@@ -329,6 +329,33 @@ class Environment extends EmitterObj {
     return tmpl.render(ctx, cb);
   }
 
+  async renderAsync(templateName, ctx, parentFrame) {
+    return this.asyncRender(templateName, ctx, true, parentFrame);
+  }
+
+  async renderStringAsync(templateString, ctx, parentFrame) {
+    return this.asyncRender(templateString, ctx, false, parentFrame);
+  }
+
+  async _asyncRender(template, ctx, namedTemplate, parentFrame) {
+    const result = await new Promise((resolve, reject) => {
+      let callback = (err, res) => {
+        if (err || res === null) {
+          reject(err || new Error('No render result'));
+        } else {
+          resolve(res);
+        }
+      };
+
+      if (namedTemplate) {
+        this.render(template, parentFrame, ctx, callback);
+      } else {
+        this.renderString(template, ctx, callback);
+      }
+    });
+    return result;
+  }
+
   waterfall(tasks, callback, forceAsync) {
     return waterfall(tasks, callback, forceAsync);
   }
