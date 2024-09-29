@@ -21,7 +21,7 @@ const compareOps = {
 };
 
 class Compiler extends Obj {
-  init(templateName, throwOnUndefined) {
+  init(templateName, throwOnUndefined, isAsync) {
     this.templateName = templateName;
     this.codebuf = [];
     this.lastId = 0;
@@ -30,6 +30,7 @@ class Compiler extends Obj {
     this._scopeClosers = '';
     this.inBlock = false;
     this.throwOnUndefined = throwOnUndefined;
+    this.isAsync = isAsync;
   }
 
   fail(msg, lineno, colno) {
@@ -1180,8 +1181,12 @@ class Compiler extends Obj {
 }
 
 module.exports = {
-  compile: function compile(src, asyncFilters, extensions, name, opts = {}) {
-    const c = new Compiler(name, opts.throwOnUndefined);
+  compile: function compile(src, asyncFilters, extensions, name, isAsync, opts = {}) {
+    if (typeof isAsync === 'object') {
+      opts = isAsync;
+      isAsync = false;
+    }
+    const c = new Compiler(name, opts.throwOnUndefined, isAsync);
 
     // Run the extension preprocessors against the source.
     const preprocessors = (extensions || []).map(ext => ext.preprocess).filter(f => !!f);

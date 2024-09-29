@@ -63,11 +63,11 @@ module.exports = {
   reset() {
     e = undefined;
   },
-  compile(src, env, path, eagerCompile) {
+  compile(src, env, path, eagerCompile, isAsync) {
     if (!e) {
       configure();
     }
-    return new Template(src, env, path, eagerCompile);
+    return new Template(src, env, path, eagerCompile, isAsync);
   },
   render(name, ctx, cb) {
     if (!e) {

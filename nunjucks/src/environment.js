@@ -188,7 +188,11 @@ class Environment extends EmitterObj {
     return (isRelative && loader.resolve) ? loader.resolve(parentName, filename) : filename;
   }
 
-  getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
+  getAsyncTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
+    return this.getTemplate(name, eagerCompile, parentName, ignoreMissing, true, cb);
+  }
+
+  getTemplate(name, eagerCompile, parentName, ignoreMissing, isAsync, cb) {
     var that = this;
     var tmpl = null;
     if (name && name.raw) {
@@ -207,6 +211,11 @@ class Environment extends EmitterObj {
       eagerCompile = false;
     }
 
+    if (typeof isAsync === 'function') {
+      cb = isAsync;
+      isAsync = false;
+    }
+
     if (name instanceof Template) {
       tmpl = name;
     } else if (typeof name !== 'string') {
@@ -216,6 +225,9 @@ class Environment extends EmitterObj {
         const loader = this.loaders[i];
         tmpl = loader.cache[this.resolveTemplate(loader, parentName, name)];
         if (tmpl) {
+          if (tmpl.isAsync !== isAsync) {
+            throw new Error('The same template can not be compiled in both async and sync mode');
+          }
           break;
         }
       }
@@ -250,9 +262,9 @@ class Environment extends EmitterObj {
       }
       let newTmpl;
       if (!info) {
-        newTmpl = new Template(noopTmplSrc, this, '', eagerCompile);
+        newTmpl = new Template(noopTmplSrc, this, '', eagerCompile, isAsync);
       } else {
-        newTmpl = new Template(info.src, this, info.path, eagerCompile);
+        newTmpl = new Template(info.src, this, info.path, eagerCompile, isAsync);
         if (!info.noCache) {
           info.loader.cache[name] = newTmpl;
         }
@@ -293,10 +305,15 @@ class Environment extends EmitterObj {
     return expressApp(this, app);
   }
 
-  render(name, ctx, cb) {
+  render(name, ctx, isAsync, cb) {
     if (lib.isFunction(ctx)) {
       cb = ctx;
       ctx = null;
+    }
+
+    if (typeof isAsync === 'function') {
+      cb = isAsync;
+      isAsync = false;
     }
 
     // We support a synchronous API to make it easier to migrate
@@ -305,7 +322,7 @@ class Environment extends EmitterObj {
     // synchronously.
     let syncResult = null;
 
-    this.getTemplate(name, (err, tmpl) => {
+    this.getTemplate(name, false, isAsync, (err, tmpl) => {
       if (err && cb) {
         callbackAsap(cb, err);
       } else if (err) {
@@ -358,6 +375,30 @@ class Environment extends EmitterObj {
 
   waterfall(tasks, callback, forceAsync) {
     return waterfall(tasks, callback, forceAsync);
+  }
+}
+
+class AsyncState {
+  constructor() {
+    this.activeClosures = 0;
+  }
+  enterClosure() {
+    this.activeClosures++;
+  }
+  leaveClosure() {
+    this.activeClosures--;
+    if (this.activeAwaits === 0 && this.completionResolver) {
+      this.completionResolver();
+      this.completionResolver = null;
+    }
+  }
+  async waitAllClosures() {
+    if (this.activeAwaits === 0) {
+      return Promise.resolve();
+    }
+    return new Promise(resolve => {
+      this.completionResolver = resolve;
+    });
   }
 }
 
@@ -435,8 +476,9 @@ class Context extends Obj {
 }
 
 class Template extends Obj {
-  init(src, env, path, eagerCompile) {
+  init(src, env, path, eagerCompile, isAsync) {
     this.env = env || new Environment();
+    this.isAsync = isAsync;
 
     if (lib.isObject(src)) {
       switch (src.type) {
@@ -562,13 +604,18 @@ class Template extends Obj {
 
     // Run the rootRenderFunc to populate the context with exported vars
     const context = new Context(ctx || {}, this.blocks, this.env);
-    this.rootRenderFunc(this.env, context, frame, globalRuntime, (err) => {
+    const callback = (err) => {
       if (err) {
         cb(err, null);
       } else {
         cb(null, context.getExported());
       }
-    });
+    };
+    if (this.isAsync) {
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, new AsyncState(), callback);
+    } else {
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
+    }
   }
 
   compile() {
@@ -587,6 +634,7 @@ class Template extends Obj {
         this.env.asyncFilters,
         this.env.extensionsList,
         this.path,
+        this.isAsync,
         this.env.opts);
 
       const func = new Function(source); // eslint-disable-line no-new-func
@@ -611,7 +659,14 @@ class Template extends Obj {
   }
 }
 
+class AsyncTemplate extends Template {
+  init(src, env, path, eagerCompile) {
+    super.init(src, env, path, eagerCompile, true);
+  }
+}
+
 module.exports = {
   Environment: Environment,
-  Template: Template
+  Template: Template,
+  AsyncTemplate: AsyncTemplate,
 };
