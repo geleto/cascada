@@ -200,6 +200,16 @@ class Environment extends EmitterObj {
       name = name.raw;
     }
 
+    if (lib.isFunction(isAsync)) {
+      cb = isAsync;
+      isAsync = false;
+    }
+
+    if (lib.isFunction(ignoreMissing)) {
+      cb = ignoreMissing;
+      ignoreMissing = false;
+    }
+
     if (lib.isFunction(parentName)) {
       cb = parentName;
       parentName = null;
@@ -209,11 +219,6 @@ class Environment extends EmitterObj {
     if (lib.isFunction(eagerCompile)) {
       cb = eagerCompile;
       eagerCompile = false;
-    }
-
-    if (typeof isAsync === 'function') {
-      cb = isAsync;
-      isAsync = false;
     }
 
     if (name instanceof Template) {
@@ -306,14 +311,14 @@ class Environment extends EmitterObj {
   }
 
   render(name, ctx, isAsync, cb) {
+    if (lib.isFunction(isAsync)) {
+      cb = ctx;
+      isAsync = false;
+    }
+
     if (lib.isFunction(ctx)) {
       cb = ctx;
       ctx = null;
-    }
-
-    if (typeof isAsync === 'function') {
-      cb = isAsync;
-      isAsync = false;
     }
 
     // We support a synchronous API to make it easier to migrate
