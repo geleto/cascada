@@ -31,6 +31,7 @@ class Compiler extends Obj {
     this.inBlock = false;
     this.throwOnUndefined = throwOnUndefined;
     this.isAsync = isAsync;
+    this.asyncClosureDepth = 0;
   }
 
   fail(msg, lineno, colno) {
@@ -89,6 +90,117 @@ class Compiler extends Obj {
     this._emitLine('}');
     this._emitLine('}');
     this.buffer = null;
+  }
+
+  // wrap await calls in this, maybe we should only astate.enterClosure()/leaveClosure()
+  // the async blocks
+  _emitAwaitBegin() {
+    if (this.isAsync) {
+      this._emit('(await ');
+    }
+  }
+
+  _emitAwaitEnd() {
+    if (this.isAsync) {
+      this._emit(')');
+    }
+  }
+
+  // an async block that does not have a value should be wrapped in this
+  _emitAsyncBlockBegin() {
+    if (this.isAsync) {
+      this._emit(`(async (frame)=>{`);
+      this._emit('astate.enterClosure();');
+      this.asyncClosureDepth++;
+    }
+  }
+
+  _emitAsyncBlockEnd() {
+    if (this.isAsync) {
+      this._emitLine(`})(frame)`);
+      this.asyncClosureDepth--;
+      if (this.asyncClosureDepth === 0) {
+        this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
+      }
+      this._emitLine('.finally(()=>{astate.leaveClosure()();})');
+    }
+  }
+
+  _emitAsyncValueBegin() {
+    if (this.isAsync) {
+      this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}(async ()=>{`);
+      this._emitLine('astate.enterClosure();');
+      this._emit('return ');
+      this.asyncClosureDepth++;
+    }
+  }
+
+  _emitAsyncValueEnd() {
+    if (this.isAsync) {
+      this._emitLine('})()');
+      this.asyncClosureDepth--;
+      if (this.asyncClosureDepth === 0) {
+        this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
+      }
+      this._emitLine('.finally(()=>{astate.leaveClosure()();})');
+    }
+  }
+
+  _emitAddToBufferBegin() {
+    if (this.isAsync) {
+      this._emitLine('(async ()=>{');
+      this._emitLine('astate.enterClosure();');
+      this._emitLine(`var index = ${this.buffer}_index++;`);
+      this._emit(`${this.buffer}[index] = `);
+      this.asyncClosureDepth++;
+    } else {
+      this._emit(`${this.buffer} += `);
+    }
+  }
+
+  _emitAddToBufferEnd() {
+    if (this.isAsync) {
+      this._emitLine('})()');
+      this.asyncClosureDepth--;
+      if (this.asyncClosureDepth === 0) {
+        this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
+      }
+      this._emitLine('.finally(()=>{astate.leaveClosure()();})');
+    }
+  }
+
+  _emitBufferBlockBegin() {
+    if (this.isAsync) {
+      // Start the async closure
+      this._emitAsyncBlockBegin();
+
+      // Push the current buffer onto the stack
+      this.bufferStack.push(this.buffer);
+
+      // Create a new buffer array for the nested block
+      const newBuffer = this._tmpid();
+
+      // Initialize the new buffer and its index inside the async closure
+      this._emitLine(`var ${newBuffer} = [];`);
+      this._emitLine(`var ${newBuffer}_index = 0;`);
+
+      // Append the new buffer to the parent buffer
+      this._emitLine(`${this.buffer}[${this.buffer}_index++] = ${newBuffer};`);
+
+      // Update the buffer reference
+      this.buffer = newBuffer;
+      // No need to update bufferIndex; we'll use `${this.buffer}_index` when needed
+    }
+  }
+
+  _emitBufferBlockEnd() {
+    if (this.isAsync) {
+      // End the async closure
+      this._emitAsyncBlockEnd();
+
+      // Restore the previous buffer from the stack
+      this.buffer = this.bufferStack.pop();
+    }
   }
 
   _addScopeLevel() {
