@@ -312,7 +312,7 @@ class Environment extends EmitterObj {
 
   render(name, ctx, isAsync, cb) {
     if (lib.isFunction(isAsync)) {
-      cb = ctx;
+      cb = isAsync;
       isAsync = false;
     }
 
