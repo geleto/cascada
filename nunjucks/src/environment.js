@@ -352,11 +352,11 @@ class Environment extends EmitterObj {
   }
 
   async renderAsync(templateName, ctx, parentFrame) {
-    return this.asyncRender(templateName, ctx, true, parentFrame);
+    return this._asyncRender(templateName, ctx, true, parentFrame);
   }
 
   async renderStringAsync(templateString, ctx, parentFrame) {
-    return this.asyncRender(templateString, ctx, false, parentFrame);
+    return this._asyncRender(templateString, ctx, false, parentFrame);
   }
 
   async _asyncRender(template, ctx, namedTemplate, parentFrame) {
