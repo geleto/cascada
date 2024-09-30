@@ -1,9 +1,13 @@
 module.exports = {
   'env': {
     node: true,
-    es6: false,
+    es6: true,
     mocha: true,
     browser: true,
+  },
+  'parserOptions': {
+    'ecmaVersion': 2018,  // Added this to ensure support for recent ES features
+    'sourceType': 'module'
   },
   'rules': {
     // func-names is annoying when you don't have arrow syntax
