@@ -10,6 +10,7 @@ module.exports = {
     'sourceType': 'module'
   },
   'rules': {
+    'quotes': ['error', 'single', { 'allowTemplateLiterals': true }],
     // func-names is annoying when you don't have arrow syntax
     'func-names': 'off',
     // To deal with browser environments, we need to have require

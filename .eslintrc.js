@@ -18,6 +18,7 @@ module.exports = {
       named: 'never',
       asyncArrow: 'always',
     }],
+    'quotes': ['error', 'single', { 'allowTemplateLiterals': true }],
     "linebreak-style": 0,
     // Temporarily disabled rules
     //
