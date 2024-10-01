@@ -1090,9 +1090,9 @@ class Compiler extends Obj {
     this._addScopeLevel();
 
     node.names.children.forEach((nameNode) => {
-      var name;
-      var alias;
-      var id = this._tmpid();
+      let name;
+      let alias;
+      let id = this._tmpid(); // Declare id here with let
 
       if (nameNode instanceof nodes.Pair) {
         name = nameNode.key.value;
@@ -1103,7 +1103,7 @@ class Compiler extends Obj {
       }
 
       this._emitLine(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
-      this._emitLine(`var ${id} = ${importedId}.${name};`);
+      this._emitLine(`${id} = ${importedId}.${name};`); // Remove 'let' here
       this._emitLine('} else {');
       this._emitLine(`cb(new Error("cannot import '${name}'")); return;`);
       this._emitLine('}');
