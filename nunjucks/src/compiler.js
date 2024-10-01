@@ -1164,7 +1164,7 @@ class Compiler extends Obj {
     // template in the top-level scope
     this._emitLine(`parentTemplate = ${parentTemplateId}`);
 
-    this._emitLine(`for(var ${k} in parentTemplate.blocks) {`);
+    this._emitLine(`for(let ${k} in parentTemplate.blocks) {`);
     this._emitLine(`context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
     this._emitLine('}');
 
@@ -1293,7 +1293,7 @@ class Compiler extends Obj {
       this._emitFuncBegin(block, `b_${name}`);
 
       let tmpFrame = new Frame();
-      this._emitLine('var frame = frame.push(true);');  // Keep this as 'var'
+      this._emitLine('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       this.compile(block.body, tmpFrame);
       this._emitFuncEnd();
     });
