@@ -310,12 +310,7 @@ class Environment extends EmitterObj {
     return expressApp(this, app);
   }
 
-  render(name, ctx, isAsync, cb) {
-    if (lib.isFunction(isAsync)) {
-      cb = isAsync;
-      isAsync = false;
-    }
-
+  render(name, ctx, cb) {
     if (lib.isFunction(ctx)) {
       cb = ctx;
       ctx = null;
@@ -327,7 +322,7 @@ class Environment extends EmitterObj {
     // synchronously.
     let syncResult = null;
 
-    this.getTemplate(name, false, isAsync, (err, tmpl) => {
+    this.getTemplate(name, false, (err, tmpl) => {
       if (err && cb) {
         callbackAsap(cb, err);
       } else if (err) {
@@ -355,11 +350,12 @@ class Environment extends EmitterObj {
     return this._asyncRender(templateName, ctx, true, parentFrame);
   }
 
-  async renderStringAsync(templateString, ctx, parentFrame) {
-    return this._asyncRender(templateString, ctx, false, parentFrame);
+  async renderStringAsync(src, ctx, opts) {
+    opts = opts || {};
+    return this._asyncRender(src, ctx, false, opts);
   }
 
-  async _asyncRender(template, ctx, namedTemplate, parentFrame) {
+  async _asyncRender(template, ctx, namedTemplate, opts) {
     const result = await new Promise((resolve, reject) => {
       let callback = (err, res) => {
         if (err || res === null) {
@@ -370,9 +366,18 @@ class Environment extends EmitterObj {
       };
 
       if (namedTemplate) {
-        this.render(template, parentFrame, ctx, callback);
+        // render template object
+        this.getTemplate(template, false, null, false, true, (err, tmpl) => {
+          if (err) {
+            callbackAsap(callback, err);
+          } else {
+            tmpl.render(ctx, callback);
+          }
+        });
       } else {
-        this.renderString(template, ctx, callback);
+        // render template string
+        const tmpl = new Template(template, this, opts.path);
+        tmpl.render(ctx, callback);
       }
     });
     return result;
@@ -404,6 +409,9 @@ class AsyncState {
     return new Promise(resolve => {
       this.completionResolver = resolve;
     });
+  }
+  createNew() {
+    return new AsyncState();
   }
 }
 
@@ -549,7 +557,7 @@ class Template extends Obj {
     let syncResult = null;
     let didError = false;
 
-    this.rootRenderFunc(this.env, context, frame, globalRuntime, (err, res) => {
+    const callback = (err, res) => {
       // TODO: this is actually a bug in the compiled template (because waterfall
       // tasks are both not passing errors up the chain of callbacks AND are not
       // causing a return from the top-most render function). But fixing that
@@ -576,11 +584,16 @@ class Template extends Obj {
         }
         syncResult = res;
       }
-    });
+    };
+
+    if (this.isAsync) {
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, new AsyncState(), callback);
+    } else {
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
+    }
 
     return syncResult;
   }
-
 
   getExported(ctx, parentFrame, cb) { // eslint-disable-line consistent-return
     if (typeof ctx === 'function') {

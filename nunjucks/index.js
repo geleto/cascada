@@ -69,12 +69,12 @@ module.exports = {
     }
     return new Template(src, env, path, eagerCompile, isAsync);
   },
-  render(name, ctx, cb) {
+  render(name, ctx, isAsync, cb) {
     if (!e) {
       configure();
     }
 
-    return e.render(name, ctx, cb);
+    return e.render(name, ctx, isAsync, cb);
   },
   renderString(src, ctx, cb) {
     if (!e) {

@@ -72,7 +72,11 @@ class Compiler extends Obj {
   _emitFuncBegin(node, name) {
     this.buffer = 'output';
     this._scopeClosers = '';
-    this._emitLine(`function ${name}(env, context, frame, runtime, cb) {`);
+    if (this.isAsync) {
+      this._emitLine(`function ${name}(env, context, frame, runtime, astate, cb) {`);
+    } else {
+      this._emitLine(`function ${name}(env, context, frame, runtime, cb) {`);
+    }
     this._emitLine(`var lineno = ${node.lineno};`);
     this._emitLine(`var colno = ${node.colno};`);
     this._emitLine(`var ${this.buffer} = "";`);
@@ -1238,12 +1242,31 @@ class Compiler extends Obj {
 
     this._emitFuncBegin(node, 'root');
     this._emitLine('var parentTemplate = null;');
+    if (this.isAsync) {
+      this._emitLine('var isIncluded = runtime.isIncluded();');
+    }
     this._compileChildren(node, frame);
+    if (this.isAsync) {
+      this._emitLine('if(!isIncluded){');
+      this._emitLine('env.waitAllClosures().then(() => {');
+      this._emitLine('  if(parentTemplate) {');
+      this._emitLine('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
+      this._emitLine('  } else {');
+      this._emitLine(`    cb(null, env.flattentBuffer(${this.buffer}));`);
+      this._emitLine('  }');
+      this._emitLine('}).catch(e => {');
+      this._emitLine('cb(runtime.handleError(e, lineno, colno))');
+      this._emitLine('});');
+      this._emitLine('} else {');
+    }
     this._emitLine('if(parentTemplate) {');
     this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, cb);');
     this._emitLine('} else {');
     this._emitLine(`cb(null, ${this.buffer});`);
     this._emitLine('}');
+    if (this.isAsync) {
+      this._emitLine('}');
+    }
     this._emitFuncEnd(true);
 
     this.inBlock = true;
