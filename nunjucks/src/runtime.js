@@ -216,6 +216,26 @@ function suppressValue(val, autoescape) {
   return val;
 }
 
+function suppressValueAsync(val, autoescape) {
+  if (Array.isArray(val)) {
+    if (autoescape) {
+      // append the function to the array, so it will be
+      // called after the elements before it are joined
+      val.push((value) => {
+        return suppressValue(value, true);
+      });
+    }
+    return val;
+  }
+  if (val && typeof val.then === 'function') {
+    // it's a promise, return a promise that suppresses the value when resolved
+    return (async (v) => {
+      return suppressValue(await v, autoescape);
+    })(val);
+  }
+  return suppressValue(val, autoescape);
+}
+
 function ensureDefined(val, lineno, colno) {
   if (val === null || val === undefined) {
     throw new lib.TemplateError(
@@ -225,6 +245,24 @@ function ensureDefined(val, lineno, colno) {
     );
   }
   return val;
+}
+
+function ensureDefinedAsync(val, lineno, colno) {
+  if (Array.isArray(val)) {
+    // append the function to the array, so it will be
+    // called after the elements before it are joined
+    val.push((v) => {
+      return ensureDefined(v, lineno, colno);
+    });
+    return val;
+  }
+  if (val && typeof val.then === 'function') {
+    // it's a promise, return a promise that suppresses the value when resolved
+    return (async (v) => {
+      return ensureDefined(await v, lineno, colno);
+    })(val);
+  }
+  return ensureDefined(val, lineno, colno);
 }
 
 function memberLookup(obj, val) {
@@ -363,7 +401,9 @@ module.exports = {
   makeKeywordArgs: makeKeywordArgs,
   numArgs: numArgs,
   suppressValue: suppressValue,
+  suppressValueAsync: suppressValueAsync,
   ensureDefined: ensureDefined,
+  ensureDefinedAsync: ensureDefinedAsync,
   memberLookup: memberLookup,
   contextOrFrameLookup: contextOrFrameLookup,
   callWrap: callWrap,
