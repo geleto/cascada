@@ -785,6 +785,7 @@ class Compiler extends Obj {
     this._emit(`let ${arr} = `);
     this._compileExpression(node.arr, frame);
     this._emitLine(';');
+    this._emitLine(`let ${len};`);
 
     this._emit(`if(${arr}) {`);
     this._emitLine(arr + ' = runtime.fromIterator(' + arr + ');');
@@ -794,18 +795,18 @@ class Compiler extends Obj {
     if (node.name instanceof nodes.Array) {
       this._emitLine(`let ${i};`);
 
-      // The object could be an arroy or object. Note that the
+      // The object could be an array or object. Note that the
       // body of the loop is duplicated for each condition, but
       // we are optimizing for speed over size.
       this._emitLine(`if(runtime.isArray(${arr})) {`);
-      this._emitLine(`var ${len} = ${arr}.length;`);
+      this._emitLine(`${len} = ${arr}.length;`);
       this._emitLine(`for(${i}=0; ${i} < ${arr}.length; ${i}++) {`);
 
       // Bind each declared var
       node.name.children.forEach((child, u) => {
-        var tid = this._tmpid();
-        this._emitLine(`var ${tid} = ${arr}[${i}][${u}];`);
-        this._emitLine(`frame.set("${child}", ${arr}[${i}][${u}]);`);
+        let tid = this._tmpid();
+        this._emitLine(`let ${tid} = ${arr}[${i}][${u}];`);
+        this._emitLine(`frame.set("${child}", ${tid});`);
         frame.set(node.name.children[u].value, tid);
       });
 
@@ -824,10 +825,10 @@ class Compiler extends Obj {
       frame.set(val.value, v);
 
       this._emitLine(`${i} = -1;`);
-      this._emitLine(`var ${len} = runtime.keys(${arr}).length;`);
-      this._emitLine(`for(var ${k} in ${arr}) {`);
+      this._emitLine(`${len} = runtime.keys(${arr}).length;`);
+      this._emitLine(`for(let ${k} in ${arr}) {`);
       this._emitLine(`${i}++;`);
-      this._emitLine(`var ${v} = ${arr}[${k}];`);
+      this._emitLine(`let ${v} = ${arr}[${k}];`);
       this._emitLine(`frame.set("${key.value}", ${k});`);
       this._emitLine(`frame.set("${val.value}", ${v});`);
 
@@ -843,9 +844,9 @@ class Compiler extends Obj {
       const v = this._tmpid();
       frame.set(node.name.value, v);
 
-      this._emitLine(`var ${len} = ${arr}.length;`);
-      this._emitLine(`for(var ${i}=0; ${i} < ${arr}.length; ${i}++) {`);
-      this._emitLine(`var ${v} = ${arr}[${i}];`);
+      this._emitLine(`${len} = ${arr}.length;`);
+      this._emitLine(`for(let ${i}=0; ${i} < ${arr}.length; ${i}++) {`);
+      this._emitLine(`let ${v} = ${arr}[${i}];`);
       this._emitLine(`frame.set("${node.name.value}", ${v});`);
 
       this._emitLoopBindings(node, arr, i, len);
@@ -859,7 +860,7 @@ class Compiler extends Obj {
 
     this._emitLine('}');
     if (node.else_) {
-      this._emitLine('if (!' + len + ') {');
+      this._emitLine(`if (!${len}) {`);
       this.compile(node.else_, frame);
       this._emitLine('}');
     }
