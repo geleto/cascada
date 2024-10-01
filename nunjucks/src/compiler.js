@@ -1292,8 +1292,8 @@ class Compiler extends Obj {
 
       this._emitFuncBegin(block, `b_${name}`);
 
-      const tmpFrame = new Frame();
-      this._emitLine('var frame = frame.push(true);');// keep this a var for now
+      let tmpFrame = new Frame();
+      this._emitLine('var frame = frame.push(true);');  // Keep this as 'var'
       this.compile(block.body, tmpFrame);
       this._emitFuncEnd();
     });
