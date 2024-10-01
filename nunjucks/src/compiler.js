@@ -49,7 +49,7 @@ class Compiler extends Obj {
     const id = this._tmpid();
     this.bufferStack.push(this.buffer);
     this.buffer = id;
-    this._emit(`var ${this.buffer} = "";`);
+    this._emit(`let ${this.buffer} = "";`);
     return id;
   }
 
@@ -77,9 +77,9 @@ class Compiler extends Obj {
     } else {
       this._emitLine(`function ${name}(env, context, frame, runtime, cb) {`);
     }
-    this._emitLine(`var lineno = ${node.lineno};`);
-    this._emitLine(`var colno = ${node.colno};`);
-    this._emitLine(`var ${this.buffer} = "";`);
+    this._emitLine(`let lineno = ${node.lineno};`);
+    this._emitLine(`let colno = ${node.colno};`);
+    this._emitLine(`let ${this.buffer} = "";`);
     this._emitLine('try {');
   }
 
@@ -154,7 +154,7 @@ class Compiler extends Obj {
     if (this.isAsync) {
       this._emitLine('(async ()=>{');
       this._emitLine('astate.enterClosure();');
-      this._emitLine(`var index = ${this.buffer}_index++;`);
+      this._emitLine(`let index = ${this.buffer}_index++;`);
       this._emit(`${this.buffer}[index] = `);
       this.asyncClosureDepth++;
     } else {
@@ -185,8 +185,8 @@ class Compiler extends Obj {
       const newBuffer = this._tmpid();
 
       // Initialize the new buffer and its index inside the async closure
-      this._emitLine(`var ${newBuffer} = [];`);
-      this._emitLine(`var ${newBuffer}_index = 0;`);
+      this._emitLine(`let ${newBuffer} = [];`);
+      this._emitLine(`let ${newBuffer}_index = 0;`);
 
       // Append the new buffer to the parent buffer
       this._emitLine(`${this.buffer}[${this.buffer}_index++] = ${newBuffer};`);
@@ -411,8 +411,12 @@ class Compiler extends Obj {
     if (v) {
       this._emit(v);
     } else {
+      // @todo - omit this for function calls?
+      // (parent instanceof nodes.FunCall && parent.name === node)
+      this._emitAwaitBegin();
       this._emit('runtime.contextOrFrameLookup(' +
         'context, frame, "' + name + '")');
+      this._emitAwaitEnd();
     }
   }
 
@@ -566,11 +570,13 @@ class Compiler extends Obj {
   }
 
   compileLookupVal(node, frame) {
+    this._emitAwaitBegin();
     this._emit('runtime.memberLookup((');
     this._compileExpression(node.target, frame);
     this._emit('),');
     this._compileExpression(node.val, frame);
     this._emit(')');
+    this._emitAwaitEnd();
   }
 
   _getNodeName(node) {
@@ -653,7 +659,7 @@ class Compiler extends Obj {
 
         // Note: This relies on js allowing scope across
         // blocks, in case this is created inside an `if`
-        this._emitLine('var ' + id + ';');
+        this._emitLine('let ' + id + ';');
       }
 
       ids.push(id);
@@ -776,7 +782,7 @@ class Compiler extends Obj {
 
     this._emitLine('frame = frame.push();');
 
-    this._emit(`var ${arr} = `);
+    this._emit(`let ${arr} = `);
     this._compileExpression(node.arr, frame);
     this._emitLine(';');
 
@@ -786,7 +792,7 @@ class Compiler extends Obj {
     // If multiple names are passed, we need to bind them
     // appropriately
     if (node.name instanceof nodes.Array) {
-      this._emitLine(`var ${i};`);
+      this._emitLine(`let ${i};`);
 
       // The object could be an arroy or object. Note that the
       // body of the loop is duplicated for each condition, but
@@ -874,7 +880,7 @@ class Compiler extends Obj {
 
     this._emitLine('frame = frame.push();');
 
-    this._emit('var ' + arr + ' = runtime.fromIterator(');
+    this._emit('let ' + arr + ' = runtime.fromIterator(');
     this._compileExpression(node.arr, frame);
     this._emitLine(');');
 
@@ -974,11 +980,11 @@ class Compiler extends Obj {
       currFrame = new Frame();
     }
     this._emitLines(
-      `var ${funcId} = runtime.makeMacro(`,
+      `let ${funcId} = runtime.makeMacro(`,
       `[${argNames.join(', ')}], `,
       `[${kwargNames.join(', ')}], `,
       `function (${realNames.join(', ')}) {`,
-      'var callerFrame = frame;',
+      'let callerFrame = frame;',
       'frame = ' + ((keepFrame) ? 'frame.push(true);' : 'new runtime.Frame();'),
       'kwargs = kwargs || {};',
       'if (Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
@@ -1165,7 +1171,7 @@ class Compiler extends Obj {
   }
 
   compileInclude(node, frame) {
-    this._emitLine('var tasks = [];');
+    this._emitLine('let tasks = [];');
     this._emitLine('tasks.push(');
     this._emitLine('function(callback) {');
     const id = this._compileGetTemplate(node, frame, false, node.ignoreMissing);
@@ -1198,7 +1204,7 @@ class Compiler extends Obj {
     var buffer = this.buffer;
     this.buffer = 'output';
     this._emitLine('(function() {');
-    this._emitLine('var output = "";');
+    this._emitLine('let output = "";');
     this._withScopedSyntax(() => {
       this.compile(node.body, frame);
     });
@@ -1241,9 +1247,9 @@ class Compiler extends Obj {
     frame = new Frame();
 
     this._emitFuncBegin(node, 'root');
-    this._emitLine('var parentTemplate = null;');
+    this._emitLine('let parentTemplate = null;');
     if (this.isAsync) {
-      this._emitLine('var isIncluded = runtime.isIncluded();');
+      this._emitLine('let isIncluded = runtime.isIncluded();');
     }
     this._compileChildren(node, frame);
     if (this.isAsync) {
@@ -1286,7 +1292,7 @@ class Compiler extends Obj {
       this._emitFuncBegin(block, `b_${name}`);
 
       const tmpFrame = new Frame();
-      this._emitLine('var frame = frame.push(true);');
+      this._emitLine('var frame = frame.push(true);');// keep this a var for now
       this.compile(block.body, tmpFrame);
       this._emitFuncEnd();
     });
