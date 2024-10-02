@@ -232,5 +232,350 @@
         `);
       });
     });
+
+    describe('Loops', () => {
+      it('should correctly handle async functions inside a for loop', async () => {
+        const context = {
+          ids: [1, 2, 3],
+          async fetchData(id) {
+            await delay(7 - (2 * id));
+            return `Data for ID ${id}`;
+          }
+        };
+
+        const template = `
+        {%- for id in ids %}
+          - {{ fetchData(id) }}
+        {%- endfor %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          - Data for ID 1
+          - Data for ID 2
+          - Data for ID 3
+        `);
+      });
+
+      it('should correctly resolve async functions with dependent arguments inside a for loop', async () => {
+        const userPosts =
+          [
+            [
+              { id: 1, title: 'User #0 first post', content: 'Hello from user 0!' },
+            ],
+            [
+              { id: 1, title: 'First post', content: 'Hello world!' },
+              { id: 2, title: 'Second post', content: 'Async is awesome!' }
+            ]
+          ];
+        const context = {
+          async fetchUser(id) {
+            await delay(7);
+            return { id, name: 'John Doe' };
+          },
+          async fetchUserPosts(userId) {
+            await delay(5);
+            if (userId < 0 || userId >= userPosts.length) {
+              throw new Error('User if out of range');
+            }
+            return userPosts[userId];
+          }
+        };
+
+        const template = `
+        {%- set user = fetchUser(1) %}
+        User: {{ user.name }}
+        Posts:
+        {%- for post in fetchUserPosts(user.id) %}
+          - {{ post.title }}: {{ post.content }}
+        {%- endfor %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+        User: John Doe
+        Posts:
+          - First post: Hello world!
+          - Second post: Async is awesome!
+        `);
+      });
+
+      it('should handle async functions inside a simple for loop', async () => {
+        const context = {
+          items: [1, 2, 3],
+          async getData(id) {
+            await delay(7 - (2 * id));
+            return `Item ${id}`;
+          }
+        };
+
+        const template = `
+        {%- for item in items %}
+          - {{ getData(item) }}
+        {%- endfor %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          - Item 1
+          - Item 2
+          - Item 3
+        `);
+      });
+
+      it('should handle async functions with loop.index', async () => {
+        const context = {
+          items: ['a', 'b', 'c'],
+          async transform(item, index) {
+            await delay(5 - index);
+            return `${item.toUpperCase()}-${index}`;
+          }
+        };
+
+        const template = `
+        {%- for item in items %}
+          {{ transform(item, loop.index) }}
+        {%- endfor %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          A-1
+          B-2
+          C-3
+        `);
+      });
+
+      it('should handle nested for loops with async functions', async () => {
+        const context = {
+          users: [{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }],
+          async getPosts(userId) {
+            await delay(5);
+            return [`Post 1 by User ${userId}`, `Post 2 by User ${userId}`];
+          }
+        };
+
+        const template = `
+        {%- for user in users %}
+          {{ user.name }}:
+          {%- for post in getPosts(user.id) %}
+          - {{ post }}
+          {%- endfor %}
+        {%- endfor %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          Alice:
+          - Post 1 by User 1
+          - Post 2 by User 1
+          Bob:
+          - Post 1 by User 2
+          - Post 2 by User 2
+        `);
+      });
+
+      it('should handle async functions in for...in...async loops', async () => {
+        const context = {
+          async getUsers() {
+            await delay(5);
+            return [{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }];
+          },
+          async getRole(userId) {
+            await delay(3);
+            return userId === 1 ? 'Admin' : 'User';
+          }
+        };
+
+        const template = `
+        {%- for user in getUsers() %}
+          {{ user.name }}: {{ getRole(user.id) }}
+        {%- endfor %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          Alice: Admin
+          Bob: User
+        `);
+      });
+
+      it('should handle async functions with loop variables', async () => {
+        const context = {
+          items: ['a', 'b', 'c'],
+          async processItem(item, index, first, last) {
+            await delay(7 - index);
+            let result = `${item.toUpperCase()}-${index}`;
+            if (first) result += ' (First)';
+            if (last) result += ' (Last)';
+            return result;
+          }
+        };
+
+        const template = `
+        {%- for item in items %}
+          {{ processItem(item, loop.index, loop.first, loop.last) }}
+        {%- endfor %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          A-1 (First)
+          B-2
+          C-3 (Last)
+        `);
+      });
+
+      it('should handle array unpacking with async function in loop body', async () => {
+        const context = {
+          users: [
+            ['John', 30],
+            ['Jane', 25],
+            ['Bob', 35]
+          ],
+          async processUser(name, age) {
+            await delay(age / 10);
+            return `${name} is ${age} years old`;
+          }
+        };
+
+        const template = `
+        {%- for name, age in users %}
+          {{ processUser(name, age) }}
+        {%- endfor %}`;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          John is 30 years old
+          Jane is 25 years old
+          Bob is 35 years old`
+        );
+      });
+
+      it('should handle object unpacking with async function in loop body', async () => {
+        const context = {
+          userAges: {
+            John: 30,
+            Jane: 25,
+            Bob: 35
+          },
+          async formatUserAge(name, age) {
+            await delay(age / 10);
+            return `${name}: ${age} years`;
+          }
+        };
+
+        const template = `
+        {%- for name, age in userAges %}
+          {{ formatUserAge(name, age) }}
+        {%- endfor %}`;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          John: 30 years
+          Jane: 25 years
+          Bob: 35 years`
+        );
+      });
+
+      it('should handle array unpacking with multiple async functions in loop body', async () => {
+        const context = {
+          employees: [
+            ['John', 'IT'],
+            ['Jane', 'HR'],
+            ['Bob', 'Finance']
+          ],
+          async getTitle(department) {
+            await delay(department.length);
+            const titles = { IT: 'Engineer', HR: 'Manager', Finance: 'Analyst' };
+            return titles[department] || 'Employee';
+          },
+          async formatEmployee(name, title) {
+            await delay(name.length);
+            return `${name} - ${title}`;
+          }
+        };
+
+        const template = `
+        {%- for name, dept in employees %}
+          {{ formatEmployee(name, getTitle(dept)) }}
+        {%- endfor %}`;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          John - Engineer
+          Jane - Manager
+          Bob - Analyst`
+        );
+      });
+
+      it('should handle array unpacking with async function and conditional in loop body', async () => {
+        const context = {
+          users: [
+            ['John', 'admin'],
+            ['Jane', 'user'],
+            ['Bob', 'moderator']
+          ],
+          async getUserPermissions(role) {
+            await delay(role.length);
+            const permissions = {
+              admin: ['read', 'write', 'delete'],
+              moderator: ['read', 'write'],
+              user: ['read']
+            };
+            return permissions[role] || [];
+          }
+        };
+
+        const template = `
+        {%- for name, role in users %}
+          {{ name }} :
+          {%- set permissions = getUserPermissions(role) -%}
+          {%- if 'write' in permissions -%}
+            Can write
+            {%- else -%}
+            Cannot write
+          {%- endif -%}
+        {%- endfor %}`;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          John :Can write
+          Jane :Cannot write
+          Bob :Can write`
+        );
+      });
+
+      it('should handle nested loops with unpacking and async functions', async () => {
+        const context = {
+          departments: {
+            IT: [['John', 'developer'], ['Jane', 'designer']],
+            HR: [['Bob', 'recruiter'], ['Alice', 'manager']]
+          },
+          async getEmployeeDetails(name, role) {
+            await delay(name.length);
+            return `${name} (${role})`;
+          }
+        };
+
+        const template = `
+        {%- for dept, employees in departments %}
+          {{ dept }}:
+          {%- for name, role in employees %}
+            - {{ getEmployeeDetails(name, role) }}
+          {%- endfor %}
+        {%- endfor %}`;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`
+          IT:
+            - John (developer)
+            - Jane (designer)
+          HR:
+            - Bob (recruiter)
+            - Alice (manager)`
+        );
+      });
+    });
   });
 }());
