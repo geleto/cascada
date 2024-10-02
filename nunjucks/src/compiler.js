@@ -626,9 +626,13 @@ class Compiler extends Obj {
     // variables within an expression. An expression in javascript
     // like (x, y, z) returns the last value, and x and y can be
     // anything
+    if (this.isAsync) {
+      this._emitAsyncValueBegin();
+    }
     this._emit('(lineno = ' + node.lineno +
       ', colno = ' + node.colno + ', ');
 
+    this._emitAwaitBegin();
     this._emit('runtime.callWrap(');
     // Compile it as normal.
     this._compileExpression(node.name, frame);
@@ -640,6 +644,12 @@ class Compiler extends Obj {
     this._compileAggregate(node.args, frame, '[', '])');
 
     this._emit(')');
+
+    this._emitAwaitEnd();
+
+    if (this.isAsync) {
+      this._emitAsyncValueEnd();
+    }
   }
 
   compileFilter(node, frame) {
