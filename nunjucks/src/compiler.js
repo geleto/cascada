@@ -164,11 +164,11 @@ class Compiler extends Obj {
       if (addClosure) {
         this._emitLine('(async ()=>{');
         this._emitLine('astate.enterClosure();');
-      }
-      this._emitLine(`let index = ${this.buffer}_index++;`);
-      this._emit(`${this.buffer}[index] = `);
-      if (addClosure) {
+        this._emitLine(`let index = ${this.buffer}_index++;`);
+        this._emit(`${this.buffer}[index] = `);
         this.asyncClosureDepth++;
+      } else {
+        this._emitLine(`${this.buffer}[${this.buffer}_index++] = `);
       }
     } else {
       this._emit(`${this.buffer} += `);
