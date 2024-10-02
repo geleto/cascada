@@ -159,20 +159,24 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAddToBufferBegin() {
+  _emitAddToBufferBegin(addClosure = true) {
     if (this.isAsync) {
-      this._emitLine('(async ()=>{');
-      this._emitLine('astate.enterClosure();');
+      if (addClosure) {
+        this._emitLine('(async ()=>{');
+        this._emitLine('astate.enterClosure();');
+      }
       this._emitLine(`let index = ${this.buffer}_index++;`);
       this._emit(`${this.buffer}[index] = `);
-      this.asyncClosureDepth++;
+      if (addClosure) {
+        this.asyncClosureDepth++;
+      }
     } else {
       this._emit(`${this.buffer} += `);
     }
   }
 
-  _emitAddToBufferEnd() {
-    if (this.isAsync) {
+  _emitAddToBufferEnd(addClosure = true) {
+    if (this.isAsync && addClosure) {
       this._emitLine('})()');
       this.asyncClosureDepth--;
       if (this.asyncClosureDepth === 0) {
@@ -1161,10 +1165,10 @@ class Compiler extends Obj {
       this._emit(')');
     }
     this._emitLine('(env, context, frame, runtime, ' + this._makeCallback(id));
-    this._emitAddToBufferBegin();
+    this._emitAddToBufferBegin(false);
     // this._emitLine(`${this.buffer} += ${id};`);
     this._emitLine(`${id};`);
-    this._emitAddToBufferEnd();
+    this._emitAddToBufferEnd(false);
     this._addScopeLevel();
   }
 
@@ -1213,10 +1217,10 @@ class Compiler extends Obj {
 
     this._emitLine('tasks.push(');
     this._emitLine('function(result, callback){');
-    this._emitAddToBufferBegin();
+    this._emitAddToBufferBegin(false);
     // this._emitLine(`${this.buffer} += result;`);
     this._emitLine(`result;`);
-    this._emitAddToBufferEnd();
+    this._emitAddToBufferEnd(false);
     this._emitLine('callback(null);');
     this._emitLine('});');
     this._emitLine('env.waterfall(tasks, function(){');
@@ -1250,10 +1254,10 @@ class Compiler extends Obj {
       // autoescaped, so simply output it for optimization
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
-          this._emitAddToBufferBegin();
+          this._emitAddToBufferBegin(false);
           // this._emit(`${this.buffer} += `);
           this.compileLiteral(child, frame);
-          this._emitAddToBufferEnd();
+          this._emitAddToBufferEnd(false);
           this._emitLine(';');
         }
       } else {
