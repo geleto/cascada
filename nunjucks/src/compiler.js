@@ -135,7 +135,7 @@ class Compiler extends Obj {
       if (this.asyncClosureDepth === 0) {
         this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
       }
-      this._emitLine('.finally(()=>{astate.leaveClosure()();})');
+      this._emitLine('.finally(()=>{astate.leaveClosure();})');
     }
   }
 
@@ -155,7 +155,7 @@ class Compiler extends Obj {
       if (this.asyncClosureDepth === 0) {
         this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
       }
-      this._emitLine('.finally(()=>{astate.leaveClosure()();})');
+      this._emitLine('.finally(()=>{astate.leaveClosure();})');
     }
   }
 
@@ -178,7 +178,7 @@ class Compiler extends Obj {
       if (this.asyncClosureDepth === 0) {
         this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
       }
-      this._emitLine('.finally(()=>{astate.leaveClosure()();})');
+      this._emitLine('.finally(()=>{astate.leaveClosure();})');
     }
   }
 
@@ -1283,16 +1283,16 @@ class Compiler extends Obj {
     this._emitFuncBegin(node, 'root');
     this._emitLine('let parentTemplate = null;');
     if (this.isAsync) {
-      this._emitLine('let isIncluded = runtime.isIncluded();');
+      this._emitLine('let isIncluded = astate.isIncluded();');
     }
     this._compileChildren(node, frame);
     if (this.isAsync) {
       this._emitLine('if(!isIncluded){');
-      this._emitLine('env.waitAllClosures().then(() => {');
+      this._emitLine('astate.waitAllClosures().then(() => {');
       this._emitLine('  if(parentTemplate) {');
       this._emitLine('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
       this._emitLine('  } else {');
-      this._emitLine(`    cb(null, env.flattentBuffer(${this.buffer}));`);
+      this._emitLine(`    cb(null, runtime.flattentBuffer(${this.buffer}));`);
       this._emitLine('  }');
       this._emitLine('}).catch(e => {');
       this._emitLine('cb(runtime.handleError(e, lineno, colno))');

@@ -265,6 +265,19 @@ function ensureDefinedAsync(val, lineno, colno) {
   return ensureDefined(val, lineno, colno);
 }
 
+function flattentBuffer(arr) {
+  const result = arr.reduce((acc, item) => {
+    if (Array.isArray(item)) {
+      return acc + flattentBuffer(item);
+    }
+    if (typeof item === 'function') {
+      return (item(acc) || '');
+    }
+    return acc + (item || '');
+  }, '');
+  return result;
+}
+
 function memberLookup(obj, val) {
   if (obj === undefined || obj === null) {
     return undefined;
@@ -404,6 +417,7 @@ module.exports = {
   suppressValueAsync: suppressValueAsync,
   ensureDefined: ensureDefined,
   ensureDefinedAsync: ensureDefinedAsync,
+  flattentBuffer: flattentBuffer,
   memberLookup: memberLookup,
   contextOrFrameLookup: contextOrFrameLookup,
   callWrap: callWrap,

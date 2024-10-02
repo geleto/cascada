@@ -5,12 +5,12 @@ const waterfall = require('a-sync-waterfall');
 const lib = require('./lib');
 const compiler = require('./compiler');
 const filters = require('./filters');
-const {FileSystemLoader, WebLoader, PrecompiledLoader} = require('./loaders');
+const { FileSystemLoader, WebLoader, PrecompiledLoader } = require('./loaders');
 const tests = require('./tests');
 const globals = require('./globals');
-const {Obj, EmitterObj} = require('./object');
+const { Obj, EmitterObj } = require('./object');
 const globalRuntime = require('./runtime');
-const {handleError, Frame} = globalRuntime;
+const { handleError, Frame } = globalRuntime;
 const expressApp = require('./express-app');
 
 // If the user is using the async API, *always* call it
@@ -376,7 +376,7 @@ class Environment extends EmitterObj {
         });
       } else {
         // render template string
-        const tmpl = new Template(template, this, opts.path);
+        const tmpl = new AsyncTemplate(template, this, opts.path);
         tmpl.render(ctx, callback);
       }
     });
@@ -389,29 +389,53 @@ class Environment extends EmitterObj {
 }
 
 class AsyncState {
-  constructor() {
+  constructor(parent) {
     this.activeClosures = 0;
+    this.parent = parent;
+    this.includeDepth = 0;
   }
   enterClosure() {
     this.activeClosures++;
   }
   leaveClosure() {
     this.activeClosures--;
-    if (this.activeAwaits === 0 && this.completionResolver) {
+    if (this.activeClosures === 0 && this.completionResolver) {
       this.completionResolver();
       this.completionResolver = null;
     }
   }
   async waitAllClosures() {
-    if (this.activeAwaits === 0) {
+    if (this.activeClosures === 0) {
       return Promise.resolve();
     }
     return new Promise(resolve => {
       this.completionResolver = resolve;
     });
   }
+  // only the top parent counts the include depth
+  pushInclude() {
+    if (this.parent) {
+      this.parent.pushInclude();
+    } else {
+      this.includeDepth++;
+    }
+  }
+  popInclude() {
+    if (this.parent) {
+      this.parent.popInclude();
+    } else {
+      this.includeDepth--;
+    }
+  }
+  isIncluded() {
+    if (this.parent) {
+      return this.parent.isIncluded();
+    } else {
+      return (this.includeDepth || 0) > 0;
+    }
+  }
   createNew() {
-    return new AsyncState();
+    return new AsyncState(this);
   }
 }
 
