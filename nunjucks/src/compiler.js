@@ -49,7 +49,11 @@ class Compiler extends Obj {
     const id = this._tmpid();
     this.bufferStack.push(this.buffer);
     this.buffer = id;
-    this._emit(`let ${this.buffer} = "";`);
+    if (this.isAsync) {
+      this._emit(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
+    } else {
+      this._emit(`let ${this.buffer} = "";`);
+    }
     return id;
   }
 
@@ -79,7 +83,12 @@ class Compiler extends Obj {
     }
     this._emitLine(`let lineno = ${node.lineno};`);
     this._emitLine(`let colno = ${node.colno};`);
-    this._emitLine(`let ${this.buffer} = "";`);
+    // this._emitLine(`let ${this.buffer} = "";`);
+    if (this.isAsync) {
+      this._emit(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
+    } else {
+      this._emit(`let ${this.buffer} = "";`);
+    }
     this._emitLine('try {');
   }
 
@@ -315,7 +324,10 @@ class Compiler extends Obj {
     var autoescape = typeof node.autoescape === 'boolean' ? node.autoescape : true;
 
     if (!async) {
-      this._emit(`${this.buffer} += runtime.suppressValue(`);
+      // this._emit(`${this.buffer} += runtime.suppressValue(`);
+      this._emitAddToBufferBegin();
+      this._emit(`${this.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
+      this._emitAwaitBegin();
     }
 
     this._emit(`env.getExtension("${node.extName}")["${node.prop}"](`);
@@ -371,12 +383,22 @@ class Compiler extends Obj {
     if (async) {
       const res = this._tmpid();
       this._emitLine(', ' + this._makeCallback(res));
-      this._emitLine(
-        `${this.buffer} += runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
+
+      this._emitAddToBufferBegin();
+
+      // this._emitLine(
+      //  `${this.buffer} += runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
+
+      this._emit(`${this.isAsync ? 'await runtime.suppressValueAsync' : 'runtime.suppressValue'}(${res}, ${autoescape} && env.opts.autoescape);`);
+
+      this._emitAddToBufferEnd();
+
       this._addScopeLevel();
     } else {
       this._emit(')');
+      this._emitAwaitEnd();
       this._emit(`, ${autoescape} && env.opts.autoescape);\n`);
+      this._emitAddToBufferEnd();
     }
   }
 
@@ -1139,7 +1161,10 @@ class Compiler extends Obj {
       this._emit(')');
     }
     this._emitLine('(env, context, frame, runtime, ' + this._makeCallback(id));
-    this._emitLine(`${this.buffer} += ${id};`);
+    this._emitAddToBufferBegin();
+    // this._emitLine(`${this.buffer} += ${id};`);
+    this._emitLine(`${id};`);
+    this._emitAddToBufferEnd();
     this._addScopeLevel();
   }
 
@@ -1188,7 +1213,10 @@ class Compiler extends Obj {
 
     this._emitLine('tasks.push(');
     this._emitLine('function(result, callback){');
-    this._emitLine(`${this.buffer} += result;`);
+    this._emitAddToBufferBegin();
+    // this._emitLine(`${this.buffer} += result;`);
+    this._emitLine(`result;`);
+    this._emitAddToBufferEnd();
     this._emitLine('callback(null);');
     this._emitLine('});');
     this._emitLine('env.waterfall(tasks, function(){');
@@ -1222,20 +1250,25 @@ class Compiler extends Obj {
       // autoescaped, so simply output it for optimization
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
-          this._emit(`${this.buffer} += `);
+          this._emitAddToBufferBegin();
+          // this._emit(`${this.buffer} += `);
           this.compileLiteral(child, frame);
+          this._emitAddToBufferEnd();
           this._emitLine(';');
         }
       } else {
-        this._emit(`${this.buffer} += runtime.suppressValue(`);
+        this._emitAddToBufferBegin();
+        this._emit(`${this.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
+
         if (this.throwOnUndefined) {
-          this._emit('runtime.ensureDefined(');
+          this._emit(`${this.isAsync ? 'await runtime.ensureDefinedAsync(' : 'runtime.ensureDefined('}`);
         }
         this.compile(child, frame);
         if (this.throwOnUndefined) {
           this._emit(`,${node.lineno},${node.colno})`);
         }
         this._emit(', env.opts.autoescape);\n');
+        this._emitAddToBufferEnd();
       }
     });
   }
