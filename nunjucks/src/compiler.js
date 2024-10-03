@@ -849,7 +849,7 @@ class Compiler extends Obj {
       node.name.children.forEach((child, u) => {
         let tid = this._tmpid();
         this._emitLine(`let ${tid} = ${arr}[${i}][${u}];`);
-        this._emitLine(`frame.set("${child}", ${tid});`);
+        this._emitLine(`frame.set("${child.value}", ${tid});`);// fixed nunjucks bug with array unpacking
         frame.set(node.name.children[u].value, tid);
       });
 
@@ -857,6 +857,11 @@ class Compiler extends Obj {
       this._withScopedSyntax(() => {
         this.compile(node.body, frame);
       });
+
+      if (this.isAsync) {
+        this._emitBufferBlockEnd();
+        this._emitLine('frame = frame.pop();');
+      }
 
       this._emitLine('}');
       this._emitLine('} else {');
