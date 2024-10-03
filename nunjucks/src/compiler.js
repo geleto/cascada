@@ -857,8 +857,8 @@ class Compiler extends Obj {
       this._withScopedSyntax(() => {
         this.compile(node.body, frame);
       });
-      this._emitLine('}');
 
+      this._emitLine('}');
       this._emitLine('} else {');
       // Iterate over the key/values of an object
       const [key, val] = node.name.children;
@@ -870,6 +870,12 @@ class Compiler extends Obj {
       this._emitLine(`${i} = -1;`);
       this._emitLine(`${len} = runtime.keys(${arr}).length;`);
       this._emitLine(`for(let ${k} in ${arr}) {`);
+
+      if (this.isAsync) {
+        this._emitLine('frame = frame.push();');
+        this._emitBufferBlockBegin();
+      }
+
       this._emitLine(`${i}++;`);
       this._emitLine(`let ${v} = ${arr}[${k}];`);
       this._emitLine(`frame.set("${key.value}", ${k});`);
