@@ -50,9 +50,9 @@ class Compiler extends Obj {
     this.bufferStack.push(this.buffer);
     this.buffer = id;
     if (this.isAsync) {
-      this._emit(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
+      this._emitLine(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
     } else {
-      this._emit(`let ${this.buffer} = "";`);
+      this._emitLine(`let ${this.buffer} = "";`);
     }
     return id;
   }
@@ -811,6 +811,8 @@ class Compiler extends Obj {
     // as fast as possible. ForAsync also shares some of this, but
     // not much.
 
+    this._emitBufferBlockBegin();
+
     const i = this._tmpid();
     const len = this._tmpid();
     const arr = this._tmpid();
@@ -837,6 +839,11 @@ class Compiler extends Obj {
       this._emitLine(`if(runtime.isArray(${arr})) {`);
       this._emitLine(`${len} = ${arr}.length;`);
       this._emitLine(`for(${i}=0; ${i} < ${arr}.length; ${i}++) {`);
+
+      if (this.isAsync) {
+        this._emitLine('frame = frame.push();');
+        this._emitBufferBlockBegin();
+      }
 
       // Bind each declared var
       node.name.children.forEach((child, u) => {
@@ -872,6 +879,12 @@ class Compiler extends Obj {
       this._withScopedSyntax(() => {
         this.compile(node.body, frame);
       });
+
+      if (this.isAsync) {
+        this._emitBufferBlockEnd();
+        this._emitLine('frame = frame.pop();');
+      }
+
       this._emitLine('}');
 
       this._emitLine('}');
@@ -882,6 +895,12 @@ class Compiler extends Obj {
 
       this._emitLine(`${len} = ${arr}.length;`);
       this._emitLine(`for(let ${i}=0; ${i} < ${arr}.length; ${i}++) {`);
+
+      if (this.isAsync) {
+        this._emitLine('frame = frame.push();');
+        this._emitBufferBlockBegin();
+      }
+
       this._emitLine(`let ${v} = ${arr}[${i}];`);
       this._emitLine(`frame.set("${node.name.value}", ${v});`);
 
@@ -891,17 +910,25 @@ class Compiler extends Obj {
         this.compile(node.body, frame);
       });
 
+      if (this.isAsync) {
+        this._emitBufferBlockEnd();
+        this._emitLine('frame = frame.pop();');
+      }
+
       this._emitLine('}');
     }
 
     this._emitLine('}');
     if (node.else_) {
       this._emitLine(`if (!${len}) {`);
+      this._emitBufferBlockBegin();
       this.compile(node.else_, frame);
+      this._emitBufferBlockEnd();
       this._emitLine('}');
     }
 
     this._emitLine('frame = frame.pop();');
+    this._emitBufferBlockEnd();
   }
 
   _compileAsyncLoop(node, frame, parallel) {
