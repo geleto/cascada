@@ -753,6 +753,8 @@ class Compiler extends Obj {
   }
 
   compileIf(node, frame, async) {
+    this._emitBufferBlockBegin();
+
     this._emit('if(');
     this._compileExpression(node.cond, frame);
     this._emitLine(') {');
@@ -781,6 +783,8 @@ class Compiler extends Obj {
     }
 
     this._emitLine('}');
+
+    this._emitBufferBlockEnd();
   }
 
   compileIfAsync(node, frame) {
