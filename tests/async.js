@@ -578,5 +578,133 @@
         );
       });
     });
+
+    describe('Conditional Statements', () => {
+      it('should handle async function in if condition', async () => {
+        const context = {
+          async isUserAdmin(id) {
+            await delay(5 - id);
+            return id === 1;
+          }
+        };
+
+        const template = '{% if isUserAdmin(1) %}Admin{% else %}Not admin{% endif %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('Admin');
+
+        const template2 = '{% if isUserAdmin(2) %}Admin{% else %}Not admin{% endif %}';
+        const result2 = await env.renderStringAsync(template2, context);
+        expect(result2).to.equal('Not admin');
+      });
+
+      it('should handle async promise in if condition', async () => {
+        const context = {
+          userStatus: Promise.resolve('active')
+        };
+
+        const template = '{% if userStatus == "active" %}User is active{% else %}User is not active{% endif %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('User is active');
+      });
+
+      it('should handle multiple async conditions in if/else if/else', async () => {
+        const context = {
+          async getUserRole(id) {
+            await delay(5 - id);
+            if (id === 1) return 'admin';
+            if (id === 2) return 'moderator';
+            return 'user';
+          }
+        };
+
+        const template = `
+        {%- if getUserRole(1) == "admin" -%}Admin user
+        {%- elif getUserRole(2) == "moderator" -%}Moderator user
+        {%- else -%}Regular user
+        {%- endif -%}`;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('Admin user');
+
+        const template2 = `
+        {%- if getUserRole(3) == "admin" -%}
+          Admin user
+        {%- elif getUserRole(2) == "moderator" -%}
+          Moderator user
+        {%- else -%}
+          Regular user
+        {%- endif -%}`;
+
+        const result2 = await env.renderStringAsync(template2, context);
+        expect(result2).to.equal('Moderator user');
+      });
+
+      it('should handle async functions inside if blocks', async () => {
+        const context = {
+          async isUserAdmin(id) {
+            await delay(5 - id);
+            return id === 1;
+          },
+          async getUserName(id) {
+            await delay(5 - id);
+            return id === 1 ? 'John' : 'Jane';
+          }
+        };
+
+        const template = `
+        {%- if isUserAdmin(1) -%}Hello, Admin {{ getUserName(1) }}!
+        {%- else -%}Hello, User {{ getUserName(2) }}!
+        {%- endif -%}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('Hello, Admin John!');
+
+        const template2 = `
+        {%- if isUserAdmin(2) -%}Hello, Admin {{ getUserName(2) }}!
+        {%- else -%}Hello, User {{ getUserName(2) }}!
+        {%- endif -%}`;
+
+        const result2 = await env.renderStringAsync(template2, context);
+        expect(result2).to.equal('Hello, User Jane!');
+      });
+
+      it('should handle nested if statements with async functions', async () => {
+        const context = {
+          async isUserActive(id) {
+            await delay(5);
+            return id % 2 === 0;
+          },
+          async getUserRole(id) {
+            await delay(3);
+            return id === 1 ? 'admin' : 'user';
+          }
+        };
+
+        const template = `
+          {%- if isUserActive(1) -%}
+              {%- if getUserRole(1) == "admin" -%}Active Admin
+              {%- else -%}Active User
+              {%- endif -%}
+          {%- else -%}Inactive User
+          {%- endif -%}
+          `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('Inactive User');
+
+        const template2 = `
+          {%- if isUserActive(2) -%}
+              {%- if getUserRole(2) == "admin" -%}Active Admin
+              {%- else -%}Active User
+              {%- endif -%}
+          {%- else -%}Inactive User
+          {%- endif -%}
+          `;
+
+        const result2 = await env.renderStringAsync(template2, context);
+        expect(result2.trim()).to.equal('Active User');
+      });
+    });
   });
 }());
