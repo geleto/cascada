@@ -911,5 +911,133 @@
       });
     });
 
+    describe('Include async tests', () => {
+      let loader;
+
+      class StringLoader {
+        constructor() {
+          this.templates = new Map();
+        }
+
+        getSource(name) {
+          if (!this.templates.has(name)) {
+            throw new Error(`Template ${name} not found`);
+          }
+
+          return {
+            src: this.templates.get(name),
+            path: name,
+            noCache: false
+          };
+        }
+
+        addTemplate(name, content) {
+          this.templates.set(name, content);
+        }
+      }
+
+      beforeEach(() => {
+        loader = new StringLoader();
+        env = new Environment(loader);
+      });
+
+      it('should handle async functions in include statements', async () => {
+        const context = {
+          async getTemplateName() {
+            await delay(5);
+            return 'greeting.njk';
+          },
+          name: 'World'
+        };
+
+        const greetingTemplate = 'Hello, {{ name }}!';
+        loader.addTemplate('greeting.njk', greetingTemplate);
+
+        const mainTemplate = '{% include getTemplateName() %}';
+        loader.addTemplate('main.njk', mainTemplate);
+
+        const result = await env.renderAsync('main.njk', context);
+        expect(result).to.equal('Hello, World!');
+      });
+
+      it('should handle async functions in includeed template', async () => {
+        const context = {
+          async getName() {
+            await delay(5);
+            return 'World';
+          },
+          async getPlace() {
+            await delay(3);
+            return 'London';
+          }
+        };
+
+        const greetingTemplate = 'Hello, {{ getName() }}, welcome to';
+        loader.addTemplate('greeting.njk', greetingTemplate);
+
+        const mainTemplate = '{% include "greeting.njk" %} {{ getPlace() }}';
+        loader.addTemplate('main.njk', mainTemplate);
+
+        const result = await env.renderAsync('main.njk', context);
+        expect(result).to.equal('Hello, World, welcome to London');
+      });
+
+      it('should handle nested includes with async functions', async () => {
+        const context = {
+          async getUser() {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            return { name: 'John', role: 'admin' };
+          }
+        };
+
+        const userTemplate = '{{ getUser().name }} ({{ getUser().role }})';
+        loader.addTemplate('user.njk', userTemplate);
+
+        const greetingTemplate = 'Welcome, {% include "user.njk" %}!';
+        loader.addTemplate('greeting.njk', greetingTemplate);
+
+        const mainTemplate = 'Hello! {% include "greeting.njk" %}';
+        loader.addTemplate('main.njk', mainTemplate);
+
+        const result = await env.renderAsync('main.njk', context);
+        expect(result).to.equal('Hello! Welcome, John (admin)!');
+      });
+
+      it('should handle async functions in included template using frame variables', async () => {
+        const context = {
+          async getUserInfo(id) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            return { name: `User ${id}`, role: id % 2 === 0 ? 'admin' : 'user' };
+          }
+        };
+
+        const userTemplate = '{% set user = getUserInfo(userId) %}{{ user.name }} ({{ user.role }})';
+        loader.addTemplate('user.njk', userTemplate);
+
+        const mainTemplate = '{% set userId = 1 %}{% include "user.njk" %}';
+        loader.addTemplate('main.njk', mainTemplate);
+
+        const result = await env.renderAsync('main.njk', context);
+        expect(result).to.equal('User 1 (user)');
+      });
+
+      it('should handle async functions in included template using for loop variables', async () => {
+        const context = {
+          getUserInfo(id) {
+            // await new Promise(resolve => setTimeout(resolve, 50));
+            return { name: `User ${id}`, role: id % 2 === 0 ? 'admin' : 'user' };
+          }
+        };
+
+        const userTemplate = '{% set user = getUserInfo(userId) %}{{ user.name }} ({{ user.role }})';
+        loader.addTemplate('user.njk', userTemplate);
+
+        const mainTemplate = '{%- for userId in [1, 2] -%}{% include "user.njk" %}\n{% endfor -%}';
+        loader.addTemplate('main.njk', mainTemplate);
+
+        const result = await env.renderAsync('main.njk', context);
+        expect(result).to.equal('User 1 (user)\nUser 2 (admin)\n');
+      });
+    });
   });
 }());
