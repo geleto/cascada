@@ -706,5 +706,37 @@
         expect(result2.trim()).to.equal('Active User');
       });
     });
+
+    describe('Async Functions in Expressions', () => {
+      it('should handle async functions in filter expressions', async () => {
+        env.addFilter('uppercase', async (str) => {
+          await delay(5);
+          return str.toUpperCase();
+        });// note that this is not declared as async filter with the regular callback method, it just returns a promise
+
+        const context = {
+          async uppercase(str) {
+            await delay(5);
+            return str.toUpperCase();
+          }
+        };
+        const template = '{{ "hello" | uppercase }}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('HELLO');
+      });
+
+      it('should handle async functions in if expressions', async () => {
+        const context = {
+          async isAdmin() {
+            await delay(5);
+            return true;
+          }
+        };
+        const template = '{{ "Admin" if isAdmin() else "User" }}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('Admin');
+      });
+    });
+
   });
 }());
