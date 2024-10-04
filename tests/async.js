@@ -2,13 +2,16 @@
   'use strict';
 
   var expect;
+  var unescape;
   var Environment;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     Environment = require('../nunjucks/src/environment').Environment;
+    unescape = require('he').unescape;
   } else {
     expect = window.expect;
+    unescape = window.he.unescape;
     Environment = nunjucks.Environment;
   }
 
@@ -712,7 +715,8 @@
         env.addFilter('uppercase', async (str) => {
           await delay(5);
           return str.toUpperCase();
-        });// note that this is not declared as async filter with the regular callback method, it just returns a promise
+        });// note that this is not declared as async filter with
+        // the regular callback method, it just returns a promise
 
         const context = {
           async uppercase(str) {
@@ -735,6 +739,175 @@
         const template = '{{ "Admin" if isAdmin() else "User" }}';
         const result = await env.renderStringAsync(template, context);
         expect(result).to.equal('Admin');
+      });
+    });
+
+    describe('Async operations in macros', () => {
+      it('should handle async functions in macro calls', async () => {
+        const context = {
+          async fetchTitle(id) {
+            await delay(5);
+            return id === 1 ? 'Hello' : 'World';
+          }
+        };
+        const template = `
+        {%- macro header(id) -%}
+          H:{{ fetchTitle(id) }}
+        {%- endmacro -%}
+        {{ header(1) }} {{ header(2) }}`;
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal(`H:Hello H:World`);
+      });
+
+      it('should handle async functions in macro call arguments', async () => {
+        const context = {
+          async fetchTitle() {
+            await delay(5);
+            return 'Async Title';
+          },
+          async fetchContent() {
+            await delay(3);
+            return 'Async Content';
+          }
+        };
+
+        const template = `
+        {% macro article(title, content) %}
+        <article>
+          <h1>{{ title }}</h1>
+          <p>{{ content }}</p>
+        </article>
+        {% endmacro %}
+
+        {{ article(fetchTitle(), fetchContent()) }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(unescape(result.trim())).to.equal(`
+        <article>
+          <h1>Async Title</h1>
+          <p>Async Content</p>
+        </article>
+        `.trim());
+      });
+
+      it('should handle async macro call arguments with dependent function in macro body', async () => {
+        const context = {
+          async fetchUser(id) {
+            await delay(5);
+            return { id, name: `User ${id}` };
+          },
+          async fetchUserPosts(userId) {
+            await delay(3);
+            return [`Post 1 by User ${userId}`, `Post 2 by User ${userId}`];
+          }
+        };
+
+        const template = `
+        {%- macro userProfile(user) -%}
+        <div class="user-profile">
+          <h2>{{ user.name }}</h2>
+          <h3>Posts:</h3>
+          <ul>
+          {%- for post in fetchUserPosts(user.id) %}
+            <li>{{ post }}</li>
+          {%- endfor %}
+          </ul>
+        </div>
+        {%- endmacro %}
+
+        {{ userProfile(fetchUser(1)) }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(unescape(result.trim())).to.equal(`
+        <div class="user-profile">
+          <h2>User 1</h2>
+          <h3>Posts:</h3>
+          <ul>
+            <li>Post 1 by User 1</li>
+            <li>Post 2 by User 1</li>
+          </ul>
+        </div>
+        `.trim());
+      });
+
+      it('should handle multiple async macro call arguments', async () => {
+        const context = {
+          async fetchHeader() {
+            await delay(5);
+            return 'Async Header';
+          },
+          async fetchFooter() {
+            await delay(4);
+            return 'Async Footer';
+          },
+          async fetchContent() {
+            await delay(3);
+            return 'Async Content';
+          }
+        };
+
+        const template = `
+        {% macro page(header, content, footer) %}
+        <div class="page">
+          <header>{{ header }}</header>
+          <main>{{ content }}</main>
+          <footer>{{ footer }}</footer>
+        </div>
+        {% endmacro %}
+
+        {{ page(fetchHeader(), fetchContent(), fetchFooter()) }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(unescape(result.trim())).to.equal(`
+        <div class="page">
+          <header>Async Header</header>
+          <main>Async Content</main>
+          <footer>Async Footer</footer>
+        </div>
+        `.trim());
+      });
+
+      it('should handle nested async macro calls', async () => {
+        const context = {
+          async fetchUser(id) {
+            await delay(5);
+            return { id, name: `User ${id}` };
+          },
+          async fetchUserRole(userId) {
+            await delay(3);
+            return userId % 2 === 0 ? 'Admin' : 'User';
+          }
+        };
+
+        const template = `
+        {%- macro userRole(userId) -%}
+        {{ fetchUserRole(userId) }}
+        {%- endmacro -%}
+
+        {%- macro userProfile(user) -%}
+        <div class="user-profile">
+          <h2>{{ user.name }}</h2>
+          <p>Role: {{ userRole(user.id) }}</p>
+        </div>
+        {%- endmacro %}
+        {{ userProfile(fetchUser(1)) }}
+        {{ userProfile(fetchUser(2)) }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(unescape(result.trim())).to.equal(`
+        <div class="user-profile">
+          <h2>User 1</h2>
+          <p>Role: User</p>
+        </div>
+        <div class="user-profile">
+          <h2>User 2</h2>
+          <p>Role: Admin</p>
+        </div>
+        `.trim());
       });
     });
 
