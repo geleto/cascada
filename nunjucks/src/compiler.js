@@ -1136,7 +1136,7 @@ class Compiler extends Obj {
     const cb = this._makeCallback(parentTemplateId);
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
     const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
-    this._emit('env.getTemplate(');
+    this._emit(this.isAsync ? 'env.getAsyncTemplate(' : 'env.getTemplate(');
     this._compileExpression(node.template, frame);
     this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
     return parentTemplateId;
