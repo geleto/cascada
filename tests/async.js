@@ -15,10 +15,11 @@
     Environment = nunjucks.Environment;
   }
 
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+
   describe('Async mode', () => {
     let env;
-    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
     beforeEach(() => {
       env = new Environment();
     });
@@ -1038,6 +1039,44 @@
         const result = await env.renderAsync('main.njk', context);
         expect(result).to.equal('User 1 (user)\nUser 2 (admin)\n');
       });
+    });
+  });
+
+  describe('Complex Async Scenarios', () => {
+    let env;
+    beforeEach(() => {
+      env = new Environment();
+    });
+    it('should handle async functions returning complex objects', async () => {
+      const context = {
+        async getUser() {
+          await delay(5);
+          return { name: 'John', roles: ['admin', 'user'] };
+        }
+      };
+      const template = '{{ getUser().name }} is {{ getUser().roles[0] }}';
+      const result = await env.renderStringAsync(template, context);
+      expect(result).to.equal('John is admin');
+    });
+
+    it('should handle error propagation in async calls', async () => {
+      const context = {
+        async errorFunc() {
+          await delay(5);
+          throw new Error('Async error');
+        }
+      };
+      const template = '{{ errorFunc() }}';
+
+      let noError = false;
+      try {
+        await env.renderStringAsync(template, context);
+        noError = true;
+      } catch (error) {
+        expect(error instanceof Error).to.equal(true);
+        expect(error.message).to.contain('Async error');
+      }
+      expect(noError).to.equal(false);
     });
   });
 }());

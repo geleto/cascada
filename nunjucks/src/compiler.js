@@ -1259,8 +1259,11 @@ class Compiler extends Obj {
     this._emitLine('let tasks = [];');
     this._emitLine('tasks.push(');
     this._emitLine('function(callback) {');
+
+    this._emitAsyncBlockBegin();
     const id = this._compileGetTemplate(node, frame, false, node.ignoreMissing);
     this._emitLine(`callback(null,${id});});`);
+    this._emitAsyncBlockEnd();
     this._emitLine('});');
 
     const id2 = this._tmpid();
