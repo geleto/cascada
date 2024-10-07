@@ -391,17 +391,24 @@ class Environment extends EmitterObj {
 class AsyncState {
   constructor(parent) {
     this.activeClosures = 0;
-    this.parent = parent;
-    this.includeDepth = 0;
+    this.includeParent = parent;
   }
   enterClosure() {
-    this.activeClosures++;
+    if (this.includeParent) {
+      this.includeParent.enterClosure();
+    } else {
+      this.activeClosures++;
+    }
   }
   leaveClosure() {
-    this.activeClosures--;
-    if (this.activeClosures === 0 && this.completionResolver) {
-      this.completionResolver();
-      this.completionResolver = null;
+    if (this.includeParent) {
+      this.includeParent.leaveClosure();
+    } else {
+      this.activeClosures--;
+      if (this.activeClosures === 0 && this.completionResolver) {
+        this.completionResolver();
+        this.completionResolver = null;
+      }
     }
   }
   async waitAllClosures() {
@@ -412,27 +419,8 @@ class AsyncState {
       this.completionResolver = resolve;
     });
   }
-  // only the top parent counts the include depth
-  pushInclude() {
-    if (this.parent) {
-      this.parent.pushInclude();
-    } else {
-      this.includeDepth++;
-    }
-  }
-  popInclude() {
-    if (this.parent) {
-      this.parent.popInclude();
-    } else {
-      this.includeDepth--;
-    }
-  }
   isIncluded() {
-    if (this.parent) {
-      return this.parent.isIncluded();
-    } else {
-      return (this.includeDepth || 0) > 0;
-    }
+    return this.includeParent;
   }
   createNew() {
     return new AsyncState(this);
@@ -548,13 +536,16 @@ class Template extends Obj {
     }
   }
 
-  render(ctx, parentFrame, cb) {
+  render(ctx, parentFrame, astate, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
     } else if (typeof parentFrame === 'function') {
       cb = parentFrame;
       parentFrame = null;
+    } else if (typeof astate === 'function') {
+      cb = astate;
+      astate = null;
     }
 
     // If there is a parent frame, we are being called from internal
@@ -611,7 +602,7 @@ class Template extends Obj {
     };
 
     if (this.isAsync) {
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, new AsyncState(), callback);
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate || new AsyncState(), callback);
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     }

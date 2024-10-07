@@ -1269,7 +1269,7 @@ class Compiler extends Obj {
     const id2 = this._tmpid();
     this._emitLine('tasks.push(');
     this._emitLine('function(template, callback){');
-    this._emitLine('template.render(context.getVariables(), frame, ' + this._makeCallback(id2));
+    this._emitLine('template.render(context.getVariables(), frame, ' + (this.isAsync ? 'astate.createNew(),' : '') + this._makeCallback(id2));
     this._emitLine('callback(null,' + id2 + ');});');
     this._emitLine('});');
 
