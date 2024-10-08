@@ -389,26 +389,17 @@ class Environment extends EmitterObj {
 }
 
 class AsyncState {
-  constructor(parent) {
+  constructor() {
     this.activeClosures = 0;
-    this.includeParent = parent;
   }
   enterClosure() {
-    if (this.includeParent) {
-      this.includeParent.enterClosure();
-    } else {
-      this.activeClosures++;
-    }
+    this.activeClosures++;
   }
   leaveClosure() {
-    if (this.includeParent) {
-      this.includeParent.leaveClosure();
-    } else {
-      this.activeClosures--;
-      if (this.activeClosures === 0 && this.completionResolver) {
-        this.completionResolver();
-        this.completionResolver = null;
-      }
+    this.activeClosures--;
+    if (this.activeClosures === 0 && this.completionResolver) {
+      this.completionResolver();
+      this.completionResolver = null;
     }
   }
   async waitAllClosures() {
@@ -418,12 +409,6 @@ class AsyncState {
     return new Promise(resolve => {
       this.completionResolver = resolve;
     });
-  }
-  isIncluded() {
-    return this.includeParent;
-  }
-  createNew() {
-    return new AsyncState(this);
   }
 }
 
@@ -602,7 +587,8 @@ class Template extends Obj {
     };
 
     if (this.isAsync) {
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate || new AsyncState(), callback);
+      this.rootRenderFunc(this.env, context, frame, globalRuntime,
+        astate || new AsyncState(), !!astate, callback);
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     }

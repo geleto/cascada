@@ -77,7 +77,7 @@ class Compiler extends Obj {
     this.buffer = 'output';
     this._scopeClosers = '';
     if (this.isAsync) {
-      this._emitLine(`function ${name}(env, context, frame, runtime, astate, cb) {`);
+      this._emitLine(`function ${name}(env, context, frame, runtime, astate, isIncluded, cb) {`);
     } else {
       this._emitLine(`function ${name}(env, context, frame, runtime, cb) {`);
     }
@@ -1269,7 +1269,7 @@ class Compiler extends Obj {
     const id2 = this._tmpid();
     this._emitLine('tasks.push(');
     this._emitLine('function(template, callback){');
-    this._emitLine('template.render(context.getVariables(), frame, ' + (this.isAsync ? 'astate.createNew(),' : '') + this._makeCallback(id2));
+    this._emitLine('template.render(context.getVariables(), frame, ' + (this.isAsync ? 'astate,' : '') + this._makeCallback(id2));
     this._emitLine('callback(null,' + id2 + ');});');
     this._emitLine('});');
 
@@ -1344,15 +1344,12 @@ class Compiler extends Obj {
 
     this._emitFuncBegin(node, 'root');
     this._emitLine('let parentTemplate = null;');
-    if (this.isAsync) {
-      this._emitLine('let isIncluded = astate.isIncluded();');
-    }
     this._compileChildren(node, frame);
     if (this.isAsync) {
       this._emitLine('if(!isIncluded){');
       this._emitLine('astate.waitAllClosures().then(() => {');
       this._emitLine('  if(parentTemplate) {');
-      this._emitLine('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
+      this._emitLine('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, false, cb);');
       this._emitLine('  } else {');
       this._emitLine(`    cb(null, runtime.flattentBuffer(${this.buffer}));`);
       this._emitLine('  }');
