@@ -16,6 +16,17 @@
     execFile(precompileBin, args, {cwd: rootDir}, cb);
   }
 
+  // https://github.com/nodejs/node/issues/34799
+  function filterDebuggerMessages(data) {
+    const debuggerMessages = [
+      'Debugger attached.',
+      'Waiting for the debugger'
+    ];
+    return data.split('\n')
+      .filter(line => !debuggerMessages.some(msg => line.trim().startsWith(msg)))
+      .join('\n');
+  }
+
   describe('precompile cli', function() {
     it('should echo a compiled template to stdout', function(done) {
       execPrecompile(['tests/templates/item.njk'], function(err, stdout, stderr) {
@@ -24,7 +35,7 @@
           return;
         }
         expect(stdout).to.contain('window.nunjucksPrecompiled');
-        expect(stderr).to.equal('');
+        expect(filterDebuggerMessages(stderr)).to.equal('');
         done();
       });
     });
@@ -40,7 +51,7 @@
           return;
         }
         expect(stdout).to.contain('"item.njk"');
-        expect(stderr).to.equal('');
+        expect(filterDebuggerMessages(stderr)).to.equal('');
         done();
       });
     });
