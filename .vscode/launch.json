@@ -36,11 +36,9 @@
 		  "NODE_PATH": "${workspaceFolder}/tests/test-node-pkgs"
 		},
 		"cwd": "${workspaceFolder}",
-		"console": "integratedTerminal",
 		"internalConsoleOptions": "openOnSessionStart",
 		"runtimeArgs": [
 		  "--nolazy",
-		  "--inspect-brk=9229" // Ensure debugger pauses at the very beginning
 		],
 		"preLaunchTask": "npm: test:instrument",
 		"autoAttachChildProcesses": true, // Automatically attach to child processes spawned by the testrunner

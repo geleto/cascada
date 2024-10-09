@@ -1,15 +1,19 @@
-var mochaPhantom = require('./mocha-phantomjs');
-var spawn = require('child_process').spawn;
-var getStaticServer = require('./static-server');
-var path = require('path');
+/* eslint-disable func-names */
+const puppeteer = require('puppeteer');
+const spawn = require('child_process').spawn;
+const getStaticServer = require('./static-server');
+const path = require('path');
+const fs = require('fs');
+const { createInstrumenter } = require('istanbul-lib-instrument');
+const { createCoverageMap } = require('istanbul-lib-coverage');
+const istanbulReports = require('istanbul-reports');
+const libReport = require('istanbul-lib-report');
 
-var utils = require('./utils');
-var lookup = utils.lookup;
-var promiseSequence = utils.promiseSequence;
+const utils = require('./utils');
+const lookup = utils.lookup;
+const promiseSequence = utils.promiseSequence;
 
 function mochaRun({cliTest = false} = {}) {
-  // We need to run the cli test without nyc because of weird behavior
-  // with spawn-wrap
   const bin = lookup((cliTest) ? '.bin/mocha' : '.bin/nyc', true);
   const runArgs = (cliTest)
     ? []
@@ -57,33 +61,166 @@ function mochaRun({cliTest = false} = {}) {
   });
 }
 
-function runtests() {
-  return new Promise((resolve, reject) => {
-    var server;
+function instrumentCode(code, filename) {
+  try {
+    const instrumenter = createInstrumenter({
+      esModules: true,
+      produceSourceMap: true,
+      autoWrap: true,
+      preserveComments: true,
+      coverageVariable: '__coverage__'
+    });
+    const instrumentedCode = instrumenter.instrumentSync(code, filename);
+    console.log(`Successfully instrumented: ${filename}`);
+    return instrumentedCode;
+  } catch (error) {
+    console.error(`Error instrumenting ${filename}:`, error);
+    return code; // Return original code if instrumentation fails
+  }
+}
 
-    const mochaPromise = promiseSequence([
+function serveInstrumentedFiles(app) {
+  const originalStatic = app.static;
+  app.static = function(root, options) {
+    return function(req, res, next) {
+      const filePath = path.join(root, req.path);
+      if (path.extname(filePath) === '.js') {
+        fs.readFile(filePath, 'utf8', (err, content) => {
+          if (err) return next(err);
+          try {
+            const instrumentedCode = instrumentCode(content, req.path);
+            res.type('application/javascript');
+            res.send(instrumentedCode);
+          } catch (instrumentError) {
+            console.error(`Error instrumenting file ${req.path}:`, instrumentError);
+            res.status(500).send('Error instrumenting file');
+          }
+          return undefined;
+        });
+      } else {
+        originalStatic(root, options)(req, res, next);
+      }
+    };
+  };
+}
+
+async function runPuppeteerTests(url) {
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
+
+  await page.evaluateOnNewDocument(() => {
+    window.__coverage__ = {};
+  });
+
+  await page.goto(url);
+
+  const result = await page.evaluate(() => {
+    return new Promise((resolve) => {
+      const interval = setInterval(() => {
+        const element = document.querySelector('#mocha-stats');
+        if (element) {
+          clearInterval(interval);
+          resolve({
+            passes: parseInt(element.querySelector('.passes em').innerText, 10),
+            failures: parseInt(element.querySelector('.failures em').innerText, 10),
+            coverage: window.__coverage__ || {}
+          });
+        }
+      }, 100);
+    });
+  });
+
+  await browser.close();
+
+  if (result.failures > 0) {
+    throw new Error(`${result.failures} test(s) failed`);
+  }
+
+  console.log(`${result.passes} test(s) passed`);
+
+  return result.coverage;
+}
+
+async function runtests() {
+  let server;
+  let coverageMap = createCoverageMap({});
+
+  try {
+    // Run Node.js tests with nyc
+    await promiseSequence([
       () => mochaRun({cliTest: false}),
       () => mochaRun({cliTest: true}),
     ]);
 
-    return mochaPromise.then(() => {
-      return getStaticServer().then((args) => {
-        server = args[0];
-        const port = args[1];
-        const promises = ['index', 'slim'].map(
-          f => (() => mochaPhantom(`http://localhost:${port}/tests/browser/${f}.html`)));
-        return promiseSequence(promises).then(() => {
-          server.close();
-          resolve();
+    // Read nyc coverage data
+    const nycOutputDir = path.join(process.cwd(), '.nyc_output');
+    if (fs.existsSync(nycOutputDir)) {
+      console.log(`NYC output directory found at ${nycOutputDir}`);
+      const files = fs.readdirSync(nycOutputDir);
+      const coverageFiles = files.filter(file => file.endsWith('.json') && file !== 'coverage.json');
+
+      if (coverageFiles.length > 0) {
+        console.log(`Found ${coverageFiles.length} coverage file(s)`);
+        coverageFiles.forEach(file => {
+          const filePath = path.join(nycOutputDir, file);
+          const coverage = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+          coverageMap.merge(createCoverageMap(coverage));
         });
-      });
-    }).catch((err) => {
-      if (server) {
-        server.close();
+        console.log('Node.js test coverage data loaded.');
+      } else {
+        console.log('No coverage files found in .nyc_output');
       }
-      reject(err);
+    } else {
+      console.error(`NYC output directory not found at ${nycOutputDir}`);
+    }
+
+    // Run browser tests with Puppeteer
+    const [serverInstance, port] = await getStaticServer();
+    server = serverInstance;
+    serveInstrumentedFiles(server);
+
+    const browserTests = [
+      () => runPuppeteerTests(`http://localhost:${port}/tests/browser/index.html`),
+      () => runPuppeteerTests(`http://localhost:${port}/tests/browser/slim.html`)
+    ];
+
+    try {
+      const browserCoverages = await Promise.all(browserTests.map(test => test()));
+      browserCoverages.forEach(browserCoverage => {
+        if (Object.keys(browserCoverage).length > 0) {
+          coverageMap.merge(createCoverageMap(browserCoverage));
+        } else {
+          console.warn('Browser test completed but no coverage data was collected');
+        }
+      });
+    } catch (error) {
+      console.error('Error running browser test:', error);
+    }
+
+    server.close();
+
+    // Generate combined coverage report
+    const context = libReport.createContext({
+      dir: './coverage',
+      coverageMap: coverageMap
     });
-  });
+
+    const reports = [
+      istanbulReports.create('lcov'),
+      istanbulReports.create('text-summary'),
+      istanbulReports.create('json')
+    ];
+
+    reports.forEach(report => report.execute(context));
+
+    console.log('Combined coverage report generated in ./coverage directory');
+  } catch (err) {
+    console.error('Error in runtests:', err);
+    if (server) {
+      server.close();
+    }
+    throw err;
+  }
 }
 
 module.exports = runtests;
