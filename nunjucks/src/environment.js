@@ -656,7 +656,46 @@ class Template extends Obj {
         this.isAsync,
         this.env.opts);
 
-      const func = new Function(source); // eslint-disable-line no-new-func
+      let func;
+      try {
+        func = new Function(source); // eslint-disable-line no-new-func
+      } catch (e) {
+        console.log('Error compiling:\n' + source); // eslint-disable-line no-console
+
+        console.log('Error creating function:'); // eslint-disable-line no-console
+        console.log('- Name:', e.name); // eslint-disable-line no-console
+        console.log('- Message:', e.message); // eslint-disable-line no-console
+        console.log('- Stack:', e.stack); // eslint-disable-line no-console
+
+        console.log('Test environment info:'); // eslint-disable-line no-console
+        console.log('UserAgent:', navigator.userAgent); // eslint-disable-line no-console
+        /* console.log("JavaScript features:", {
+          let: typeof let !== 'undefined',
+          const: typeof const !== 'undefined',
+          arrow: typeof (() => {}) === 'function'
+        }); */
+        // Additional properties that might e available
+        if (e.lineNumber) console.log('- Line Number:', e.lineNumber); // eslint-disable-line no-console
+        if (e.columnNumber) console.log('- Column Number:', e.columnNumber); // eslint-disable-line no-console
+        if (e.fileName) console.log('- File Name:', e.fileName); // eslint-disable-line no-console
+
+        // If it's a syntax error, it might have additional properties
+        if (e instanceof SyntaxError) {
+          console.log('- Is Syntax Error: Yes'); // eslint-disable-line no-console
+          // Some environments provide these for SyntaxErrors
+          if (e.line) console.log('- Line:', e.line); // eslint-disable-line no-console
+          if (e.column) console.log('- Column:', e.column); // eslint-disable-line no-console
+        }
+
+        // Log the source that caused the error
+        console.log('- Problematic source:', source); // eslint-disable-line no-console
+
+        // Log the current environment
+        console.log('- Node.js version:', process.version); // eslint-disable-line no-console
+        console.log('- V8 version:', process.versions.v8); // eslint-disable-line no-console
+
+        throw new Error('Error trying to compile ' + this.path + ' ' + e.message);
+      }
       props = func();
     }
 

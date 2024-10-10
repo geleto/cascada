@@ -10,7 +10,16 @@
   ],
   "env": {
     "test": {
-      "plugins": ["./scripts/lib/arrow-function-coverage-fix", "istanbul"]
+      "plugins": [
+        "./scripts/lib/arrow-function-coverage-fix",
+        "istanbul"
+      ],
+      "ignore": [
+        "**/node_modules/**",
+        "**/*.min.js",
+        "**/tests/browser/**",
+        "scripts/**"    // Add this line
+      ]
     }
   },
   "ignore": [

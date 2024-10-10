@@ -60,7 +60,9 @@
   <script>
     nunjucks.testing = true;
     mocha.checkLeaks();
-    mocha.run();
+    mocha.run(function (failures) {
+      window.tests_failed = failures;
+    });
   </script>
 </body>
 </html>

@@ -2,15 +2,23 @@
 
 'use strict';
 
-var NYC = require('nyc');
+const NYC = require('nyc');
+const path = require('path');
 
 process.env.NODE_ENV = 'test';
 
 const nyc = new NYC({
-  exclude: ['*.min.js', 'scripts/**', 'tests/**'],
+  cwd: path.join(__dirname, '..'),
+  exclude: [
+    '*.min.js',
+    'scripts/**', // Exclude the scripts directory
+    'tests/**',
+    'node_modules/**'
+  ],
   reporter: ['text', 'html', 'lcovonly'],
-  showProcessTree: true
+  all: true,
 });
+
 nyc.reset();
 
 require('@babel/register');
@@ -24,7 +32,7 @@ precompileTestTemplates()
   .then(() => runtests())
   .catch((e) => {
     err = e;
-    console.log(err); // eslint-disable-line no-console
+    console.error(err);
   })
   .then(() => {
     nyc.writeCoverageFile();

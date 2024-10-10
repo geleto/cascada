@@ -12,16 +12,18 @@
     "istanbul-lib-instrument": "^6.0.3",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.1.7",
-    "puppeteer": "^23.5.1"
+    "puppeteer": "^23.5.1",
+    "puppeteer-to-istanbul": "^1.4.0"
   },
   "browser": "./browser/nunjucks.js",
   "devDependencies": {
     "@babel/cli": "^7.0.0-beta.38",
-    "@babel/core": "^7.0.0-beta.38",
+    "@babel/core": "^7.25.7",
+    "@babel/plugin-transform-modules-commonjs": "^7.25.7",
     "@babel/preset-env": "^7.0.0-beta.38",
     "@babel/register": "^7.0.0-beta.38",
     "babel-loader": "^8.0.0-beta.0",
-    "babel-plugin-istanbul": "^4.1.5",
+    "babel-plugin-istanbul": "^4.1.6",
     "babel-plugin-module-resolver": "3.0.0-beta.5",
     "connect": "^3.6.5",
     "core-js": "^2.5.3",
@@ -76,16 +78,13 @@
     "node": ">= 6.9.0"
   },
   "scripts": {
-    "build:transpile": "babel nunjucks --out-dir .",
-    "build:bundle": "node scripts/bundle.js",
-    "build": "npm run build:transpile && npm run build:bundle",
+    "build": "babel nunjucks --out-dir . && node scripts/bundle.js",
     "codecov": "codecov",
     "mocha": "mocha -R spec tests",
     "lint": "eslint nunjucks scripts tests",
     "prepare": "npm run build",
-    "test:instrument": "cross-env NODE_ENV=test scripts/bundle.js",
     "test:runner": "cross-env NODE_ENV=test NODE_PATH=tests/test-node-pkgs scripts/testrunner.js",
-    "test": "npm run lint && npm run test:instrument && npm run test:runner"
+    "test": "npm run lint && npm run test:runner"
   },
   "bin": {
     "nunjucks-precompile": "./bin/precompile"
