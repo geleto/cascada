@@ -21,20 +21,20 @@ function getStaticServer(prt) {
           const parsedUrl = url.parse(req.url);
           const pathname = parsedUrl.pathname;
 
-          // Only instrument JS files that are part of your source code
-          if (pathname.endsWith('.js')) {
-            const filePath = path.join(staticRoot, pathname);
+          // Resolve the file path
+          const filePath = path.join(staticRoot, pathname);
 
-            // Exclude files in node_modules or any minified files
-            if (
-              filePath.includes('node_modules') ||
-              filePath.includes('tests/browser') || // Exclude test libraries
-              filePath.endsWith('.min.js')
-            ) {
-              // Serve the file without instrumentation
-              return serveStatic(staticRoot)(req, res, next);
-            }
+          // Always serve non-JS files and minified JS files without instrumentation
+          if (!pathname.endsWith('.js') || pathname.endsWith('.min.js')) {
+            return serveStatic(staticRoot)(req, res, next);
+          }
 
+          // Conditional instrumentation: Only instrument JS files that meet certain conditions
+          if (
+            !filePath.includes('node_modules') // && // Don't instrument files from node_modules
+            // !filePath.includes('tests/browser') // Don't instrument test libraries
+          ) {
+            // Read and instrument the JS file using Babel
             fs.readFile(filePath, 'utf8', (err, code) => {
               if (err) return next(err);
 
@@ -43,22 +43,27 @@ function getStaticServer(prt) {
                 {
                   filename: filePath,
                   sourceMaps: 'inline',
-                  plugins: ['istanbul'],
+                  babelrc: true, // Ensure Babel uses .babelrc
+                  envName: 'test', // Set the environment to 'test'
                 },
                 (error, result) => {
-                  if (error) return next(err);
+                  if (error) {
+                    console.error('Babel transform error:', error);
+                    return next(err);
+                  }
 
+                  // console.log(`Instrumented ${filePath}:\n`,
+                  // result.code.split('\n').slice(0, 5).join('\n'));
                   res.setHeader('Content-Type', 'application/javascript');
                   res.end(result.code);
-
                   return undefined;
                 }
               );
-
               return undefined;
             });
           } else {
-            next();
+            // Serve the JS file without instrumentation
+            return serveStatic(staticRoot)(req, res, next);
           }
           return undefined;
         });

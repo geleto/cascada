@@ -18,7 +18,7 @@
         "**/node_modules/**",
         "**/*.min.js",
         "**/tests/browser/**",
-        "scripts/**"    // Add this line
+        "scripts/**"
       ]
     }
   },

@@ -68,8 +68,87 @@ function mochaRun({ cliTest = false } = {}) {
 
 // Function to run browser-based tests using Puppeteer
 async function runPuppeteerTest(pageUrl) {
-  const browser = await puppeteer.launch();
+  const browser = await puppeteer.launch({
+    headless: true,
+    devtools: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
   const page = await browser.newPage();
+
+  page.on('console', (msg) => {
+    const type = msg.type();
+    const text = msg.text()
+      .replace(' %s', '')
+      .replace('%s%s ', '')
+      .replace('%d', '')
+      .replace(' ) %s:', '')
+      .replace('(%s)', '');
+
+    if (text.startsWith('Failed to load resource: ')) {
+      return;
+    }
+
+    switch (type) {
+      case 'log':
+      case 'debug':
+      case 'info':
+      case 'error':
+      case 'warn':
+        console[type](text);
+        break;
+      case 'dir':
+      case 'dirxml':
+      case 'table':
+        console.log(`[${type}] ${text}`);
+        break;
+      case 'trace':
+        console.trace(text);
+        break;
+      case 'clear':
+        console.clear();
+        break;
+      case 'startGroup':
+      case 'startGroupCollapsed':
+        console.group(text);
+        break;
+      case 'endGroup':
+        console.groupEnd();
+        break;
+      case 'assert':
+        console.assert(false, text);
+        break;
+      case 'profile':
+        console.profile(text);
+        break;
+      case 'profileEnd':
+        console.profileEnd(text);
+        break;
+      case 'count':
+        console.count(text);
+        break;
+      case 'timeEnd':
+        console.timeEnd(text);
+        break;
+      case 'verbose':
+        console.debug(`[Verbose] ${text}`);
+        break;
+      default:
+        console.log(`[${type}] ${text}`);
+    }
+  });
+
+  /* page.on('pageerror', (error) => {
+    console.error('Page error:', error);
+  }); */
+
+  /* page.on('requestfailed', (request) => {
+    console.error(`Request failed: ${request.url()} - ${request.failure().errorText}`);
+  }); */
+
+  // Optionally, log all network requests for more detail
+  /* page.on('request', (request) => {
+    console.log(`Request: ${request.url()}`);
+  }); */
 
   // Navigate to the test page
   await page.goto(pageUrl);

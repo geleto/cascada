@@ -11,12 +11,13 @@ const nyc = new NYC({
   cwd: path.join(__dirname, '..'),
   exclude: [
     '*.min.js',
-    'scripts/**', // Exclude the scripts directory
+    'scripts/**',
     'tests/**',
-    'node_modules/**'
+    'node_modules/**',
   ],
-  reporter: ['text', 'html', 'lcovonly'],
-  all: true,
+  reporter: ['text', 'html', 'lcovonly'], // Standard report formats
+  all: true, // Ensure all files are instrumented, even those not tested
+  tempDirectory: path.join(process.cwd(), '.nyc_output') // Store coverage data
 });
 
 nyc.reset();

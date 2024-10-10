@@ -39,11 +39,13 @@
     // typeof initMochaPhantomJS === 'function' && initMochaPhantomJS();
     mocha.setup({
       ui: 'bdd',
-      timeout: 10000
+      timeout: 10000,
+      reporter: 'spec',
+      globals: ['puppeteer___ariaQuerySelector', '__ariaQuerySelector', 'puppeteer___ariaQuerySelectorAll', '__ariaQuerySelectorAll']
     });
   </script>
 
-  <script src="nunjucks.min.js"></script>
+  <script src="./nunjucks.min.js"></script>
   <script src="../util.js"></script>
 
   <script src="../api.js"></script>
@@ -62,6 +64,8 @@
     mocha.checkLeaks();
     mocha.run(function (failures) {
       window.tests_failed = failures;
+      console.log('Tests completed. Failures:', failures);
+      console.log('Coverage data:', window.__coverage__);
     });
   </script>
 </body>
