@@ -36,6 +36,7 @@ precompileTestTemplates()
     console.error(err);
   })
   .then(() => {
+    console.log('Writing coverage reports...');
     nyc.writeCoverageFile();
     nyc.report();
 

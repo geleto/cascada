@@ -76,13 +76,19 @@
     "node": ">= 6.9.0"
   },
   "scripts": {
-    "build": "babel nunjucks --out-dir . && node scripts/bundle.js",
     "codecov": "codecov",
     "mocha": "mocha -R spec tests",
     "lint": "eslint nunjucks scripts tests",
     "prepare": "npm run build",
-    "test:runner": "cross-env NODE_ENV=test NODE_PATH=tests/test-node-pkgs scripts/testrunner.js",
-    "test": "npm run lint && npm run test:runner"
+    "build:transpile": "babel nunjucks --out-dir .",
+    "build:transpile:coverage:browser": "cross-env BABEL_ENV=test-browser babel nunjucks --out-dir .",
+    "build:bundle": "node scripts/bundle.js",
+    "build:bundle:coverage:browser": "cross-env BABEL_ENV=test-browser node scripts/bundle.js",
+    "build": "npm run build:transpile && npm run build:bundle",
+    "build:coverage:browser": "npm run build:transpile:coverage:browser && npm run build:bundle:coverage:browser",
+    "test": "npm run lint && npm run test:runner",
+    "test:instrument": "cross-env NODE_ENV=test scripts/bundle.js",
+    "test:runner": "cross-env NODE_ENV=test NODE_PATH=tests/test-node-pkgs scripts/testrunner.js"
   },
   "bin": {
     "nunjucks-precompile": "./bin/precompile"

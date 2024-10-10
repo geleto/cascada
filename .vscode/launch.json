@@ -40,7 +40,6 @@
 		"runtimeArgs": [
 		  "--nolazy",
 		],
-		"preLaunchTask": "npm: test:instrument",
 		"autoAttachChildProcesses": true, // Automatically attach to child processes spawned by the testrunner
 		"skipFiles": [
 		  "<node_internals>/**"
