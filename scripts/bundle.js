@@ -9,7 +9,7 @@ var path = require('path');
 var webpack = require('webpack');
 var pjson = require('../package.json');
 var promiseSequence = require('./lib/utils').promiseSequence;
-var UglifyJsPlugin = require('uglifyjs-webpack-plugin');
+const TerserPlugin = require('terser-webpack-plugin');
 var TEST_ENV = (process.env.NODE_ENV === 'test');
 
 var destDir = path.resolve(path.join(
@@ -27,6 +27,7 @@ function runWebpack(opts) {
   return new Promise(function(resolve, reject) {
     try {
       var config = {
+        mode: 'none',
         entry: './nunjucks/index.js',
         devtool: 'source-map',
         output: {
@@ -37,10 +38,6 @@ function runWebpack(opts) {
           devtoolModuleFilenameTemplate: function(info) {
             return path.relative(destDir, info.absoluteResourcePath);
           }
-        },
-        node: {
-          process: false,
-          setImmediate: false
         },
         module: {
           rules: [{
@@ -78,14 +75,16 @@ function runWebpack(opts) {
             'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
             'process.env.BUILD_TYPE': JSON.stringify((opts.slim) ? 'SLIM' : 'STD'),
           }),
-        ]
+        ],
+        optimization: {
+          minimize: opts.min,
+        }
       };
 
       if (opts.min) {
-        config.plugins.push(
-          new UglifyJsPlugin({
-            sourceMap: true,
-            uglifyOptions: {
+        config.optimization.minimizer = [
+          new TerserPlugin({
+            terserOptions: {
               mangle: {
                 properties: {
                   regex: /^_[^_]/
@@ -94,9 +93,10 @@ function runWebpack(opts) {
               compress: {
                 unsafe: true
               }
-            }
+            },
+            extractComments: false, // Prevents the creation of LICENSE files
           })
-        );
+        ];
       }
 
       webpack(config).run(function(err, stats) {

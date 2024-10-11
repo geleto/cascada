@@ -42,9 +42,9 @@
     "phantomjs-prebuilt": "^2.1.16",
     "serve-static": "^1.13.1",
     "supertest": "*",
+    "terser-webpack-plugin": "^5.3.10",
     "uglify-js": "^2.8.29",
-    "uglifyjs-webpack-plugin": "^1.1.6",
-    "webpack": "^3.10.0"
+    "webpack": "^5.95.0"
   },
   "buildDependencies": {
     "@babel/cli": "^7.0.0-beta.38",
