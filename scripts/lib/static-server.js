@@ -20,40 +20,37 @@ function getStaticServer(prt) {
         app.use((req, res, next) => {
           const parsedUrl = url.parse(req.url);
           const pathname = parsedUrl.pathname;
-
-          // Resolve the file path
           const filePath = path.join(staticRoot, pathname);
+
+          console.log(`Requested file: ${filePath}`); // Debugging log
 
           // Always serve non-JS files and minified JS files without instrumentation
           if (!pathname.endsWith('.js') || pathname.endsWith('.min.js')) {
-            return serveStatic(staticRoot)(req, res, next);
+            return next();
           }
 
-          // Conditional instrumentation: Only instrument JS files that meet certain conditions
-          if (
-            !filePath.includes('node_modules') // && // Don't instrument files from node_modules
-            // !filePath.includes('tests/browser') // Don't instrument test libraries
-          ) {
-            // Read and instrument the JS file using Babel
+          // Conditional instrumentation
+          if (!filePath.includes('node_modules')) {
             fs.readFile(filePath, 'utf8', (err, code) => {
-              if (err) return next(err);
+              if (err) {
+                console.error(`Error reading file ${filePath}:`, err);
+                return next(); // Proceed to the next middleware
+              }
 
               babel.transform(
                 code,
                 {
                   filename: filePath,
                   sourceMaps: 'inline',
-                  babelrc: true, // Ensure Babel uses .babelrc
-                  envName: 'test', // Set the environment to 'test'
+                  babelrc: true,
+                  envName: 'test',
                 },
                 (error, result) => {
                   if (error) {
                     console.error('Babel transform error:', error);
-                    return next(err);
+                    return next(); // Proceed to the next middleware
                   }
 
-                  // console.log(`Instrumented ${filePath}:\n`,
-                  // result.code.split('\n').slice(0, 5).join('\n'));
                   res.setHeader('Content-Type', 'application/javascript');
                   res.end(result.code);
                   return undefined;
@@ -62,14 +59,21 @@ function getStaticServer(prt) {
               return undefined;
             });
           } else {
-            // Serve the JS file without instrumentation
-            return serveStatic(staticRoot)(req, res, next);
+            return next();
           }
           return undefined;
         });
 
-        // Serve static files (HTML, CSS, images, etc.)
-        app.use(serveStatic(staticRoot));
+        // Serve static files (HTML, CSS, images, etc.) with correct MIME types
+        app.use(
+          serveStatic(staticRoot, {
+            setHeaders: (res, filePath) => {
+              if (filePath.endsWith('.js') || filePath.endsWith('.min.js')) {
+                res.setHeader('Content-Type', 'application/javascript');
+              }
+            },
+          })
+        );
 
         const server = http.createServer(app);
         server.listen(port, () => {
