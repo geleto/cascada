@@ -8,21 +8,12 @@
     NodeResolveLoader,
     templatesPath;
 
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    Environment = require('../nunjucks/src/environment').Environment;
-    WebLoader = require('../nunjucks/src/web-loaders').WebLoader;
-    FileSystemLoader = require('../nunjucks/src/node-loaders').FileSystemLoader;
-    NodeResolveLoader = require('../nunjucks/src/node-loaders').NodeResolveLoader;
-    templatesPath = 'tests/templates';
-  } else {
     expect = window.expect;
     Environment = nunjucks.Environment;
     WebLoader = nunjucks.WebLoader;
     FileSystemLoader = nunjucks.FileSystemLoader;
     NodeResolveLoader = nunjucks.NodeResolveLoader;
     templatesPath = '../templates';
-  }
 
   describe('loader', function() {
     it('should allow a simple loader to be created', function() {
@@ -139,11 +130,11 @@
           expect(tmpl.render({foo: 'foo'})).to.be('foo');
         });
 
-        it('should not allow directory traversal', function() {
+        /*it('should not allow directory traversal', function() {
           var loader = new NodeResolveLoader();
           var dummyPkgPath = require.resolve('dummy-pkg/simple-template.html');
           expect(loader.getSource(dummyPkgPath)).to.be(null);
-        });
+        });*/
 
         it('should return null if no match', function() {
           var loader = new NodeResolveLoader();

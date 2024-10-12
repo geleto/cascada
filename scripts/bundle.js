@@ -6,7 +6,7 @@ const path = require('path');
 const webpack = require('webpack');
 const pjson = require('../package.json');
 const promiseSequence = require('./lib/utils').promiseSequence;
-const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
+const TerserPlugin = require('terser-webpack-plugin');
 const TEST_ENV = process.env.NODE_ENV === 'test';
 
 const destDir = path.resolve(path.join(__dirname, TEST_ENV ? '../tests/browser' : '../browser'));
@@ -81,25 +81,25 @@ function runWebpack(opts) {
             'process.env.BUILD_TYPE': JSON.stringify(opts.slim ? 'SLIM' : 'STD'),
           }),
         ],
-      };
-
-      if (opts.min) {
-        config.plugins.push(
-          new UglifyJsPlugin({
-            sourceMap: true,
-            uglifyOptions: {
-              mangle: {
-                properties: {
-                  regex: /^_[^_]/,
+        optimization: {
+          minimize: opts.min,
+          minimizer: [
+            new TerserPlugin({
+              terserOptions: {
+                mangle: {
+                  properties: {
+                    regex: /^_[^_]/,
+                  },
+                },
+                compress: {
+                  unsafe: true,
                 },
               },
-              compress: {
-                unsafe: true,
-              },
-            },
-          })
-        );
-      }
+              extractComments: false,
+            }),
+          ],
+        },
+      };
 
       webpack(config).run((err, stats) => {
         if (err) {

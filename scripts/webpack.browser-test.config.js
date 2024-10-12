@@ -1,4 +1,6 @@
 const path = require('path');
+const webpack = require('webpack');
+const NodePolyfillPlugin = require('node-polyfill-webpack-plugin');
 
 module.exports = {
   mode: 'development',
@@ -33,6 +35,22 @@ module.exports = {
       }
     ]
   },
+  plugins: [
+    new NodePolyfillPlugin(),
+  ],
+  resolve: {
+    alias: {
+      // Add alias for dummy-pkg
+      'dummy-pkg': path.resolve(__dirname, '../tests/test-node-pkgs/dummy-pkg'),
+      'nunjucks/src/node-loaders': false, // no node loaders in browser environment
+    },
+    fallback: {
+      "path": require.resolve("path-browserify"),
+      "fs": false,
+      "os": require.resolve("os-browserify/browser"),
+      "stream": require.resolve("stream-browserify")
+    }
+  },
   optimization: {
     moduleIds: 'deterministic',
     splitChunks: {
@@ -46,3 +64,13 @@ module.exports = {
     },
   },
 };
+
+// Only add the IgnorePlugin for fsevents on non-macOS platforms
+// to avoid Can't resolve 'fsevents' in chokidar
+if (process.platform !== "darwin") {
+  module.exports.plugins.push(
+    new webpack.IgnorePlugin({
+      resourceRegExp: /^fsevents$/,
+    })
+  );
+}
