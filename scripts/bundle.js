@@ -22,6 +22,7 @@ function runWebpack(opts) {
   return new Promise((resolve, reject) => {
     try {
       const config = {
+        mode: process.env.NODE_ENV || 'production', // Set the mode based on NODE_ENV
         entry: './nunjucks/index.js',
         devtool: 'source-map',
         output: {
@@ -32,9 +33,12 @@ function runWebpack(opts) {
           devtoolModuleFilenameTemplate:
             (info) => path.relative(destDir, info.absoluteResourcePath),
         },
-        node: {
-          process: false,
-          setImmediate: false,
+        resolve: {
+          fallback: {
+            // If you need to polyfill 'process' or 'setImmediate', you can do it here
+            // "process": false,
+            // "setImmediate": false
+          }
         },
         module: {
           rules: [
