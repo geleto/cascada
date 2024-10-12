@@ -23,8 +23,9 @@
     "@babel/plugin-transform-modules-commonjs": "^7.25.7",
     "@babel/preset-env": "^7.25.8",
     "@babel/register": "^7.0.0-beta.38",
+    "@istanbuljs/nyc-config-babel": "^3.0.0",
     "babel-loader": "^8.0.0-beta.0",
-    "babel-plugin-istanbul": "^4.1.6",
+    "babel-plugin-istanbul": "^7.0.0",
     "babel-plugin-module-resolver": "3.0.0-beta.5",
     "connect": "^3.6.5",
     "core-js": "^2.5.3",
@@ -90,7 +91,7 @@
     "test:prep:precompile": "node scripts/runprecompile.js",
     "test:prep:bundle:browser": "webpack --config scripts/webpack.browser-test.config.js",
     "test:prep:instrument:node": "cross-env NODE_ENV=test scripts/bundle.js",
-    "test:run:node": "cross-env NODE_PATH=./tests/test-node-pkgs nyc mocha --require @babel/register tests",
+    "test:run:node": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc mocha --require @babel/register tests",
     "test:run:browser": "npm run test:prep:bundle:browser && node scripts/testrunner.js",
     "test:tool:merge-coverage": "nyc merge .nyc_output coverage && nyc report --reporter=text",
     "test:node": "npm run test:prep:precompile && npm run test:run:node",
@@ -107,17 +108,23 @@
     "src/**"
   ],
   "nyc": {
-    "require": [
-      "@babel/register"
+    "extends": "@istanbuljs/nyc-config-babel",
+    "all": true,
+    "include": [
+      "nunjucks/**/*.js"
+    ],
+    "exclude": [
+      "**/*.spec.js",
+      "**/*.test.js",
+      "tests/**",
+      "scripts/**"
+    ],
+    "reporter": [
+      "text",
+      "lcov"
     ],
     "sourceMap": false,
-    "instrument": false,
-    "exclude": [
-      "*.min.js",
-      "scripts/**",
-      "tests/**",
-      "src/**"
-    ]
+    "instrument": false
   },
   "repository": {
     "type": "git",
