@@ -15,7 +15,7 @@
   "env": {
     "test": {
       "plugins": [
-        "babel-plugin-istanbul"
+        "istanbul"
       ],
       "ignore": [
         "**/node_modules/**",
