@@ -36,12 +36,9 @@
   <script src="../../node_modules/mocha/mocha.js"></script>
   <script>
     delete window.require;
-    // typeof initMochaPhantomJS === 'function' && initMochaPhantomJS();
     mocha.setup({
       ui: 'bdd',
-      timeout: 10000,
-      reporter: 'spec',
-      globals: ['puppeteer___ariaQuerySelector', '__ariaQuerySelector', 'puppeteer___ariaQuerySelectorAll', '__ariaQuerySelectorAll']
+      timeout: 10000
     });
   </script>
 

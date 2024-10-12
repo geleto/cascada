@@ -1,33 +1,27 @@
 #!/usr/bin/env node
-/* eslint-disable vars-on-top, func-names */
 
 'use strict';
 
-require('module-alias/register');
+const path = require('path');
+const webpack = require('webpack');
+const pjson = require('../package.json');
+const promiseSequence = require('./lib/utils').promiseSequence;
+const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
+const TEST_ENV = process.env.NODE_ENV === 'test';
 
-var path = require('path');
-var webpack = require('webpack');
-var pjson = require('../package.json');
-var promiseSequence = require('./lib/utils').promiseSequence;
-const TerserPlugin = require('terser-webpack-plugin');
-var TEST_ENV = (process.env.NODE_ENV === 'test');
-
-var destDir = path.resolve(path.join(
-  __dirname,
-  (TEST_ENV) ? '../tests/browser' : '../browser'));
+const destDir = path.resolve(path.join(__dirname, TEST_ENV ? '../tests/browser' : '../browser'));
 
 function runWebpack(opts) {
-  var type = (opts.slim) ? '(slim, only works with precompiled templates)' : '';
-  var ext = (opts.min) ? '.min.js' : '.js';
+  const type = opts.slim ? '(slim, only works with precompiled templates)' : '';
+  let ext = opts.min ? '.min.js' : '.js';
   if (opts.slim) {
-    ext = '-slim' + ext;
+    ext = `-slim${ext}`;
   }
-  var filename = 'nunjucks' + ext;
+  const filename = `nunjucks${ext}`;
 
-  return new Promise(function(resolve, reject) {
+  return new Promise((resolve, reject) => {
     try {
-      var config = {
-        mode: 'none',
+      const config = {
         entry: './nunjucks/index.js',
         devtool: 'source-map',
         output: {
@@ -35,75 +29,83 @@ function runWebpack(opts) {
           filename: filename,
           library: 'nunjucks',
           libraryTarget: 'umd',
-          devtoolModuleFilenameTemplate: function(info) {
-            return path.relative(destDir, info.absoluteResourcePath);
-          }
+          devtoolModuleFilenameTemplate:
+            (info) => path.relative(destDir, info.absoluteResourcePath),
+        },
+        node: {
+          process: false,
+          setImmediate: false,
         },
         module: {
-          rules: [{
-            test: /nunjucks/,
-            exclude: /(node_modules|browser|tests)(?!\.js)/,
-            use: {
-              loader: 'babel-loader',
-              options: {
-                plugins: [['module-resolver', {
-                  extensions: ['.js'],
-                  resolvePath: function(sourcePath) {
-                    if (sourcePath.match(/^(fs|path|chokidar)$/)) {
-                      return 'node-libs-browser/mock/empty';
-                    }
-                    if (opts.slim) {
-                      if (sourcePath.match(/(nodes|lexer|parser|precompile|transformer|compiler)(\.js)?$/)) {
-                        return 'node-libs-browser/mock/empty';
-                      }
-                    }
-                    if (sourcePath.match(/\/loaders(\.js)?$/)) {
-                      return sourcePath.replace('loaders', (opts.slim) ? 'precompiled-loader' : 'web-loaders');
-                    }
-                    return null;
-                  },
-                }]]
-              }
-            }
-          }]
+          rules: [
+            {
+              test: /nunjucks/,
+              exclude: /(node_modules|browser|tests)(?!\.js)/,
+              use: {
+                loader: 'babel-loader',
+                options: {
+                  plugins: [
+                    [
+                      'module-resolver',
+                      {
+                        extensions: ['.js'],
+                        resolvePath: (sourcePath) => {
+                          if (sourcePath.match(/^(fs|path|chokidar)$/)) {
+                            return 'node-libs-browser/mock/empty';
+                          }
+                          if (opts.slim) {
+                            if (sourcePath.match(/(nodes|lexer|parser|precompile|transformer|compiler)(\.js)?$/)) {
+                              return 'node-libs-browser/mock/empty';
+                            }
+                          }
+                          if (sourcePath.match(/\/loaders(\.js)?$/)) {
+                            return sourcePath.replace('loaders', opts.slim ? 'precompiled-loader' : 'web-loaders');
+                          }
+                          return null;
+                        },
+                      },
+                    ],
+                  ],
+                  ...(TEST_ENV && {
+                    plugins: ['babel-plugin-istanbul'],
+                  }),
+                },
+              },
+            },
+          ],
         },
         plugins: [
-          new webpack.BannerPlugin(
-            'Browser bundle of nunjucks ' + pjson.version + ' ' + type
-          ),
+          new webpack.BannerPlugin(`Browser bundle of nunjucks ${pjson.version} ${type}`),
           new webpack.DefinePlugin({
             'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
-            'process.env.BUILD_TYPE': JSON.stringify((opts.slim) ? 'SLIM' : 'STD'),
+            'process.env.BUILD_TYPE': JSON.stringify(opts.slim ? 'SLIM' : 'STD'),
           }),
         ],
-        optimization: {
-          minimize: opts.min,
-        }
       };
 
       if (opts.min) {
-        config.optimization.minimizer = [
-          new TerserPlugin({
-            terserOptions: {
+        config.plugins.push(
+          new UglifyJsPlugin({
+            sourceMap: true,
+            uglifyOptions: {
               mangle: {
                 properties: {
-                  regex: /^_[^_]/
-                }
+                  regex: /^_[^_]/,
+                },
               },
               compress: {
-                unsafe: true
-              }
+                unsafe: true,
+              },
             },
-            extractComments: false, // Prevents the creation of LICENSE files
           })
-        ];
+        );
       }
 
-      webpack(config).run(function(err, stats) {
+      webpack(config).run((err, stats) => {
         if (err) {
           reject(err);
         } else {
-          resolve(stats.toString({cached: false, cachedAssets: false}));
+          resolve(stats.toString({ cached: false, cachedAssets: false }));
         }
       });
     } catch (err) {
@@ -112,25 +114,19 @@ function runWebpack(opts) {
   });
 }
 
-var runConfigs = [
-  {min: true, slim: false},
-  {min: true, slim: true}
+const runConfigs = [
+  { min: true, slim: false },
+  { min: true, slim: true },
 ];
 
 if (!TEST_ENV) {
-  runConfigs.unshift(
-    {min: false, slim: false},
-    {min: false, slim: true});
+  runConfigs.unshift({ min: false, slim: false }, { min: false, slim: true });
 }
 
-var promises = runConfigs.map(function(opts) {
-  return function() {
-    return runWebpack(opts).then(function(stats) {
-      console.log(stats); // eslint-disable-line no-console
-    });
-  };
-});
+const promises = runConfigs.map((opts) =>
+  () => runWebpack(opts).then((stats) => console.log(stats))
+);
 
-promiseSequence(promises).catch(function(err) {
+promiseSequence(promises).catch((err) => {
   throw err;
 });

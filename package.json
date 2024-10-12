@@ -18,9 +18,9 @@
   "browser": "./browser/nunjucks.js",
   "devDependencies": {
     "@babel/cli": "^7.0.0-beta.38",
-    "@babel/core": "^7.25.7",
+    "@babel/core": "^7.25.8",
     "@babel/plugin-transform-modules-commonjs": "^7.25.7",
-    "@babel/preset-env": "^7.0.0-beta.38",
+    "@babel/preset-env": "^7.25.8",
     "@babel/register": "^7.0.0-beta.38",
     "babel-loader": "^8.0.0-beta.0",
     "babel-plugin-istanbul": "^4.1.6",
@@ -28,7 +28,7 @@
     "connect": "^3.6.5",
     "core-js": "^2.5.3",
     "cross-env": "^5.1.3",
-    "eslint": "^4.13.0",
+    "eslint": "^9.12.0",
     "eslint-config-airbnb-base": "^12.1.0",
     "eslint-plugin-import": "^2.8.0",
     "expect.js": "*",
@@ -44,7 +44,8 @@
     "supertest": "*",
     "terser-webpack-plugin": "^5.3.10",
     "uglify-js": "^2.8.29",
-    "webpack": "^5.95.0"
+    "webpack": "^5.95.0",
+    "webpack-cli": "^5.1.4"
   },
   "buildDependencies": {
     "@babel/cli": "^7.0.0-beta.38",
@@ -86,9 +87,15 @@
     "build:bundle:coverage:browser": "cross-env BABEL_ENV=test-browser node scripts/bundle.js",
     "build": "npm run build:transpile && npm run build:bundle",
     "build:coverage:browser": "npm run build:transpile:coverage:browser && npm run build:bundle:coverage:browser",
-    "test": "npm run lint && npm run test:runner",
-    "test:instrument": "cross-env NODE_ENV=test scripts/bundle.js",
-    "test:runner": "cross-env NODE_ENV=test NODE_PATH=tests/test-node-pkgs scripts/testrunner.js"
+    "test:prep:precompile": "node scripts/runprecompile.js",
+    "test:prep:bundle:browser": "webpack --config scripts/webpack.browser-test.config.js",
+    "test:prep:instrument:node": "cross-env NODE_ENV=test scripts/bundle.js",
+    "test:run:node": "cross-env NODE_PATH=./tests/test-node-pkgs nyc mocha --require @babel/register tests",
+    "test:run:browser": "npm run test:prep:bundle:browser && node scripts/testrunner.js",
+    "test:tool:merge-coverage": "nyc merge .nyc_output coverage && nyc report --reporter=text",
+    "test:node": "npm run test:prep:precompile && npm run test:run:node",
+    "test:browser": "npm run test:prep:precompile && npm run test:run:browser",
+    "test": "npm run lint && npm run test:prep:instrument:node && npm run test:node && npm run test:browser && npm run test:tool:merge-coverage"
   },
   "bin": {
     "nunjucks-precompile": "./bin/precompile"
@@ -101,10 +108,16 @@
   ],
   "nyc": {
     "require": [
-      "babel-register"
+      "@babel/register"
     ],
     "sourceMap": false,
-    "instrument": false
+    "instrument": false,
+    "exclude": [
+      "*.min.js",
+      "scripts/**",
+      "tests/**",
+      "src/**"
+    ]
   },
   "repository": {
     "type": "git",

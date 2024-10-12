@@ -1,18 +1,21 @@
 {
   "presets": [
-    ["@babel/env", {
+    ["@babel/preset-env", {
       "loose": true,
       "targets": {
-        "browsers": ["last 2 versions", "safari >= 7", "ie 9"],
-        "node": "6"
+        "browsers": [
+          ">0.2%",
+          "not dead",
+          "not op_mini all"
+        ],
+        "node": "current"
       }
     }]
   ],
   "env": {
     "test": {
       "plugins": [
-        "./scripts/lib/arrow-function-coverage-fix",
-        "istanbul"
+        "babel-plugin-istanbul"
       ],
       "ignore": [
         "**/node_modules/**",
@@ -21,8 +24,5 @@
         "scripts/**"
       ]
     }
-  },
-  "ignore": [
-    "scripts/lib/arrow-function-coverage-fix.js"
-  ]
+  }
 }
