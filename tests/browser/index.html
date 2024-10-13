@@ -63,6 +63,9 @@
       window.tests_failed = failures;
       console.log('Tests completed. Failures:', failures);
       console.log('Coverage data:', window.__coverage__);
+      window.sendTestResults({ failures }).then(() => {
+        window.testResultsReceived = true;
+      });
     });
   </script>
 </body>

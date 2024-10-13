@@ -20,7 +20,6 @@
       "ignore": [
         "**/node_modules/**",
         "**/*.min.js",
-        "**/tests/browser/**",
         "scripts/**"
       ]
     }

@@ -25,15 +25,18 @@ async function runTestFile(browser, port, testFile) {
   const page = await context.newPage();
 
   try {
-    await page.goto(`http://localhost:${port}/tests/browser/${testFile}`);
+    const url = `http://localhost:${port}/tests/browser/${testFile}`;
+    await page.goto(url);
 
-    const testResult = await page.evaluate(() => {
-      return new Promise((resolve) => {
-        mocha.run((failures) => resolve({ failures }));
-      });
-    });
+    console.log(`Running tests in ${testFile}`);
 
-    if (testResult.failures > 0) {
+    // Wait for test results
+    const testResult = await page.waitForFunction(() => window.testResultsReceived, { timeout: 30000 });
+    const resultValue = await testResult.jsonValue();
+
+    console.log(`Tests finished in ${testFile} with results:`, resultValue);
+
+    if (resultValue.failures > 0) {
       throw new Error(`Tests failed in ${testFile}`);
     }
 
@@ -62,7 +65,9 @@ async function runTests() {
     browser = await chromium.launch();
     const testFiles = ['index.html', 'slim.html'];
 
-    await Promise.all(testFiles.map(testFile => runTestFile(browser, port, testFile)));
+    for (const testFile of testFiles) {
+      await runTestFile(browser, port, testFile);
+    }
 
     nyc.writeCoverageFile();
     await nyc.report();
