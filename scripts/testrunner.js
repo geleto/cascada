@@ -122,9 +122,9 @@ async function runTestFile(browser, port, testFile) {
       console.log('Injected script running');
       if (typeof mocha !== 'undefined') {
         console.log('Mocha found, running tests');
-        mocha.run((failures) => {
+        const runner = mocha.run((failures) => {
           window.testResultsReceived = {
-            failures: failures,
+            stats: runner.stats,
             coverage: window.__coverage__
           };
           window.sendTestResults(window.testResultsReceived);
@@ -137,13 +137,7 @@ async function runTestFile(browser, port, testFile) {
     const testResult = await page.waitForFunction(() => window.testResultsReceived, { timeout: 120000 });
     const resultValue = await testResult.jsonValue();
 
-    // Wait for coverage data to be saved before proceeding
-    await coverageSavedPromise;
-
-    /*if (resultValue.failures > 0) {
-      console.error(`Tests failed in ${testFile}`);
-      overallTestsPassed = false;
-    }*/
+    await coverageSavedPromise;// Wait for coverage data to be saved before proceeding
 
     return resultValue;
   } catch (error) {
@@ -159,6 +153,12 @@ async function runTests() {
   let browser;
   let port;
   let overallTestsPassed = true;
+
+  let totalTests = 0;
+  let totalPassed = 0;
+  let totalFailed = 0;
+  let totalPending = 0;
+  let totalDuration = 0;
 
   try {
     nyc.reset();
@@ -179,12 +179,18 @@ async function runTests() {
     for (const testFile of testFiles) {
       console.log(`Running tests for ${testFile}...`);
       const result = await runTestFile(browser, port, testFile);
-      if (result.failures > 0) {
+
+      if (result.stats.failures > 0) {
         overallTestsPassed = false;
       }
+
+      totalTests += result.stats.tests;
+      totalPassed += result.stats.passes;
+      totalFailed += result.stats.failures;
+      totalPending += result.stats.pending;
+      totalDuration += result.stats.duration;
     }
 
-    //console.log('\nProcessing coverage data...');
     const coverageMap = libCoverage.createCoverageMap({});
 
     for (const file of coverageConfig.files) {
@@ -205,14 +211,18 @@ async function runTests() {
     console.error('Test runner encountered an error:', error);
     overallTestsPassed = false;
   } finally {
+    console.log('\nBrowser Tests Summary:');
+    console.log(`Tests: ${totalTests}`);
+    console.log(chalk.green(`Passed: ${totalPassed}`));
+    console.log(chalk.red(`Failed: ${totalFailed}`));
+    console.log(chalk.blue(`Pending: ${totalPending}`));
+    console.log(`Duration: (${totalDuration}ms)`);
+
     if (browser) {
-      //console.log('Closing browser...');
       await browser.close();
     }
     if (server) {
-      console.log('Closing server...');
       server.close(() => {
-        //console.log('Server closed');
       });
     }
   }
@@ -221,7 +231,6 @@ async function runTests() {
     //console.error('Some tests failed');
     process.exit(1);
   } else {
-    //console.log('All tests passed successfully');
   }
 }
 
