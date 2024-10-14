@@ -11,1126 +11,6 @@
 return /******/ (() => { // webpackBootstrap
 /******/ 	var __webpack_modules__ = ({
 
-/***/ 9647:
-/*!***************************!*\
-  !*** ./nunjucks/index.js ***!
-  \***************************/
-/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
-
-"use strict";
-
-
-function cov_14c1vv3dmx() {
-  var path = "C:\\Projects\\cascada\\nunjucks\\index.js";
-  var hash = "c43612d6e69f6fce739d0b44b523680801056011";
-  var global = new Function("return this")();
-  var gcv = "__coverage__";
-  var coverageData = {
-    path: "C:\\Projects\\cascada\\nunjucks\\index.js",
-    statementMap: {
-      "0": {
-        start: {
-          line: 3,
-          column: 12
-        },
-        end: {
-          line: 3,
-          column: 32
-        }
-      },
-      "1": {
-        start: {
-          line: 4,
-          column: 32
-        },
-        end: {
-          line: 4,
-          column: 60
-        }
-      },
-      "2": {
-        start: {
-          line: 5,
-          column: 15
-        },
-        end: {
-          line: 5,
-          column: 38
-        }
-      },
-      "3": {
-        start: {
-          line: 6,
-          column: 16
-        },
-        end: {
-          line: 6,
-          column: 40
-        }
-      },
-      "4": {
-        start: {
-          line: 7,
-          column: 19
-        },
-        end: {
-          line: 7,
-          column: 46
-        }
-      },
-      "5": {
-        start: {
-          line: 8,
-          column: 17
-        },
-        end: {
-          line: 8,
-          column: 42
-        }
-      },
-      "6": {
-        start: {
-          line: 9,
-          column: 15
-        },
-        end: {
-          line: 9,
-          column: 38
-        }
-      },
-      "7": {
-        start: {
-          line: 10,
-          column: 14
-        },
-        end: {
-          line: 10,
-          column: 36
-        }
-      },
-      "8": {
-        start: {
-          line: 11,
-          column: 16
-        },
-        end: {
-          line: 11,
-          column: 40
-        }
-      },
-      "9": {
-        start: {
-          line: 12,
-          column: 14
-        },
-        end: {
-          line: 12,
-          column: 36
-        }
-      },
-      "10": {
-        start: {
-          line: 13,
-          column: 27
-        },
-        end: {
-          line: 13,
-          column: 56
-        }
-      },
-      "11": {
-        start: {
-          line: 19,
-          column: 2
-        },
-        end: {
-          line: 19,
-          column: 20
-        }
-      },
-      "12": {
-        start: {
-          line: 20,
-          column: 2
-        },
-        end: {
-          line: 23,
-          column: 3
-        }
-      },
-      "13": {
-        start: {
-          line: 21,
-          column: 4
-        },
-        end: {
-          line: 21,
-          column: 25
-        }
-      },
-      "14": {
-        start: {
-          line: 22,
-          column: 4
-        },
-        end: {
-          line: 22,
-          column: 25
-        }
-      },
-      "15": {
-        start: {
-          line: 26,
-          column: 2
-        },
-        end: {
-          line: 36,
-          column: 3
-        }
-      },
-      "16": {
-        start: {
-          line: 27,
-          column: 4
-        },
-        end: {
-          line: 30,
-          column: 7
-        }
-      },
-      "17": {
-        start: {
-          line: 31,
-          column: 9
-        },
-        end: {
-          line: 36,
-          column: 3
-        }
-      },
-      "18": {
-        start: {
-          line: 32,
-          column: 4
-        },
-        end: {
-          line: 35,
-          column: 7
-        }
-      },
-      "19": {
-        start: {
-          line: 38,
-          column: 2
-        },
-        end: {
-          line: 38,
-          column: 44
-        }
-      },
-      "20": {
-        start: {
-          line: 40,
-          column: 2
-        },
-        end: {
-          line: 42,
-          column: 3
-        }
-      },
-      "21": {
-        start: {
-          line: 41,
-          column: 4
-        },
-        end: {
-          line: 41,
-          column: 28
-        }
-      },
-      "22": {
-        start: {
-          line: 44,
-          column: 2
-        },
-        end: {
-          line: 44,
-          column: 11
-        }
-      },
-      "23": {
-        start: {
-          line: 47,
-          column: 0
-        },
-        end: {
-          line: 88,
-          column: 2
-        }
-      },
-      "24": {
-        start: {
-          line: 64,
-          column: 4
-        },
-        end: {
-          line: 64,
-          column: 18
-        }
-      },
-      "25": {
-        start: {
-          line: 67,
-          column: 4
-        },
-        end: {
-          line: 69,
-          column: 5
-        }
-      },
-      "26": {
-        start: {
-          line: 68,
-          column: 6
-        },
-        end: {
-          line: 68,
-          column: 18
-        }
-      },
-      "27": {
-        start: {
-          line: 70,
-          column: 4
-        },
-        end: {
-          line: 70,
-          column: 63
-        }
-      },
-      "28": {
-        start: {
-          line: 73,
-          column: 4
-        },
-        end: {
-          line: 75,
-          column: 5
-        }
-      },
-      "29": {
-        start: {
-          line: 74,
-          column: 6
-        },
-        end: {
-          line: 74,
-          column: 18
-        }
-      },
-      "30": {
-        start: {
-          line: 77,
-          column: 4
-        },
-        end: {
-          line: 77,
-          column: 44
-        }
-      },
-      "31": {
-        start: {
-          line: 80,
-          column: 4
-        },
-        end: {
-          line: 82,
-          column: 5
-        }
-      },
-      "32": {
-        start: {
-          line: 81,
-          column: 6
-        },
-        end: {
-          line: 81,
-          column: 18
-        }
-      },
-      "33": {
-        start: {
-          line: 84,
-          column: 4
-        },
-        end: {
-          line: 84,
-          column: 40
-        }
-      }
-    },
-    fnMap: {
-      "0": {
-        name: "configure",
-        decl: {
-          start: {
-            line: 18,
-            column: 9
-          },
-          end: {
-            line: 18,
-            column: 18
-          }
-        },
-        loc: {
-          start: {
-            line: 18,
-            column: 40
-          },
-          end: {
-            line: 45,
-            column: 1
-          }
-        },
-        line: 18
-      },
-      "1": {
-        name: "(anonymous_1)",
-        decl: {
-          start: {
-            line: 63,
-            column: 2
-          },
-          end: {
-            line: 63,
-            column: 3
-          }
-        },
-        loc: {
-          start: {
-            line: 63,
-            column: 10
-          },
-          end: {
-            line: 65,
-            column: 3
-          }
-        },
-        line: 63
-      },
-      "2": {
-        name: "(anonymous_2)",
-        decl: {
-          start: {
-            line: 66,
-            column: 2
-          },
-          end: {
-            line: 66,
-            column: 3
-          }
-        },
-        loc: {
-          start: {
-            line: 66,
-            column: 49
-          },
-          end: {
-            line: 71,
-            column: 3
-          }
-        },
-        line: 66
-      },
-      "3": {
-        name: "(anonymous_3)",
-        decl: {
-          start: {
-            line: 72,
-            column: 2
-          },
-          end: {
-            line: 72,
-            column: 3
-          }
-        },
-        loc: {
-          start: {
-            line: 72,
-            column: 33
-          },
-          end: {
-            line: 78,
-            column: 3
-          }
-        },
-        line: 72
-      },
-      "4": {
-        name: "(anonymous_4)",
-        decl: {
-          start: {
-            line: 79,
-            column: 2
-          },
-          end: {
-            line: 79,
-            column: 3
-          }
-        },
-        loc: {
-          start: {
-            line: 79,
-            column: 29
-          },
-          end: {
-            line: 85,
-            column: 3
-          }
-        },
-        line: 79
-      }
-    },
-    branchMap: {
-      "0": {
-        loc: {
-          start: {
-            line: 19,
-            column: 9
-          },
-          end: {
-            line: 19,
-            column: 19
-          }
-        },
-        type: "binary-expr",
-        locations: [{
-          start: {
-            line: 19,
-            column: 9
-          },
-          end: {
-            line: 19,
-            column: 13
-          }
-        }, {
-          start: {
-            line: 19,
-            column: 17
-          },
-          end: {
-            line: 19,
-            column: 19
-          }
-        }],
-        line: 19
-      },
-      "1": {
-        loc: {
-          start: {
-            line: 20,
-            column: 2
-          },
-          end: {
-            line: 23,
-            column: 3
-          }
-        },
-        type: "if",
-        locations: [{
-          start: {
-            line: 20,
-            column: 2
-          },
-          end: {
-            line: 23,
-            column: 3
-          }
-        }, {
-          start: {
-            line: undefined,
-            column: undefined
-          },
-          end: {
-            line: undefined,
-            column: undefined
-          }
-        }],
-        line: 20
-      },
-      "2": {
-        loc: {
-          start: {
-            line: 26,
-            column: 2
-          },
-          end: {
-            line: 36,
-            column: 3
-          }
-        },
-        type: "if",
-        locations: [{
-          start: {
-            line: 26,
-            column: 2
-          },
-          end: {
-            line: 36,
-            column: 3
-          }
-        }, {
-          start: {
-            line: 31,
-            column: 9
-          },
-          end: {
-            line: 36,
-            column: 3
-          }
-        }],
-        line: 26
-      },
-      "3": {
-        loc: {
-          start: {
-            line: 31,
-            column: 9
-          },
-          end: {
-            line: 36,
-            column: 3
-          }
-        },
-        type: "if",
-        locations: [{
-          start: {
-            line: 31,
-            column: 9
-          },
-          end: {
-            line: 36,
-            column: 3
-          }
-        }, {
-          start: {
-            line: undefined,
-            column: undefined
-          },
-          end: {
-            line: undefined,
-            column: undefined
-          }
-        }],
-        line: 31
-      },
-      "4": {
-        loc: {
-          start: {
-            line: 33,
-            column: 16
-          },
-          end: {
-            line: 33,
-            column: 45
-          }
-        },
-        type: "binary-expr",
-        locations: [{
-          start: {
-            line: 33,
-            column: 16
-          },
-          end: {
-            line: 33,
-            column: 24
-          }
-        }, {
-          start: {
-            line: 33,
-            column: 28
-          },
-          end: {
-            line: 33,
-            column: 45
-          }
-        }],
-        line: 33
-      },
-      "5": {
-        loc: {
-          start: {
-            line: 34,
-            column: 13
-          },
-          end: {
-            line: 34,
-            column: 39
-          }
-        },
-        type: "binary-expr",
-        locations: [{
-          start: {
-            line: 34,
-            column: 13
-          },
-          end: {
-            line: 34,
-            column: 21
-          }
-        }, {
-          start: {
-            line: 34,
-            column: 25
-          },
-          end: {
-            line: 34,
-            column: 39
-          }
-        }],
-        line: 34
-      },
-      "6": {
-        loc: {
-          start: {
-            line: 40,
-            column: 2
-          },
-          end: {
-            line: 42,
-            column: 3
-          }
-        },
-        type: "if",
-        locations: [{
-          start: {
-            line: 40,
-            column: 2
-          },
-          end: {
-            line: 42,
-            column: 3
-          }
-        }, {
-          start: {
-            line: undefined,
-            column: undefined
-          },
-          end: {
-            line: undefined,
-            column: undefined
-          }
-        }],
-        line: 40
-      },
-      "7": {
-        loc: {
-          start: {
-            line: 40,
-            column: 6
-          },
-          end: {
-            line: 40,
-            column: 26
-          }
-        },
-        type: "binary-expr",
-        locations: [{
-          start: {
-            line: 40,
-            column: 6
-          },
-          end: {
-            line: 40,
-            column: 10
-          }
-        }, {
-          start: {
-            line: 40,
-            column: 14
-          },
-          end: {
-            line: 40,
-            column: 26
-          }
-        }],
-        line: 40
-      },
-      "8": {
-        loc: {
-          start: {
-            line: 67,
-            column: 4
-          },
-          end: {
-            line: 69,
-            column: 5
-          }
-        },
-        type: "if",
-        locations: [{
-          start: {
-            line: 67,
-            column: 4
-          },
-          end: {
-            line: 69,
-            column: 5
-          }
-        }, {
-          start: {
-            line: undefined,
-            column: undefined
-          },
-          end: {
-            line: undefined,
-            column: undefined
-          }
-        }],
-        line: 67
-      },
-      "9": {
-        loc: {
-          start: {
-            line: 73,
-            column: 4
-          },
-          end: {
-            line: 75,
-            column: 5
-          }
-        },
-        type: "if",
-        locations: [{
-          start: {
-            line: 73,
-            column: 4
-          },
-          end: {
-            line: 75,
-            column: 5
-          }
-        }, {
-          start: {
-            line: undefined,
-            column: undefined
-          },
-          end: {
-            line: undefined,
-            column: undefined
-          }
-        }],
-        line: 73
-      },
-      "10": {
-        loc: {
-          start: {
-            line: 80,
-            column: 4
-          },
-          end: {
-            line: 82,
-            column: 5
-          }
-        },
-        type: "if",
-        locations: [{
-          start: {
-            line: 80,
-            column: 4
-          },
-          end: {
-            line: 82,
-            column: 5
-          }
-        }, {
-          start: {
-            line: undefined,
-            column: undefined
-          },
-          end: {
-            line: undefined,
-            column: undefined
-          }
-        }],
-        line: 80
-      },
-      "11": {
-        loc: {
-          start: {
-            line: 86,
-            column: 14
-          },
-          end: {
-            line: 86,
-            column: 62
-          }
-        },
-        type: "cond-expr",
-        locations: [{
-          start: {
-            line: 86,
-            column: 29
-          },
-          end: {
-            line: 86,
-            column: 50
-          }
-        }, {
-          start: {
-            line: 86,
-            column: 53
-          },
-          end: {
-            line: 86,
-            column: 62
-          }
-        }],
-        line: 86
-      },
-      "12": {
-        loc: {
-          start: {
-            line: 87,
-            column: 20
-          },
-          end: {
-            line: 87,
-            column: 74
-          }
-        },
-        type: "cond-expr",
-        locations: [{
-          start: {
-            line: 87,
-            column: 35
-          },
-          end: {
-            line: 87,
-            column: 62
-          }
-        }, {
-          start: {
-            line: 87,
-            column: 65
-          },
-          end: {
-            line: 87,
-            column: 74
-          }
-        }],
-        line: 87
-      }
-    },
-    s: {
-      "0": 0,
-      "1": 0,
-      "2": 0,
-      "3": 0,
-      "4": 0,
-      "5": 0,
-      "6": 0,
-      "7": 0,
-      "8": 0,
-      "9": 0,
-      "10": 0,
-      "11": 0,
-      "12": 0,
-      "13": 0,
-      "14": 0,
-      "15": 0,
-      "16": 0,
-      "17": 0,
-      "18": 0,
-      "19": 0,
-      "20": 0,
-      "21": 0,
-      "22": 0,
-      "23": 0,
-      "24": 0,
-      "25": 0,
-      "26": 0,
-      "27": 0,
-      "28": 0,
-      "29": 0,
-      "30": 0,
-      "31": 0,
-      "32": 0,
-      "33": 0
-    },
-    f: {
-      "0": 0,
-      "1": 0,
-      "2": 0,
-      "3": 0,
-      "4": 0
-    },
-    b: {
-      "0": [0, 0],
-      "1": [0, 0],
-      "2": [0, 0],
-      "3": [0, 0],
-      "4": [0, 0],
-      "5": [0, 0],
-      "6": [0, 0],
-      "7": [0, 0],
-      "8": [0, 0],
-      "9": [0, 0],
-      "10": [0, 0],
-      "11": [0, 0],
-      "12": [0, 0]
-    },
-    _coverageSchema: "1a1c01bbd47fc00a2c39e90264f33305004495a9",
-    hash: "c43612d6e69f6fce739d0b44b523680801056011"
-  };
-  var coverage = global[gcv] || (global[gcv] = {});
-  if (!coverage[path] || coverage[path].hash !== hash) {
-    coverage[path] = coverageData;
-  }
-  var actualCoverage = coverage[path];
-  {
-    // @ts-ignore
-    cov_14c1vv3dmx = function () {
-      return actualCoverage;
-    };
-  }
-  return actualCoverage;
-}
-cov_14c1vv3dmx();
-const lib = (cov_14c1vv3dmx().s[0]++, __webpack_require__(/*! ./src/lib */ 449));
-const {
-  Environment,
-  Template
-} = (cov_14c1vv3dmx().s[1]++, __webpack_require__(/*! ./src/environment */ 2887));
-const Loader = (cov_14c1vv3dmx().s[2]++, __webpack_require__(/*! ./src/loader */ 7491));
-const loaders = (cov_14c1vv3dmx().s[3]++, __webpack_require__(/*! ./src/loaders */ 7494));
-const precompile = (cov_14c1vv3dmx().s[4]++, __webpack_require__(/*! ./src/precompile */ 6470));
-const compiler = (cov_14c1vv3dmx().s[5]++, __webpack_require__(/*! ./src/compiler */ 6933));
-const parser = (cov_14c1vv3dmx().s[6]++, __webpack_require__(/*! ./src/parser */ 999));
-const lexer = (cov_14c1vv3dmx().s[7]++, __webpack_require__(/*! ./src/lexer */ 3608));
-const runtime = (cov_14c1vv3dmx().s[8]++, __webpack_require__(/*! ./src/runtime */ 5434));
-const nodes = (cov_14c1vv3dmx().s[9]++, __webpack_require__(/*! ./src/nodes */ 8883));
-const installJinjaCompat = (cov_14c1vv3dmx().s[10]++, __webpack_require__(/*! ./src/jinja-compat */ 433));
-
-// A single instance of an environment, since this is so commonly used
-let e;
-function configure(templatesPath, opts) {
-  cov_14c1vv3dmx().f[0]++;
-  cov_14c1vv3dmx().s[11]++;
-  opts = (cov_14c1vv3dmx().b[0][0]++, opts) || (cov_14c1vv3dmx().b[0][1]++, {});
-  cov_14c1vv3dmx().s[12]++;
-  if (lib.isObject(templatesPath)) {
-    cov_14c1vv3dmx().b[1][0]++;
-    cov_14c1vv3dmx().s[13]++;
-    opts = templatesPath;
-    cov_14c1vv3dmx().s[14]++;
-    templatesPath = null;
-  } else {
-    cov_14c1vv3dmx().b[1][1]++;
-  }
-  let TemplateLoader;
-  cov_14c1vv3dmx().s[15]++;
-  if (loaders.FileSystemLoader) {
-    cov_14c1vv3dmx().b[2][0]++;
-    cov_14c1vv3dmx().s[16]++;
-    TemplateLoader = new loaders.FileSystemLoader(templatesPath, {
-      watch: opts.watch,
-      noCache: opts.noCache
-    });
-  } else {
-    cov_14c1vv3dmx().b[2][1]++;
-    cov_14c1vv3dmx().s[17]++;
-    if (loaders.WebLoader) {
-      cov_14c1vv3dmx().b[3][0]++;
-      cov_14c1vv3dmx().s[18]++;
-      TemplateLoader = new loaders.WebLoader(templatesPath, {
-        useCache: (cov_14c1vv3dmx().b[4][0]++, opts.web) && (cov_14c1vv3dmx().b[4][1]++, opts.web.useCache),
-        async: (cov_14c1vv3dmx().b[5][0]++, opts.web) && (cov_14c1vv3dmx().b[5][1]++, opts.web.async)
-      });
-    } else {
-      cov_14c1vv3dmx().b[3][1]++;
-    }
-  }
-  cov_14c1vv3dmx().s[19]++;
-  e = new Environment(TemplateLoader, opts);
-  cov_14c1vv3dmx().s[20]++;
-  if ((cov_14c1vv3dmx().b[7][0]++, opts) && (cov_14c1vv3dmx().b[7][1]++, opts.express)) {
-    cov_14c1vv3dmx().b[6][0]++;
-    cov_14c1vv3dmx().s[21]++;
-    e.express(opts.express);
-  } else {
-    cov_14c1vv3dmx().b[6][1]++;
-  }
-  cov_14c1vv3dmx().s[22]++;
-  return e;
-}
-cov_14c1vv3dmx().s[23]++;
-module.exports = {
-  Environment: Environment,
-  Template: Template,
-  Loader: Loader,
-  FileSystemLoader: loaders.FileSystemLoader,
-  NodeResolveLoader: loaders.NodeResolveLoader,
-  PrecompiledLoader: loaders.PrecompiledLoader,
-  WebLoader: loaders.WebLoader,
-  compiler: compiler,
-  parser: parser,
-  lexer: lexer,
-  runtime: runtime,
-  lib: lib,
-  nodes: nodes,
-  installJinjaCompat: installJinjaCompat,
-  configure: configure,
-  reset() {
-    cov_14c1vv3dmx().f[1]++;
-    cov_14c1vv3dmx().s[24]++;
-    e = undefined;
-  },
-  compile(src, env, path, eagerCompile, isAsync) {
-    cov_14c1vv3dmx().f[2]++;
-    cov_14c1vv3dmx().s[25]++;
-    if (!e) {
-      cov_14c1vv3dmx().b[8][0]++;
-      cov_14c1vv3dmx().s[26]++;
-      configure();
-    } else {
-      cov_14c1vv3dmx().b[8][1]++;
-    }
-    cov_14c1vv3dmx().s[27]++;
-    return new Template(src, env, path, eagerCompile, isAsync);
-  },
-  render(name, ctx, isAsync, cb) {
-    cov_14c1vv3dmx().f[3]++;
-    cov_14c1vv3dmx().s[28]++;
-    if (!e) {
-      cov_14c1vv3dmx().b[9][0]++;
-      cov_14c1vv3dmx().s[29]++;
-      configure();
-    } else {
-      cov_14c1vv3dmx().b[9][1]++;
-    }
-    cov_14c1vv3dmx().s[30]++;
-    return e.render(name, ctx, isAsync, cb);
-  },
-  renderString(src, ctx, cb) {
-    cov_14c1vv3dmx().f[4]++;
-    cov_14c1vv3dmx().s[31]++;
-    if (!e) {
-      cov_14c1vv3dmx().b[10][0]++;
-      cov_14c1vv3dmx().s[32]++;
-      configure();
-    } else {
-      cov_14c1vv3dmx().b[10][1]++;
-    }
-    cov_14c1vv3dmx().s[33]++;
-    return e.renderString(src, ctx, cb);
-  },
-  precompile: precompile ? (cov_14c1vv3dmx().b[11][0]++, precompile.precompile) : (cov_14c1vv3dmx().b[11][1]++, undefined),
-  precompileString: precompile ? (cov_14c1vv3dmx().b[12][0]++, precompile.precompileString) : (cov_14c1vv3dmx().b[12][1]++, undefined)
-};
-
-/***/ }),
-
 /***/ 6933:
 /*!**********************************!*\
   !*** ./nunjucks/src/compiler.js ***!
@@ -91507,13 +90387,130 @@ module.exports = {
 
 /***/ }),
 
-/***/ 8029:
+/***/ 5905:
+/*!***************************!*\
+  !*** ./nunjucks/index.js ***!
+  \***************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+const lib = __webpack_require__(/*! ./src/lib */ 449);
+const {Environment, Template} = __webpack_require__(/*! ./src/environment */ 2887);
+const Loader = __webpack_require__(/*! ./src/loader */ 7491);
+const loaders = __webpack_require__(/*! ./src/loaders */ 7494);
+const precompile = __webpack_require__(/*! ./src/precompile */ 6470);
+const compiler = __webpack_require__(/*! ./src/compiler */ 6933);
+const parser = __webpack_require__(/*! ./src/parser */ 999);
+const lexer = __webpack_require__(/*! ./src/lexer */ 3608);
+const runtime = __webpack_require__(/*! ./src/runtime */ 5434);
+const nodes = __webpack_require__(/*! ./src/nodes */ 8883);
+const installJinjaCompat = __webpack_require__(/*! ./src/jinja-compat */ 433);
+
+// A single instance of an environment, since this is so commonly used
+let e;
+
+function configure(templatesPath, opts) {
+  opts = opts || {};
+  if (lib.isObject(templatesPath)) {
+    opts = templatesPath;
+    templatesPath = null;
+  }
+
+  let TemplateLoader;
+  if (loaders.FileSystemLoader) {
+    TemplateLoader = new loaders.FileSystemLoader(templatesPath, {
+      watch: opts.watch,
+      noCache: opts.noCache
+    });
+  } else if (loaders.WebLoader) {
+    TemplateLoader = new loaders.WebLoader(templatesPath, {
+      useCache: opts.web && opts.web.useCache,
+      async: opts.web && opts.web.async
+    });
+  }
+
+  e = new Environment(TemplateLoader, opts);
+
+  if (opts && opts.express) {
+    e.express(opts.express);
+  }
+
+  return e;
+}
+
+module.exports = {
+  Environment: Environment,
+  Template: Template,
+  Loader: Loader,
+  FileSystemLoader: loaders.FileSystemLoader,
+  NodeResolveLoader: loaders.NodeResolveLoader,
+  PrecompiledLoader: loaders.PrecompiledLoader,
+  WebLoader: loaders.WebLoader,
+  compiler: compiler,
+  parser: parser,
+  lexer: lexer,
+  runtime: runtime,
+  lib: lib,
+  nodes: nodes,
+  installJinjaCompat: installJinjaCompat,
+  configure: configure,
+  reset() {
+    e = undefined;
+  },
+  compile(src, env, path, eagerCompile, isAsync) {
+    if (!e) {
+      configure();
+    }
+    return new Template(src, env, path, eagerCompile, isAsync);
+  },
+  render(name, ctx, isAsync, cb) {
+    if (!e) {
+      configure();
+    }
+
+    return e.render(name, ctx, isAsync, cb);
+  },
+  renderString(src, ctx, cb) {
+    if (!e) {
+      configure();
+    }
+
+    return e.renderString(src, ctx, cb);
+  },
+  precompile: (precompile) ? precompile.precompile : undefined,
+  precompileString: (precompile) ? precompile.precompileString : undefined,
+};
+
+
+/***/ }),
+
+/***/ 4841:
+/*!****************************!*\
+  !*** ./nunjucks/src/ sync ***!
+  \****************************/
+/***/ ((module) => {
+
+function webpackEmptyContext(req) {
+	var e = new Error("Cannot find module '" + req + "'");
+	e.code = 'MODULE_NOT_FOUND';
+	throw e;
+}
+webpackEmptyContext.keys = () => ([]);
+webpackEmptyContext.resolve = webpackEmptyContext;
+webpackEmptyContext.id = 4841;
+module.exports = webpackEmptyContext;
+
+/***/ }),
+
+/***/ 2119:
 /*!**********************!*\
   !*** ./tests/api.js ***!
   \**********************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   'use strict';
 
   var expect;
@@ -91522,29 +90519,37 @@ module.exports = {
   var Loader;
   var templatesPath;
   var path;
+
   if (true) {
     expect = __webpack_require__(/*! expect.js */ 1801);
-    util = __webpack_require__(/*! ./util */ 9821);
+    util = __webpack_require__(/*! ./util */ 9099);
     Environment = (__webpack_require__(/*! ../nunjucks/src/environment */ 2887).Environment);
     Loader = (__webpack_require__(/*! ../nunjucks/src/node-loaders */ 5257).FileSystemLoader);
     templatesPath = 'tests/templates';
     path = __webpack_require__(/*! path */ 7975);
   } else {}
-  describe('api', function () {
-    it('should always force compilation of parent template', function () {
+
+  describe('api', function() {
+    it('should always force compilation of parent template', function() {
       var env = new Environment(new Loader(templatesPath));
+
       var child = env.getTemplate('base-inherit.njk');
       expect(child.render()).to.be('Foo*Bar*BazFizzle');
     });
-    it('should only call the callback once when conditional import fails', function (done) {
+
+    it('should only call the callback once when conditional import fails', function(done) {
       var env = new Environment(new Loader(templatesPath));
       var called = 0;
-      env.render('broken-conditional-include.njk', function () {
-        expect(++called).to.be(1);
-      });
+      env.render('broken-conditional-include.njk',
+        function() {
+          expect(++called).to.be(1);
+        }
+      );
       setTimeout(done, 0);
     });
-    it('should handle correctly relative paths', function () {
+
+
+    it('should handle correctly relative paths', function() {
       var env;
       var child1;
       var child2;
@@ -91555,10 +90560,12 @@ module.exports = {
       env = new Environment(new Loader(templatesPath));
       child1 = env.getTemplate('relative/test1.njk');
       child2 = env.getTemplate('relative/test2.njk');
+
       expect(child1.render()).to.be('FooTest1BazFizzle');
       expect(child2.render()).to.be('FooTest2BazFizzle');
     });
-    it('should handle correctly cache for relative paths', function () {
+
+    it('should handle correctly cache for relative paths', function() {
       var env;
       var test;
       if (typeof path === 'undefined') {
@@ -91567,9 +90574,11 @@ module.exports = {
       }
       env = new Environment(new Loader(templatesPath));
       test = env.getTemplate('relative/test-cache.njk');
+
       expect(util.normEOL(test.render())).to.be('Test1\nTest2');
     });
-    it('should handle correctly relative paths in renderString', function () {
+
+    it('should handle correctly relative paths in renderString', function() {
       var env;
       if (typeof path === 'undefined') {
         this.skip();
@@ -91580,52 +90589,55 @@ module.exports = {
         path: path.resolve(templatesPath, 'string.njk')
       })).to.be('FooTest3BazFizzle');
     });
-    it('should emit "load" event on Environment instance', function (done) {
+
+    it('should emit "load" event on Environment instance', function(done) {
       var env = new Environment(new Loader(templatesPath));
-      env.on('load', function (name, source) {
+      env.on('load', function(name, source) {
         expect(name).to.equal('item.njk');
         done();
       });
       env.render('item.njk', {});
     });
   });
-})();
+}());
+
 
 /***/ }),
 
-/***/ 2582:
+/***/ 9696:
 /*!********************************!*\
   !*** ./tests/browser/index.js ***!
   \********************************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
 // Include the necessary test files
-__webpack_require__(/*! ../util.js */ 9821);
-__webpack_require__(/*! ../api.js */ 8029);
-__webpack_require__(/*! ../lexer.js */ 7031);
-__webpack_require__(/*! ../loader.js */ 1594);
-__webpack_require__(/*! ../parser.js */ 9922);
-__webpack_require__(/*! ../compiler.js */ 3564);
-__webpack_require__(/*! ../runtime.js */ 2313);
-__webpack_require__(/*! ../filters.js */ 7274);
-__webpack_require__(/*! ../globals.js */ 9417);
-__webpack_require__(/*! ../jinja-compat.js */ 2848);
-__webpack_require__(/*! ../tests.js */ 1092);
+__webpack_require__(/*! ../util.js */ 9099);
+__webpack_require__(/*! ../api.js */ 2119);
+__webpack_require__(/*! ../lexer.js */ 7501);
+__webpack_require__(/*! ../loader.js */ 2720);
+__webpack_require__(/*! ../parser.js */ 6124);
+__webpack_require__(/*! ../compiler.js */ 8630);
+__webpack_require__(/*! ../runtime.js */ 9739);
+__webpack_require__(/*! ../filters.js */ 7488);
+__webpack_require__(/*! ../globals.js */ 6571);
+__webpack_require__(/*! ../jinja-compat.js */ 1922);
+__webpack_require__(/*! ../tests.js */ 6438);
 
 // Set up the test environment
 nunjucks.testing = true;
 mocha.checkLeaks();
 mocha.run();
 
+
 /***/ }),
 
-/***/ 3564:
+/***/ 8630:
 /*!***************************!*\
   !*** ./tests/compiler.js ***!
   \***************************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   'use strict';
 
   var expect;
@@ -91638,67 +90650,95 @@ mocha.run();
   var equal;
   var finish;
   var isSlim;
+
   if (true) {
     expect = __webpack_require__(/*! expect.js */ 1801);
-    util = __webpack_require__(/*! ./util */ 9821);
+    util = __webpack_require__(/*! ./util */ 9099);
     Template = (__webpack_require__(/*! ../nunjucks/src/environment */ 2887).Template);
     Environment = (__webpack_require__(/*! ../nunjucks/src/environment */ 2887).Environment);
     fs = __webpack_require__(/*! fs */ 2564);
   } else {}
+
   render = util.render;
   equal = util.equal;
   finish = util.finish;
   isSlim = util.isSlim;
   Loader = util.Loader;
-  describe('compiler', function () {
-    it('should compile templates', function (done) {
+
+  describe('compiler', function() {
+    it('should compile templates', function(done) {
       equal('Hello world', 'Hello world');
-      equal('Hello world, {{ name }}', {
-        name: 'James'
-      }, 'Hello world, James');
-      equal('Hello world, {{name}}{{suffix}}, how are you', {
-        name: 'James',
-        suffix: ' Long'
-      }, 'Hello world, James Long, how are you');
+      equal('Hello world, {{ name }}',
+        {
+          name: 'James'
+        },
+        'Hello world, James');
+
+      equal('Hello world, {{name}}{{suffix}}, how are you',
+        {
+          name: 'James',
+          suffix: ' Long'
+        },
+        'Hello world, James Long, how are you');
+
       finish(done);
     });
-    it('should escape newlines', function (done) {
+
+    it('should escape newlines', function(done) {
       equal('foo\\nbar', 'foo\\nbar');
       finish(done);
     });
-    it('should escape Unicode line seperators', function (done) {
+
+    it('should escape Unicode line seperators', function(done) {
       equal('\u2028', '\u2028');
       finish(done);
     });
-    it('should compile references', function (done) {
-      equal('{{ foo.bar }}', {
-        foo: {
-          bar: 'baz'
-        }
-      }, 'baz');
-      equal('{{ foo["bar"] }}', {
-        foo: {
-          bar: 'baz'
-        }
-      }, 'baz');
+
+    it('should compile references', function(done) {
+      equal('{{ foo.bar }}',
+        {
+          foo: {
+            bar: 'baz'
+          }
+        },
+        'baz');
+
+      equal('{{ foo["bar"] }}',
+        {
+          foo: {
+            bar: 'baz'
+          }
+        },
+        'baz');
+
       finish(done);
     });
-    it('should compile references - object without prototype', function (done) {
+
+    it('should compile references - object without prototype', function(done) {
       var context = Object.create(null);
       context.foo = Object.create(null);
       context.foo.bar = 'baz';
-      equal('{{ foo.bar }}', context, 'baz');
-      equal('{{ foo["bar"] }}', context, 'baz');
+
+      equal('{{ foo.bar }}',
+        context,
+        'baz');
+
+      equal('{{ foo["bar"] }}',
+        context,
+        'baz');
+
       finish(done);
     });
-    it('should fail silently on undefined values', function (done) {
+
+    it('should fail silently on undefined values', function(done) {
       equal('{{ foo }}', '');
       equal('{{ foo.bar }}', '');
       equal('{{ foo.bar.baz }}', '');
       equal('{{ foo.bar.baz["biz"].mumble }}', '');
       finish(done);
     });
-    it('should not treat falsy values the same as undefined', function (done) {
+
+    it('should not treat falsy values the same as undefined', function(done) {
       equal('{{ foo }}', {
         foo: 0
       }, '0');
@@ -91707,38 +90747,47 @@ mocha.run();
       }, 'false');
       finish(done);
     });
-    it('should display none as empty string', function (done) {
+
+    it('should display none as empty string', function(done) {
       equal('{{ none }}', '');
       finish(done);
     });
-    it('should compile none as falsy', function (done) {
+
+    it('should compile none as falsy', function(done) {
       equal('{% if not none %}yes{% endif %}', 'yes');
       finish(done);
     });
-    it('should compile none as null, not undefined', function (done) {
+
+    it('should compile none as null, not undefined', function(done) {
       equal('{{ none|default("d", false) }}', '');
       finish(done);
     });
-    it('should compile function calls', function (done) {
-      equal('{{ foo("msg") }}', {
-        foo: function (str) {
-          return str + 'hi';
-        }
-      }, 'msghi');
+
+    it('should compile function calls', function(done) {
+      equal('{{ foo("msg") }}',
+        {
+          foo: function(str) {
+            return str + 'hi';
+          }
+        },
+        'msghi');
       finish(done);
     });
-    it('should compile function calls with correct scope', function (done) {
+
+    it('should compile function calls with correct scope', function(done) {
       equal('{{ foo.bar() }}', {
         foo: {
-          bar: function () {
+          bar: function() {
             return this.baz;
           },
           baz: 'hello'
         }
       }, 'hello');
+
       finish(done);
     });
-    it('should compile switch statements', function () {
+
+    it('should compile switch statements', function() {
       // standard switches
       var tpl1 = '{% switch foo %}{% case "bar" %}BAR{% case "baz" %}BAZ{% default %}NEITHER FOO NOR BAR{% endswitch %}';
       // test no-default switches
@@ -91760,364 +90809,536 @@ mocha.run();
         foo: 'baz'
       }, 'BAR');
     });
-    it('should compile if blocks', function (done) {
-      var tmpl = 'Give me some {% if hungry %}pizza' + '{% else %}water{% endif %}';
+
+    it('should compile if blocks', function(done) {
+      var tmpl = ('Give me some {% if hungry %}pizza' +
+        '{% else %}water{% endif %}');
+
       equal(tmpl, {
         hungry: true
       }, 'Give me some pizza');
       equal(tmpl, {
         hungry: false
       }, 'Give me some water');
-      equal('{% if not hungry %}good{% endif %}', {
-        hungry: false
-      }, 'good');
-      equal('{% if hungry and like_pizza %}good{% endif %}', {
-        hungry: true,
-        like_pizza: true
-      }, 'good');
-      equal('{% if hungry or like_pizza %}good{% endif %}', {
-        hungry: false,
-        like_pizza: true
-      }, 'good');
-      equal('{% if (hungry or like_pizza) and anchovies %}good{% endif %}', {
-        hungry: false,
-        like_pizza: true,
-        anchovies: true
-      }, 'good');
-      equal('{% if food == "pizza" %}pizza{% endif %}' + '{% if food =="beer" %}beer{% endif %}', {
-        food: 'beer'
-      }, 'beer');
-      equal('{% if "pizza" in food %}yum{% endif %}', {
-        food: {
+      equal('{% if not hungry %}good{% endif %}',
+        {
+          hungry: false
+        },
+        'good');
+
+      equal('{% if hungry and like_pizza %}good{% endif %}',
+        {
+          hungry: true,
+          like_pizza: true
+        },
+        'good');
+
+      equal('{% if hungry or like_pizza %}good{% endif %}',
+        {
+          hungry: false,
+          like_pizza: true
+        },
+        'good');
+
+      equal('{% if (hungry or like_pizza) and anchovies %}good{% endif %}',
+        {
+          hungry: false,
+          like_pizza: true,
+          anchovies: true
+        },
+        'good');
+
+      equal(
+        '{% if food == "pizza" %}pizza{% endif %}' +
+        '{% if food =="beer" %}beer{% endif %}',
+        {
+          food: 'beer'
+        },
+        'beer');
+
+      equal('{% if "pizza" in food %}yum{% endif %}',
+        {
+          food: {
+            pizza: true
+          }
+        },
+        'yum');
+
+      equal('{% if pizza %}yum{% elif anchovies %}yuck{% endif %}',
+        {
           pizza: true
-        }
-      }, 'yum');
-      equal('{% if pizza %}yum{% elif anchovies %}yuck{% endif %}', {
-        pizza: true
-      }, 'yum');
-      equal('{% if pizza %}yum{% elseif anchovies %}yuck{% endif %}', {
-        pizza: true
-      }, 'yum');
-      equal('{% if pizza %}yum{% elif anchovies %}yuck{% endif %}', {
-        anchovies: true
-      }, 'yuck');
-      equal('{% if pizza %}yum{% elseif anchovies %}yuck{% endif %}', {
-        anchovies: true
-      }, 'yuck');
-      equal('{% if topping == "pepperoni" %}yum{% elseif topping == "anchovies" %}' + 'yuck{% else %}hmmm{% endif %}', {
-        topping: 'sausage'
-      }, 'hmmm');
+        },
+        'yum');
+
+      equal('{% if pizza %}yum{% elseif anchovies %}yuck{% endif %}',
+        {
+          pizza: true
+        },
+        'yum');
+
+      equal('{% if pizza %}yum{% elif anchovies %}yuck{% endif %}',
+        {
+          anchovies: true
+        },
+        'yuck');
+
+      equal('{% if pizza %}yum{% elseif anchovies %}yuck{% endif %}',
+        {
+          anchovies: true
+        },
+        'yuck');
+
+      equal(
+        '{% if topping == "pepperoni" %}yum{% elseif topping == "anchovies" %}' +
+        'yuck{% else %}hmmm{% endif %}',
+        {
+          topping: 'sausage'
+        },
+        'hmmm');
+
       finish(done);
     });
-    it('should compile the ternary operator', function (done) {
+
+    it('should compile the ternary operator', function(done) {
       equal('{{ "foo" if bar else "baz" }}', 'baz');
       equal('{{ "foo" if bar else "baz" }}', {
         bar: true
       }, 'foo');
+
       finish(done);
     });
-    it('should compile inline conditionals', function (done) {
+
+    it('should compile inline conditionals', function(done) {
       var tmpl = 'Give me some {{ "pizza" if hungry else "water" }}';
+
       equal(tmpl, {
         hungry: true
       }, 'Give me some pizza');
       equal(tmpl, {
         hungry: false
       }, 'Give me some water');
-      equal('{{ "good" if not hungry }}', {
-        hungry: false
-      }, 'good');
-      equal('{{ "good" if hungry and like_pizza }}', {
-        hungry: true,
-        like_pizza: true
-      }, 'good');
-      equal('{{ "good" if hungry or like_pizza }}', {
-        hungry: false,
-        like_pizza: true
-      }, 'good');
-      equal('{{ "good" if (hungry or like_pizza) and anchovies }}', {
-        hungry: false,
-        like_pizza: true,
-        anchovies: true
-      }, 'good');
-      equal('{{ "pizza" if food == "pizza" }}' + '{{ "beer" if food == "beer" }}', {
-        food: 'beer'
-      }, 'beer');
+      equal('{{ "good" if not hungry }}',
+        {
+          hungry: false
+        }, 'good');
+      equal('{{ "good" if hungry and like_pizza }}',
+        {
+          hungry: true,
+          like_pizza: true
+        }, 'good');
+      equal('{{ "good" if hungry or like_pizza }}',
+        {
+          hungry: false,
+          like_pizza: true
+        }, 'good');
+      equal('{{ "good" if (hungry or like_pizza) and anchovies }}',
+        {
+          hungry: false,
+          like_pizza: true,
+          anchovies: true
+        }, 'good');
+      equal(
+        '{{ "pizza" if food == "pizza" }}' +
+        '{{ "beer" if food == "beer" }}',
+        {
+          food: 'beer'
+        }, 'beer');
+
       finish(done);
     });
+
     function runLoopTests(block) {
       var end = {
         asyncAll: 'endall',
         asyncEach: 'endeach',
         for: 'endfor'
       }[block];
-      describe('the ' + block + ' tag', function () {
-        it('should loop over simple arrays', function () {
-          equal('{% ' + block + ' i in arr %}{{ i }}{% ' + end + ' %}', {
-            arr: [1, 2, 3, 4, 5]
-          }, '12345');
+
+      describe('the ' + block + ' tag', function() {
+        it('should loop over simple arrays', function() {
+          equal(
+            '{% ' + block + ' i in arr %}{{ i }}{% ' + end + ' %}',
+            { arr: [1, 2, 3, 4, 5] },
+            '12345');
         });
-        it('should loop normally with an {% else %} tag and non-empty array', function () {
-          equal('{% ' + block + ' i in arr %}{{ i }}{% else %}empty{% ' + end + ' %}', {
-            arr: [1, 2, 3, 4, 5]
-          }, '12345');
+        it('should loop normally with an {% else %} tag and non-empty array', function() {
+          equal(
+            '{% ' + block + ' i in arr %}{{ i }}{% else %}empty{% ' + end + ' %}',
+            { arr: [1, 2, 3, 4, 5] },
+            '12345');
         });
-        it('should execute the {% else %} block when looping over an empty array', function () {
-          equal('{% ' + block + ' i in arr %}{{ i }}{% else %}empty{% ' + end + ' %}', {
-            arr: []
-          }, 'empty');
+        it('should execute the {% else %} block when looping over an empty array', function() {
+          equal(
+            '{% ' + block + ' i in arr %}{{ i }}{% else %}empty{% ' + end + ' %}',
+            { arr: [] },
+            'empty');
         });
-        it('should support destructured looping', function () {
-          equal('{% ' + block + ' a, b, c in arr %}' + '{{ a }},{{ b }},{{ c }}.{% ' + end + ' %}', {
-            arr: [['x', 'y', 'z'], ['1', '2', '3']]
-          }, 'x,y,z.1,2,3.');
+        it('should support destructured looping', function() {
+          equal(
+            '{% ' + block + ' a, b, c in arr %}' +
+            '{{ a }},{{ b }},{{ c }}.{% ' + end + ' %}',
+            { arr: [['x', 'y', 'z'], ['1', '2', '3']] },
+            'x,y,z.1,2,3.');
         });
-        it('should do loop over key-values of a literal in-template Object', function () {
-          equal('{% ' + block + ' k, v in { one: 1, two: 2 } %}' + '-{{ k }}:{{ v }}-{% ' + end + ' %}', '-one:1--two:2-');
+        it('should do loop over key-values of a literal in-template Object', function() {
+          equal(
+            '{% ' + block + ' k, v in { one: 1, two: 2 } %}' +
+            '-{{ k }}:{{ v }}-{% ' + end + ' %}', '-one:1--two:2-');
         });
-        it('should support loop.index', function () {
+        it('should support loop.index', function() {
           equal('{% ' + block + ' i in [7,3,6] %}{{ loop.index }}{% ' + end + ' %}', '123');
         });
-        it('should support loop.index0', function () {
+        it('should support loop.index0', function() {
           equal('{% ' + block + ' i in [7,3,6] %}{{ loop.index0 }}{% ' + end + ' %}', '012');
         });
-        it('should support loop.revindex', function () {
+        it('should support loop.revindex', function() {
           equal('{% ' + block + ' i in [7,3,6] %}{{ loop.revindex }}{% ' + end + ' %}', '321');
         });
-        it('should support loop.revindex0', function () {
+        it('should support loop.revindex0', function() {
           equal('{% ' + block + ' i in [7,3,6] %}{{ loop.revindex0 }}{% ' + end + ' %}', '210');
         });
-        it('should support loop.first', function () {
-          equal('{% ' + block + ' i in [7,3,6] %}' + '{% if loop.first %}{{ i }}{% endif %}' + '{% ' + end + ' %}', '7');
+        it('should support loop.first', function() {
+          equal(
+            '{% ' + block + ' i in [7,3,6] %}' +
+            '{% if loop.first %}{{ i }}{% endif %}' +
+            '{% ' + end + ' %}',
+            '7');
         });
-        it('should support loop.last', function () {
-          equal('{% ' + block + ' i in [7,3,6] %}' + '{% if loop.last %}{{ i }}{% endif %}' + '{% ' + end + ' %}', '6');
+        it('should support loop.last', function() {
+          equal(
+            '{% ' + block + ' i in [7,3,6] %}' +
+            '{% if loop.last %}{{ i }}{% endif %}' +
+            '{% ' + end + ' %}',
+            '6');
         });
-        it('should support loop.length', function () {
+        it('should support loop.length', function() {
           equal('{% ' + block + ' i in [7,3,6] %}{{ loop.length }}{% ' + end + ' %}', '333');
         });
-        it('should fail silently when looping over an undefined variable', function () {
+        it('should fail silently when looping over an undefined variable', function() {
           equal('{% ' + block + ' i in foo %}{{ i }}{% ' + end + ' %}', '');
         });
-        it('should fail silently when looping over an undefined property', function () {
-          equal('{% ' + block + ' i in foo.bar %}{{ i }}{% ' + end + ' %}', {
-            foo: {}
-          }, '');
+        it('should fail silently when looping over an undefined property', function() {
+          equal(
+            '{% ' + block + ' i in foo.bar %}{{ i }}{% ' + end + ' %}',
+            { foo: {} },
+            '');
         });
         // TODO: this behavior differs from jinja2
-        it('should fail silently when looping over a null variable', function () {
-          equal('{% ' + block + ' i in foo %}{{ i }}{% ' + end + ' %}', {
-            foo: null
-          }, '');
+        it('should fail silently when looping over a null variable', function() {
+          equal(
+            '{% ' + block + ' i in foo %}{{ i }}{% ' + end + ' %}',
+            { foo: null },
+            '');
         });
-        it('should loop over two-dimensional arrays', function () {
-          equal('{% ' + block + ' x, y in points %}[{{ x }},{{ y }}]{% ' + end + ' %}', {
-            points: [[1, 2], [3, 4], [5, 6]]
-          }, '[1,2][3,4][5,6]');
+        it('should loop over two-dimensional arrays', function() {
+          equal('{% ' + block + ' x, y in points %}[{{ x }},{{ y }}]{% ' + end + ' %}',
+            { points: [[1, 2], [3, 4], [5, 6]] },
+            '[1,2][3,4][5,6]');
         });
-        it('should loop over four-dimensional arrays', function () {
-          equal('{% ' + block + ' a, b, c, d in arr %}[{{ a }},{{ b }},{{ c }},{{ d }}]{% ' + end + '%}', {
-            arr: [[1, 2, 3, 4], [5, 6, 7, 8]]
-          }, '[1,2,3,4][5,6,7,8]');
+        it('should loop over four-dimensional arrays', function() {
+          equal(
+            '{% ' + block + ' a, b, c, d in arr %}[{{ a }},{{ b }},{{ c }},{{ d }}]{% ' + end + '%}',
+            { arr: [[1, 2, 3, 4], [5, 6, 7, 8]] },
+            '[1,2,3,4][5,6,7,8]');
         });
-        it('should support loop.index with two-dimensional loops', function () {
-          equal('{% ' + block + ' x, y in points %}{{ loop.index }}{% ' + end + ' %}', {
-            points: [[1, 2], [3, 4], [5, 6]]
-          }, '123');
+        it('should support loop.index with two-dimensional loops', function() {
+          equal('{% ' + block + ' x, y in points %}{{ loop.index }}{% ' + end + ' %}',
+            {
+              points: [[1, 2], [3, 4], [5, 6]]
+            },
+            '123');
         });
-        it('should support loop.revindex with two-dimensional loops', function () {
-          equal('{% ' + block + ' x, y in points %}{{ loop.revindex }}{% ' + end + ' %}', {
-            points: [[1, 2], [3, 4], [5, 6]]
-          }, '321');
+        it('should support loop.revindex with two-dimensional loops', function() {
+          equal('{% ' + block + ' x, y in points %}{{ loop.revindex }}{% ' + end + ' %}',
+            {
+              points: [[1, 2], [3, 4], [5, 6]]
+            },
+            '321');
         });
-        it('should support key-value looping over an Object variable', function () {
-          equal('{% ' + block + ' k, v in items %}({{ k }},{{ v }}){% ' + end + ' %}', {
-            items: {
-              foo: 1,
-              bar: 2
-            }
-          }, '(foo,1)(bar,2)');
+        it('should support key-value looping over an Object variable', function() {
+          equal('{% ' + block + ' k, v in items %}({{ k }},{{ v }}){% ' + end + ' %}',
+            {
+              items: {
+                foo: 1,
+                bar: 2
+              }
+            },
+            '(foo,1)(bar,2)');
         });
-        it('should support loop.index when looping over an Object\'s key-value pairs', function () {
-          equal('{% ' + block + ' k, v in items %}{{ loop.index }}{% ' + end + ' %}', {
-            items: {
-              foo: 1,
-              bar: 2
-            }
-          }, '12');
+        it('should support loop.index when looping over an Object\'s key-value pairs', function() {
+          equal('{% ' + block + ' k, v in items %}{{ loop.index }}{% ' + end + ' %}',
+            {
+              items: {
+                foo: 1,
+                bar: 2
+              }
+            },
+            '12');
         });
-        it('should support loop.revindex when looping over an Object\'s key-value pairs', function () {
-          equal('{% ' + block + ' k, v in items %}{{ loop.revindex }}{% ' + end + ' %}', {
-            items: {
-              foo: 1,
-              bar: 2
-            }
-          }, '21');
+        it('should support loop.revindex when looping over an Object\'s key-value pairs', function() {
+          equal('{% ' + block + ' k, v in items %}{{ loop.revindex }}{% ' + end + ' %}',
+            {
+              items: {
+                foo: 1,
+                bar: 2
+              }
+            },
+            '21');
         });
-        it('should support loop.length when looping over an Object\'s key-value pairs', function () {
-          equal('{% ' + block + ' k, v in items %}{{ loop.length }}{% ' + end + ' %}', {
-            items: {
-              foo: 1,
-              bar: 2
-            }
-          }, '22');
+        it('should support loop.length when looping over an Object\'s key-value pairs', function() {
+          equal('{% ' + block + ' k, v in items %}{{ loop.length }}{% ' + end + ' %}',
+            {
+              items: {
+                foo: 1,
+                bar: 2
+              }
+            },
+            '22');
         });
-        it('should support include tags in the body of the loop', function () {
-          equal('{% ' + block + ' item, v in items %}{% include "item.njk" %}{% ' + end + ' %}', {
-            items: {
-              foo: 1,
-              bar: 2
-            }
-          }, 'showing fooshowing bar');
+        it('should support include tags in the body of the loop', function() {
+          equal('{% ' + block + ' item, v in items %}{% include "item.njk" %}{% ' + end + ' %}',
+            {
+              items: {
+                foo: 1,
+                bar: 2
+              }
+            },
+            'showing fooshowing bar');
         });
-        it('should work with {% set %} and {% include %} tags', function () {
-          equal('{% set item = passed_var %}' + '{% include "item.njk" %}\n' + '{% ' + block + ' i in passed_iter %}' + '{% set item = i %}' + '{% include "item.njk" %}\n' + '{% ' + end + ' %}', {
-            passed_var: 'test',
-            passed_iter: ['1', '2', '3']
-          }, 'showing test\nshowing 1\nshowing 2\nshowing 3\n');
+        it('should work with {% set %} and {% include %} tags', function() {
+          equal(
+            '{% set item = passed_var %}' +
+            '{% include "item.njk" %}\n' +
+            '{% ' + block + ' i in passed_iter %}' +
+            '{% set item = i %}' +
+            '{% include "item.njk" %}\n' +
+            '{% ' + end + ' %}',
+            {
+              passed_var: 'test',
+              passed_iter: ['1', '2', '3']
+            },
+            'showing test\nshowing 1\nshowing 2\nshowing 3\n');
         });
         /* global Set */
-        it('should work with Set builtin', function () {
+        it('should work with Set builtin', function() {
           if (typeof Set === 'undefined') {
             this.skip();
           } else {
-            equal('{% ' + block + ' i in set %}{{ i }}{% ' + end + ' %}', {
-              set: new Set([1, 2, 3, 4, 5])
-            }, '12345');
-            equal('{% ' + block + ' i in set %}{{ i }}{% else %}empty{% ' + end + ' %}', {
-              set: new Set([1, 2, 3, 4, 5])
-            }, '12345');
-            equal('{% ' + block + ' i in set %}{{ i }}{% else %}empty{% ' + end + ' %}', {
-              set: new Set()
-            }, 'empty');
+            equal('{% ' + block + ' i in set %}{{ i }}{% ' + end + ' %}',
+              { set: new Set([1, 2, 3, 4, 5]) },
+              '12345');
+
+            equal('{% ' + block + ' i in set %}{{ i }}{% else %}empty{% ' + end + ' %}',
+              { set: new Set([1, 2, 3, 4, 5]) },
+              '12345');
+
+            equal('{% ' + block + ' i in set %}{{ i }}{% else %}empty{% ' + end + ' %}',
+              { set: new Set() },
+              'empty');
           }
         });
         /* global Map */
-        it('should work with Map builtin', function () {
+        it('should work with Map builtin', function() {
           if (typeof Map === 'undefined') {
             this.skip();
           } else {
-            equal('{% ' + block + ' k, v in map %}[{{ k }},{{ v }}]{% ' + end + ' %}', {
-              map: new Map([[1, 2], [3, 4], [5, 6]])
-            }, '[1,2][3,4][5,6]');
-            equal('{% ' + block + ' k, v in map %}[{{ k }},{{ v }}]{% else %}empty{% ' + end + ' %}', {
-              map: new Map([[1, 2], [3, 4], [5, 6]])
-            }, '[1,2][3,4][5,6]');
-            equal('{% ' + block + ' k, v in map %}[{{ k }},{{ v }}]{% else %}empty{% ' + end + ' %}', {
-              map: new Map()
-            }, 'empty');
+            equal('{% ' + block + ' k, v in map %}[{{ k }},{{ v }}]{% ' + end + ' %}',
+              { map: new Map([[1, 2], [3, 4], [5, 6]]) },
+              '[1,2][3,4][5,6]');
+
+            equal('{% ' + block + ' k, v in map %}[{{ k }},{{ v }}]{% else %}empty{% ' + end + ' %}',
+              { map: new Map([[1, 2], [3, 4], [5, 6]]) },
+              '[1,2][3,4][5,6]');
+
+            equal('{% ' + block + ' k, v in map %}[{{ k }},{{ v }}]{% else %}empty{% ' + end + ' %}',
+              { map: new Map() },
+              'empty');
           }
         });
       });
     }
+
     runLoopTests('for');
     runLoopTests('asyncEach');
     runLoopTests('asyncAll');
-    it('should allow overriding var with none inside nested scope', function (done) {
-      equal('{% set var = "foo" %}' + '{% for i in [1] %}{% set var = none %}{{ var }}{% endfor %}', '');
+
+    it('should allow overriding var with none inside nested scope', function(done) {
+      equal(
+        '{% set var = "foo" %}' +
+        '{% for i in [1] %}{% set var = none %}{{ var }}{% endfor %}',
+        '');
+
       finish(done);
     });
-    it('should compile async control', function (done) {
+
+    it('should compile async control', function(done) {
       var opts;
       if (!fs) {
         this.skip();
       } else {
         opts = {
           asyncFilters: {
-            getContents: function (tmpl, cb) {
+            getContents: function(tmpl, cb) {
               fs.readFile(tmpl, cb);
             },
-            getContentsArr: function (arr, cb) {
-              fs.readFile(arr[0], function (err, res) {
+
+            getContentsArr: function(arr, cb) {
+              fs.readFile(arr[0], function(err, res) {
                 cb(err, [res]);
               });
             }
           }
         };
-        render('{{ tmpl | getContents }}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('somecontenthere');
-        });
-        render('{% if tmpl %}{{ tmpl | getContents }}{% endif %}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('somecontenthere');
-        });
-        render('{% if tmpl | getContents %}yes{% endif %}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('yes');
-        });
-        render('{% for t in [tmpl, tmpl] %}{{ t | getContents }}*{% endfor %}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('somecontenthere*somecontenthere*');
-        });
-        render('{% for t in [tmpl, tmpl] | getContentsArr %}{{ t }}{% endfor %}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('somecontenthere');
-        });
-        render('{% if test %}{{ tmpl | getContents }}{% endif %}oof', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('oof');
-        });
-        render('{% if tmpl %}' + '{% for i in [0, 1] %}{{ tmpl | getContents }}*{% endfor %}' + '{% endif %}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('somecontenthere*somecontenthere*');
-        });
-        render('{% block content %}{{ tmpl | getContents }}{% endblock %}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('somecontenthere');
-        });
-        render('{% block content %}hello{% endblock %} {{ tmpl | getContents }}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('hello somecontenthere');
-        });
-        render('{% block content %}{% set foo = tmpl | getContents %}{{ foo }}{% endblock %}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('somecontenthere');
-        });
-        render('{% block content %}{% include "async.njk" %}{% endblock %}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('somecontenthere\n');
-        });
-        render('{% asyncEach i in [0, 1] %}{% include "async.njk" %}{% endeach %}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('somecontenthere\nsomecontenthere\n');
-        });
-        render('{% asyncAll i in [0, 1, 2, 3, 4] %}-{{ i }}:{% include "async.njk" %}-{% endall %}', {
-          tmpl: 'tests/templates/for-async-content.njk'
-        }, opts, function (err, res) {
-          expect(res).to.be('-0:somecontenthere\n-' + '-1:somecontenthere\n-' + '-2:somecontenthere\n-' + '-3:somecontenthere\n-' + '-4:somecontenthere\n-');
-        });
+
+        render('{{ tmpl | getContents }}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('somecontenthere');
+          });
+
+        render('{% if tmpl %}{{ tmpl | getContents }}{% endif %}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('somecontenthere');
+          });
+
+        render('{% if tmpl | getContents %}yes{% endif %}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('yes');
+          });
+
+        render('{% for t in [tmpl, tmpl] %}{{ t | getContents }}*{% endfor %}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('somecontenthere*somecontenthere*');
+          });
+
+        render('{% for t in [tmpl, tmpl] | getContentsArr %}{{ t }}{% endfor %}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('somecontenthere');
+          });
+
+        render('{% if test %}{{ tmpl | getContents }}{% endif %}oof',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('oof');
+          });
+
+        render(
+          '{% if tmpl %}' +
+          '{% for i in [0, 1] %}{{ tmpl | getContents }}*{% endfor %}' +
+          '{% endif %}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('somecontenthere*somecontenthere*');
+          });
+
+        render('{% block content %}{{ tmpl | getContents }}{% endblock %}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('somecontenthere');
+          });
+
+        render('{% block content %}hello{% endblock %} {{ tmpl | getContents }}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('hello somecontenthere');
+          });
+
+        render('{% block content %}{% set foo = tmpl | getContents %}{{ foo }}{% endblock %}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('somecontenthere');
+          });
+
+        render('{% block content %}{% include "async.njk" %}{% endblock %}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('somecontenthere\n');
+          });
+
+        render('{% asyncEach i in [0, 1] %}{% include "async.njk" %}{% endeach %}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('somecontenthere\nsomecontenthere\n');
+          });
+
+        render('{% asyncAll i in [0, 1, 2, 3, 4] %}-{{ i }}:{% include "async.njk" %}-{% endall %}',
+          {
+            tmpl: 'tests/templates/for-async-content.njk'
+          },
+          opts,
+          function(err, res) {
+            expect(res).to.be('-0:somecontenthere\n-' +
+              '-1:somecontenthere\n-' +
+              '-2:somecontenthere\n-' +
+              '-3:somecontenthere\n-' +
+              '-4:somecontenthere\n-');
+          });
       }
+
       finish(done);
     });
-    it('should compile basic arithmetic operators', function () {
+
+    it('should compile basic arithmetic operators', function() {
       equal('{{ 3 + 4 - 5 * 6 / 10 }}', '4');
     });
-    it('should compile the exponentiation (**) operator', function () {
+
+    it('should compile the exponentiation (**) operator', function() {
       equal('{{ 4**5 }}', '1024');
     });
-    it('should compile the integer division (//) operator', function () {
+
+    it('should compile the integer division (//) operator', function() {
       equal('{{ 9//5 }}', '1');
     });
-    it('should compile the modulus operator', function () {
+
+    it('should compile the modulus operator', function() {
       equal('{{ 9%5 }}', '4');
     });
-    it('should compile numeric negation operator', function () {
+
+    it('should compile numeric negation operator', function() {
       equal('{{ -5 }}', '-5');
     });
-    it('should compile comparison operators', function () {
+
+    it('should compile comparison operators', function() {
       equal('{% if 3 < 4 %}yes{% endif %}', 'yes');
       equal('{% if 3 > 4 %}yes{% endif %}', '');
       equal('{% if 9 >= 10 %}yes{% endif %}', '');
@@ -92125,534 +91346,1060 @@ mocha.run();
       equal('{% if 9 <= 10 %}yes{% endif %}', 'yes');
       equal('{% if 10 <= 10 %}yes{% endif %}', 'yes');
       equal('{% if 11 <= 10 %}yes{% endif %}', '');
+
       equal('{% if 10 != 10 %}yes{% endif %}', '');
       equal('{% if 10 == 10 %}yes{% endif %}', 'yes');
+
       equal('{% if "0" == 0 %}yes{% endif %}', 'yes');
       equal('{% if "0" === 0 %}yes{% endif %}', '');
       equal('{% if "0" !== 0 %}yes{% endif %}', 'yes');
       equal('{% if 0 == false %}yes{% endif %}', 'yes');
       equal('{% if 0 === false %}yes{% endif %}', '');
-      equal('{% if foo(20) > bar %}yes{% endif %}', {
-        foo: function (n) {
-          return n - 1;
+
+      equal('{% if foo(20) > bar %}yes{% endif %}',
+        {
+          foo: function(n) {
+            return n - 1;
+          },
+          bar: 15
         },
-        bar: 15
-      }, 'yes');
+        'yes');
     });
-    it('should compile python-style ternary operators', function () {
+
+    it('should compile python-style ternary operators', function() {
       equal('{{ "yes" if 1 is odd else "no"  }}', 'yes');
       equal('{{ "yes" if 2 is even else "no"  }}', 'yes');
       equal('{{ "yes" if 2 is odd else "no"  }}', 'no');
       equal('{{ "yes" if 1 is even else "no"  }}', 'no');
     });
-    it('should compile the "in" operator for Arrays', function () {
+
+    it('should compile the "in" operator for Arrays', function() {
       equal('{% if 1 in [1, 2] %}yes{% endif %}', 'yes');
       equal('{% if 1 in [2, 3] %}yes{% endif %}', '');
       equal('{% if 1 not in [1, 2] %}yes{% endif %}', '');
       equal('{% if 1 not in [2, 3] %}yes{% endif %}', 'yes');
-      equal('{% if "a" in vals %}yes{% endif %}', {
-        vals: ['a', 'b']
-      }, 'yes');
+      equal('{% if "a" in vals %}yes{% endif %}',
+        { vals: ['a', 'b'] },
+        'yes');
     });
-    it('should compile the "in" operator for objects', function () {
-      equal('{% if "a" in obj %}yes{% endif %}', {
-        obj: {
-          a: true
-        }
-      }, 'yes');
-      equal('{% if "a" in obj %}yes{% endif %}', {
-        obj: {
-          b: true
-        }
-      }, '');
+
+    it('should compile the "in" operator for objects', function() {
+      equal('{% if "a" in obj %}yes{% endif %}',
+        { obj: { a: true } },
+        'yes');
+      equal('{% if "a" in obj %}yes{% endif %}',
+        { obj: { b: true } },
+        '');
     });
-    it('should compile the "in" operator for strings', function () {
+
+    it('should compile the "in" operator for strings', function() {
       equal('{% if "foo" in "foobar" %}yes{% endif %}', 'yes');
     });
-    it('should throw an error when using the "in" operator on unexpected types', function (done) {
-      render('{% if "a" in 1 %}yes{% endif %}', {}, {
-        noThrow: true
-      }, function (err, res) {
-        expect(res).to.be(undefined);
-        expect(err).to.match(/Cannot use "in" operator to search for "a" in unexpected types\./);
-      });
-      render('{% if "a" in obj %}yes{% endif %}', {}, {
-        noThrow: true
-      }, function (err, res) {
-        expect(res).to.be(undefined);
-        expect(err).to.match(/Cannot use "in" operator to search for "a" in unexpected types\./);
-      });
+
+    it('should throw an error when using the "in" operator on unexpected types', function(done) {
+      render(
+        '{% if "a" in 1 %}yes{% endif %}',
+        {},
+        {
+          noThrow: true
+        },
+        function(err, res) {
+          expect(res).to.be(undefined);
+          expect(err).to.match(
+            /Cannot use "in" operator to search for "a" in unexpected types\./
+          );
+        }
+      );
+
+      render(
+        '{% if "a" in obj %}yes{% endif %}',
+        {},
+        {
+          noThrow: true
+        },
+        function(err, res) {
+          expect(res).to.be(undefined);
+          expect(err).to.match(
+            /Cannot use "in" operator to search for "a" in unexpected types\./
+          );
+        }
+      );
+
       finish(done);
     });
+
     if (!isSlim) {
-      it('should throw exceptions when called synchronously', function () {
+      it('should throw exceptions when called synchronously', function() {
         var tmpl = new Template('{% from "doesnotexist" import foo %}');
         function templateRender() {
           tmpl.render();
         }
         expect(templateRender).to.throwException(/template not found: doesnotexist/);
       });
-      it('should include error line in raised TemplateError', function (done) {
-        var tmplStr = ['{% set items = ["a", "b",, "c"] %}', '{{ items | join(",") }}'].join('\n');
+
+      it('should include error line in raised TemplateError', function(done) {
+        var tmplStr = [
+          '{% set items = ["a", "b",, "c"] %}',
+          '{{ items | join(",") }}',
+        ].join('\n');
+
         var loader = new Loader('tests/templates');
         var env = new Environment(loader);
         var tmpl = new Template(tmplStr, env, 'parse-error.njk');
-        tmpl.render({}, function (err, res) {
+
+        tmpl.render({}, function(err, res) {
           expect(res).to.be(undefined);
-          expect(err.toString()).to.be(['Template render error: (parse-error.njk) [Line 1, Column 26]', '  unexpected token: ,'].join('\n'));
+          expect(err.toString()).to.be([
+            'Template render error: (parse-error.njk) [Line 1, Column 26]',
+            '  unexpected token: ,',
+          ].join('\n'));
           done();
         });
       });
-      it('should include error line when exception raised in user function', function (done) {
-        var tmplStr = ['{% block content %}', '<div>{{ foo() }}</div>', '{% endblock %}'].join('\n');
+
+      it('should include error line when exception raised in user function', function(done) {
+        var tmplStr = [
+          '{% block content %}',
+          '<div>{{ foo() }}</div>',
+          '{% endblock %}',
+        ].join('\n');
         var env = new Environment(new Loader('tests/templates'));
         var tmpl = new Template(tmplStr, env, 'user-error.njk');
+
         function foo() {
           throw new Error('ERROR');
         }
-        tmpl.render({
-          foo: foo
-        }, function (err, res) {
+
+        tmpl.render({foo: foo}, function(err, res) {
           expect(res).to.be(undefined);
-          expect(err.toString()).to.be(['Template render error: (user-error.njk) [Line 1, Column 11]', '  Error: ERROR'].join('\n'));
+          expect(err.toString()).to.be([
+            'Template render error: (user-error.njk) [Line 1, Column 11]',
+            '  Error: ERROR',
+          ].join('\n'));
           done();
         });
       });
     }
-    it('should throw exceptions from included templates when called synchronously', function () {
+
+    it('should throw exceptions from included templates when called synchronously', function() {
       function templateRender() {
-        render('{% include "broken-import.njk" %}', {
-          str: 'abc'
-        });
+        render('{% include "broken-import.njk" %}', {str: 'abc'});
       }
       expect(templateRender).to.throwException(/template not found: doesnotexist/);
     });
-    it('should pass errors from included templates to callback when async', function (done) {
-      render('{% include "broken-import.njk" %}', {
-        str: 'abc'
-      }, {
-        noThrow: true
-      }, function (err, res) {
-        expect(err).to.match(/template not found: doesnotexist/);
-        expect(res).to.be(undefined);
-        done();
-      });
+
+    it('should pass errors from included templates to callback when async', function(done) {
+      render(
+        '{% include "broken-import.njk" %}',
+        {str: 'abc'},
+        {noThrow: true},
+        function(err, res) {
+          expect(err).to.match(/template not found: doesnotexist/);
+          expect(res).to.be(undefined);
+          done();
+        });
     });
-    it('should compile string concatenations with tilde', function (done) {
+
+    it('should compile string concatenations with tilde', function(done) {
       equal('{{ 4 ~ \'hello\' }}', '4hello');
       equal('{{ 4 ~ 5 }}', '45');
       equal('{{ \'a\' ~ \'b\' ~ 5 }}', 'ab5');
       finish(done);
     });
-    it('should compile macros', function (done) {
-      equal('{% macro foo() %}This is a macro{% endmacro %}' + '{{ foo() }}', 'This is a macro');
+
+    it('should compile macros', function(done) {
+      equal(
+        '{% macro foo() %}This is a macro{% endmacro %}' +
+        '{{ foo() }}',
+        'This is a macro');
       finish(done);
     });
-    it('should compile macros with optional args', function (done) {
-      equal('{% macro foo(x, y) %}{{ y }}{% endmacro %}' + '{{ foo(1) }}', '');
+
+    it('should compile macros with optional args', function(done) {
+      equal(
+        '{% macro foo(x, y) %}{{ y }}{% endmacro %}' +
+        '{{ foo(1) }}',
+        '');
       finish(done);
     });
-    it('should compile macros with args that can be passed to filters', function (done) {
-      equal('{% macro foo(x) %}{{ x|title }}{% endmacro %}' + '{{ foo("foo") }}', 'Foo');
+
+    it('should compile macros with args that can be passed to filters', function(done) {
+      equal(
+        '{% macro foo(x) %}{{ x|title }}{% endmacro %}' +
+        '{{ foo("foo") }}',
+        'Foo');
       finish(done);
     });
-    it('should compile macros with positional args', function (done) {
-      equal('{% macro foo(x, y) %}{{ y }}{% endmacro %}' + '{{ foo(1, 2) }}', '2');
+
+    it('should compile macros with positional args', function(done) {
+      equal(
+        '{% macro foo(x, y) %}{{ y }}{% endmacro %}' +
+        '{{ foo(1, 2) }}',
+        '2');
       finish(done);
     });
-    it('should compile macros with arg defaults', function (done) {
-      equal('{% macro foo(x, y, z=5) %}{{ y }}{% endmacro %}' + '{{ foo(1, 2) }}', '2');
-      equal('{% macro foo(x, y, z=5) %}{{ z }}{% endmacro %}' + '{{ foo(1, 2) }}', '5');
+
+    it('should compile macros with arg defaults', function(done) {
+      equal(
+        '{% macro foo(x, y, z=5) %}{{ y }}{% endmacro %}' +
+        '{{ foo(1, 2) }}',
+        '2');
+      equal(
+        '{% macro foo(x, y, z=5) %}{{ z }}{% endmacro %}' +
+        '{{ foo(1, 2) }}',
+        '5');
       finish(done);
     });
-    it('should compile macros with keyword args', function (done) {
-      equal('{% macro foo(x, y, z=5) %}{{ y }}{% endmacro %}' + '{{ foo(1, y=2) }}', '2');
+
+    it('should compile macros with keyword args', function(done) {
+      equal(
+        '{% macro foo(x, y, z=5) %}{{ y }}{% endmacro %}' +
+        '{{ foo(1, y=2) }}',
+        '2');
       finish(done);
     });
-    it('should compile macros with only keyword args', function (done) {
-      equal('{% macro foo(x, y, z=5) %}{{ x }}{{ y }}{{ z }}' + '{% endmacro %}' + '{{ foo(x=1, y=2) }}', '125');
+
+    it('should compile macros with only keyword args', function(done) {
+      equal(
+        '{% macro foo(x, y, z=5) %}{{ x }}{{ y }}{{ z }}' +
+        '{% endmacro %}' +
+        '{{ foo(x=1, y=2) }}',
+        '125');
       finish(done);
     });
-    it('should compile macros with keyword args overriding defaults', function (done) {
-      equal('{% macro foo(x, y, z=5) %}{{ x }}{{ y }}{{ z }}' + '{% endmacro %}' + '{{ foo(x=1, y=2, z=3) }}', '123');
+
+    it('should compile macros with keyword args overriding defaults', function(done) {
+      equal(
+        '{% macro foo(x, y, z=5) %}{{ x }}{{ y }}{{ z }}' +
+        '{% endmacro %}' +
+        '{{ foo(x=1, y=2, z=3) }}',
+        '123');
       finish(done);
     });
-    it('should compile macros with out-of-order keyword args', function (done) {
-      equal('{% macro foo(x, y=2, z=5) %}{{ x }}{{ y }}{{ z }}' + '{% endmacro %}' + '{{ foo(1, z=3) }}', '123');
+
+    it('should compile macros with out-of-order keyword args', function(done) {
+      equal(
+        '{% macro foo(x, y=2, z=5) %}{{ x }}{{ y }}{{ z }}' +
+        '{% endmacro %}' +
+        '{{ foo(1, z=3) }}',
+        '123');
       finish(done);
     });
-    it('should compile macros', function (done) {
-      equal('{% macro foo(x, y=2, z=5) %}{{ x }}{{ y }}{{ z }}' + '{% endmacro %}' + '{{ foo(1) }}', '125');
+
+    it('should compile macros', function(done) {
+      equal(
+        '{% macro foo(x, y=2, z=5) %}{{ x }}{{ y }}{{ z }}' +
+        '{% endmacro %}' +
+        '{{ foo(1) }}',
+        '125');
       finish(done);
     });
-    it('should compile macros with multiple overridden arg defaults', function (done) {
-      equal('{% macro foo(x, y=2, z=5) %}{{ x }}{{ y }}{{ z }}' + '{% endmacro %}' + '{{ foo(1, 10, 20) }}', '11020');
+
+    it('should compile macros with multiple overridden arg defaults', function(done) {
+      equal(
+        '{% macro foo(x, y=2, z=5) %}{{ x }}{{ y }}{{ z }}' +
+        '{% endmacro %}' +
+        '{{ foo(1, 10, 20) }}',
+        '11020');
       finish(done);
     });
-    it('should compile macro calls inside blocks', function (done) {
-      equal('{% extends "base.njk" %}' + '{% macro foo(x, y=2, z=5) %}{{ x }}{{ y }}{{ z }}' + '{% endmacro %}' + '{% block block1 %}' + '{{ foo(1) }}' + '{% endblock %}', 'Foo125BazFizzle');
+
+    it('should compile macro calls inside blocks', function(done) {
+      equal(
+        '{% extends "base.njk" %}' +
+        '{% macro foo(x, y=2, z=5) %}{{ x }}{{ y }}{{ z }}' +
+        '{% endmacro %}' +
+        '{% block block1 %}' +
+        '{{ foo(1) }}' +
+        '{% endblock %}',
+        'Foo125BazFizzle');
       finish(done);
     });
-    it('should compile macros defined in one block and called in another', function (done) {
-      equal('{% block bar %}' + '{% macro foo(x, y=2, z=5) %}{{ x }}{{ y }}{{ z }}' + '{% endmacro %}' + '{% endblock %}' + '{% block baz %}' + '{{ foo(1) }}' + '{% endblock %}', '125');
+
+    it('should compile macros defined in one block and called in another', function(done) {
+      equal(
+        '{% block bar %}' +
+        '{% macro foo(x, y=2, z=5) %}{{ x }}{{ y }}{{ z }}' +
+        '{% endmacro %}' +
+        '{% endblock %}' +
+        '{% block baz %}' +
+        '{{ foo(1) }}' +
+        '{% endblock %}',
+        '125');
       finish(done);
     });
-    it('should compile macros that include other templates', function (done) {
-      equal('{% macro foo() %}{% include "include.njk" %}{% endmacro %}' + '{{ foo() }}', {
-        name: 'james'
-      }, 'FooInclude james');
+
+    it('should compile macros that include other templates', function(done) {
+      equal(
+        '{% macro foo() %}{% include "include.njk" %}{% endmacro %}' +
+        '{{ foo() }}',
+        {
+          name: 'james'
+        },
+        'FooInclude james');
       finish(done);
     });
-    it('should compile macros that set vars', function (done) {
-      equal('{% macro foo() %}{% set x = "foo"%}{{ x }}{% endmacro %}' + '{% set x = "bar" %}' + '{{ x }}' + '{{ foo() }}' + '{{ x }}', 'barfoobar');
+
+    it('should compile macros that set vars', function(done) {
+      equal(
+        '{% macro foo() %}{% set x = "foo"%}{{ x }}{% endmacro %}' +
+        '{% set x = "bar" %}' +
+        '{{ x }}' +
+        '{{ foo() }}' +
+        '{{ x }}',
+        'barfoobar');
+
       finish(done);
     });
-    it('should not leak variables set in macro to calling scope', function (done) {
-      equal('{% macro setFoo() %}' + '{% set x = "foo" %}' + '{{ x }}' + '{% endmacro %}' + '{% macro display() %}' + '{% set x = "bar" %}' + '{{ setFoo() }}' + '{{ x }}' + '{% endmacro %}' + '{{ display() }}', 'foobar');
+
+    it('should not leak variables set in macro to calling scope', function(done) {
+      equal(
+        '{% macro setFoo() %}' +
+        '{% set x = "foo" %}' +
+        '{{ x }}' +
+        '{% endmacro %}' +
+        '{% macro display() %}' +
+        '{% set x = "bar" %}' +
+        '{{ setFoo() }}' +
+        '{{ x }}' +
+        '{% endmacro %}' +
+        '{{ display() }}',
+        'foobar');
+
       finish(done);
     });
-    it('should not leak variables set in nested scope within macro out to calling scope', function (done) {
-      equal('{% macro setFoo() %}' + '{% for y in [1] %}{% set x = "foo" %}{{ x }}{% endfor %}' + '{% endmacro %}' + '{% macro display() %}' + '{% set x = "bar" %}' + '{{ setFoo() }}' + '{{ x }}' + '{% endmacro %}' + '{{ display() }}', 'foobar');
+
+    it('should not leak variables set in nested scope within macro out to calling scope', function(done) {
+      equal(
+        '{% macro setFoo() %}' +
+        '{% for y in [1] %}{% set x = "foo" %}{{ x }}{% endfor %}' +
+        '{% endmacro %}' +
+        '{% macro display() %}' +
+        '{% set x = "bar" %}' +
+        '{{ setFoo() }}' +
+        '{{ x }}' +
+        '{% endmacro %}' +
+        '{{ display() }}',
+        'foobar');
+
       finish(done);
     });
-    it('should compile macros without leaking set to calling scope', function (done) {
+
+    it('should compile macros without leaking set to calling scope', function(done) {
       // This test checks that the issue #577 is resolved.
       // If the bug is not fixed, and set variables leak into the
       // caller scope, there will be too many "foo"s here ("foofoofoo"),
       // because each recursive call will append a "foo" to the
       // variable x in its caller's scope, instead of just its own.
-      equal('{% macro foo(topLevel, prefix="") %}' + '{% if topLevel %}' + '{% set x = "" %}' + '{% for i in [1,2] %}' + '{{ foo(false, x) }}' + '{% endfor %}' + '{% else %}' + '{% set x = prefix + "foo" %}' + '{{ x }}' + '{% endif %}' + '{% endmacro %}' + '{{ foo(true) }}', 'foofoo');
+      equal(
+        '{% macro foo(topLevel, prefix="") %}' +
+        '{% if topLevel %}' +
+        '{% set x = "" %}' +
+        '{% for i in [1,2] %}' +
+        '{{ foo(false, x) }}' +
+        '{% endfor %}' +
+        '{% else %}' +
+        '{% set x = prefix + "foo" %}' +
+        '{{ x }}' +
+        '{% endif %}' +
+        '{% endmacro %}' +
+        '{{ foo(true) }}',
+        'foofoo');
+
       finish(done);
     });
-    it('should compile macros that cannot see variables in caller scope', function (done) {
-      equal('{% macro one(var) %}{{ two() }}{% endmacro %}' + '{% macro two() %}{{ var }}{% endmacro %}' + '{{ one("foo") }}', '');
+
+    it('should compile macros that cannot see variables in caller scope', function(done) {
+      equal(
+        '{% macro one(var) %}{{ two() }}{% endmacro %}' +
+        '{% macro two() %}{{ var }}{% endmacro %}' +
+        '{{ one("foo") }}',
+        '');
       finish(done);
     });
-    it('should compile call blocks', function (done) {
-      equal('{% macro wrap(el) %}' + '<{{ el }}>{{ caller() }}</{{ el }}>' + '{% endmacro %}' + '{% call wrap("div") %}Hello{% endcall %}', '<div>Hello</div>');
+
+    it('should compile call blocks', function(done) {
+      equal(
+        '{% macro wrap(el) %}' +
+        '<{{ el }}>{{ caller() }}</{{ el }}>' +
+        '{% endmacro %}' +
+        '{% call wrap("div") %}Hello{% endcall %}',
+        '<div>Hello</div>');
+
       finish(done);
     });
-    it('should compile call blocks with args', function (done) {
-      equal('{% macro list(items) %}' + '<ul>{% for i in items %}' + '<li>{{ caller(i) }}</li>' + '{% endfor %}</ul>' + '{% endmacro %}' + '{% call(item) list(["a", "b"]) %}{{ item }}{% endcall %}', '<ul><li>a</li><li>b</li></ul>');
+
+    it('should compile call blocks with args', function(done) {
+      equal(
+        '{% macro list(items) %}' +
+        '<ul>{% for i in items %}' +
+        '<li>{{ caller(i) }}</li>' +
+        '{% endfor %}</ul>' +
+        '{% endmacro %}' +
+        '{% call(item) list(["a", "b"]) %}{{ item }}{% endcall %}',
+        '<ul><li>a</li><li>b</li></ul>');
+
       finish(done);
     });
-    it('should compile call blocks using imported macros', function (done) {
-      equal('{% import "import.njk" as imp %}' + '{% call imp.wrap("span") %}Hey{% endcall %}', '<span>Hey</span>');
+
+    it('should compile call blocks using imported macros', function(done) {
+      equal(
+        '{% import "import.njk" as imp %}' +
+        '{% call imp.wrap("span") %}Hey{% endcall %}',
+        '<span>Hey</span>');
       finish(done);
     });
-    it('should import templates', function (done) {
-      equal('{% import "import.njk" as imp %}' + '{{ imp.foo() }} {{ imp.bar }}', 'Here\'s a macro baz');
-      equal('{% from "import.njk" import foo as baz, bar %}' + '{{ bar }} {{ baz() }}', 'baz Here\'s a macro');
+
+    it('should import templates', function(done) {
+      equal(
+        '{% import "import.njk" as imp %}' +
+        '{{ imp.foo() }} {{ imp.bar }}',
+        'Here\'s a macro baz');
+
+      equal(
+        '{% from "import.njk" import foo as baz, bar %}' +
+        '{{ bar }} {{ baz() }}',
+        'baz Here\'s a macro');
 
       // TODO: Should the for loop create a new frame for each
       // iteration? As it is, `num` is set on all iterations after
       // the first one sets it
-      equal('{% for i in [1,2] %}' + 'start: {{ num }}' + '{% from "import.njk" import bar as num %}' + 'end: {{ num }}' + '{% endfor %}' + 'final: {{ num }}', 'start: end: bazstart: bazend: bazfinal: ');
+      equal(
+        '{% for i in [1,2] %}' +
+        'start: {{ num }}' +
+        '{% from "import.njk" import bar as num %}' +
+        'end: {{ num }}' +
+        '{% endfor %}' +
+        'final: {{ num }}',
+        'start: end: bazstart: bazend: bazfinal: ');
+
       finish(done);
     });
-    it('should import templates with context', function (done) {
-      equal('{% set bar = "BAR" %}' + '{% import "import-context.njk" as imp with context %}' + '{{ imp.foo() }}', 'Here\'s BAR');
-      equal('{% set bar = "BAR" %}' + '{% from "import-context.njk" import foo with context %}' + '{{ foo() }}', 'Here\'s BAR');
-      equal('{% set bar = "BAR" %}' + '{% import "import-context-set.njk" as imp %}' + '{{ bar }}', 'BAR');
-      equal('{% set bar = "BAR" %}' + '{% import "import-context-set.njk" as imp %}' + '{{ imp.bar }}', 'FOO');
-      equal('{% set bar = "BAR" %}' + '{% import "import-context-set.njk" as imp with context %}' + '{{ bar }}{{ buzz }}', 'FOO');
-      equal('{% set bar = "BAR" %}' + '{% import "import-context-set.njk" as imp with context %}' + '{{ imp.bar }}{{ buzz }}', 'FOO');
+
+    it('should import templates with context', function(done) {
+      equal(
+        '{% set bar = "BAR" %}' +
+        '{% import "import-context.njk" as imp with context %}' +
+        '{{ imp.foo() }}',
+        'Here\'s BAR');
+
+      equal(
+        '{% set bar = "BAR" %}' +
+        '{% from "import-context.njk" import foo with context %}' +
+        '{{ foo() }}',
+        'Here\'s BAR');
+
+      equal(
+        '{% set bar = "BAR" %}' +
+        '{% import "import-context-set.njk" as imp %}' +
+        '{{ bar }}',
+        'BAR');
+
+      equal(
+        '{% set bar = "BAR" %}' +
+        '{% import "import-context-set.njk" as imp %}' +
+        '{{ imp.bar }}',
+        'FOO');
+
+      equal(
+        '{% set bar = "BAR" %}' +
+        '{% import "import-context-set.njk" as imp with context %}' +
+        '{{ bar }}{{ buzz }}',
+        'FOO');
+
+      equal(
+        '{% set bar = "BAR" %}' +
+        '{% import "import-context-set.njk" as imp with context %}' +
+        '{{ imp.bar }}{{ buzz }}',
+        'FOO');
+
       finish(done);
     });
-    it('should import templates without context', function (done) {
-      equal('{% set bar = "BAR" %}' + '{% import "import-context.njk" as imp without context %}' + '{{ imp.foo() }}', 'Here\'s ');
-      equal('{% set bar = "BAR" %}' + '{% from "import-context.njk" import foo without context %}' + '{{ foo() }}', 'Here\'s ');
+
+    it('should import templates without context', function(done) {
+      equal(
+        '{% set bar = "BAR" %}' +
+        '{% import "import-context.njk" as imp without context %}' +
+        '{{ imp.foo() }}',
+        'Here\'s ');
+
+      equal(
+        '{% set bar = "BAR" %}' +
+        '{% from "import-context.njk" import foo without context %}' +
+        '{{ foo() }}',
+        'Here\'s ');
+
       finish(done);
     });
-    it('should default to importing without context', function (done) {
-      equal('{% set bar = "BAR" %}' + '{% import "import-context.njk" as imp %}' + '{{ imp.foo() }}', 'Here\'s ');
-      equal('{% set bar = "BAR" %}' + '{% from "import-context.njk" import foo %}' + '{{ foo() }}', 'Here\'s ');
+
+    it('should default to importing without context', function(done) {
+      equal(
+        '{% set bar = "BAR" %}' +
+        '{% import "import-context.njk" as imp %}' +
+        '{{ imp.foo() }}',
+        'Here\'s ');
+
+      equal(
+        '{% set bar = "BAR" %}' +
+        '{% from "import-context.njk" import foo %}' +
+        '{{ foo() }}',
+        'Here\'s ');
+
       finish(done);
     });
-    it('should inherit templates', function (done) {
+
+    it('should inherit templates', function(done) {
       equal('{% extends "base.njk" %}', 'FooBarBazFizzle');
       equal('hola {% extends "base.njk" %} hizzle mumble', 'FooBarBazFizzle');
-      equal('{% extends "base.njk" %}{% block block1 %}BAR{% endblock %}', 'FooBARBazFizzle');
-      equal('{% extends "base.njk" %}' + '{% block block1 %}BAR{% endblock %}' + '{% block block2 %}BAZ{% endblock %}', 'FooBARBAZFizzle');
-      equal('hola {% extends tmpl %} hizzle mumble', {
-        tmpl: 'base.njk'
-      }, 'FooBarBazFizzle');
+
+      equal('{% extends "base.njk" %}{% block block1 %}BAR{% endblock %}',
+        'FooBARBazFizzle');
+
+      equal(
+        '{% extends "base.njk" %}' +
+        '{% block block1 %}BAR{% endblock %}' +
+        '{% block block2 %}BAZ{% endblock %}',
+        'FooBARBAZFizzle');
+
+      equal('hola {% extends tmpl %} hizzle mumble',
+        { tmpl: 'base.njk' },
+        'FooBarBazFizzle');
+
       finish(done);
     });
-    it('should not call blocks not defined from template inheritance', function (done) {
+    it('should not call blocks not defined from template inheritance', function(done) {
       var count = 0;
-      render('{% extends "base.njk" %}' + '{% block notReal %}{{ foo() }}{% endblock %}', {
-        foo: function () {
-          count++;
-        }
-      }, function () {
-        expect(count).to.be(0);
-      });
+      render(
+        '{% extends "base.njk" %}' +
+        '{% block notReal %}{{ foo() }}{% endblock %}',
+        { foo: function() { count++; } },
+        function() {
+          expect(count).to.be(0);
+        });
+
       finish(done);
     });
-    it('should conditionally inherit templates', function (done) {
-      equal('{% if false %}{% extends "base.njk" %}{% endif %}' + '{% block block1 %}BAR{% endblock %}', 'BAR');
-      equal('{% if true %}{% extends "base.njk" %}{% endif %}' + '{% block block1 %}BAR{% endblock %}', 'FooBARBazFizzle');
-      equal('{% if true %}' + '{% extends "base.njk" %}' + '{% else %}' + '{% extends "base2.njk" %}' + '{% endif %}' + '{% block block1 %}HELLO{% endblock %}', 'FooHELLOBazFizzle');
-      equal('{% if false %}' + '{% extends "base.njk" %}' + '{% else %}' + '{% extends "base2.njk" %}' + '{% endif %}' + '{% block item %}hello{{ item }}{% endblock %}', 'hello1hello2');
+
+    it('should conditionally inherit templates', function(done) {
+      equal(
+        '{% if false %}{% extends "base.njk" %}{% endif %}' +
+        '{% block block1 %}BAR{% endblock %}',
+        'BAR');
+
+      equal(
+        '{% if true %}{% extends "base.njk" %}{% endif %}' +
+        '{% block block1 %}BAR{% endblock %}',
+        'FooBARBazFizzle');
+
+      equal(
+        '{% if true %}' +
+        '{% extends "base.njk" %}' +
+        '{% else %}' +
+        '{% extends "base2.njk" %}' +
+        '{% endif %}' +
+        '{% block block1 %}HELLO{% endblock %}',
+        'FooHELLOBazFizzle');
+
+      equal(
+        '{% if false %}' +
+        '{% extends "base.njk" %}' +
+        '{% else %}' +
+        '{% extends "base2.njk" %}' +
+        '{% endif %}' +
+        '{% block item %}hello{{ item }}{% endblock %}',
+        'hello1hello2');
+
       finish(done);
     });
-    it('should error if same block is defined multiple times', function (done) {
-      var func = function () {
-        render('{% extends "simple-base.njk" %}' + '{% block test %}{% endblock %}' + '{% block test %}{% endblock %}');
+
+    it('should error if same block is defined multiple times', function(done) {
+      var func = function() {
+        render(
+          '{% extends "simple-base.njk" %}' +
+          '{% block test %}{% endblock %}' +
+          '{% block test %}{% endblock %}');
       };
+
       expect(func).to.throwException(/Block "test" defined more than once./);
+
       finish(done);
     });
-    it('should render nested blocks in child template', function (done) {
-      equal('{% extends "base.njk" %}' + '{% block block1 %}{% block nested %}BAR{% endblock %}{% endblock %}', 'FooBARBazFizzle');
+
+    it('should render nested blocks in child template', function(done) {
+      equal(
+        '{% extends "base.njk" %}' +
+        '{% block block1 %}{% block nested %}BAR{% endblock %}{% endblock %}',
+        'FooBARBazFizzle');
+
       finish(done);
     });
-    it('should render parent blocks with super()', function (done) {
-      equal('{% extends "base.njk" %}' + '{% block block1 %}{{ super() }}BAR{% endblock %}', 'FooBarBARBazFizzle');
+
+    it('should render parent blocks with super()', function(done) {
+      equal(
+        '{% extends "base.njk" %}' +
+        '{% block block1 %}{{ super() }}BAR{% endblock %}',
+        'FooBarBARBazFizzle');
 
       // two levels of `super` should work
-      equal('{% extends "base-inherit.njk" %}' + '{% block block1 %}*{{ super() }}*{% endblock %}', 'Foo**Bar**BazFizzle');
+      equal(
+        '{% extends "base-inherit.njk" %}' +
+        '{% block block1 %}*{{ super() }}*{% endblock %}',
+        'Foo**Bar**BazFizzle');
+
       finish(done);
     });
-    it('should let super() see global vars from child template', function (done) {
-      equal('{% extends "base-show.njk" %}{% set var = "child" %}' + '{% block main %}{{ super() }}{% endblock %}', 'child');
+
+    it('should let super() see global vars from child template', function(done) {
+      equal(
+        '{% extends "base-show.njk" %}{% set var = "child" %}' +
+        '{% block main %}{{ super() }}{% endblock %}',
+        'child');
+
       finish(done);
     });
-    it('should not let super() see vars from child block', function (done) {
-      equal('{% extends "base-show.njk" %}' + '{% block main %}{% set var = "child" %}{{ super() }}{% endblock %}', '');
+
+    it('should not let super() see vars from child block', function(done) {
+      equal(
+        '{% extends "base-show.njk" %}' +
+        '{% block main %}{% set var = "child" %}{{ super() }}{% endblock %}',
+        '');
+
       finish(done);
     });
-    it('should let child templates access parent global scope', function (done) {
-      equal('{% extends "base-set.njk" %}' + '{% block main %}{{ var }}{% endblock %}', 'parent');
+
+    it('should let child templates access parent global scope', function(done) {
+      equal(
+        '{% extends "base-set.njk" %}' +
+        '{% block main %}{{ var }}{% endblock %}',
+        'parent');
+
       finish(done);
     });
-    it('should not let super() modify calling scope', function (done) {
-      equal('{% extends "base-set-inside-block.njk" %}' + '{% block main %}{{ super() }}{{ var }}{% endblock %}', '');
+
+    it('should not let super() modify calling scope', function(done) {
+      equal(
+        '{% extends "base-set-inside-block.njk" %}' +
+        '{% block main %}{{ super() }}{{ var }}{% endblock %}',
+        '');
+
       finish(done);
     });
-    it('should not let child templates set vars in parent scope', function (done) {
-      equal('{% extends "base-set-and-show.njk" %}' + '{% block main %}{% set var = "child" %}{% endblock %}', 'parent');
+
+    it('should not let child templates set vars in parent scope', function(done) {
+      equal(
+        '{% extends "base-set-and-show.njk" %}' +
+        '{% block main %}{% set var = "child" %}{% endblock %}',
+        'parent');
+
       finish(done);
     });
-    it('should render blocks in their own scope', function (done) {
-      equal('{% set var = "parent" %}' + '{% block main %}{% set var = "inner" %}{% endblock %}' + '{{ var }}', 'parent');
+
+    it('should render blocks in their own scope', function(done) {
+      equal(
+        '{% set var = "parent" %}' +
+        '{% block main %}{% set var = "inner" %}{% endblock %}' +
+        '{{ var }}',
+        'parent');
+
       finish(done);
     });
-    it('should include templates', function (done) {
-      equal('hello world {% include "include.njk" %}', 'hello world FooInclude ');
+
+    it('should include templates', function(done) {
+      equal('hello world {% include "include.njk" %}',
+        'hello world FooInclude ');
       finish(done);
     });
-    it('should include 130 templates without call stack size exceed', function (done) {
-      equal('{% include "includeMany.njk" %}', new Array(131).join('FooInclude \n'));
+
+    it('should include 130 templates without call stack size exceed', function(done) {
+      equal('{% include "includeMany.njk" %}',
+        new Array(131).join('FooInclude \n'));
       finish(done);
     });
-    it('should include templates with context', function (done) {
-      equal('hello world {% include "include.njk" %}', {
-        name: 'james'
-      }, 'hello world FooInclude james');
+
+    it('should include templates with context', function(done) {
+      equal('hello world {% include "include.njk" %}',
+        {
+          name: 'james'
+        },
+        'hello world FooInclude james');
       finish(done);
     });
-    it('should include templates that can see including scope, but not write to it', function (done) {
+
+    it('should include templates that can see including scope, but not write to it', function(done) {
       equal('{% set var = 1 %}{% include "include-set.njk" %}{{ var }}', '12\n1');
       finish(done);
     });
-    it('should include templates dynamically', function (done) {
-      equal('hello world {% include tmpl %}', {
-        name: 'thedude',
-        tmpl: 'include.njk'
-      }, 'hello world FooInclude thedude');
-      finish(done);
-    });
-    it('should include templates dynamically based on a set var', function (done) {
-      equal('hello world {% set tmpl = "include.njk" %}{% include tmpl %}', {
-        name: 'thedude'
-      }, 'hello world FooInclude thedude');
-      finish(done);
-    });
-    it('should include templates dynamically based on an object attr', function (done) {
-      equal('hello world {% include data.tmpl %}', {
-        name: 'thedude',
-        data: {
+
+    it('should include templates dynamically', function(done) {
+      equal('hello world {% include tmpl %}',
+        {
+          name: 'thedude',
           tmpl: 'include.njk'
+        },
+        'hello world FooInclude thedude');
+      finish(done);
+    });
+
+    it('should include templates dynamically based on a set var', function(done) {
+      equal('hello world {% set tmpl = "include.njk" %}{% include tmpl %}',
+        {
+          name: 'thedude'
+        },
+        'hello world FooInclude thedude');
+      finish(done);
+    });
+
+    it('should include templates dynamically based on an object attr', function(done) {
+      equal('hello world {% include data.tmpl %}',
+        {
+          name: 'thedude',
+          data: {
+            tmpl: 'include.njk'
+          }
+        },
+        'hello world FooInclude thedude');
+
+      finish(done);
+    });
+
+    it('should throw an error when including a file that does not exist', function(done) {
+      render(
+        '{% include "missing.njk" %}',
+        {},
+        {
+          noThrow: true
+        },
+        function(err, res) {
+          expect(res).to.be(undefined);
+          expect(err).to.match(/template not found: missing.njk/);
         }
-      }, 'hello world FooInclude thedude');
+      );
+
       finish(done);
     });
-    it('should throw an error when including a file that does not exist', function (done) {
-      render('{% include "missing.njk" %}', {}, {
-        noThrow: true
-      }, function (err, res) {
-        expect(res).to.be(undefined);
-        expect(err).to.match(/template not found: missing.njk/);
-      });
-      finish(done);
-    });
-    it('should fail silently on missing templates if requested', function (done) {
-      equal('hello world {% include "missing.njk" ignore missing %}', 'hello world ');
-      equal('hello world {% include "missing.njk" ignore missing %}', {
-        name: 'thedude'
-      }, 'hello world ');
+
+    it('should fail silently on missing templates if requested', function(done) {
+      equal('hello world {% include "missing.njk" ignore missing %}',
+        'hello world ');
+
+      equal('hello world {% include "missing.njk" ignore missing %}',
+        {
+          name: 'thedude'
+        },
+        'hello world ');
+
       finish(done);
     });
 
     /**
      * This test checks that this issue is resolved: http://stackoverflow.com/questions/21777058/loop-index-in-included-nunjucks-file
      */
-    it('should have access to "loop" inside an include', function (done) {
-      equal('{% for item in [1,2,3] %}{% include "include-in-loop.njk" %}{% endfor %}', '1,0,true\n2,1,false\n3,2,false\n');
-      equal('{% for k,v in items %}{% include "include-in-loop.njk" %}{% endfor %}', {
-        items: {
-          a: 'A',
-          b: 'B'
-        }
-      }, '1,0,true\n2,1,false\n');
+    it('should have access to "loop" inside an include', function(done) {
+      equal('{% for item in [1,2,3] %}{% include "include-in-loop.njk" %}{% endfor %}',
+        '1,0,true\n2,1,false\n3,2,false\n');
+
+      equal('{% for k,v in items %}{% include "include-in-loop.njk" %}{% endfor %}',
+        {
+          items: {
+            a: 'A',
+            b: 'B'
+          }
+        },
+        '1,0,true\n2,1,false\n');
+
       finish(done);
     });
-    it('should maintain nested scopes', function (done) {
-      equal('{% for i in [1,2] %}' + '{% for i in [3,4] %}{{ i }}{% endfor %}' + '{{ i }}{% endfor %}', '341342');
+
+    it('should maintain nested scopes', function(done) {
+      equal(
+        '{% for i in [1,2] %}' +
+        '{% for i in [3,4] %}{{ i }}{% endfor %}' +
+        '{{ i }}{% endfor %}',
+        '341342');
+
       finish(done);
     });
-    it('should allow blocks in for loops', function (done) {
-      equal('{% extends "base2.njk" %}' + '{% block item %}hello{{ item }}{% endblock %}', 'hello1hello2');
+
+    it('should allow blocks in for loops', function(done) {
+      equal(
+        '{% extends "base2.njk" %}' +
+        '{% block item %}hello{{ item }}{% endblock %}',
+        'hello1hello2');
+
       finish(done);
     });
-    it('should make includes inherit scope', function (done) {
-      equal('{% for item in [1,2] %}' + '{% include "item.njk" %}' + '{% endfor %}', 'showing 1showing 2');
+
+    it('should make includes inherit scope', function(done) {
+      equal(
+        '{% for item in [1,2] %}' +
+        '{% include "item.njk" %}' +
+        '{% endfor %}',
+        'showing 1showing 2');
+
       finish(done);
     });
-    it('should compile a set block', function (done) {
-      equal('{% set username = "foo" %}{{ username }}', {
-        username: 'james'
-      }, 'foo');
-      equal('{% set x, y = "foo" %}{{ x }}{{ y }}', 'foofoo');
-      equal('{% set x = 1 + 2 %}{{ x }}', '3');
-      equal('{% for i in [1] %}{% set foo=1 %}{% endfor %}{{ foo }}', {
-        foo: 2
-      }, '2');
-      equal('{% include "set.njk" %}{{ foo }}', {
-        foo: 'bar'
-      }, 'bar');
-      equal('{% set username = username + "pasta" %}{{ username }}', {
-        username: 'basta'
-      }, 'bastapasta');
+
+    it('should compile a set block', function(done) {
+      equal('{% set username = "foo" %}{{ username }}',
+        {
+          username: 'james'
+        },
+        'foo');
+
+      equal('{% set x, y = "foo" %}{{ x }}{{ y }}',
+        'foofoo');
+
+      equal('{% set x = 1 + 2 %}{{ x }}',
+        '3');
+
+      equal('{% for i in [1] %}{% set foo=1 %}{% endfor %}{{ foo }}',
+        {
+          foo: 2
+        },
+        '2');
+
+      equal('{% include "set.njk" %}{{ foo }}',
+        {
+          foo: 'bar'
+        },
+        'bar');
+
+      equal('{% set username = username + "pasta" %}{{ username }}',
+        {
+          username: 'basta'
+        },
+        'bastapasta');
 
       // `set` should only set within its current scope
-      equal('{% for i in [1] %}{% set val=5 %}{% endfor %}' + '{{ val }}', '');
-      equal('{% for i in [1,2,3] %}' + '{% if not val %}{% set val=5 %}{% endif %}' + '{% set val=val+1 %}{{ val }}' + '{% endfor %}' + 'afterwards: {{ val }}', '678afterwards: ');
+      equal(
+        '{% for i in [1] %}{% set val=5 %}{% endfor %}' +
+        '{{ val }}',
+        '');
+
+      equal(
+        '{% for i in [1,2,3] %}' +
+        '{% if not val %}{% set val=5 %}{% endif %}' +
+        '{% set val=val+1 %}{{ val }}' +
+        '{% endfor %}' +
+        'afterwards: {{ val }}',
+        '678afterwards: ');
 
       // however, like Python, if a variable has been set in an
       // above scope, any other set should correctly resolve to
       // that frame
-      equal('{% set val=1 %}' + '{% for i in [1] %}{% set val=5 %}{% endfor %}' + '{{ val }}', '5');
-      equal('{% set val=5 %}' + '{% for i in [1,2,3] %}' + '{% set val=val+1 %}{{ val }}' + '{% endfor %}' + 'afterwards: {{ val }}', '678afterwards: 8');
+      equal(
+        '{% set val=1 %}' +
+        '{% for i in [1] %}{% set val=5 %}{% endfor %}' +
+        '{{ val }}',
+        '5');
+
+      equal(
+        '{% set val=5 %}' +
+        '{% for i in [1,2,3] %}' +
+        '{% set val=val+1 %}{{ val }}' +
+        '{% endfor %}' +
+        'afterwards: {{ val }}',
+        '678afterwards: 8');
+
       finish(done);
     });
-    it('should compile set with frame references', function (done) {
-      equal('{% set username = user.name %}{{ username }}', {
-        user: {
-          name: 'james'
-        }
-      }, 'james');
+
+    it('should compile set with frame references', function(done) {
+      equal('{% set username = user.name %}{{ username }}',
+        {
+          user: {
+            name: 'james'
+          }
+        },
+        'james');
+
       finish(done);
     });
-    it('should compile set assignments of the same variable', function (done) {
-      equal('{% set x = "hello" %}' + '{% if false %}{% set x = "world" %}{% endif %}' + '{{ x }}', 'hello');
-      equal('{% set x = "blue" %}' + '{% if true %}{% set x = "green" %}{% endif %}' + '{{ x }}', 'green');
+
+    it('should compile set assignments of the same variable', function(done) {
+      equal(
+        '{% set x = "hello" %}' +
+        '{% if false %}{% set x = "world" %}{% endif %}' +
+        '{{ x }}',
+        'hello');
+
+      equal(
+        '{% set x = "blue" %}' +
+        '{% if true %}{% set x = "green" %}{% endif %}' +
+        '{{ x }}',
+        'green');
+
       finish(done);
     });
-    it('should compile block-set', function (done) {
-      equal('{% set block_content %}{% endset %}' + '{{ block_content }}', '');
+
+    it('should compile block-set', function(done) {
+      equal(
+        '{% set block_content %}{% endset %}' +
+        '{{ block_content }}',
+        ''
+      );
 
       /**
        * Capture blocks inside macros were printing to the main buffer instead of
        * the temporary one, see https://github.com/mozilla/nunjucks/issues/914.
        **/
-      equal('{%- macro foo(bar) -%}' + '{%- set test -%}foo{%- endset -%}' + '{{ bar }}{{ test }}' + '{%- endmacro -%}' + '{{ foo("bar") }}', 'barfoo');
-      equal('{% set block_content %}test string{% endset %}' + '{{ block_content }}', 'test string');
-      equal('{% set block_content %}' + '{% for item in [1, 2, 3] %}' + '{% include "item.njk" %} ' + '{% endfor %}' + '{% endset %}' + '{{ block_content }}', 'showing 1 showing 2 showing 3 ');
-      equal('{% set block_content %}' + '{% set inner_block_content %}' + '{% for i in [1, 2, 3] %}' + 'item {{ i }} ' + '{% endfor %}' + '{% endset %}' + '{% for i in [1, 2, 3] %}' + 'inner {{i}}: "{{ inner_block_content }}" ' + '{% endfor %}' + '{% endset %}' + '{{ block_content | safe }}', 'inner 1: "item 1 item 2 item 3 " ' + 'inner 2: "item 1 item 2 item 3 " ' + 'inner 3: "item 1 item 2 item 3 " ');
-      equal('{% set x,y,z %}' + 'cool' + '{% endset %}' + '{{ x }} {{ y }} {{ z }}', 'cool cool cool');
+      equal(
+        '{%- macro foo(bar) -%}' +
+        '{%- set test -%}foo{%- endset -%}' +
+        '{{ bar }}{{ test }}' +
+        '{%- endmacro -%}' +
+        '{{ foo("bar") }}',
+        'barfoo'
+      );
+
+      equal(
+        '{% set block_content %}test string{% endset %}' +
+        '{{ block_content }}',
+        'test string'
+      );
+
+      equal(
+        '{% set block_content %}' +
+        '{% for item in [1, 2, 3] %}' +
+        '{% include "item.njk" %} ' +
+        '{% endfor %}' +
+        '{% endset %}' +
+        '{{ block_content }}',
+        'showing 1 showing 2 showing 3 '
+      );
+
+      equal(
+        '{% set block_content %}' +
+        '{% set inner_block_content %}' +
+        '{% for i in [1, 2, 3] %}' +
+        'item {{ i }} ' +
+        '{% endfor %}' +
+        '{% endset %}' +
+        '{% for i in [1, 2, 3] %}' +
+        'inner {{i}}: "{{ inner_block_content }}" ' +
+        '{% endfor %}' +
+        '{% endset %}' +
+        '{{ block_content | safe }}',
+        'inner 1: "item 1 item 2 item 3 " ' +
+        'inner 2: "item 1 item 2 item 3 " ' +
+        'inner 3: "item 1 item 2 item 3 " '
+      );
+
+      equal(
+        '{% set x,y,z %}' +
+        'cool' +
+        '{% endset %}' +
+        '{{ x }} {{ y }} {{ z }}',
+        'cool cool cool'
+      );
+
       finish(done);
     });
-    it('should compile block-set wrapping an inherited block', function (done) {
-      equal('{% extends "base-set-wraps-block.njk" %}' + '{% block somevar %}foo{% endblock %}', 'foo\n');
+
+    it('should compile block-set wrapping an inherited block', function(done) {
+      equal(
+        '{% extends "base-set-wraps-block.njk" %}' +
+        '{% block somevar %}foo{% endblock %}',
+        'foo\n'
+      );
       finish(done);
     });
-    it('should throw errors', function (done) {
-      render('{% from "import.njk" import boozle %}', {}, {
-        noThrow: true
-      }, function (err) {
-        expect(err).to.match(/cannot import 'boozle'/);
-      });
+
+    it('should throw errors', function(done) {
+      render('{% from "import.njk" import boozle %}',
+        {},
+        {
+          noThrow: true
+        },
+        function(err) {
+          expect(err).to.match(/cannot import 'boozle'/);
+        });
+
       finish(done);
     });
-    it('should allow custom tag compilation', function (done) {
+
+    it('should allow custom tag compilation', function(done) {
       function TestExtension() {
         this.tags = ['test'];
-        this.parse = function (parser, nodes) {
+
+        this.parse = function(parser, nodes) {
           var content;
           var tag;
           parser.advanceAfterBlockEnd();
+
           content = parser.parseUntilBlocks('endtest');
           tag = new nodes.CallExtension(this, 'run', null, [content]);
           parser.advanceAfterBlockEnd();
+
           return tag;
         };
-        this.run = function (context, content) {
+
+        this.run = function(context, content) {
           // Reverse the string
           return content().split('').reverse().join('');
         };
       }
-      equal('{% test %}123456789{% endtest %}', null, {
-        extensions: {
-          TestExtension: new TestExtension()
-        }
-      }, '987654321');
+
+      equal('{% test %}123456789{% endtest %}', null,
+        { extensions: { TestExtension: new TestExtension() } },
+        '987654321');
+
       finish(done);
     });
-    it('should allow custom tag compilation without content', function (done) {
+
+    it('should allow custom tag compilation without content', function(done) {
       function TestExtension() {
         // jshint validthis: true
         this.tags = ['test'];
-        this.parse = function (parser, nodes) {
+
+        this.parse = function(parser, nodes) {
           var tok = parser.nextToken();
           var args = parser.parseSignature(null, true);
           parser.advanceAfterBlockEnd(tok.value);
+
           return new nodes.CallExtension(this, 'run', args, null);
         };
-        this.run = function (context, arg1) {
+
+        this.run = function(context, arg1) {
           // Reverse the string
           return arg1.split('').reverse().join('');
         };
       }
-      equal('{% test "123456" %}', null, {
-        extensions: {
-          TestExtension: new TestExtension()
-        }
-      }, '654321');
+
+      equal('{% test "123456" %}', null,
+        { extensions: { TestExtension: new TestExtension() } },
+        '654321');
+
       finish(done);
     });
-    it('should allow complicated custom tag compilation', function (done) {
+
+    it('should allow complicated custom tag compilation', function(done) {
       function TestExtension() {
         // jshint validthis: true
         this.tags = ['test'];
 
         /* normally this is automatically done by Environment */
         this._name = TestExtension;
-        this.parse = function (parser, nodes, lexer) {
+
+        this.parse = function(parser, nodes, lexer) {
           var body;
           var intermediate = null;
+
           parser.advanceAfterBlockEnd();
+
           body = parser.parseUntilBlocks('intermediate', 'endtest');
+
           if (parser.skipSymbol('intermediate')) {
             parser.skip(lexer.TOKEN_BLOCK_END);
             intermediate = parser.parseUntilBlocks('endtest');
           }
+
           parser.advanceAfterBlockEnd();
+
           return new nodes.CallExtension(this, 'run', null, [body, intermediate]);
         };
-        this.run = function (context, body, intermediate) {
+
+        this.run = function(context, body, intermediate) {
           var output = body().split('').join(',');
           if (intermediate) {
             // Reverse the string.
@@ -92661,27 +92408,30 @@ mocha.run();
           return output;
         };
       }
-      equal('{% test %}abcdefg{% endtest %}', null, {
-        extensions: {
-          TestExtension: new TestExtension()
-        }
-      }, 'a,b,c,d,e,f,g');
-      equal('{% test %}abcdefg{% intermediate %}second half{% endtest %}', null, {
-        extensions: {
-          TestExtension: new TestExtension()
-        }
-      }, 'a,b,c,d,e,f,gflah dnoces');
+
+      equal('{% test %}abcdefg{% endtest %}', null,
+        { extensions: { TestExtension: new TestExtension() } },
+        'a,b,c,d,e,f,g');
+
+      equal('{% test %}abcdefg{% intermediate %}second half{% endtest %}',
+        null,
+        { extensions: { TestExtension: new TestExtension() } },
+        'a,b,c,d,e,f,gflah dnoces');
+
       finish(done);
     });
-    it('should allow custom tag with args compilation', function (done) {
+
+    it('should allow custom tag with args compilation', function(done) {
       var opts;
+
       function TestExtension() {
         // jshint validthis: true
         this.tags = ['test'];
 
         /* normally this is automatically done by Environment */
         this._name = TestExtension;
-        this.parse = function (parser, nodes) {
+
+        this.parse = function(parser, nodes) {
           var body;
           var args;
           var tok = parser.nextToken();
@@ -92689,11 +92439,14 @@ mocha.run();
           // passing true makes it tolerate when no args exist
           args = parser.parseSignature(true);
           parser.advanceAfterBlockEnd(tok.value);
+
           body = parser.parseUntilBlocks('endtest');
           parser.advanceAfterBlockEnd();
+
           return new nodes.CallExtension(this, 'run', args, [body]);
         };
-        this.run = function (context, prefix, kwargs, body) {
+
+        this.run = function(context, prefix, kwargs, body) {
           var output;
           if (typeof prefix === 'function') {
             body = prefix;
@@ -92703,322 +92456,518 @@ mocha.run();
             body = kwargs;
             kwargs = {};
           }
+
           output = prefix + body().split('').reverse().join('');
           if (kwargs.cutoff) {
             output = output.slice(0, kwargs.cutoff);
           }
+
           return output;
         };
       }
+
       opts = {
         extensions: {
           TestExtension: new TestExtension()
         }
       };
-      equal('{% test %}foobar{% endtest %}', null, opts, 'raboof');
-      equal('{% test("biz") %}foobar{% endtest %}', null, opts, 'bizraboof');
-      equal('{% test("biz", cutoff=5) %}foobar{% endtest %}', null, opts, 'bizra');
+
+      equal(
+        '{% test %}foobar{% endtest %}', null, opts,
+        'raboof');
+
+      equal(
+        '{% test("biz") %}foobar{% endtest %}', null, opts,
+        'bizraboof');
+
+      equal(
+        '{% test("biz", cutoff=5) %}foobar{% endtest %}', null, opts,
+        'bizra');
+
       finish(done);
     });
-    it('should autoescape by default', function (done) {
+
+    it('should autoescape by default', function(done) {
       equal('{{ foo }}', {
         foo: '"\'<>&'
       }, '&quot;&#39;&lt;&gt;&amp;');
       finish(done);
     });
-    it('should autoescape if autoescape is on', function (done) {
-      equal('{{ foo }}', {
-        foo: '"\'<>&'
-      }, {
-        autoescape: true
-      }, '&quot;&#39;&lt;&gt;&amp;');
-      equal('{{ foo|reverse }}', {
-        foo: '"\'<>&'
-      }, {
-        autoescape: true
-      }, '&amp;&gt;&lt;&#39;&quot;');
-      equal('{{ foo|reverse|safe }}', {
-        foo: '"\'<>&'
-      }, {
-        autoescape: true
-      }, '&><\'"');
-      equal('{{ foo }}', {
-        foo: null
-      }, {
-        autoescape: true
-      }, '');
-      equal('{{ foo }}', {
-        foo: ['<p>foo</p>']
-      }, {
-        autoescape: true
-      }, '&lt;p&gt;foo&lt;/p&gt;');
-      equal('{{ foo }}', {
-        foo: {
-          toString: function () {
-            return '<p>foo</p>';
-          }
+
+    it('should autoescape if autoescape is on', function(done) {
+      equal(
+        '{{ foo }}',
+        { foo: '"\'<>&' },
+        { autoescape: true },
+        '&quot;&#39;&lt;&gt;&amp;');
+
+      equal('{{ foo|reverse }}',
+        { foo: '"\'<>&' },
+        { autoescape: true },
+        '&amp;&gt;&lt;&#39;&quot;');
+
+      equal(
+        '{{ foo|reverse|safe }}',
+        { foo: '"\'<>&' },
+        { autoescape: true },
+        '&><\'"');
+
+      equal(
+        '{{ foo }}',
+        { foo: null },
+        { autoescape: true },
+        '');
+
+      equal(
+        '{{ foo }}',
+        { foo: ['<p>foo</p>'] },
+        { autoescape: true },
+        '&lt;p&gt;foo&lt;/p&gt;');
+
+      equal(
+        '{{ foo }}',
+        { foo: { toString: function() { return '<p>foo</p>'; } } },
+        { autoescape: true },
+        '&lt;p&gt;foo&lt;/p&gt;');
+
+      equal('{{ foo | safe }}',
+        { foo: null },
+        { autoescape: true },
+        '');
+
+      equal(
+        '{{ foo | safe }}',
+        { foo: '<p>foo</p>' },
+        { autoescape: true },
+        '<p>foo</p>');
+
+      equal(
+        '{{ foo | safe }}',
+        { foo: ['<p>foo</p>'] },
+        { autoescape: true },
+        '<p>foo</p>');
+
+      equal(
+        '{{ foo | safe }}',
+        { foo: { toString: function() { return '<p>foo</p>'; } } },
+        { autoescape: true },
+        '<p>foo</p>');
+
+      finish(done);
+    });
+
+    it('should not autoescape safe strings', function(done) {
+      equal(
+        '{{ foo|safe }}',
+        { foo: '"\'<>&' },
+        { autoescape: true },
+        '"\'<>&');
+
+      finish(done);
+    });
+
+    it('should not autoescape macros', function(done) {
+      render(
+        '{% macro foo(x, y) %}{{ x }} and {{ y }}{% endmacro %}' +
+        '{{ foo("<>&", "<>") }}',
+        null,
+        {
+          autoescape: true
+        },
+        function(err, res) {
+          expect(res).to.be('&lt;&gt;&amp; and &lt;&gt;');
         }
-      }, {
-        autoescape: true
-      }, '&lt;p&gt;foo&lt;/p&gt;');
-      equal('{{ foo | safe }}', {
-        foo: null
-      }, {
-        autoescape: true
-      }, '');
-      equal('{{ foo | safe }}', {
-        foo: '<p>foo</p>'
-      }, {
-        autoescape: true
-      }, '<p>foo</p>');
-      equal('{{ foo | safe }}', {
-        foo: ['<p>foo</p>']
-      }, {
-        autoescape: true
-      }, '<p>foo</p>');
-      equal('{{ foo | safe }}', {
-        foo: {
-          toString: function () {
-            return '<p>foo</p>';
-          }
+      );
+
+      render(
+        '{% macro foo(x, y) %}{{ x|safe }} and {{ y }}{% endmacro %}' +
+        '{{ foo("<>&", "<>") }}',
+        null,
+        {
+          autoescape: true
+        },
+        function(err, res) {
+          expect(res).to.be('<>& and &lt;&gt;');
         }
-      }, {
-        autoescape: true
-      }, '<p>foo</p>');
+      );
+
       finish(done);
     });
-    it('should not autoescape safe strings', function (done) {
-      equal('{{ foo|safe }}', {
-        foo: '"\'<>&'
-      }, {
-        autoescape: true
-      }, '"\'<>&');
+
+    it('should not autoescape super()', function(done) {
+      render(
+        '{% extends "base3.njk" %}' +
+        '{% block block1 %}{{ super() }}{% endblock %}',
+        null,
+        {
+          autoescape: true
+        },
+        function(err, res) {
+          expect(res).to.be('<b>Foo</b>');
+        }
+      );
+
       finish(done);
     });
-    it('should not autoescape macros', function (done) {
-      render('{% macro foo(x, y) %}{{ x }} and {{ y }}{% endmacro %}' + '{{ foo("<>&", "<>") }}', null, {
-        autoescape: true
-      }, function (err, res) {
-        expect(res).to.be('&lt;&gt;&amp; and &lt;&gt;');
-      });
-      render('{% macro foo(x, y) %}{{ x|safe }} and {{ y }}{% endmacro %}' + '{{ foo("<>&", "<>") }}', null, {
-        autoescape: true
-      }, function (err, res) {
-        expect(res).to.be('<>& and &lt;&gt;');
-      });
+
+    it('should autoescape backslashes', function(done) {
+      equal(
+        '{{ foo }}',
+        { foo: 'foo \\\' bar' },
+        { autoescape: true },
+        'foo &#92;&#39; bar');
+
       finish(done);
     });
-    it('should not autoescape super()', function (done) {
-      render('{% extends "base3.njk" %}' + '{% block block1 %}{{ super() }}{% endblock %}', null, {
-        autoescape: true
-      }, function (err, res) {
-        expect(res).to.be('<b>Foo</b>');
-      });
-      finish(done);
-    });
-    it('should autoescape backslashes', function (done) {
-      equal('{{ foo }}', {
-        foo: 'foo \\\' bar'
-      }, {
-        autoescape: true
-      }, 'foo &#92;&#39; bar');
-      finish(done);
-    });
-    it('should not autoescape when extension set false', function (done) {
+
+    it('should not autoescape when extension set false', function(done) {
       function TestExtension() {
         // jshint validthis: true
         this.tags = ['test'];
+
         this.autoescape = false;
-        this.parse = function (parser, nodes) {
+
+        this.parse = function(parser, nodes) {
           var tok = parser.nextToken();
           var args = parser.parseSignature(null, true);
           parser.advanceAfterBlockEnd(tok.value);
           return new nodes.CallExtension(this, 'run', args, null);
         };
-        this.run = function () {
+
+        this.run = function() {
           // Reverse the string
           return '<b>Foo</b>';
         };
       }
-      render('{% test "123456" %}', null, {
-        extensions: {
-          TestExtension: new TestExtension()
+
+      render(
+        '{% test "123456" %}',
+        null,
+        {
+          extensions: { TestExtension: new TestExtension() },
+          autoescape: true
         },
-        autoescape: true
-      }, function (err, res) {
-        expect(res).to.be('<b>Foo</b>');
-      });
-      finish(done);
-    });
-    it('should pass context as this to filters', function (done) {
-      render('{{ foo | hallo }}', {
-        foo: 1,
-        bar: 2
-      }, {
-        filters: {
-          hallo: function (foo) {
-            return foo + this.lookup('bar');
-          }
+        function(err, res) {
+          expect(res).to.be('<b>Foo</b>');
         }
-      }, function (err, res) {
-        expect(res).to.be('3');
-      });
+      );
+
       finish(done);
     });
-    it('should render regexs', function (done) {
-      equal('{{ r/name [0-9] \\// }}', {}, {
-        autoescape: false
-      }, '/name [0-9] \\//');
-      equal('{{ r/x/gi }}', '/x/gi');
+
+    it('should pass context as this to filters', function(done) {
+      render(
+        '{{ foo | hallo }}',
+        { foo: 1, bar: 2 },
+        {
+          filters: {
+            hallo: function(foo) {
+              return foo + this.lookup('bar');
+            }
+          }
+        },
+        function(err, res) {
+          expect(res).to.be('3');
+        }
+      );
+
       finish(done);
     });
-    it('should throw an error when {% call %} is passed an object that is not a function', function (done) {
-      render('{% call foo() %}{% endcall %}', {
-        foo: 'bar'
-      }, {
-        noThrow: true
-      }, function (err, res) {
-        expect(res).to.be(undefined);
-        expect(err).to.match(/Unable to call `\w+`, which is not a function/);
-      });
+
+    it('should render regexs', function(done) {
+      equal('{{ r/name [0-9] \\// }}', {}, { autoescape: false },
+        '/name [0-9] \\//');
+
+      equal('{{ r/x/gi }}',
+        '/x/gi');
+
       finish(done);
     });
-    it('should throw an error when including a file that calls an undefined macro', function (done) {
-      render('{% include "undefined-macro.njk" %}', {}, {
-        noThrow: true
-      }, function (err, res) {
-        expect(res).to.be(undefined);
-        expect(err).to.match(/Unable to call `\w+`, which is undefined or falsey/);
-      });
-      finish(done);
-    });
-    it('should throw an error when including a file that calls an undefined macro even inside {% if %} tag', function (done) {
-      render('{% if true %}{% include "undefined-macro.njk" %}{% endif %}', {}, {
-        noThrow: true
-      }, function (err, res) {
-        expect(res).to.be(undefined);
-        expect(err).to.match(/Unable to call `\w+`, which is undefined or falsey/);
-      });
-      finish(done);
-    });
-    it('should throw an error when including a file that imports macro that calls an undefined macro', function (done) {
-      render('{% include "import-macro-call-undefined-macro.njk" %}', {
-        list: [1, 2, 3]
-      }, {
-        noThrow: true
-      }, function (err, res) {
-        expect(res).to.be(undefined);
-        expect(err).to.match(/Unable to call `\w+`, which is undefined or falsey/);
-      });
-      finish(done);
-    });
-    it('should control whitespaces correctly', function (done) {
-      equal('{% if true -%}{{"hello"}} {{"world"}}{% endif %}', 'hello world');
-      equal('{% if true -%}{% if true %} {{"hello"}} {{"world"}}' + '{% endif %}{% endif %}', ' hello world');
-      equal('{% if true -%}{# comment #} {{"hello"}}{% endif %}', ' hello');
-      finish(done);
-    });
-    it('should control expression whitespaces correctly', function (done) {
-      equal('Well, {{- \' hello, \' -}} my friend', 'Well, hello, my friend');
-      equal(' {{ 2 + 2 }} ', ' 4 ');
-      equal(' {{-2 + 2 }} ', '4 ');
-      equal(' {{ -2 + 2 }} ', ' 0 ');
-      equal(' {{ 2 + 2 -}} ', ' 4');
-      finish(done);
-    });
-    it('should get right value when macro parameter conflict with global macro name', function (done) {
-      render('{# macro1 and macro2 definition #}' + '{% macro macro1() %}' + '{% endmacro %}' + '' + '{% macro macro2(macro1="default") %}' + '{{macro1}}' + '{% endmacro %}' + '' + '{# calling macro2 #}' + '{{macro2("this should be outputted") }}', {}, {}, function (err, res) {
-        expect(res.trim()).to.eql('this should be outputted');
-      });
-      finish(done);
-    });
-    it('should get right value when macro include macro', function (done) {
-      render('{# macro1 and macro2 definition #}' + '{% macro macro1() %} foo' + '{% endmacro %}' + '' + '{% macro macro2(text="default") %}' + '{{macro1()}}' + '{% endmacro %}' + '' + '{# calling macro2 #}' + '{{macro2("this should not be outputted") }}', {}, {}, function (err, res) {
-        expect(res.trim()).to.eql('foo');
-      });
-      finish(done);
-    });
-    it('should allow access to outer scope in call blocks', function (done) {
-      render('{% macro inside() %}' + '{{ caller() }}' + '{% endmacro %}' + '{% macro outside(var) %}' + '{{ var }}\n' + '{% call inside() %}' + '{{ var }}' + '{% endcall %}' + '{% endmacro %}' + '{{ outside("foobar") }}', {}, {}, function (err, res) {
-        expect(res.trim()).to.eql('foobar\nfoobar');
-      });
-      finish(done);
-    });
-    it('should not leak scope from call blocks to parent', function (done) {
-      render('{% set var = "expected" %}' + '{% macro inside() %}' + '{% set var = "incorrect-value" %}' + '{{ caller() }}' + '{% endmacro %}' + '{% macro outside() %}' + '{% call inside() %}' + '{% endcall %}' + '{% endmacro %}' + '{{ outside() }}' + '{{ var }}', {}, {}, function (err, res) {
-        expect(res.trim()).to.eql('expected');
-      });
-      finish(done);
-    });
-    if (!isSlim) {
-      it('should import template objects', function (done) {
-        var tmpl = new Template('{% macro foo() %}Inside a macro{% endmacro %}' + '{% set bar = "BAZ" %}');
-        equal('{% import tmpl as imp %}' + '{{ imp.foo() }} {{ imp.bar }}', {
-          tmpl: tmpl
-        }, 'Inside a macro BAZ');
-        equal('{% from tmpl import foo as baz, bar %}' + '{{ bar }} {{ baz() }}', {
-          tmpl: tmpl
-        }, 'BAZ Inside a macro');
-        finish(done);
-      });
-      it('should inherit template objects', function (done) {
-        var tmpl = new Template('Foo{% block block1 %}Bar{% endblock %}' + '{% block block2 %}Baz{% endblock %}Whizzle');
-        equal('hola {% extends tmpl %} fizzle mumble', {
-          tmpl: tmpl
-        }, 'FooBarBazWhizzle');
-        equal('{% extends tmpl %}' + '{% block block1 %}BAR{% endblock %}' + '{% block block2 %}BAZ{% endblock %}', {
-          tmpl: tmpl
-        }, 'FooBARBAZWhizzle');
-        finish(done);
-      });
-      it('should include template objects', function (done) {
-        var tmpl = new Template('FooInclude {{ name }}');
-        equal('hello world {% include tmpl %}', {
-          name: 'thedude',
-          tmpl: tmpl
-        }, 'hello world FooInclude thedude');
-        finish(done);
-      });
-      it('should throw an error when invalid expression whitespaces are used', function (done) {
-        render(' {{ 2 + 2- }}', {}, {
-          noThrow: true
-        }, function (err, res) {
+
+    it('should throw an error when {% call %} is passed an object that is not a function', function(done) {
+      render(
+        '{% call foo() %}{% endcall %}',
+        {foo: 'bar'},
+        {noThrow: true},
+        function(err, res) {
           expect(res).to.be(undefined);
-          expect(err).to.match(/unexpected token: }}/);
+          expect(err).to.match(/Unable to call `\w+`, which is not a function/);
         });
+
+      finish(done);
+    });
+
+    it('should throw an error when including a file that calls an undefined macro', function(done) {
+      render(
+        '{% include "undefined-macro.njk" %}',
+        {},
+        {
+          noThrow: true
+        },
+        function(err, res) {
+          expect(res).to.be(undefined);
+          expect(err).to.match(/Unable to call `\w+`, which is undefined or falsey/);
+        }
+      );
+
+      finish(done);
+    });
+
+    it('should throw an error when including a file that calls an undefined macro even inside {% if %} tag', function(done) {
+      render(
+        '{% if true %}{% include "undefined-macro.njk" %}{% endif %}',
+        {},
+        {
+          noThrow: true
+        },
+        function(err, res) {
+          expect(res).to.be(undefined);
+          expect(err).to.match(/Unable to call `\w+`, which is undefined or falsey/);
+        }
+      );
+
+      finish(done);
+    });
+
+    it('should throw an error when including a file that imports macro that calls an undefined macro', function(done) {
+      render(
+        '{% include "import-macro-call-undefined-macro.njk" %}',
+        { list: [1, 2, 3] },
+        { noThrow: true },
+        function(err, res) {
+          expect(res).to.be(undefined);
+          expect(err).to.match(/Unable to call `\w+`, which is undefined or falsey/);
+        }
+      );
+
+      finish(done);
+    });
+
+
+    it('should control whitespaces correctly', function(done) {
+      equal(
+        '{% if true -%}{{"hello"}} {{"world"}}{% endif %}',
+        'hello world');
+
+      equal(
+        '{% if true -%}{% if true %} {{"hello"}} {{"world"}}'
+        + '{% endif %}{% endif %}',
+        ' hello world');
+
+      equal(
+        '{% if true -%}{# comment #} {{"hello"}}{% endif %}',
+        ' hello');
+
+      finish(done);
+    });
+
+    it('should control expression whitespaces correctly', function(done) {
+      equal(
+        'Well, {{- \' hello, \' -}} my friend',
+        'Well, hello, my friend'
+      );
+
+      equal(' {{ 2 + 2 }} ', ' 4 ');
+
+      equal(' {{-2 + 2 }} ', '4 ');
+
+      equal(' {{ -2 + 2 }} ', ' 0 ');
+
+      equal(' {{ 2 + 2 -}} ', ' 4');
+
+      finish(done);
+    });
+
+    it('should get right value when macro parameter conflict with global macro name', function(done) {
+      render(
+        '{# macro1 and macro2 definition #}' +
+        '{% macro macro1() %}' +
+        '{% endmacro %}' +
+        '' +
+        '{% macro macro2(macro1="default") %}' +
+        '{{macro1}}' +
+        '{% endmacro %}' +
+        '' +
+        '{# calling macro2 #}' +
+        '{{macro2("this should be outputted") }}', {}, {}, function(err, res) {
+          expect(res.trim()).to.eql('this should be outputted');
+        });
+
+      finish(done);
+    });
+
+    it('should get right value when macro include macro', function(done) {
+      render(
+        '{# macro1 and macro2 definition #}' +
+        '{% macro macro1() %} foo' +
+        '{% endmacro %}' +
+        '' +
+        '{% macro macro2(text="default") %}' +
+        '{{macro1()}}' +
+        '{% endmacro %}' +
+        '' +
+        '{# calling macro2 #}' +
+        '{{macro2("this should not be outputted") }}', {}, {}, function(err, res) {
+          expect(res.trim()).to.eql('foo');
+        });
+
+      finish(done);
+    });
+
+    it('should allow access to outer scope in call blocks', function(done) {
+      render(
+        '{% macro inside() %}' +
+        '{{ caller() }}' +
+        '{% endmacro %}' +
+        '{% macro outside(var) %}' +
+        '{{ var }}\n' +
+        '{% call inside() %}' +
+        '{{ var }}' +
+        '{% endcall %}' +
+        '{% endmacro %}' +
+        '{{ outside("foobar") }}', {}, {}, function(err, res) {
+          expect(res.trim()).to.eql('foobar\nfoobar');
+        });
+
+      finish(done);
+    });
+
+    it('should not leak scope from call blocks to parent', function(done) {
+      render(
+        '{% set var = "expected" %}' +
+        '{% macro inside() %}' +
+        '{% set var = "incorrect-value" %}' +
+        '{{ caller() }}' +
+        '{% endmacro %}' +
+        '{% macro outside() %}' +
+        '{% call inside() %}' +
+        '{% endcall %}' +
+        '{% endmacro %}' +
+        '{{ outside() }}' +
+        '{{ var }}', {}, {}, function(err, res) {
+          expect(res.trim()).to.eql('expected');
+        });
+
+      finish(done);
+    });
+
+
+    if (!isSlim) {
+      it('should import template objects', function(done) {
+        var tmpl = new Template('{% macro foo() %}Inside a macro{% endmacro %}' +
+          '{% set bar = "BAZ" %}');
+
+        equal(
+          '{% import tmpl as imp %}' +
+          '{{ imp.foo() }} {{ imp.bar }}',
+          {
+            tmpl: tmpl
+          },
+          'Inside a macro BAZ');
+
+        equal(
+          '{% from tmpl import foo as baz, bar %}' +
+          '{{ bar }} {{ baz() }}',
+          {
+            tmpl: tmpl
+          },
+          'BAZ Inside a macro');
+
+        finish(done);
+      });
+
+      it('should inherit template objects', function(done) {
+        var tmpl = new Template('Foo{% block block1 %}Bar{% endblock %}' +
+          '{% block block2 %}Baz{% endblock %}Whizzle');
+
+        equal('hola {% extends tmpl %} fizzle mumble',
+          {
+            tmpl: tmpl
+          },
+          'FooBarBazWhizzle');
+
+        equal(
+          '{% extends tmpl %}' +
+          '{% block block1 %}BAR{% endblock %}' +
+          '{% block block2 %}BAZ{% endblock %}',
+          {
+            tmpl: tmpl
+          },
+          'FooBARBAZWhizzle');
+
+        finish(done);
+      });
+
+      it('should include template objects', function(done) {
+        var tmpl = new Template('FooInclude {{ name }}');
+
+        equal('hello world {% include tmpl %}',
+          {
+            name: 'thedude',
+            tmpl: tmpl
+          },
+          'hello world FooInclude thedude');
+
+        finish(done);
+      });
+
+      it('should throw an error when invalid expression whitespaces are used', function(done) {
+        render(
+          ' {{ 2 + 2- }}',
+          {},
+          {
+            noThrow: true
+          },
+          function(err, res) {
+            expect(res).to.be(undefined);
+            expect(err).to.match(/unexpected token: }}/);
+          }
+        );
+
         finish(done);
       });
     }
   });
-  describe('the filter tag', function () {
-    it('should apply the title filter to the body', function (done) {
-      equal('{% filter title %}may the force be with you{% endfilter %}', 'May The Force Be With You');
+
+  describe('the filter tag', function() {
+    it('should apply the title filter to the body', function(done) {
+      equal('{% filter title %}may the force be with you{% endfilter %}',
+        'May The Force Be With You');
       finish(done);
     });
-    it('should apply the replace filter to the body', function (done) {
-      equal('{% filter replace("force", "forth") %}may the force be with you{% endfilter %}', 'may the forth be with you');
+
+    it('should apply the replace filter to the body', function(done) {
+      equal('{% filter replace("force", "forth") %}may the force be with you{% endfilter %}',
+        'may the forth be with you');
       finish(done);
     });
-    it('should work with variables in the body', function (done) {
-      equal('{% set foo = "force" %}{% filter replace("force", "forth") %}may the {{ foo }} be with you{% endfilter %}', 'may the forth be with you');
+
+    it('should work with variables in the body', function(done) {
+      equal('{% set foo = "force" %}{% filter replace("force", "forth") %}may the {{ foo }} be with you{% endfilter %}',
+        'may the forth be with you');
       finish(done);
     });
-    it('should work with blocks in the body', function (done) {
-      equal('{% extends "filter-block.html" %}' + '{% block block1 %}force{% endblock %}', 'may the forth be with you\n');
+
+    it('should work with blocks in the body', function(done) {
+      equal(
+        '{% extends "filter-block.html" %}' +
+        '{% block block1 %}force{% endblock %}',
+        'may the forth be with you\n');
       finish(done);
     });
   });
-})();
+}());
+
 
 /***/ }),
 
-/***/ 7274:
+/***/ 7488:
 /*!**************************!*\
   !*** ./tests/filters.js ***!
   \**************************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   'use strict';
 
   var expect;
@@ -93028,26 +92977,39 @@ mocha.run();
   var render;
   var equal;
   var finish;
+
   if (true) {
     expect = __webpack_require__(/*! expect.js */ 1801);
-    util = __webpack_require__(/*! ./util */ 9821);
+    util = __webpack_require__(/*! ./util */ 9099);
     lib = __webpack_require__(/*! ../nunjucks/src/lib */ 449);
     r = __webpack_require__(/*! ../nunjucks/src/runtime */ 5434);
   } else {}
+
   render = util.render;
   equal = util.equal;
   finish = util.finish;
-  describe('filter', function () {
-    it('abs', function (done) {
+
+  describe('filter', function() {
+    it('abs', function(done) {
       equal('{{ -3|abs }}', '3');
       equal('{{ -3.456|abs }}', '3.456');
       finish(done);
     });
-    it('batch', function (done) {
-      equal(['{% for a in [1,2,3,4,5,6]|batch(2) %}', '-{% for b in a %}', '{{ b }}', '{% endfor %}-', '{% endfor %}'].join(''), '-12--34--56-');
+
+    it('batch', function(done) {
+      equal(
+        [
+          '{% for a in [1,2,3,4,5,6]|batch(2) %}',
+          '-{% for b in a %}',
+          '{{ b }}',
+          '{% endfor %}-',
+          '{% endfor %}'].join(''),
+        '-12--34--56-');
+
       finish(done);
     });
-    it('capitalize', function (done) {
+
+    it('capitalize', function(done) {
       equal('{{ "foo" | capitalize }}', 'Foo');
       equal('{{ str | capitalize }}', {
         str: r.markSafe('foo')
@@ -93057,18 +93019,35 @@ mocha.run();
       equal('{{ nothing | capitalize }}', '');
       finish(done);
     });
-    it('center', function (done) {
-      equal('{{ "fooo" | center }}', lib.repeat(' ', 38) + 'fooo' + lib.repeat(' ', 38));
-      equal('{{ str | center }}', {
-        str: r.markSafe('fooo')
-      }, lib.repeat(' ', 38) + 'fooo' + lib.repeat(' ', 38));
-      equal('{{ undefined | center }}', lib.repeat(' ', 40) + '' + lib.repeat(' ', 40));
-      equal('{{ null | center }}', lib.repeat(' ', 40) + '' + lib.repeat(' ', 40));
-      equal('{{ nothing | center }}', lib.repeat(' ', 40) + '' + lib.repeat(' ', 40));
-      equal('{{ "foo" | center }}', lib.repeat(' ', 38) + 'foo' + lib.repeat(' ', 39));
+
+    it('center', function(done) {
+      equal('{{ "fooo" | center }}',
+        lib.repeat(' ', 38) + 'fooo' +
+        lib.repeat(' ', 38));
+
+      equal('{{ str | center }}',
+        {str: r.markSafe('fooo')},
+        lib.repeat(' ', 38) + 'fooo' + lib.repeat(' ', 38));
+
+      equal('{{ undefined | center }}',
+        lib.repeat(' ', 40) + '' +
+        lib.repeat(' ', 40));
+
+      equal('{{ null | center }}',
+        lib.repeat(' ', 40) + '' +
+        lib.repeat(' ', 40));
+
+      equal('{{ nothing | center }}',
+        lib.repeat(' ', 40) + '' +
+        lib.repeat(' ', 40));
+
+      equal('{{ "foo" | center }}',
+        lib.repeat(' ', 38) + 'foo' +
+        lib.repeat(' ', 39));
       finish(done);
     });
-    it('default', function (done) {
+
+    it('default', function(done) {
       equal('{{ undefined | default("foo") }}', 'foo');
       equal('{{ bar | default("foo") }}', {
         bar: null
@@ -93079,252 +93058,379 @@ mocha.run();
       equal('{{ "bar" | default("foo") }}', 'bar');
       finish(done);
     });
-    it('dump', function () {
-      equal('{{ [\'a\', 1, {b: true}] | dump  }}', '[&quot;a&quot;,1,{&quot;b&quot;:true}]');
-      equal('{{ [\'a\', 1, {b: true}] | dump(2) }}', '[\n  &quot;a&quot;,\n  1,\n  {\n    &quot;b&quot;: true\n  }\n]');
-      equal('{{ [\'a\', 1, {b: true}] | dump(4) }}', '[\n    &quot;a&quot;,\n    1,\n    {\n        &quot;b&quot;: true\n    }\n]');
-      equal('{{ [\'a\', 1, {b: true}] | dump(\'\t\') }}', '[\n\t&quot;a&quot;,\n\t1,\n\t{\n\t\t&quot;b&quot;: true\n\t}\n]');
+
+    it('dump', function() {
+      equal('{{ [\'a\', 1, {b: true}] | dump  }}',
+        '[&quot;a&quot;,1,{&quot;b&quot;:true}]');
+      equal('{{ [\'a\', 1, {b: true}] | dump(2) }}',
+        '[\n  &quot;a&quot;,\n  1,\n  {\n    &quot;b&quot;: true\n  }\n]');
+      equal('{{ [\'a\', 1, {b: true}] | dump(4) }}',
+        '[\n    &quot;a&quot;,\n    1,\n    {\n        &quot;b&quot;: true\n    }\n]');
+      equal('{{ [\'a\', 1, {b: true}] | dump(\'\t\') }}',
+        '[\n\t&quot;a&quot;,\n\t1,\n\t{\n\t\t&quot;b&quot;: true\n\t}\n]');
     });
-    it('escape', function () {
-      equal('{{ "<html>\\\\" | escape }}', {}, {
-        autoescape: false
-      }, '&lt;html&gt;&#92;');
+
+    it('escape', function() {
+      equal(
+        '{{ "<html>\\\\" | escape }}', {},
+        { autoescape: false },
+        '&lt;html&gt;&#92;');
     });
-    it('escape skip safe', function () {
-      equal('{{ "<html>" | safe | escape }}', {}, {
-        autoescape: false
-      }, '<html>');
+
+    it('escape skip safe', function() {
+      equal('{{ "<html>" | safe | escape }}', {},
+        { autoescape: false },
+        '<html>');
     });
-    it('should not double escape strings', function () {
-      equal('{{ "<html>" | escape | escape }}', {}, {
-        autoescape: false
-      }, '&lt;html&gt;');
+
+    it('should not double escape strings', function() {
+      equal('{{ "<html>" | escape | escape }}', {},
+        { autoescape: false },
+        '&lt;html&gt;');
     });
-    it('should not double escape with autoescape on', function () {
-      equal('{% set val = "<html>" | escape %}{{ val }}', {}, {
-        autoescape: true
-      }, '&lt;html&gt;');
+
+    it('should not double escape with autoescape on', function() {
+      equal('{% set val = "<html>" | escape %}{{ val }}', {},
+        { autoescape: true },
+        '&lt;html&gt;');
     });
-    it('should work with non-string values', function () {
-      equal('{{ foo | escape }}', {
-        foo: ['<html>']
-      }, {
-        autoescape: false
-      }, '&lt;html&gt;');
-      equal('{{ foo | escape }}', {
-        foo: {
-          toString: function () {
-            return '<html>';
-          }
-        }
-      }, {
-        autoescape: false
-      }, '&lt;html&gt;');
-      equal('{{ foo | escape }}', {
-        foo: null
-      }, {
-        autoescape: false
-      }, '');
+
+    it('should work with non-string values', function() {
+      equal(
+        '{{ foo | escape }}',
+        { foo: ['<html>'] },
+        { autoescape: false },
+        '&lt;html&gt;');
+
+      equal(
+        '{{ foo | escape }}',
+        { foo: { toString: function() { return '<html>'; } } },
+        { autoescape: false },
+        '&lt;html&gt;');
+
+      equal('{{ foo | escape }}',
+        { foo: null },
+        { autoescape: false },
+        '');
     });
-    it('should not escape safe strings with autoescape on', function () {
-      equal('{{ "<html>" | safe | escape }}', {}, {
-        autoescape: true
-      }, '<html>');
-      equal('{% set val = "<html>" | safe | e %}{{ val }}', {}, {
-        autoescape: true
-      }, '<html>');
+
+    it('should not escape safe strings with autoescape on', function() {
+      equal(
+        '{{ "<html>" | safe | escape }}', {},
+        { autoescape: true },
+        '<html>');
+
+      equal(
+        '{% set val = "<html>" | safe | e %}{{ val }}', {},
+        { autoescape: true },
+        '<html>');
     });
-    it('should keep strings escaped after they have been escaped', function () {
-      equal('{% set val = "<html>" | e | safe %}{{ val }}', {}, {
-        autoescape: false
-      }, '&lt;html&gt;');
+
+    it('should keep strings escaped after they have been escaped', function() {
+      equal(
+        '{% set val = "<html>" | e | safe %}{{ val }}', {},
+        { autoescape: false },
+        '&lt;html&gt;');
     });
-    it('dictsort', function (done) {
+
+    it('dictsort', function(done) {
       // no real foolproof way to test that a js obj has been transformed
       // from unsorted -> sorted, as its enumeration ordering is undefined
       // and might fluke being sorted originally .. lets just init with some jumbled
       // keys
 
       // no params - should be case insensitive, by key
-      equal('{% for item in items | dictsort %}' + '{{ item[0] }}{% endfor %}', {
-        items: {
-          e: 1,
-          d: 2,
-          c: 3,
-          a: 4,
-          f: 5,
-          b: 6
-        }
-      }, 'abcdef');
+      equal(
+        '{% for item in items | dictsort %}' +
+        '{{ item[0] }}{% endfor %}',
+        {
+          items: {
+            e: 1,
+            d: 2,
+            c: 3,
+            a: 4,
+            f: 5,
+            b: 6
+          }
+        },
+        'abcdef');
 
       // case sensitive = true
-      equal('{% for item in items | dictsort(true) %}{{ item[0] }},{% endfor %}', {
-        items: {
-          ABC: 6,
-          ABc: 5,
-          Abc: 1,
-          abc: 2
-        }
-      }, 'ABC,ABc,Abc,abc,');
+      equal(
+        '{% for item in items | dictsort(true) %}{{ item[0] }},{% endfor %}', {
+          items: {
+            ABC: 6,
+            ABc: 5,
+            Abc: 1,
+            abc: 2
+          }
+        },
+        'ABC,ABc,Abc,abc,');
 
       // use values for sort
-      equal('{% for item in items | dictsort(false, "value") %}{{ item[0] }}{% endfor %}', {
-        items: {
-          a: 6,
-          b: 5,
-          c: 1,
-          d: 2
-        }
-      }, 'cdba');
+      equal(
+        '{% for item in items | dictsort(false, "value") %}{{ item[0] }}{% endfor %}', {
+          items: {
+            a: 6,
+            b: 5,
+            c: 1,
+            d: 2
+          }
+        },
+        'cdba');
+
       finish(done);
     });
-    it('first', function (done) {
+
+    it('first', function(done) {
       equal('{{ [1,2,3] | first }}', '1');
       finish(done);
     });
-    it('float', function () {
+
+    it('float', function() {
       equal('{{ "3.5" | float }}', '3.5');
       equal('{{ "0" | float }}', '0');
     });
-    it('forceescape', function (done) {
-      equal('{{ str | forceescape }}', {
-        str: r.markSafe('<html>')
-      }, '&lt;html&gt;');
+
+    it('forceescape', function(done) {
+      equal('{{ str | forceescape }}', { str: r.markSafe('<html>')}, '&lt;html&gt;');
       equal('{{ "<html>" | safe | forceescape }}', '&lt;html&gt;');
       finish(done);
     });
-    it('int', function () {
+
+    it('int', function() {
       equal('{{ "3.5" | int }}', '3');
       equal('{{ "0" | int }}', '0');
       equal('{{ "foobar" | int("42") }}', '42');
       equal('{{ "0x4d32" | int(base=16) }}', '19762');
       equal('{{ "011" | int(base=8) }}', '9');
     });
-    it('int (default value)', function () {
+
+    it('int (default value)', function() {
       equal('{{ "bob" | int("cat") }}', 'cat');
     });
-    it('float (default value)', function () {
+
+    it('float (default value)', function() {
       equal('{{ "bob" | float("cat") }}', 'cat');
     });
-    it('groupby', function (done) {
+
+    it('groupby', function(done) {
       const namesContext = {
         items: [{
           name: 'james',
           type: 'green'
-        }, {
+        },
+        {
           name: 'john',
           type: 'blue'
-        }, {
+        },
+        {
           name: 'jim',
           type: 'blue'
-        }, {
+        },
+        {
           name: 'jessie',
           type: 'green'
         }]
       };
-      equal('{% for type, items in items | groupby("type") %}' + ':{{ type }}:' + '{% for item in items %}' + '{{ item.name }}' + '{% endfor %}' + '{% endfor %}', namesContext, ':green:jamesjessie:blue:johnjim');
-      equal('{% for type, items in items | groupby("type") %}' + ':{{ type }}:' + '{% for item in items %}' + '{{ item.name }}' + '{% endfor %}' + '{% endfor %}', {
-        items: [{
-          name: 'james',
-          type: 'green'
-        }, {
-          name: 'john',
-          type: 'blue'
-        }, {
-          name: 'jim',
-          type: 'blue'
-        }, {
-          name: 'jessie',
-          color: 'green'
-        }]
-      }, ':green:james:blue:johnjim:undefined:jessie');
-      equal('{% for year, posts in posts | groupby("date.year") %}' + ':{{ year }}:' + '{% for post in posts %}' + '{{ post.title }}' + '{% endfor %}' + '{% endfor %}', {
-        posts: [{
-          date: {
-            year: 2019
+      equal(
+        '{% for type, items in items | groupby("type") %}' +
+        ':{{ type }}:' +
+        '{% for item in items %}' +
+        '{{ item.name }}' +
+        '{% endfor %}' +
+        '{% endfor %}',
+        namesContext,
+        ':green:jamesjessie:blue:johnjim');
+
+      equal(
+        '{% for type, items in items | groupby("type") %}' +
+        ':{{ type }}:' +
+        '{% for item in items %}' +
+        '{{ item.name }}' +
+        '{% endfor %}' +
+        '{% endfor %}',
+        {
+          items: [{
+            name: 'james',
+            type: 'green'
           },
-          title: 'Post 1'
-        }, {
-          date: {
-            year: 2018
+          {
+            name: 'john',
+            type: 'blue'
           },
-          title: 'Post 2'
-        }, {
-          date: {
-            year: 2019
+          {
+            name: 'jim',
+            type: 'blue'
           },
-          title: 'Post 3'
-        }]
-      }, ':2018:Post 2:2019:Post 1Post 3');
-      equal('{% for year, posts in posts | groupby("date.year") %}' + ':{{ year }}:' + '{% for post in posts %}' + '{{ post.title }}' + '{% endfor %}' + '{% endfor %}', {
-        posts: [{
-          date: {
-            year: 2019
-          },
-          title: 'Post 1'
-        }, {
-          date: {
-            year: 2018
-          },
-          title: 'Post 2'
-        }, {
-          meta: {
-            month: 2
-          },
-          title: 'Post 3'
-        }]
-      }, ':2018:Post 2:2019:Post 1:undefined:Post 3');
-      equal('{% for type, items in items | groupby({}) %}' + ':{{ type }}:' + '{% for item in items %}' + '{{ item.name }}' + '{% endfor %}' + '{% endfor %}', namesContext, ':undefined:jamesjohnjimjessie');
-      const undefinedTemplate = '{% for type, items in items | groupby("a.b.c") %}' + ':{{ type }}:' + '{% for item in items %}' + '{{ item.name }}' + '{% endfor %}' + '{% endfor %}';
-      equal(undefinedTemplate, namesContext, ':undefined:jamesjohnjimjessie');
-      expect(function () {
-        render(undefinedTemplate, namesContext, {
-          throwOnUndefined: true
-        });
+          {
+            name: 'jessie',
+            color: 'green'
+          }]
+        },
+        ':green:james:blue:johnjim:undefined:jessie');
+
+      equal(
+        '{% for year, posts in posts | groupby("date.year") %}' +
+        ':{{ year }}:' +
+        '{% for post in posts %}' +
+        '{{ post.title }}' +
+        '{% endfor %}' +
+        '{% endfor %}',
+        {
+          posts: [
+            {
+              date: {
+                year: 2019
+              },
+              title: 'Post 1'
+            },
+            {
+              date: {
+                year: 2018
+              },
+              title: 'Post 2'
+            },
+            {
+              date: {
+                year: 2019
+              },
+              title: 'Post 3'
+            }
+          ]
+        },
+        ':2018:Post 2:2019:Post 1Post 3');
+
+      equal(
+        '{% for year, posts in posts | groupby("date.year") %}' +
+        ':{{ year }}:' +
+        '{% for post in posts %}' +
+        '{{ post.title }}' +
+        '{% endfor %}' +
+        '{% endfor %}',
+        {
+          posts: [
+            {
+              date: {
+                year: 2019
+              },
+              title: 'Post 1'
+            },
+            {
+              date: {
+                year: 2018
+              },
+              title: 'Post 2'
+            },
+            {
+              meta: {
+                month: 2
+              },
+              title: 'Post 3'
+            }
+          ]
+        },
+        ':2018:Post 2:2019:Post 1:undefined:Post 3');
+
+      equal(
+        '{% for type, items in items | groupby({}) %}' +
+        ':{{ type }}:' +
+        '{% for item in items %}' +
+        '{{ item.name }}' +
+        '{% endfor %}' +
+        '{% endfor %}',
+        namesContext,
+        ':undefined:jamesjohnjimjessie'
+      );
+
+      const undefinedTemplate = (
+        '{% for type, items in items | groupby("a.b.c") %}' +
+        ':{{ type }}:' +
+        '{% for item in items %}' +
+        '{{ item.name }}' +
+        '{% endfor %}' +
+        '{% endfor %}'
+      );
+      equal(
+        undefinedTemplate,
+        namesContext,
+        ':undefined:jamesjohnjimjessie'
+      );
+
+      expect(function() {
+        render(
+          undefinedTemplate,
+          namesContext,
+          {
+            throwOnUndefined: true
+          }
+        );
       }).to.throwError(/groupby: attribute "a\.b\.c" resolved to undefined/);
+
       finish(done);
     });
-    it('indent', function (done) {
-      equal('{{ "one\ntwo\nthree" | indent }}', 'one\n    two\n    three');
-      equal('{{ "one\ntwo\nthree" | indent(2) }}', 'one\n  two\n  three');
-      equal('{{ "one\ntwo\nthree" | indent(2, true) }}', '  one\n  two\n  three');
+
+    it('indent', function(done) {
+      equal('{{ "one\ntwo\nthree" | indent }}',
+        'one\n    two\n    three');
+      equal('{{ "one\ntwo\nthree" | indent(2) }}',
+        'one\n  two\n  three');
+      equal('{{ "one\ntwo\nthree" | indent(2, true) }}',
+        '  one\n  two\n  three');
+
       equal('{{ str | indent }}', {
         str: r.markSafe('one\ntwo\nthree')
       }, 'one\n    two\n    three');
+
       equal('{{ "" | indent }}', '');
       equal('{{ undefined | indent }}', '');
       equal('{{ undefined | indent(2) }}', '');
       equal('{{ undefined | indent(2, true) }}', '');
+
       equal('{{ null | indent }}', '');
       equal('{{ null | indent(2) }}', '');
       equal('{{ null | indent(2, true) }}', '');
+
       equal('{{ nothing | indent }}', '');
       equal('{{ nothing | indent(2) }}', '');
       equal('{{ nothing | indent(2, true) }}', '');
       finish(done);
     });
-    it('join', function (done) {
-      equal('{{ items | join }}', {
-        items: [1, 2, 3]
-      }, '123');
-      equal('{{ items | join(",") }}', {
-        items: ['foo', 'bar', 'bear']
-      }, 'foo,bar,bear');
-      equal('{{ items | join(",", "name") }}', {
-        items: [{
-          name: 'foo'
-        }, {
-          name: 'bar'
-        }, {
-          name: 'bear'
-        }]
-      }, 'foo,bar,bear');
+
+    it('join', function(done) {
+      equal('{{ items | join }}',
+        {
+          items: [1, 2, 3]
+        },
+        '123');
+
+      equal('{{ items | join(",") }}',
+        {
+          items: ['foo', 'bar', 'bear']
+        },
+        'foo,bar,bear');
+
+      equal('{{ items | join(",", "name") }}',
+        {
+          items: [{
+            name: 'foo'
+          },
+          {
+            name: 'bar'
+          },
+          {
+            name: 'bear'
+          }]
+        },
+        'foo,bar,bear');
       finish(done);
     });
-    it('last', function (done) {
+
+    it('last', function(done) {
       equal('{{ [1,2,3] | last }}', '3');
       finish(done);
     });
+
     describe('the length filter', function suite() {
       it('should return length of a list literal', function test() {
         equal('{{ [1,2,3] | length }}', '3');
@@ -93380,7 +93486,7 @@ mocha.run();
       });
       it('should output the full length of a sparse array', function test() {
         equal('{{ arr | length }}', {
-          arr: [0,, 2] // eslint-disable-line
+          arr: [0,, 2]  // eslint-disable-line
         }, '3');
       });
       it('should output the length of an array created with "new Array"', function test() {
@@ -93416,25 +93522,27 @@ mocha.run();
         } else {
           set = new Set(['value1']);
           set.add('value2');
-          equal('{{ set | length }}', {
-            set: set
-          }, '2');
+          equal('{{ set | length }}', { set: set }, '2');
         }
       });
     });
-    it('list', function (done) {
+
+    it('list', function(done) {
       var person = {
         name: 'Joe',
         age: 83
       };
-      equal('{% for i in "foobar" | list %}{{ i }},{% endfor %}', 'f,o,o,b,a,r,');
-      equal('{% for pair in person | list %}{{ pair.key }}: {{ pair.value }} - {% endfor %}', {
-        person: person
-      }, 'name: Joe - age: 83 - ');
+      equal('{% for i in "foobar" | list %}{{ i }},{% endfor %}',
+        'f,o,o,b,a,r,');
+      equal('{% for pair in person | list %}{{ pair.key }}: {{ pair.value }} - {% endfor %}',
+        {
+          person: person
+        }, 'name: Joe - age: 83 - ');
       equal('{% for i in [1, 2] | list %}{{ i }}{% endfor %}', '12');
       finish(done);
     });
-    it('lower', function (done) {
+
+    it('lower', function(done) {
       equal('{{ "fOObAr" | lower }}', 'foobar');
       equal('{{ str | lower }}', {
         str: r.markSafe('fOObAr')
@@ -93444,7 +93552,8 @@ mocha.run();
       equal('{{ nothing | lower }}', '');
       finish(done);
     });
-    it('nl2br', function (done) {
+
+    it('nl2br', function(done) {
       equal('{{ null | nl2br }}', '');
       equal('{{ undefined | nl2br }}', '');
       equal('{{ nothing | nl2br }}', '');
@@ -93460,27 +93569,36 @@ mocha.run();
       equal('{{ "foo\nbar" | nl2br }}', 'foo&lt;br /&gt;\nbar');
       finish(done);
     });
-    it('random', function (done) {
+
+    it('random', function(done) {
       var i;
       for (i = 0; i < 100; i++) {
-        render('{{ [1,2,3,4,5,6,7,8,9] | random }}', function (err, res) {
+        render('{{ [1,2,3,4,5,6,7,8,9] | random }}', function(err, res) {
           var val = parseInt(res, 10);
           expect(val).to.be.within(1, 9);
         });
       }
+
       finish(done);
     });
-    it('reject', function (done) {
+
+    it('reject', function(done) {
       var context = {
         numbers: [0, 1, 2, 3, 4, 5]
       };
+
       equal('{{ numbers | reject("odd") | join }}', context, '024');
+
       equal('{{ numbers | reject("even") | join }}', context, '135');
+
       equal('{{ numbers | reject("divisibleby", 3) | join }}', context, '1245');
+
       equal('{{ numbers | reject() | join }}', context, '0');
+
       finish(done);
     });
-    it('rejectattr', function (done) {
+
+    it('rejectattr', function(done) {
       var foods = [{
         tasty: true
       }, {
@@ -93493,17 +93611,24 @@ mocha.run();
       }, '1');
       finish(done);
     });
-    it('select', function (done) {
+
+    it('select', function(done) {
       var context = {
         numbers: [0, 1, 2, 3, 4, 5]
       };
+
       equal('{{ numbers | select("odd") | join }}', context, '135');
+
       equal('{{ numbers | select("even") | join }}', context, '024');
+
       equal('{{ numbers | select("divisibleby", 3) | join }}', context, '03');
+
       equal('{{ numbers | select() | join }}', context, '12345');
+
       finish(done);
     });
-    it('selectattr', function (done) {
+
+    it('selectattr', function(done) {
       var foods = [{
         tasty: true
       }, {
@@ -93516,7 +93641,8 @@ mocha.run();
       }, '2');
       finish(done);
     });
-    it('replace', function (done) {
+
+    it('replace', function(done) {
       equal('{{ 123456 | replace("4", ".") }}', '123.56');
       equal('{{ 123456 | replace("4", ".") }}', '123.56');
       equal('{{ 12345.6 | replace("4", ".") }}', '123.5.6');
@@ -93542,6 +93668,7 @@ mocha.run();
       equal('{{ "aaabbbbbccc" | replace("d", "y", 4) }}', 'aaabbbbbccc');
       equal('{{ "aaabbcccbbb" | replace("b", "y", 4) }}', 'aaayycccyyb');
 
+
       // Bad initial inputs
       equal('{{ undefined | replace("b", "y", 4) }}', '');
       equal('{{ null | replace("b", "y", 4) }}', '');
@@ -93551,8 +93678,10 @@ mocha.run();
       equal('{{ false | replace("rue", "afafasf", 4) }}', 'false');
 
       // Will result in an infinite loop if unbounded otherwise test will pass
-      equal('{{ "<img src=" | replace("<img", "<img alt=val") | safe }}', '<img alt=val src=');
-      equal('{{ "<img src=\\"http://www.example.com\\" />" | replace("<img", "replacement text") | safe }}', 'replacement text src=\"http://www.example.com\" />');
+      equal('{{ "<img src=" | replace("<img", "<img alt=val") | safe }}',
+        '<img alt=val src=');
+      equal('{{ "<img src=\\"http://www.example.com\\" />" | replace("<img", "replacement text") | safe }}',
+        'replacement text src=\"http://www.example.com\" />');
 
       // Regex
       equal('{{ "aabbbb" | replace(r/ab{2}/, "z") }}', 'azbb');
@@ -93564,130 +93693,166 @@ mocha.run();
       }, 'xxxbbbccc');
       finish(done);
     });
-    it('reverse', function (done) {
+
+    it('reverse', function(done) {
       equal('{{ "abcdef" | reverse }}', 'fedcba');
       equal('{% for i in [1, 2, 3, 4] | reverse %}{{ i }}{% endfor %}', '4321');
       finish(done);
     });
-    it('round', function (done) {
+
+    it('round', function(done) {
       equal('{{ 4.5 | round }}', '5');
       equal('{{ 4.5 | round(0, "floor") }}', '4');
       equal('{{ 4.12345 | round(4) }}', '4.1235');
-      equal('{{ 4.12344 | round(4) }}', '4.1234');
+      equal('{{ 4.12344 | round(4) }}', ('4.1234'));
       finish(done);
     });
-    it('slice', function (done) {
-      var tmpl = '{% for items in arr | slice(3) %}' + '--' + '{% for item in items %}' + '{{ item }}' + '{% endfor %}' + '--' + '{% endfor %}';
-      equal(tmpl, {
-        arr: [1, 2, 3, 4, 5, 6, 7, 8, 9]
-      }, '--123----456----789--');
-      equal(tmpl, {
-        arr: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-      }, '--1234----567----8910--');
+
+    it('slice', function(done) {
+      var tmpl = '{% for items in arr | slice(3) %}' +
+        '--' +
+        '{% for item in items %}' +
+        '{{ item }}' +
+        '{% endfor %}' +
+        '--' +
+        '{% endfor %}';
+
+      equal(tmpl,
+        {
+          arr: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        },
+        '--123----456----789--');
+
+      equal(tmpl,
+        {
+          arr: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        },
+        '--1234----567----8910--');
+
       finish(done);
     });
-    it('sum', function (done) {
-      equal('{{ items | sum }}', {
-        items: [1, 2, 3]
-      }, '6');
-      equal('{{ items | sum("value") }}', {
-        items: [{
-          value: 1
-        }, {
-          value: 2
-        }, {
-          value: 3
-        }]
-      }, '6');
-      equal('{{ items | sum("value", 10) }}', {
-        items: [{
-          value: 1
-        }, {
-          value: 2
-        }, {
-          value: 3
-        }]
-      }, '16');
-      finish(done);
-    });
-    it('sort', function (done) {
-      equal('{% for i in [3,5,2,1,4,6] | sort %}{{ i }}{% endfor %}', '123456');
-      equal('{% for i in ["fOo", "Foo"] | sort %}{{ i }}{% endfor %}', 'fOoFoo');
-      equal('{% for i in [1,6,3,7] | sort(true) %}{{ i }}{% endfor %}', '7631');
-      equal('{% for i in ["fOo", "Foo"] | sort(false, true) %}{{ i }}{% endfor %}', 'FoofOo');
-      equal('{% for item in items | sort(false, false, "name") %}{{ item.name }}{% endfor %}', {
-        items: [{
-          name: 'james'
-        }, {
-          name: 'fred'
-        }, {
-          name: 'john'
-        }]
-      }, 'fredjamesjohn');
-      equal('{% for i in [ {n:3},{n:5},{n:2},{n:1},{n:4},{n:6}] | sort(attribute="n") %}{{ i.n }}{% endfor %}', '123456');
-      const nestedAttributeSortTemplate = '{% for item in items | sort(attribute="meta.age") %}{{ item.name }}{% endfor %}';
-      equal(nestedAttributeSortTemplate, {
-        items: [{
-          name: 'james',
-          meta: {
-            age: 25
-          }
-        }, {
-          name: 'fred',
-          meta: {
-            age: 18
-          }
-        }, {
-          name: 'john',
-          meta: {
-            age: 19
-          }
-        }]
-      }, 'fredjohnjames');
-      expect(function () {
-        render(nestedAttributeSortTemplate, {
+
+    it('sum', function(done) {
+      equal('{{ items | sum }}',
+        {
+          items: [1, 2, 3]
+        },
+        '6');
+
+      equal('{{ items | sum("value") }}',
+        {
           items: [{
-            name: 'james',
-            meta: {
-              age: 25
-            }
-          }, {
-            name: 'fred',
-            meta: {
-              age: 18
-            }
-          }, {
-            name: 'john',
-            meta: {
-              title: 'Developer'
-            }
+            value: 1
+          },
+          {
+            value: 2
+          },
+          {
+            value: 3
           }]
-        }, {
-          throwOnUndefined: true
-        });
+        },
+        '6');
+
+      equal('{{ items | sum("value", 10) }}',
+        {
+          items: [
+            {value: 1},
+            {value: 2},
+            {value: 3}
+          ]
+        },
+        '16');
+
+      finish(done);
+    });
+
+    it('sort', function(done) {
+      equal('{% for i in [3,5,2,1,4,6] | sort %}{{ i }}{% endfor %}',
+        '123456');
+
+      equal('{% for i in ["fOo", "Foo"] | sort %}{{ i }}{% endfor %}',
+        'fOoFoo');
+
+      equal('{% for i in [1,6,3,7] | sort(true) %}{{ i }}{% endfor %}',
+        '7631');
+
+      equal('{% for i in ["fOo", "Foo"] | sort(false, true) %}{{ i }}{% endfor %}',
+        'FoofOo');
+
+      equal('{% for item in items | sort(false, false, "name") %}{{ item.name }}{% endfor %}',
+        {
+          items: [
+            {name: 'james'},
+            {name: 'fred'},
+            {name: 'john'}
+          ]
+        },
+        'fredjamesjohn');
+
+      equal('{% for i in [ {n:3},{n:5},{n:2},{n:1},{n:4},{n:6}] | sort(attribute="n") %}{{ i.n }}{% endfor %}',
+        '123456');
+
+      const nestedAttributeSortTemplate = '{% for item in items | sort(attribute="meta.age") %}{{ item.name }}{% endfor %}';
+      equal(
+        nestedAttributeSortTemplate,
+        {
+          items: [
+            {name: 'james', meta: {age: 25}},
+            {name: 'fred', meta: {age: 18}},
+            {name: 'john', meta: {age: 19}}
+          ]
+        },
+        'fredjohnjames'
+      );
+
+      expect(function() {
+        render(
+          nestedAttributeSortTemplate,
+          {
+            items: [
+              {name: 'james', meta: {age: 25}},
+              {name: 'fred', meta: {age: 18}},
+              {name: 'john', meta: {title: 'Developer'}}
+            ]
+          },
+          {
+            throwOnUndefined: true
+          }
+        );
       }).to.throwError(/sort: attribute "meta\.age" resolved to undefined/);
+
       finish(done);
     });
-    it('string', function (done) {
-      equal('{% for i in 1234 | string | list %}{{ i }},{% endfor %}', '1,2,3,4,');
+
+    it('string', function(done) {
+      equal('{% for i in 1234 | string | list %}{{ i }},{% endfor %}',
+        '1,2,3,4,');
       finish(done);
     });
-    it('striptags', function (done) {
+
+    it('striptags', function(done) {
       equal('{{ html | striptags }}', {
         html: '<foo>bar'
       }, 'bar');
-      equal('{{ html | striptags }}', {
-        html: '  <p>an  \n <a href="#">example</a> link</p>\n<p>to a webpage</p> ' + '<!-- <p>and some comments</p> -->'
-      }, 'an example link to a webpage');
+      equal('{{ html | striptags }}',
+        {
+          html: '  <p>an  \n <a href="#">example</a> link</p>\n<p>to a webpage</p> ' +
+            '<!-- <p>and some comments</p> -->'
+        },
+        'an example link to a webpage');
       equal('{{ undefined | striptags }}', '');
       equal('{{ null | striptags }}', '');
       equal('{{ nothing | striptags }}', '');
-      equal('{{ html | striptags(true) }}', {
-        html: '<div>\n  row1\nrow2  \n  <strong>row3</strong>\n</div>\n\n' + ' HEADER \n\n<ul>\n  <li>option  1</li>\n<li>option  2</li>\n</ul>'
-      }, 'row1\nrow2\nrow3\n\nHEADER\n\noption 1\noption 2');
+      equal('{{ html | striptags(true) }}',
+        {
+          html: '<div>\n  row1\nrow2  \n  <strong>row3</strong>\n</div>\n\n' +
+            ' HEADER \n\n<ul>\n  <li>option  1</li>\n<li>option  2</li>\n</ul>'
+        },
+        'row1\nrow2\nrow3\n\nHEADER\n\noption 1\noption 2');
       finish(done);
     });
-    it('title', function (done) {
+
+    it('title', function(done) {
       equal('{{ "foo bar baz" | title }}', 'Foo Bar Baz');
       equal('{{ str | title }}', {
         str: r.markSafe('foo bar baz')
@@ -93697,14 +93862,16 @@ mocha.run();
       equal('{{ nothing | title }}', '');
       finish(done);
     });
-    it('trim', function (done) {
+
+    it('trim', function(done) {
       equal('{{ "  foo " | trim }}', 'foo');
       equal('{{ str | trim }}', {
         str: r.markSafe('  foo ')
       }, 'foo');
       finish(done);
     });
-    it('truncate', function (done) {
+
+    it('truncate', function(done) {
       equal('{{ "foo bar" | truncate(3) }}', 'foo...');
       equal('{{ "foo bar baz" | truncate(6) }}', 'foo...');
       equal('{{ "foo bar baz" | truncate(7) }}', 'foo bar...');
@@ -93713,24 +93880,29 @@ mocha.run();
       equal('{{ "foo bar" | truncate(3) }}', {
         str: r.markSafe('foo bar')
       }, 'foo...');
+
       equal('{{ undefined | truncate(3) }}', '');
       equal('{{ undefined | truncate(6) }}', '');
       equal('{{ undefined | truncate(7) }}', '');
       equal('{{ undefined | truncate(5, true) }}', '');
       equal('{{ undefined | truncate(6, true, "?") }}', '');
+
       equal('{{ null | truncate(3) }}', '');
       equal('{{ null | truncate(6) }}', '');
       equal('{{ null | truncate(7) }}', '');
       equal('{{ null | truncate(5, true) }}', '');
       equal('{{ null | truncate(6, true, "?") }}', '');
+
       equal('{{ nothing | truncate(3) }}', '');
       equal('{{ nothing | truncate(6) }}', '');
       equal('{{ nothing | truncate(7) }}', '');
       equal('{{ nothing | truncate(5, true) }}', '');
       equal('{{ nothing | truncate(6, true, "?") }}', '');
+
       finish(done);
     });
-    it('upper', function (done) {
+
+    it('upper', function(done) {
       equal('{{ "foo" | upper }}', 'FOO');
       equal('{{ str | upper }}', {
         str: r.markSafe('foo')
@@ -93740,7 +93912,8 @@ mocha.run();
       equal('{{ nothing | upper }}', '');
       finish(done);
     });
-    it('urlencode', function (done) {
+
+    it('urlencode', function(done) {
       equal('{{ "&" | urlencode }}', '%26');
       equal('{{ arr | urlencode | safe }}', {
         arr: [[1, 2], ['&1', '&2']]
@@ -93753,61 +93926,86 @@ mocha.run();
       }, '1=2&%261=%262');
       finish(done);
     });
-    it('urlencode - object without prototype', function (done) {
+
+    it('urlencode - object without prototype', function(done) {
       var obj = Object.create(null);
       obj['1'] = 2;
       obj['&1'] = '&2';
+
       equal('{{ obj | urlencode | safe }}', {
         obj: obj
       }, '1=2&%261=%262');
       finish(done);
     });
-    it('urlize', function (done) {
+
+    it('urlize', function(done) {
       // from jinja test suite:
       // https://github.com/mitsuhiko/jinja2/blob/8db47916de0e888dd8664b2511e220ab5ecf5c15/jinja2/testsuite/filters.py#L236-L239
-      equal('{{ "foo http://www.example.com/ bar" | urlize | safe }}', 'foo <a href="http://www.example.com/">' + 'http://www.example.com/</a> bar');
+      equal('{{ "foo http://www.example.com/ bar" | urlize | safe }}',
+        'foo <a href="http://www.example.com/">' +
+        'http://www.example.com/</a> bar');
 
       // additional tests
       equal('{{ "" | urlize }}', '');
       equal('{{ "foo" | urlize }}', 'foo');
 
       // http
-      equal('{{ "http://jinja.pocoo.org/docs/templates/" | urlize | safe }}', '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
+      equal('{{ "http://jinja.pocoo.org/docs/templates/" | urlize | safe }}',
+        '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
 
       // https
-      equal('{{ "https://jinja.pocoo.org/docs/templates/" | urlize | safe }}', '<a href="https://jinja.pocoo.org/docs/templates/">https://jinja.pocoo.org/docs/templates/</a>');
+      equal('{{ "https://jinja.pocoo.org/docs/templates/" | urlize | safe }}',
+        '<a href="https://jinja.pocoo.org/docs/templates/">https://jinja.pocoo.org/docs/templates/</a>');
 
       // www without protocol
-      equal('{{ "www.pocoo.org/docs/templates/" | urlize | safe }}', '<a href="http://www.pocoo.org/docs/templates/">www.pocoo.org/docs/templates/</a>');
+      equal('{{ "www.pocoo.org/docs/templates/" | urlize | safe }}',
+        '<a href="http://www.pocoo.org/docs/templates/">www.pocoo.org/docs/templates/</a>');
 
       // .org, .net, .com without protocol or www
-      equal('{{ "pocoo.org/docs/templates/" | urlize | safe }}', '<a href="http://pocoo.org/docs/templates/">pocoo.org/docs/templates/</a>');
-      equal('{{ "pocoo.net/docs/templates/" | urlize | safe }}', '<a href="http://pocoo.net/docs/templates/">pocoo.net/docs/templates/</a>');
-      equal('{{ "pocoo.com/docs/templates/" | urlize | safe }}', '<a href="http://pocoo.com/docs/templates/">pocoo.com/docs/templates/</a>');
-      equal('{{ "pocoo.com:80" | urlize | safe }}', '<a href="http://pocoo.com:80">pocoo.com:80</a>');
-      equal('{{ "pocoo.com" | urlize | safe }}', '<a href="http://pocoo.com">pocoo.com</a>');
-      equal('{{ "pocoo.commune" | urlize | safe }}', 'pocoo.commune');
+      equal('{{ "pocoo.org/docs/templates/" | urlize | safe }}',
+        '<a href="http://pocoo.org/docs/templates/">pocoo.org/docs/templates/</a>');
+      equal('{{ "pocoo.net/docs/templates/" | urlize | safe }}',
+        '<a href="http://pocoo.net/docs/templates/">pocoo.net/docs/templates/</a>');
+      equal('{{ "pocoo.com/docs/templates/" | urlize | safe }}',
+        '<a href="http://pocoo.com/docs/templates/">pocoo.com/docs/templates/</a>');
+      equal('{{ "pocoo.com:80" | urlize | safe }}',
+        '<a href="http://pocoo.com:80">pocoo.com:80</a>');
+      equal('{{ "pocoo.com" | urlize | safe }}',
+        '<a href="http://pocoo.com">pocoo.com</a>');
+      equal('{{ "pocoo.commune" | urlize | safe }}',
+        'pocoo.commune');
 
       // truncate the printed URL
-      equal('{{ "http://jinja.pocoo.org/docs/templates/" | urlize(12, true) | safe }}', '<a href="http://jinja.pocoo.org/docs/templates/" rel="nofollow">http://jinja</a>');
+      equal('{{ "http://jinja.pocoo.org/docs/templates/" | urlize(12, true) | safe }}',
+        '<a href="http://jinja.pocoo.org/docs/templates/" rel="nofollow">http://jinja</a>');
 
       // punctuation on the beginning of line.
-      equal('{{ "(http://jinja.pocoo.org/docs/templates/" | urlize | safe }}', '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
-      equal('{{ "<http://jinja.pocoo.org/docs/templates/" | urlize | safe }}', '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
-      equal('{{ "&lt;http://jinja.pocoo.org/docs/templates/" | urlize | safe }}', '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
+      equal('{{ "(http://jinja.pocoo.org/docs/templates/" | urlize | safe }}',
+        '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
+      equal('{{ "<http://jinja.pocoo.org/docs/templates/" | urlize | safe }}',
+        '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
+      equal('{{ "&lt;http://jinja.pocoo.org/docs/templates/" | urlize | safe }}',
+        '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
 
       // punctuation on the end of line
-      equal('{{ "http://jinja.pocoo.org/docs/templates/," | urlize | safe }}', '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
-      equal('{{ "http://jinja.pocoo.org/docs/templates/." | urlize | safe }}', '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
-      equal('{{ "http://jinja.pocoo.org/docs/templates/)" | urlize | safe }}', '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
-      equal('{{ "http://jinja.pocoo.org/docs/templates/\n" | urlize | safe }}', '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>\n');
-      equal('{{ "http://jinja.pocoo.org/docs/templates/&gt;" | urlize | safe }}', '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
+      equal('{{ "http://jinja.pocoo.org/docs/templates/," | urlize | safe }}',
+        '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
+      equal('{{ "http://jinja.pocoo.org/docs/templates/." | urlize | safe }}',
+        '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
+      equal('{{ "http://jinja.pocoo.org/docs/templates/)" | urlize | safe }}',
+        '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
+      equal('{{ "http://jinja.pocoo.org/docs/templates/\n" | urlize | safe }}',
+        '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>\n');
+      equal('{{ "http://jinja.pocoo.org/docs/templates/&gt;" | urlize | safe }}',
+        '<a href="http://jinja.pocoo.org/docs/templates/">http://jinja.pocoo.org/docs/templates/</a>');
 
       // http url with username
-      equal('{{ "http://testuser@testuser.com" | urlize | safe }}', '<a href="http://testuser@testuser.com">http://testuser@testuser.com</a>');
+      equal('{{ "http://testuser@testuser.com" | urlize | safe }}',
+        '<a href="http://testuser@testuser.com">http://testuser@testuser.com</a>');
 
       // email addresses
-      equal('{{ "testuser@testuser.com" | urlize | safe }}', '<a href="mailto:testuser@testuser.com">testuser@testuser.com</a>');
+      equal('{{ "testuser@testuser.com" | urlize | safe }}',
+        '<a href="mailto:testuser@testuser.com">testuser@testuser.com</a>');
 
       // periods in the text
       equal('{{ "foo." | urlize }}', 'foo.');
@@ -93819,30 +94017,34 @@ mocha.run();
       // breaklines and tabs in the text
       equal('{{ "what\nup" | urlize | safe }}', 'what\nup');
       equal('{{ "what\tup" | urlize | safe }}', 'what\tup');
+
       finish(done);
     });
-    it('wordcount', function (done) {
+
+    it('wordcount', function(done) {
       equal('{{ "foo bar baz" | wordcount }}', '3');
-      equal('{{ str | wordcount }}', {
-        str: r.markSafe('foo bar baz')
-      }, '3');
+      equal(
+        '{{ str | wordcount }}',
+        { str: r.markSafe('foo bar baz') },
+        '3');
       equal('{{ null | wordcount }}', '');
       equal('{{ undefined | wordcount }}', '');
       equal('{{ nothing | wordcount }}', '');
       finish(done);
     });
   });
-})();
+}());
+
 
 /***/ }),
 
-/***/ 9417:
+/***/ 6571:
 /*!**************************!*\
   !*** ./tests/globals.js ***!
   \**************************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   'use strict';
 
   var expect;
@@ -93851,16 +94053,19 @@ mocha.run();
   var equal;
   var render;
   var finish;
+
   if (true) {
     expect = __webpack_require__(/*! expect.js */ 1801);
-    util = __webpack_require__(/*! ./util */ 9821);
+    util = __webpack_require__(/*! ./util */ 9099);
     Environment = (__webpack_require__(/*! ../nunjucks/src/environment */ 2887).Environment);
   } else {}
+
   equal = util.equal;
   render = util.render;
   finish = util.finish;
-  describe('global', function () {
-    it('should have range', function (done) {
+
+  describe('global', function() {
+    it('should have range', function(done) {
       equal('{% for i in range(0, 10) %}{{ i }}{% endfor %}', '0123456789');
       equal('{% for i in range(10) %}{{ i }}{% endfor %}', '0123456789');
       equal('{% for i in range(5, 10) %}{{ i }}{% endfor %}', '56789');
@@ -93868,224 +94073,316 @@ mocha.run();
       equal('{% for i in range(5, 10, 2) %}{{ i }}{% endfor %}', '579');
       equal('{% for i in range(5, 10, 2.5) %}{{ i }}{% endfor %}', '57.5');
       equal('{% for i in range(5, 10, 2.5) %}{{ i }}{% endfor %}', '57.5');
+
       equal('{% for i in range(10, 5, -1) %}{{ i }}{% endfor %}', '109876');
       equal('{% for i in range(10, 5, -2.5) %}{{ i }}{% endfor %}', '107.5');
+
       finish(done);
     });
-    it('should have cycler', function (done) {
-      equal('{% set cls = cycler("odd", "even") %}' + '{{ cls.next() }}' + '{{ cls.next() }}' + '{{ cls.next() }}', 'oddevenodd');
-      equal('{% set cls = cycler("odd", "even") %}' + '{{ cls.next() }}' + '{{ cls.reset() }}' + '{{ cls.next() }}', 'oddodd');
-      equal('{% set cls = cycler("odd", "even") %}' + '{{ cls.next() }}' + '{{ cls.next() }}' + '{{ cls.current }}', 'oddeveneven');
+
+    it('should have cycler', function(done) {
+      equal(
+        '{% set cls = cycler("odd", "even") %}' +
+        '{{ cls.next() }}' +
+        '{{ cls.next() }}' +
+        '{{ cls.next() }}',
+        'oddevenodd');
+
+      equal(
+        '{% set cls = cycler("odd", "even") %}' +
+        '{{ cls.next() }}' +
+        '{{ cls.reset() }}' +
+        '{{ cls.next() }}',
+        'oddodd');
+
+      equal(
+        '{% set cls = cycler("odd", "even") %}' +
+        '{{ cls.next() }}' +
+        '{{ cls.next() }}' +
+        '{{ cls.current }}',
+        'oddeveneven');
+
       finish(done);
     });
-    it('should have joiner', function (done) {
-      equal('{% set comma = joiner() %}' + 'foo{{ comma() }}bar{{ comma() }}baz{{ comma() }}', 'foobar,baz,');
-      equal('{% set pipe = joiner("|") %}' + 'foo{{ pipe() }}bar{{ pipe() }}baz{{ pipe() }}', 'foobar|baz|');
+
+    it('should have joiner', function(done) {
+      equal(
+        '{% set comma = joiner() %}' +
+        'foo{{ comma() }}bar{{ comma() }}baz{{ comma() }}',
+        'foobar,baz,');
+
+      equal(
+        '{% set pipe = joiner("|") %}' +
+        'foo{{ pipe() }}bar{{ pipe() }}baz{{ pipe() }}',
+        'foobar|baz|');
+
       finish(done);
     });
-    it('should allow addition of globals', function (done) {
+
+    it('should allow addition of globals', function(done) {
       var env = new Environment();
-      env.addGlobal('hello', function (arg1) {
+
+      env.addGlobal('hello', function(arg1) {
         return 'Hello ' + arg1;
       });
+
       equal('{{ hello("World!") }}', 'Hello World!', env);
+
       finish(done);
     });
-    it('should allow chaining of globals', function (done) {
+
+    it('should allow chaining of globals', function(done) {
       var env = new Environment();
-      env.addGlobal('hello', function (arg1) {
+
+      env.addGlobal('hello', function(arg1) {
         return 'Hello ' + arg1;
-      }).addGlobal('goodbye', function (arg1) {
+      }).addGlobal('goodbye', function(arg1) {
         return 'Goodbye ' + arg1;
       });
+
       equal('{{ hello("World!") }}', 'Hello World!', env);
       equal('{{ goodbye("World!") }}', 'Goodbye World!', env);
+
       finish(done);
     });
-    it('should allow getting of globals', function (done) {
+
+    it('should allow getting of globals', function(done) {
       var env = new Environment();
-      var hello = function (arg1) {
+      var hello = function(arg1) {
         return 'Hello ' + arg1;
       };
+
       env.addGlobal('hello', hello);
+
       expect(env.getGlobal('hello')).to.be.equal(hello);
+
       finish(done);
     });
-    it('should allow getting boolean globals', function (done) {
+
+    it('should allow getting boolean globals', function(done) {
       var env = new Environment();
       var hello = false;
+
       env.addGlobal('hello', hello);
+
       expect(env.getGlobal('hello')).to.be.equal(hello);
+
       finish(done);
     });
-    it('should fail on getting non-existent global', function (done) {
+
+    it('should fail on getting non-existent global', function(done) {
       var env = new Environment();
 
       // Using this format instead of .withArgs since env.getGlobal uses 'this'
-      expect(function () {
+      expect(function() {
         env.getGlobal('hello');
       }).to.throwError();
+
       finish(done);
     });
-    it('should pass context as this to global functions', function (done) {
+
+    it('should pass context as this to global functions', function(done) {
       var env = new Environment();
-      env.addGlobal('hello', function () {
+
+      env.addGlobal('hello', function() {
         return 'Hello ' + this.lookup('user');
       });
+
       equal('{{ hello() }}', {
         user: 'James'
       }, 'Hello James', env);
       finish(done);
     });
-    it('should be exclusive to each environment', function (done) {
+
+    it('should be exclusive to each environment', function(done) {
       var env = new Environment();
       var env2;
+
       env.addGlobal('hello', 'konichiwa');
       env2 = new Environment();
 
       // Using this format instead of .withArgs since env2.getGlobal uses 'this'
-      expect(function () {
+      expect(function() {
         env2.getGlobal('hello');
       }).to.throwError();
+
       finish(done);
     });
-    it('should return errors from globals', function (done) {
+
+    it('should return errors from globals', function(done) {
       var env = new Environment();
-      env.addGlobal('err', function () {
+
+      env.addGlobal('err', function() {
         throw new Error('Global error');
       });
+
       try {
         render('{{ err() }}', null, {}, env);
       } catch (e) {
         expect(e).to.be.a(Error);
       }
+
       finish(done);
     });
   });
-})();
+}());
+
 
 /***/ }),
 
-/***/ 2848:
+/***/ 1922:
 /*!*******************************!*\
   !*** ./tests/jinja-compat.js ***!
   \*******************************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   'use strict';
 
   var util;
   var equal;
   var finish;
+
   if (true) {
-    util = __webpack_require__(/*! ./util */ 9821);
+    util = __webpack_require__(/*! ./util */ 9099);
   } else {}
+
   equal = util.jinjaEqual;
   finish = util.finish;
-  describe('jinja-compat', function () {
+
+  describe('jinja-compat', function() {
     var arr = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-    it('should support array slices with start and stop', function (done) {
-      equal('{% for i in arr[1:4] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'bcd');
+
+    it('should support array slices with start and stop', function(done) {
+      equal('{% for i in arr[1:4] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'bcd');
       finish(done);
     });
-    it('should support array slices using expressions', function (done) {
-      equal('{% for i in arr[n:n+3] %}{{ i }}{% endfor %}', {
-        n: 1,
-        arr: arr
-      }, 'bcd');
+    it('should support array slices using expressions', function(done) {
+      equal('{% for i in arr[n:n+3] %}{{ i }}{% endfor %}',
+        {
+          n: 1,
+          arr: arr
+        },
+        'bcd');
       finish(done);
     });
-    it('should support array slices with start', function (done) {
-      equal('{% for i in arr[3:] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'defgh');
+    it('should support array slices with start', function(done) {
+      equal('{% for i in arr[3:] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'defgh');
       finish(done);
     });
-    it('should support array slices with negative start', function (done) {
-      equal('{% for i in arr[-3:] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'fgh');
+    it('should support array slices with negative start', function(done) {
+      equal('{% for i in arr[-3:] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'fgh');
       finish(done);
     });
-    it('should support array slices with stop', function (done) {
-      equal('{% for i in arr[:4] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'abcd');
+    it('should support array slices with stop', function(done) {
+      equal('{% for i in arr[:4] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'abcd');
       finish(done);
     });
-    it('should support array slices with negative stop', function (done) {
-      equal('{% for i in arr[:-3] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'abcde');
+    it('should support array slices with negative stop', function(done) {
+      equal('{% for i in arr[:-3] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'abcde');
       finish(done);
     });
-    it('should support array slices with step', function (done) {
-      equal('{% for i in arr[::2] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'aceg');
+    it('should support array slices with step', function(done) {
+      equal('{% for i in arr[::2] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'aceg');
       finish(done);
     });
-    it('should support array slices with negative step', function (done) {
-      equal('{% for i in arr[::-1] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'hgfedcba');
+    it('should support array slices with negative step', function(done) {
+      equal('{% for i in arr[::-1] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'hgfedcba');
       finish(done);
     });
-    it('should support array slices with start and negative step', function (done) {
-      equal('{% for i in arr[4::-1] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'edcba');
+    it('should support array slices with start and negative step', function(done) {
+      equal('{% for i in arr[4::-1] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'edcba');
       finish(done);
     });
-    it('should support array slices with negative start and negative step', function (done) {
-      equal('{% for i in arr[-5::-1] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'dcba');
+    it('should support array slices with negative start and negative step', function(done) {
+      equal('{% for i in arr[-5::-1] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'dcba');
       finish(done);
     });
-    it('should support array slices with stop and negative step', function (done) {
-      equal('{% for i in arr[:3:-1] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'hgfe');
+    it('should support array slices with stop and negative step', function(done) {
+      equal('{% for i in arr[:3:-1] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'hgfe');
       finish(done);
     });
-    it('should support array slices with start and step', function (done) {
-      equal('{% for i in arr[1::2] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'bdfh');
+    it('should support array slices with start and step', function(done) {
+      equal('{% for i in arr[1::2] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'bdfh');
       finish(done);
     });
-    it('should support array slices with start, stop, and step', function (done) {
-      equal('{% for i in arr[1:7:2] %}{{ i }}{% endfor %}', {
-        arr: arr
-      }, 'bdf');
+    it('should support array slices with start, stop, and step', function(done) {
+      equal('{% for i in arr[1:7:2] %}{{ i }}{% endfor %}',
+        {
+          arr: arr
+        },
+        'bdf');
       finish(done);
     });
   });
-})();
+}());
+
 
 /***/ }),
 
-/***/ 7031:
+/***/ 7501:
 /*!************************!*\
   !*** ./tests/lexer.js ***!
   \************************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   'use strict';
 
   var expect;
   var lib;
   var lexer;
+
   if (true) {
     expect = __webpack_require__(/*! expect.js */ 1801);
     lib = __webpack_require__(/*! ../nunjucks/src/lib */ 449);
     lexer = __webpack_require__(/*! ../nunjucks/src/lexer */ 3608);
   } else {}
+
   function _hasTokens(ws, tokens, types) {
     var i;
     var type;
@@ -94093,11 +94390,13 @@ mocha.run();
     for (i = 0; i < types.length; i++) {
       type = types[i];
       tok = tokens.nextToken();
+
       if (!ws) {
         while (tok && tok.type === lexer.TOKEN_WHITESPACE) {
           tok = tokens.nextToken();
         }
       }
+
       if (lib.isArray(type)) {
         expect(tok.type).to.be(type[0]);
         expect(tok.value).to.be(type[1]);
@@ -94117,65 +94416,140 @@ mocha.run();
       }
     }
   }
+
   function hasTokens(tokens /* , types */) {
     return _hasTokens(false, tokens, lib.toArray(arguments).slice(1));
   }
+
   function hasTokensWithWS(tokens /* , types */) {
     return _hasTokens(true, tokens, lib.toArray(arguments).slice(1));
   }
-  describe('lexer', function () {
+
+  describe('lexer', function() {
     var tok;
     var tmpl;
     var tokens;
-    it('should parse template data', function () {
+
+    it('should parse template data', function() {
       tok = lexer.lex('3').nextToken();
       expect(tok.type).to.be(lexer.TOKEN_DATA);
       expect(tok.value).to.be('3');
+
       tmpl = 'foo bar bizzle 3 [1,2] !@#$%^&*()<>?:"{}|';
       tok = lexer.lex(tmpl).nextToken();
       expect(tok.type).to.be(lexer.TOKEN_DATA);
       expect(tok.value).to.be(tmpl);
     });
-    it('should keep track of whitespace', function () {
+
+    it('should keep track of whitespace', function() {
       tokens = lexer.lex('data {% 1 2\n   3  %} data');
-      hasTokensWithWS(tokens, lexer.TOKEN_DATA, lexer.TOKEN_BLOCK_START, [lexer.TOKEN_WHITESPACE, ' '], lexer.TOKEN_INT, [lexer.TOKEN_WHITESPACE, ' '], lexer.TOKEN_INT, [lexer.TOKEN_WHITESPACE, '\n   '], lexer.TOKEN_INT, [lexer.TOKEN_WHITESPACE, '  '], lexer.TOKEN_BLOCK_END, lexer.TOKEN_DATA);
+      hasTokensWithWS(tokens,
+        lexer.TOKEN_DATA,
+        lexer.TOKEN_BLOCK_START,
+        [lexer.TOKEN_WHITESPACE, ' '],
+        lexer.TOKEN_INT,
+        [lexer.TOKEN_WHITESPACE, ' '],
+        lexer.TOKEN_INT,
+        [lexer.TOKEN_WHITESPACE, '\n   '],
+        lexer.TOKEN_INT,
+        [lexer.TOKEN_WHITESPACE, '  '],
+        lexer.TOKEN_BLOCK_END,
+        lexer.TOKEN_DATA);
     });
-    it('should trim blocks', function () {
+
+    it('should trim blocks', function() {
       tokens = lexer.lex('  {% if true %}\n    foo\n  {% endif %}\n', {
         trimBlocks: true
       });
-      hasTokens(tokens, [lexer.TOKEN_DATA, '  '], lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BOOLEAN, lexer.TOKEN_BLOCK_END, [lexer.TOKEN_DATA, '    foo\n  '], lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BLOCK_END);
+      hasTokens(tokens,
+        [lexer.TOKEN_DATA, '  '],
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BOOLEAN,
+        lexer.TOKEN_BLOCK_END,
+        [lexer.TOKEN_DATA, '    foo\n  '],
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BLOCK_END);
     });
-    it('should trim windows-style CRLF line endings after blocks', function () {
+
+    it('should trim windows-style CRLF line endings after blocks', function() {
       tokens = lexer.lex('  {% if true %}\r\n    foo\r\n  {% endif %}\r\n', {
         trimBlocks: true
       });
-      hasTokens(tokens, [lexer.TOKEN_DATA, '  '], lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BOOLEAN, lexer.TOKEN_BLOCK_END, [lexer.TOKEN_DATA, '    foo\r\n  '], lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BLOCK_END);
+      hasTokens(tokens,
+        [lexer.TOKEN_DATA, '  '],
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BOOLEAN,
+        lexer.TOKEN_BLOCK_END,
+        [lexer.TOKEN_DATA, '    foo\r\n  '],
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BLOCK_END);
     });
-    it('should not trim CR after blocks', function () {
+
+    it('should not trim CR after blocks', function() {
       tokens = lexer.lex('  {% if true %}\r    foo\r\n  {% endif %}\r', {
         trimBlocks: true
       });
-      hasTokens(tokens, [lexer.TOKEN_DATA, '  '], lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BOOLEAN, lexer.TOKEN_BLOCK_END, [lexer.TOKEN_DATA, '\r    foo\r\n  '], lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BLOCK_END, [lexer.TOKEN_DATA, '\r']);
+      hasTokens(tokens,
+        [lexer.TOKEN_DATA, '  '],
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BOOLEAN,
+        lexer.TOKEN_BLOCK_END,
+        [lexer.TOKEN_DATA, '\r    foo\r\n  '],
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BLOCK_END,
+        [lexer.TOKEN_DATA, '\r']);
     });
-    it('should lstrip and trim blocks', function () {
+
+    it('should lstrip and trim blocks', function() {
       tokens = lexer.lex('test\n {% if true %}\n  foo\n {% endif %}\n</div>', {
         lstripBlocks: true,
         trimBlocks: true
       });
-      hasTokens(tokens, [lexer.TOKEN_DATA, 'test\n'], lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BOOLEAN, lexer.TOKEN_BLOCK_END, [lexer.TOKEN_DATA, '  foo\n'], lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BLOCK_END, [lexer.TOKEN_DATA, '</div>']);
+      hasTokens(tokens,
+        [lexer.TOKEN_DATA, 'test\n'],
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BOOLEAN,
+        lexer.TOKEN_BLOCK_END,
+        [lexer.TOKEN_DATA, '  foo\n'],
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BLOCK_END,
+        [lexer.TOKEN_DATA, '</div>']);
     });
-    it('should lstrip and not collapse whitespace between blocks', function () {
+
+    it('should lstrip and not collapse whitespace between blocks', function() {
       tokens = lexer.lex('   {% t %} {% t %}', {
         lstripBlocks: true
       });
-      hasTokens(tokens, lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BLOCK_END, [lexer.TOKEN_DATA, ' '], lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BLOCK_END);
+      hasTokens(tokens,
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BLOCK_END,
+        [lexer.TOKEN_DATA, ' '],
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BLOCK_END);
     });
-    it('should parse variable start and end', function () {
+
+
+    it('should parse variable start and end', function() {
       tokens = lexer.lex('data {{ foo }} bar bizzle');
-      hasTokens(tokens, lexer.TOKEN_DATA, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_VARIABLE_END, lexer.TOKEN_DATA);
+      hasTokens(tokens,
+        lexer.TOKEN_DATA,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_VARIABLE_END,
+        lexer.TOKEN_DATA);
     });
-    it('should treat the non-breaking space as valid whitespace', function () {
+
+    it('should treat the non-breaking space as valid whitespace', function() {
       tokens = lexer.lex('{{\u00A0foo }}');
       tok = tokens.nextToken();
       tok = tokens.nextToken();
@@ -94183,365 +94557,570 @@ mocha.run();
       expect(tok.type).to.be(lexer.TOKEN_SYMBOL);
       expect(tok.value).to.be('foo');
     });
-    it('should parse block start and end', function () {
+
+    it('should parse block start and end', function() {
       tokens = lexer.lex('data {% foo %} bar bizzle');
-      hasTokens(tokens, lexer.TOKEN_DATA, lexer.TOKEN_BLOCK_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_BLOCK_END, lexer.TOKEN_DATA);
+      hasTokens(tokens,
+        lexer.TOKEN_DATA,
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_BLOCK_END,
+        lexer.TOKEN_DATA);
     });
-    it('should parse basic types', function () {
+
+    it('should parse basic types', function() {
       tokens = lexer.lex('{{ 3 4.5 true false none foo "hello" \'boo\' r/regex/ }}');
-      hasTokens(tokens, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_INT, lexer.TOKEN_FLOAT, lexer.TOKEN_BOOLEAN, lexer.TOKEN_BOOLEAN, lexer.TOKEN_NONE, lexer.TOKEN_SYMBOL, lexer.TOKEN_STRING, lexer.TOKEN_STRING, lexer.TOKEN_REGEX, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_FLOAT,
+        lexer.TOKEN_BOOLEAN,
+        lexer.TOKEN_BOOLEAN,
+        lexer.TOKEN_NONE,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_STRING,
+        lexer.TOKEN_STRING,
+        lexer.TOKEN_REGEX,
+        lexer.TOKEN_VARIABLE_END);
     });
-    it('should parse function calls', function () {
+
+    it('should parse function calls', function() {
       tokens = lexer.lex('{{ foo(bar) }}');
-      hasTokens(tokens, lexer.TOKEN_VARIABLE_START, [lexer.TOKEN_SYMBOL, 'foo'], lexer.TOKEN_LEFT_PAREN, [lexer.TOKEN_SYMBOL, 'bar'], lexer.TOKEN_RIGHT_PAREN, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_VARIABLE_START,
+        [lexer.TOKEN_SYMBOL, 'foo'],
+        lexer.TOKEN_LEFT_PAREN,
+        [lexer.TOKEN_SYMBOL, 'bar'],
+        lexer.TOKEN_RIGHT_PAREN,
+        lexer.TOKEN_VARIABLE_END);
     });
-    it('should parse groups', function () {
+
+    it('should parse groups', function() {
       tokens = lexer.lex('{{ (1, 2, 3) }}');
-      hasTokens(tokens, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_LEFT_PAREN, lexer.TOKEN_INT, lexer.TOKEN_COMMA, lexer.TOKEN_INT, lexer.TOKEN_COMMA, lexer.TOKEN_INT, lexer.TOKEN_RIGHT_PAREN, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_LEFT_PAREN,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_COMMA,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_COMMA,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_RIGHT_PAREN,
+        lexer.TOKEN_VARIABLE_END);
     });
-    it('should parse arrays', function () {
+
+    it('should parse arrays', function() {
       tokens = lexer.lex('{{ [1, 2, 3] }}');
-      hasTokens(tokens, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_LEFT_BRACKET, lexer.TOKEN_INT, lexer.TOKEN_COMMA, lexer.TOKEN_INT, lexer.TOKEN_COMMA, lexer.TOKEN_INT, lexer.TOKEN_RIGHT_BRACKET, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_LEFT_BRACKET,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_COMMA,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_COMMA,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_RIGHT_BRACKET,
+        lexer.TOKEN_VARIABLE_END);
     });
-    it('should parse dicts', function () {
+
+    it('should parse dicts', function() {
       tokens = lexer.lex('{{ {one:1, "two":2} }}');
-      hasTokens(tokens, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_LEFT_CURLY, [lexer.TOKEN_SYMBOL, 'one'], lexer.TOKEN_COLON, [lexer.TOKEN_INT, '1'], lexer.TOKEN_COMMA, [lexer.TOKEN_STRING, 'two'], lexer.TOKEN_COLON, [lexer.TOKEN_INT, '2'], lexer.TOKEN_RIGHT_CURLY, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_LEFT_CURLY,
+        [lexer.TOKEN_SYMBOL, 'one'],
+        lexer.TOKEN_COLON,
+        [lexer.TOKEN_INT, '1'],
+        lexer.TOKEN_COMMA,
+        [lexer.TOKEN_STRING, 'two'],
+        lexer.TOKEN_COLON,
+        [lexer.TOKEN_INT, '2'],
+        lexer.TOKEN_RIGHT_CURLY,
+        lexer.TOKEN_VARIABLE_END);
     });
-    it('should parse blocks without whitespace', function () {
+
+    it('should parse blocks without whitespace', function() {
       tokens = lexer.lex('data{{hello}}{%if%}data');
-      hasTokens(tokens, lexer.TOKEN_DATA, lexer.TOKEN_VARIABLE_START, [lexer.TOKEN_SYMBOL, 'hello'], lexer.TOKEN_VARIABLE_END, lexer.TOKEN_BLOCK_START, [lexer.TOKEN_SYMBOL, 'if'], lexer.TOKEN_BLOCK_END, lexer.TOKEN_DATA);
+      hasTokens(tokens,
+        lexer.TOKEN_DATA,
+        lexer.TOKEN_VARIABLE_START,
+        [lexer.TOKEN_SYMBOL, 'hello'],
+        lexer.TOKEN_VARIABLE_END,
+        lexer.TOKEN_BLOCK_START,
+        [lexer.TOKEN_SYMBOL, 'if'],
+        lexer.TOKEN_BLOCK_END,
+        lexer.TOKEN_DATA);
     });
-    it('should parse filters', function () {
-      hasTokens(lexer.lex('{{ foo|bar }}'), lexer.TOKEN_VARIABLE_START, [lexer.TOKEN_SYMBOL, 'foo'], lexer.TOKEN_PIPE, [lexer.TOKEN_SYMBOL, 'bar'], lexer.TOKEN_VARIABLE_END);
+
+    it('should parse filters', function() {
+      hasTokens(lexer.lex('{{ foo|bar }}'),
+        lexer.TOKEN_VARIABLE_START,
+        [lexer.TOKEN_SYMBOL, 'foo'],
+        lexer.TOKEN_PIPE,
+        [lexer.TOKEN_SYMBOL, 'bar'],
+        lexer.TOKEN_VARIABLE_END);
     });
-    it('should parse operators', function () {
-      hasTokens(lexer.lex('{{ 3+3-3*3/3 }}'), lexer.TOKEN_VARIABLE_START, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_VARIABLE_END);
-      hasTokens(lexer.lex('{{ 3**4//5 }}'), lexer.TOKEN_VARIABLE_START, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_VARIABLE_END);
-      hasTokens(lexer.lex('{{ 3 != 4 == 5 <= 6 >= 7 < 8 > 9 }}'), lexer.TOKEN_VARIABLE_START, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_OPERATOR, lexer.TOKEN_INT, lexer.TOKEN_VARIABLE_END);
+
+    it('should parse operators', function() {
+      hasTokens(lexer.lex('{{ 3+3-3*3/3 }}'),
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_VARIABLE_END);
+
+      hasTokens(lexer.lex('{{ 3**4//5 }}'),
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_VARIABLE_END);
+
+      hasTokens(lexer.lex('{{ 3 != 4 == 5 <= 6 >= 7 < 8 > 9 }}'),
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_OPERATOR,
+        lexer.TOKEN_INT,
+        lexer.TOKEN_VARIABLE_END);
     });
-    it('should parse comments', function () {
+
+    it('should parse comments', function() {
       tokens = lexer.lex('data data {# comment #} data');
-      hasTokens(tokens, lexer.TOKEN_DATA, lexer.TOKEN_COMMENT, lexer.TOKEN_DATA);
+      hasTokens(tokens,
+        lexer.TOKEN_DATA,
+        lexer.TOKEN_COMMENT,
+        lexer.TOKEN_DATA);
     });
-    it('should allow changing the variable start and end', function () {
+
+    it('should allow changing the variable start and end', function() {
       tokens = lexer.lex('data {= var =}', {
         tags: {
           variableStart: '{=',
           variableEnd: '=}'
         }
       });
-      hasTokens(tokens, lexer.TOKEN_DATA, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_DATA,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_VARIABLE_END);
     });
-    it('should allow changing the block start and end', function () {
+
+    it('should allow changing the block start and end', function() {
       tokens = lexer.lex('{= =}', {
         tags: {
           blockStart: '{=',
           blockEnd: '=}'
         }
       });
-      hasTokens(tokens, lexer.TOKEN_BLOCK_START, lexer.TOKEN_BLOCK_END);
+      hasTokens(tokens,
+        lexer.TOKEN_BLOCK_START,
+        lexer.TOKEN_BLOCK_END);
     });
-    it('should allow changing the variable start and end', function () {
+
+    it('should allow changing the variable start and end', function() {
       tokens = lexer.lex('data {= var =}', {
         tags: {
           variableStart: '{=',
           variableEnd: '=}'
         }
       });
-      hasTokens(tokens, lexer.TOKEN_DATA, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_SYMBOL, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_DATA,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_VARIABLE_END);
     });
-    it('should allow changing the comment start and end', function () {
+
+    it('should allow changing the comment start and end', function() {
       tokens = lexer.lex('<!-- A comment! -->', {
         tags: {
           commentStart: '<!--',
           commentEnd: '-->'
         }
       });
-      hasTokens(tokens, lexer.TOKEN_COMMENT);
+      hasTokens(tokens,
+        lexer.TOKEN_COMMENT);
     });
 
     /**
      * Test that this bug is fixed: https://github.com/mozilla/nunjucks/issues/235
      */
-    it('should have individual lexer tag settings for each environment', function () {
+    it('should have individual lexer tag settings for each environment', function() {
       tokens = lexer.lex('{=', {
         tags: {
           variableStart: '{='
         }
       });
       hasTokens(tokens, lexer.TOKEN_VARIABLE_START);
+
       tokens = lexer.lex('{{');
       hasTokens(tokens, lexer.TOKEN_VARIABLE_START);
+
       tokens = lexer.lex('{{', {
         tags: {
           variableStart: '<<<'
         }
       });
       hasTokens(tokens, lexer.TOKEN_DATA);
+
       tokens = lexer.lex('{{');
       hasTokens(tokens, lexer.TOKEN_VARIABLE_START);
     });
-    it('should parse regular expressions', function () {
+
+    it('should parse regular expressions', function() {
       tokens = lexer.lex('{{ r/basic regex [a-z]/ }}');
-      hasTokens(tokens, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_REGEX, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_REGEX,
+        lexer.TOKEN_VARIABLE_END);
 
       // A more complex regex with escaped slashes.
       tokens = lexer.lex('{{ r/{a*b} \\/regex! [0-9]\\// }}');
-      hasTokens(tokens, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_REGEX, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_REGEX,
+        lexer.TOKEN_VARIABLE_END);
 
       // This one has flags.
       tokens = lexer.lex('{{ r/^x/gim }}');
-      hasTokens(tokens, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_REGEX, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_REGEX,
+        lexer.TOKEN_VARIABLE_END);
 
       // This one has a valid flag then an invalid flag.
       tokens = lexer.lex('{{ r/x$/iv }}');
-      hasTokens(tokens, lexer.TOKEN_VARIABLE_START, lexer.TOKEN_REGEX, lexer.TOKEN_SYMBOL, lexer.TOKEN_VARIABLE_END);
+      hasTokens(tokens,
+        lexer.TOKEN_VARIABLE_START,
+        lexer.TOKEN_REGEX,
+        lexer.TOKEN_SYMBOL,
+        lexer.TOKEN_VARIABLE_END);
     });
-    it('should keep track of token positions', function () {
-      hasTokens(lexer.lex('{{ 3 != 4 == 5 <= 6 >= 7 < 8 > 9 }}'), {
-        type: lexer.TOKEN_VARIABLE_START,
-        lineno: 0,
-        colno: 0
-      }, {
-        type: lexer.TOKEN_INT,
-        value: '3',
-        lineno: 0,
-        colno: 3
-      }, {
-        type: lexer.TOKEN_OPERATOR,
-        value: '!=',
-        lineno: 0,
-        colno: 5
-      }, {
-        type: lexer.TOKEN_INT,
-        value: '4',
-        lineno: 0,
-        colno: 8
-      }, {
-        type: lexer.TOKEN_OPERATOR,
-        value: '==',
-        lineno: 0,
-        colno: 10
-      }, {
-        type: lexer.TOKEN_INT,
-        value: '5',
-        lineno: 0,
-        colno: 13
-      }, {
-        type: lexer.TOKEN_OPERATOR,
-        value: '<=',
-        lineno: 0,
-        colno: 15
-      }, {
-        type: lexer.TOKEN_INT,
-        value: '6',
-        lineno: 0,
-        colno: 18
-      }, {
-        type: lexer.TOKEN_OPERATOR,
-        lineno: 0,
-        colno: 20,
-        value: '>='
-      }, {
-        type: lexer.TOKEN_INT,
-        lineno: 0,
-        colno: 23,
-        value: '7'
-      }, {
-        type: lexer.TOKEN_OPERATOR,
-        value: '<',
-        lineno: 0,
-        colno: 25
-      }, {
-        type: lexer.TOKEN_INT,
-        value: '8',
-        lineno: 0,
-        colno: 27
-      }, {
-        type: lexer.TOKEN_OPERATOR,
-        value: '>',
-        lineno: 0,
-        colno: 29
-      }, {
-        type: lexer.TOKEN_INT,
-        value: '9',
-        lineno: 0,
-        colno: 31
-      }, {
-        type: lexer.TOKEN_VARIABLE_END,
-        lineno: 0,
-        colno: 33
-      });
-      hasTokens(lexer.lex('{% if something %}{{ value }}{% else %}{{ otherValue }}{% endif %}'), {
-        type: lexer.TOKEN_BLOCK_START,
-        lineno: 0,
-        colno: 0
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'if',
-        lineno: 0,
-        colno: 3
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'something',
-        lineno: 0,
-        colno: 6
-      }, {
-        type: lexer.TOKEN_BLOCK_END,
-        lineno: 0,
-        colno: 16
-      }, {
-        type: lexer.TOKEN_VARIABLE_START,
-        lineno: 0,
-        colno: 18
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'value',
-        lineno: 0,
-        colno: 21
-      }, {
-        type: lexer.TOKEN_VARIABLE_END,
-        lineno: 0,
-        colno: 27
-      }, {
-        type: lexer.TOKEN_BLOCK_START,
-        lineno: 0,
-        colno: 29
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'else',
-        lineno: 0,
-        colno: 32
-      }, {
-        type: lexer.TOKEN_BLOCK_END,
-        lineno: 0,
-        colno: 37
-      }, {
-        type: lexer.TOKEN_VARIABLE_START,
-        lineno: 0,
-        colno: 39
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'otherValue',
-        lineno: 0,
-        colno: 42
-      }, {
-        type: lexer.TOKEN_VARIABLE_END,
-        lineno: 0,
-        colno: 53
-      }, {
-        type: lexer.TOKEN_BLOCK_START,
-        lineno: 0,
-        colno: 55
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'endif',
-        lineno: 0,
-        colno: 58
-      }, {
-        type: lexer.TOKEN_BLOCK_END,
-        lineno: 0,
-        colno: 64
-      });
-      hasTokens(lexer.lex('{% if something %}\n{{ value }}\n{% else %}\n{{ otherValue }}\n{% endif %}'), {
-        type: lexer.TOKEN_BLOCK_START,
-        lineno: 0,
-        colno: 0
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'if',
-        lineno: 0,
-        colno: 3
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'something',
-        lineno: 0,
-        colno: 6
-      }, {
-        type: lexer.TOKEN_BLOCK_END,
-        lineno: 0,
-        colno: 16
-      }, {
-        type: lexer.TOKEN_DATA,
-        value: '\n'
-      }, {
-        type: lexer.TOKEN_VARIABLE_START,
-        lineno: 1,
-        colno: 0
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'value',
-        lineno: 1,
-        colno: 3
-      }, {
-        type: lexer.TOKEN_VARIABLE_END,
-        lineno: 1,
-        colno: 9
-      }, {
-        type: lexer.TOKEN_DATA,
-        value: '\n'
-      }, {
-        type: lexer.TOKEN_BLOCK_START,
-        lineno: 2,
-        colno: 0
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'else',
-        lineno: 2,
-        colno: 3
-      }, {
-        type: lexer.TOKEN_BLOCK_END,
-        lineno: 2,
-        colno: 8
-      }, {
-        type: lexer.TOKEN_DATA,
-        value: '\n'
-      }, {
-        type: lexer.TOKEN_VARIABLE_START,
-        lineno: 3,
-        colno: 0
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'otherValue',
-        lineno: 3,
-        colno: 3
-      }, {
-        type: lexer.TOKEN_VARIABLE_END,
-        lineno: 3,
-        colno: 14
-      }, {
-        type: lexer.TOKEN_DATA,
-        value: '\n'
-      }, {
-        type: lexer.TOKEN_BLOCK_START,
-        lineno: 4,
-        colno: 0
-      }, {
-        type: lexer.TOKEN_SYMBOL,
-        value: 'endif',
-        lineno: 4,
-        colno: 3
-      }, {
-        type: lexer.TOKEN_BLOCK_END,
-        lineno: 4,
-        colno: 9
-      });
+
+    it('should keep track of token positions', function() {
+      hasTokens(lexer.lex('{{ 3 != 4 == 5 <= 6 >= 7 < 8 > 9 }}'),
+        {
+          type: lexer.TOKEN_VARIABLE_START,
+          lineno: 0,
+          colno: 0,
+        },
+        {
+          type: lexer.TOKEN_INT,
+          value: '3',
+          lineno: 0,
+          colno: 3,
+        },
+        {
+          type: lexer.TOKEN_OPERATOR,
+          value: '!=',
+          lineno: 0,
+          colno: 5,
+        },
+        {
+          type: lexer.TOKEN_INT,
+          value: '4',
+          lineno: 0,
+          colno: 8,
+        },
+        {
+          type: lexer.TOKEN_OPERATOR,
+          value: '==',
+          lineno: 0,
+          colno: 10,
+        },
+        {
+          type: lexer.TOKEN_INT,
+          value: '5',
+          lineno: 0,
+          colno: 13,
+        },
+        {
+          type: lexer.TOKEN_OPERATOR,
+          value: '<=',
+          lineno: 0,
+          colno: 15,
+        },
+        {
+          type: lexer.TOKEN_INT,
+          value: '6',
+          lineno: 0,
+          colno: 18,
+        },
+        {
+          type: lexer.TOKEN_OPERATOR,
+          lineno: 0,
+          colno: 20,
+          value: '>=',
+        },
+        {
+          type: lexer.TOKEN_INT,
+          lineno: 0,
+          colno: 23,
+          value: '7',
+        },
+        {
+          type: lexer.TOKEN_OPERATOR,
+          value: '<',
+          lineno: 0,
+          colno: 25,
+        },
+        {
+          type: lexer.TOKEN_INT,
+          value: '8',
+          lineno: 0,
+          colno: 27,
+        },
+        {
+          type: lexer.TOKEN_OPERATOR,
+          value: '>',
+          lineno: 0,
+          colno: 29,
+        },
+        {
+          type: lexer.TOKEN_INT,
+          value: '9',
+          lineno: 0,
+          colno: 31,
+        },
+        {
+          type: lexer.TOKEN_VARIABLE_END,
+          lineno: 0,
+          colno: 33,
+        });
+
+      hasTokens(lexer.lex('{% if something %}{{ value }}{% else %}{{ otherValue }}{% endif %}'),
+        {
+          type: lexer.TOKEN_BLOCK_START,
+          lineno: 0,
+          colno: 0,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'if',
+          lineno: 0,
+          colno: 3,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'something',
+          lineno: 0,
+          colno: 6,
+        },
+        {
+          type: lexer.TOKEN_BLOCK_END,
+          lineno: 0,
+          colno: 16,
+        },
+        {
+          type: lexer.TOKEN_VARIABLE_START,
+          lineno: 0,
+          colno: 18,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'value',
+          lineno: 0,
+          colno: 21,
+        },
+        {
+          type: lexer.TOKEN_VARIABLE_END,
+          lineno: 0,
+          colno: 27,
+        },
+        {
+          type: lexer.TOKEN_BLOCK_START,
+          lineno: 0,
+          colno: 29,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'else',
+          lineno: 0,
+          colno: 32,
+        },
+        {
+          type: lexer.TOKEN_BLOCK_END,
+          lineno: 0,
+          colno: 37,
+        },
+        {
+          type: lexer.TOKEN_VARIABLE_START,
+          lineno: 0,
+          colno: 39,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'otherValue',
+          lineno: 0,
+          colno: 42,
+        },
+        {
+          type: lexer.TOKEN_VARIABLE_END,
+          lineno: 0,
+          colno: 53,
+        },
+        {
+          type: lexer.TOKEN_BLOCK_START,
+          lineno: 0,
+          colno: 55,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'endif',
+          lineno: 0,
+          colno: 58,
+        },
+        {
+          type: lexer.TOKEN_BLOCK_END,
+          lineno: 0,
+          colno: 64,
+        });
+
+      hasTokens(lexer.lex('{% if something %}\n{{ value }}\n{% else %}\n{{ otherValue }}\n{% endif %}'),
+        {
+          type: lexer.TOKEN_BLOCK_START,
+          lineno: 0,
+          colno: 0,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'if',
+          lineno: 0,
+          colno: 3,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'something',
+          lineno: 0,
+          colno: 6,
+        },
+        {
+          type: lexer.TOKEN_BLOCK_END,
+          lineno: 0,
+          colno: 16,
+        },
+        {
+          type: lexer.TOKEN_DATA,
+          value: '\n',
+        },
+        {
+          type: lexer.TOKEN_VARIABLE_START,
+          lineno: 1,
+          colno: 0,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'value',
+          lineno: 1,
+          colno: 3,
+        },
+        {
+          type: lexer.TOKEN_VARIABLE_END,
+          lineno: 1,
+          colno: 9,
+        },
+        {
+          type: lexer.TOKEN_DATA,
+          value: '\n',
+        },
+        {
+          type: lexer.TOKEN_BLOCK_START,
+          lineno: 2,
+          colno: 0,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'else',
+          lineno: 2,
+          colno: 3,
+        },
+        {
+          type: lexer.TOKEN_BLOCK_END,
+          lineno: 2,
+          colno: 8,
+        },
+        {
+          type: lexer.TOKEN_DATA,
+          value: '\n',
+        },
+        {
+          type: lexer.TOKEN_VARIABLE_START,
+          lineno: 3,
+          colno: 0,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'otherValue',
+          lineno: 3,
+          colno: 3,
+        },
+        {
+          type: lexer.TOKEN_VARIABLE_END,
+          lineno: 3,
+          colno: 14,
+        },
+        {
+          type: lexer.TOKEN_DATA,
+          value: '\n',
+        },
+        {
+          type: lexer.TOKEN_BLOCK_START,
+          lineno: 4,
+          colno: 0,
+        },
+        {
+          type: lexer.TOKEN_SYMBOL,
+          value: 'endif',
+          lineno: 4,
+          colno: 3,
+        },
+        {
+          type: lexer.TOKEN_BLOCK_END,
+          lineno: 4,
+          colno: 9,
+        });
     });
   });
-})();
+}());
+
 
 /***/ }),
 
-/***/ 1594:
+/***/ 2720:
 /*!*************************!*\
   !*** ./tests/loader.js ***!
   \*************************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   'use strict';
 
-  var expect, Environment, WebLoader, FileSystemLoader, NodeResolveLoader, templatesPath;
+  var expect,
+    Environment,
+    WebLoader,
+    FileSystemLoader,
+    NodeResolveLoader,
+    templatesPath;
+
   if (true) {
     expect = __webpack_require__(/*! expect.js */ 1801);
     Environment = (__webpack_require__(/*! ../nunjucks/src/environment */ 2887).Environment);
@@ -94550,108 +95129,129 @@ mocha.run();
     NodeResolveLoader = (__webpack_require__(/*! ../nunjucks/src/node-loaders */ 5257).NodeResolveLoader);
     templatesPath = 'tests/templates';
   } else {}
-  describe('loader', function () {
-    it('should allow a simple loader to be created', function () {
+
+  describe('loader', function() {
+    it('should allow a simple loader to be created', function() {
       // From Docs: http://mozilla.github.io/nunjucks/api.html#writing-a-loader
       // We should be able to create a loader that only exposes getSource
       var env, parent;
+
       function MyLoader() {
         // configuration
       }
-      MyLoader.prototype.getSource = function () {
+
+      MyLoader.prototype.getSource = function() {
         return {
           src: 'Hello World',
           path: '/tmp/somewhere'
         };
       };
+
       env = new Environment(new MyLoader(templatesPath));
       parent = env.getTemplate('fake.njk');
       expect(parent.render()).to.be('Hello World');
     });
-    it('should catch loader error', function (done) {
+
+    it('should catch loader error', function(done) {
       // From Docs: http://mozilla.github.io/nunjucks/api.html#writing-a-loader
       // We should be able to create a loader that only exposes getSource
       var env;
+
       function MyLoader() {
         // configuration
         this.async = true;
       }
-      MyLoader.prototype.getSource = function (s, cb) {
-        setTimeout(function () {
+
+      MyLoader.prototype.getSource = function(s, cb) {
+        setTimeout(function() {
           cb(new Error('test'));
         }, 1);
       };
+
       env = new Environment(new MyLoader(templatesPath));
-      env.getTemplate('fake.njk', function (err, parent) {
+      env.getTemplate('fake.njk', function(err, parent) {
         expect(err).to.be.a(Error);
         expect(parent).to.be(undefined);
+
         done();
       });
     });
-    describe('WebLoader', function () {
-      it('should have default opts for WebLoader', function () {
+
+    describe('WebLoader', function() {
+      it('should have default opts for WebLoader', function() {
         var webLoader = new WebLoader(templatesPath);
         expect(webLoader).to.be.a(WebLoader);
         expect(webLoader.useCache).to.be(false);
         expect(webLoader.async).to.be(false);
       });
-      it('should emit a "load" event', function (done) {
+
+      it('should emit a "load" event', function(done) {
         var loader = new WebLoader(templatesPath);
+
         if (typeof window === 'undefined') {
           this.skip();
         }
-        loader.on('load', function (name, source) {
+
+        loader.on('load', function(name, source) {
           expect(name).to.equal('simple-base.njk');
           done();
         });
+
         loader.getSource('simple-base.njk');
       });
     });
+
     if (typeof FileSystemLoader !== 'undefined') {
-      describe('FileSystemLoader', function () {
-        it('should have default opts', function () {
+      describe('FileSystemLoader', function() {
+        it('should have default opts', function() {
           var loader = new FileSystemLoader(templatesPath);
           expect(loader).to.be.a(FileSystemLoader);
           expect(loader.noCache).to.be(false);
         });
-        it('should emit a "load" event', function (done) {
+
+        it('should emit a "load" event', function(done) {
           var loader = new FileSystemLoader(templatesPath);
-          loader.on('load', function (name, source) {
+          loader.on('load', function(name, source) {
             expect(name).to.equal('simple-base.njk');
             done();
           });
+
           loader.getSource('simple-base.njk');
         });
       });
     }
+
     if (typeof NodeResolveLoader !== 'undefined') {
-      describe('NodeResolveLoader', function () {
-        it('should have default opts', function () {
+      describe('NodeResolveLoader', function() {
+        it('should have default opts', function() {
           var loader = new NodeResolveLoader();
           expect(loader).to.be.a(NodeResolveLoader);
           expect(loader.noCache).to.be(false);
         });
-        it('should emit a "load" event', function (done) {
+
+        it('should emit a "load" event', function(done) {
           var loader = new NodeResolveLoader();
-          loader.on('load', function (name, source) {
+          loader.on('load', function(name, source) {
             expect(name).to.equal('dummy-pkg/simple-template.html');
             done();
           });
+
           loader.getSource('dummy-pkg/simple-template.html');
         });
-        it('should render templates', function () {
+
+        it('should render templates', function() {
           var env = new Environment(new NodeResolveLoader());
           var tmpl = env.getTemplate('dummy-pkg/simple-template.html');
-          expect(tmpl.render({
-            foo: 'foo'
-          })).to.be('foo');
+          expect(tmpl.render({foo: 'foo'})).to.be('foo');
         });
-        it('should not allow directory traversal', function () {
+
+        it('should not allow directory traversal', function() {
           var loader = new NodeResolveLoader();
           var dummyPkgPath = /*require.resolve*/(/*! dummy-pkg/simple-template.html */ 8824);
           expect(loader.getSource(dummyPkgPath)).to.be(null);
         });
-        it('should return null if no match', function () {
+
+        it('should return null if no match', function() {
           var loader = new NodeResolveLoader();
           var tmplName = 'dummy-pkg/does-not-exist.html';
           expect(loader.getSource(tmplName)).to.be(null);
@@ -94659,61 +95259,77 @@ mocha.run();
       });
     }
   });
-})();
+}());
+
 
 /***/ }),
 
-/***/ 9922:
+/***/ 6124:
 /*!*************************!*\
   !*** ./tests/parser.js ***!
   \*************************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   'use strict';
 
-  var expect, lib, nodes, parser;
+  var expect,
+    lib,
+    nodes,
+    parser;
+
   if (true) {
     expect = __webpack_require__(/*! expect.js */ 1801);
     lib = __webpack_require__(/*! ../nunjucks/src/lib */ 449);
     nodes = __webpack_require__(/*! ../nunjucks/src/nodes */ 8883);
     parser = __webpack_require__(/*! ../nunjucks/src/parser */ 999);
   } else {}
+
   function _isAST(node1, node2) {
     // Compare ASTs
     // TODO: Clean this up (seriously, really)
     /* eslint-disable vars-on-top */
 
     expect(node1.typename).to.be(node2.typename);
+
     if (node2 instanceof nodes.NodeList) {
       var lit = ': num-children: ';
-      var sig2 = node2.typename + lit + node2.children.length;
+      var sig2 = (node2.typename + lit + node2.children.length);
+
       expect(node1.children).to.be.ok();
-      var sig1 = node1.typename + lit + node1.children.length;
+      var sig1 = (node1.typename + lit + node1.children.length);
+
       expect(sig1).to.be(sig2);
+
       for (var n = 0, l = node2.children.length; n < l; n++) {
         _isAST(node1.children[n], node2.children[n]);
       }
     } else {
-      node2.iterFields(function (value, field) {
+      node2.iterFields(function(value, field) {
         var ofield = node1[field];
+
         if (value instanceof nodes.Node) {
           _isAST(ofield, value);
         } else if (lib.isArray(ofield) && lib.isArray(value)) {
           expect('num-children: ' + ofield.length).to.be('num-children: ' + value.length);
-          lib.each(ofield, function (v, i) {
+
+          lib.each(ofield, function(v, i) {
             if (ofield[i] instanceof nodes.Node) {
               _isAST(ofield[i], value[i]);
             } else if (ofield[i] !== null && value[i] !== null) {
               expect(ofield[i]).to.be(value[i]);
             }
           });
-        } else if ((ofield !== null || value !== null) && (ofield !== undefined || value !== undefined)) {
+        } else if ((ofield !== null || value !== null) &&
+          (ofield !== undefined || value !== undefined)) {
           if (ofield === null) {
-            throw new Error(value + ' expected for "' + field + '", null found');
+            throw new Error(value + ' expected for "' + field +
+              '", null found');
           }
+
           if (value === null) {
-            throw new Error(ofield + ' expected to be null for "' + field + '"');
+            throw new Error(ofield + ' expected to be null for "' +
+              field + '"');
           }
 
           // We want good errors and tracebacks, so test on
@@ -94730,6 +95346,7 @@ mocha.run();
       });
     }
   }
+
   function isAST(node1, ast) {
     // Compare the ASTs, the second one is an AST literal so transform
     // it into a real one
@@ -94743,426 +95360,1039 @@ mocha.run();
     if (!(ast && lib.isArray(ast))) {
       return ast;
     }
+
     var Type = ast[0];
     // some nodes have fields (e.g. Compare.ops) which are plain arrays
     if (Type instanceof Array) {
       return lib.map(ast, toNodes);
     }
-    var F = function () {};
+    var F = function() {};
     F.prototype = Type.prototype;
+
     var dummy = new F();
+
     if (dummy instanceof nodes.NodeList) {
       return new Type(0, 0, lib.map(ast.slice(1), toNodes));
     } else if (dummy instanceof nodes.CallExtension) {
-      return new Type(ast[1], ast[2], ast[3] ? toNodes(ast[3]) : ast[3], lib.isArray(ast[4]) ? lib.map(ast[4], toNodes) : ast[4]);
+      return new Type(ast[1], ast[2], ast[3] ? toNodes(ast[3]) : ast[3],
+        lib.isArray(ast[4]) ? lib.map(ast[4], toNodes) : ast[4]);
     } else {
-      return new Type(0, 0, toNodes(ast[1]), toNodes(ast[2]), toNodes(ast[3]), toNodes(ast[4]), toNodes(ast[5]));
+      return new Type(0, 0,
+        toNodes(ast[1]),
+        toNodes(ast[2]),
+        toNodes(ast[3]),
+        toNodes(ast[4]),
+        toNodes(ast[5]));
     }
   }
-  describe('parser', function () {
-    it('should parse basic types', function () {
-      isAST(parser.parse('{{ 1 }}'), [nodes.Root, [nodes.Output, [nodes.Literal, 1]]]);
-      isAST(parser.parse('{{ 4.567 }}'), [nodes.Root, [nodes.Output, [nodes.Literal, 4.567]]]);
-      isAST(parser.parse('{{ "foo" }}'), [nodes.Root, [nodes.Output, [nodes.Literal, 'foo']]]);
-      isAST(parser.parse('{{ \'foo\' }}'), [nodes.Root, [nodes.Output, [nodes.Literal, 'foo']]]);
-      isAST(parser.parse('{{ true }}'), [nodes.Root, [nodes.Output, [nodes.Literal, true]]]);
-      isAST(parser.parse('{{ false }}'), [nodes.Root, [nodes.Output, [nodes.Literal, false]]]);
-      isAST(parser.parse('{{ none }}'), [nodes.Root, [nodes.Output, [nodes.Literal, null]]]);
-      isAST(parser.parse('{{ foo }}'), [nodes.Root, [nodes.Output, [nodes.Symbol, 'foo']]]);
-      isAST(parser.parse('{{ r/23/gi }}'), [nodes.Root, [nodes.Output, [nodes.Literal, new RegExp('23', 'gi')]]]);
+
+  describe('parser', function() {
+    it('should parse basic types', function() {
+      isAST(parser.parse('{{ 1 }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Literal, 1]]]);
+
+      isAST(parser.parse('{{ 4.567 }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Literal, 4.567]]]);
+
+      isAST(parser.parse('{{ "foo" }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Literal, 'foo']]]);
+
+      isAST(parser.parse('{{ \'foo\' }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Literal, 'foo']]]);
+
+      isAST(parser.parse('{{ true }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Literal, true]]]);
+
+      isAST(parser.parse('{{ false }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Literal, false]]]);
+
+      isAST(parser.parse('{{ none }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Literal, null]]]);
+
+      isAST(parser.parse('{{ foo }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Symbol, 'foo']]]);
+
+      isAST(parser.parse('{{ r/23/gi }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Literal, new RegExp('23', 'gi')]]]);
     });
-    it('should parse aggregate types', function () {
-      isAST(parser.parse('{{ [1,2,3] }}'), [nodes.Root, [nodes.Output, [nodes.Array, [nodes.Literal, 1], [nodes.Literal, 2], [nodes.Literal, 3]]]]);
-      isAST(parser.parse('{{ (1,2,3) }}'), [nodes.Root, [nodes.Output, [nodes.Group, [nodes.Literal, 1], [nodes.Literal, 2], [nodes.Literal, 3]]]]);
-      isAST(parser.parse('{{ {foo: 1, \'two\': 2} }}'), [nodes.Root, [nodes.Output, [nodes.Dict, [nodes.Pair, [nodes.Symbol, 'foo'], [nodes.Literal, 1]], [nodes.Pair, [nodes.Literal, 'two'], [nodes.Literal, 2]]]]]);
+
+    it('should parse aggregate types', function() {
+      isAST(parser.parse('{{ [1,2,3] }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Array,
+              [nodes.Literal, 1],
+              [nodes.Literal, 2],
+              [nodes.Literal, 3]]]]);
+
+      isAST(parser.parse('{{ (1,2,3) }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Group,
+              [nodes.Literal, 1],
+              [nodes.Literal, 2],
+              [nodes.Literal, 3]]]]);
+
+      isAST(parser.parse('{{ {foo: 1, \'two\': 2} }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Dict,
+              [nodes.Pair,
+                [nodes.Symbol, 'foo'],
+                [nodes.Literal, 1]],
+              [nodes.Pair,
+                [nodes.Literal, 'two'],
+                [nodes.Literal, 2]]]]]);
     });
-    it('should parse variables', function () {
-      isAST(parser.parse('hello {{ foo }}, how are you'), [nodes.Root, [nodes.Output, [nodes.TemplateData, 'hello ']], [nodes.Output, [nodes.Symbol, 'foo']], [nodes.Output, [nodes.TemplateData, ', how are you']]]);
+
+    it('should parse variables', function() {
+      isAST(parser.parse('hello {{ foo }}, how are you'),
+        [nodes.Root,
+          [nodes.Output, [nodes.TemplateData, 'hello ']],
+          [nodes.Output, [nodes.Symbol, 'foo']],
+          [nodes.Output, [nodes.TemplateData, ', how are you']]]);
     });
-    it('should parse operators', function () {
-      isAST(parser.parse('{{ x == y }}'), [nodes.Root, [nodes.Output, [nodes.Compare, [nodes.Symbol, 'x'], [[nodes.CompareOperand, [nodes.Symbol, 'y'], '==']]]]]);
-      isAST(parser.parse('{{ x or y }}'), [nodes.Root, [nodes.Output, [nodes.Or, [nodes.Symbol, 'x'], [nodes.Symbol, 'y']]]]);
-      isAST(parser.parse('{{ x in y }}'), [nodes.Root, [nodes.Output, [nodes.In, [nodes.Symbol, 'x'], [nodes.Symbol, 'y']]]]);
-      isAST(parser.parse('{{ x not in y }}'), [nodes.Root, [nodes.Output, [nodes.Not, [nodes.In, [nodes.Symbol, 'x'], [nodes.Symbol, 'y']]]]]);
-      isAST(parser.parse('{{ x is callable }}'), [nodes.Root, [nodes.Output, [nodes.Is, [nodes.Symbol, 'x'], [nodes.Symbol, 'callable']]]]);
-      isAST(parser.parse('{{ x is not callable }}'), [nodes.Root, [nodes.Output, [nodes.Not, [nodes.Is, [nodes.Symbol, 'x'], [nodes.Symbol, 'callable']]]]]);
+
+    it('should parse operators', function() {
+      isAST(parser.parse('{{ x == y }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Compare,
+              [nodes.Symbol, 'x'],
+              [[nodes.CompareOperand, [nodes.Symbol, 'y'], '==']]]]]);
+
+      isAST(parser.parse('{{ x or y }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Or,
+              [nodes.Symbol, 'x'],
+              [nodes.Symbol, 'y']]]]);
+
+      isAST(parser.parse('{{ x in y }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.In,
+              [nodes.Symbol, 'x'],
+              [nodes.Symbol, 'y']]]]);
+
+      isAST(parser.parse('{{ x not in y }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Not,
+              [nodes.In,
+                [nodes.Symbol, 'x'],
+                [nodes.Symbol, 'y']]]]]);
+
+      isAST(parser.parse('{{ x is callable }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Is,
+              [nodes.Symbol, 'x'],
+              [nodes.Symbol, 'callable']]]]);
+
+      isAST(parser.parse('{{ x is not callable }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Not,
+              [nodes.Is,
+                [nodes.Symbol, 'x'],
+                [nodes.Symbol, 'callable']]]]]);
     });
-    it('should parse tilde', function () {
-      isAST(parser.parse('{{ 2 ~ 3 }}'), [nodes.Root, [nodes.Output, [nodes.Concat, [nodes.Literal, 2], [nodes.Literal, 3]]]]);
+
+    it('should parse tilde', function() {
+      isAST(parser.parse('{{ 2 ~ 3 }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Concat,
+              [nodes.Literal, 2],
+              [nodes.Literal, 3]
+            ]]]
+      );
     });
-    it('should parse operators with correct precedence', function () {
-      isAST(parser.parse('{{ x in y and z }}'), [nodes.Root, [nodes.Output, [nodes.And, [nodes.In, [nodes.Symbol, 'x'], [nodes.Symbol, 'y']], [nodes.Symbol, 'z']]]]);
-      isAST(parser.parse('{{ x not in y or z }}'), [nodes.Root, [nodes.Output, [nodes.Or, [nodes.Not, [nodes.In, [nodes.Symbol, 'x'], [nodes.Symbol, 'y']]], [nodes.Symbol, 'z']]]]);
-      isAST(parser.parse('{{ x or y and z }}'), [nodes.Root, [nodes.Output, [nodes.Or, [nodes.Symbol, 'x'], [nodes.And, [nodes.Symbol, 'y'], [nodes.Symbol, 'z']]]]]);
+
+    it('should parse operators with correct precedence', function() {
+      isAST(parser.parse('{{ x in y and z }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.And,
+              [nodes.In,
+                [nodes.Symbol, 'x'],
+                [nodes.Symbol, 'y']],
+              [nodes.Symbol, 'z']]]]);
+
+      isAST(parser.parse('{{ x not in y or z }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Or,
+              [nodes.Not,
+                [nodes.In,
+                  [nodes.Symbol, 'x'],
+                  [nodes.Symbol, 'y']]],
+              [nodes.Symbol, 'z']]]]);
+
+      isAST(parser.parse('{{ x or y and z }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Or,
+              [nodes.Symbol, 'x'],
+              [nodes.And,
+                [nodes.Symbol, 'y'],
+                [nodes.Symbol, 'z']]]]]);
     });
-    it('should parse blocks', function () {
-      var n = parser.parse('want some {% if hungry %}pizza{% else %}' + 'water{% endif %}?');
+
+    it('should parse blocks', function() {
+      var n = parser.parse('want some {% if hungry %}pizza{% else %}' +
+        'water{% endif %}?');
       expect(n.children[1].typename).to.be('If');
+
       n = parser.parse('{% block foo %}stuff{% endblock %}');
       expect(n.children[0].typename).to.be('Block');
+
       n = parser.parse('{% block foo %}stuff{% endblock foo %}');
       expect(n.children[0].typename).to.be('Block');
+
       n = parser.parse('{% extends "test.njk" %}stuff');
       expect(n.children[0].typename).to.be('Extends');
+
       n = parser.parse('{% include "test.njk" %}');
       expect(n.children[0].typename).to.be('Include');
     });
-    it('should accept attributes and methods of static arrays, objects and primitives', function () {
-      expect(function () {
+
+    it('should accept attributes and methods of static arrays, objects and primitives', function() {
+      expect(function() {
         parser.parse('{{ ([1, 2, 3]).indexOf(1) }}');
       }).to.not.throwException();
-      expect(function () {
+
+      expect(function() {
         parser.parse('{{ [1, 2, 3].length }}');
       }).to.not.throwException();
-      expect(function () {
+
+      expect(function() {
         parser.parse('{{ "Some String".replace("S", "$") }}');
       }).to.not.throwException();
-      expect(function () {
+
+      expect(function() {
         parser.parse('{{ ({ name : "Khalid" }).name }}');
       }).to.not.throwException();
-      expect(function () {
+
+      expect(function() {
         parser.parse('{{ 1.618.toFixed(2) }}');
       }).to.not.throwException();
     });
-    it('should parse include tags', function () {
+
+    it('should parse include tags', function() {
       var n = parser.parse('{% include "test.njk" %}');
       expect(n.children[0].typename).to.be('Include');
+
       n = parser.parse('{% include "test.html"|replace("html","j2") %}');
       expect(n.children[0].typename).to.be('Include');
+
       n = parser.parse('{% include ""|default("test.njk") %}');
       expect(n.children[0].typename).to.be('Include');
     });
-    it('should parse for loops', function () {
-      isAST(parser.parse('{% for x in [1, 2] %}{{ x }}{% endfor %}'), [nodes.Root, [nodes.For, [nodes.Array, [nodes.Literal, 1], [nodes.Literal, 2]], [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Output, [nodes.Symbol, 'x']]]]]);
+
+    it('should parse for loops', function() {
+      isAST(parser.parse('{% for x in [1, 2] %}{{ x }}{% endfor %}'),
+        [nodes.Root,
+          [nodes.For,
+            [nodes.Array,
+              [nodes.Literal, 1],
+              [nodes.Literal, 2]],
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.Symbol, 'x']]]]]);
     });
-    it('should parse for loops with else', function () {
-      isAST(parser.parse('{% for x in [] %}{{ x }}{% else %}empty{% endfor %}'), [nodes.Root, [nodes.For, [nodes.Array], [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Output, [nodes.Symbol, 'x']]], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'empty']]]]]);
+
+    it('should parse for loops with else', function() {
+      isAST(parser.parse('{% for x in [] %}{{ x }}{% else %}empty{% endfor %}'),
+        [nodes.Root,
+          [nodes.For,
+            [nodes.Array],
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.Symbol, 'x']]],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.TemplateData, 'empty']]]]]);
     });
-    it('should parse filters', function () {
-      isAST(parser.parse('{{ foo | bar }}'), [nodes.Root, [nodes.Output, [nodes.Filter, [nodes.Symbol, 'bar'], [nodes.NodeList, [nodes.Symbol, 'foo']]]]]);
-      isAST(parser.parse('{{ foo | bar | baz }}'), [nodes.Root, [nodes.Output, [nodes.Filter, [nodes.Symbol, 'baz'], [nodes.NodeList, [nodes.Filter, [nodes.Symbol, 'bar'], [nodes.NodeList, [nodes.Symbol, 'foo']]]]]]]);
-      isAST(parser.parse('{{ foo | bar(3) }}'), [nodes.Root, [nodes.Output, [nodes.Filter, [nodes.Symbol, 'bar'], [nodes.NodeList, [nodes.Symbol, 'foo'], [nodes.Literal, 3]]]]]);
+
+    it('should parse filters', function() {
+      isAST(parser.parse('{{ foo | bar }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Filter,
+              [nodes.Symbol, 'bar'],
+              [nodes.NodeList,
+                [nodes.Symbol, 'foo']]]]]);
+
+      isAST(parser.parse('{{ foo | bar | baz }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Filter,
+              [nodes.Symbol, 'baz'],
+              [nodes.NodeList,
+                [nodes.Filter,
+                  [nodes.Symbol, 'bar'],
+                  [nodes.NodeList,
+                    [nodes.Symbol, 'foo']]]]]]]);
+
+      isAST(parser.parse('{{ foo | bar(3) }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.Filter,
+              [nodes.Symbol, 'bar'],
+              [nodes.NodeList,
+                [nodes.Symbol, 'foo'],
+                [nodes.Literal, 3]]]]]);
     });
-    it('should parse macro definitions', function () {
-      var ast = parser.parse('{% macro foo(bar, baz="foobar") %}' + 'This is a macro' + '{% endmacro %}');
-      isAST(ast, [nodes.Root, [nodes.Macro, [nodes.Symbol, 'foo'], [nodes.NodeList, [nodes.Symbol, 'bar'], [nodes.KeywordArgs, [nodes.Pair, [nodes.Symbol, 'baz'], [nodes.Literal, 'foobar']]]], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'This is a macro']]]]]);
+
+    it('should parse macro definitions', function() {
+      var ast = parser.parse('{% macro foo(bar, baz="foobar") %}' +
+        'This is a macro' +
+        '{% endmacro %}');
+      isAST(ast,
+        [nodes.Root,
+          [nodes.Macro,
+            [nodes.Symbol, 'foo'],
+            [nodes.NodeList,
+              [nodes.Symbol, 'bar'],
+              [nodes.KeywordArgs,
+                [nodes.Pair,
+                  [nodes.Symbol, 'baz'], [nodes.Literal, 'foobar']]]],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.TemplateData, 'This is a macro']]]]]);
     });
-    it('should parse call blocks', function () {
-      var ast = parser.parse('{% call foo("bar") %}' + 'This is the caller' + '{% endcall %}');
-      isAST(ast, [nodes.Root, [nodes.Output, [nodes.FunCall, [nodes.Symbol, 'foo'], [nodes.NodeList, [nodes.Literal, 'bar'], [nodes.KeywordArgs, [nodes.Pair, [nodes.Symbol, 'caller'], [nodes.Caller, [nodes.Symbol, 'caller'], [nodes.NodeList], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'This is the caller']]]]]]]]]]);
+
+    it('should parse call blocks', function() {
+      var ast = parser.parse('{% call foo("bar") %}' +
+        'This is the caller' +
+        '{% endcall %}');
+      isAST(ast,
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.FunCall,
+              [nodes.Symbol, 'foo'],
+              [nodes.NodeList,
+                [nodes.Literal, 'bar'],
+                [nodes.KeywordArgs,
+                  [nodes.Pair,
+                    [nodes.Symbol, 'caller'],
+                    [nodes.Caller,
+                      [nodes.Symbol, 'caller'],
+                      [nodes.NodeList],
+                      [nodes.NodeList,
+                        [nodes.Output,
+                          [nodes.TemplateData, 'This is the caller']]]]]]]]]]);
     });
-    it('should parse call blocks with args', function () {
-      var ast = parser.parse('{% call(i) foo("bar", baz="foobar") %}' + 'This is {{ i }}' + '{% endcall %}');
-      isAST(ast, [nodes.Root, [nodes.Output, [nodes.FunCall, [nodes.Symbol, 'foo'], [nodes.NodeList, [nodes.Literal, 'bar'], [nodes.KeywordArgs, [nodes.Pair, [nodes.Symbol, 'baz'], [nodes.Literal, 'foobar']], [nodes.Pair, [nodes.Symbol, 'caller'], [nodes.Caller, [nodes.Symbol, 'caller'], [nodes.NodeList, [nodes.Symbol, 'i']], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'This is ']], [nodes.Output, [nodes.Symbol, 'i']]]]]]]]]]);
+
+    it('should parse call blocks with args', function() {
+      var ast = parser.parse('{% call(i) foo("bar", baz="foobar") %}' +
+        'This is {{ i }}' +
+        '{% endcall %}');
+      isAST(ast,
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.FunCall,
+              [nodes.Symbol, 'foo'],
+              [nodes.NodeList,
+                [nodes.Literal, 'bar'],
+                [nodes.KeywordArgs,
+                  [nodes.Pair,
+                    [nodes.Symbol, 'baz'], [nodes.Literal, 'foobar']],
+                  [nodes.Pair,
+                    [nodes.Symbol, 'caller'],
+                    [nodes.Caller,
+                      [nodes.Symbol, 'caller'],
+                      [nodes.NodeList, [nodes.Symbol, 'i']],
+                      [nodes.NodeList,
+                        [nodes.Output,
+                          [nodes.TemplateData, 'This is ']],
+                        [nodes.Output,
+                          [nodes.Symbol, 'i']]]]]]]]]]);
     });
-    it('should parse raw', function () {
-      isAST(parser.parse('{% raw %}hello {{ {% %} }}{% endraw %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, 'hello {{ {% %} }}']]]);
+
+    it('should parse raw', function() {
+      isAST(parser.parse('{% raw %}hello {{ {% %} }}{% endraw %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, 'hello {{ {% %} }}']]]);
     });
-    it('should parse raw with broken variables', function () {
-      isAST(parser.parse('{% raw %}{{ x }{% endraw %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '{{ x }']]]);
+
+    it('should parse raw with broken variables', function() {
+      isAST(parser.parse('{% raw %}{{ x }{% endraw %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, '{{ x }']]]);
     });
-    it('should parse raw with broken blocks', function () {
-      isAST(parser.parse('{% raw %}{% if i_am_stupid }Still do your job well{% endraw %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '{% if i_am_stupid }Still do your job well']]]);
+
+    it('should parse raw with broken blocks', function() {
+      isAST(parser.parse('{% raw %}{% if i_am_stupid }Still do your job well{% endraw %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, '{% if i_am_stupid }Still do your job well']]]);
     });
-    it('should parse raw with pure text', function () {
-      isAST(parser.parse('{% raw %}abc{% endraw %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, 'abc']]]);
+
+    it('should parse raw with pure text', function() {
+      isAST(parser.parse('{% raw %}abc{% endraw %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, 'abc']]]);
     });
-    it('should parse raw with raw blocks', function () {
-      isAST(parser.parse('{% raw %}{% raw %}{{ x }{% endraw %}{% endraw %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '{% raw %}{{ x }{% endraw %}']]]);
+
+
+    it('should parse raw with raw blocks', function() {
+      isAST(parser.parse('{% raw %}{% raw %}{{ x }{% endraw %}{% endraw %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, '{% raw %}{{ x }{% endraw %}']]]);
     });
-    it('should parse raw with comment blocks', function () {
-      isAST(parser.parse('{% raw %}{# test {% endraw %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '{# test ']]]);
+
+    it('should parse raw with comment blocks', function() {
+      isAST(parser.parse('{% raw %}{# test {% endraw %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, '{# test ']]]);
     });
-    it('should parse multiple raw blocks', function () {
-      isAST(parser.parse('{% raw %}{{ var }}{% endraw %}{{ var }}{% raw %}{{ var }}{% endraw %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '{{ var }}']], [nodes.Output, [nodes.Symbol, 'var']], [nodes.Output, [nodes.TemplateData, '{{ var }}']]]);
+
+    it('should parse multiple raw blocks', function() {
+      isAST(parser.parse('{% raw %}{{ var }}{% endraw %}{{ var }}{% raw %}{{ var }}{% endraw %}'),
+        [nodes.Root,
+          [nodes.Output, [nodes.TemplateData, '{{ var }}']],
+          [nodes.Output, [nodes.Symbol, 'var']],
+          [nodes.Output, [nodes.TemplateData, '{{ var }}']]]);
     });
-    it('should parse multiline multiple raw blocks', function () {
-      isAST(parser.parse('\n{% raw %}{{ var }}{% endraw %}\n{{ var }}\n{% raw %}{{ var }}{% endraw %}\n'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '\n']], [nodes.Output, [nodes.TemplateData, '{{ var }}']], [nodes.Output, [nodes.TemplateData, '\n']], [nodes.Output, [nodes.Symbol, 'var']], [nodes.Output, [nodes.TemplateData, '\n']], [nodes.Output, [nodes.TemplateData, '{{ var }}']], [nodes.Output, [nodes.TemplateData, '\n']]]);
+
+    it('should parse multiline multiple raw blocks', function() {
+      isAST(parser.parse('\n{% raw %}{{ var }}{% endraw %}\n{{ var }}\n{% raw %}{{ var }}{% endraw %}\n'),
+        [nodes.Root,
+          [nodes.Output, [nodes.TemplateData, '\n']],
+          [nodes.Output, [nodes.TemplateData, '{{ var }}']],
+          [nodes.Output, [nodes.TemplateData, '\n']],
+          [nodes.Output, [nodes.Symbol, 'var']],
+          [nodes.Output, [nodes.TemplateData, '\n']],
+          [nodes.Output, [nodes.TemplateData, '{{ var }}']],
+          [nodes.Output, [nodes.TemplateData, '\n']]]);
     });
-    it('should parse verbatim', function () {
-      isAST(parser.parse('{% verbatim %}hello {{ {% %} }}{% endverbatim %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, 'hello {{ {% %} }}']]]);
+
+    it('should parse verbatim', function() {
+      isAST(parser.parse('{% verbatim %}hello {{ {% %} }}{% endverbatim %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, 'hello {{ {% %} }}']]]);
     });
-    it('should parse verbatim with broken variables', function () {
-      isAST(parser.parse('{% verbatim %}{{ x }{% endverbatim %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '{{ x }']]]);
+
+    it('should parse verbatim with broken variables', function() {
+      isAST(parser.parse('{% verbatim %}{{ x }{% endverbatim %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, '{{ x }']]]);
     });
-    it('should parse verbatim with broken blocks', function () {
-      isAST(parser.parse('{% verbatim %}{% if i_am_stupid }Still do your job well{% endverbatim %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '{% if i_am_stupid }Still do your job well']]]);
+
+    it('should parse verbatim with broken blocks', function() {
+      isAST(parser.parse('{% verbatim %}{% if i_am_stupid }Still do your job well{% endverbatim %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, '{% if i_am_stupid }Still do your job well']]]);
     });
-    it('should parse verbatim with pure text', function () {
-      isAST(parser.parse('{% verbatim %}abc{% endverbatim %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, 'abc']]]);
+
+    it('should parse verbatim with pure text', function() {
+      isAST(parser.parse('{% verbatim %}abc{% endverbatim %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, 'abc']]]);
     });
-    it('should parse verbatim with verbatim blocks', function () {
-      isAST(parser.parse('{% verbatim %}{% verbatim %}{{ x }{% endverbatim %}{% endverbatim %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '{% verbatim %}{{ x }{% endverbatim %}']]]);
+
+
+    it('should parse verbatim with verbatim blocks', function() {
+      isAST(parser.parse('{% verbatim %}{% verbatim %}{{ x }{% endverbatim %}{% endverbatim %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, '{% verbatim %}{{ x }{% endverbatim %}']]]);
     });
-    it('should parse verbatim with comment blocks', function () {
-      isAST(parser.parse('{% verbatim %}{# test {% endverbatim %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '{# test ']]]);
+
+    it('should parse verbatim with comment blocks', function() {
+      isAST(parser.parse('{% verbatim %}{# test {% endverbatim %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, '{# test ']]]);
     });
-    it('should parse multiple verbatim blocks', function () {
-      isAST(parser.parse('{% verbatim %}{{ var }}{% endverbatim %}{{ var }}{% verbatim %}{{ var }}{% endverbatim %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '{{ var }}']], [nodes.Output, [nodes.Symbol, 'var']], [nodes.Output, [nodes.TemplateData, '{{ var }}']]]);
+
+    it('should parse multiple verbatim blocks', function() {
+      isAST(parser.parse('{% verbatim %}{{ var }}{% endverbatim %}{{ var }}{% verbatim %}{{ var }}{% endverbatim %}'),
+        [nodes.Root,
+          [nodes.Output, [nodes.TemplateData, '{{ var }}']],
+          [nodes.Output, [nodes.Symbol, 'var']],
+          [nodes.Output, [nodes.TemplateData, '{{ var }}']]]);
     });
-    it('should parse multiline multiple verbatim blocks', function () {
-      isAST(parser.parse('\n{% verbatim %}{{ var }}{% endverbatim %}\n{{ var }}\n{% verbatim %}{{ var }}{% endverbatim %}\n'), [nodes.Root, [nodes.Output, [nodes.TemplateData, '\n']], [nodes.Output, [nodes.TemplateData, '{{ var }}']], [nodes.Output, [nodes.TemplateData, '\n']], [nodes.Output, [nodes.Symbol, 'var']], [nodes.Output, [nodes.TemplateData, '\n']], [nodes.Output, [nodes.TemplateData, '{{ var }}']], [nodes.Output, [nodes.TemplateData, '\n']]]);
+
+    it('should parse multiline multiple verbatim blocks', function() {
+      isAST(parser.parse('\n{% verbatim %}{{ var }}{% endverbatim %}\n{{ var }}\n{% verbatim %}{{ var }}{% endverbatim %}\n'),
+        [nodes.Root,
+          [nodes.Output, [nodes.TemplateData, '\n']],
+          [nodes.Output, [nodes.TemplateData, '{{ var }}']],
+          [nodes.Output, [nodes.TemplateData, '\n']],
+          [nodes.Output, [nodes.Symbol, 'var']],
+          [nodes.Output, [nodes.TemplateData, '\n']],
+          [nodes.Output, [nodes.TemplateData, '{{ var }}']],
+          [nodes.Output, [nodes.TemplateData, '\n']]]);
     });
-    it('should parse switch statements', function () {
+
+    it('should parse switch statements', function() {
       var tpl = '{% switch foo %}{% case "bar" %}BAR{% case "baz" %}BAZ{% default %}NEITHER FOO NOR BAR{% endswitch %}';
-      isAST(parser.parse(tpl), [nodes.Root, [nodes.Switch, [nodes.Symbol, 'foo'], [[nodes.Case, [nodes.Literal, 'bar'], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'BAR']]]], [nodes.Case, [nodes.Literal, 'baz'], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'BAZ']]]]], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'NEITHER FOO NOR BAR']]]]]);
+      isAST(parser.parse(tpl),
+        [nodes.Root,
+          [nodes.Switch,
+            [nodes.Symbol, 'foo'],
+            [
+              [nodes.Case,
+                [nodes.Literal, 'bar'],
+                [nodes.NodeList,
+                  [nodes.Output,
+                    [nodes.TemplateData, 'BAR']]]],
+              [nodes.Case,
+                [nodes.Literal, 'baz'],
+                [nodes.NodeList,
+                  [nodes.Output,
+                    [nodes.TemplateData, 'BAZ']]]]],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.TemplateData, 'NEITHER FOO NOR BAR']]]]]);
     });
-    it('should parse keyword and non-keyword arguments', function () {
-      isAST(parser.parse('{{ foo("bar", falalalala, baz="foobar") }}'), [nodes.Root, [nodes.Output, [nodes.FunCall, [nodes.Symbol, 'foo'], [nodes.NodeList, [nodes.Literal, 'bar'], [nodes.Symbol, 'falalalala'], [nodes.KeywordArgs, [nodes.Pair, [nodes.Symbol, 'baz'], [nodes.Literal, 'foobar']]]]]]]);
+
+    it('should parse keyword and non-keyword arguments', function() {
+      isAST(parser.parse('{{ foo("bar", falalalala, baz="foobar") }}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.FunCall,
+              [nodes.Symbol, 'foo'],
+              [nodes.NodeList,
+                [nodes.Literal, 'bar'],
+                [nodes.Symbol, 'falalalala'],
+                [nodes.KeywordArgs,
+                  [nodes.Pair,
+                    [nodes.Symbol, 'baz'],
+                    [nodes.Literal, 'foobar']]]]]]]);
     });
-    it('should parse imports', function () {
-      isAST(parser.parse('{% import "foo/bar.njk" as baz %}'), [nodes.Root, [nodes.Import, [nodes.Literal, 'foo/bar.njk'], [nodes.Symbol, 'baz']]]);
-      isAST(parser.parse('{% from "foo/bar.njk" import baz, foobar as foobarbaz %}'), [nodes.Root, [nodes.FromImport, [nodes.Literal, 'foo/bar.njk'], [nodes.NodeList, [nodes.Symbol, 'baz'], [nodes.Pair, [nodes.Symbol, 'foobar'], [nodes.Symbol, 'foobarbaz']]]]]);
-      isAST(parser.parse('{% import "foo/bar.html"|replace("html", "j2") as baz %}'), [nodes.Root, [nodes.Import, [nodes.Filter, [nodes.Symbol, 'replace'], [nodes.NodeList, [nodes.Literal, 'foo/bar.html'], [nodes.Literal, 'html'], [nodes.Literal, 'j2']]], [nodes.Symbol, 'baz']]]);
-      isAST(parser.parse('{% from ""|default("foo/bar.njk") import baz, foobar as foobarbaz %}'), [nodes.Root, [nodes.FromImport, [nodes.Filter, [nodes.Symbol, 'default'], [nodes.NodeList, [nodes.Literal, ''], [nodes.Literal, 'foo/bar.njk']]], [nodes.NodeList, [nodes.Symbol, 'baz'], [nodes.Pair, [nodes.Symbol, 'foobar'], [nodes.Symbol, 'foobarbaz']]]]]);
+
+    it('should parse imports', function() {
+      isAST(parser.parse('{% import "foo/bar.njk" as baz %}'),
+        [nodes.Root,
+          [nodes.Import,
+            [nodes.Literal, 'foo/bar.njk'],
+            [nodes.Symbol, 'baz']]]);
+
+      isAST(parser.parse('{% from "foo/bar.njk" import baz, foobar as foobarbaz %}'),
+        [nodes.Root,
+          [nodes.FromImport,
+            [nodes.Literal, 'foo/bar.njk'],
+            [nodes.NodeList,
+              [nodes.Symbol, 'baz'],
+              [nodes.Pair,
+                [nodes.Symbol, 'foobar'],
+                [nodes.Symbol, 'foobarbaz']]]]]);
+
+      isAST(parser.parse('{% import "foo/bar.html"|replace("html", "j2") as baz %}'),
+        [nodes.Root,
+          [nodes.Import,
+            [nodes.Filter,
+              [nodes.Symbol, 'replace'],
+              [nodes.NodeList,
+                [nodes.Literal, 'foo/bar.html'],
+                [nodes.Literal, 'html'],
+                [nodes.Literal, 'j2']
+              ]
+            ],
+            [nodes.Symbol, 'baz']]]);
+
+      isAST(parser.parse('{% from ""|default("foo/bar.njk") import baz, foobar as foobarbaz %}'),
+        [nodes.Root,
+          [nodes.FromImport,
+            [nodes.Filter,
+              [nodes.Symbol, 'default'],
+              [nodes.NodeList,
+                [nodes.Literal, ''],
+                [nodes.Literal, 'foo/bar.njk']
+              ]
+            ],
+            [nodes.NodeList,
+              [nodes.Symbol, 'baz'],
+              [nodes.Pair,
+                [nodes.Symbol, 'foobar'],
+                [nodes.Symbol, 'foobarbaz']]]]]);
     });
-    it('should parse whitespace control', function () {
+
+    it('should parse whitespace control', function() {
       // Every start/end tag with "-" should trim the whitespace
       // before or after it
 
-      isAST(parser.parse('{% if x %}\n  hi \n{% endif %}'), [nodes.Root, [nodes.If, [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, '\n  hi \n']]]]]);
-      isAST(parser.parse('{% if x -%}\n  hi \n{% endif %}'), [nodes.Root, [nodes.If, [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'hi \n']]]]]);
-      isAST(parser.parse('{% if x %}\n  hi \n{%- endif %}'), [nodes.Root, [nodes.If, [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, '\n  hi']]]]]);
-      isAST(parser.parse('{% if x -%}\n  hi \n{%- endif %}'), [nodes.Root, [nodes.If, [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'hi']]]]]);
-      isAST(parser.parse('poop  \n{%- if x -%}\n  hi \n{%- endif %}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, 'poop']], [nodes.If, [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'hi']]]]]);
-      isAST(parser.parse('hello \n{#- comment #}'), [nodes.Root, [nodes.Output, [nodes.TemplateData, 'hello']]]);
-      isAST(parser.parse('{# comment -#} \n world'), [nodes.Root, [nodes.Output, [nodes.TemplateData, 'world']]]);
-      isAST(parser.parse('hello \n{#- comment -#} \n world'), [nodes.Root, [nodes.Output, [nodes.TemplateData, 'hello']], [nodes.Output, [nodes.TemplateData, 'world']]]);
-      isAST(parser.parse('hello \n{# - comment - #} \n world'), [nodes.Root, [nodes.Output, [nodes.TemplateData, 'hello \n']], [nodes.Output, [nodes.TemplateData, ' \n world']]]);
+      isAST(parser.parse('{% if x %}\n  hi \n{% endif %}'),
+        [nodes.Root,
+          [nodes.If,
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.TemplateData, '\n  hi \n']]]]]);
+
+      isAST(parser.parse('{% if x -%}\n  hi \n{% endif %}'),
+        [nodes.Root,
+          [nodes.If,
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.TemplateData, 'hi \n']]]]]);
+
+      isAST(parser.parse('{% if x %}\n  hi \n{%- endif %}'),
+        [nodes.Root,
+          [nodes.If,
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.TemplateData, '\n  hi']]]]]);
+
+      isAST(parser.parse('{% if x -%}\n  hi \n{%- endif %}'),
+        [nodes.Root,
+          [nodes.If,
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.TemplateData, 'hi']]]]]);
+
+      isAST(parser.parse('poop  \n{%- if x -%}\n  hi \n{%- endif %}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, 'poop']],
+          [nodes.If,
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.TemplateData, 'hi']]]]]);
+
+      isAST(parser.parse('hello \n{#- comment #}'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, 'hello']]]);
+
+      isAST(parser.parse('{# comment -#} \n world'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, 'world']]]);
+
+      isAST(parser.parse('hello \n{#- comment -#} \n world'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, 'hello']],
+          [nodes.Output,
+            [nodes.TemplateData, 'world']]]);
+
+      isAST(parser.parse('hello \n{# - comment - #} \n world'),
+        [nodes.Root,
+          [nodes.Output,
+            [nodes.TemplateData, 'hello \n']],
+          [nodes.Output,
+            [nodes.TemplateData, ' \n world']]]);
 
       // The from statement required a special case so make sure to
       // test it
-      isAST(parser.parse('{% from x import y %}\n  hi \n'), [nodes.Root, [nodes.FromImport, [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Symbol, 'y']]], [nodes.Output, [nodes.TemplateData, '\n  hi \n']]]);
-      isAST(parser.parse('{% from x import y -%}\n  hi \n'), [nodes.Root, [nodes.FromImport, [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Symbol, 'y']]], [nodes.Output, [nodes.TemplateData, 'hi \n']]]);
-      isAST(parser.parse('{% if x -%}{{y}} {{z}}{% endif %}'), [nodes.Root, [nodes.If, [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Output, [nodes.Symbol, 'y']], [nodes.Output,
-      // the value of TemplateData should be ' ' instead of ''
-      [nodes.TemplateData, ' ']], [nodes.Output, [nodes.Symbol, 'z']]]]]);
-      isAST(parser.parse('{% if x -%}{% if y %} {{z}}{% endif %}{% endif %}'), [nodes.Root, [nodes.If, [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.If, [nodes.Symbol, 'y'], [nodes.NodeList, [nodes.Output,
-      // the value of TemplateData should be ' ' instead of ''
-      [nodes.TemplateData, ' ']], [nodes.Output, [nodes.Symbol, 'z']]]]]]]);
-      isAST(parser.parse('{% if x -%}{# comment #} {{z}}{% endif %}'), [nodes.Root, [nodes.If, [nodes.Symbol, 'x'], [nodes.NodeList, [nodes.Output,
-      // the value of TemplateData should be ' ' instead of ''
-      [nodes.TemplateData, ' ']], [nodes.Output, [nodes.Symbol, 'z']]]]]);
+      isAST(parser.parse('{% from x import y %}\n  hi \n'),
+        [nodes.Root,
+          [nodes.FromImport,
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Symbol, 'y']]],
+          [nodes.Output,
+            [nodes.TemplateData, '\n  hi \n']]]);
+
+      isAST(parser.parse('{% from x import y -%}\n  hi \n'),
+        [nodes.Root,
+          [nodes.FromImport,
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Symbol, 'y']]],
+          [nodes.Output,
+            [nodes.TemplateData, 'hi \n']]]);
+
+      isAST(parser.parse('{% if x -%}{{y}} {{z}}{% endif %}'),
+        [nodes.Root,
+          [nodes.If,
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Output,
+                [nodes.Symbol, 'y']],
+              [nodes.Output,
+                // the value of TemplateData should be ' ' instead of ''
+                [nodes.TemplateData, ' ']],
+              [nodes.Output,
+                [nodes.Symbol, 'z']]]]]);
+
+      isAST(parser.parse('{% if x -%}{% if y %} {{z}}{% endif %}{% endif %}'),
+        [nodes.Root,
+          [nodes.If,
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.If,
+                [nodes.Symbol, 'y'],
+                [nodes.NodeList,
+                  [nodes.Output,
+                    // the value of TemplateData should be ' ' instead of ''
+                    [nodes.TemplateData, ' ']],
+                  [nodes.Output,
+                    [nodes.Symbol, 'z']]
+                ]]]]]);
+
+      isAST(parser.parse('{% if x -%}{# comment #} {{z}}{% endif %}'),
+        [nodes.Root,
+          [nodes.If,
+            [nodes.Symbol, 'x'],
+            [nodes.NodeList,
+              [nodes.Output,
+                // the value of TemplateData should be ' ' instead of ''
+                [nodes.TemplateData, ' ']],
+              [nodes.Output,
+                [nodes.Symbol, 'z']]]]]);
     });
-    it('should throw errors', function () {
-      expect(function () {
+
+    it('should throw errors', function() {
+      expect(function() {
         parser.parse('hello {{ foo');
       }).to.throwException(/expected variable end/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('hello {% if');
       }).to.throwException(/expected expression/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('hello {% if sdf zxc');
       }).to.throwException(/expected block end/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('{% include "foo %}');
       }).to.throwException(/expected block end/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('hello {% if sdf %} data');
       }).to.throwException(/expected elif, else, or endif/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('hello {% block sdf %} data');
       }).to.throwException(/expected endblock/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('hello {% block sdf %} data{% endblock foo %}');
       }).to.throwException(/expected block end/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('hello {% bar %} dsfsdf');
       }).to.throwException(/unknown block tag/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('{{ foo(bar baz) }}');
       }).to.throwException(/expected comma after expression/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('{% import "foo" %}');
       }).to.throwException(/expected "as" keyword/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('{% from "foo" %}');
       }).to.throwException(/expected import/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('{% from "foo" import bar baz %}');
       }).to.throwException(/expected comma/);
-      expect(function () {
+
+      expect(function() {
         parser.parse('{% from "foo" import _bar %}');
       }).to.throwException(/names starting with an underscore cannot be imported/);
     });
-    it('should parse custom tags', function () {
+
+    it('should parse custom tags', function() {
       function TestTagExtension() {
         /* eslint-disable no-shadow */
         this.tags = ['testtag'];
 
         /* normally this is automatically done by Environment */
         this._name = 'testtagExtension';
-        this.parse = function (parser, nodes) {
+
+        this.parse = function(parser, nodes) {
           parser.peekToken();
           parser.advanceAfterBlockEnd();
           return new nodes.CallExtension(this, 'foo');
         };
       }
+
       function TestBlockTagExtension() {
         /* eslint-disable no-shadow */
         this.tags = ['testblocktag'];
         this._name = 'testblocktagExtension';
-        this.parse = function (parser, nodes) {
+
+        this.parse = function(parser, nodes) {
           parser.peekToken();
           parser.advanceAfterBlockEnd();
+
           var content = parser.parseUntilBlocks('endtestblocktag');
           var tag = new nodes.CallExtension(this, 'bar', null, [1, content]);
           parser.advanceAfterBlockEnd();
+
           return tag;
         };
       }
+
       function TestArgsExtension() {
         /* eslint-disable no-shadow */
         this.tags = ['testargs'];
         this._name = 'testargsExtension';
-        this.parse = function (parser, nodes) {
+
+        this.parse = function(parser, nodes) {
           var begun = parser.peekToken();
           var args = null;
 
           // Skip the name
           parser.nextToken();
+
           args = parser.parseSignature(true);
           parser.advanceAfterBlockEnd(begun.value);
+
           return new nodes.CallExtension(this, 'biz', args);
         };
       }
-      var extensions = [new TestTagExtension(), new TestBlockTagExtension(), new TestArgsExtension()];
-      isAST(parser.parse('{% testtag %}', extensions), [nodes.Root, [nodes.CallExtension, extensions[0], 'foo', undefined, undefined]]);
-      isAST(parser.parse('{% testblocktag %}sdfd{% endtestblocktag %}', extensions), [nodes.Root, [nodes.CallExtension, extensions[1], 'bar', null, [1, [nodes.NodeList, [nodes.Output, [nodes.TemplateData, 'sdfd']]]]]]);
-      isAST(parser.parse('{% testblocktag %}{{ 123 }}{% endtestblocktag %}', extensions), [nodes.Root, [nodes.CallExtension, extensions[1], 'bar', null, [1, [nodes.NodeList, [nodes.Output, [nodes.Literal, 123]]]]]]);
-      isAST(parser.parse('{% testargs(123, "abc", foo="bar") %}', extensions), [nodes.Root, [nodes.CallExtension, extensions[2], 'biz',
-      // The only arg is the list of run-time arguments
-      // coming from the template
-      [nodes.NodeList, [nodes.Literal, 123], [nodes.Literal, 'abc'], [nodes.KeywordArgs, [nodes.Pair, [nodes.Symbol, 'foo'], [nodes.Literal, 'bar']]]]]]);
-      isAST(parser.parse('{% testargs %}', extensions), [nodes.Root, [nodes.CallExtension, extensions[2], 'biz', null]]);
+
+      var extensions = [new TestTagExtension(),
+        new TestBlockTagExtension(),
+        new TestArgsExtension()];
+
+      isAST(parser.parse('{% testtag %}', extensions),
+        [nodes.Root,
+          [nodes.CallExtension, extensions[0], 'foo', undefined, undefined]]);
+
+      isAST(parser.parse('{% testblocktag %}sdfd{% endtestblocktag %}', extensions),
+        [nodes.Root,
+          [nodes.CallExtension, extensions[1], 'bar', null,
+            [1, [nodes.NodeList,
+              [nodes.Output,
+                [nodes.TemplateData, 'sdfd']]]]]]);
+
+      isAST(parser.parse('{% testblocktag %}{{ 123 }}{% endtestblocktag %}', extensions),
+        [nodes.Root,
+          [nodes.CallExtension, extensions[1], 'bar', null,
+            [1, [nodes.NodeList,
+              [nodes.Output,
+                [nodes.Literal, 123]]]]]]);
+
+      isAST(parser.parse('{% testargs(123, "abc", foo="bar") %}', extensions),
+        [nodes.Root,
+          [nodes.CallExtension, extensions[2], 'biz',
+
+            // The only arg is the list of run-time arguments
+            // coming from the template
+            [nodes.NodeList,
+              [nodes.Literal, 123],
+              [nodes.Literal, 'abc'],
+              [nodes.KeywordArgs,
+                [nodes.Pair,
+                  [nodes.Symbol, 'foo'],
+                  [nodes.Literal, 'bar']]]]]]);
+
+      isAST(parser.parse('{% testargs %}', extensions),
+        [nodes.Root,
+          [nodes.CallExtension, extensions[2], 'biz', null]]);
     });
   });
-})();
+}());
+
 
 /***/ }),
 
-/***/ 2313:
+/***/ 9739:
 /*!**************************!*\
   !*** ./tests/runtime.js ***!
   \**************************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   'use strict';
 
   var expect, util, finish, render;
+
   if (true) {
     expect = __webpack_require__(/*! expect.js */ 1801);
-    util = __webpack_require__(/*! ./util */ 9821);
+    util = __webpack_require__(/*! ./util */ 9099);
   } else {}
+
   finish = util.finish;
   render = util.render;
-  describe('runtime', function () {
-    it('should report the failed function calls to symbols', function (done) {
+
+  describe('runtime', function() {
+    it('should report the failed function calls to symbols', function(done) {
       render('{{ foo("cvan") }}', {}, {
         noThrow: true
-      }, function (err) {
+      }, function(err) {
         expect(err).to.match(/Unable to call `foo`, which is undefined/);
       });
+
       finish(done);
     });
-    it('should report the failed function calls to lookups', function (done) {
+
+    it('should report the failed function calls to lookups', function(done) {
       render('{{ foo["bar"]("cvan") }}', {}, {
         noThrow: true
-      }, function (err) {
+      }, function(err) {
         expect(err).to.match(/foo\["bar"\]/);
       });
+
       finish(done);
     });
-    it('should report the failed function calls to calls', function (done) {
+
+    it('should report the failed function calls to calls', function(done) {
       render('{{ foo.bar("second call") }}', {}, {
         noThrow: true
-      }, function (err) {
+      }, function(err) {
         expect(err).to.match(/foo\["bar"\]/);
       });
+
       finish(done);
     });
-    it('should report full function name in error', function (done) {
+
+    it('should report full function name in error', function(done) {
       render('{{ foo.barThatIsLongerThanTen() }}', {}, {
         noThrow: true
-      }, function (err) {
+      }, function(err) {
         expect(err).to.match(/foo\["barThatIsLongerThanTen"\]/);
       });
+
       finish(done);
     });
-    it('should report the failed function calls w/multiple args', function (done) {
+
+    it('should report the failed function calls w/multiple args', function(done) {
       render('{{ foo.bar("multiple", "args") }}', {}, {
         noThrow: true
-      }, function (err) {
+      }, function(err) {
         expect(err).to.match(/foo\["bar"\]/);
       });
-      render('{{ foo["bar"]["zip"]("multiple", "args") }}', {}, {
-        noThrow: true
-      }, function (err) {
-        expect(err).to.match(/foo\["bar"\]\["zip"\]/);
-      });
+
+      render('{{ foo["bar"]["zip"]("multiple", "args") }}',
+        {},
+        {
+          noThrow: true
+        },
+        function(err) {
+          expect(err).to.match(/foo\["bar"\]\["zip"\]/);
+        });
+
       finish(done);
     });
-    it('should allow for undefined macro arguments in the last position', function (done) {
-      render('{% macro foo(bar, baz) %}' + '{{ bar }} {{ baz }}{% endmacro %}' + '{{ foo("hello", nosuchvar) }}', {}, {
+
+    it('should allow for undefined macro arguments in the last position', function(done) {
+      render('{% macro foo(bar, baz) %}' +
+        '{{ bar }} {{ baz }}{% endmacro %}' +
+        '{{ foo("hello", nosuchvar) }}',
+      {},
+      {
         noThrow: true
-      }, function (err, res) {
+      },
+      function(err, res) {
         expect(err).to.equal(null);
         expect(typeof res).to.be('string');
       });
+
       finish(done);
     });
-    it('should allow for objects without a prototype macro arguments in the last position', function (done) {
+
+    it('should allow for objects without a prototype macro arguments in the last position', function(done) {
       var noProto = Object.create(null);
       noProto.qux = 'world';
-      render('{% macro foo(bar, baz) %}' + '{{ bar }} {{ baz.qux }}{% endmacro %}' + '{{ foo("hello", noProto) }}', {
+
+      render('{% macro foo(bar, baz) %}' +
+      '{{ bar }} {{ baz.qux }}{% endmacro %}' +
+      '{{ foo("hello", noProto) }}',
+      {
         noProto: noProto
-      }, {
+      },
+      {
         noThrow: true
-      }, function (err, res) {
+      },
+      function(err, res) {
         expect(err).to.equal(null);
         expect(res).to.equal('hello world');
       });
+
       finish(done);
     });
-    it('should not read variables property from Object.prototype', function (done) {
+
+    it('should not read variables property from Object.prototype', function(done) {
       var payload = 'function(){ return 1+2; }()';
       var data = {};
       Object.getPrototypeOf(data).payload = payload;
+
       render('{{ payload }}', data, {
         noThrow: true
-      }, function (err, res) {
+      }, function(err, res) {
         expect(err).to.equal(null);
         expect(res).to.equal(payload);
       });
       delete Object.getPrototypeOf(data).payload;
+
       finish(done);
     });
   });
-})();
+}());
+
 
 /***/ }),
 
-/***/ 1092:
+/***/ 8824:
+/*!*************************************************************!*\
+  !*** ./tests/test-node-pkgs/dummy-pkg/simple-template.html ***!
+  \*************************************************************/
+/***/ (() => {
+
+{{ foo }}
+
+/***/ }),
+
+/***/ 6438:
 /*!************************!*\
   !*** ./tests/tests.js ***!
   \************************/
 /***/ ((__unused_webpack_module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   'use strict';
 
   var expect, util, render, equal;
+
   if (true) {
     expect = __webpack_require__(/*! expect.js */ 1801);
-    util = __webpack_require__(/*! ./util */ 9821);
+    util = __webpack_require__(/*! ./util */ 9099);
   } else {}
+
   render = util.render;
   equal = util.equal;
-  describe('tests', function () {
-    it('callable should detect callability', function () {
+
+  describe('tests', function() {
+    it('callable should detect callability', function() {
       var callable = render('{{ foo is callable }}', {
-        foo: function () {
+        foo: function() {
           return '!!!';
         }
       });
@@ -95172,7 +96402,8 @@ mocha.run();
       expect(callable).to.be('true');
       expect(uncallable).to.be('true');
     });
-    it('defined should detect definedness', function () {
+
+    it('defined should detect definedness', function() {
       expect(render('{{ foo is defined }}')).to.be('false');
       expect(render('{{ foo is not defined }}')).to.be('true');
       expect(render('{{ foo is defined }}', {
@@ -95182,19 +96413,30 @@ mocha.run();
         foo: null
       })).to.be('false');
     });
-    it('should support "is defined" in {% if %} expressions', function () {
-      expect(render('{% if foo is defined %}defined{% else %}undefined{% endif %}', {})).to.be('undefined');
-      expect(render('{% if foo is defined %}defined{% else %}undefined{% endif %}', {
-        foo: null
-      })).to.be('defined');
+
+    it('should support "is defined" in {% if %} expressions', function() {
+      expect(
+        render('{% if foo is defined %}defined{% else %}undefined{% endif %}',
+          {})
+      ).to.be('undefined');
+      expect(
+        render('{% if foo is defined %}defined{% else %}undefined{% endif %}',
+          {foo: null})
+      ).to.be('defined');
     });
-    it('should support "is not defined" in {% if %} expressions', function () {
-      expect(render('{% if foo is not defined %}undefined{% else %}defined{% endif %}', {})).to.be('undefined');
-      expect(render('{% if foo is not defined %}undefined{% else %}defined{% endif %}', {
-        foo: null
-      })).to.be('defined');
+
+    it('should support "is not defined" in {% if %} expressions', function() {
+      expect(
+        render('{% if foo is not defined %}undefined{% else %}defined{% endif %}',
+          {})
+      ).to.be('undefined');
+      expect(
+        render('{% if foo is not defined %}undefined{% else %}defined{% endif %}',
+          {foo: null})
+      ).to.be('defined');
     });
-    it('undefined should detect undefinedness', function () {
+
+    it('undefined should detect undefinedness', function() {
       expect(render('{{ foo is undefined }}')).to.be('true');
       expect(render('{{ foo is not undefined }}')).to.be('false');
       expect(render('{{ foo is undefined }}', {
@@ -95204,7 +96446,8 @@ mocha.run();
         foo: null
       })).to.be('true');
     });
-    it('none/null should detect strictly null values', function () {
+
+    it('none/null should detect strictly null values', function() {
       // required a change in lexer.js @ 220
       expect(render('{{ null is null }}')).to.be('true');
       expect(render('{{ none is none }}')).to.be('true');
@@ -95214,13 +96457,15 @@ mocha.run();
         foo: null
       })).to.be('false');
     });
-    it('divisibleby should detect divisibility', function () {
+
+    it('divisibleby should detect divisibility', function() {
       var divisible = render('{{ "6" is divisibleby(3) }}');
       var notDivisible = render('{{ 3 is not divisibleby(2) }}');
       expect(divisible).to.be('true');
       expect(notDivisible).to.be('true');
     });
-    it('escaped should test whether or not something is escaped', function () {
+
+    it('escaped should test whether or not something is escaped', function() {
       var escaped = render('{{ (foo | safe) is escaped }}', {
         foo: 'foobarbaz'
       });
@@ -95230,19 +96475,22 @@ mocha.run();
       expect(escaped).to.be('true');
       expect(notEscaped).to.be('false');
     });
-    it('even should detect whether or not a number is even', function () {
+
+    it('even should detect whether or not a number is even', function() {
       var fiveEven = render('{{ "5" is even }}');
       var fourNotEven = render('{{ 4 is not even }}');
       expect(fiveEven).to.be('false');
       expect(fourNotEven).to.be('false');
     });
-    it('odd should detect whether or not a number is odd', function () {
+
+    it('odd should detect whether or not a number is odd', function() {
       var fiveOdd = render('{{ "5" is odd }}');
       var fourNotOdd = render('{{ 4 is not odd }}');
       expect(fiveOdd).to.be('true');
       expect(fourNotOdd).to.be('true');
     });
-    it('mapping should detect Maps or hashes', function () {
+
+    it('mapping should detect Maps or hashes', function() {
       /* global Map */
       var map1, map2, mapOneIsMapping, mapTwoIsMapping;
       if (typeof Map === 'undefined') {
@@ -95260,49 +96508,57 @@ mocha.run();
         expect(mapTwoIsMapping).to.be('true');
       }
     });
-    it('falsy should detect whether or not a value is falsy', function () {
+
+    it('falsy should detect whether or not a value is falsy', function() {
       var zero = render('{{ 0 is falsy }}');
       var pancakes = render('{{ "pancakes" is not falsy }}');
       expect(zero).to.be('true');
       expect(pancakes).to.be('true');
     });
-    it('truthy should detect whether or not a value is truthy', function () {
+
+    it('truthy should detect whether or not a value is truthy', function() {
       var nullTruthy = render('{{ null is truthy }}');
       var pancakesNotTruthy = render('{{ "pancakes" is not truthy }}');
       expect(nullTruthy).to.be('false');
       expect(pancakesNotTruthy).to.be('false');
     });
-    it('greaterthan than should detect whether or not a value is less than another', function () {
+
+    it('greaterthan than should detect whether or not a value is less than another', function() {
       var fiveGreaterThanFour = render('{{ "5" is greaterthan(4) }}');
       var fourNotGreaterThanTwo = render('{{ 4 is not greaterthan(2) }}');
       expect(fiveGreaterThanFour).to.be('true');
       expect(fourNotGreaterThanTwo).to.be('false');
     });
-    it('ge should detect whether or not a value is greater than or equal to another', function () {
+
+    it('ge should detect whether or not a value is greater than or equal to another', function() {
       var fiveGreaterThanEqualToFive = render('{{ "5" is ge(5) }}');
       var fourNotGreaterThanEqualToTwo = render('{{ 4 is not ge(2) }}');
       expect(fiveGreaterThanEqualToFive).to.be('true');
       expect(fourNotGreaterThanEqualToTwo).to.be('false');
     });
-    it('lessthan than should detect whether or not a value is less than another', function () {
+
+    it('lessthan than should detect whether or not a value is less than another', function() {
       var fiveLessThanFour = render('{{ "5" is lessthan(4) }}');
       var fourNotLessThanTwo = render('{{ 4 is not lessthan(2) }}');
       expect(fiveLessThanFour).to.be('false');
       expect(fourNotLessThanTwo).to.be('true');
     });
-    it('le should detect whether or not a value is less than or equal to another', function () {
+
+    it('le should detect whether or not a value is less than or equal to another', function() {
       var fiveLessThanEqualToFive = render('{{ "5" is le(5) }}');
       var fourNotLessThanEqualToTwo = render('{{ 4 is not le(2) }}');
       expect(fiveLessThanEqualToFive).to.be('true');
       expect(fourNotLessThanEqualToTwo).to.be('true');
     });
-    it('ne should detect whether or not a value is not equal to another', function () {
+
+    it('ne should detect whether or not a value is not equal to another', function() {
       var five = render('{{ 5 is ne(5) }}');
       var four = render('{{ 4 is not ne(2) }}');
       expect(five).to.be('false');
       expect(four).to.be('false');
     });
-    it('iterable should detect that a generator is iterable', function (done) {
+
+    it('iterable should detect that a generator is iterable', function(done) {
       /* eslint-disable no-eval */
       var iterable;
       try {
@@ -95310,55 +96566,54 @@ mocha.run();
       } catch (e) {
         return this.skip(); // Browser does not support generators
       }
-      equal('{{ fn is iterable }}', {
-        fn: iterable
-      }, 'true');
+      equal('{{ fn is iterable }}', { fn: iterable }, 'true');
       return done();
     });
-    it('iterable should detect that an Array is not non-iterable', function () {
-      equal('{{ arr is not iterable }}', {
-        arr: []
-      }, 'false');
+
+    it('iterable should detect that an Array is not non-iterable', function() {
+      equal('{{ arr is not iterable }}', { arr: [] }, 'false');
     });
-    it('iterable should detect that a Map is iterable', function () {
+
+    it('iterable should detect that a Map is iterable', function() {
       /* global Map */
       if (typeof Map === 'undefined') {
         this.skip();
       } else {
-        equal('{{ map is iterable }}', {
-          map: new Map()
-        }, 'true');
+        equal('{{ map is iterable }}', { map: new Map() }, 'true');
       }
     });
-    it('iterable should detect that a Set is not non-iterable', function () {
+
+    it('iterable should detect that a Set is not non-iterable', function() {
       /* global Set */
       if (typeof Set === 'undefined') {
         this.skip();
       } else {
-        equal('{{ set is not iterable }}', {
-          set: new Set()
-        }, 'false');
+        equal('{{ set is not iterable }}', { set: new Set() }, 'false');
       }
     });
-    it('number should detect whether a value is numeric', function () {
+
+    it('number should detect whether a value is numeric', function() {
       var num = render('{{ 5 is number }}');
       var str = render('{{ "42" is number }}');
       expect(num).to.be('true');
       expect(str).to.be('false');
     });
-    it('string should detect whether a value is a string', function () {
+
+    it('string should detect whether a value is a string', function() {
       var num = render('{{ 5 is string }}');
       var str = render('{{ "42" is string }}');
       expect(num).to.be('false');
       expect(str).to.be('true');
     });
-    it('equalto should detect value equality', function () {
+
+    it('equalto should detect value equality', function() {
       var same = render('{{ 1 is equalto(2) }}');
       var notSame = render('{{ 2 is not equalto(2) }}');
       expect(same).to.be('false');
       expect(notSame).to.be('false');
     });
-    it('sameas should alias to equalto', function () {
+
+    it('sameas should alias to equalto', function() {
       var obj = {};
       var same = render('{{ obj1 is sameas(obj2) }}', {
         obj1: obj,
@@ -95366,26 +96621,29 @@ mocha.run();
       });
       expect(same).to.be('true');
     });
-    it('lower should detect whether or not a string is lowercased', function () {
+
+    it('lower should detect whether or not a string is lowercased', function() {
       expect(render('{{ "foobar" is lower }}')).to.be('true');
       expect(render('{{ "Foobar" is lower }}')).to.be('false');
     });
-    it('upper should detect whether or not a string is uppercased', function () {
+
+    it('upper should detect whether or not a string is uppercased', function() {
       expect(render('{{ "FOOBAR" is upper }}')).to.be('true');
       expect(render('{{ "Foobar" is upper }}')).to.be('false');
     });
   });
-})();
+}());
+
 
 /***/ }),
 
-/***/ 9821:
+/***/ 9099:
 /*!***********************!*\
   !*** ./tests/util.js ***!
   \***********************/
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
-(function () {
+(function() {
   /* eslint-disable vars-on-top */
 
   'use strict';
@@ -95399,8 +96657,9 @@ mocha.run();
     precompileString,
     templatesPath,
     expect;
+
   if (typeof window === 'undefined') {
-    nunjucks = nunjucksFull = __webpack_require__(/*! ../nunjucks/index.js */ 9647);
+    nunjucks = nunjucksFull = __webpack_require__(/*! ../nunjucks/index.js */ 5905);
     Loader = nunjucks.FileSystemLoader;
     templatesPath = 'tests/templates';
     expect = __webpack_require__(/*! expect.js */ 1801);
@@ -95421,12 +96680,15 @@ mocha.run();
   precompileString = nunjucksFull.precompileString;
   Environment = nunjucks.Environment;
   Template = nunjucks.Template;
+
   var numAsyncs;
   var doneHandler;
-  beforeEach(function () {
+
+  beforeEach(function() {
     numAsyncs = 0;
     doneHandler = null;
   });
+
   function equal(str, ctx, opts, str2, env) {
     if (typeof ctx === 'string') {
       env = opts;
@@ -95443,6 +96705,7 @@ mocha.run();
     var res = render(str, ctx, opts, env);
     expect(res).to.be(str2);
   }
+
   function jinjaEqual(str, ctx, str2, env) {
     var jinjaUninstalls = [nunjucks.installJinjaCompat()];
     if (nunjucksFull !== nunjucks) {
@@ -95456,6 +96719,7 @@ mocha.run();
       }
     }
   }
+
   function finish(done) {
     if (numAsyncs > 0) {
       doneHandler = done;
@@ -95463,12 +96727,14 @@ mocha.run();
       done();
     }
   }
+
   function normEOL(str) {
     if (!str) {
       return str;
     }
     return str.replace(/\r\n|\r/g, '\n');
   }
+
   function randomTemplateName() {
     var rand = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(0, 5);
     return rand + '.njk';
@@ -95489,10 +96755,13 @@ mocha.run();
       cb = env;
       env = null;
     }
+
     opts = opts || {};
     opts.dev = true;
+
     var loader;
     var e;
+
     if (isSlim) {
       e = env || new Environment([], opts);
       loader = e.loaders[0];
@@ -95500,6 +96769,7 @@ mocha.run();
       loader = new Loader(templatesPath);
       e = env || new Environment(loader, opts);
     }
+
     var name;
     if (opts.filters) {
       for (name in opts.filters) {
@@ -95508,6 +96778,7 @@ mocha.run();
         }
       }
     }
+
     if (opts.asyncFilters) {
       for (name in opts.asyncFilters) {
         if (Object.prototype.hasOwnProperty.call(opts.asyncFilters, name)) {
@@ -95515,6 +96786,7 @@ mocha.run();
         }
       }
     }
+
     if (opts.extensions) {
       for (name in opts.extensions) {
         if (Object.prototype.hasOwnProperty.call(opts.extensions, name)) {
@@ -95522,6 +96794,7 @@ mocha.run();
         }
       }
     }
+
     var tmplName;
     if (isSlim) {
       tmplName = randomTemplateName();
@@ -95532,22 +96805,27 @@ mocha.run();
       });
       eval(precompileJs); // eslint-disable-line no-eval
     }
+
     ctx = ctx || {};
+
     var t;
+
     if (isSlim) {
       var tmplSource = loader.getSource(tmplName);
       t = new Template(tmplSource.src, e, tmplSource.path);
     } else {
       t = new Template(str, e);
     }
+
     if (!cb) {
       return t.render(ctx);
     } else {
       numAsyncs++;
-      t.render(ctx, function (err, res) {
+      t.render(ctx, function(err, res) {
         if (err && !opts.noThrow) {
           throw err;
         }
+
         try {
           cb(err, normEOL(res));
         } catch (exc) {
@@ -95559,13 +96837,16 @@ mocha.run();
             throw exc;
           }
         }
+
         numAsyncs--;
+
         if (numAsyncs === 0 && doneHandler) {
           doneHandler();
         }
       });
     }
   }
+
   if (typeof window === 'undefined') {
     module.exports.render = render;
     module.exports.equal = equal;
@@ -95582,38 +96863,11 @@ mocha.run();
       finish: finish,
       normEOL: normEOL,
       isSlim: isSlim,
-      Loader: Loader
+      Loader: Loader,
     };
   }
-})();
+}());
 
-/***/ }),
-
-/***/ 4841:
-/*!****************************!*\
-  !*** ./nunjucks/src/ sync ***!
-  \****************************/
-/***/ ((module) => {
-
-function webpackEmptyContext(req) {
-	var e = new Error("Cannot find module '" + req + "'");
-	e.code = 'MODULE_NOT_FOUND';
-	throw e;
-}
-webpackEmptyContext.keys = () => ([]);
-webpackEmptyContext.resolve = webpackEmptyContext;
-webpackEmptyContext.id = 4841;
-module.exports = webpackEmptyContext;
-
-/***/ }),
-
-/***/ 8824:
-/*!*************************************************************!*\
-  !*** ./tests/test-node-pkgs/dummy-pkg/simple-template.html ***!
-  \*************************************************************/
-/***/ (() => {
-
-{{ foo }}
 
 /***/ }),
 
@@ -95836,7 +97090,7 @@ module.exports = webpackEmptyContext;
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
 /******/ 	// This entry module depends on other loaded chunks and execution need to be delayed
-/******/ 	var __webpack_exports__ = __webpack_require__.O(undefined, ["vendors"], () => (__webpack_require__(2582)))
+/******/ 	var __webpack_exports__ = __webpack_require__.O(undefined, ["vendors"], () => (__webpack_require__(9696)))
 /******/ 	__webpack_exports__ = __webpack_require__.O(__webpack_exports__);
 /******/ 	
 /******/ 	return __webpack_exports__;

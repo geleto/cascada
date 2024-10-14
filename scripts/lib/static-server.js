@@ -20,7 +20,7 @@ async function getStaticServer(prt) {
       const pathname = parsedUrl.pathname;
       const filePath = path.join(staticRoot, pathname);
 
-      console.log(`Requested file: ${filePath}`); // Debugging log
+      //console.log(`Requested file: ${filePath}`); // Debugging log
 
       // Always serve non-JS files and minified JS files without instrumentation
       if (!pathname.endsWith('.js') || pathname.endsWith('.min.js')) {

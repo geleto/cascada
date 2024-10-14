@@ -57,39 +57,13 @@
   <script src="../tests.js"></script>
 
   <script>
-   nunjucks.testing = true;
-    mocha.checkLeaks();
-
-    // New: Log the start of the tests
-    console.log('Starting Mocha tests');
-    window.logProgress('Starting Mocha tests');
-
-    let testCount = 0;
-    let testsPassed = 0;
-
-    // New: Override the test function to log each test
-    const originalTest = window.it;
-    window.it = function(name, fn) {
-      return originalTest(name, function() {
-        testCount++;
-        window.logProgress(`Running test ${testCount}: ${name}`);
-        return fn.apply(this, arguments);
-      });
-    };
-
-    mocha.run(function (failures) {
-      // Modified: Calculate testsPassed and set more detailed testResultsReceived
-      testsPassed = testCount - failures;
-      window.testResultsReceived = {
-        failures: failures,
-        total: testCount,
-        passed: testsPassed,
-        coverage: window.__coverage__
-      };
-      // New: Log test completion with summary
-      console.log(`Tests completed. Total: ${testCount}, Passed: ${testsPassed}, Failed: ${failures}`);
-      window.logProgress(`Tests completed. Total: ${testCount}, Passed: ${testsPassed}, Failed: ${failures}`);
+    console.log('Test script loaded');
+    nunjucks.testing = true;
+    mocha.setup({
+      ui: 'bdd',
+      reporter: 'spec'
     });
+    mocha.checkLeaks();
   </script>
 </body>
 </html>

@@ -109,15 +109,9 @@
   ],
   "nyc": {
     "extends": "@istanbuljs/nyc-config-babel",
-    "all": true,
+    "all": false,
     "include": [
       "nunjucks/**/*.js"
-    ],
-    "exclude": [
-      "**/*.spec.js",
-      "**/*.test.js",
-      "tests/**",
-      "scripts/**"
     ],
     "reporter": [
       "text",

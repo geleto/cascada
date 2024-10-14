@@ -23,8 +23,7 @@ module.exports = {
       {
         test: /\.js$/,
         include: [
-          path.resolve(__dirname, '../nunjucks'),
-          path.resolve(__dirname, '../tests'),
+          path.resolve(__dirname, '../nunjucks/src'),
         ],
         use: {
           loader: 'babel-loader',
