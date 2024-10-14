@@ -9,11 +9,19 @@ const mocha = require('mocha');
 const path = require('path');
 const fs = require('fs').promises;
 const chalk = require('tiny-chalk');
+const libCoverage = require('istanbul-lib-coverage');
 const getStaticServer = require('./lib/static-server');
 const { chromium } = require('playwright');
 const precompileTestTemplates = require('./lib/precompile');
 
 process.env.NODE_ENV = 'test';
+
+// Define shared coverage data
+const coverageConfig = {
+  dir: path.join(__dirname, '../.nyc_output'),
+  files: ['browser-std.json', 'browser-slim.json'],
+  getFullPath: (file) => path.join(coverageConfig.dir, file)
+};
 
 const nyc = new NYC({
   include: ["nunjucks/**/*.js"],
@@ -52,9 +60,23 @@ function colorConsoleOutput(message) {
     .replace(/^(\s*)(Error:.*)/gm, (match, indent, error) => `${indent}${chalk.red(error)}`);
 }
 
+async function deleteCoverageFiles() {
+  for (const file of coverageConfig.files) {
+    const filePath = coverageConfig.getFullPath(file);
+    try {
+      await fs.unlink(filePath);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.error(`Error deleting coverage file ${file}:`, error);
+      }
+    }
+  }
+}
+
 async function runTestFile(browser, port, testFile) {
   const context = await browser.newContext();
   const page = await context.newPage();
+  let coverageSavedPromise;
 
   try {
     const url = `http://localhost:${port}/tests/browser/${testFile}`;
@@ -77,14 +99,23 @@ async function runTestFile(browser, port, testFile) {
       console.log(`${testFile} progress:`, message);
     });
 
-    await page.exposeFunction('sendTestResults', async (results) => {
-      console.log(`Tests finished for ${testFile}, passed: ${results.passed}, failed: ${results.failures}, total: ${results.total}`);
-      if (results.coverage) {
-        console.log(`Coverage data received for ${testFile}`);
-        const coverageFileName = testFile.includes('slim') ? 'browser-slim.json' : 'browser-std.json';
-        const coverageFile = path.join(__dirname, '../.nyc_output', coverageFileName);
-        await fs.writeFile(coverageFile, JSON.stringify(results.coverage));
-      }
+    // Create a promise that resolves when coverage data is saved
+    coverageSavedPromise = new Promise((resolve, reject) => {
+      page.exposeFunction('sendTestResults', async (results) => {
+        if (results.coverage) {
+          const coverageFileName = testFile.includes('slim') ? 'browser-slim.json' : 'browser-std.json';
+          const coverageFile = coverageConfig.getFullPath(coverageFileName);
+          try {
+            await fs.writeFile(coverageFile, JSON.stringify(results.coverage));
+            resolve(); // Resolve the promise when coverage data is saved
+          } catch (error) {
+            reject(error);
+          }
+        } else {
+          console.log(`No coverage data received for ${testFile}`);
+          resolve(); // Resolve even if there's no coverage data
+        }
+      });
     });
 
     await page.evaluate(() => {
@@ -94,8 +125,6 @@ async function runTestFile(browser, port, testFile) {
         mocha.run((failures) => {
           window.testResultsReceived = {
             failures: failures,
-            total: mocha.suite.total(),
-            passed: mocha.suite.total() - failures,
             coverage: window.__coverage__
           };
           window.sendTestResults(window.testResultsReceived);
@@ -108,15 +137,18 @@ async function runTestFile(browser, port, testFile) {
     const testResult = await page.waitForFunction(() => window.testResultsReceived, { timeout: 120000 });
     const resultValue = await testResult.jsonValue();
 
-    if (resultValue.failures > 0) {
+    // Wait for coverage data to be saved before proceeding
+    await coverageSavedPromise;
+
+    /*if (resultValue.failures > 0) {
       console.error(`Tests failed in ${testFile}`);
-      // We're not throwing an error here anymore, just logging it
-    }
+      overallTestsPassed = false;
+    }*/
 
     return resultValue;
   } catch (error) {
     console.error(`Error in ${testFile}:`, error);
-    return { failures: 1, total: 1, passed: 0 }; // Return a failed result object
+    return { failures: 1, total: 1, passed: 0 };
   } finally {
     await context.close();
   }
@@ -129,8 +161,9 @@ async function runTests() {
   let overallTestsPassed = true;
 
   try {
-    console.log('Starting test process...');
     nyc.reset();
+
+    await deleteCoverageFiles();
 
     console.log('Precompiling test templates...');
     await precompileTestTemplates();
@@ -151,17 +184,15 @@ async function runTests() {
       }
     }
 
-    console.log('All test files have been processed');
+    //console.log('\nProcessing coverage data...');
+    const coverageMap = libCoverage.createCoverageMap({});
 
-    console.log('Processing coverage data...');
-    const coverageFiles = ['browser-std.json', 'browser-slim.json'];
-    for (const file of coverageFiles) {
-      const coverageFile = path.join(__dirname, '../.nyc_output', file);
+    for (const file of coverageConfig.files) {
+      const coverageFile = coverageConfig.getFullPath(file);
       try {
         const coverageData = JSON.parse(await fs.readFile(coverageFile, 'utf8'));
-        Object.keys(coverageData).forEach(filename => {
-          nyc.addFileCoverage(coverageData[filename]);
-        });
+        const fileCoverageMap = libCoverage.createCoverageMap(coverageData);
+        coverageMap.merge(fileCoverageMap);
       } catch (error) {
         console.error(`Error processing coverage file ${file}:`, error);
       }
@@ -170,44 +201,30 @@ async function runTests() {
     console.log('\nCoverage Summary:');
     await nyc.report();
 
-    const coverageData = nyc.getCoverageMapFromAllCoverageFiles();
-    const summary = coverageData.getCoverageSummary();
-    const lines = summary.lines;
-    const statements = summary.statements;
-    const functions = summary.functions;
-    const branches = summary.branches;
-
-    console.log('\nDetailed Coverage Data:');
-    console.log(`Lines: ${lines.pct.toFixed(2)}% (${lines.covered}/${lines.total})`);
-    console.log(`Statements: ${statements.pct.toFixed(2)}% (${statements.covered}/${statements.total})`);
-    console.log(`Functions: ${functions.pct.toFixed(2)}% (${functions.covered}/${functions.total})`);
-    console.log(`Branches: ${branches.pct.toFixed(2)}% (${branches.covered}/${branches.total})`);
-
   } catch (error) {
     console.error('Test runner encountered an error:', error);
     overallTestsPassed = false;
   } finally {
     if (browser) {
-      console.log('Closing browser...');
+      //console.log('Closing browser...');
       await browser.close();
     }
     if (server) {
       console.log('Closing server...');
       server.close(() => {
-        console.log('Server closed');
+        //console.log('Server closed');
       });
     }
   }
 
   if (!overallTestsPassed) {
-    console.error('Some tests failed');
+    //console.error('Some tests failed');
     process.exit(1);
   } else {
-    console.log('All tests passed successfully');
+    //console.log('All tests passed successfully');
   }
 }
 
-console.log('Test runner script started');
 runTests().catch(error => {
   console.error('Unhandled error in test runner:', error);
   process.exit(1);

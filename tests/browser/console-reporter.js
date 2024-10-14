@@ -32,5 +32,3 @@ class ConsoleReporter {
     });
   }
 }
-
-module.exports = ConsoleReporter;
