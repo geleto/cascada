@@ -596,7 +596,7 @@ class Template extends Obj {
     return syncResult;
   }
 
-  getExported(ctx, parentFrame, cb) { // eslint-disable-line consistent-return
+  getExported(ctx, parentFrame, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
@@ -635,6 +635,8 @@ class Template extends Obj {
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     }
+
+    return undefined;
   }
 
   compile() {
@@ -658,41 +660,41 @@ class Template extends Obj {
 
       let func;
       try {
-        func = new Function(source); // eslint-disable-line no-new-func
+        func = new Function(source);
       } catch (e) {
-        console.log('Error compiling:\n' + source); // eslint-disable-line no-console
+        console.error('Error compiling:\n' + source);
 
-        console.log('Error creating function:'); // eslint-disable-line no-console
-        console.log('- Name:', e.name); // eslint-disable-line no-console
-        console.log('- Message:', e.message); // eslint-disable-line no-console
-        console.log('- Stack:', e.stack); // eslint-disable-line no-console
+        console.error('Error creating function:');
+        console.error('- Name:', e.name);
+        console.error('- Message:', e.message);
+        console.error('- Stack:', e.stack);
 
-        console.log('Test environment info:'); // eslint-disable-line no-console
-        console.log('UserAgent:', navigator.userAgent); // eslint-disable-line no-console
+        console.error('Test environment info:');
+        console.error('UserAgent:', navigator.userAgent);
         /* console.log("JavaScript features:", {
           let: typeof let !== 'undefined',
           const: typeof const !== 'undefined',
           arrow: typeof (() => {}) === 'function'
         }); */
         // Additional properties that might e available
-        if (e.lineNumber) console.log('- Line Number:', e.lineNumber); // eslint-disable-line no-console
-        if (e.columnNumber) console.log('- Column Number:', e.columnNumber); // eslint-disable-line no-console
-        if (e.fileName) console.log('- File Name:', e.fileName); // eslint-disable-line no-console
+        if (e.lineNumber) console.error('- Line Number:', e.lineNumber);
+        if (e.columnNumber) console.error('- Column Number:', e.columnNumber);
+        if (e.fileName) console.error('- File Name:', e.fileName);
 
         // If it's a syntax error, it might have additional properties
         if (e instanceof SyntaxError) {
-          console.log('- Is Syntax Error: Yes'); // eslint-disable-line no-console
+          console.error('- Is Syntax Error: Yes');
           // Some environments provide these for SyntaxErrors
-          if (e.line) console.log('- Line:', e.line); // eslint-disable-line no-console
-          if (e.column) console.log('- Column:', e.column); // eslint-disable-line no-console
+          if (e.line) console.error('- Line:', e.line);
+          if (e.column) console.error('- Column:', e.column);
         }
 
         // Log the source that caused the error
-        console.log('- Problematic source:', source); // eslint-disable-line no-console
+        console.error('- Problematic source:', source);
 
         // Log the current environment
-        console.log('- Node.js version:', process.version); // eslint-disable-line no-console
-        console.log('- V8 version:', process.versions.v8); // eslint-disable-line no-console
+        console.error('- Node.js version:', process.version);
+        console.error('- V8 version:', process.versions.v8);
 
         throw new Error('Error trying to compile ' + this.path + ' ' + e.message);
       }

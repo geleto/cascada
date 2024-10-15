@@ -44,10 +44,10 @@ module.exports = {
       'nunjucks/src/node-loaders': false, // no node loaders in browser environment
     },
     fallback: {
-      "path": require.resolve("path-browserify"),
-      "fs": false,
-      "os": require.resolve("os-browserify/browser"),
-      "stream": require.resolve("stream-browserify")
+      'path': require.resolve('path-browserify'),
+      'fs': false,
+      'os': require.resolve('os-browserify/browser'),
+      'stream': require.resolve('stream-browserify')
     }
   },
   optimization: {
@@ -66,7 +66,7 @@ module.exports = {
 
 // Only add the IgnorePlugin for fsevents on non-macOS platforms
 // to avoid Can't resolve 'fsevents' in chokidar
-if (process.platform !== "darwin") {
+if (process.platform !== 'darwin') {
   module.exports.plugins.push(
     new webpack.IgnorePlugin({
       resourceRegExp: /^fsevents$/,

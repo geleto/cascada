@@ -6,7 +6,6 @@ const precompileTestTemplates = require('./lib/precompile');
 
 precompileTestTemplates()
   .then(() => {
-    console.log('Precompilation complete.');
   })
   .catch((err) => {
     console.error('Precompilation failed:', err);

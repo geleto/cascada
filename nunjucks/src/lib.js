@@ -349,7 +349,6 @@ function indexOf(arr, searchElement, fromIndex) {
 exports.indexOf = indexOf;
 
 function keys_(obj) {
-  /* eslint-disable no-restricted-syntax */
   const arr = [];
   for (let k in obj) {
     if (hasOwnProp(obj, k)) {

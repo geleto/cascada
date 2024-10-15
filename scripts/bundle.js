@@ -22,22 +22,26 @@ function runWebpack(opts) {
   return new Promise((resolve, reject) => {
     try {
       const config = {
-        mode: process.env.NODE_ENV || 'production', // Set the mode based on NODE_ENV
+        mode: TEST_ENV ? 'development' : (process.env.NODE_ENV || 'production'),
         entry: './nunjucks/index.js',
-        devtool: 'source-map',
+        target: 'web',
+        devtool: TEST_ENV ? 'inline-source-map' : 'source-map',
         output: {
           path: destDir,
           filename: filename,
           library: 'nunjucks',
           libraryTarget: 'umd',
+          globalObject: 'this',
           devtoolModuleFilenameTemplate:
             (info) => path.relative(destDir, info.absoluteResourcePath),
         },
         resolve: {
           fallback: {
-            // If you need to polyfill 'process' or 'setImmediate', you can do it here
-            // "process": false,
-            // "setImmediate": false
+            "fs": false,
+            "path": false,
+            "os": false,
+            "chokidar": false,
+            "stream": false
           }
         },
         module: {
@@ -54,7 +58,7 @@ function runWebpack(opts) {
                       {
                         extensions: ['.js'],
                         resolvePath: (sourcePath) => {
-                          if (sourcePath.match(/^(fs|path|chokidar)$/)) {
+                          if (sourcePath.match(/^(fs|path|os|chokidar|stream)$/)) {
                             return 'node-libs-browser/mock/empty';
                           }
                           if (opts.slim) {
@@ -81,12 +85,16 @@ function runWebpack(opts) {
         plugins: [
           new webpack.BannerPlugin(`Browser bundle of nunjucks ${pjson.version} ${type}`),
           new webpack.DefinePlugin({
-            'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
+            'process.env.NODE_ENV': JSON.stringify(TEST_ENV ? 'development' : (process.env.NODE_ENV || 'production')),
             'process.env.BUILD_TYPE': JSON.stringify(opts.slim ? 'SLIM' : 'STD'),
+          }),
+          new webpack.IgnorePlugin({
+            resourceRegExp: /^fsevents$/,
+            contextRegExp: /chokidar/,
           }),
         ],
         optimization: {
-          minimize: opts.min,
+          minimize: opts.min && !TEST_ENV,
           minimizer: [
             new TerserPlugin({
               terserOptions: {
@@ -128,6 +136,7 @@ if (!TEST_ENV) {
 }
 
 const promises = runConfigs.map((opts) =>
+  // eslint-disable-next-line no-console
   () => runWebpack(opts).then((stats) => console.log(stats))
 );
 

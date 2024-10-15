@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable no-console */
 
 'use strict';
 
@@ -24,7 +25,7 @@ const coverageConfig = {
 };
 
 const nyc = new NYC({
-  include: ["nunjucks/**/*.js"],
+  include: ['nunjucks/**/*.js'],
   reporter: ['text', 'html', 'lcov'],
   showProcessTree: true
 });
@@ -160,14 +161,11 @@ async function runTests() {
 
     await deleteCoverageFiles();
 
-    console.log('Precompiling test templates...');
     await precompileTestTemplates();
 
-    console.log('Starting static server...');
     [server, port] = await getStaticServer();
     console.log(`Static server listening on port ${port}`);
 
-    console.log('Launching browser...');
     browser = await chromium.launch();
     const testFiles = ['index.html', 'slim.html'];
 

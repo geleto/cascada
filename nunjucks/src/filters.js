@@ -89,7 +89,7 @@ function dictsort(val, caseSensitive, by) {
 
   let array = [];
   // deliberately include properties from the object's prototype
-  for (let k in val) { // eslint-disable-line guard-for-in, no-restricted-syntax
+  for (let k in val) { // eslint-disable-line guard-for-in
     array.push([k, val[k]]);
   }
 

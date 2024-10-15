@@ -1,3 +1,4 @@
+/* eslint-disable camelcase*/
 (function() {
   'use strict';
 

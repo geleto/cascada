@@ -47,12 +47,13 @@ async function getStaticServer(prt) {
           res.end(result.code);
         } catch (error) {
           console.error(`Error processing file ${filePath}:`, error);
-          console.error('Code snippet:', code?.substring(0, 100) + '...');
+          console.error('Code snippet:', (code?code.substring(0, 100):'') + '...');
           next();
         }
       } else {
         next();
       }
+      return undefined;
     });
 
     // Serve static files (HTML, CSS, images, etc.) with correct MIME types
@@ -69,6 +70,7 @@ async function getStaticServer(prt) {
     return new Promise((resolve) => {
       const server = http.createServer(app);
       server.listen(port, () => {
+        // eslint-disable-next-line no-console
         console.log('Test server listening on port ' + port);
         resolve([server, port]);
       });

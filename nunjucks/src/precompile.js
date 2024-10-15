@@ -92,7 +92,7 @@ function precompile(input, opts) {
         if (opts.force) {
           // Don't stop generating the output if we're
           // forcing compilation.
-          console.error(e); // eslint-disable-line no-console
+          console.error(e);
         } else {
           throw e;
         }

@@ -53,7 +53,7 @@ function globals() {
           arr.push(i);
         }
       } else {
-        for (let i = start; i > stop; i += step) { // eslint-disable-line for-direction
+        for (let i = start; i > stop; i += step) {
           arr.push(i);
         }
       }
