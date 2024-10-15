@@ -80,7 +80,6 @@ async function runTestFile(browser, port, testFile) {
 
   try {
     const url = `http://localhost:${port}/tests/browser/${testFile}`;
-    console.log(`Navigating to ${url}`);
 
     page.on('console', msg =>
       console.log(colorConsoleOutput(msg.text()))
@@ -92,8 +91,6 @@ async function runTestFile(browser, port, testFile) {
     if (!response.ok()) {
       throw new Error(`Failed to load ${url}: ${response.status()} ${response.statusText()}`);
     }
-
-    console.log(`Page loaded: ${testFile}`);
 
     await page.exposeFunction('logProgress', (message) => {
       console.log(`${testFile} progress:`, message);
@@ -112,16 +109,14 @@ async function runTestFile(browser, port, testFile) {
             reject(error);
           }
         } else {
-          console.log(`No coverage data received for ${testFile}`);
+          console.error(`No coverage data received for ${testFile}`);
           resolve(); // Resolve even if there's no coverage data
         }
       });
     });
 
     await page.evaluate(() => {
-      console.log('Injected script running');
       if (typeof mocha !== 'undefined') {
-        console.log('Mocha found, running tests');
         const runner = mocha.run((failures) => {
           window.testResultsReceived = {
             stats: runner.stats,
@@ -177,7 +172,7 @@ async function runTests() {
     const testFiles = ['index.html', 'slim.html'];
 
     for (const testFile of testFiles) {
-      console.log(`Running tests for ${testFile}...`);
+      console.log(`\nRunning tests for ${testFile}...`);
       const result = await runTestFile(browser, port, testFile);
 
       if (result.stats.failures > 0) {
@@ -228,7 +223,6 @@ async function runTests() {
   }
 
   if (!overallTestsPassed) {
-    //console.error('Some tests failed');
     process.exit(1);
   } else {
   }
