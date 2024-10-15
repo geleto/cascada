@@ -14,63 +14,73 @@ async function getStaticServer(prt) {
   try {
     const app = connect();
 
-    // Middleware to instrument JS files on-the-fly using Babel
+    // Middleware to handle all requests
     app.use(async (req, res, next) => {
       const parsedUrl = url.parse(req.url);
       const pathname = parsedUrl.pathname;
       const filePath = path.join(staticRoot, pathname);
 
-      //console.log(`Requested file: ${filePath}`); // Debugging log
+      console.log(`Requested file: ${filePath}`); // Debugging log
 
-      // Always serve non-JS files and minified JS files without instrumentation
-      if (!pathname.endsWith('.js') || pathname.endsWith('.min.js')) {
-        return next();
-      }
+      try {
+        const stats = await fs.stat(filePath);
 
-      // Conditional instrumentation
-      let code;
-      if (!filePath.includes('node_modules')) {
-        try {
-          code = await fs.readFile(filePath, 'utf8');
-          const result = await babel.transformAsync(code, {
-            filename: filePath,
-            sourceMaps: 'inline',
-            babelrc: true,
-            envName: 'test',
-          });
-
-          if (!result || !result.code) {
-            throw new Error('Babel transform resulted in null or undefined code');
+        if (stats.isFile()) {
+          // Set correct MIME type for all files
+          if (pathname.endsWith('.js') || pathname.endsWith('.min.js')) {
+            res.setHeader('Content-Type', 'application/javascript');
+          } else if (pathname.endsWith('.html')) {
+            res.setHeader('Content-Type', 'text/html');
+          } else if (pathname.endsWith('.css')) {
+            res.setHeader('Content-Type', 'text/css');
           }
 
-          res.setHeader('Content-Type', 'application/javascript');
-          res.end(result.code);
-        } catch (error) {
-          console.error(`Error processing file ${filePath}:`, error);
-          console.error('Code snippet:', (code?code.substring(0, 100):'') + '...');
+          // For JS files that are not in node_modules and not minified, apply Babel transform
+          if (pathname.endsWith('.js') && !pathname.endsWith('.min.js') && !filePath.includes('node_modules')) {
+            const code = await fs.readFile(filePath, 'utf8');
+            const result = await babel.transformAsync(code, {
+              filename: filePath,
+              sourceMaps: 'inline',
+              babelrc: true,
+              envName: 'test',
+            });
+
+            if (!result || !result.code) {
+              throw new Error('Babel transform resulted in null or undefined code');
+            }
+
+            res.end(result.code);
+          } else {
+            // For all other files, serve them directly
+            const fileContent = await fs.readFile(filePath);
+            res.end(fileContent);
+          }
+        } else {
+          // If it's not a file, move to the next middleware
           next();
         }
-      } else {
-        next();
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          // File not found
+          console.error(`File not found: ${filePath}`);
+          res.statusCode = 404;
+          res.setHeader('Content-Type', 'text/plain');
+          res.end('404 Not Found');
+        } else {
+          console.error(`Error processing file ${filePath}:`, error);
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'text/plain');
+          res.end('500 Internal Server Error');
+        }
       }
-      return undefined;
     });
 
-    // Serve static files (HTML, CSS, images, etc.) with correct MIME types
-    app.use(
-      serveStatic(staticRoot, {
-        setHeaders: (res, filePath) => {
-          if (filePath.endsWith('.js') || filePath.endsWith('.min.js')) {
-            res.setHeader('Content-Type', 'application/javascript');
-          }
-        },
-      })
-    );
+    // Fallback static file serving
+    app.use(serveStatic(staticRoot));
 
     return new Promise((resolve) => {
       const server = http.createServer(app);
       server.listen(port, () => {
-        // eslint-disable-next-line no-console
         console.log('Test server listening on port ' + port);
         resolve([server, port]);
       });
