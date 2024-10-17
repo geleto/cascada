@@ -14,9 +14,6 @@
     "istanbul-lib-instrument": "^6.0.3",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.1.7",
-    "node-polyfill-webpack-plugin": "^4.0.0",
-    "puppeteer": "^23.5.1",
-    "puppeteer-to-istanbul": "^1.4.0",
     "tiny-chalk": "^2.0.0"
   },
   "browser": "./browser/nunjucks.js",
@@ -42,12 +39,10 @@
     "module-alias": "^2.0.3",
     "node-libs-browser": "^0.7.0",
     "nyc": "^17.1.0",
-    "phantomjs-prebuilt": "^2.1.16",
     "playwright": "^1.48.0",
     "serve-static": "^1.13.1",
     "supertest": "*",
     "terser-webpack-plugin": "^5.3.10",
-    "uglify-js": "^2.8.29",
     "webpack": "^5.95.0",
     "webpack-cli": "^5.1.4"
   },
@@ -88,18 +83,11 @@
     "build:transpile": "babel nunjucks --out-dir .",
     "build:bundle": "node scripts/bundle.js",
     "build": "npm run lint && npm run build:transpile && npm run build:bundle",
-
-    "test:precompile": "node scripts/runprecompile.js",
-    "test:instrument": "cross-env NODE_ENV=test node scripts/bundle.js",
-
-    "test:prep": "npm run build && npm run test:precompile",
-
+    "test:prep": "npm run build && node scripts/runprecompile.js",
     "test:node-no-prep": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc mocha --require @babel/register tests",
     "test:node": "npm run test:prep && npm run test:node-no-prep",
-
-    "test:browser-no-prep": "npm run test:instrument && node scripts/testrunner.js",
+    "test:browser-no-prep": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/testrunner.js",
     "test:browser": "npm run test:prep && npm run test:browser-no-prep",
-
     "test": "npm run test:prep && npm run test:node-no-prep && npm run test:browser-no-prep"
   },
   "bin": {

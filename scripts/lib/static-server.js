@@ -20,8 +20,6 @@ async function getStaticServer(prt) {
       const pathname = parsedUrl.pathname;
       const filePath = path.join(staticRoot, pathname);
 
-      console.log(`Requested file: ${filePath}`); // Debugging log
-
       try {
         const stats = await fs.stat(filePath);
 
@@ -81,6 +79,7 @@ async function getStaticServer(prt) {
     return new Promise((resolve) => {
       const server = http.createServer(app);
       server.listen(port, () => {
+        // eslint-disable-next-line no-console
         console.log('Test server listening on port ' + port);
         resolve([server, port]);
       });
