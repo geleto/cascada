@@ -86,10 +86,25 @@
     "lint": "eslint nunjucks scripts tests",
     "prepare": "npm run build",
     "build:transpile": "babel nunjucks --out-dir .",
-    "build:transpile:coverage:browser": "cross-env BABEL_ENV=test-browser babel nunjucks --out-dir .",
     "build:bundle": "node scripts/bundle.js",
+    "build": "npm run lint && npm run build:transpile && npm run build:bundle",
+
+    "test:precompile": "node scripts/runprecompile.js",
+    "test:instrument": "cross-env NODE_ENV=test node scripts/bundle.js",
+
+    "test:prep": "npm run build && npm run test:precompile && npm run test:instrument",
+
+    "test:node-no-prep": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc mocha --require @babel/register tests",
+    "test:node": "npm run test:prep && npm run test:node-no-prep",
+
+    "test:browser-no-prep": "node scripts/testrunner.js",
+    "test:browser": "npm run test:prep && npm run test:browser-no-prep",
+
+    "test": "npm run test:prep && npm run test:node-no-prep && npm run test:browser-no-prep",
+
+
+    "build:transpile:coverage:browser": "cross-env BABEL_ENV=test-browser babel nunjucks --out-dir .",
     "build:bundle:coverage:browser": "cross-env BABEL_ENV=test-browser node scripts/bundle.js",
-    "build": "npm run build:transpile && npm run build:bundle",
     "build:coverage:browser": "npm run build:transpile:coverage:browser && npm run build:bundle:coverage:browser",
     "test:prep:precompile": "node scripts/runprecompile.js",
     "test:prep:bundle:browser": "webpack --config scripts/webpack.browser-test.config.js",
@@ -97,9 +112,9 @@
     "test:run:node": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc mocha --require @babel/register tests",
     "test:run:browser": "npm run test:prep:bundle:browser && node scripts/testrunner.js",
     "test:tool:merge-coverage": "nyc merge .nyc_output coverage && nyc report --reporter=text",
-    "test:node": "npm run test:prep:precompile && npm run test:run:node",
-    "test:browser": "npm run test:prep:precompile && npm run test:run:browser",
-    "test": "npm run lint && npm run test:prep:instrument:node && npm run test:node && npm run test:browser && npm run test:tool:merge-coverage"
+    "test:xnode": "npm run test:prep:precompile && npm run test:run:node",
+    "test:xbrowser": "npm run test:prep:precompile && npm run test:run:browser",
+    "testOld": "npm run lint &`& npm run test:prep:instrument:node && npm run test:node && npm run test:browser && npm run test:tool:merge-coverage"
   },
   "bin": {
     "nunjucks-precompile": "./bin/precompile"

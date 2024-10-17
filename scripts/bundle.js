@@ -37,11 +37,11 @@ function runWebpack(opts) {
         },
         resolve: {
           fallback: {
-            "fs": false,
-            "path": false,
-            "os": false,
-            "chokidar": false,
-            "stream": false
+            'fs': false,
+            'path': false,
+            'os': false,
+            'chokidar': false,
+            'stream': false
           }
         },
         module: {
@@ -74,9 +74,9 @@ function runWebpack(opts) {
                       },
                     ],
                   ],
-                  ...(TEST_ENV && {
+                  /*...(TEST_ENV && {
                     plugins: ['babel-plugin-istanbul'],
-                  }),
+                  }),*/
                 },
               },
             },
