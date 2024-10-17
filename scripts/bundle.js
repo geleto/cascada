@@ -73,10 +73,8 @@ function runWebpack(opts) {
                         },
                       },
                     ],
+                    ...(TEST_ENV ? ['babel-plugin-istanbul'] : []),
                   ],
-                  /*...(TEST_ENV && {
-                    plugins: ['babel-plugin-istanbul'],
-                  }),*/
                 },
               },
             },

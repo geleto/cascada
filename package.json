@@ -127,7 +127,7 @@
   ],
   "nyc": {
     "extends": "@istanbuljs/nyc-config-babel",
-    "all": false,
+    "all": true,
     "include": [
       "nunjucks/**/*.js"
     ],
@@ -135,7 +135,7 @@
       "text",
       "lcov"
     ],
-    "sourceMap": false,
+    "sourceMap": true,
     "instrument": false
   },
   "repository": {
