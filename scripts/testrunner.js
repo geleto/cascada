@@ -16,11 +16,15 @@ const { chromium } = require('playwright');
 const precompileTestTemplates = require('./lib/precompile');
 
 process.env.NODE_ENV = 'test';
+let mergeNodeTestsCoverage = process.argv.includes('fullTest');
+const NODE_TESTS_COVERAGE_FILE = 'coverage-final.json';
 
-// Define shared coverage data
 const coverageConfig = {
   dir: path.join(__dirname, '../.nyc_output'),
-  files: ['browser-std.json', 'browser-slim.json'],
+  files: [
+    'browser-std.json',
+    'browser-slim.json'],
+  fileData: {},
   getFullPath: (file) => path.join(coverageConfig.dir, file)
 };
 
@@ -59,19 +63,6 @@ function colorConsoleOutput(message) {
 
     // Error messages (assuming they start with "Error:")
     .replace(/^(\s*)(Error:.*)/gm, (match, indent, error) => `${indent}${chalk.red(error)}`);
-}
-
-async function deleteCoverageFiles() {
-  for (const file of coverageConfig.files) {
-    const filePath = coverageConfig.getFullPath(file);
-    try {
-      await fs.unlink(filePath);
-    } catch (error) {
-      if (error.code !== 'ENOENT') {
-        console.error(`Error deleting coverage file ${file}:`, error);
-      }
-    }
-  }
 }
 
 async function runTestFile(browser, port, testFile) {
@@ -157,9 +148,19 @@ async function runTests() {
   let totalDuration = 0;
 
   try {
-    nyc.reset();
 
-    await deleteCoverageFiles();
+    //the coverage file from the node tests has to be read in advance because nyc initialization deletes it
+    if( mergeNodeTestsCoverage ){
+      try{
+        coverageConfig.files.push(NODE_TESTS_COVERAGE_FILE);
+        coverageConfig.fileData[NODE_TESTS_COVERAGE_FILE] = JSON.parse(await fs.readFile(coverageConfig.getFullPath(NODE_TESTS_COVERAGE_FILE), 'utf8'));
+        console.log('node coverage file loaded');
+      }catch(e){
+        console.error(`Failed to open node tests coverage file ${coverageConfig.getFullPath(NODE_TESTS_COVERAGE_FILE)} , error: ${e}`);
+      }
+    }
+
+    nyc.reset();
 
     await precompileTestTemplates();
 
@@ -184,20 +185,37 @@ async function runTests() {
       totalDuration += result.stats.duration;
     }
 
+    // Merge the coverage files from browser tests and Node.js tests
     const coverageMap = libCoverage.createCoverageMap({});
-
     for (const file of coverageConfig.files) {
-      const coverageFile = coverageConfig.getFullPath(file);
       try {
-        const coverageData = JSON.parse(await fs.readFile(coverageFile, 'utf8'));
+        //the coverage file from the node tests has to be read in advance because nyc initialization deletes it
+        const data = coverageConfig.fileData[file];
+        const coverageData = data || JSON.parse(await fs.readFile(coverageConfig.getFullPath(file), 'utf8'));
         const fileCoverageMap = libCoverage.createCoverageMap(coverageData);
         coverageMap.merge(fileCoverageMap);
       } catch (error) {
-        console.error(`Error processing coverage file ${file}:`, error);
+        if( file===NODE_TESTS_COVERAGE_FILE ){
+          mergeNodeTestsCoverage = false;
+          console.error(`Error processing Node tests coverage file ${file}:`, error);
+        }
+        else{
+          console.error(`Error processing browser coverage file ${file}:`, error);
+        }
       }
     }
 
-    console.log('\nCoverage Summary:');
+    // Write the merged coverage data to a new file
+    const mergedCoverageFile = path.join(coverageConfig.dir, 'merged-coverage.json');
+    await fs.writeFile(mergedCoverageFile, JSON.stringify(coverageMap));
+
+    if (mergeNodeTestsCoverage){
+      console.log('\nCombined Coverage Summary from Node and browser tests:');
+    }
+    else{
+      console.log('\nCoverage Summary from browser tests:');
+    }
+
     await nyc.report();
 
   } catch (error) {
@@ -222,7 +240,6 @@ async function runTests() {
 
   if (!overallTestsPassed) {
     process.exit(1);
-  } else {
   }
 }
 
