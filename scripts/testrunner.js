@@ -68,7 +68,6 @@ function colorConsoleOutput(message) {
 async function runTestFile(browser, port, testFile) {
   const context = await browser.newContext();
   const page = await context.newPage();
-  let coverageSavedPromise;
 
   try {
     const url = `http://localhost:${port}/tests/browser/${testFile}`;
@@ -89,22 +88,27 @@ async function runTestFile(browser, port, testFile) {
     });
 
     // Create a promise that resolves when coverage data is saved
-    coverageSavedPromise = new Promise((resolve, reject) => {
-      page.exposeFunction('sendTestResults', async (results) => {
-        if (results.coverage) {
-          const coverageFileName = testFile.includes('slim') ? 'browser-slim.json' : 'browser-std.json';
-          const coverageFile = coverageConfig.getFullPath(coverageFileName);
-          try {
-            await fs.writeFile(coverageFile, JSON.stringify(results.coverage));
-            resolve(); // Resolve the promise when coverage data is saved
-          } catch (error) {
-            reject(error);
-          }
-        } else {
-          console.error(`No coverage data received for ${testFile}`);
-          resolve(); // Resolve even if there's no coverage data
+    let coverageSavedResolve, coverageSavedReject;
+    const coverageSavedPromise = new Promise((resolve, reject) => {
+      coverageSavedResolve = resolve;
+      coverageSavedReject = reject;
+    });
+
+    await page.exposeFunction('sendTestResults', async (results) => {
+      if (results.coverage) {
+        const coverageFileName = testFile.includes('slim') ? 'browser-slim.json' : 'browser-std.json';
+        const coverageFile = coverageConfig.getFullPath(coverageFileName);
+        try {
+          await fs.writeFile(coverageFile, JSON.stringify(results.coverage));
+          coverageSavedResolve(); // Resolve the promise when coverage data is saved
+        } catch (error) {
+          console.error(`Error saving coverage data for ${testFile}:`, error);
+          coverageSavedReject(error); // Reject the promise if there's an error saving coverage data
         }
-      });
+      } else {
+        console.error(`No coverage data received for ${testFile}`);
+        coverageSavedReject(new Error('No coverage data received')); // Reject the promise if no coverage data
+      }
     });
 
     await page.evaluate(() => {
