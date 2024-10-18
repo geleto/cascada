@@ -4,7 +4,7 @@
 	  {
 		"type": "node",
 		"request": "launch",
-		"name": "Mocha Tests",
+		"name": "Debug Mocha Tests",
 		"program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
 		"args": [
 		  "-R",
@@ -12,6 +12,7 @@
 		  "--timeout",
 		  "999999",
 		  "--colors",
+		  "--check-leaks",
 		  "${workspaceFolder}/tests"
 		],
 		"env": {
@@ -29,18 +30,42 @@
 	  {
 		"type": "node",
 		"request": "launch",
-		"name": "Run All Tests",
-		"program": "${workspaceFolder}/scripts/testrunner.js",
+		"name": "Debug Browser Tests",
+		"runtimeExecutable": "npm",
+		"runtimeArgs": [
+		  "run-script",
+		  "test:browser"
+		],
+		"env": {
+		  "NODE_ENV": "test",
+		  "NODE_PATH": "${workspaceFolder}/tests/test-node-pkgs",
+		  "PWDEBUG": "1"
+		},
+		"cwd": "${workspaceFolder}",
+		"console": "integratedTerminal",
+		"internalConsoleOptions": "neverOpen",
+		"autoAttachChildProcesses": true,
+		"skipFiles": [
+		  "<node_internals>/**"
+		]
+	  },
+	  {
+		"type": "node",
+		"request": "launch",
+		"name": "Debug Node Tests",
+		"runtimeExecutable": "npm",
+		"runtimeArgs": [
+		  "run-script",
+		  "test:node"
+		],
 		"env": {
 		  "NODE_ENV": "test",
 		  "NODE_PATH": "${workspaceFolder}/tests/test-node-pkgs"
 		},
 		"cwd": "${workspaceFolder}",
-		"internalConsoleOptions": "openOnSessionStart",
-		"runtimeArgs": [
-		  "--nolazy",
-		],
-		"autoAttachChildProcesses": true, // Automatically attach to child processes spawned by the testrunner
+		"console": "integratedTerminal",
+		"internalConsoleOptions": "neverOpen",
+		"autoAttachChildProcesses": true,
 		"skipFiles": [
 		  "<node_internals>/**"
 		]
