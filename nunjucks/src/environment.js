@@ -460,7 +460,16 @@ class Context extends Obj {
     return this.blocks[name][0];
   }
 
-  getSuper(env, name, block, frame, runtime, cb) {
+  getSuper(env, name, block, frame, runtime, astate, isIncluded, cb) {
+    if (typeof isIncluded === 'function') {
+      cb = isIncluded;
+      isIncluded = false;
+    }
+    else if(typeof astate === 'function') {
+      cb = astate;
+      astate = null;
+      isIncluded = false;
+    }
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
     var context = this;
@@ -521,6 +530,7 @@ class Template extends Obj {
     }
   }
 
+  //@todo - isIncluded?
   render(ctx, parentFrame, astate, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;

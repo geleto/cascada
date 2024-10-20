@@ -1220,7 +1220,12 @@ class Compiler extends Obj {
     if (!this.inBlock) {
       this._emit(')');
     }
-    this._emitLine('(env, context, frame, runtime, ' + this._makeCallback(id));
+    if(this.isAsync) {
+      this._emitLine('(env, context, frame, runtime, astate, isIncluded, ' + this._makeCallback(id));
+    }
+    else {
+      this._emitLine('(env, context, frame, runtime, ' + this._makeCallback(id));
+    }
     this._emitAddToBufferBegin(false);
     // this._emitLine(`${this.buffer} += ${id};`);
     this._emitLine(`${id};`);
@@ -1233,7 +1238,12 @@ class Compiler extends Obj {
     var id = node.symbol.value;
 
     const cb = this._makeCallback(id);
-    this._emitLine(`context.getSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
+    if(this.isAsync) {
+      this._emitLine(`context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, isIncluded, ${cb}`);
+    }
+    else{
+      this._emitLine(`context.getSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
+    }
     this._emitLine(`${id} = runtime.markSafe(${id});`);
     this._addScopeLevel();
     frame.set(id, id);
@@ -1360,7 +1370,12 @@ class Compiler extends Obj {
       this._emitLine('} else {');
     }
     this._emitLine('if(parentTemplate) {');
-    this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, cb);');
+    if (this.isAsync) {
+      this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, false, cb);');
+    }
+    else {
+      this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, cb);');
+    }
     this._emitLine('} else {');
     this._emitLine(`cb(null, ${this.buffer});`);
     this._emitLine('}');
