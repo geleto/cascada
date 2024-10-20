@@ -461,6 +461,10 @@ class Context extends Obj {
   }
 
   getSuper(env, name, block, frame, runtime, astate, isIncluded, cb) {
+    var idx = lib.indexOf(this.blocks[name] || [], block);
+    var blk = this.blocks[name][idx + 1];
+    var context = this;
+
     if (typeof isIncluded === 'function') {
       cb = isIncluded;
       isIncluded = false;
@@ -470,15 +474,18 @@ class Context extends Obj {
       astate = null;
       isIncluded = false;
     }
-    var idx = lib.indexOf(this.blocks[name] || [], block);
-    var blk = this.blocks[name][idx + 1];
-    var context = this;
 
     if (idx === -1 || !blk) {
       throw new Error('no super block available for "' + name + '"');
     }
 
-    blk(env, context, frame, runtime, cb);
+    if(astate) {
+      //async mode
+      blk(env, context, frame, runtime, astate, isIncluded, cb);
+    }
+    else {
+      blk(env, context, frame, runtime, cb);
+    }
   }
 
   addExport(name) {

@@ -1214,7 +1214,12 @@ class Compiler extends Obj {
     // waste of performance to always execute huge top-level
     // blocks twice
     if (!this.inBlock) {
-      this._emit('(parentTemplate ? function(e, c, f, r, cb) { cb(""); } : ');
+      if(this.isAsync) {
+        this._emit('(parentTemplate ? function(e, c, f, r, a, i, cb) { cb(""); } : ');
+      }
+      else {
+        this._emit('(parentTemplate ? function(e, c, f, r, cb) { cb(""); } : ');
+      }
     }
     this._emit(`context.getBlock("${node.name.value}")`);
     if (!this.inBlock) {
@@ -1227,7 +1232,6 @@ class Compiler extends Obj {
       this._emitLine('(env, context, frame, runtime, ' + this._makeCallback(id));
     }
     this._emitAddToBufferBegin(false);
-    // this._emitLine(`${this.buffer} += ${id};`);
     this._emitLine(`${id};`);
     this._emitAddToBufferEnd(false);
     this._addScopeLevel();
