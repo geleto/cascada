@@ -1040,43 +1040,200 @@
         expect(result).to.equal('User 1 (user)\nUser 2 (admin)\n');
       });
     });
-  });
 
-  describe('Complex Async Scenarios', () => {
-    let env;
-    beforeEach(() => {
-      env = new Environment();
-    });
-    it('should handle async functions returning complex objects', async () => {
-      const context = {
-        async getUser() {
-          await delay(5);
-          return { name: 'John', roles: ['admin', 'user'] };
+    describe('Complex Async Scenarios', () => {
+      beforeEach(() => {
+        env = new Environment();
+      });
+      it('should handle async functions returning complex objects', async () => {
+        const context = {
+          async getUser() {
+            await delay(5);
+            return { name: 'John', roles: ['admin', 'user'] };
+          }
+        };
+        const template = '{{ getUser().name }} is {{ getUser().roles[0] }}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('John is admin');
+      });
+
+      it('should handle error propagation in async calls', async () => {
+        const context = {
+          async errorFunc() {
+            await delay(5);
+            throw new Error('Async error');
+          }
+        };
+        const template = '{{ errorFunc() }}';
+
+        let noError = false;
+        try {
+          await env.renderStringAsync(template, context);
+          noError = true;
+        } catch (error) {
+          expect(error instanceof Error).to.equal(true);
+          expect(error.message).to.contain('Async error');
         }
-      };
-      const template = '{{ getUser().name }} is {{ getUser().roles[0] }}';
-      const result = await env.renderStringAsync(template, context);
-      expect(result).to.equal('John is admin');
+        expect(noError).to.equal(false);
+      });
     });
 
-    it('should handle error propagation in async calls', async () => {
-      const context = {
-        async errorFunc() {
-          await delay(5);
-          throw new Error('Async error');
-        }
-      };
-      const template = '{{ errorFunc() }}';
+    describe('Async Nunjucks Expressions', () => {
+      beforeEach(() => {
+        env = new Environment();
+      });
 
-      let noError = false;
-      try {
-        await env.renderStringAsync(template, context);
-        noError = true;
-      } catch (error) {
-        expect(error instanceof Error).to.equal(true);
-        expect(error.message).to.contain('Async error');
-      }
-      expect(noError).to.equal(false);
+      const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+      it('should handle mixed parameter types in expressions', async () => {
+        const context = {
+          async textFunc() { await pause(10); return 'Hello'; },
+          async numFunc() { await pause(6); return 42; },
+
+          get asyncList() { return pause(8).then(() => [1, 2, 'three'].toString()); },
+          get asyncObj() { return pause(2).then(() => ({a: 1, b: 2})); },
+
+          staticFlag: true,
+          regularFunc: () => 'Regular',
+        };
+        const template = `
+          Async function (String): {{ textFunc() }}
+          Async function (Number): {{ numFunc() }}
+          Async getter (Array): {{ asyncList }}
+          Async getter (Object): {{ asyncObj }}
+          Static value: {{ staticFlag }}
+          Regular function: {{ regularFunc() }}
+          Inline value: {{ "Inline" }}
+        `;
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal(`
+          Async function (String): Hello
+          Async function (Number): 42
+          Async getter (Array): 1,2,three
+          Async getter (Object): [object Object]
+          Static value: true
+          Regular function: Regular
+          Inline value: Inline
+        `.trim());
+      });
+
+      it('should handle mixed parameter types in math operations', async () => {
+        const context = {
+          async addAsync(a, b) { await pause(5); return a + b; },
+
+          get asyncNum() { return pause(6).then(() => 5); },
+
+          subtractSync: (a, b) => a - b,
+
+          staticNum: 3,
+        };
+        const template = `
+          Async function: {{ addAsync(2, 3) }}
+          Async getter: {{ asyncNum }}
+          Non-async function: {{ subtractSync(10, 5) }}
+          Static value: {{ staticNum }}
+          Mixed: {{ addAsync(asyncNum, subtractSync(staticNum, 1)) }}
+          With inline: {{ addAsync(2, 3) + 5 }}
+        `;
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal(`
+          Async function: 5
+          Async getter: 5
+          Non-async function: 5
+          Static value: 3
+          Mixed: 7
+          With inline: 10
+        `.trim());
+      });
+
+      it('should handle mixed parameter types in comparisons and logic', async () => {
+        const context = {
+          async asyncGreaterThan(a, b) { await pause(10); return a > b; },
+
+          get asyncX() { return pause(2).then(() => 5); },
+
+          syncEqual: (a, b) => a === b,
+
+          staticY: 10,
+        };
+        const template = `
+          Async function: {{ asyncGreaterThan(staticY, asyncX) }}
+          Async getter: {{ asyncX > 3 }}
+          Non-async function: {{ syncEqual(asyncX, 5) }}
+          Static value comparison: {{ staticY < 15 }}
+          Mixed: {{ asyncGreaterThan(asyncX, 3) and syncEqual(staticY, 10) }}
+          With inline: {{ asyncX > 3 and 7 < staticY }}
+        `;
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal(`
+          Async function: true
+          Async getter: true
+          Non-async function: true
+          Static value comparison: true
+          Mixed: true
+          With inline: true
+        `.trim());
+      });
+
+      it('should handle mixed parameter types in if expressions', async () => {
+        const context = {
+          async asyncTrue() { await pause(3); return true; },
+
+          get asyncFalse() { return pause(2).then(() => false); },
+
+          syncTrue: () => true,
+
+          staticFalse: false,
+        };
+        const template = `
+          Async function: {{ "yes" if asyncTrue() else "no" }}
+          Async getter: {{ "yes" if asyncFalse else "no" }}
+          Non-async function: {{ "yes" if syncTrue() else "no" }}
+          Static value: {{ "yes" if staticFalse else "no" }}
+          Mixed: {{ "yes" if (asyncTrue() and not staticFalse) else "no" }}
+          With inline: {{ "yes" if (asyncTrue() and true) else "no" }}
+        `;
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal(`
+          Async function: yes
+          Async getter: no
+          Non-async function: yes
+          Static value: no
+          Mixed: yes
+          With inline: yes
+        `.trim());
+      });
+
+      it('should handle mixed parameter types in complex nested expressions', async () => {
+        const context = {
+          async fetchUsers() {
+            await pause(5);
+            return [
+              { name: 'Alice', age: 30 },
+              { name: 'Bob', age: 25 },
+              { name: 'Charlie', age: 35 }
+            ];
+          },
+
+          get asyncDiscount() { return pause(5).then(() => 0.1); },
+
+          isAdult: (age) => age >= 18,
+
+          adultAge: 18,
+        };
+        const template = `
+          {% for user in fetchUsers() -%}
+            {{ user.name }}: {{ ("Adult" if isAdult(user.age) else "Minor") }} (Age: {{ user.age }}, Discount: {{ (asyncDiscount * 100 if user.age > adultAge else 0) }}%)
+          {% endfor %}
+        `;
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal(`
+          Alice: Adult (Age: 30, Discount: 10%)
+          Bob: Adult (Age: 25, Discount: 10%)
+          Charlie: Adult (Age: 35, Discount: 10%)
+        `.trim());
+      });
     });
+
   });
 }());
