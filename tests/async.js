@@ -1235,9 +1235,10 @@
       });
     });
 
-    describe.only('Async Block Tag Tests', () => {
+    describe('Async Block Tag Tests', () => {
       let loader;
       beforeEach(() => {;
+        loader = new StringLoader();
         env = new Environment(loader);
       });
 
@@ -1260,7 +1261,7 @@
             return 'Async Child Content';
           }
         };
-        env.addTemplate('base.njk', '<div>{% block content %}Base Content{% endblock %}</div>');
+        loader.addTemplate('base.njk', '<div>{% block content %}Base Content{% endblock %}</div>');
         const childTemplate = '{% extends "base.njk" %}{% block content %}{{ getContent() }}{% endblock %}';
         const result = await env.renderStringAsync(childTemplate, context);
         expect(result.trim()).to.equal('<div>Async Child Content</div>');
@@ -1325,7 +1326,7 @@
             return 'Async Child Content';
           }
         };
-        env.addTemplate('base.njk', '{% block content %}{{ getBaseContent() }}{% endblock %}');
+        loader.addTemplate('base.njk', '{% block content %}{{ getBaseContent() }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content %}{{ super() }} + {{ getChildContent() }}{% endblock %}';
         const result = await env.renderStringAsync(childTemplate, context);
         expect(result.trim()).to.equal('Async Base Content + Async Child Content');
@@ -1346,8 +1347,8 @@
             return 'Async C';
           }
         };
-        env.addTemplate('grand.njk', '{% block a %}{{ getA() }}{% endblock %}{% block b %}{{ getB() }}{% endblock %}{% block c %}{{ getC() }}{% endblock %}');
-        env.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block b %}Modified {{ getB() }}{% endblock %}');
+        loader.addTemplate('grand.njk', '{% block a %}{{ getA() }}{% endblock %}{% block b %}{{ getB() }}{% endblock %}{% block c %}{{ getC() }}{% endblock %}');
+        loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block b %}Modified {{ getB() }}{% endblock %}');
         const childTemplate = '{% extends "parent.njk" %}{% block c %}Modified {{ getC() }}{% endblock %}';
         const result = await env.renderStringAsync(childTemplate, context);
         expect(result.trim()).to.equal('Async AModified Async BModified Async C');
