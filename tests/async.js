@@ -1401,5 +1401,266 @@
       });
     });
 
+    describe('Async Custom Extensions', () => {
+      beforeEach(() => {
+        env = new Environment();
+      });
+
+      class AsyncExtension {
+        constructor(tagName, method) {
+          this.tags = [tagName];
+          this.method = method;
+        }
+
+        parse(parser, nodes) {
+          const tok = parser.nextToken();          // Get the tag token
+          const args = parser.parseSignature(null, true); // Parse arguments
+          parser.advanceAfterBlockEnd(tok.value);  // Move parser past the block end
+          return new nodes.CallExtensionAsync(this, 'run', args);
+        }
+
+        run(context, ...args) {
+          const callback = args.pop(); // The callback is always the last argument
+          // Check if the first argument has a 'children' property (for single argument cases)
+          const finalArgs = args.length === 1 && args[0].children ? args[0].children : args;
+          Promise.resolve(this.method(...finalArgs))
+            .then((result) => {
+              callback(null, result);
+            })
+            .catch((err) => {
+              callback(err);
+            });
+        }
+      }
+
+      // Test Cases
+
+      it('should handle a simple async extension function', async () => {
+        const greetExtension = new AsyncExtension('greet', async (name) => {
+          await delay(5);
+          return `Hello, ${name}!`;
+        });
+
+        env.addExtension('GreetExtension', greetExtension);
+
+        const template = '{% greet "John" %}';
+        const result = await env.renderStringAsync(template);
+        expect(result).to.equal('Hello, John!');
+      });
+
+      it('should handle an async extension function with multiple arguments', async () => {
+        const addExtension = new AsyncExtension('add', async (a, b) => {
+          await delay(5);
+          return a + b;
+        });
+
+        env.addExtension('AddExtension', addExtension);
+
+        const template = '{% add 5, 3 %}';
+        const result = await env.renderStringAsync(template);
+        expect(result).to.equal('8');
+      });
+
+      it('should handle an async extension function that returns complex data', async () => {
+        const getUserExtension = new AsyncExtension('getUser', async () => {
+          await delay(5);
+          return { name: 'Alice', age: 30 };
+        });
+
+        env.addExtension('GetUserExtension', getUserExtension);
+
+        const template = `
+          {% set user = getUser() %}
+          {{ user.name }} is {{ user.age }} years old
+        `;
+        const result = await env.renderStringAsync(template);
+        expect(result.trim()).to.equal('Alice is 30 years old');
+      });
+
+      it('should handle async extension functions in expressions', async () => {
+        const multiplyExtension = new AsyncExtension('multiply', async (a, b) => {
+          await delay(5);
+          return a * b;
+        });
+
+        env.addExtension('MultiplyExtension', multiplyExtension);
+
+        const template = '{{ multiply(2, 3) + 5 }}';
+        const result = await env.renderStringAsync(template);
+        expect(result).to.equal('11');
+      });
+
+      it('should handle async extension functions in conditionals', async () => {
+        const isEvenExtension = new AsyncExtension('isEven', async (num) => {
+          await delay(5);
+          return num % 2 === 0;
+        });
+
+        env.addExtension('IsEvenExtension', isEvenExtension);
+
+        const template = `
+          {% if isEven(4) %}Even{% else %}Odd{% endif %}
+        `;
+        const result = await env.renderStringAsync(template);
+        expect(result.trim()).to.equal('Even');
+      });
+
+      it('should handle async extension functions in loops', async () => {
+        const getItemsExtension = new AsyncExtension('getItems', async () => {
+          await delay(5);
+          return ['a', 'b', 'c'];
+        });
+
+        env.addExtension('GetItemsExtension', getItemsExtension);
+
+        const template = `
+          {% for item in getItems() %}{{ item }}{% endfor %}
+        `;
+        const result = await env.renderStringAsync(template);
+        expect(result.trim()).to.equal('abc');
+      });
+
+      it('should handle async extension functions with async context data', async () => {
+        const combineExtension = new AsyncExtension('combine', async (a, b) => {
+          await delay(5);
+          return `${a} ${b}`;
+        });
+
+        env.addExtension('CombineExtension', combineExtension);
+
+        const context = {
+          async getPrefix() {
+            await delay(3);
+            return 'Hello';
+          }
+        };
+
+        const template = '{{ combine(getPrefix(), "World") }}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('Hello World');
+      });
+
+      it('should handle errors in async extension functions', async () => {
+        const throwErrorExtension = new AsyncExtension('throwError', async () => {
+          await delay(5);
+          throw new Error('Async extension error');
+        });
+
+        env.addExtension('ThrowErrorExtension', throwErrorExtension);
+
+        const template = '{{ throwError() }}';
+
+        try {
+          await env.renderStringAsync(template);
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Async extension error');
+        }
+      });
+
+      it('should handle async extension functions in macros', async () => {
+        const greetExtension = new AsyncExtension('greet', async (name) => {
+          await delay(5);
+          return `Hello, ${name}!`;
+        });
+
+        env.addExtension('GreetExtension', greetExtension);
+
+        const template = `
+          {% macro greetPerson(name) %}
+            {{ greet(name) }}
+          {% endmacro %}
+          {{ greetPerson("Alice") }}
+        `;
+        const result = await env.renderStringAsync(template);
+        expect(result.trim()).to.equal('Hello, Alice!');
+      });
+
+      it('should handle async extension functions with filters', async () => {
+        const uppercaseExtension = new AsyncExtension('uppercase', async (str) => {
+          await delay(5);
+          return str.toUpperCase();
+        });
+
+        env.addExtension('UppercaseExtension', uppercaseExtension);
+
+        env.addFilter('lowercase', (str) => str.toLowerCase());
+
+        const template = '{{ uppercase("Hello") | lowercase }}';
+        const result = await env.renderStringAsync(template);
+        expect(result).to.equal('hello');
+      });
+
+      it('should handle promise values as parameters to async extensions', async () => {
+        const greetExtension = new AsyncExtension('greet', async (name) => {
+          await delay(5);
+          return `Hello, ${name}!`;
+        });
+
+        env.addExtension('GreetExtension', greetExtension);
+
+        const context = {
+          async fetchName() {
+            await delay(10);
+            return 'Alice';
+          }
+        };
+
+        const template = '{{ greet(fetchName()) }}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('Hello, Alice!');
+      });
+
+      it('should handle multiple promise values as parameters to async extensions', async () => {
+        const combineExtension = new AsyncExtension('combine', async (firstName, lastName) => {
+          await delay(5);
+          return `${firstName} ${lastName}`;
+        });
+
+        env.addExtension('CombineExtension', combineExtension);
+
+        const context = {
+          async fetchFirstName() {
+            await delay(8);
+            return 'John';
+          },
+          async fetchLastName() {
+            await delay(6);
+            return 'Doe';
+          }
+        };
+
+        const template = '{{ combine(fetchFirstName(), fetchLastName()) }}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('John Doe');
+      });
+
+      it('should handle promise values in complex expressions with async extensions', async () => {
+        const addExtension = new AsyncExtension('add', async (a, b) => {
+          await delay(5);
+          return a + b;
+        });
+
+        const multiplyExtension = new AsyncExtension('multiply', async (a, b) => {
+          await delay(3);
+          return a * b;
+        });
+
+        env.addExtension('AddExtension', addExtension);
+        env.addExtension('MultiplyExtension', multiplyExtension);
+
+        const context = {
+          async fetchNumber() {
+            await delay(7);
+            return 5;
+          }
+        };
+
+        const template = '{{ add(multiply(fetchNumber(), 2), 3) }}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('13');
+      });
+    });
+
   });
 }());
