@@ -8,7 +8,6 @@ var cmdpath = null;
 
 program
   .storeOptionsAsProperties(false)
-  .passCommandToAction(false);
 
 program
   .name('precompile')
