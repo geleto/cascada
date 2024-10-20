@@ -17,6 +17,28 @@
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+  class StringLoader {
+    constructor() {
+      this.templates = new Map();
+    }
+
+    getSource(name) {
+      if (!this.templates.has(name)) {
+        throw new Error(`Template ${name} not found`);
+      }
+
+      return {
+        src: this.templates.get(name),
+        path: name,
+        noCache: false
+      };
+    }
+
+    addTemplate(name, content) {
+      this.templates.set(name, content);
+    }
+  }
+
 
   describe('Async mode', () => {
     let env;
@@ -915,28 +937,6 @@
     describe('Include async tests', () => {
       let loader;
 
-      class StringLoader {
-        constructor() {
-          this.templates = new Map();
-        }
-
-        getSource(name) {
-          if (!this.templates.has(name)) {
-            throw new Error(`Template ${name} not found`);
-          }
-
-          return {
-            src: this.templates.get(name),
-            path: name,
-            noCache: false
-          };
-        }
-
-        addTemplate(name, content) {
-          this.templates.set(name, content);
-        }
-      }
-
       beforeEach(() => {
         loader = new StringLoader();
         env = new Environment(loader);
@@ -1232,6 +1232,170 @@
           Bob: Adult (Age: 25, Discount: 10%)
           Charlie: Adult (Age: 35, Discount: 10%)
         `.trim());
+      });
+    });
+
+    describe.only('Async Block Tag Tests', () => {
+      let loader;
+      beforeEach(() => {;
+        env = new Environment(loader);
+      });
+
+      it('should render a simple block with async content', async () => {
+        const context = {
+          async getMessage() {
+            await delay(10);
+            return 'Hello, World!';
+          }
+        };
+        const template = '{% block content %}{{ getMessage() }}{% endblock %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Hello, World!');
+      });
+
+      it('should handle template inheritance with blocks and async content', async () => {
+        const context = {
+          async getContent() {
+            await delay(10);
+            return 'Async Child Content';
+          }
+        };
+        env.addTemplate('base.njk', '<div>{% block content %}Base Content{% endblock %}</div>');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}{{ getContent() }}{% endblock %}';
+        const result = await env.renderStringAsync(childTemplate, context);
+        expect(result.trim()).to.equal('<div>Async Child Content</div>');
+      });
+
+      it('should handle nested blocks with async content', async () => {
+        const context = {
+          async getOuter() {
+            await delay(10);
+            return 'Async Outer';
+          },
+          async getInner() {
+            await delay(15);
+            return 'Async Inner';
+          }
+        };
+        const template = '{% block outer %}{{ getOuter() }} {% block inner %}{{ getInner() }}{% endblock %}{% endblock %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Async Outer Async Inner');
+      });
+
+      it('should handle blocks within loops with async data', async () => {
+        const context = {
+          async getItems() {
+            await delay(10);
+            return ['a', 'b', 'c'];
+          },
+          async processItem(item) {
+            await delay(5);
+            return `Processed ${item.toUpperCase()}`;
+          }
+        };
+        const template = '{% for item in getItems() %}{% block item %}{{ processItem(item) }}{% endblock %}{% endfor %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Processed AProcessed BProcessed C');
+      });
+
+      it('should handle async functions within blocks and as block parameters', async () => {
+        const context = {
+          async getName() {
+            await delay(10);
+            return 'John';
+          },
+          async getGreeting(name) {
+            await delay(5);
+            return `Hello, ${name}!`;
+          }
+        };
+        const template = '{% block greeting %}{{ getGreeting(getName()) }}{% endblock %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Hello, John!');
+      });
+
+      it('should handle the super function in blocks with async content', async () => {
+        const context = {
+          async getBaseContent() {
+            await delay(10);
+            return 'Async Base Content';
+          },
+          async getChildContent() {
+            await delay(5);
+            return 'Async Child Content';
+          }
+        };
+        env.addTemplate('base.njk', '{% block content %}{{ getBaseContent() }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}{{ super() }} + {{ getChildContent() }}{% endblock %}';
+        const result = await env.renderStringAsync(childTemplate, context);
+        expect(result.trim()).to.equal('Async Base Content + Async Child Content');
+      });
+
+      it('should handle multiple levels of inheritance with blocks and async content', async () => {
+        const context = {
+          async getA() {
+            await delay(10);
+            return 'Async A';
+          },
+          async getB() {
+            await delay(15);
+            return 'Async B';
+          },
+          async getC() {
+            await delay(5);
+            return 'Async C';
+          }
+        };
+        env.addTemplate('grand.njk', '{% block a %}{{ getA() }}{% endblock %}{% block b %}{{ getB() }}{% endblock %}{% block c %}{{ getC() }}{% endblock %}');
+        env.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block b %}Modified {{ getB() }}{% endblock %}');
+        const childTemplate = '{% extends "parent.njk" %}{% block c %}Modified {{ getC() }}{% endblock %}';
+        const result = await env.renderStringAsync(childTemplate, context);
+        expect(result.trim()).to.equal('Async AModified Async BModified Async C');
+      });
+
+      it('should handle async functions in block names', async () => {
+        const context = {
+          async getBlockName() {
+            await delay(10);
+            return 'dynamic_block';
+          },
+          async getContent() {
+            await delay(5);
+            return 'Dynamic Block Content';
+          }
+        };
+        const template = '{% block {{ getBlockName() }} %}{{ getContent() }}{% endblock %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Dynamic Block Content');
+      });
+
+      it('should handle async iterables in for loops within blocks', async () => {
+        const context = {
+          async *getItems() {
+            yield delay(10).then(() => 'Item 1');
+            yield delay(15).then(() => 'Item 2');
+            yield delay(5).then(() => 'Item 3');
+          }
+        };
+        const template = '{% block content %}{% for item in getItems() %}{{ item }}{% endfor %}{% endblock %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Item 1Item 2Item 3');
+      });
+
+      it('should handle async conditionals within blocks', async () => {
+        const context = {
+          async shouldRender() {
+            await delay(10);
+            return true;
+          },
+          async getContent() {
+            await delay(5);
+            return 'Conditional Content';
+          }
+        };
+        const template = '{% block content %}{% if shouldRender() %}{{ getContent() }}{% endif %}{% endblock %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Conditional Content');
       });
     });
 
