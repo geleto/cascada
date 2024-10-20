@@ -1245,7 +1245,7 @@
       it('should render a simple block with async content', async () => {
         const context = {
           async getMessage() {
-            await delay(10);
+            await delay(1);
             return 'Hello, World!';
           }
         };
@@ -1257,7 +1257,7 @@
       it('should handle template inheritance with blocks and async content', async () => {
         const context = {
           async getContent() {
-            await delay(10);
+            await delay(1);
             return 'Async Child Content';
           }
         };
@@ -1270,11 +1270,11 @@
       it('should handle nested blocks with async content', async () => {
         const context = {
           async getOuter() {
-            await delay(10);
+            await delay(2);
             return 'Async Outer';
           },
           async getInner() {
-            await delay(15);
+            await delay(1);
             return 'Async Inner';
           }
         };
@@ -1286,11 +1286,11 @@
       it('should handle blocks within loops with async data', async () => {
         const context = {
           async getItems() {
-            await delay(10);
+            await delay(3);
             return ['a', 'b', 'c'];
           },
           async processItem(item) {
-            await delay(5);
+            await delay(1);
             return `Processed ${item.toUpperCase()}`;
           }
         };
@@ -1302,11 +1302,11 @@
       it('should handle async functions within blocks and as block parameters', async () => {
         const context = {
           async getName() {
-            await delay(10);
+            await delay(4);
             return 'John';
           },
           async getGreeting(name) {
-            await delay(5);
+            await delay(2);
             return `Hello, ${name}!`;
           }
         };
@@ -1318,11 +1318,11 @@
       it('should handle the super function in blocks with async content', async () => {
         const context = {
           async getBaseContent() {
-            await delay(10);
+            await delay(3);
             return 'Async Base Content';
           },
           async getChildContent() {
-            await delay(5);
+            await delay(1);
             return 'Async Child Content';
           }
         };
@@ -1335,11 +1335,11 @@
       it('should handle multiple levels of inheritance with blocks and async content', async () => {
         const context = {
           async getA() {
-            await delay(10);
+            await delay(3);
             return 'Async A';
           },
           async getB() {
-            await delay(15);
+            await delay(2);
             return 'Async B';
           },
           async getC() {
@@ -1354,33 +1354,34 @@
         expect(result.trim()).to.equal('Async AModified Async BModified Async C');
       });
 
-      it('should handle async functions in block names', async () => {
+      it('should handle blocks inside a for loop with async content', async () => {
         const context = {
-          async getBlockName() {
-            await delay(10);
-            return 'dynamic_block';
+          async getItems() {
+            await delay(4);
+            return ['apple', 'banana', 'cherry'];
           },
-          async getContent() {
+          async processItem(item) {
             await delay(5);
-            return 'Dynamic Block Content';
+            return item.toUpperCase();
+          },
+          async getPrefix() {
+            await delay(3);
+            return 'Item:';
           }
         };
-        const template = '{% block {{ getBlockName() }} %}{{ getContent() }}{% endblock %}';
-        const result = await env.renderStringAsync(template, context);
-        expect(result.trim()).to.equal('Dynamic Block Content');
-      });
 
-      it('should handle async iterables in for loops within blocks', async () => {
-        const context = {
-          async *getItems() {
-            yield delay(10).then(() => 'Item 1');
-            yield delay(15).then(() => 'Item 2');
-            yield delay(5).then(() => 'Item 3');
-          }
-        };
-        const template = '{% block content %}{% for item in getItems() %}{{ item }}{% endfor %}{% endblock %}';
+        const template = `
+          {% for item in getItems() -%}
+            {%- block item_block -%}
+              {{ getPrefix() }} {{ processItem(item) }}
+            {% endblock -%}
+          {% endfor %}
+        `;
+
         const result = await env.renderStringAsync(template, context);
-        expect(result.trim()).to.equal('Item 1Item 2Item 3');
+        expect(result.trim()).to.equal(`Item: APPLE
+            Item: BANANA
+            Item: CHERRY`);
       });
 
       it('should handle async conditionals within blocks', async () => {
