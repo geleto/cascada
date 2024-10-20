@@ -77,7 +77,7 @@
   },
   "scripts": {
     "codecov": "codecov",
-    "mocha": "mocha --check-leaks -R spec tests",
+    "mocha": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs mocha --check-leaks -R spec tests",
     "lint": "eslint nunjucks scripts tests",
     "prepare": "npm run build",
     "build:transpile": "babel nunjucks --out-dir .",
