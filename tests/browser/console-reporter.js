@@ -3,6 +3,7 @@ class ConsoleReporter {
     const stats = runner.stats;
     const testResults = new Map();
     const failedTests = [];
+    let failureCount = 0;
 
     runner.on('suite', (suite) => {
       if (suite.root) return;
@@ -14,7 +15,8 @@ class ConsoleReporter {
       if (result) {
         let symbol;
         if (result.failed) {
-          symbol = '×';
+          failureCount++;
+          symbol = `× ${failureCount})`;
         } else if (result.pending) {
           symbol = '∘';
         } else {
@@ -66,8 +68,8 @@ class ConsoleReporter {
 
       if (failedTests.length > 0) {
         console.log('\nFailed Tests:');
-        failedTests.forEach(({ test, err }) => {
-          console.log(`\n  ${test.title}`);
+        failedTests.forEach(({ test, err }, index) => {
+          console.log(`\n  ${index + 1}) ${test.title}`);
           console.log(`    Error: ${err.message}`);
           console.log('    Stack:');
           err.stack.split('\n').forEach(line => console.log(`      ${line.trim()}`));
