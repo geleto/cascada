@@ -37,6 +37,19 @@ const noopTmplSrc = {
   }
 };
 
+const noopTmplSrcAsync = {
+  type: 'code',
+  obj: {
+    root(env, context, frame, runtime, astate, isIncluded, cb) {
+      try {
+        cb(null, '');
+      } catch (e) {
+        cb(handleError(e, null, null));
+      }
+    }
+  }
+};
+
 class Environment extends EmitterObj {
   init(loaders, opts) {
     // The dev flag determines the trace that'll be shown on errors.
@@ -267,7 +280,7 @@ class Environment extends EmitterObj {
       }
       let newTmpl;
       if (!info) {
-        newTmpl = new Template(noopTmplSrc, this, '', eagerCompile, isAsync);
+        newTmpl = new Template(isAsync? noopTmplSrcAsync : noopTmplSrc, this, '', eagerCompile, isAsync);
       } else {
         newTmpl = new Template(info.src, this, info.path, eagerCompile, isAsync);
         if (!info.noCache) {
