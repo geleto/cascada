@@ -135,7 +135,7 @@ class Compiler extends Obj {
       if (this.asyncClosureDepth === 0) {
         this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
       }
-      this._emitLine('.finally(()=>{astate.leaveClosure();})');
+      this._emitLine('.finally(()=>{astate.leaveClosure();});');
     }
   }
 
@@ -182,7 +182,7 @@ class Compiler extends Obj {
       if (this.asyncClosureDepth === 0) {
         this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
       }
-      this._emitLine('.finally(()=>{astate.leaveClosure();})');
+      this._emitLine('.finally(()=>{astate.leaveClosure();});');
     }
   }
 
