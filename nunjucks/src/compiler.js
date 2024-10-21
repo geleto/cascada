@@ -231,15 +231,15 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAwaitIfPromiseVoid(expressionCode) {
+  _emitAwaitIfPromiseVoid(code) {
     if (CONDITIONAL_AWAIT) {
         const tempVar = this._tmpid();  // Generate a unique temporary variable
         // Start a block to handle the conditional await logic
-        this._emitLine(`{ let ${tempVar} = ${expressionCode};`);
+        this._emitLine(`{ let ${tempVar} = ${code};`);
         this._emitLine(`if (${tempVar} && typeof ${tempVar}.then === 'function') { await ${tempVar}; }`);
     } else {
         // In case of regular await, emit the standard await directly
-        this._emitLine(`await ${expressionCode}`);
+        this._emitLine(`await ${code}`);
     }
   }
 

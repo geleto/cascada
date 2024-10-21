@@ -1413,20 +1413,33 @@
         }
 
         parse(parser, nodes) {
-          const tok = parser.nextToken();
-          const args = parser.parseSignature(null, true);
-          parser.advanceAfterBlockEnd(tok.value);
+          const tok = parser.nextToken();          // Get the tag token
+          const args = parser.parseSignature(null, true); // Parse arguments
+          parser.advanceAfterBlockEnd(tok.value);  // Move parser past the block end
 
           // Check if this is a block-style tag
-          const body = parser.parseUntilBlocks('end' + this.tags[0]);
-          if (body) {
+          let contentArgs = [];
+          let nextToken = parser.peekToken();
+
+          if (nextToken && nextToken.type === nunjucks.lexer.TOKEN_SYMBOL && nextToken.value === 'end' + this.tags[0]) {
+            // No body content, just an inline tag
             parser.advanceAfterBlockEnd();
+          } else {
+            // Parse until we encounter the end tag, making sure the token is valid
+            while (nextToken && !(nextToken.type === nunjucks.lexer.TOKEN_SYMBOL && nextToken.value === 'end' + tok.value)) {
+              const body = parser.parseUntilBlocks('end' + tok.value);
+              contentArgs.push(body);
+              nextToken = parser.peekToken();
+            }
+            if (nextToken) {
+              parser.advanceAfterBlockEnd('end' + tok.value);
+            }
           }
 
-          return new nodes.CallExtensionAsync(this, 'run', args, body ? [body] : null);
+          return new nodes.CallExtensionAsync(this, 'run', args, contentArgs.length > 0 ? contentArgs : null);
         }
 
-        run(context, ...args) {
+        runOld(context, ...args) {
           const callback = args.pop(); // The callback is always the last argument
           // Check if the first argument has a 'children' property (for single argument cases)
           const finalArgs = args.length === 1 && args[0].children ? args[0].children : args;
@@ -1439,7 +1452,7 @@
             });
         }
 
-        run2(context, ...args) {
+        run(context, ...args) {
           const callback = args.pop(); // The callback is always the last argument
 
           // Extract contentArgs from args
@@ -1462,7 +1475,7 @@
       }
 
       it('should handle a simple async extension function', async () => {
-        const greetExtension = new AsyncExtension('greet', async (name) => {
+        const greetExtension = new AsyncExtension('greet', async (context, name) => {
           await delay(5);
           return `Hello, ${name}!`;
         });
@@ -1475,7 +1488,7 @@
       });
 
       it('should handle an async extension function with multiple arguments', async () => {
-        const addExtension = new AsyncExtension('add', async (a, b) => {
+        const addExtension = new AsyncExtension('add', async (context, a, b) => {
           await delay(5);
           return a + b;
         });
@@ -1568,7 +1581,7 @@
         const context = {
           getName: async () => {
             await delay(10);
-            return "Alice";
+            return 'Alice';
           }
         };
 
@@ -1597,11 +1610,11 @@
         const context = {
           getName: async () => {
             await delay(10);
-            return "Bob";
+            return 'Bob';
           },
           getRole: async () => {
             await delay(15);
-            return "manager";
+            return 'manager';
           }
         };
 
@@ -1630,11 +1643,11 @@
         const context = {
           getName: async () => {
             await delay(10);
-            return "Charlie";
+            return 'Charlie';
           },
           getCity: async () => {
             await delay(15);
-            return "New York";
+            return 'New York';
           }
         };
 
