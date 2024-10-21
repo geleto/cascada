@@ -220,6 +220,25 @@ class Compiler extends Obj {
     }
   }
 
+  //awaiting a non-promise value is slow and should be avoided
+  _emitAwaitIfPromiseVar(varName) {
+    this._emitLine(`\n((${varName} && typeof ${varName}.then === 'function') ? await ${varName} : ${varName})`);
+  }
+
+  _emitAwaitIfPromiseExpr(expressionCode) {
+    const tempVar = this._tmpid();
+    this._emitLine(`(await (async () => { let ${tempVar} = \n${expressionCode};\n return (${tempVar} && typeof ${tempVar}.then === 'function') ? await ${tempVar} : ${tempVar}; })())`);
+  }
+
+  _emitAwaitIfPromiseBegin() {
+    const tempVar = this._tmpid();
+    this._emitLine(`(await (async () => { let ${tempVar} = `);
+  }
+
+  _emitAwaitIfPromiseEnd() {
+    this._emit(`;\n return (${tempVar} && typeof ${tempVar}.then === 'function') ? await ${tempVar} : ${tempVar}; })())`);
+  }
+
   _addScopeLevel() {
     this._scopeClosers += '})';
   }
@@ -351,7 +370,13 @@ class Compiler extends Obj {
         // Tag arguments are passed normally to the call. Note
         // that keyword arguments are turned into a single js
         // object as the last argument, if they exist.
+        if(this.isAsync) {
+          this._emit('runtime.awaitIfPromise(');
+        }
         this._compileExpression(arg, frame);
+        if(this.isAsync) {
+          this._emit(')');
+        }
 
         if (i !== args.children.length - 1 || contentArgs.length) {
           this._emit(',');
