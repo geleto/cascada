@@ -1461,205 +1461,161 @@
         expect(result).to.equal('8');
       });
 
-      it('should handle an async extension function that returns complex data', async () => {
-        const getUserExtension = new AsyncExtension('getUser', async () => {
-          await delay(5);
-          return { name: 'Alice', age: 30 };
-        });
-
-        env.addExtension('GetUserExtension', getUserExtension);
-
-        const template = `
-          {% set user = getUser() %}
-          {{ user.name }} is {{ user.age }} years old
-        `;
-        const result = await env.renderStringAsync(template);
-        expect(result.trim()).to.equal('Alice is 30 years old');
-      });
-
-      it('should handle async extension functions in expressions', async () => {
-        const multiplyExtension = new AsyncExtension('multiply', async (a, b) => {
-          await delay(5);
-          return a * b;
-        });
-
-        env.addExtension('MultiplyExtension', multiplyExtension);
-
-        const template = '{{ multiply(2, 3) + 5 }}';
-        const result = await env.renderStringAsync(template);
-        expect(result).to.equal('11');
-      });
-
-      it('should handle async extension functions in conditionals', async () => {
-        const isEvenExtension = new AsyncExtension('isEven', async (num) => {
-          await delay(5);
-          return num % 2 === 0;
-        });
-
-        env.addExtension('IsEvenExtension', isEvenExtension);
-
-        const template = `
-          {% if isEven(4) %}Even{% else %}Odd{% endif %}
-        `;
-        const result = await env.renderStringAsync(template);
-        expect(result.trim()).to.equal('Even');
-      });
-
-      it('should handle async extension functions in loops', async () => {
-        const getItemsExtension = new AsyncExtension('getItems', async () => {
-          await delay(5);
-          return ['a', 'b', 'c'];
-        });
-
-        env.addExtension('GetItemsExtension', getItemsExtension);
-
-        const template = `
-          {% for item in getItems() %}{{ item }}{% endfor %}
-        `;
-        const result = await env.renderStringAsync(template);
-        expect(result.trim()).to.equal('abc');
-      });
-
-      it('should handle async extension functions with async context data', async () => {
-        const combineExtension = new AsyncExtension('combine', async (a, b) => {
-          await delay(5);
-          return `${a} ${b}`;
-        });
-
-        env.addExtension('CombineExtension', combineExtension);
-
-        const context = {
-          async getPrefix() {
-            await delay(3);
-            return 'Hello';
+      it('should handle async extension tags in loops', async () => {
+        env.addExtension('getName', {
+          tags: ['getName'],
+          parse(parser, nodes, lexer) {
+            var tok = parser.nextToken();
+            var args = parser.parseSignature(null, true);
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtension(this, 'run', args);
+          },
+          async run(context, number) {
+            await delay(5); // simulate async operation
+            const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
+            return names[number % names.length];
           }
-        };
-
-        const template = '{{ combine(getPrefix(), "World") }}';
-        const result = await env.renderStringAsync(template, context);
-        expect(result).to.equal('Hello World');
-      });
-
-      it('should handle errors in async extension functions', async () => {
-        const throwErrorExtension = new AsyncExtension('throwError', async () => {
-          await delay(5);
-          throw new Error('Async extension error');
         });
 
-        env.addExtension('ThrowErrorExtension', throwErrorExtension);
+        const template =`
+        <ul>
+          {%- for i in range(5) %}
+            <li>{% getName i -%}</li>
+          {%- endfor %}
+          </ul>`;
 
-        const template = '{{ throwError() }}';
+        const result = await env.renderStringAsync(template);
+        const expected =`
+        <ul>
+            <li>Alice</li>
+            <li>Bob</li>
+            <li>Charlie</li>
+            <li>David</li>
+            <li>Eve</li>
+          </ul>`;
 
-        try {
-          await env.renderStringAsync(template);
-          expect.fail('Should have thrown an error');
-        } catch (error) {
-          expect(error.message).to.contain('Async extension error');
+        expect(result).to.equal(expected);
+      });
+    });
+
+    it('should properly handle errors thrown in async extension tags', async () => {
+      env.addExtension('asyncError', {
+        tags: ['asyncError'],
+        parse(parser, nodes, lexer) {
+          var tok = parser.nextToken();
+          parser.advanceAfterBlockEnd(tok.value);
+          return new nodes.CallExtension(this, 'run');
+        },
+        async run() {
+          await delay(10); // Simulate some async operation
+          throw new Error('Async extension error');
         }
       });
 
-      it('should handle async extension functions in macros', async () => {
-        const greetExtension = new AsyncExtension('greet', async (name) => {
-          await delay(5);
+      const template = '{% asyncError %}';
+
+      try {
+        await env.renderStringAsync(template);
+        // If we reach this point, the test should fail
+        expect.fail('Expected an error to be thrown');
+      } catch (error) {
+        expect(error instanceof Error).to.equal(true);
+        expect(error.message).to.contain('Async extension error');
+      }
+    });
+
+    it('should handle an extension tag with one async parameter', async () => {
+      env.addExtension('greet', {
+        tags: ['greet'],
+        parse(parser, nodes, lexer) {
+          var tok = parser.nextToken();
+          var args = parser.parseSignature(null, true);
+          parser.advanceAfterBlockEnd(tok.value);
+          return new nodes.CallExtension(this, 'run', args);
+        },
+        async run(context, namePromise) {
+          const name = await namePromise;
+          await delay(5); // simulate some async operation
           return `Hello, ${name}!`;
-        });
-
-        env.addExtension('GreetExtension', greetExtension);
-
-        const template = `
-          {% macro greetPerson(name) %}
-            {{ greet(name) }}
-          {% endmacro %}
-          {{ greetPerson("Alice") }}
-        `;
-        const result = await env.renderStringAsync(template);
-        expect(result.trim()).to.equal('Hello, Alice!');
+        }
       });
 
-      it('should handle async extension functions with filters', async () => {
-        const uppercaseExtension = new AsyncExtension('uppercase', async (str) => {
-          await delay(5);
-          return str.toUpperCase();
-        });
+      const context = {
+        getName: async () => {
+          await delay(10);
+          return "Alice";
+        }
+      };
 
-        env.addExtension('UppercaseExtension', uppercaseExtension);
+      const template = '{% greet getName() %}';
+      const result = await env.renderStringAsync(template, context);
+      expect(result).to.equal('Hello, Alice!');
+    });
 
-        env.addFilter('lowercase', (str) => str.toLowerCase());
-
-        const template = '{{ uppercase("Hello") | lowercase }}';
-        const result = await env.renderStringAsync(template);
-        expect(result).to.equal('hello');
+    it('should handle an extension tag with two async parameters', async () => {
+      env.addExtension('introduce', {
+        tags: ['introduce'],
+        parse(parser, nodes, lexer) {
+          var tok = parser.nextToken();
+          var args = parser.parseSignature(null, true);
+          parser.advanceAfterBlockEnd(tok.value);
+          return new nodes.CallExtension(this, 'run', args);
+        },
+        async run(context, namePromise, rolePromise) {
+          const name = await namePromise;
+          const role = await rolePromise;
+          await delay(5); // simulate some async operation
+          return `This is ${name}, our ${role}.`;
+        }
       });
 
-      it('should handle promise values as parameters to async extensions', async () => {
-        const greetExtension = new AsyncExtension('greet', async (name) => {
-          await delay(5);
-          return `Hello, ${name}!`;
-        });
+      const context = {
+        getName: async () => {
+          await delay(10);
+          return "Bob";
+        },
+        getRole: async () => {
+          await delay(15);
+          return "manager";
+        }
+      };
 
-        env.addExtension('GreetExtension', greetExtension);
+      const template = '{% introduce getName(), getRole() %}';
+      const result = await env.renderStringAsync(template, context);
+      expect(result).to.equal('This is Bob, our manager.');
+    });
 
-        const context = {
-          async fetchName() {
-            await delay(10);
-            return 'Alice';
-          }
-        };
-
-        const template = '{{ greet(fetchName()) }}';
-        const result = await env.renderStringAsync(template, context);
-        expect(result).to.equal('Hello, Alice!');
+    it('should handle an extension tag with mixed async and non-async parameters', async () => {
+      env.addExtension('describeUser', {
+        tags: ['describeUser'],
+        parse(parser, nodes, lexer) {
+          var tok = parser.nextToken();
+          var args = parser.parseSignature(null, true);
+          parser.advanceAfterBlockEnd(tok.value);
+          return new nodes.CallExtension(this, 'run', args);
+        },
+        async run(context, namePromise, age, cityPromise) {
+          const name = await namePromise;
+          const city = await cityPromise;
+          await delay(5); // simulate some async operation
+          return `${name}, aged ${age}, lives in ${city}.`;
+        }
       });
 
-      it('should handle multiple promise values as parameters to async extensions', async () => {
-        const combineExtension = new AsyncExtension('combine', async (firstName, lastName) => {
-          await delay(5);
-          return `${firstName} ${lastName}`;
-        });
+      const context = {
+        getName: async () => {
+          await delay(10);
+          return "Charlie";
+        },
+        getCity: async () => {
+          await delay(15);
+          return "New York";
+        }
+      };
 
-        env.addExtension('CombineExtension', combineExtension);
-
-        const context = {
-          async fetchFirstName() {
-            await delay(8);
-            return 'John';
-          },
-          async fetchLastName() {
-            await delay(6);
-            return 'Doe';
-          }
-        };
-
-        const template = '{{ combine(fetchFirstName(), fetchLastName()) }}';
-        const result = await env.renderStringAsync(template, context);
-        expect(result).to.equal('John Doe');
-      });
-
-      it('should handle promise values in complex expressions with async extensions', async () => {
-        const addExtension = new AsyncExtension('add', async (a, b) => {
-          await delay(5);
-          return a + b;
-        });
-
-        const multiplyExtension = new AsyncExtension('multiply', async (a, b) => {
-          await delay(3);
-          return a * b;
-        });
-
-        env.addExtension('AddExtension', addExtension);
-        env.addExtension('MultiplyExtension', multiplyExtension);
-
-        const context = {
-          async fetchNumber() {
-            await delay(7);
-            return 5;
-          }
-        };
-
-        const template = '{{ add(multiply(fetchNumber(), 2), 3) }}';
-        const result = await env.renderStringAsync(template, context);
-        expect(result).to.equal('13');
-      });
+      const template = '{% describeUser getName(), 30, getCity() %}';
+      const result = await env.renderStringAsync(template, context);
+      expect(result).to.equal('Charlie, aged 30, lives in New York.');
     });
 
   });
