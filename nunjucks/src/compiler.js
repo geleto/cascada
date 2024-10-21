@@ -7,7 +7,7 @@ const {TemplateError} = require('./lib');
 const {Frame} = require('./runtime');
 const {Obj} = require('./object');
 
-const CONDITIONAL_AWAIT = true;
+const CONDITIONAL_AWAIT = true;//awaiting a non-promise value is slow and should be avoided
 
 // These are all the same for now, but shouldn't be passed straight
 // through
@@ -223,7 +223,6 @@ class Compiler extends Obj {
   }
 
   //awaiting a non-promise value is slow and should be avoided
-  //should be used for vars and simple expressions
   _emitAwaitIfPromiseVar(varName) {
     if(CONDITIONAL_AWAIT) {
       this._emitLine(`\n((${varName} && typeof ${varName}.then === 'function') ? await ${varName} : ${varName})`);
@@ -375,13 +374,7 @@ class Compiler extends Obj {
         // Tag arguments are passed normally to the call. Note
         // that keyword arguments are turned into a single js
         // object as the last argument, if they exist.
-        if(this.isAsync) {
-          this._emit('runtime.awaitIfPromise(');
-        }
         this._compileExpression(arg, frame);
-        if(this.isAsync) {
-          this._emit(')');
-        }
 
         if (i !== args.children.length - 1 || contentArgs.length) {
           this._emit(',');

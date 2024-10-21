@@ -1413,10 +1413,17 @@
         }
 
         parse(parser, nodes) {
-          const tok = parser.nextToken();          // Get the tag token
-          const args = parser.parseSignature(null, true); // Parse arguments
-          parser.advanceAfterBlockEnd(tok.value);  // Move parser past the block end
-          return new nodes.CallExtensionAsync(this, 'run', args);
+          const tok = parser.nextToken();
+          const args = parser.parseSignature(null, true);
+          parser.advanceAfterBlockEnd(tok.value);
+
+          // Check if this is a block-style tag
+          const body = parser.parseUntilBlocks('end' + this.tags[0]);
+          if (body) {
+            parser.advanceAfterBlockEnd();
+          }
+
+          return new nodes.CallExtensionAsync(this, 'run', args, body ? [body] : null);
         }
 
         run(context, ...args) {
@@ -1431,9 +1438,28 @@
               callback(err);
             });
         }
-      }
 
-      // Test Cases
+        run2(context, ...args) {
+          const callback = args.pop(); // The callback is always the last argument
+
+          // Extract contentArgs from args
+          const contentArgs = args.filter(arg => arg && arg.hasOwnProperty('getCall')).map(arg => () => context.env.renderString(arg(), context.ctx));
+          args = args.filter(arg => !(arg && arg.hasOwnProperty('getCall')));
+
+          const finalArgs = args.length === 1 && args[0].children ? args[0].children : args;
+
+          // Combine the context, contentArgs, and finalArgs
+          const methodArgs = [context, ...contentArgs, ...finalArgs];
+
+          Promise.resolve(this.method(...methodArgs))
+            .then((result) => {
+              callback(null, result);
+            })
+            .catch((err) => {
+              callback(err);
+            });
+        }
+      }
 
       it('should handle a simple async extension function', async () => {
         const greetExtension = new AsyncExtension('greet', async (name) => {
@@ -1496,127 +1522,127 @@
 
         expect(result).to.equal(expected);
       });
-    });
 
-    it('should properly handle errors thrown in async extension tags', async () => {
-      env.addExtension('asyncError', {
-        tags: ['asyncError'],
-        parse(parser, nodes, lexer) {
-          var tok = parser.nextToken();
-          parser.advanceAfterBlockEnd(tok.value);
-          return new nodes.CallExtension(this, 'run');
-        },
-        async run() {
-          await delay(10); // Simulate some async operation
-          throw new Error('Async extension error');
+      it('should properly handle errors thrown in async extension tags', async () => {
+        env.addExtension('asyncError', {
+          tags: ['asyncError'],
+          parse(parser, nodes, lexer) {
+            var tok = parser.nextToken();
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtension(this, 'run');
+          },
+          async run() {
+            await delay(10); // Simulate some async operation
+            throw new Error('Async extension error');
+          }
+        });
+
+        const template = '{% asyncError %}';
+
+        try {
+          await env.renderStringAsync(template);
+          // If we reach this point, the test should fail
+          expect.fail('Expected an error to be thrown');
+        } catch (error) {
+          expect(error instanceof Error).to.equal(true);
+          expect(error.message).to.contain('Async extension error');
         }
       });
 
-      const template = '{% asyncError %}';
+      it('should handle an extension tag with one async parameter', async () => {
+        env.addExtension('greet', {
+          tags: ['greet'],
+          parse(parser, nodes, lexer) {
+            var tok = parser.nextToken();
+            var args = parser.parseSignature(null, true);
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtension(this, 'run', args);
+          },
+          async run(context, namePromise) {
+            const name = await namePromise;
+            await delay(5); // simulate some async operation
+            return `Hello, ${name}!`;
+          }
+        });
 
-      try {
-        await env.renderStringAsync(template);
-        // If we reach this point, the test should fail
-        expect.fail('Expected an error to be thrown');
-      } catch (error) {
-        expect(error instanceof Error).to.equal(true);
-        expect(error.message).to.contain('Async extension error');
-      }
-    });
+        const context = {
+          getName: async () => {
+            await delay(10);
+            return "Alice";
+          }
+        };
 
-    it('should handle an extension tag with one async parameter', async () => {
-      env.addExtension('greet', {
-        tags: ['greet'],
-        parse(parser, nodes, lexer) {
-          var tok = parser.nextToken();
-          var args = parser.parseSignature(null, true);
-          parser.advanceAfterBlockEnd(tok.value);
-          return new nodes.CallExtension(this, 'run', args);
-        },
-        async run(context, namePromise) {
-          const name = await namePromise;
-          await delay(5); // simulate some async operation
-          return `Hello, ${name}!`;
-        }
+        const template = '{% greet getName() %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('Hello, Alice!');
       });
 
-      const context = {
-        getName: async () => {
-          await delay(10);
-          return "Alice";
-        }
-      };
+      it('should handle an extension tag with two async parameters', async () => {
+        env.addExtension('introduce', {
+          tags: ['introduce'],
+          parse(parser, nodes, lexer) {
+            var tok = parser.nextToken();
+            var args = parser.parseSignature(null, true);
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtension(this, 'run', args);
+          },
+          async run(context, namePromise, rolePromise) {
+            const name = await namePromise;
+            const role = await rolePromise;
+            await delay(5); // simulate some async operation
+            return `This is ${name}, our ${role}.`;
+          }
+        });
 
-      const template = '{% greet getName() %}';
-      const result = await env.renderStringAsync(template, context);
-      expect(result).to.equal('Hello, Alice!');
-    });
+        const context = {
+          getName: async () => {
+            await delay(10);
+            return "Bob";
+          },
+          getRole: async () => {
+            await delay(15);
+            return "manager";
+          }
+        };
 
-    it('should handle an extension tag with two async parameters', async () => {
-      env.addExtension('introduce', {
-        tags: ['introduce'],
-        parse(parser, nodes, lexer) {
-          var tok = parser.nextToken();
-          var args = parser.parseSignature(null, true);
-          parser.advanceAfterBlockEnd(tok.value);
-          return new nodes.CallExtension(this, 'run', args);
-        },
-        async run(context, namePromise, rolePromise) {
-          const name = await namePromise;
-          const role = await rolePromise;
-          await delay(5); // simulate some async operation
-          return `This is ${name}, our ${role}.`;
-        }
+        const template = '{% introduce getName(), getRole() %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('This is Bob, our manager.');
       });
 
-      const context = {
-        getName: async () => {
-          await delay(10);
-          return "Bob";
-        },
-        getRole: async () => {
-          await delay(15);
-          return "manager";
-        }
-      };
+      it('should handle an extension tag with mixed async and non-async parameters', async () => {
+        env.addExtension('describeUser', {
+          tags: ['describeUser'],
+          parse(parser, nodes, lexer) {
+            var tok = parser.nextToken();
+            var args = parser.parseSignature(null, true);
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtension(this, 'run', args);
+          },
+          async run(context, namePromise, age, cityPromise) {
+            const name = await namePromise;
+            const city = await cityPromise;
+            await delay(5); // simulate some async operation
+            return `${name}, aged ${age}, lives in ${city}.`;
+          }
+        });
 
-      const template = '{% introduce getName(), getRole() %}';
-      const result = await env.renderStringAsync(template, context);
-      expect(result).to.equal('This is Bob, our manager.');
-    });
+        const context = {
+          getName: async () => {
+            await delay(10);
+            return "Charlie";
+          },
+          getCity: async () => {
+            await delay(15);
+            return "New York";
+          }
+        };
 
-    it('should handle an extension tag with mixed async and non-async parameters', async () => {
-      env.addExtension('describeUser', {
-        tags: ['describeUser'],
-        parse(parser, nodes, lexer) {
-          var tok = parser.nextToken();
-          var args = parser.parseSignature(null, true);
-          parser.advanceAfterBlockEnd(tok.value);
-          return new nodes.CallExtension(this, 'run', args);
-        },
-        async run(context, namePromise, age, cityPromise) {
-          const name = await namePromise;
-          const city = await cityPromise;
-          await delay(5); // simulate some async operation
-          return `${name}, aged ${age}, lives in ${city}.`;
-        }
+        const template = '{% describeUser getName(), 30, getCity() %}';
+        const result = await env.renderStringAsync(template, context);
+        expect(result).to.equal('Charlie, aged 30, lives in New York.');
       });
 
-      const context = {
-        getName: async () => {
-          await delay(10);
-          return "Charlie";
-        },
-        getCity: async () => {
-          await delay(15);
-          return "New York";
-        }
-      };
-
-      const template = '{% describeUser getName(), 30, getCity() %}';
-      const result = await env.renderStringAsync(template, context);
-      expect(result).to.equal('Charlie, aged 30, lives in New York.');
     });
-
   });
 }());
