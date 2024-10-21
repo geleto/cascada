@@ -7,6 +7,8 @@ const {TemplateError} = require('./lib');
 const {Frame} = require('./runtime');
 const {Obj} = require('./object');
 
+const CONDITIONAL_AWAIT = true;
+
 // These are all the same for now, but shouldn't be passed straight
 // through
 const compareOps = {
@@ -221,22 +223,13 @@ class Compiler extends Obj {
   }
 
   //awaiting a non-promise value is slow and should be avoided
+  //should be used for vars and simple expressions
   _emitAwaitIfPromiseVar(varName) {
-    this._emitLine(`\n((${varName} && typeof ${varName}.then === 'function') ? await ${varName} : ${varName})`);
-  }
-
-  _emitAwaitIfPromiseExpr(expressionCode) {
-    const tempVar = this._tmpid();
-    this._emitLine(`(await (async () => { let ${tempVar} = \n${expressionCode};\n return (${tempVar} && typeof ${tempVar}.then === 'function') ? await ${tempVar} : ${tempVar}; })())`);
-  }
-
-  _emitAwaitIfPromiseBegin() {
-    const tempVar = this._tmpid();
-    this._emitLine(`(await (async () => { let ${tempVar} = `);
-  }
-
-  _emitAwaitIfPromiseEnd() {
-    this._emit(`;\n return (${tempVar} && typeof ${tempVar}.then === 'function') ? await ${tempVar} : ${tempVar}; })())`);
+    if(CONDITIONAL_AWAIT) {
+      this._emitLine(`\n((${varName} && typeof ${varName}.then === 'function') ? await ${varName} : ${varName})`);
+    } else {
+      this._emitLine(`\nawait ${varName}`);
+    }
   }
 
   _addScopeLevel() {
