@@ -836,7 +836,7 @@ class Compiler extends Obj {
     });
   }
 
-  compileFor(node, frame) {
+  compileFor(node, frame, serialAsync=false) {
     // Some of this code is ugly, but it keeps the generated code
     // as fast as possible. ForAsync also shares some of this, but
     // not much.
@@ -870,7 +870,7 @@ class Compiler extends Obj {
       this._emitLine(`${len} = ${arr}.length;`);
       this._emitLine(`for(${i}=0; ${i} < ${arr}.length; ${i}++) {`);
 
-      if (this.isAsync) {
+      if (this.isAsync && !serialAsync) {
         this._emitLine('frame = frame.push();');
         this._emitBufferBlockBegin();
       }
@@ -888,7 +888,7 @@ class Compiler extends Obj {
         this.compile(node.body, frame);
       });
 
-      if (this.isAsync) {
+      if (this.isAsync && !serialAsync) {
         this._emitBufferBlockEnd();
         this._emitLine('frame = frame.pop();');
       }
@@ -976,11 +976,17 @@ class Compiler extends Obj {
     // This shares some code with the For tag, but not enough to
     // worry about. This iterates across an object asynchronously,
     // but not in parallel.
+    var i, len, arr, asyncMethod;
 
-    var i = this._tmpid();
-    var len = this._tmpid();
-    var arr = this._tmpid();
-    var asyncMethod = parallel ? 'asyncAll' : 'asyncEach';
+    if( this.isAsync ) {
+      this.compileFor(node, frame);//, !parallel); - @todo - implement serialAsync
+      return;
+    }
+
+    i = this._tmpid();
+    len = this._tmpid();
+    arr = this._tmpid();
+    asyncMethod = parallel ? 'asyncAll' : 'asyncEach';
     frame = frame.push();
 
     this._emitLine('frame = frame.push();');
