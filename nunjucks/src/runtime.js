@@ -304,8 +304,10 @@ function ensurePromiseFunc(mixedFn) {
     }
 
     // If mixedFn returned a promise, return it directly
-    if (result && typeof result.then === 'function') {
-      return result;
+    if (result ) {
+      if( typeof result.then === 'function')
+        return result;
+      return Promise.resolve(result);
     }
 
     // If the callback was called synchronously, handle it immediately

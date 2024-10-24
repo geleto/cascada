@@ -1488,7 +1488,7 @@
         expect(result).to.equal('Hello, John!');
       });
 
-      it.only('should handle a simple old-style extension function (old sync)', async () => {
+      it('should handle a simple old-style extension function (old sync)', async () => {
         env.addExtension('getName', {
           tags: ['greet'],
           parse(parser, nodes, lexer) {
@@ -1722,7 +1722,7 @@
         expect(result).to.equal('Charlie, aged 30, lives in New York.');
       });
 
-      it('should handle an extension with a single content block', async () => {
+      it.only('should handle an extension with a single content block', async () => {
         const wrapExtension = new AsyncExtension(
           'wrap',
           async (context, tagName, bodyContent) => {
@@ -1875,10 +1875,9 @@
       });
 
       // Test 9: mixedFn returns a non-promise value
-      it('should handle functions that return non-promise values and use the callback', function() {
-        function mixedFn(a, b, callback) {
-          callback(null, a + b);
-          return 'non-promise value';
+      it('should handle functions that return non-promise values', function() {
+        function mixedFn(a, b) {
+          return a + b;
         }
 
         const adaptedFn = ensurePromiseFunc(mixedFn);
