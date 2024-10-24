@@ -700,12 +700,10 @@ class Template extends Obj {
         console.error('- Stack:', e.stack);
 
         console.error('Test environment info:');
-        console.error('UserAgent:', navigator.userAgent);
-        /* console.log("JavaScript features:", {
-          let: typeof let !== 'undefined',
-          const: typeof const !== 'undefined',
-          arrow: typeof (() => {}) === 'function'
-        }); */
+        if(typeof navigator !== 'undefined') {
+          console.error('UserAgent:', navigator.userAgent);
+        }
+
         // Additional properties that might e available
         if (e.lineNumber) console.error('- Line Number:', e.lineNumber);
         if (e.columnNumber) console.error('- Column Number:', e.columnNumber);
