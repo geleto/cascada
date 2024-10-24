@@ -265,6 +265,67 @@ function ensureDefinedAsync(val, lineno, colno) {
   return ensureDefined(val, lineno, colno);
 }
 
+/**
+ * The mixedFn can be either with callback or return a promise
+ * The converted function will always return a promise
+ * The implementation is more complicated to make it fatser (no await chaining and unneded promise creation)
+ * @todo - timeout
+ */
+function ensurePromiseFunc(mixedFn) {
+  return (...args) => {
+    let callbackError, callbackResult;
+    let callbackCalled = false;
+
+    // Declare resolve and reject before the callback
+    let resolve, reject;
+
+    // Define the callback function
+    const callback = (error, result) => {
+      if (!resolve) {
+        // Callback called synchronously, store the result
+        callbackCalled = true;
+        callbackError = error;
+        callbackResult = result;
+      } else {
+        // Callback called asynchronously, resolve/reject the promise
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      }
+    };
+
+    let result;
+    try {
+      result = mixedFn(...args, callback);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+
+    // If mixedFn returned a promise, return it directly
+    if (result && typeof result.then === 'function') {
+      return result;
+    }
+
+    // If the callback was called synchronously, handle it immediately
+    if (callbackCalled) {
+      if (callbackError) {
+        return Promise.reject(callbackError);
+      } else {
+        return Promise.resolve(callbackResult);
+      }
+    }
+
+    // If the callback was not called synchronously, create and return a new promise
+    return new Promise((res, rej) => {
+      // Store the resolve and reject functions for the callback to use asynchronously
+      resolve = res;
+      reject = rej;
+    });
+  };
+}
+
 function flattentBuffer(arr) {
   const result = arr.reduce((acc, item) => {
     if (Array.isArray(item)) {
@@ -417,6 +478,7 @@ module.exports = {
   suppressValueAsync: suppressValueAsync,
   ensureDefined: ensureDefined,
   ensureDefinedAsync: ensureDefinedAsync,
+  ensurePromiseFunc: ensurePromiseFunc,
   flattentBuffer: flattentBuffer,
   memberLookup: memberLookup,
   contextOrFrameLookup: contextOrFrameLookup,

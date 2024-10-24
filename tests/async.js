@@ -4,18 +4,18 @@
   var expect;
   var unescape;
   var Environment;
-  // var Lexer;
+  var ensurePromiseFunc;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     Environment = require('../nunjucks/src/environment').Environment;
-    // Lexer = require('../nunjucks/src/lexer');
     unescape = require('he').unescape;
+    ensurePromiseFunc = require('../nunjucks/src/runtime').ensurePromiseFunc;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
     Environment = nunjucks.Environment;
-    // Lexer = nunjucks.Lexer;
+    ensurePromiseFunc = nunjucks.runtime.ensurePromiseFunc;
   }
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1410,9 +1410,10 @@
       });
 
       class AsyncExtension {
-        constructor(tagName, method) {
+        constructor(tagName, method, options = {}) {
           this.tags = [tagName];
           this.method = method;
+          this.supportsBody = options.supportsBody || false;
         }
 
         parse(parser, nodes) {
@@ -1420,16 +1421,36 @@
           const args = parser.parseSignature(null, true); // Parse arguments
           parser.advanceAfterBlockEnd(tok.value); // Move parser past the block end
 
-          // Since we're handling inline tags, we don't need to parse any body content
-          return new nodes.CallExtension(this, 'run', args);
+          if (this.supportsBody) {
+            // Parse the body until the end tag (e.g., 'endwrap')
+            const body = parser.parseUntilBlocks('end' + tok.value);
+            parser.advanceAfterBlockEnd(); // Move past the end tag
+
+            // Return a CallExtension node with arguments and content body
+            return new nodes.CallExtension(this, 'run', args, [body]);
+          } else {
+            // Return a CallExtension node without body
+            return new nodes.CallExtension(this, 'run', args);
+          }
         }
 
         async run(context, ...args) {
-          // Combine the context and arguments to pass to the method
-          const methodArgs = [context, ...args];
+          let bodyContent = '';
 
-          // Call the method and return its result
-          return await this.method(...methodArgs);
+          if (this.supportsBody && typeof args[args.length - 1] === 'function') {
+            const body = args.pop();
+
+            // Render the body content if it's a function
+            bodyContent = await new Promise((resolve, reject) => {
+              body((err, res) => {
+                if (err) reject(err);
+                else resolve(res);
+              });
+            });
+          }
+
+          // Call the method with arguments and the rendered body content
+          return await this.method(context, ...args, bodyContent);
         }
       }
 
@@ -1528,6 +1549,80 @@
         expect(result).to.equal(expected);
       });
 
+      it('should handle sync extension tags in loops (old sync)', async () => {
+        env.addExtension('getNameSync', {
+          tags: ['getName'],
+          parse(parser, nodes) {
+            var tok = parser.nextToken();
+            var args = parser.parseSignature(null, true);
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtension(this, 'run', args);
+          },
+          run(context, number) {
+            const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
+            return names[number % names.length];
+          }
+        });
+
+        const template = `
+          <ul>
+            {%- for i in range(5) %}
+              <li>{% getName i -%}</li>
+            {%- endfor %}
+          </ul>`;
+
+        const result = await env.renderStringAsync(template);
+        const expected = `
+          <ul>
+              <li>Alice</li>
+              <li>Bob</li>
+              <li>Charlie</li>
+              <li>David</li>
+              <li>Eve</li>
+          </ul>`;
+
+        expect(result.trim()).to.equal(expected.trim());
+      });
+
+      it.skip('should handle async extension tags in loops (old async)', async () => {
+        env.addExtension('getNameAsync', {
+          tags: ['getName'],
+          parse(parser, nodes) {
+            var tok = parser.nextToken();
+            var args = parser.parseSignature(null, true);
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtensionAsync(this, 'run', args);
+          },
+          run(context, number, callback) {
+            const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
+            setTimeout(() => {
+              const result = names[number % names.length];
+              callback(null, result); // Pass the result back via the callback
+            }, 5); // Simulate a small asynchronous delay
+          }
+        });
+
+        const template = `
+          <ul>
+            {%- for i in range(5) %}
+              <li>{% getName i -%}</li>
+            {%- endfor %}
+          </ul>`;
+
+        const result = await env.renderStringAsync(template);//@todo - this will not work with renderString, nunjucks bug? - test
+        const expected = `
+          <ul>
+              <li>Alice</li>
+              <li>Bob</li>
+              <li>Charlie</li>
+              <li>David</li>
+              <li>Eve</li>
+          </ul>`;
+
+        expect(result).to.equal(expected);
+      });
+
+
       it('should properly handle errors thrown in async extension tags', async () => {
         const asyncErrorExtension = new AsyncExtension('asyncError', async () => {
           await delay(10); // Simulate some async operation
@@ -1625,6 +1720,189 @@
         const template = '{% describeUser getName(), 30, getCity() %}';
         const result = await env.renderStringAsync(template, context);
         expect(result).to.equal('Charlie, aged 30, lives in New York.');
+      });
+
+      it('should handle an extension with a single content block', async () => {
+        const wrapExtension = new AsyncExtension(
+          'wrap',
+          async (context, tagName, bodyContent) => {
+            await delay(5);
+            return `<${tagName}>${bodyContent}</${tagName}>`;
+          },
+          { supportsBody: true } // Indicate that this tag supports body content
+        );
+
+        env.addExtension('WrapExtension', wrapExtension);
+
+        const template = `
+          {% wrap "section" %}
+            This is some content.
+          {% endwrap %}
+        `;
+
+        const result = await env.renderStringAsync(template);
+        const expected = `
+          <section>
+            This is some content.
+          </section>
+        `;
+
+        expect(unescape(result.trim())).to.equal(expected.trim());
+      });
+
+    });
+
+    describe('ensurePromiseFunc', function() {
+      // Test 1: mixedFn returns a promise
+      it('should return the original promise when mixedFn returns a promise', function() {
+        function mixedFn(a, b, callback) {
+          return new Promise((resolve) => {
+            setTimeout(() => resolve(a + b), 100);
+          });
+        }
+
+        const adaptedFn = ensurePromiseFunc(mixedFn);
+
+        return adaptedFn(1, 2).then((result) => {
+          expect(result).to.equal(3);
+        });
+      });
+
+      // Test 2: mixedFn calls the callback synchronously
+      it('should handle synchronous callbacks correctly', function() {
+        function mixedFn(a, b, callback) {
+          callback(null, a + b); // Synchronous callback
+        }
+
+        const adaptedFn = ensurePromiseFunc(mixedFn);
+
+        return adaptedFn(1, 2).then((result) => {
+          expect(result).to.equal(3);
+        });
+      });
+
+      // Test 3: mixedFn calls the callback asynchronously
+      it('should handle asynchronous callbacks correctly', function() {
+        function mixedFn(a, b, callback) {
+          setTimeout(() => callback(null, a + b), 100); // Asynchronous callback
+        }
+
+        const adaptedFn = ensurePromiseFunc(mixedFn);
+
+        return adaptedFn(1, 2).then((result) => {
+          expect(result).to.equal(3);
+        });
+      });
+
+      // Test 4: mixedFn throws a synchronous exception
+      it('should reject the promise if mixedFn throws a synchronous exception', function() {
+        function mixedFn(a, b, callback) {
+          throw new Error('Synchronous error');
+        }
+
+        const adaptedFn = ensurePromiseFunc(mixedFn);
+
+        return adaptedFn(1, 2).catch((error) => {
+          expect(error.message).to.equal('Synchronous error');
+        });
+      });
+
+      // Test 5: mixedFn calls the callback and then throws a synchronous exception
+      it('should prioritize the exception over the callback result', function() {
+        function mixedFn(a, b, callback) {
+          callback(null, a + b);
+          throw new Error('Synchronous error after callback');
+        }
+
+        const adaptedFn = ensurePromiseFunc(mixedFn);
+
+        return adaptedFn(1, 2).catch((error) => {
+          expect(error.message).to.equal('Synchronous error after callback');
+        });
+      });
+
+      // Test 6: mixedFn calls the callback with an error asynchronously
+      it('should reject the promise if callback is called with an error asynchronously', function() {
+        function mixedFn(a, b, callback) {
+          setTimeout(() => callback(new Error('Asynchronous error')), 100);
+        }
+
+        const adaptedFn = ensurePromiseFunc(mixedFn);
+
+        return adaptedFn(1, 2).catch((error) => {
+          expect(error.message).to.equal('Asynchronous error');
+        });
+      });
+
+      // Test 7: mixedFn calls the callback with an error synchronously
+      it('should reject the promise if callback is called with an error synchronously', function() {
+        function mixedFn(a, b, callback) {
+          callback(new Error('Synchronous callback error'));
+        }
+
+        const adaptedFn = ensurePromiseFunc(mixedFn);
+
+        return adaptedFn(1, 2).catch((error) => {
+          expect(error.message).to.equal('Synchronous callback error');
+        });
+      });
+
+      // Test 8: mixedFn neither returns a promise nor calls the callback
+      it('should return a promise that never resolves if mixedFn neither returns a promise nor calls the callback', function(done) {
+        function mixedFn(a, b, callback) {
+          // Does nothing
+        }
+
+        const adaptedFn = ensurePromiseFunc(mixedFn);
+
+        const promise = adaptedFn(1, 2);
+
+        // Set a timeout to check that the promise remains pending
+        const timeout = setTimeout(() => {
+          done();
+        }, 200);
+
+        promise.then(
+          () => {
+            clearTimeout(timeout);
+            done(new Error('Promise should not have resolved'));
+          },
+          () => {
+            clearTimeout(timeout);
+            done(new Error('Promise should not have rejected'));
+          }
+        );
+      });
+
+      // Test 9: mixedFn returns a non-promise value
+      it('should handle functions that return non-promise values and use the callback', function() {
+        function mixedFn(a, b, callback) {
+          callback(null, a + b);
+          return 'non-promise value';
+        }
+
+        const adaptedFn = ensurePromiseFunc(mixedFn);
+
+        return adaptedFn(1, 2).then((result) => {
+          expect(result).to.equal(3);
+        });
+      });
+
+      // Test 10: mixedFn returns a thenable (non-promise object with a then method)
+      it('should treat thenables as promises when returned by mixedFn', function() {
+        function mixedFn(a, b, callback) {
+          return {
+            then: function(onFulfilled) {
+              setTimeout(() => onFulfilled(a + b), 100);
+            },
+          };
+        }
+
+        const adaptedFn = ensurePromiseFunc(mixedFn);
+
+        return adaptedFn(1, 2).then((result) => {
+          expect(result).to.equal(3);
+        });
       });
     });
 
