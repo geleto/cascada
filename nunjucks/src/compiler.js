@@ -349,16 +349,23 @@ class Compiler extends Obj {
     var args = node.args;
     var contentArgs = node.contentArgs;
     var autoescape = typeof node.autoescape === 'boolean' ? node.autoescape : true;
+    var asyncRes;
+    async = async || this.isAsync;
 
     if (!async) {
-      // this._emit(`${this.buffer} += runtime.suppressValue(`);
       this._emitAddToBufferBegin();
       this._emit(`${this.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
       this._emitAwaitBegin();
     }
 
-    this._emit(`env.getExtension("${node.extName}")["${node.prop}"](`);
-    this._emit('context');
+    if(this.isAsync) {
+      asyncRes = this._tmpid();
+      const ext = this._tmpid();
+      this._emitLine(`let ${ext} = env.getExtension("${node.extName}");`);
+      this._emit(`let ${asyncRes} = runtime.ensurePromiseFunc(${ext}["${node.prop}"].bind(${ext}))(context`);
+    } else {
+      this._emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
+    }
 
     if (args || contentArgs) {
       this._emit(',');
@@ -408,19 +415,23 @@ class Compiler extends Obj {
     }
 
     if (async) {
-      const res = this._tmpid();
-      this._emitLine(', ' + this._makeCallback(res));
-
-      this._emitAddToBufferBegin();
-
-      // this._emitLine(
-      //  `${this.buffer} += runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
+      let res;
+      if(this.isAsync) {
+        this._emitLine(');');
+        this._emitAddToBufferBegin();
+        res = asyncRes;
+      } else {
+        res = this._tmpid();
+        this._emitLine(', ' + this._makeCallback(res));
+      }
 
       this._emit(`${this.isAsync ? 'await runtime.suppressValueAsync' : 'runtime.suppressValue'}(${res}, ${autoescape} && env.opts.autoescape);`);
 
-      this._emitAddToBufferEnd();
-
-      this._addScopeLevel();
+      if (this.isAsync) {
+        this._emitAddToBufferEnd();
+      } else {
+        this._addScopeLevel();
+      }
     } else {
       this._emit(')');
       this._emitAwaitEnd();

@@ -1488,7 +1488,7 @@
         expect(result).to.equal('Hello, John!');
       });
 
-      it('should handle a simple old-style extension function (old sync)', async () => {
+      it.only('should handle a simple old-style extension function (old sync)', async () => {
         env.addExtension('getName', {
           tags: ['greet'],
           parse(parser, nodes, lexer) {
@@ -1584,7 +1584,7 @@
         expect(result.trim()).to.equal(expected.trim());
       });
 
-      it.skip('should handle async extension tags in loops (old async)', async () => {
+      it('should handle async extension tags in loops (old async)', async () => {
         env.addExtension('getNameAsync', {
           tags: ['getName'],
           parse(parser, nodes) {

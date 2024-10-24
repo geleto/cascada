@@ -298,7 +298,7 @@ function ensurePromiseFunc(mixedFn) {
 
     let result;
     try {
-      result = mixedFn(...args, callback);
+        result = mixedFn(...args, callback);
     } catch (error) {
       return Promise.reject(error);
     }
