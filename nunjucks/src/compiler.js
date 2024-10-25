@@ -365,12 +365,17 @@ class Compiler extends Obj {
 
       this._emitAddToBufferBegin();
       this._emit(this.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
-      if(!noExtensionCallback) {
+      if(noExtensionCallback) {
+        if(parallel) {
+          this._emit(`${ext}["${node.prop}"](context`);
+        }
+        else {
+          //resolve the arguments before calling the function
+          this._emit(`runtime.resolveArguments(${ext}["${node.prop}"].bind(${ext}), 1)(context`);
+        }
+      } else {
         //convert the callback to a promise
-        this._emit(`runtime.promisify(${ext}["${node.prop}"])(context`);
-      }
-      else {
-        this._emit(`${ext}["${node.prop}"](context`);
+        this._emit(`runtime.promisify(${ext}["${node.prop}"].bind(${ext}))(context`);
       }
     } else {
       this._emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);

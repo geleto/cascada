@@ -281,6 +281,36 @@ function promisify(fn) {
   };
 }
 
+function resolveArguments(fn, skipArguments = 0) {
+  return async function(...args) {
+    const skippedArgs = args.slice(0, skipArguments);
+    const remainingArgs = args.slice(skipArguments);
+
+    const promiseIndices = [];
+    const promiseArgs = [];
+    remainingArgs.forEach((arg, index) => {
+      if (arg instanceof Promise) {
+        promiseIndices.push(index);
+        promiseArgs.push(arg);
+      }
+    });
+
+    if (promiseArgs.length === 0) {
+      return fn.apply(this, args);
+    }
+
+    const resolvedPromises = await Promise.all(promiseArgs);
+
+    promiseIndices.forEach((index, i) => {
+      remainingArgs[index] = resolvedPromises[i];
+    });
+
+    const finalArgs = [...skippedArgs, ...remainingArgs];
+
+    return fn.apply(this, finalArgs);
+  };
+}
+
 function flattentBuffer(arr) {
   const result = arr.reduce((acc, item) => {
     if (Array.isArray(item)) {
@@ -434,6 +464,7 @@ module.exports = {
   ensureDefined: ensureDefined,
   ensureDefinedAsync: ensureDefinedAsync,
   promisify: promisify,
+  resolveArguments: resolveArguments,
   flattentBuffer: flattentBuffer,
   memberLookup: memberLookup,
   contextOrFrameLookup: contextOrFrameLookup,
