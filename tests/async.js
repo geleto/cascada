@@ -4,18 +4,15 @@
   var expect;
   var unescape;
   var Environment;
-  var ensurePromiseFunc;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     Environment = require('../nunjucks/src/environment').Environment;
     unescape = require('he').unescape;
-    ensurePromiseFunc = require('../nunjucks/src/runtime').ensurePromiseFunc;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
     Environment = nunjucks.Environment;
-    ensurePromiseFunc = nunjucks.runtime.ensurePromiseFunc;
   }
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1414,6 +1411,7 @@
           this.tags = [tagName];
           this.method = method;
           this.supportsBody = options.supportsBody || false;
+          this.parallel = options.parallel || false;
         }
 
         parse(parser, nodes) {
@@ -1426,11 +1424,22 @@
             const body = parser.parseUntilBlocks('end' + tok.value);
             parser.advanceAfterBlockEnd(); // Move past the end tag
 
-            // Return a CallExtension node with arguments and content body
-            return new nodes.CallExtension(this, 'run', args, [body]);
+            // RError compiling:eturn a CallExtension node with arguments and content body
+            if(this.parallel) {
+              return new nodes.CallExtensionParallel(this, 'run', args, [body]);
+            }
+            else{
+              return new nodes.CallExtension(this, 'run', args, [body]);
+            }
+
           } else {
             // Return a CallExtension node without body
-            return new nodes.CallExtension(this, 'run', args);
+            if(this.parallel) {
+              return new nodes.CallExtensionParallel(this, 'run', args, undefined);
+            }
+            else {
+              return new nodes.CallExtension(this, 'run', args, undefined);
+            }
           }
         }
 
@@ -1470,7 +1479,7 @@
       it('should handle a simple callback extension function (old async)', async () => {
         env.addExtension('getName', {
           tags: ['greet'],
-          parse(parser, nodes, lexer) {
+          parse(parser, nodes) {
             var tok = parser.nextToken();
             var args = parser.parseSignature(null, true);
             parser.advanceAfterBlockEnd(tok.value);
@@ -1722,7 +1731,7 @@
         expect(result).to.equal('Charlie, aged 30, lives in New York.');
       });
 
-      it.only('should handle an extension with a single content block', async () => {
+      it('should handle an extension with a single content block', async () => {
         const wrapExtension = new AsyncExtension(
           'wrap',
           async (context, tagName, bodyContent) => {
@@ -1748,160 +1757,6 @@
         `;
 
         expect(unescape(result.trim())).to.equal(expected.trim());
-      });
-
-    });
-
-    describe('ensurePromiseFunc', function() {
-      // Test 1: mixedFn returns a promise
-      it('should return the original promise when mixedFn returns a promise', function() {
-        function mixedFn(a, b, callback) {
-          return new Promise((resolve) => {
-            setTimeout(() => resolve(a + b), 100);
-          });
-        }
-
-        const adaptedFn = ensurePromiseFunc(mixedFn);
-
-        return adaptedFn(1, 2).then((result) => {
-          expect(result).to.equal(3);
-        });
-      });
-
-      // Test 2: mixedFn calls the callback synchronously
-      it('should handle synchronous callbacks correctly', function() {
-        function mixedFn(a, b, callback) {
-          callback(null, a + b); // Synchronous callback
-        }
-
-        const adaptedFn = ensurePromiseFunc(mixedFn);
-
-        return adaptedFn(1, 2).then((result) => {
-          expect(result).to.equal(3);
-        });
-      });
-
-      // Test 3: mixedFn calls the callback asynchronously
-      it('should handle asynchronous callbacks correctly', function() {
-        function mixedFn(a, b, callback) {
-          setTimeout(() => callback(null, a + b), 100); // Asynchronous callback
-        }
-
-        const adaptedFn = ensurePromiseFunc(mixedFn);
-
-        return adaptedFn(1, 2).then((result) => {
-          expect(result).to.equal(3);
-        });
-      });
-
-      // Test 4: mixedFn throws a synchronous exception
-      it('should reject the promise if mixedFn throws a synchronous exception', function() {
-        function mixedFn(a, b, callback) {
-          throw new Error('Synchronous error');
-        }
-
-        const adaptedFn = ensurePromiseFunc(mixedFn);
-
-        return adaptedFn(1, 2).catch((error) => {
-          expect(error.message).to.equal('Synchronous error');
-        });
-      });
-
-      // Test 5: mixedFn calls the callback and then throws a synchronous exception
-      it('should prioritize the exception over the callback result', function() {
-        function mixedFn(a, b, callback) {
-          callback(null, a + b);
-          throw new Error('Synchronous error after callback');
-        }
-
-        const adaptedFn = ensurePromiseFunc(mixedFn);
-
-        return adaptedFn(1, 2).catch((error) => {
-          expect(error.message).to.equal('Synchronous error after callback');
-        });
-      });
-
-      // Test 6: mixedFn calls the callback with an error asynchronously
-      it('should reject the promise if callback is called with an error asynchronously', function() {
-        function mixedFn(a, b, callback) {
-          setTimeout(() => callback(new Error('Asynchronous error')), 100);
-        }
-
-        const adaptedFn = ensurePromiseFunc(mixedFn);
-
-        return adaptedFn(1, 2).catch((error) => {
-          expect(error.message).to.equal('Asynchronous error');
-        });
-      });
-
-      // Test 7: mixedFn calls the callback with an error synchronously
-      it('should reject the promise if callback is called with an error synchronously', function() {
-        function mixedFn(a, b, callback) {
-          callback(new Error('Synchronous callback error'));
-        }
-
-        const adaptedFn = ensurePromiseFunc(mixedFn);
-
-        return adaptedFn(1, 2).catch((error) => {
-          expect(error.message).to.equal('Synchronous callback error');
-        });
-      });
-
-      // Test 8: mixedFn neither returns a promise nor calls the callback
-      it('should return a promise that never resolves if mixedFn neither returns a promise nor calls the callback', function(done) {
-        function mixedFn(a, b, callback) {
-          // Does nothing
-        }
-
-        const adaptedFn = ensurePromiseFunc(mixedFn);
-
-        const promise = adaptedFn(1, 2);
-
-        // Set a timeout to check that the promise remains pending
-        const timeout = setTimeout(() => {
-          done();
-        }, 200);
-
-        promise.then(
-          () => {
-            clearTimeout(timeout);
-            done(new Error('Promise should not have resolved'));
-          },
-          () => {
-            clearTimeout(timeout);
-            done(new Error('Promise should not have rejected'));
-          }
-        );
-      });
-
-      // Test 9: mixedFn returns a non-promise value
-      it('should handle functions that return non-promise values', function() {
-        function mixedFn(a, b) {
-          return a + b;
-        }
-
-        const adaptedFn = ensurePromiseFunc(mixedFn);
-
-        return adaptedFn(1, 2).then((result) => {
-          expect(result).to.equal(3);
-        });
-      });
-
-      // Test 10: mixedFn returns a thenable (non-promise object with a then method)
-      it('should treat thenables as promises when returned by mixedFn', function() {
-        function mixedFn(a, b, callback) {
-          return {
-            then: function(onFulfilled) {
-              setTimeout(() => onFulfilled(a + b), 100);
-            },
-          };
-        }
-
-        const adaptedFn = ensurePromiseFunc(mixedFn);
-
-        return adaptedFn(1, 2).then((result) => {
-          expect(result).to.equal(3);
-        });
       });
     });
 

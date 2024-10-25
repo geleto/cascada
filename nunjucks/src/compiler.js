@@ -345,24 +345,33 @@ class Compiler extends Obj {
     }
   }
 
-  compileCallExtension(node, frame, async) {
+  /**
+   * CallExtension - no callback, can return either value or promise
+   * CallExtensionAsync - uses callback, async = true
+   * CallExtensionParallel - parameters can be promises, can return either value or promise, parallel = true
+   */
+  compileCallExtension(node, frame, async, parallel) {
     var args = node.args;
     var contentArgs = node.contentArgs;
     var autoescape = typeof node.autoescape === 'boolean' ? node.autoescape : true;
-    var asyncRes;
-    async = async || this.isAsync;
+    var noExtensionCallback = !async || parallel;//assign the return value directly, no callback
 
-    if (!async) {
-      this._emitAddToBufferBegin();
-      this._emit(`${this.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
-      this._emitAwaitBegin();
-    }
+    //async = async || this.isAsync;
+    parallel = parallel && this.isAsync;
 
-    if(this.isAsync) {
-      asyncRes = this._tmpid();
+    if (noExtensionCallback || this.isAsync) {
       const ext = this._tmpid();
       this._emitLine(`let ${ext} = env.getExtension("${node.extName}");`);
-      this._emit(`let ${asyncRes} = runtime.ensurePromiseFunc(${ext}["${node.prop}"].bind(${ext}))(context`);
+
+      this._emitAddToBufferBegin();
+      this._emit(this.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
+      if(!noExtensionCallback) {
+        //convert the callback to a promise
+        this._emit(`runtime.promisify(${ext}["${node.prop}"])(context`);
+      }
+      else {
+        this._emit(`${ext}["${node.prop}"](context`);
+      }
     } else {
       this._emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
     }
@@ -414,35 +423,28 @@ class Compiler extends Obj {
       });
     }
 
-    if (async) {
-      let res;
-      if(this.isAsync) {
-        this._emitLine(');');
-        this._emitAddToBufferBegin();
-        res = asyncRes;
-      } else {
-        res = this._tmpid();
-        this._emitLine(', ' + this._makeCallback(res));
-      }
-
-      this._emit(`${this.isAsync ? 'await runtime.suppressValueAsync' : 'runtime.suppressValue'}(${res}, ${autoescape} && env.opts.autoescape);`);
-
-      if (this.isAsync) {
-        this._emitAddToBufferEnd();
-      } else {
-        this._addScopeLevel();
-      }
-    } else {
-      this._emit(')');
-      this._emitAwaitEnd();
-      this._emit(`, ${autoescape} && env.opts.autoescape);\n`);
+    if (noExtensionCallback || this.isAsync) {
+      this._emit(`), ${autoescape} && env.opts.autoescape);`);//end of suppressValue
       this._emitAddToBufferEnd();
+    } else {
+      const res = this._tmpid();
+      this._emitLine(', ' + this._makeCallback(res));
+      this._emitAddToBufferBegin();
+      this._emit(`${this.isAsync ? 'await runtime.suppressValueAsync' : 'runtime.suppressValue'}(${res}, ${autoescape} && env.opts.autoescape);`);
+      this._emitAddToBufferEnd();
+
+      this._addScopeLevel();
     }
   }
 
   compileCallExtensionAsync(node, frame) {
     this.compileCallExtension(node, frame, true);
   }
+
+  compileCallExtensionParallel(node, frame) {
+    this.compileCallExtension(node, frame, true, true);
+  }
+
 
   compileNodeList(node, frame) {
     this._compileChildren(node, frame);
