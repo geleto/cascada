@@ -24,48 +24,69 @@
 			"<node_internals>/**"
 		]
 	},
-	  {
+	{
+		"type": "node",
+		"request": "launch",
+		"name": "No-build Mocha Tests",
+		"program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
+		"args": [
+			"--check-leaks",
+			"-R",
+			"spec",
+			"${workspaceFolder}/tests"
+		],
+		"env": {
+			"NODE_ENV": "test",
+			"NODE_PATH": "${workspaceFolder}/tests/test-node-pkgs"
+		},
+		"cwd": "${workspaceFolder}",
+		"internalConsoleOptions": "openOnSessionStart",
+		"autoAttachChildProcesses": false,
+		"skipFiles": [
+			"<node_internals>/**"
+		]
+	},
+	{
 		"type": "node",
 		"request": "launch",
 		"name": "Debug Browser Tests",
 		"runtimeExecutable": "npm",
 		"runtimeArgs": [
-		  "run-script",
-		  "test:browser"
+			"run-script",
+			"test:browser"
 		],
 		"env": {
-		  "NODE_ENV": "test",
-		  "NODE_PATH": "${workspaceFolder}/tests/test-node-pkgs",
-		  "PWDEBUG": "1"
+			"NODE_ENV": "test",
+			"NODE_PATH": "${workspaceFolder}/tests/test-node-pkgs",
+			"PWDEBUG": "1"
 		},
 		"cwd": "${workspaceFolder}",
 		"console": "integratedTerminal",
 		"internalConsoleOptions": "neverOpen",
 		"autoAttachChildProcesses": true,
 		"skipFiles": [
-		  "<node_internals>/**"
+			"<node_internals>/**"
 		]
-	  },
-	  {
+	},
+	{
 		"type": "node",
 		"request": "launch",
 		"name": "Debug Node Tests",
 		"runtimeExecutable": "npm",
 		"runtimeArgs": [
-		  "run-script",
-		  "test:node"
+			"run-script",
+			"test:node"
 		],
 		"env": {
-		  "NODE_ENV": "test",
-		  "NODE_PATH": "${workspaceFolder}/tests/test-node-pkgs"
+			"NODE_ENV": "test",
+			"NODE_PATH": "${workspaceFolder}/tests/test-node-pkgs"
 		},
 		"cwd": "${workspaceFolder}",
 		"console": "integratedTerminal",
 		"internalConsoleOptions": "neverOpen",
 		"autoAttachChildProcesses": true,
 		"skipFiles": [
-		  "<node_internals>/**"
+			"<node_internals>/**"
 		]
-	  }
-	]
+	}]
   }
