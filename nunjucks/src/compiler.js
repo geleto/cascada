@@ -410,6 +410,9 @@ class Compiler extends Obj {
         }
 
         if (arg) {
+          if(parallel) {
+            this._emit('runtime.promisify(');
+          }
           this._emitLine('function(cb) {');
           this._emitLine('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
           const id = this._pushBuffer();
@@ -422,6 +425,9 @@ class Compiler extends Obj {
           this._popBuffer();
           this._emitLine(`return ${id};`);
           this._emitLine('}');
+          if(parallel) {
+            this._emit(')()');
+          }
         } else {
           this._emit('null');
         }

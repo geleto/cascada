@@ -145,7 +145,7 @@ const CallExtension = Node.extend('CallExtension', {
   fields: ['extName', 'prop', 'args', 'contentArgs']
 });
 const CallExtensionAsync = CallExtension.extend('CallExtensionAsync');
-const CallExtensionParallel = CallExtension.extend('CallExtensionAsync');
+const CallExtensionParallel = CallExtension.extend('CallExtensionParallel');
 
 // This is hacky, but this is just a debugging function anyway
 function print(str, indent, inline) {

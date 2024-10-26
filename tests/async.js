@@ -4,15 +4,18 @@
   var expect;
   var unescape;
   var Environment;
+  var lexer;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     Environment = require('../nunjucks/src/environment').Environment;
+    lexer = require('../nunjucks/src/lexer');
     unescape = require('he').unescape;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
     Environment = nunjucks.Environment;
+    lexer = nunjucks.lexer;
   }
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1412,6 +1415,8 @@
           this.method = method;
           this.supportsBody = options.supportsBody || false;
           this.parallel = options.parallel || false;
+          this.oldAsync = options.oldAsync || false;
+          this.numContentArgs = 0; // Will be set during parsing
         }
 
         parse(parser, nodes) {
@@ -1420,46 +1425,113 @@
           parser.advanceAfterBlockEnd(tok.value); // Move parser past the block end
 
           if (this.supportsBody) {
-            // Parse the body until the end tag (e.g., 'endwrap')
-            const body = parser.parseUntilBlocks('end' + tok.value);
-            parser.advanceAfterBlockEnd(); // Move past the end tag
+            // Determine if there are multiple content blocks
+            const hasSeparator = parser.peekToken().type === lexer.TOKEN_BLOCK_START &&
+              parser.nextToken().value === 'separator';
 
-            // RError compiling:eturn a CallExtension node with arguments and content body
-            if(this.parallel) {
-              return new nodes.CallExtensionParallel(this, 'run', args, [body]);
-            }
-            else{
-              return new nodes.CallExtension(this, 'run', args, [body]);
+            let contentArgs;
+            if (hasSeparator) {
+              // If there are multiple content blocks, parse them
+              contentArgs = this.parseBody(parser, nodes, tok.value);
+            } else {
+              // Otherwise, treat the entire body as a single content block
+              const body = parser.parseUntilBlocks('end' + tok.value);
+              parser.advanceAfterBlockEnd(); // Move past the end tag
+              contentArgs = [body]; // Store single content block in array
             }
 
+            this.numContentArgs = contentArgs.length;
+
+            // Return a CallExtension node with arguments and content bodies
+            if (this.parallel) {
+              return new nodes.CallExtensionParallel(this, 'run', args, contentArgs);
+            } else if (this.oldAsync) {
+              return new nodes.CallExtensionAsync(this, 'run', args, contentArgs);
+            } else {
+              return new nodes.CallExtension(this, 'run', args, contentArgs);
+            }
           } else {
             // Return a CallExtension node without body
-            if(this.parallel) {
-              return new nodes.CallExtensionParallel(this, 'run', args, undefined);
-            }
-            else {
-              return new nodes.CallExtension(this, 'run', args, undefined);
+            if (this.parallel) {
+              return new nodes.CallExtensionParallel(this, 'run', args);
+            } else if (this.oldAsync) {
+              return new nodes.CallExtensionAsync(this, 'run', args);
+            } else {
+              return new nodes.CallExtension(this, 'run', args);
             }
           }
+        }
+
+        parseBody(parser, nodes, tagName) {
+          const bodies = [];
+          let currentBody = parser.parseUntilBlocks('separator', 'end' + tagName);
+          bodies.push(currentBody);
+
+          while (true) {
+            const tok = parser.peekToken();
+            if (tok.type === lexer.TOKEN_BLOCK_START) {
+              parser.nextToken(); // Skip block start
+              const tagTok = parser.nextToken();
+              if (tagTok.value === 'separator') {
+                parser.advanceAfterBlockEnd(); // Skip past 'separator' tag end
+                currentBody = parser.parseUntilBlocks('separator', 'end' + tagName);
+                bodies.push(currentBody);
+              } else if (tagTok.value === 'end' + tagName) {
+                parser.advanceAfterBlockEnd(); // Skip past 'end' tag
+                break;
+              } else {
+                parser.fail(
+                  'Unexpected tag in extension',
+                  tagTok.lineno,
+                  tagTok.colno
+                );
+              }
+            } else {
+              parser.fail('Unexpected token in extension', tok.lineno, tok.colno);
+            }
+          }
+
+          return bodies; // Return array of bodies
         }
 
         async run(context, ...args) {
           let bodyContent = '';
 
+          if(this.parallel) {
+            await Promise.all(args);
+          }
+
+          let callback = null;
+          if(this.oldAsync) {
+            //the old async uses a callback as the last argument
+            callback = args.pop();
+          }
+
           if (this.supportsBody && typeof args[args.length - 1] === 'function') {
             const body = args.pop();
 
-            // Render the body content if it's a function
-            bodyContent = await new Promise((resolve, reject) => {
-              body((err, res) => {
-                if (err) reject(err);
-                else resolve(res);
+            if(this.parallel) {
+              bodyContent = body;
+            }
+            else {
+              // Render the body content if it's a function
+              bodyContent = await new Promise((resolve, reject) => {
+                body((err, res) => {
+                  if (err) reject(err);
+                  else resolve(res);
+                });
               });
-            });
+            }
           }
 
           // Call the method with arguments and the rendered body content
-          return await this.method(context, ...args, bodyContent);
+          const result = await this.method(context, ...args, bodyContent);
+          if(callback) {
+            callback(null, result);
+          }
+          else {
+            return result;
+          }
         }
       }
 
@@ -1727,36 +1799,55 @@
         };
 
         const template = '{% describeUser getName(), 30, getCity() %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await en
+        v.renderStringAsync(template, context);
         expect(result).to.equal('Charlie, aged 30, lives in New York.');
       });
 
-      it('should handle an extension with a single content block', async () => {
-        const wrapExtension = new AsyncExtension(
-          'wrap',
-          async (context, tagName, bodyContent) => {
-            await delay(5);
-            return `<${tagName}>${bodyContent}</${tagName}>`;
-          },
-          { supportsBody: true } // Indicate that this tag supports body content
-        );
+      it.only('should handle an extension with a single content block', async () => {
+        const options = [
+          //{supportsBody: true, extName: 'wrap'},
+          //{supportsBody: true, extName: 'pwrap', parallel: true},
+          {supportsBody: true, extName: 'awrap', oldAsync: true},
+        ]
+        for(const option of options) {
+          const extName = option.extName;
+          const wrapExtension = new AsyncExtension(
+            extName,
+            async (context, tagName, bodyContent) => {
+              if( option.parallel ) {
+                bodyContent = await bodyContent;
+              }
+              await delay(5);
+              return `<${tagName}>${bodyContent}</${tagName}>`;
+            },
+            option
+          );
 
-        env.addExtension('WrapExtension', wrapExtension);
+          env.addExtension(extName, wrapExtension);
 
-        const template = `
-          {% wrap "section" %}
-            This is some content.
-          {% endwrap %}
-        `;
+          const context = {
+            getExtName: async () => {
+              await delay(3);
+              return extName;
+            }
+          };
 
-        const result = await env.renderStringAsync(template);
-        const expected = `
-          <section>
-            This is some content.
-          </section>
-        `;
+          const template = `
+            {% ${extName} "section" %}
+              This is some content in {{getExtName()}}.
+            {% end${extName} %}
+          `;
 
-        expect(unescape(result.trim())).to.equal(expected.trim());
+          const result = await env.renderStringAsync(template, context);
+          const expected = `
+            <section>
+              This is some content in ${extName} }}.
+            </section>
+          `;
+
+          expect(unescape(result.trim())).to.equal(expected.trim());
+        }
       });
     });
 
