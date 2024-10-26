@@ -1528,6 +1528,7 @@
           const result = await this.method(context, ...args, bodyContent);
           if(callback) {
             callback(null, result);
+            return undefined;
           }
           else {
             return result;
@@ -1572,7 +1573,7 @@
       it('should handle a simple old-style extension function (old sync)', async () => {
         env.addExtension('getName', {
           tags: ['greet'],
-          parse(parser, nodes, lexer) {
+          parse(parser, nodes) {
             var tok = parser.nextToken();
             var args = parser.parseSignature(null, true);
             parser.advanceAfterBlockEnd(tok.value);
@@ -1806,8 +1807,8 @@
 
       it.only('should handle an extension with a single content block', async () => {
         const options = [
-          //{supportsBody: true, extName: 'wrap'},
-          //{supportsBody: true, extName: 'pwrap', parallel: true},
+          {supportsBody: true, extName: 'wrap'},
+          {supportsBody: true, extName: 'pwrap', parallel: true},
           {supportsBody: true, extName: 'awrap', oldAsync: true},
         ]
         for(const option of options) {
@@ -1842,7 +1843,7 @@
           const result = await env.renderStringAsync(template, context);
           const expected = `
             <section>
-              This is some content in ${extName} }}.
+              This is some content in ${extName}.
             </section>
           `;
 

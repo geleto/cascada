@@ -423,6 +423,9 @@ class AsyncState {
       this.completionResolver = resolve;
     });
   }
+  new() {
+    return new AsyncState();
+  }
 }
 
 class Context extends Obj {

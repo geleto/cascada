@@ -161,6 +161,31 @@ class Compiler extends Obj {
     }
   }
 
+  _emitAsyncRenderClosure(innerBodyFunction) {
+    if(!this.isAsync) {
+      innerBodyFunction.call(this);
+      return;
+    }
+
+    this._emit('(async (astate) => {\n');
+    this._pushBuffer();
+
+    const originalAsyncClosureDepth = this.asyncClosureDepth;
+    this.asyncClosureDepth = 0;
+
+    innerBodyFunction.call(this);
+
+    this.asyncClosureDepth = originalAsyncClosureDepth;
+
+    this._emitLine(';');
+    this._emitLine('await astate.waitAllClosures();');
+
+    this._emitLine(`return runtime.flattentBuffer(${this.buffer});`);
+    this._popBuffer();
+
+    this._emit('})(astate.new())');
+  }
+
   _emitAddToBufferBegin(addClosure = true) {
     if (this.isAsync) {
       if (addClosure) {
@@ -411,22 +436,27 @@ class Compiler extends Obj {
 
         if (arg) {
           if(parallel) {
+            //in parallel mode, the contentArgs are converted to promises
             this._emit('runtime.promisify(');
           }
           this._emitLine('function(cb) {');
           this._emitLine('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
-          const id = this._pushBuffer();
+
 
           this._withScopedSyntax(() => {
-            this.compile(arg, frame);
+            const id = this._tmpid();
+            this._emit(`let ${id} = `);
+            this._emitAsyncRenderClosure( function() {
+              this.compile(arg, frame);
+              //the render closure will flatten the buffer and return it
+            });
+            this._emitLine(';');
             this._emitLine(`cb(null, ${id});`);
           });
 
-          this._popBuffer();
-          this._emitLine(`return ${id};`);
-          this._emitLine('}');
+          this._emitLine('}');//end callback
           if(parallel) {
-            this._emit(')()');
+            this._emit(')()');//call the promisified function
           }
         } else {
           this._emit('null');
