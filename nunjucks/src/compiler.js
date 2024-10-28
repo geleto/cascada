@@ -878,10 +878,14 @@ class Compiler extends Obj {
   }
 
   compileIfAsync(node, frame) {
-    this._emit('(function(cb) {');
-    this.compileIf(node, frame, true);
-    this._emit('})(' + this._makeCallback());
-    this._addScopeLevel();
+    if(this.isAsync) {
+      this.compileIf(node, frame);
+    } else {
+      this._emit('(function(cb) {');
+      this.compileIf(node, frame, true);
+      this._emit('})(' + this._makeCallback());
+      this._addScopeLevel();
+    }
   }
 
   _emitLoopBindings(node, arr, i, len) {
