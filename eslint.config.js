@@ -2,6 +2,12 @@ const js = require('@eslint/js');
 const globals = require('globals');
 //const pluginNode = require('eslint-plugin-node');
 
+// https://github.com/sindresorhus/globals/issues/239
+const GLOBALS_BROWSER_FIX = Object.assign({}, globals.browser, {
+  //AudioWorkletGlobalScope: globals.browser['AudioWorkletGlobalScope ']
+});
+delete GLOBALS_BROWSER_FIX['AudioWorkletGlobalScope '];
+
 module.exports = [
   {
     ...js.configs.recommended,
@@ -40,8 +46,8 @@ module.exports = [
         require: 'readonly',
         // Your custom global
         nunjucks: 'readonly',
-        ...globals.browser,
-        ...globals.node,
+        ...GLOBALS_BROWSER_FIX,
+        ...globals.node
       }
     },
     rules: {
