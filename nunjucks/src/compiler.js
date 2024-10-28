@@ -391,7 +391,6 @@ class Compiler extends Obj {
     var autoescape = typeof node.autoescape === 'boolean' ? node.autoescape : true;
     var noExtensionCallback = !async || parallel;//assign the return value directly, no callback
 
-    //async = async || this.isAsync;
     parallel = parallel && this.isAsync;
 
     if (noExtensionCallback || this.isAsync) {
@@ -402,24 +401,20 @@ class Compiler extends Obj {
       this._emit(this.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
       if(noExtensionCallback) {
         //the extension returns a value directly
-        if(parallel) {
+        if(!this.isAsync || parallel) {
+          //send the arguments as they are - promises or values
           this._emit(`${ext}["${node.prop}"](context`);
         }
         else {
-          //resolve the arguments before calling the function
-          if(this.isAsync) {p,
-            this._emit(`runtime.resolveArguments(${ext}["${node.prop}"].bind(${ext}), 1)(context`);
-          }
-          else {
-            this._emit(`${ext}["${node.prop}"].bind(${ext}), 1)(context`);
-          }
+          //async but not parallel - resolve the arguments before calling the function
+          this._emit(`runtime.resolveArguments(${ext}["${node.prop}"].bind(${ext}), 1)(context`);
         }
       } else {
-        //convert the callback to a promise
+        //isAsync, the callback should be promisified
         this._emit(`runtime.promisify(${ext}["${node.prop}"].bind(${ext}))(context`);
       }
     } else {
-      //the extension returns the value via a callback
+      //use the original nunjucks callback mechanism
       this._emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
     }
 
@@ -472,9 +467,6 @@ class Compiler extends Obj {
 
             this._emitLine('}');//end callback
           }
-          /*if(parallel) {
-            this._emit(')()');//call the promisified function
-          }*/
         } else {
           this._emit('null');
         }
@@ -482,9 +474,7 @@ class Compiler extends Obj {
     }
 
     if (noExtensionCallback || this.isAsync) {
-      if(this.isAsync && !parallel) {
-        this._emit(`)`);//end resolveArguments
-      }
+      this._emit(`)`);//close the extension call
       this._emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
       this._emitAddToBufferEnd();
     } else {
