@@ -695,7 +695,7 @@ class Template extends Obj {
       try {
         func = new Function(source);
       } catch (e) {
-        /*console.error('Error compiling:\n' + source);
+        console.error('Error compiling:\n' + source);
 
         console.error('Error creating function:');
         console.error('- Name:', e.name);
@@ -725,7 +725,7 @@ class Template extends Obj {
 
         // Log the current environment
         console.error('- Node.js version:', process.version);
-        console.error('- V8 version:', process.versions.v8);*/
+        console.error('- V8 version:', process.versions.v8);
 
         throw new Error('Error trying to compile ' + this.path + ' ' + e.message);
       }
