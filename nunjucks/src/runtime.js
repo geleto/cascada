@@ -289,7 +289,7 @@ function resolveArguments(fn, skipArguments = 0) {
     const promiseIndices = [];
     const promiseArgs = [];
     remainingArgs.forEach((arg, index) => {
-      if (arg instanceof Promise) {
+      if (arg && typeof arg.then === 'function') {
         promiseIndices.push(index);
         promiseArgs.push(arg);
       }
