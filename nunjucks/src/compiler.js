@@ -161,14 +161,20 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAsyncRenderClosure(innerBodyFunction) {
+  _emitAsyncRenderClosure(innerBodyFunction, callbackName = null) {
     if(!this.isAsync) {
+      const id = this._pushBuffer();
       innerBodyFunction.call(this);
+      this._popBuffer();
+      if(callbackName) {
+        this._emitLine(`${callbackName}(null, ${id});`);
+      }
+      this._emitLine(`return ${id};`);
       return;
     }
 
     this._emit('(async (astate) => {\n');
-    this._pushBuffer();
+    const id = this._pushBuffer();
 
     const originalAsyncClosureDepth = this.asyncClosureDepth;
     this.asyncClosureDepth = 0;
@@ -180,8 +186,12 @@ class Compiler extends Obj {
     this._emitLine(';');
     this._emitLine('await astate.waitAllClosures();');
 
-    this._emitLine(`return runtime.flattentBuffer(${this.buffer});`);
+    this._emitLine(`${id} = runtime.flattentBuffer(${id});`);
     this._popBuffer();
+    if(callbackName) {
+      this._emitLine(`${callbackName}(null, ${id});`);
+    }
+    this._emitLine(`return ${id};`);
 
     this._emit('})(astate.new())');
   }
@@ -192,7 +202,7 @@ class Compiler extends Obj {
         this._emitLine('(async ()=>{');
         this._emitLine('astate.enterClosure();');
         this._emitLine(`let index = ${this.buffer}_index++;`);
-        this._emit(`${this.buffer}[index] = `);
+        this._emit(`${this.buffer}[index] = `);//@todo - ${this.buffer}[${this.buffer}_index++], else line
         this.asyncClosureDepth++;
       } else {
         this._emitLine(`${this.buffer}[${this.buffer}_index++] = `);
@@ -391,18 +401,25 @@ class Compiler extends Obj {
       this._emitAddToBufferBegin();
       this._emit(this.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
       if(noExtensionCallback) {
+        //the extension returns a value directly
         if(parallel) {
           this._emit(`${ext}["${node.prop}"](context`);
         }
         else {
           //resolve the arguments before calling the function
-          this._emit(`runtime.resolveArguments(${ext}["${node.prop}"].bind(${ext}), 1)(context`);
+          if(this.isAsync) {p,
+            this._emit(`runtime.resolveArguments(${ext}["${node.prop}"].bind(${ext}), 1)(context`);
+          }
+          else {
+            this._emit(`${ext}["${node.prop}"].bind(${ext}), 1)(context`);
+          }
         }
       } else {
         //convert the callback to a promise
         this._emit(`runtime.promisify(${ext}["${node.prop}"].bind(${ext}))(context`);
       }
     } else {
+      //the extension returns the value via a callback
       this._emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
     }
 
@@ -436,28 +453,28 @@ class Compiler extends Obj {
 
         if (arg) {
           if(parallel) {
-            //in parallel mode, the contentArgs are converted to promises
-            this._emit('runtime.promisify(');
-          }
-          this._emitLine('function(cb) {');
-          this._emitLine('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
-
-
-          this._withScopedSyntax(() => {
-            const id = this._tmpid();
-            this._emit(`let ${id} = `);
+            //in parallel mode, the contentArgs are promises
             this._emitAsyncRenderClosure( function() {
               this.compile(arg, frame);
-              //the render closure will flatten the buffer and return it
             });
-            this._emitLine(';');
-            this._emitLine(`cb(null, ${id});`);
-          });
-
-          this._emitLine('}');//end callback
-          if(parallel) {
-            this._emit(')()');//call the promisified function
           }
+          else {
+            //in non-paralle mode, the contentArgs are callback functions
+            this._emitLine('function(cb) {');
+            this._emitLine('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
+
+            this._withScopedSyntax(() => {
+              this._emitAsyncRenderClosure( function() {
+                this.compile(arg, frame);
+              }, 'cb');
+              this._emitLine(';');
+            });
+
+            this._emitLine('}');//end callback
+          }
+          /*if(parallel) {
+            this._emit(')()');//call the promisified function
+          }*/
         } else {
           this._emit('null');
         }
@@ -465,7 +482,10 @@ class Compiler extends Obj {
     }
 
     if (noExtensionCallback || this.isAsync) {
-      this._emit(`), ${autoescape} && env.opts.autoescape);`);//end of suppressValue
+      if(this.isAsync && !parallel) {
+        this._emit(`)`);//end resolveArguments
+      }
+      this._emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
       this._emitAddToBufferEnd();
     } else {
       const res = this._tmpid();
