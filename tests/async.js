@@ -1411,7 +1411,7 @@
 
       class AsyncExtension {
         constructor(tagName, method, options = {}) {
-          this.tags = [tagName];
+          this.tags = [tagName, 'separator'];
           this.method = method;
           this.supportsBody = options.supportsBody || false;
           this.parallel = options.parallel || false;
@@ -1421,25 +1421,24 @@
 
         parse(parser, nodes) {
           const tok = parser.nextToken(); // Get the tag token
+
+          if (tok.value === this.tags[0]) {
+            // Parsing the main tag (e.g., 'wrap')
+            return this.parseMainTag(parser, nodes, tok);
+          } else {
+            parser.fail(`Unexpected tag: ${tok.value}`, tok.lineno, tok.colno);
+            return undefined;
+          }
+        }
+
+        parseMainTag(parser, nodes, tok) {
           const args = parser.parseSignature(null, true); // Parse arguments
           parser.advanceAfterBlockEnd(tok.value); // Move parser past the block end
 
+          let contentArgs = [];
+
           if (this.supportsBody) {
-            // Determine if there are multiple content blocks
-            const hasSeparator = parser.peekToken().type === lexer.TOKEN_BLOCK_START &&
-              parser.nextToken().value === 'separator';
-
-            let contentArgs;
-            if (hasSeparator) {
-              // If there are multiple content blocks, parse them
-              contentArgs = this.parseBody(parser, nodes, tok.value);
-            } else {
-              // Otherwise, treat the entire body as a single content block
-              const body = parser.parseUntilBlocks('end' + tok.value);
-              parser.advanceAfterBlockEnd(); // Move past the end tag
-              contentArgs = [body]; // Store single content block in array
-            }
-
+            contentArgs = this.parseBody(parser, nodes, tok.value);
             this.numContentArgs = contentArgs.length;
 
             // Return a CallExtension node with arguments and content bodies
@@ -1464,30 +1463,35 @@
 
         parseBody(parser, nodes, tagName) {
           const bodies = [];
-          let currentBody = parser.parseUntilBlocks('separator', 'end' + tagName);
-          bodies.push(currentBody);
 
           while (true) {
-            const tok = parser.peekToken();
-            if (tok.type === lexer.TOKEN_BLOCK_START) {
-              parser.nextToken(); // Skip block start
-              const tagTok = parser.nextToken();
-              if (tagTok.value === 'separator') {
-                parser.advanceAfterBlockEnd(); // Skip past 'separator' tag end
-                currentBody = parser.parseUntilBlocks('separator', 'end' + tagName);
-                bodies.push(currentBody);
-              } else if (tagTok.value === 'end' + tagName) {
-                parser.advanceAfterBlockEnd(); // Skip past 'end' tag
-                break;
-              } else {
-                parser.fail(
-                  'Unexpected tag in extension',
-                  tagTok.lineno,
-                  tagTok.colno
-                );
-              }
+            const body = parser.parseUntilBlocks('separator', 'end' + tagName);
+            bodies.push(body);
+
+            // After parseUntilBlocks, the parser is at the tag name token (TOKEN_SYMBOL)
+            const tagTok = parser.nextToken(); // Should be TOKEN_SYMBOL
+
+            if (tagTok.type !== lexer.TOKEN_SYMBOL) {
+              parser.fail('Expected tag name', tagTok.lineno, tagTok.colno);
+            }
+
+            const tagNameValue = tagTok.value;
+
+            // Advance after block end (this moves past '%}')
+            parser.advanceAfterBlockEnd(tagNameValue);
+
+            if (tagNameValue === 'separator') {
+              // Continue parsing the next body
+              continue;
+            } else if (tagNameValue === 'end' + tagName) {
+              // End of the tag block
+              break;
             } else {
-              parser.fail('Unexpected token in extension', tok.lineno, tok.colno);
+              parser.fail(
+                `Unexpected tag "${tagNameValue}" in extension`,
+                tagTok.lineno,
+                tagTok.colno
+              );
             }
           }
 
@@ -1495,8 +1499,6 @@
         }
 
         async run(context, ...args) {
-          let bodyContent = '';
-
           if(this.parallel) {
             await Promise.all(args);
           }
@@ -1507,7 +1509,35 @@
             callback = args.pop();
           }
 
-          if (this.supportsBody && typeof args[args.length - 1] === 'function') {
+          const bodies = [];
+          for(let i=0; i<this.numContentArgs; i++) {
+            let body = args.pop();
+            if(!this.parallel) {
+              // Render the body content if it's a function
+              body = await new Promise((resolve, reject) => {
+                body((err, res) => {
+                  if (err) reject(err);
+                  else resolve(res);
+                });
+              });
+            }
+            else {
+              body = await body;
+            }
+            bodies.unshift(body);
+          }
+
+          const bodyContent = await this.method(context, ...args, bodies.length > 1 ? bodies : bodies[0]);
+
+          if(callback) {
+            callback(null, bodyContent);
+            return undefined;
+          }
+          else {
+            return bodyContent;
+          }
+
+          /*if (this.supportsBody && typeof args[args.length - 1] === 'function') {
             const body = args.pop();
 
             if(this.parallel) {
@@ -1522,17 +1552,11 @@
                 });
               });
             }
-          }
+          }*/
 
           // Call the method with arguments and the rendered body content
-          const result = await this.method(context, ...args, bodyContent);
-          if(callback) {
-            callback(null, result);
-            return undefined;
-          }
-          else {
-            return result;
-          }
+          //const result = await this.method(context, ...args, bodyContent);
+
         }
       }
 
@@ -1800,16 +1824,15 @@
         };
 
         const template = '{% describeUser getName(), 30, getCity() %}';
-        const result = await en
-        v.renderStringAsync(template, context);
+        const result = await env.renderStringAsync(template, context);
         expect(result).to.equal('Charlie, aged 30, lives in New York.');
       });
 
-      it.only('should handle an extension with a single content block', async () => {
+      it('should handle an extension with a single content block', async () => {
         const options = [
-          {supportsBody: true, extName: 'wrap'},
+          //{supportsBody: true, extName: 'wrap'},
           {supportsBody: true, extName: 'pwrap', parallel: true},
-          {supportsBody: true, extName: 'awrap', oldAsync: true},
+          //{supportsBody: true, extName: 'awrap', oldAsync: true},
         ]
         for(const option of options) {
           const extName = option.extName;
@@ -1845,6 +1868,61 @@
             <section>
               This is some content in ${extName}.
             </section>
+          `;
+
+          expect(unescape(result.trim())).to.equal(expected.trim());
+        }
+      });
+
+      it('should handle an extension with multiple content blocks', async () => {
+        const options = [
+          { supportsBody: true, extName: 'wrap' },
+          { supportsBody: true, extName: 'pwrap', parallel: true },
+          { supportsBody: true, extName: 'awrap', oldAsync: true },
+        ];
+        for (const option of options) {
+          const extName = option.extName;
+          const wrapExtension = new AsyncExtension(
+            extName,
+            async (context, tagName, contentBlocks) => {
+
+              await delay(5);
+
+              // Join the content blocks with a separator if alternative content exists
+              const mainContent = contentBlocks[0];
+              const altContent = contentBlocks[1] || '';
+              const result = `<${tagName}>${mainContent}</${tagName}>` +
+                             (altContent ? `<alt>${altContent}</alt>` : '');
+
+              return result;
+            },
+            option
+          );
+
+          env.addExtension(extName, wrapExtension);
+
+          const context = {
+            getExtName: async () => {
+              await delay(3);
+              return extName;
+            }
+          };
+
+          const template = `
+            {% ${extName} "section" %}
+              This is main content in {{getExtName()}}.
+            {% separator %}
+              This is alternative content in {{getExtName()}}.
+            {% end${extName} %}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          const expected = `
+            <section>
+              This is main content in ${extName}.
+            </section><alt>
+              This is alternative content in ${extName}.
+            </alt>
           `;
 
           expect(unescape(result.trim())).to.equal(expected.trim());
