@@ -134,16 +134,14 @@ class Compiler extends Obj {
     if (this.isAsync) {
       this._emitLine(`})(frame)`);
       this.asyncClosureDepth--;
-      if (this.asyncClosureDepth === 0) {
-        this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-      }
+      this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
       this._emitLine('.finally(()=>{astate.leaveClosure();});');
     }
   }
 
   _emitAsyncValueBegin() {
     if (this.isAsync) {
-      this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}(async ()=>{`);
+      this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}(async ()=>{`);//@todo - tottaly not sure about this - test
       this._emitLine('astate.enterClosure();');
       this._emit('return ');
       this.asyncClosureDepth++;
@@ -154,9 +152,8 @@ class Compiler extends Obj {
     if (this.isAsync) {
       this._emitLine('})()');
       this.asyncClosureDepth--;
-      if (this.asyncClosureDepth === 0) {
-        this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-      }
+      // The error will be re-thrown when the ewturned value is awaited:
+      //this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
       this._emitLine('.finally(()=>{astate.leaveClosure();})');
     }
   }
@@ -194,6 +191,10 @@ class Compiler extends Obj {
     this._emitLine(`return ${id};`);
 
     this._emit('})(astate.new())');
+    if(callbackName){
+      this._emitLine(`.catch(e=>{${callbackName}(runtime.handleError(e, lineno, colno))})`);
+    }
+    //in the non-callback case, using the rendered buffer will throw the error
   }
 
   _emitAddToBufferBegin(addClosure = true) {
@@ -216,9 +217,7 @@ class Compiler extends Obj {
     if (this.isAsync && addClosure) {
       this._emitLine('})()');
       this.asyncClosureDepth--;
-      if (this.asyncClosureDepth === 0) {
-        this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-      }
+      this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
       this._emitLine('.finally(()=>{astate.leaveClosure();});');
     }
   }

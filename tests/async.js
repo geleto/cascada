@@ -938,7 +938,6 @@
     });
 
     describe('Async Nunjucks Caller Functionality', () => {
-      let env;
 
       beforeEach(() => {
         env = new Environment();
