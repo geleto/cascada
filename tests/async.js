@@ -1941,7 +1941,7 @@
         try {
           await env.renderStringAsync(template);
           // If we reach this point, the test should fail
-          expect.fail('Expected an error to be thrown');
+          expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error instanceof Error).to.equal(true);
           expect(error.message).to.contain('Async extension error');
@@ -2126,6 +2126,376 @@
 
           expect(unescape(result.trim())).to.equal(expected.trim());
         }
+      });
+    });
+
+    describe.only('Async Import Tests', () => {
+      let loader;
+
+      beforeEach(() => {
+        loader = new StringLoader();
+        env = new Environment(loader);
+      });
+
+      describe('Basic Import', () => {
+        beforeEach(() => {
+          // Add template with macros
+          loader.addTemplate('forms.njk', `
+            {%- macro field(name, value='', type='text') -%}
+            <div class="field">
+              <input type="{{ type }}" name="{{ name }}" value="{{ value | escape }}" />
+            </div>
+            {%- endmacro -%}
+
+            {%- macro label(text) -%}
+            <div>
+              <label>{{ text }}</label>
+            </div>
+            {%- endmacro -%}
+          `);
+        });
+
+        it('should handle import with async values in macro calls', async () => {
+          const context = {
+            async getFieldName() {
+              await delay(5);
+              return 'username';
+            },
+            async getFieldValue() {
+              await delay(3);
+              return 'john_doe';
+            }
+          };
+
+          const template = `
+            {%- import "forms.njk" as forms -%}
+            {{ forms.field(getFieldName(), getFieldValue()) }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(unescape(result.trim())).to.equal(
+            `<div class="field">
+              <input type="text" name="username" value="john_doe" />
+            </div>`
+          );
+        });
+
+        it('should handle from import with async values', async () => {
+          const context = {
+            async getLabelText() {
+              await delay(5);
+              return 'Enter Username:';
+            }
+          };
+
+          const template = `
+            {% from "forms.njk" import field, label %}
+            {{ label(getLabelText()) }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(unescape(result.trim())).to.equal(
+            `<div>
+              <label>Enter Username:</label>
+            </div>`
+          );
+        });
+      });
+
+      describe('Import with Context', () => {
+        beforeEach(() => {
+          // Add template that uses context variables
+          loader.addTemplate('context-forms.njk', `
+            {%- macro userField() -%}
+            <input name="user" value="{{ username }}" />
+            {%- endmacro -%}
+
+            {%- macro statusLabel() -%}
+            <label>Status: {{ status }}</label>
+            {%- endmacro -%}
+          `);
+        });
+
+        it('should handle import with async context values', async () => {
+          const context = {
+            username: Promise.resolve('john_doe'),
+            status: Promise.resolve('active')
+          };
+
+          const template = `
+            {% import "context-forms.njk" as forms with context %}
+            {{ forms.userField() }}
+            {{ forms.statusLabel() }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(unescape(result.trim())).to.equal(
+            `<input name="user" value="john_doe" />
+            <label>Status: active</label>`
+          );
+        });
+
+        it('should not have access to context without with context', async () => {
+          const context = {
+            username: Promise.resolve('john_doe')
+          };
+
+          const template = `
+            {% import "context-forms.njk" as forms %}
+            {{ forms.userField() }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(unescape(result.trim())).to.equal(
+            '<input name="user" value="" />'
+          );
+        });
+      });
+
+      describe('Dynamic Import Names', () => {
+        beforeEach(() => {
+          loader.addTemplate('form1.njk', `
+            {%- macro field() -%}Form 1 Field{%- endmacro -%}
+          `);
+          loader.addTemplate('form2.njk', `
+            {%- macro field() -%}Form 2 Field{%- endmacro -%}
+          `);
+        });
+
+        it('should handle async template names in import', async () => {
+          const context = {
+            async getFormNumber() {
+              await delay(5);
+              return 1;
+            }
+          };
+
+          const template = `
+            {% import "form" + getFormNumber() + ".njk" as form %}
+            {{ form.field() }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(result.trim()).to.equal('Form 1 Field');
+        });
+      });
+
+      describe('Complex Import Scenarios', () => {
+        beforeEach(() => {
+          // Template with macros that take functions as parameters rather than accessing context
+          loader.addTemplate('async-forms.njk', `
+            {%- macro userProfile(fetchUserFunc, fetchPostsFunc, id) -%}
+              {% set user = fetchUserFunc(id) %}
+              <div class="profile">
+                <h2>{{ user.name }}</h2>
+                <p>Email: {{ user.email }}</p>
+                {% for post in fetchPostsFunc(id) %}
+                  <div class="post">{{ post.title }}</div>
+                {% endfor %}
+              </div>
+            {%- endmacro -%}
+          `);
+
+          // Template with nested imports
+          loader.addTemplate('layout.njk', `
+            {%- macro page(content) -%}
+            <main>{{ content }}</main>
+            {%- endmacro -%}
+          `);
+
+          loader.addTemplate('nested-template.njk', `
+            {% import "layout.njk" as layout %}
+            {% import "async-forms.njk" as forms %}
+
+            {%- macro wrapper(fetchUserFunc, fetchPostsFunc, userId) -%}
+            {{ layout.page(forms.userProfile(fetchUserFunc, fetchPostsFunc, userId)) }}
+            {%- endmacro -%}
+          `);
+        });
+
+        it('should handle complex async operations in imported macros', async () => {
+          const context = {
+            async fetchUser(id) {
+              await delay(5);
+              return {
+                name: `User ${id}`,
+                email: `user${id}@example.com`
+              };
+            },
+            async fetchUserPosts(userId) {
+              await delay(3);
+              return [
+                { title: `Post 1 by User ${userId}` },
+                { title: `Post 2 by User ${userId}` }
+              ];
+            }
+          };
+
+          const template = `
+            {% import "async-forms.njk" as forms %}
+            {{ forms.userProfile(fetchUser, fetchUserPosts, 1) }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(unescape(result.trim())).to.equal(
+              `<div class="profile">
+                <h2>User 1</h2>
+                <p>Email: user1@example.com</p>
+                <div class="post">Post 1 by User 1</div>
+                <div class="post">Post 2 by User 1</div>
+              </div>`
+          );
+        });
+
+        it('should handle nested imports with async operations', async () => {
+          const context = {
+            async fetchUser(id) {
+              await delay(5);
+              return {
+                name: `User ${id}`,
+                email: `user${id}@example.com`
+              };
+            },
+            async fetchUserPosts(userId) {
+              await delay(3);
+              return [
+                { title: `Post 1 by User ${userId}` },
+                { title: `Post 2 by User ${userId}` }
+              ];
+            }
+          };
+
+          const template = `
+            {% import "nested-template.njk" as templates %}
+            {{ templates.wrapper(fetchUser, fetchUserPosts, 1) }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(unescape(result.trim())).to.equal(
+            '<main>' +
+            '<div class="profile">' +
+            '<h2>User 1</h2>' +
+            '<p>Email: user1@example.com</p>' +
+            '<div class="post">Post 1 by User 1</div>' +
+            '<div class="post">Post 2 by User 1</div>' +
+            '</div>' +
+            '</main>'
+          );
+        });
+
+        it('should handle errors in passed async functions', async () => {
+          const context = {
+            async fetchUser(id) {
+              await delay(5);
+              throw new Error('Failed to fetch user');
+            },
+            async fetchUserPosts(userId) {
+              await delay(3);
+              return [];
+            }
+          };
+
+          const template = `
+            {% import "async-forms.njk" as forms %}
+            {{ forms.userProfile(fetchUser, fetchUserPosts, 1) }}
+          `;
+
+          try {
+            await env.renderStringAsync(template, context);
+            expect().fail('Expected an error to be thrown');
+          } catch (error) {
+            expect(error.message).to.contain('Failed to fetch user');
+          }
+        });
+      });
+
+      // Let's also fix the Dependencies section
+      describe('Import with Dependencies', () => {
+        beforeEach(() => {
+          // Template with async set variables that receives the functions it needs
+          loader.addTemplate('config.njk', `
+            {%- macro init(getUrlFunc, getKeyFunc) -%}
+              {% set apiUrl = getUrlFunc() %}
+              {% set apiKey = getKeyFunc() %}
+
+              {%- macro apiCall(endpoint) -%}
+              {{ apiUrl }}/{{ endpoint }}?key={{ apiKey }}
+              {%- endmacro -%}
+
+              {{ caller() if caller else '' }}
+            {%- endmacro -%}
+          `);
+
+          // Template that depends on imported values
+          loader.addTemplate('api-forms.njk', `
+            {% import "config.njk" as config %}
+
+            {%- macro userEndpoint(getUrlFunc, getKeyFunc, userId) -%}
+              {% call config.init(getUrlFunc, getKeyFunc) %}
+                {{ config.apiCall("users/" + userId) }}
+              {% endcall %}
+            {%- endmacro -%}
+          `);
+        });
+
+        it('should handle async dependencies in nested imports', async () => {
+          const context = {
+            async getApiUrl() {
+              await delay(5);
+              return 'https://api.example.com';
+            },
+            async getApiKey() {
+              await delay(3);
+              return 'secret-key-123';
+            }
+          };
+
+          const template = `
+            {% import "api-forms.njk" as api %}
+            {{ api.userEndpoint(getApiUrl, getApiKey, "123") }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(result.trim()).to.equal(
+            'https://api.example.com/users/123?key=secret-key-123'
+          );
+        });
+      });
+
+      describe('Import with Async Filter Usage', () => {
+        beforeEach(() => {
+          // Add async filter
+          env.addFilter('uppercase', async (str) => {
+            await delay(5);
+            return str.toUpperCase();
+          });
+
+          // Template using async filter
+          loader.addTemplate('filtered-forms.njk', `
+            {%- macro formattedField(name, value) -%}
+            <input name="{{ name }}" value="{{ value | uppercase }}" />
+            {%- endmacro -%}
+          `);
+        });
+
+        it('should handle async filters in imported macros', async () => {
+          const context = {
+            async getName() {
+              await delay(3);
+              return 'username';
+            }
+          };
+
+          const template = `
+            {% import "filtered-forms.njk" as forms %}
+            {{ forms.formattedField(getName(), "john_doe") }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(unescape(result.trim())).to.equal(
+            '<input name="username" value="JOHN_DOE" />'
+          );
+        });
       });
     });
 

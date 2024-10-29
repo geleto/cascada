@@ -629,7 +629,7 @@ class Template extends Obj {
     return syncResult;
   }
 
-  getExported(ctx, parentFrame, cb) {
+  getExported(ctx, parentFrame, astate, isIncluded, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
@@ -638,6 +638,16 @@ class Template extends Obj {
     if (typeof parentFrame === 'function') {
       cb = parentFrame;
       parentFrame = null;
+    }
+
+    if (typeof astate === 'function') {
+      cb = astate;
+      astate = null;
+    }
+
+    if (typeof isIncluded === 'function') {
+      cb = isIncluded;
+      isIncluded = false;
     }
 
     // Catch compile errors for async rendering
@@ -664,7 +674,7 @@ class Template extends Obj {
       }
     };
     if (this.isAsync) {
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, new AsyncState(), callback);
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate || new AsyncState(), isIncluded, callback);
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     }

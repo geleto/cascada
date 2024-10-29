@@ -1244,7 +1244,7 @@ class Compiler extends Obj {
     this._addScopeLevel();
 
     this._emitLine(id + '.getExported(' +
-      (node.withContext ? 'context.getVariables(), frame, ' : '') +
+      (node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync? 'astate, true, ' : '') : '') +
       this._makeCallback(id));
     this._addScopeLevel();
 
@@ -1262,7 +1262,7 @@ class Compiler extends Obj {
     this._addScopeLevel();
 
     this._emitLine(importedId + '.getExported(' +
-      (node.withContext ? 'context.getVariables(), frame, ' : '') +
+      (node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync? 'astate, true, ' : '') : '') +
       this._makeCallback(importedId));
     this._addScopeLevel();
 
