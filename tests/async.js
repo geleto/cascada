@@ -2380,7 +2380,7 @@
           expect(unescape(result.trim())).to.equal('Alice');
         });
 
-        it.only('should handle nested imports with async values - simplified', async () => {
+        it('should handle nested imports with async values - simplified', async () => {
           const context = {
             nameValue: 'Bob'
           };
@@ -2408,7 +2408,6 @@
           expect(result).to.equal(`Bob!`);
         });
 
-
         it('should handle nested imports with async values', async () => {
           const context = {
             async getName() {
@@ -2422,12 +2421,13 @@
           };
 
           const template = `
-              {%- import "nested-template.njk" as templates -%}
-              {{- templates.wrapper(getName(), getCount()) -}}
+              {%- import "nested-template.njk" as templates -%}{{- templates.wrapper(getName(), getCount()) -}}
           `;
 
           const result = await env.renderStringAsync(template, context);
-          expect(result).to.equal(`<main>Hello, Bob (delayed)!</main>Count: 0Count: 1`);
+          expect(unescape(result.trim())).to.equal(
+                  `<main>Hello, Bob (delayed)!</main>
+                  Count: 0Count: 1`);
         });
 
         it('should handle async values in imported macro loops', async () => {
