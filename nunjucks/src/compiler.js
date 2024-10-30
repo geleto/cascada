@@ -1261,6 +1261,7 @@ class Compiler extends Obj {
     const id = this._compileGetTemplate(node, frame, false, false);
     this._addScopeLevel();
 
+    //@todo - in isAsync mode, the variables and macros should be immediately available as promises
     this._emitLine(id + '.getExported(' +
       (node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync? 'astate, true, ' : '') : '') +
       this._makeCallback(id));

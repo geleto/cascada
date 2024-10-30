@@ -2356,6 +2356,59 @@
           expect(result).to.equal('Hello, Alice (delayed)!');
         });
 
+        it('should handle async variables and functions in imported macros', async () => {
+          // Add the template to the loader
+          loader.addTemplate('greeting_macros.njk', `
+            {%- macro greetWithContext() -%}
+              {{ getName() }}
+            {%- endmacro -%}
+          `);
+
+          const context = {
+            async getName() {
+              await delay(5);
+              return 'Alice';
+            }
+          };
+
+          const template = `
+            {% import "greeting_macros.njk" as gm with context %}
+            {{ gm.greetWithContext() }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(unescape(result.trim())).to.equal('Alice');
+        });
+
+        it.only('should handle nested imports with async values - simplified', async () => {
+          const context = {
+            nameValue: 'Bob'
+          };
+
+          loader.addTemplate('nested.njk', `
+            {%- macro greeting(name) -%}
+                {{ name }}!
+            {%- endmacro -%}
+
+            {%- macro page(content) -%}
+                {{ content }}
+            {%- endmacro -%}
+
+            {%- macro wrapper(name) -%}
+                {{ page(greeting(name)) }}
+            {%- endmacro -%}
+        `);
+
+          const template = `
+              {%- import "nested.njk" as macros -%}
+              {{- macros.wrapper(nameValue) -}}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(result).to.equal(`Bob!`);
+        });
+
+
         it('should handle nested imports with async values', async () => {
           const context = {
             async getName() {
@@ -2393,6 +2446,145 @@
           const result = await env.renderStringAsync(template, context);
           expect(unescape(result)).to.equal(
             '<ul><li>one</li><li>two</li><li>three</li></ul>');
+        });
+      });
+
+      describe('Nunjucks Async Macro Handling Tests', () => {
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        beforeEach(() => {
+          // Ensure a fresh environment before each test if needed
+          env = new Environment(loader);
+        });
+
+        it('should handle async function passed as argument to macro', async () => {
+          const context = {
+            async getName() {
+              await delay(5);
+              return 'Alice';
+            }
+          };
+
+          const template = `
+            {%- macro greet(name) -%}
+              Hello, {{ name }}!
+            {%- endmacro -%}
+            {{ greet(getName()) }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(result.trim()).to.equal('Hello, Alice!');
+        });
+
+        it('should handle async function called within macro', async () => {
+          const context = {
+            async getName() {
+              await delay(5);
+              return 'Bob';
+            }
+          };
+
+          const template = `
+            {%- macro greet() -%}
+              Hello, {{ getName() }}!
+            {%- endmacro -%}
+            {{ greet() }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(result.trim()).to.equal('Hello, Bob!');
+        });
+
+        it('should handle async function in imported macro', async () => {
+          loader.addTemplate('greet_macro.njk', `
+            {%- macro greet(name) -%}
+              Hello, {{ name }}!
+            {%- endmacro -%}
+          `);
+
+          const context = {
+            async getName() {
+              await delay(5);
+              return 'Charlie';
+            }
+          };
+
+          const template = `
+            {% import "greet_macro.njk" as macros %}
+            {{ macros.greet(getName()) }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(result.trim()).to.equal('Hello, Charlie!');
+        });
+
+        it('should handle async function called within imported macro with context', async () => {
+          loader.addTemplate('greet_macro_with_context.njk', `
+            {%- macro greet() -%}
+              Hello, {{ getName() }}!
+            {%- endmacro -%}
+          `);
+
+          const context = {
+            async getName() {
+              await delay(5);
+              return 'Diana';
+            }
+          };
+
+          const template = `
+            {% import "greet_macro_with_context.njk" as macros with context %}
+            {{ macros.greet() }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(result.trim()).to.equal('Hello, Diana!');
+        });
+
+        it('should handle macro using async variable from context', async () => {
+          const context = {
+            async greeting() {
+              await delay(2);
+              return 'Hi';
+            },
+            async name() {
+              await delay(3);
+              return 'Eve';
+            }
+          };
+
+          const template = `
+            {%- macro greet() -%}
+              {{ greeting }}, {{ name }}!
+            {%- endmacro -%}
+            {{ greet() }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(result.trim()).to.equal('Hi, Eve!');
+        });
+
+        it('should handle async logic inside macro', async () => {
+          const context = {
+            async getGreeting() {
+              await delay(2);
+              return 'Greetings';
+            },
+            async getName() {
+              await delay(3);
+              return 'Frank';
+            }
+          };
+
+          const template = `
+            {%- macro greet() -%}
+              {{ getGreeting() }}, {{ getName() }}!
+            {%- endmacro -%}
+            {{ greet() }}
+          `;
+
+          const result = await env.renderStringAsync(template, context);
+          expect(result.trim()).to.equal('Greetings, Frank!');
         });
       });
 
