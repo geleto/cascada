@@ -290,6 +290,7 @@ class Compiler extends Obj {
     var _scopeClosers = this._scopeClosers;
     this._scopeClosers = '';
 
+
     func.call(this);
 
     this._closeScopeLevels();
@@ -1262,8 +1263,10 @@ class Compiler extends Obj {
     this._addScopeLevel();
 
     //@todo - in isAsync mode, the variables and macros should be immediately available as promises
+    const withoutContextArguments = this.isAsync ? 'null, null, astate, true, ' : '';
     this._emitLine(id + '.getExported(' +
-      (node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync? 'astate, true, ' : '') : '') +
+      (node.withContext ?
+        'context.getVariables(), frame, ' + (this.isAsync? 'astate, true, ' : '') : withoutContextArguments) +
       this._makeCallback(id));
     this._addScopeLevel();
 
@@ -1280,8 +1283,9 @@ class Compiler extends Obj {
     const importedId = this._compileGetTemplate(node, frame, false, false);
     this._addScopeLevel();
 
+    const withoutContextArguments = this.isAsync ? 'null, null, astate, true, ' : '';
     this._emitLine(importedId + '.getExported(' +
-      (node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync? 'astate, true, ' : '') : '') +
+      (node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync? 'astate, true, ' : '') : withoutContextArguments) +
       this._makeCallback(importedId));
     this._addScopeLevel();
 

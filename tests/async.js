@@ -2450,12 +2450,6 @@
       });
 
       describe('Nunjucks Async Macro Handling Tests', () => {
-        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-        beforeEach(() => {
-          // Ensure a fresh environment before each test if needed
-          env = new Environment(loader);
-        });
 
         it('should handle async function passed as argument to macro', async () => {
           const context = {
