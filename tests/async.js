@@ -121,6 +121,19 @@
       expect(result).to.equal('User: John Doe (john@example.com)');
     });
 
+    it('should correctly resolve an async expression with set', async () => {
+      const context = {
+        async getValue(id) {
+          await delay(5);
+          return 1;
+        }
+      };
+
+      const template = '{% set result = getValue() + 1 %}Result = {{ result }}';
+      const result = await env.renderStringAsync(template, context);
+      expect(result).to.equal('Result = 2');
+    });
+
     describe('Dependent Async Functions', () => {
       // Test for dependent async functions (user and user's posts)
       it('should correctly resolve async functions with dependent arguments', async () => {

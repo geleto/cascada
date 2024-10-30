@@ -792,7 +792,15 @@ class Compiler extends Obj {
 
     if (node.value) {
       this._emit(ids.join(' = ') + ' = ');
-      this._compileExpression(node.value, frame);
+      if(this.isAsync) {
+        //@todo - in the future will wrap the expression only if it has a lookup
+        this._emitAsyncValueBegin();
+        this._compileExpression(node.value, frame);
+        this._emitAsyncValueEnd();
+      }
+      else{
+        this._compileExpression(node.value, frame);
+      }
       this._emitLine(';');
     } else {
       this._emit(ids.join(' = ') + ' = ');
