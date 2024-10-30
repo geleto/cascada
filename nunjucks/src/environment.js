@@ -202,6 +202,11 @@ class Environment extends EmitterObj {
   }
 
   getAsyncTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
+    if(typeof name.then === 'function') { // it's a promise
+      return name.then((resolvedName) => {
+        this.getTemplate(resolvedName, eagerCompile, parentName, ignoreMissing, true, cb);
+      });
+    }
     return this.getTemplate(name, eagerCompile, parentName, ignoreMissing, true, cb);
   }
 

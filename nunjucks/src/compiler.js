@@ -1232,8 +1232,18 @@ class Compiler extends Obj {
     const cb = this._makeCallback(parentTemplateId);
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
     const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
-    this._emit(this.isAsync ? 'env.getAsyncTemplate(' : 'env.getTemplate(');
-    this._compileExpression(node.template, frame);
+
+    if(this.isAsync) {
+      this._emit('env.getAsyncTemplate(');
+      this._emitAsyncValueBegin();
+      this._compileExpression(node.template, frame);
+      this._emitAsyncValueEnd();
+    }
+    else {
+      this._emit('env.getTemplate(');
+      this._compileExpression(node.template, frame);
+    }
+
     this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
     return parentTemplateId;
   }
@@ -1375,6 +1385,7 @@ class Compiler extends Obj {
     const id = this._compileGetTemplate(node, frame, false, node.ignoreMissing);
     this._emitLine(`callback(null,${id});});`);
     this._emitAsyncBlockEnd();
+
     this._emitLine('});');
 
     const id2 = this._tmpid();

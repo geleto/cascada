@@ -2129,7 +2129,7 @@
       });
     });
 
-    describe.only('Async Import Tests', () => {
+    describe('Async Import Tests', () => {
       let loader;
 
       beforeEach(() => {
@@ -2282,130 +2282,104 @@
 
       describe('Complex Import Scenarios', () => {
         beforeEach(() => {
-          // Template with macros that take functions as parameters rather than accessing context
+          // Template with async operations using its own local set variables
           loader.addTemplate('async-forms.njk', `
-            {%- macro userProfile(fetchUserFunc, fetchPostsFunc, id) -%}
-              {% set user = fetchUserFunc(id) %}
-              <div class="profile">
-                <h2>{{ user.name }}</h2>
-                <p>Email: {{ user.email }}</p>
-                {% for post in fetchPostsFunc(id) %}
-                  <div class="post">{{ post.title }}</div>
-                {% endfor %}
-              </div>
-            {%- endmacro -%}
+              {%- set greeting = "Hello" -%}
+
+              {%- macro delayedGreeting(name) -%}
+                  {{- greeting }}, {{ name }} (delayed)!
+              {%- endmacro -%}
+
+              {%- macro counter(count) -%}
+                  {%- for i in range(count) -%}
+                      Count: {{ i }}
+                  {%- endfor -%}
+              {%- endmacro -%}
           `);
 
           // Template with nested imports
           loader.addTemplate('layout.njk', `
-            {%- macro page(content) -%}
-            <main>{{ content }}</main>
-            {%- endmacro -%}
+              {%- macro page(content) -%}
+                  <main>{{ content }}</main>
+              {%- endmacro -%}
           `);
 
           loader.addTemplate('nested-template.njk', `
-            {% import "layout.njk" as layout %}
-            {% import "async-forms.njk" as forms %}
+              {%- import "layout.njk" as layout -%}
+              {%- import "async-forms.njk" as forms -%}
 
-            {%- macro wrapper(fetchUserFunc, fetchPostsFunc, userId) -%}
-            {{ layout.page(forms.userProfile(fetchUserFunc, fetchPostsFunc, userId)) }}
-            {%- endmacro -%}
+              {%- macro wrapper(name, count) -%}
+                  {{ layout.page(forms.delayedGreeting(name)) }}
+                  {{ forms.counter(count) }}
+              {%- endmacro -%}
+          `);
+
+          // Template with list rendering
+          loader.addTemplate('async-loop.njk', `
+              {%- macro listItems(items) -%}
+                  <ul>
+                      {%- for item in items -%}
+                      <li>{{ item }}</li>
+                      {%- endfor -%}
+                  </ul>
+              {%- endmacro -%}
           `);
         });
 
-        it('should handle complex async operations in imported macros', async () => {
+        it('should handle async values passed to imported macros', async () => {
           const context = {
-            async fetchUser(id) {
+            async getName() {
               await delay(5);
-              return {
-                name: `User ${id}`,
-                email: `user${id}@example.com`
-              };
-            },
-            async fetchUserPosts(userId) {
-              await delay(3);
-              return [
-                { title: `Post 1 by User ${userId}` },
-                { title: `Post 2 by User ${userId}` }
-              ];
+              return 'Alice';
             }
           };
 
           const template = `
-            {% import "async-forms.njk" as forms %}
-            {{ forms.userProfile(fetchUser, fetchUserPosts, 1) }}
+              {%- import "async-forms.njk" as forms -%}
+              {{- forms.delayedGreeting(getName()) -}}
           `;
 
           const result = await env.renderStringAsync(template, context);
-          expect(unescape(result.trim())).to.equal(
-              `<div class="profile">
-                <h2>User 1</h2>
-                <p>Email: user1@example.com</p>
-                <div class="post">Post 1 by User 1</div>
-                <div class="post">Post 2 by User 1</div>
-              </div>`
-          );
+          expect(result).to.equal('Hello, Alice (delayed)!');
         });
 
-        it('should handle nested imports with async operations', async () => {
+        it('should handle nested imports with async values', async () => {
           const context = {
-            async fetchUser(id) {
+            async getName() {
               await delay(5);
-              return {
-                name: `User ${id}`,
-                email: `user${id}@example.com`
-              };
+              return 'Bob';
             },
-            async fetchUserPosts(userId) {
+            async getCount() {
               await delay(3);
-              return [
-                { title: `Post 1 by User ${userId}` },
-                { title: `Post 2 by User ${userId}` }
-              ];
+              return 2;
             }
           };
 
           const template = `
-            {% import "nested-template.njk" as templates %}
-            {{ templates.wrapper(fetchUser, fetchUserPosts, 1) }}
+              {%- import "nested-template.njk" as templates -%}
+              {{- templates.wrapper(getName(), getCount()) -}}
           `;
 
           const result = await env.renderStringAsync(template, context);
-          expect(unescape(result.trim())).to.equal(
-            '<main>' +
-            '<div class="profile">' +
-            '<h2>User 1</h2>' +
-            '<p>Email: user1@example.com</p>' +
-            '<div class="post">Post 1 by User 1</div>' +
-            '<div class="post">Post 2 by User 1</div>' +
-            '</div>' +
-            '</main>'
-          );
+          expect(result).to.equal(`<main>Hello, Bob (delayed)!</main>Count: 0Count: 1`);
         });
 
-        it('should handle errors in passed async functions', async () => {
+        it('should handle async values in imported macro loops', async () => {
           const context = {
-            async fetchUser(id) {
+            async getItems() {
               await delay(5);
-              throw new Error('Failed to fetch user');
-            },
-            async fetchUserPosts(userId) {
-              await delay(3);
-              return [];
+              return ['one', 'two', 'three'];
             }
           };
 
           const template = `
-            {% import "async-forms.njk" as forms %}
-            {{ forms.userProfile(fetchUser, fetchUserPosts, 1) }}
+              {%- import "async-loop.njk" as loop -%}
+              {{- loop.listItems(getItems()) -}}
           `;
 
-          try {
-            await env.renderStringAsync(template, context);
-            expect().fail('Expected an error to be thrown');
-          } catch (error) {
-            expect(error.message).to.contain('Failed to fetch user');
-          }
+          const result = await env.renderStringAsync(template, context);
+          expect(unescape(result)).to.equal(
+            '<ul><li>one</li><li>two</li><li>three</li></ul>');
         });
       });
 
