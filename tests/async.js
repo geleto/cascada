@@ -2683,5 +2683,250 @@
       });
     });
 
+    describe('Async Switch Statement Tests', () => {
+      let env;
+
+      beforeEach(() => {
+        env = new Environment();
+      });
+
+      // Basic switch functionality
+      it('should handle basic switch with async switch value', async () => {
+        const context = {
+          async getValue() {
+            await delay(5);
+            return 'B';
+          }
+        };
+
+        const template = `
+          {% switch getValue() %}
+            {% case 'A' %}
+              Alpha
+            {% case 'B' %}
+              Beta
+            {% case 'C' %}
+              Charlie
+            {% default %}
+              Unknown
+          {% endswitch %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Beta');
+      });
+
+      // Test multiple matching cases
+      it('should execute first matching case with async values', async () => {
+        const context = {
+          async getValue() {
+            await delay(5);
+            return 'B';
+          },
+          async getCaseValue() {
+            await delay(3);
+            return 'B';
+          }
+        };
+
+        const template = `
+          {% switch getValue() %}
+            {% case 'A' %}
+              Alpha
+            {% case getCaseValue() %}
+              First B
+            {% case 'B' %}
+              Second B
+            {% default %}
+              Unknown
+          {% endswitch %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('First B');
+      });
+
+      // Test default case
+      it('should execute default case when no match found with async values', async () => {
+        const context = {
+          async getValue() {
+            await delay(5);
+            return 'X';
+          }
+        };
+
+        const template = `
+          {% switch getValue() %}
+            {% case 'A' %}
+              Alpha
+            {% case 'B' %}
+              Beta
+            {% default %}
+              No match
+          {% endswitch %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('No match');
+      });
+
+      // Test async content in case blocks
+      it('should handle async content within case blocks', async () => {
+        const context = {
+          switchValue: 'A',
+          async getContent() {
+            await delay(5);
+            return 'Dynamic Content';
+          }
+        };
+
+        const template = `
+          {% switch switchValue %}
+            {% case 'A' %}
+              {{ getContent() }}
+            {% case 'B' %}
+              Static Content
+            {% default %}
+              Default Content
+          {% endswitch %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Dynamic Content');
+      });
+
+      // Test nested structures
+      it('should handle switch inside loops with async values', async () => {
+        const context = {
+          async getItems() {
+            await delay(5);
+            return ['A', 'B', 'C'];
+          },
+          async getValue(item) {
+            await delay(3);
+            return item;
+          }
+        };
+
+        const template = `
+          {%- for item in getItems() -%}
+            {%- switch getValue(item) -%}
+              {%- case 'A' -%}A{%- case 'B' %}B{% case 'C' %}C{% default -%}X
+            {%- endswitch -%}
+          {%- endfor -%}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('ABC');
+      });
+
+      // Test switch inside switch
+      it('should handle nested switch statements with async values', async () => {
+        const context = {
+          async getOuter() {
+            await delay(5);
+            return 'A';
+          },
+          async getInner() {
+            await delay(3);
+            return '1';
+          }
+        };
+
+        const template = `
+          {%- switch getOuter() -%}
+            {%- case 'A' -%}
+              Outer A:
+              {%- switch getInner() -%}
+                {%- case '1' -%}Inner 1{%- case '2' -%}Inner 2{%- default -%}Inner D
+              {%- endswitch -%}
+            {%- case 'B' -%}
+              Outer B
+            {%- default -%}
+              Outer D
+          {%- endswitch -%}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Outer A:Inner 1');
+      });
+
+      // Test async case expressions
+      it('should handle async expressions in case statements', async () => {
+        const context = {
+          value: 'test',
+          async getCaseValue1() {
+            await delay(5);
+            return 'test';
+          },
+          async getCaseValue2() {
+            await delay(3);
+            return 'other';
+          }
+        };
+
+        const template = `
+          {% switch value %}
+            {% case getCaseValue1() %}
+              Match 1
+            {% case getCaseValue2() %}
+              Match 2
+            {% default %}
+              No Match
+          {% endswitch %}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Match 1');
+      });
+
+      // Test error handling
+      it('should handle errors in async switch expressions', async () => {
+        const context = {
+          async getValue() {
+            await delay(5);
+            throw new Error('Switch expression error');
+          }
+        };
+
+        const template = `
+          {% switch getValue() %}
+            {% case 'A' %}Alpha{% default %}Default
+          {% endswitch %}
+        `;
+
+        try {
+          await env.renderStringAsync(template, context);
+          expect().fail('Expected an error to be thrown');
+        } catch (error) {
+          expect(error.message).to.contain('Switch expression error');
+        }
+      });
+
+      // Test error handling in case expressions
+      it('should handle errors in async case expressions', async () => {
+        const context = {
+          value: 'test',
+          async getCaseValue() {
+            await delay(5);
+            throw new Error('Case expression error');
+          }
+        };
+
+        const template = `
+          {% switch value %}
+            {% case getCaseValue() %}Match{% default %}Default
+          {% endswitch %}
+        `;
+
+        try {
+          await env.renderStringAsync(template, context);
+          expect().fail('Expected an error to be thrown');
+        } catch (error) {
+          expect(error.message).to.contain('Case expression error');
+        }
+      });
+    });
+
   });
 }());

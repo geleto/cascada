@@ -830,6 +830,8 @@ class Compiler extends Obj {
   }
 
   compileSwitch(node, frame) {
+    this._emitBufferBlockBegin();
+
     this._emit('switch (');
     this.compile(node.expr, frame);
     this._emit(') {');
@@ -848,6 +850,8 @@ class Compiler extends Obj {
       this.compile(node.default, frame);
     }
     this._emit('}');
+
+    this._emitBufferBlockEnd();
   }
 
   compileIf(node, frame, async) {
