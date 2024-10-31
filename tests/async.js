@@ -976,6 +976,21 @@
           expect(rendered.trim()).to.equal('async result');
         });
 
+        it('caller should work in ternary condition', async () => {
+          const template = `
+            {% macro add(x, y) %}
+            {{ caller() if caller else 0 }}: {{ x + y }}
+            {% endmacro%}
+
+            {% call add(1, 2) -%}
+            The result is
+            {%- endcall %}
+          `;
+
+          const result = await env.renderStringAsync(template);
+          expect(result.trim()).to.equal('The result is: 3');
+        });
+
         it('should handle multiple async values in caller', async () => {
           const template = `
             {%- macro format() -%}
@@ -2549,7 +2564,7 @@
 
           const template = `
             {%- macro greet() -%}
-              {{ greeting }}, {{ name }}!
+              {{ greeting() }}, {{ name() }}!
             {%- endmacro -%}
             {{ greet() }}
           `;
@@ -2590,12 +2605,7 @@
             {%- macro init(getUrlFunc, getKeyFunc) -%}
               {% set apiUrl = getUrlFunc() %}
               {% set apiKey = getKeyFunc() %}
-
-              {%- macro apiCall(endpoint) -%}
-              {{ apiUrl }}/{{ endpoint }}?key={{ apiKey }}
-              {%- endmacro -%}
-
-              {{ caller() if caller else '' }}
+              {{ apiUrl }}/{{ caller() }}?key={{ apiKey }}
             {%- endmacro -%}
           `);
 
@@ -2604,9 +2614,9 @@
             {% import "config.njk" as config %}
 
             {%- macro userEndpoint(getUrlFunc, getKeyFunc, userId) -%}
-              {% call config.init(getUrlFunc, getKeyFunc) %}
-                {{ config.apiCall("users/" + userId) }}
-              {% endcall %}
+              {%- call config.init(getUrlFunc, getKeyFunc) -%}
+                users/{{ userId }}
+              {%- endcall -%}
             {%- endmacro -%}
           `);
         });
@@ -2624,7 +2634,7 @@
           };
 
           const template = `
-            {% import "api-forms.njk" as api %}
+            {% import "api-forms.njk" as api -%}
             {{ api.userEndpoint(getApiUrl, getApiKey, "123") }}
           `;
 
@@ -2633,6 +2643,7 @@
             'https://api.example.com/users/123?key=secret-key-123'
           );
         });
+
       });
 
       describe('Import with Async Filter Usage', () => {

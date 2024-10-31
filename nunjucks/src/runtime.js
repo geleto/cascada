@@ -18,6 +18,8 @@ class Frame {
     // if this is true, writes (set) should never propagate upwards past
     // this frame to its parent (though reads may).
     this.isolateWrites = isolateWrites;
+    this.cloneParent = null;
+    this.cloneChildren = null;//a set
   }
 
   set(name, val, resolveUp) {
@@ -26,6 +28,16 @@ class Frame {
     var parts = name.split('.');
     var obj = this.variables;
     var frame = this;
+
+    if (this.cloneChildren && this.cloneChildren.size) {
+      this.cloneChildren.forEach((clone) => {
+        clone.detachClone();
+      });
+    }
+
+    if (this.cloneParent) {
+      this.detachClone();
+    }
 
     if (resolveUp) {
       if ((frame = this.resolve(parts[0], true))) {
@@ -78,6 +90,28 @@ class Frame {
 
   pop() {
     return this.parent;
+  }
+
+  clone() {
+    var cloneFrame = new Frame(this.parent, this.isolateWrites);
+    cloneFrame.variables = this.variables;
+    cloneFrame.topLevel = this.topLevel;
+    this.cloneChildren = this.cloneChildren || new Set();
+    this.cloneChildren.add(cloneFrame);
+    cloneFrame.cloneParent = this;
+    return cloneFrame;
+  }
+
+  detachClone(newVariables = {}) {
+    if (this.cloneParent) {
+      this.cloneParent.cloneChildren.delete(this);
+      this.variables = newVariables? Object.assign(this.variables, newVariables) : null;
+      this.cloneParent = null;
+    }
+  }
+
+  releaseClone() {
+    this.detachClone(null);
   }
 }
 

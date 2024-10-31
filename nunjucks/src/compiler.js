@@ -132,7 +132,7 @@ class Compiler extends Obj {
 
   _emitAsyncBlockEnd() {
     if (this.isAsync) {
-      this._emitLine(`})(frame)`);
+      this._emitLine(`})(frame.clone())`);
       this.asyncClosureDepth--;
       this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
       this._emitLine('.finally(()=>{astate.leaveClosure();});');
@@ -141,7 +141,7 @@ class Compiler extends Obj {
 
   _emitAsyncValueBegin() {
     if (this.isAsync) {
-      this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}(async ()=>{`);//@todo - tottaly not sure about this - test
+      this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}(async (frame)=>{`);//@todo - probably wrong - test
       this._emitLine('astate.enterClosure();');
       this._emit('return ');
       this.asyncClosureDepth++;
@@ -150,7 +150,7 @@ class Compiler extends Obj {
 
   _emitAsyncValueEnd() {
     if (this.isAsync) {
-      this._emitLine('})()');
+      this._emitLine('})(frame.clone())');
       this.asyncClosureDepth--;
       // The error will be re-thrown when the ewturned value is awaited:
       //this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
@@ -170,7 +170,7 @@ class Compiler extends Obj {
       return;
     }
 
-    this._emit('(async (astate) => {\n');
+    this._emit('(async (frame, astate) => {\n');
     const id = this._pushBuffer();
 
     const originalAsyncClosureDepth = this.asyncClosureDepth;
@@ -190,7 +190,7 @@ class Compiler extends Obj {
     }
     this._emitLine(`return ${id};`);
 
-    this._emit('})(astate.new())');
+    this._emit('})(frame.clone(), astate.new())');
     if(callbackName){
       this._emitLine(`.catch(e=>{${callbackName}(runtime.handleError(e, lineno, colno))})`);
     }
@@ -200,7 +200,7 @@ class Compiler extends Obj {
   _emitAddToBufferBegin(addClosure = true) {
     if (this.isAsync) {
       if (addClosure) {
-        this._emitLine('(async ()=>{');
+        this._emitLine('(async (frame)=>{');
         this._emitLine('astate.enterClosure();');
         this._emitLine(`let index = ${this.buffer}_index++;`);
         this._emit(`${this.buffer}[index] = `);//@todo - ${this.buffer}[${this.buffer}_index++], else line
@@ -215,7 +215,7 @@ class Compiler extends Obj {
 
   _emitAddToBufferEnd(addClosure = true) {
     if (this.isAsync && addClosure) {
-      this._emitLine('})()');
+      this._emitLine('})(frame.clone())');
       this.asyncClosureDepth--;
       this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
       this._emitLine('.finally(()=>{astate.leaveClosure();});');
