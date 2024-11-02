@@ -18,26 +18,15 @@ class Frame {
     // if this is true, writes (set) should never propagate upwards past
     // this frame to its parent (though reads may).
     this.isolateWrites = isolateWrites;
-    this.cloneParent = null;
-    this.cloneChildren = null;//a set
   }
 
+  // nunjucks bug?, resolveUp is not used in recursive calls
   set(name, val, resolveUp) {
     // Allow variables with dots by automatically creating the
     // nested structure
     var parts = name.split('.');
     var obj = this.variables;
     var frame = this;
-
-    if (this.cloneChildren && this.cloneChildren.size) {
-      this.cloneChildren.forEach((clone) => {
-        clone.detachClone();
-      });
-    }
-
-    if (this.cloneParent) {
-      this.detachClone();
-    }
 
     if (resolveUp) {
       if ((frame = this.resolve(parts[0], true))) {
@@ -91,27 +80,176 @@ class Frame {
   pop() {
     return this.parent;
   }
+}
 
-  clone() {
-    var cloneFrame = new Frame(this.parent, this.isolateWrites);
-    cloneFrame.variables = this.variables;
-    cloneFrame.topLevel = this.topLevel;
-    this.cloneChildren = this.cloneChildren || new Set();
-    this.cloneChildren.add(cloneFrame);
-    cloneFrame.cloneParent = this;
-    return cloneFrame;
+class TimelineRecord {
+  constructor() {
+    this.variables = Object.create(null);
+    this.frames = null;
+  }
+}
+
+// A frame which instances can create snapshots of itself that
+// can be used as regular frames. Further changes to the frame
+// don't affect the snapshots, and vice-versa.
+class AsyncFrame {
+  constructor(parent, isolateWrites) {
+    this.timeline = [new TimelineRecord()];
+    this.parent = parent;
+    this.topLevel = false;
+
+    // if this is true, writes (set) should never propagate upwards past
+    // this frame to its parent (though reads may).
+    this.isolateWrites = isolateWrites;
+
+    this.isSnapshot = false;
   }
 
-  detachClone(newVariables = {}) {
-    if (this.cloneParent) {
-      this.cloneParent.cloneChildren.delete(this);
-      this.variables = newVariables? Object.assign(this.variables, newVariables) : null;
-      this.cloneParent = null;
+  set(name, val, resolveUp) {
+    let lastTimelineRecord = this.timeline[this.timeline.length - 1];
+    if(lastTimelineRecord.frames && lastTimelineRecord.frames.size > 0){
+      //do not touch this snapshot as it has frames attached to it
+      //create a new snapshot
+      lastTimelineRecord = new TimelineRecord();
+      this.timeline.push(lastTimelineRecord);
+    }
+
+    let parts = name.split('.');
+    let obj = lastTimelineRecord.variables;
+    let frame = this;
+
+    if (resolveUp) {
+      if ((frame = this.resolve(parts[0], true))) {
+        frame.set(name, val);
+        return;
+      }
+    }
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      const id = parts[i];
+
+      if (!obj[id]) {
+        obj[id] = {};
+      }
+      obj = obj[id];
+    }
+
+    obj[parts[parts.length - 1]] = val;
+  }
+
+  get(name) {
+    for(let i = this.timeline.length - 1; i >= 0; i--){
+      let timelineRecord = this.timeline[i];
+      let val = timelineRecord.variables[name];
+      if (val !== undefined) {
+        return val;
+      }
+    }
+    return null;
+  }
+
+  lookup(name, snapshotFrame = null) {
+    var p = this.parent;
+    let trIndex = snapshotFrame ? this._findSnapshotInTimeline(snapshotFrame) : this.timeline.length - 1;
+    if(trIndex === -1){
+      throw new Error('snapshotFrame not in the timeline');
+    }
+    for(let i = trIndex; i >= 0; i--){
+      let timelineRecord = this.timeline[i];
+      let val = timelineRecord.variables[name];
+      if (val !== undefined) {
+        return val;
+      }
+    }
+    return p && p.lookup(name, snapshotFrame || (this.isSnapshot ? this : null));
+  }
+
+  resolve(name, forWrite, snapshotFrame = null) {
+    var p = (forWrite && this.isolateWrites) ? undefined : this.parent;
+    let trIndex = snapshotFrame ? this._findSnapshotInTimeline(snapshotFrame) : this.timeline.length - 1;
+    if(trIndex === -1){
+      throw new Error('snapshotFrame not in the timeline');
+    }
+    for (let i = trIndex; i >= 0; i--) {
+      let timelineRecord = this.timeline[i];
+      if (timelineRecord.variables[name] !== undefined) {
+        return this;
+      }
+    }
+
+    // If not found, check parent frame
+    return p && p.resolve(name, forWrite, snapshotFrame || (this.isSnapshot ? this : null));
+  }
+
+  push(isolateWrites) {
+    return new AsyncFrame(this, isolateWrites);
+  }
+
+  pop() {
+    return this.parent;
+  }
+
+  snapshot() {
+    let snapshotFrame = new AsyncFrame(this, this.isolateWrites);
+    snapshotFrame.isSnapshot = true;
+    this._addSnapshot(snapshotFrame);
+    return snapshotFrame;
+  }
+
+  _addSnapshot(snapshotFrame) {
+    let lastTimelineRecord = this.timeline[this.timeline.length - 1];
+    if(!lastTimelineRecord.frames){
+      lastTimelineRecord.frames = new Set();
+    }
+    lastTimelineRecord.frames.add(snapshotFrame);
+    if(this.parent){
+      this.parent._addSnapshot(snapshotFrame);
     }
   }
 
-  releaseClone() {
-    this.detachClone(null);
+
+  dispose(snapshotFrame = null) {
+    if(!snapshotFrame){
+      if(!this.parent){
+        throw new Error('Cannot dispose of root frame');
+      }
+      this.parent.dispose(this);
+      return;
+    }
+    if(!snapshotFrame.isSnapshot){
+      throw new Error('Cannot dispose a frame that is not a snapshot');
+    }
+    if(this.parent){
+      this.parent.dispose(snapshotFrame);
+    }
+    //find the snapshot frame in the timeline and remove it
+    let snapPos = this._findSnapshotInTimeline(snapshotFrame);
+    if(snapPos==-1){
+      throw new Error('snapshotFrame not in the timeline');
+    }
+
+    let timelineRecord = this.timeline[snapPos];
+    timelineRecord.frames.delete(snapshotFrame);
+    if(timelineRecord.frames.size === 0){
+      if( snapPos>0 ){
+        let previousRecord = this.timeline[snapPos - 1];
+        Object.assign(previousRecord.variables, timelineRecord.variables);
+        this.timeline.splice(snapPos, 1);
+      }
+      else if(this.timeline.length > 1){
+        let nextRecord = this.timeline[snapPos + 1];
+        Object.assign(timelineRecord.variables, nextRecord.variables);
+        nextRecord.variables = timelineRecord.variables;
+        this.timeline.splice(snapPos, 1);
+      }
+    }
+  }
+
+  //retruns a the index of the record in the timeline that has snapshotFrame
+  _findSnapshotInTimeline(snapshotFrame){
+    return this.timeline.findIndex(
+      record => record.frames && record.frames.has(snapshotFrame)
+    );
   }
 }
 
@@ -490,6 +628,7 @@ function fromIterator(arr) {
 
 module.exports = {
   Frame: Frame,
+  AsyncFrame: AsyncFrame,
   makeMacro: makeMacro,
   makeKeywordArgs: makeKeywordArgs,
   numArgs: numArgs,
