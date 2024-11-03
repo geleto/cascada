@@ -2684,8 +2684,6 @@
     });
 
     describe('Async Switch Statement Tests', () => {
-      let env;
-
       beforeEach(() => {
         env = new Environment();
       });

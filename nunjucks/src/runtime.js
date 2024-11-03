@@ -80,6 +80,10 @@ class Frame {
   pop() {
     return this.parent;
   }
+
+  new() {
+    return new Frame(undefined, this.isolateWrites);
+  }
 }
 
 class TimelineRecord {
@@ -187,6 +191,10 @@ class AsyncFrame {
 
   pop() {
     return this.parent;
+  }
+
+  new() {
+    return new AsyncFrame(undefined, this.isolateWrites);
   }
 
   snapshot() {

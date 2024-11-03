@@ -4,7 +4,7 @@ const parser = require('./parser');
 const transformer = require('./transformer');
 const nodes = require('./nodes');
 const {TemplateError} = require('./lib');
-const {Frame} = require('./runtime');
+const {Frame, AsyncFrame} = require('./runtime');
 const {Obj} = require('./object');
 
 const CONDITIONAL_AWAIT = true;//awaiting a non-promise value is slow and should be avoided
@@ -107,7 +107,7 @@ class Compiler extends Obj {
     this.buffer = null;
   }
 
-  // wrap await calls in this, maybe we should only astate.enterClosure()/leaveClosure()
+  // wrap await calls in this, maybe we should only astate.enterClosure(frame)/leaveClosure()
   // the async blocks
   _emitAwaitBegin() {
     if (this.isAsync) {
@@ -124,37 +124,44 @@ class Compiler extends Obj {
   // an async block that does not have a value should be wrapped in this
   _emitAsyncBlockBegin() {
     if (this.isAsync) {
-      this._emit(`(async (frame)=>{`);
-      this._emit('astate.enterClosure();');
+      this._emit(`(async (astate)=>{`);
+      this._emit('let frame = astate.snapshotFrame;');
       this.asyncClosureDepth++;
     }
   }
 
   _emitAsyncBlockEnd() {
     if (this.isAsync) {
-      this._emitLine(`})(frame.clone())`);
+      this._emitLine('astate.leaveClosure();');
+      this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this.asyncClosureDepth--;
       this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-      this._emitLine('.finally(()=>{astate.leaveClosure();});');
+      this._emitLine('.finally(()=>{});');
     }
   }
 
-  _emitAsyncValueBegin() {
+  _emitAsyncValue(emitFunc) {
     if (this.isAsync) {
-      this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}(async (frame)=>{`);//@todo - probably wrong - test
-      this._emitLine('astate.enterClosure();');
-      this._emit('return ');
+      this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}`);//@todo - probably wrong - test
+      this._emitLine(`(async (astate)=>{`);
+      this._emit('let frame = astate.snapshotFrame;');
+      const res = this._tmpid();
+      this._emitLine(`let ${res} = `);
       this.asyncClosureDepth++;
-    }
-  }
 
-  _emitAsyncValueEnd() {
-    if (this.isAsync) {
-      this._emitLine('})(frame.clone())');
+      emitFunc();
+
+      this._emitLine(';');
+      this._emitLine('astate.leaveClosure();');
+      this._emitLine(`return ${res};`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this.asyncClosureDepth--;
       // The error will be re-thrown when the ewturned value is awaited:
       //this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-      this._emitLine('.finally(()=>{astate.leaveClosure();})');
+      this._emitLine('.finally(()=>{})');
+    }
+    else {
+      emitFunc();
     }
   }
 
@@ -170,8 +177,10 @@ class Compiler extends Obj {
       return;
     }
 
-    this._emit('(async (frame, astate) => {\n');
-    const id = this._pushBuffer();
+    this._emit(`(async (astate)=>{`);
+    this._emit('let frame = astate.snapshotFrame;');
+
+    const id = this._pushBuffer();//@todo - probably not needed after snapshots?
 
     const originalAsyncClosureDepth = this.asyncClosureDepth;
     this.asyncClosureDepth = 0;
@@ -188,9 +197,11 @@ class Compiler extends Obj {
     if(callbackName) {
       this._emitLine(`${callbackName}(null, ${id});`);
     }
-    this._emitLine(`return ${id};`);
 
-    this._emit('})(frame.clone(), astate.new())');
+    this._emitLine('astate.leaveClosure();');
+    this._emitLine(`return ${id};`);
+    this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
+
     if(callbackName){
       this._emitLine(`.catch(e=>{${callbackName}(runtime.handleError(e, lineno, colno))})`);
     }
@@ -200,8 +211,9 @@ class Compiler extends Obj {
   _emitAddToBufferBegin(addClosure = true) {
     if (this.isAsync) {
       if (addClosure) {
-        this._emitLine('(async (frame)=>{');
-        this._emitLine('astate.enterClosure();');
+        this._emitLine(`(async (astate)=>{`);
+        this._emit('let frame = astate.snapshotFrame;');
+
         this._emitLine(`let index = ${this.buffer}_index++;`);
         this._emit(`${this.buffer}[index] = `);//@todo - ${this.buffer}[${this.buffer}_index++], else line
         this.asyncClosureDepth++;
@@ -215,10 +227,12 @@ class Compiler extends Obj {
 
   _emitAddToBufferEnd(addClosure = true) {
     if (this.isAsync && addClosure) {
-      this._emitLine('})(frame.clone())');
+
+       this._emitLine('astate.leaveClosure();');
+      this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this.asyncClosureDepth--;
       this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-      this._emitLine('.finally(()=>{astate.leaveClosure();});');
+      this._emitLine('.finally(()=>{});');
     }
   }
 
@@ -713,30 +727,25 @@ class Compiler extends Obj {
     // variables within an expression. An expression in javascript
     // like (x, y, z) returns the last value, and x and y can be
     // anything
-    if (this.isAsync) {
-      this._emitAsyncValueBegin();
-    }
-    this._emit('(lineno = ' + node.lineno +
-      ', colno = ' + node.colno + ', ');
+    this._emitAsyncValue(()=>{
+      this._emit('(lineno = ' + node.lineno +
+        ', colno = ' + node.colno + ', ');
 
-    this._emitAwaitBegin();
-    this._emit('runtime.callWrap(');
-    // Compile it as normal.
-    this._compileExpression(node.name, frame);
+      this._emitAwaitBegin();
+      this._emit('runtime.callWrap(');
+      // Compile it as normal.
+      this._compileExpression(node.name, frame);
 
-    // Output the name of what we're calling so we can get friendly errors
-    // if the lookup fails.
-    this._emit(', "' + this._getNodeName(node.name).replace(/"/g, '\\"') + '", context, ');
+      // Output the name of what we're calling so we can get friendly errors
+      // if the lookup fails.
+      this._emit(', "' + this._getNodeName(node.name).replace(/"/g, '\\"') + '", context, ');
 
-    this._compileAggregate(node.args, frame, '[', '])');
+      this._compileAggregate(node.args, frame, '[', '])');
 
-    this._emit(')');
+      this._emit(')');
 
-    this._emitAwaitEnd();
-
-    if (this.isAsync) {
-      this._emitAsyncValueEnd();
-    }
+      this._emitAwaitEnd();
+    });
   }
 
   compileFilter(node, frame) {
@@ -795,9 +804,9 @@ class Compiler extends Obj {
       this._emit(ids.join(' = ') + ' = ');
       if(this.isAsync) {
         //@todo - in the future will wrap the expression only if it has a lookup
-        this._emitAsyncValueBegin();
-        this._compileExpression(node.value, frame);
-        this._emitAsyncValueEnd();
+        this._emitAsyncValue( () => {
+          this._compileExpression(node.value, frame);
+        });
       }
       else{
         this._compileExpression(node.value, frame);
@@ -1168,7 +1177,7 @@ class Compiler extends Obj {
     if (keepFrame) {
       currFrame = frame.push(true);
     } else {
-      currFrame = new Frame();
+      currFrame = this.isAsync ? new AsyncFrame() : new Frame();
     }
     this._emitLines(
       `let ${funcId} = runtime.makeMacro(`,
@@ -1176,7 +1185,7 @@ class Compiler extends Obj {
       `[${kwargNames.join(', ')}], `,
       `function (${realNames.join(', ')}) {`,
       'let callerFrame = frame;',
-      'frame = ' + ((keepFrame) ? 'frame.push(true);' : 'new runtime.Frame();'),
+      'frame = ' + ((keepFrame) ? 'frame.push(true);' : 'frame.new();'),
       'kwargs = kwargs || {};',
       'if (Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
       'frame.set("caller", kwargs.caller); }');
@@ -1248,9 +1257,9 @@ class Compiler extends Obj {
 
     if(this.isAsync) {
       this._emit('env.getAsyncTemplate(');
-      this._emitAsyncValueBegin();
-      this._compileExpression(node.template, frame);
-      this._emitAsyncValueEnd();
+      this._emitAsyncValue( () => {
+        this._compileExpression(node.template, frame);
+      });
     }
     else {
       this._emit('env.getTemplate(');

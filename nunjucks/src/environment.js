@@ -10,7 +10,7 @@ const tests = require('./tests');
 const globals = require('./globals');
 const { Obj, EmitterObj } = require('./object');
 const globalRuntime = require('./runtime');
-const { handleError, Frame } = globalRuntime;
+const { handleError, Frame, AsyncFrame } = globalRuntime;
 const expressApp = require('./express-app');
 
 // If the user is using the async API, *always* call it
@@ -406,28 +406,75 @@ class Environment extends EmitterObj {
   }
 }
 
+//@todo - move to runtime
 class AsyncState {
-  constructor() {
+  constructor(parent = null) {
     this.activeClosures = 0;
+    this.parent = parent;
+    this.completionPromise = null;
+    this.completionResolver = null;
+    this.snapshotFrame = null;//@todo - remove
   }
-  enterClosure() {
-    this.activeClosures++;
+
+  enterClosure(snapshotFrame) {
+    const newState = new AsyncState(this);
+    newState.snapshotFrame = snapshotFrame;
+    newState._incrementClosures();
+
+    // Create a new completion promise for this specific closure chain
+    this.waitAllClosures().then(() => {
+      snapshotFrame.dispose();
+    });
+
+    return newState;
   }
+
   leaveClosure() {
     this.activeClosures--;
-    if (this.activeClosures === 0 && this.completionResolver) {
-      this.completionResolver();
-      this.completionResolver = null;
+
+    if (this.activeClosures === 0) {
+      if (this.completionResolver) {
+        this.completionResolver();
+        // Reset both promise and resolver
+        this.completionPromise = null;
+        this.completionResolver = null;
+      }
+    } else if (this.activeClosures < 0) {
+      throw new Error('Negative activeClosures count detected');
+    }
+
+    if (this.parent) {
+      return this.parent.leaveClosure();
+    }
+
+    return this.parent;
+  }
+
+  _incrementClosures() {
+    this.activeClosures++;
+    if (this.parent) {
+      this.parent._incrementClosures();
     }
   }
+
   async waitAllClosures() {
     if (this.activeClosures === 0) {
       return Promise.resolve();
     }
-    return new Promise(resolve => {
+
+    // Reuse existing promise if it exists
+    if (this.completionPromise) {
+      return this.completionPromise;
+    }
+
+    // Create new promise and store it
+    this.completionPromise = new Promise(resolve => {
       this.completionResolver = resolve;
     });
+
+    return this.completionPromise;
   }
+
   new() {
     return new AsyncState();
   }
@@ -590,7 +637,14 @@ class Template extends Obj {
     }
 
     const context = new Context(ctx || {}, this.blocks, this.env);
-    const frame = parentFrame ? parentFrame.push(true) : new Frame();
+    //const frame = parentFrame ? parentFrame.push(true) : new Frame();
+    let frame;
+    if(parentFrame){
+      frame = parentFrame.push(true);
+    }
+    else {
+      frame = this.isAsync? new AsyncFrame : new Frame();
+    }
     frame.topLevel = true;
     let syncResult = null;
     let didError = false;
@@ -666,7 +720,14 @@ class Template extends Obj {
       }
     }
 
-    const frame = parentFrame ? parentFrame.push() : new Frame();
+    //const frame = parentFrame ? parentFrame.push() : new Frame();
+    let frame;
+    if(parentFrame){
+      frame = parentFrame.push(true);
+    }
+    else {
+      frame = this.isAsync? new AsyncFrame : new Frame();
+    }
     frame.topLevel = true;
 
     // Run the rootRenderFunc to populate the context with exported vars
