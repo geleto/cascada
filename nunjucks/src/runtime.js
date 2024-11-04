@@ -82,7 +82,7 @@ class Frame {
   }
 
   new() {
-    return new Frame(undefined, this.isolateWrites);
+    return new Frame();//undefined, this.isolateWrites);
   }
 }
 
@@ -194,7 +194,7 @@ class AsyncFrame {
   }
 
   new() {
-    return new AsyncFrame(undefined, this.isolateWrites);
+    return new AsyncFrame();//undefined, this.isolateWrites);
   }
 
   snapshot() {
