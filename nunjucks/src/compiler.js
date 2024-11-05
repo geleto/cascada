@@ -130,9 +130,12 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAsyncBlockEnd() {
+  _emitAsyncBlockEnd(finalBlockFunction = null) {
     if (this.isAsync) {
       this._emitLine('astate.leaveClosure();');
+      if(finalBlockFunction) {
+        finalBlockFunction.call(this);
+      }
       this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this.asyncClosureDepth--;
       this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
@@ -817,8 +820,10 @@ class Compiler extends Obj {
     } else {
       // set block
       this._emit(ids.join(' = ') + ' = ');
-      this.compile(node.body, frame);
-      this._emitLine(';');
+      this._emitAsyncValue( () => {
+        this.compile(node.body, frame);
+        this._emitLine(';');
+      });
     }
 
     node.targets.forEach((target, i) => {
@@ -1220,7 +1225,7 @@ class Compiler extends Obj {
     });
 
     this._emitLine('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
-    this._emitLine(`return new runtime.SafeString(${bufferId});`);
+    this._emitLine(`return ${this.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
     this._emitLine('});');
     this._popBuffer();
 
@@ -1445,13 +1450,26 @@ class Compiler extends Obj {
     // so the set block writes to the capture output instead of the buffer
     var buffer = this.buffer;
     this.buffer = 'output';
-    this._emitLine('(function() {');
-    this._emitLine('let output = "";');
-    this._withScopedSyntax(() => {
+    if(this.isAsync) {
+      this._emitAsyncBlockBegin();
+      this._emitLine('let output = [];');
       this.compile(node.body, frame);
-    });
-    this._emitLine('return output;');
-    this._emitLine('})()');
+      this._emitAsyncBlockEnd(()=>{
+        this._emitLine('await astate.waitAllClosures()');
+        this._emitLine(`return runtime.flattentBuffer(output);`);
+        //todo - return the output immediately as a promise - waitAllClosuresAndFlattem
+      });
+    }
+    else{
+      this._emitLine('(function() {');
+      this._emitLine('let output = "";');
+      this._withScopedSyntax(() => {
+        this.compile(node.body, frame);
+      });
+      this._emitLine('return output;');
+      this._emitLine('})()');
+    }
+
     // and of course, revert back to the old buffer id
     this.buffer = buffer;
   }

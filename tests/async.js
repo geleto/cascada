@@ -3068,7 +3068,7 @@
       });
 
       // Set block with macros
-      it.only('should handle set block with async values in macros - non-async', async () => {
+      it('should handle set block with async values in macros - non-async', async () => {
         const context = {
           getTitle() {
             return 'Welcome';
@@ -3091,7 +3091,7 @@
       });
 
       // Set block with macros
-      it.only('should handle set block with async values in macros', async () => {
+      it('should handle set block with async values in macros', async () => {
         const context = {
           async getTitle() {
             await delay(5);
