@@ -2926,5 +2926,360 @@
       });
     });
 
+    describe('Basic Set Tests', () => {
+      let loader;
+
+      beforeEach(() => {
+        loader = new StringLoader();
+        env = new Environment(loader);
+      });
+
+      it('should handle multiple targets with async expression', async () => {
+        const context = {
+          async getBase() {
+            await delay(5);
+            return 10;
+          },
+          async getMultiplier() {
+            await delay(3);
+            return 2;
+          }
+        };
+
+        const template = `
+          {% set x, y = getBase() * getMultiplier() %}
+          {{ x }},{{ y }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('20,20');
+      });
+    });
+
+    describe('Async Set Block Tests', () => {
+      let loader;
+
+      beforeEach(() => {
+        loader = new StringLoader();
+        env = new Environment(loader);
+      });
+
+      // Basic set block functionality
+      it('should handle basic set block with async content', async () => {
+        const context = {
+          async getName() {
+            await delay(5);
+            return 'John';
+          }
+        };
+
+        const template = `
+          {% set greeting %}
+            Hello, {{ getName() }}!
+            Welcome to our site.
+          {% endset %}
+          {{ greeting }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Hello, John!\n            Welcome to our site.');
+      });
+
+      // Multiple async values in set block
+      it('should handle multiple async values in set block', async () => {
+        const context = {
+          async getFirstName() {
+            await delay(5);
+            return 'John';
+          },
+          async getLastName() {
+            await delay(3);
+            return 'Doe';
+          }
+        };
+
+        const template = `
+          {% set userInfo %}
+            First Name: {{ getFirstName() }}
+            Last Name: {{ getLastName() }}
+          {% endset %}
+          {{ userInfo }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('First Name: John\n            Last Name: Doe');
+      });
+
+      // Nested set blocks
+      it('should handle nested set blocks with async content', async () => {
+        const context = {
+          async getHeader() {
+            await delay(5);
+            return 'Welcome';
+          },
+          async getFooter() {
+            await delay(3);
+            return 'Goodbye';
+          }
+        };
+
+        const template = `
+          {% set outer %}
+            {% set inner %}
+              {{ getHeader() }}
+            {% endset %}
+            {{ inner }}
+            {% set footer %}
+              {{ getFooter() }}
+            {% endset %}
+            {{ footer }}
+          {% endset %}
+          {{ outer }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim().replace(/\s+/g, ' ')).to.equal('Welcome Goodbye');
+      });
+
+      // Set block with control structures
+      it('should handle set block with async values in control structures', async () => {
+        const context = {
+          async getUsers() {
+            await delay(5);
+            return ['Alice', 'Bob', 'Charlie'];
+          },
+          async getStatus(user) {
+            await delay(3);
+            return user === 'Alice' ? 'admin' : 'user';
+          }
+        };
+
+        const template = `
+          {% set userList %}
+            {% for user in getUsers() %}
+              {{ user }}: {{ getStatus(user) }}
+            {% endfor %}
+          {% endset %}
+          {{ userList }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim().replace(/\s+/g, ' ')).to.equal('Alice: admin Bob: user Charlie: user');
+      });
+
+      // Set block with macros
+      it.only('should handle set block with async values in macros - non-async', async () => {
+        const context = {
+          getTitle() {
+            return 'Welcome';
+          }
+        };
+
+        const template = `
+          {% macro header(title) %}
+            <h1>{{ title }}</h1>
+          {% endmacro %}
+
+          {% set pageHeader %}
+            {{ header(getTitle()) }}
+          {% endset %}
+          {{ pageHeader }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(unescape(result.trim())).to.equal('<h1>Welcome</h1>');
+      });
+
+      // Set block with macros
+      it.only('should handle set block with async values in macros', async () => {
+        const context = {
+          async getTitle() {
+            await delay(5);
+            return 'Welcome';
+          }
+        };
+
+        const template = `
+          {% macro header(title) %}
+            <h1>{{ title }}</h1>
+          {% endmacro %}
+
+          {% set pageHeader %}
+            {{ header(getTitle()) }}
+          {% endset %}
+          {{ pageHeader }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(unescape(result.trim())).to.equal('<h1>Welcome</h1>');
+      });
+
+      // Set block in imported templates
+      it('should handle set block in imported templates with async values', async () => {
+        loader.addTemplate('header.njk', `
+          {% macro render(title) %}
+            {% set header %}
+              <header>{{ title }}</header>
+            {% endset %}
+            {{ header }}
+          {% endmacro %}
+        `);
+
+        const context = {
+          async getTitle() {
+            await delay(5);
+            return 'Welcome';
+          }
+        };
+
+        const template = `
+          {% import "header.njk" as headers %}
+          {{ headers.render(getTitle()) }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(unescape(result.trim())).to.equal('<header>Welcome</header>');
+      });
+
+      // Set block with filters
+      it('should handle set block with async filters', async () => {
+        env.addFilter('uppercase', async (str) => {
+          await delay(5);
+          return str.toUpperCase();
+        });
+
+        const context = {
+          async getName() {
+            await delay(3);
+            return 'john';
+          }
+        };
+
+        const template = `
+          {% set greeting %}
+            Hello, {{ getName() | uppercase }}!
+          {% endset %}
+          {{ greeting }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim()).to.equal('Hello, JOHN!');
+      });
+
+      // Error handling in set blocks
+      it('should handle errors in async content within set blocks', async () => {
+        const context = {
+          async getName() {
+            await delay(5);
+            throw new Error('Failed to get name');
+          }
+        };
+
+        const template = `
+          {% set greeting %}
+            Hello, {{ getName() }}!
+          {% endset %}
+          {{ greeting }}
+        `;
+
+        try {
+          await env.renderStringAsync(template, context);
+          expect().fail('Expected an error to be thrown');
+        } catch (error) {
+          expect(error.message).to.contain('Failed to get name');
+        }
+      });
+
+      // Complex nested structures
+      it('should handle complex nested structures with set blocks and async values', async () => {
+        const context = {
+          async getUsers() {
+            await delay(5);
+            return [
+              { name: 'Alice', role: 'admin' },
+              { name: 'Bob', role: 'user' }
+            ];
+          },
+          async getPermissions(role) {
+            await delay(3);
+            return role === 'admin' ? ['read', 'write'] : ['read'];
+          }
+        };
+
+        const template = `
+          {% set userList %}
+            {% for user in getUsers() %}
+              {% set permissions %}
+                {% for perm in getPermissions(user.role) %}
+                  {{ perm }}
+                {% endfor %}
+              {% endset %}
+              {{ user.name }}: {{ permissions }}
+            {% endfor %}
+          {% endset %}
+          {{ userList }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim().replace(/\s+/g, ' ')).to.equal('Alice: read write Bob: read');
+      });
+
+      // Set block with async expressions
+      it('should handle set block with async expressions', async () => {
+        const context = {
+          async getValue() {
+            await delay(5);
+            return 10;
+          },
+          async getMultiplier() {
+            await delay(3);
+            return 2;
+          }
+        };
+
+        const template = `
+          {% set calculation %}
+            {{ getValue() * getMultiplier() }}
+          {% endset %}
+          Result: {{ calculation }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim().replace(/\s+/g, ' ')).to.equal('Result: 20');
+      });
+
+      // Multiple set blocks with dependencies
+      it('should handle multiple set blocks with dependencies', async () => {
+        const context = {
+          async getBasePrice() {
+            await delay(5);
+            return 100;
+          },
+          async calculateTax(price) {
+            await delay(3);
+            return price * 0.2;
+          }
+        };
+
+        const template = `
+          {% set basePrice %}
+            {{ getBasePrice() }}
+          {% endset %}
+          {% set tax %}
+            {{ calculateTax(basePrice) }}
+          {% endset %}
+          {% set total %}
+            {{ basePrice + tax }}
+          {% endset %}
+          Base: {{ basePrice }}
+          Tax: {{ tax }}
+          Total: {{ total }}
+        `;
+
+        const result = await env.renderStringAsync(template, context);
+        expect(result.trim().replace(/\s+/g, ' ')).to.equal('Base: 100 Tax: 20 Total: 120');
+      });
+    });
+
   });
 }());
