@@ -2057,9 +2057,9 @@
 
       it('should handle an extension with a single content block', async () => {
         const options = [
-          //{supportsBody: true, extName: 'wrap'},
+          {supportsBody: true, extName: 'wrap'},//the old API, but returning async value
           {supportsBody: true, extName: 'pwrap', parallel: true},
-          //{supportsBody: true, extName: 'awrap', oldAsync: true},
+          {supportsBody: true, extName: 'awrap', oldAsync: true},
         ]
         for(const option of options) {
           const extName = option.extName;

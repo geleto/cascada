@@ -189,17 +189,19 @@ class Compiler extends Obj {
 
     this.asyncClosureDepth = originalAsyncClosureDepth;
 
-    this._emitLine(';');
-    this._emitLine('await astate.waitAllClosures();');
-
-    this._emitLine(`${id} = runtime.flattentBuffer(${id});`);
+    //this._emitLine(';');
     this._popBuffer();
+
+    this._emitLine('astate.leaveClosure();');
+    this._emitLine('await astate.waitAllClosures();');
+    this._emitLine(`${id} = runtime.flattentBuffer(${id});`);
+
+    //return via callback or directly
     if(callbackName) {
       this._emitLine(`${callbackName}(null, ${id});`);
     }
-
-    this._emitLine('astate.leaveClosure();');
     this._emitLine(`return ${id};`);
+
     this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
 
     if(callbackName){
@@ -813,6 +815,7 @@ class Compiler extends Obj {
       }
       this._emitLine(';');
     } else {
+      // set block
       this._emit(ids.join(' = ') + ' = ');
       this.compile(node.body, frame);
       this._emitLine(';');
