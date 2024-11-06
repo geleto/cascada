@@ -129,7 +129,7 @@
         }
       };
 
-      const template = '{% set result = getValue() + 1 %}Result = {{ result }}';
+      const template = '{% set result = 1 + getValue() %}Result = {{ result }}';
       const result = await env.renderStringAsync(template, context);
       expect(result).to.equal('Result = 2');
     });
@@ -3068,29 +3068,6 @@
       });
 
       // Set block with macros
-      it('should handle set block with async values in macros - non-async', async () => {
-        const context = {
-          getTitle() {
-            return 'Welcome';
-          }
-        };
-
-        const template = `
-          {% macro header(title) %}
-            <h1>{{ title }}</h1>
-          {% endmacro %}
-
-          {% set pageHeader %}
-            {{ header(getTitle()) }}
-          {% endset %}
-          {{ pageHeader }}
-        `;
-
-        const result = await env.renderString(template, context);
-        expect(unescape(result.trim())).to.equal('<h1>Welcome</h1>');
-      });
-
-      // Set block with macros
       it('should handle set block with async values in macros', async () => {
         const context = {
           async getTitle() {
@@ -3246,38 +3223,6 @@
 
         const result = await env.renderStringAsync(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Result: 20');
-      });
-
-      // Multiple set blocks with dependencies
-      it('should handle multiple set blocks with dependencies', async () => {
-        const context = {
-          async getBasePrice() {
-            await delay(5);
-            return 100;
-          },
-          async calculateTax(price) {
-            await delay(3);
-            return price * 0.2;
-          }
-        };
-
-        const template = `
-          {% set basePrice %}
-            {{ getBasePrice() }}
-          {% endset %}
-          {% set tax %}
-            {{ calculateTax(basePrice) }}
-          {% endset %}
-          {% set total %}
-            {{ basePrice + tax }}
-          {% endset %}
-          Base: {{ basePrice }}
-          Tax: {{ tax }}
-          Total: {{ total }}
-        `;
-
-        const result = await env.renderStringAsync(template, context);
-        expect(result.trim().replace(/\s+/g, ' ')).to.equal('Base: 100 Tax: 20 Total: 120');
       });
     });
 

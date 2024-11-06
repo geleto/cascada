@@ -40,7 +40,7 @@ const noopTmplSrc = {
 const noopTmplSrcAsync = {
   type: 'code',
   obj: {
-    root(env, context, frame, runtime, astate, isIncluded, cb) {
+    root(env, context, frame, runtime, astate, cb) {
       try {
         cb(null, '');
       } catch (e) {
@@ -528,19 +528,14 @@ class Context extends Obj {
     return this.blocks[name][0];
   }
 
-  getSuper(env, name, block, frame, runtime, astate, isIncluded, cb) {
+  getSuper(env, name, block, frame, runtime, astate, cb) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
     var context = this;
 
-    if (typeof isIncluded === 'function') {
-      cb = isIncluded;
-      isIncluded = false;
-    }
-    else if(typeof astate === 'function') {
+    if(typeof astate === 'function') {
       cb = astate;
       astate = null;
-      isIncluded = false;
     }
 
     if (idx === -1 || !blk) {
@@ -549,7 +544,7 @@ class Context extends Obj {
 
     if(astate) {
       //async mode
-      blk(env, context, frame, runtime, astate, isIncluded, cb);
+      blk(env, context, frame, runtime, astate, cb);
     }
     else {
       blk(env, context, frame, runtime, cb);
@@ -605,7 +600,6 @@ class Template extends Obj {
     }
   }
 
-  //@todo - isIncluded?
   render(ctx, parentFrame, astate, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
@@ -637,7 +631,6 @@ class Template extends Obj {
     }
 
     const context = new Context(ctx || {}, this.blocks, this.env);
-    //const frame = parentFrame ? parentFrame.push(true) : new Frame();
     let frame;
     if(parentFrame){
       frame = parentFrame.push(true);
@@ -680,7 +673,7 @@ class Template extends Obj {
 
     if (this.isAsync) {
       this.rootRenderFunc(this.env, context, frame, globalRuntime,
-        astate || new AsyncState(), !!astate, callback);
+        astate || new AsyncState(), callback);
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     }
@@ -688,7 +681,7 @@ class Template extends Obj {
     return syncResult;
   }
 
-  getExported(ctx, parentFrame, astate, isIncluded, cb) {
+  getExported(ctx, parentFrame, astate, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
@@ -704,11 +697,6 @@ class Template extends Obj {
       astate = null;
     }
 
-    if (typeof isIncluded === 'function') {
-      cb = isIncluded;
-      isIncluded = false;
-    }
-
     // Catch compile errors for async rendering
     try {
       this.compile();
@@ -720,13 +708,18 @@ class Template extends Obj {
       }
     }
 
-    //const frame = parentFrame ? parentFrame.push() : new Frame();
     let frame;
     if(parentFrame){
       frame = parentFrame.push();
     }
     else {
-      frame = this.isAsync? new AsyncFrame : new Frame();
+      if( this.isAsync ){
+        frame = new AsyncFrame();
+        frame.isIncluded = true;
+      }
+      else {
+        frame = new Frame();
+      }
     }
     frame.topLevel = true;
 
@@ -740,7 +733,7 @@ class Template extends Obj {
       }
     };
     if (this.isAsync) {
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate || new AsyncState(), isIncluded, callback);
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate || new AsyncState(), callback);
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     }

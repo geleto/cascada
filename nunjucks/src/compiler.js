@@ -79,7 +79,7 @@ class Compiler extends Obj {
     this.buffer = 'output';
     this._scopeClosers = '';
     if (this.isAsync) {
-      this._emitLine(`function ${name}(env, context, frame, runtime, astate, isIncluded, cb) {`);
+      this._emitLine(`function ${name}(env, context, frame, runtime, astate, cb) {`);
     } else {
       this._emitLine(`function ${name}(env, context, frame, runtime, cb) {`);
     }
@@ -143,9 +143,10 @@ class Compiler extends Obj {
     }
   }
 
+  //@todo - option whether it's ok to return a promise
   _emitAsyncValue(emitFunc) {
     if (this.isAsync) {
-      this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}`);//@todo - probably wrong - test
+      this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}`);//do not await if not in an async block
       this._emitLine(`(async (astate)=>{`);
       this._emit('let frame = astate.snapshotFrame;');
       const res = this._tmpid();
@@ -1284,10 +1285,10 @@ class Compiler extends Obj {
     this._addScopeLevel();
 
     //@todo - in isAsync mode, the variables and macros should be immediately available as promises
-    const withoutContextArguments = this.isAsync ? 'null, null, astate, true, ' : '';
+    const withoutContextArguments = this.isAsync ? 'null, null, astate, ' : '';
     this._emitLine(id + '.getExported(' +
       (node.withContext ?
-        'context.getVariables(), frame, ' + (this.isAsync? 'astate, true, ' : '') : withoutContextArguments) +
+        'context.getVariables(), frame, ' + (this.isAsync? 'astate, ' : '') : withoutContextArguments) +
       this._makeCallback(id));
     this._addScopeLevel();
 
@@ -1304,9 +1305,9 @@ class Compiler extends Obj {
     const importedId = this._compileGetTemplate(node, frame, false, false);
     this._addScopeLevel();
 
-    const withoutContextArguments = this.isAsync ? 'null, null, astate, true, ' : '';
+    const withoutContextArguments = this.isAsync ? 'null, null, astate, ' : '';
     this._emitLine(importedId + '.getExported(' +
-      (node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync? 'astate, true, ' : '') : withoutContextArguments) +
+      (node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync? 'astate, ' : '') : withoutContextArguments) +
       this._makeCallback(importedId));
     this._addScopeLevel();
 
@@ -1355,7 +1356,7 @@ class Compiler extends Obj {
     // blocks twice
     if (!this.inBlock) {
       if(this.isAsync) {
-        this._emit('(parentTemplate ? function(e, c, f, r, a, i, cb) { cb(""); } : ');
+        this._emit('(parentTemplate ? function(e, c, f, r, a, cb) { cb(""); } : ');
       }
       else {
         this._emit('(parentTemplate ? function(e, c, f, r, cb) { cb(""); } : ');
@@ -1366,7 +1367,7 @@ class Compiler extends Obj {
       this._emit(')');
     }
     if(this.isAsync) {
-      this._emitLine('(env, context, frame, runtime, astate, isIncluded, ' + this._makeCallback(id));
+      this._emitLine('(env, context, frame, runtime, astate, ' + this._makeCallback(id));
     }
     else {
       this._emitLine('(env, context, frame, runtime, ' + this._makeCallback(id));
@@ -1383,7 +1384,7 @@ class Compiler extends Obj {
 
     const cb = this._makeCallback(id);
     if(this.isAsync) {
-      this._emitLine(`context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, isIncluded, ${cb}`);
+      this._emitLine(`context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, ${cb}`);
     }
     else{
       this._emitLine(`context.getSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
@@ -1515,10 +1516,11 @@ class Compiler extends Obj {
     this._emitLine('let parentTemplate = null;');
     this._compileChildren(node, frame);
     if (this.isAsync) {
+      this._emitLine('let isIncluded = !!(frame.parent || frame.isIncluded);');
       this._emitLine('if(!isIncluded){');
       this._emitLine('astate.waitAllClosures().then(() => {');
       this._emitLine('  if(parentTemplate) {');
-      this._emitLine('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, false, cb);');
+      this._emitLine('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
       this._emitLine('  } else {');
       this._emitLine(`    cb(null, runtime.flattentBuffer(${this.buffer}));`);
       this._emitLine('  }');
@@ -1529,7 +1531,7 @@ class Compiler extends Obj {
     }
     this._emitLine('if(parentTemplate) {');
     if (this.isAsync) {
-      this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, false, cb);');
+      this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
     }
     else {
       this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, cb);');
