@@ -201,16 +201,11 @@ class Environment extends EmitterObj {
     return (isRelative && loader.resolve) ? loader.resolve(parentName, filename) : filename;
   }
 
-  getAsyncTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
-    if(typeof name.then === 'function') { // it's a promise
-      return name.then((resolvedName) => {
-        this.getTemplate(resolvedName, eagerCompile, parentName, ignoreMissing, true, cb);
-      });
-    }
-    return this.getTemplate(name, eagerCompile, parentName, ignoreMissing, true, cb);
+  getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
+    return this._getTemplate(name, eagerCompile, parentName, ignoreMissing, false, cb);
   }
 
-  getTemplate(name, eagerCompile, parentName, ignoreMissing, isAsync, cb) {
+  _getTemplate(name, eagerCompile, parentName, ignoreMissing, isAsync, cb) {
     var that = this;
     var tmpl = null;
     if (name && name.raw) {
@@ -285,9 +280,13 @@ class Environment extends EmitterObj {
       }
       let newTmpl;
       if (!info) {
-        newTmpl = new Template(isAsync? noopTmplSrcAsync : noopTmplSrc, this, '', eagerCompile, isAsync);
+        newTmpl = isAsync?
+          new Template(noopTmplSrcAsync, this, '', eagerCompile) :
+          new AsyncTemplate(noopTmplSrc, this, '', eagerCompile);
       } else {
-        newTmpl = new Template(info.src, this, info.path, eagerCompile, isAsync);
+        newTmpl = isAsync?
+          new AsyncTemplate(info.src, this, info.path, eagerCompile) :
+          new Template(info.src, this, info.path, eagerCompile);
         if (!info.noCache) {
           info.loader.cache[name] = newTmpl;
         }
@@ -364,8 +363,51 @@ class Environment extends EmitterObj {
     return tmpl.render(ctx, cb);
   }
 
+  renderStringAsync(src, ctx, opts = {}) {
+    if (lib.isFunction(opts)) {
+      opts = {};
+    }
+
+    return new Promise((resolve, reject) => {
+      const tmpl = new Template(src, this, opts.path);
+      tmpl.render(ctx, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+  }
+
+  waterfall(tasks, callback, forceAsync) {
+    return waterfall(tasks, callback, forceAsync);
+  }
+}
+
+class AsyncEnvironment extends Environment {
+  init(loaders, opts) {
+    super.init(loaders, opts);
+  }
+
   async renderAsync(templateName, ctx, parentFrame) {
     return this._asyncRender(templateName, ctx, true, parentFrame);
+  }
+
+  renderString(src, ctx, opts, cb) {
+    if (typeof opts === 'function') {
+      cb = opts;
+      opts = {};
+    }
+    opts = opts || {};
+
+    this.renderStringAsync(src, ctx, opts)
+      .then(result => {
+        if (cb) cb(null, result);
+      })
+      .catch(err => {
+        if (cb) cb(err);
+      });
   }
 
   async renderStringAsync(src, ctx, opts) {
@@ -385,7 +427,7 @@ class Environment extends EmitterObj {
 
       if (namedTemplate) {
         // render template object
-        this.getTemplate(template, false, null, false, true, (err, tmpl) => {
+        this.getTemplate(template, false, null, false, (err, tmpl) => {
           if (err) {
             callbackAsap(callback, err);
           } else {
@@ -401,8 +443,13 @@ class Environment extends EmitterObj {
     return result;
   }
 
-  waterfall(tasks, callback, forceAsync) {
-    return waterfall(tasks, callback, forceAsync);
+  getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
+    if(typeof name.then === 'function') { // it's a promise
+      return name.then((resolvedName) => {
+        this._getTemplate(resolvedName, eagerCompile, parentName, ignoreMissing, true, cb);
+      });
+    }
+    return this._getTemplate(name, eagerCompile, parentName, ignoreMissing, true, cb);
   }
 }
 
@@ -821,12 +868,14 @@ class Template extends Obj {
 
 class AsyncTemplate extends Template {
   init(src, env, path, eagerCompile) {
+    env = env || new AsyncEnvironment();
     super.init(src, env, path, eagerCompile, true);
   }
 }
 
 module.exports = {
   Environment: Environment,
+  AsyncEnvironment: AsyncEnvironment,
   Template: Template,
-  AsyncTemplate: AsyncTemplate,
+  AsyncTemplate: AsyncTemplate
 };

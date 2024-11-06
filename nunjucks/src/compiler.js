@@ -1263,15 +1263,14 @@ class Compiler extends Obj {
     const cb = this._makeCallback(parentTemplateId);
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
     const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
+    this._emit('env.getTemplate(');
 
     if(this.isAsync) {
-      this._emit('env.getAsyncTemplate(');
       this._emitAsyncValue( () => {
         this._compileExpression(node.template, frame);
       });
     }
     else {
-      this._emit('env.getTemplate(');
       this._compileExpression(node.template, frame);
     }
 

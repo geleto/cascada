@@ -3,18 +3,18 @@
 
   var expect;
   var unescape;
-  var Environment;
+  var AsyncEnvironment;
   var lexer;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    Environment = require('../nunjucks/src/environment').Environment;
+    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
     lexer = require('../nunjucks/src/lexer');
     unescape = require('he').unescape;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
-    Environment = nunjucks.Environment;
+    AsyncEnvironment = nunjucks.AsyncEnvironment;
     lexer = nunjucks.lexer;
   }
 
@@ -46,7 +46,7 @@
   describe('Async mode', () => {
     let env;
     beforeEach(() => {
-      env = new Environment();
+      env = new AsyncEnvironment();
     });
 
     describe('Basic Async Rendering', () => {
@@ -953,7 +953,7 @@
     describe('Async Nunjucks Caller Functionality', () => {
 
       beforeEach(() => {
-        env = new Environment();
+        env = new AsyncEnvironment();
       });
 
       describe('Async Caller Basic Usage', () => {
@@ -1169,7 +1169,7 @@
 
       beforeEach(() => {
         loader = new StringLoader();
-        env = new Environment(loader);
+        env = new AsyncEnvironment(loader);
       });
 
       it('should handle async functions in include statements', async () => {
@@ -1273,7 +1273,7 @@
 
     describe('Complex Async Scenarios', () => {
       beforeEach(() => {
-        env = new Environment();
+        env = new AsyncEnvironment();
       });
       it('should handle async functions returning complex objects', async () => {
         const context = {
@@ -1310,7 +1310,7 @@
 
     describe('Async Nunjucks Expressions', () => {
       beforeEach(() => {
-        env = new Environment();
+        env = new AsyncEnvironment();
       });
 
       const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1469,7 +1469,7 @@
       let loader;
       beforeEach(() => {;
         loader = new StringLoader();
-        env = new Environment(loader);
+        env = new AsyncEnvironment(loader);
       });
 
       it('should render a simple block with async content', async () => {
@@ -1633,7 +1633,7 @@
 
     describe('Async Custom Extensions', () => {
       beforeEach(() => {
-        env = new Environment();
+        env = new AsyncEnvironment();
       });
 
       class AsyncExtension {
@@ -2162,7 +2162,7 @@
 
       beforeEach(() => {
         loader = new StringLoader();
-        env = new Environment(loader);
+        env = new AsyncEnvironment(loader);
       });
 
       describe('Basic Import', () => {
@@ -2685,7 +2685,7 @@
 
     describe('Async Switch Statement Tests', () => {
       beforeEach(() => {
-        env = new Environment();
+        env = new AsyncEnvironment();
       });
 
       // Basic switch functionality
@@ -2931,7 +2931,7 @@
 
       beforeEach(() => {
         loader = new StringLoader();
-        env = new Environment(loader);
+        env = new AsyncEnvironment(loader);
       });
 
       it('should handle multiple targets with async expression', async () => {
@@ -2961,7 +2961,7 @@
 
       beforeEach(() => {
         loader = new StringLoader();
-        env = new Environment(loader);
+        env = new AsyncEnvironment(loader);
       });
 
       // Basic set block functionality
