@@ -363,23 +363,6 @@ class Environment extends EmitterObj {
     return tmpl.render(ctx, cb);
   }
 
-  renderStringAsync(src, ctx, opts = {}) {
-    if (lib.isFunction(opts)) {
-      opts = {};
-    }
-
-    return new Promise((resolve, reject) => {
-      const tmpl = new Template(src, this, opts.path);
-      tmpl.render(ctx, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
-  }
-
   waterfall(tasks, callback, forceAsync) {
     return waterfall(tasks, callback, forceAsync);
   }
@@ -394,25 +377,24 @@ class AsyncEnvironment extends Environment {
     return this._asyncRender(templateName, ctx, true, parentFrame);
   }
 
-  renderString(src, ctx, opts, cb) {
+  async renderString(src, ctx, opts, cb) {
     if (typeof opts === 'function') {
       cb = opts;
       opts = {};
     }
     opts = opts || {};
 
-    this.renderStringAsync(src, ctx, opts)
-      .then(result => {
-        if (cb) cb(null, result);
-      })
-      .catch(err => {
-        if (cb) cb(err);
-      });
-  }
-
-  async renderStringAsync(src, ctx, opts) {
-    opts = opts || {};
-    return this._asyncRender(src, ctx, false, opts);
+    try{
+      const result = this._asyncRender(src, ctx, false, opts);
+      if(cb){
+        cb(null, result)
+      }
+      return result;
+    }
+    catch(err){
+      if (cb) cb(err);
+      throw err;
+    }
   }
 
   async _asyncRender(template, ctx, namedTemplate, opts) {

@@ -62,7 +62,7 @@
         };
 
         const template = 'Current time is: {{ currentTime }}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('Current time is: 2024-09-12T17:12:123Z');
       });
     });
@@ -77,7 +77,7 @@
       };
 
       const template = 'The weather is {{ weatherPromise.temp }}°C and {{ weatherPromise.condition }}.';
-      const result = await env.renderStringAsync(template, context);
+      const result = await env.renderString(template, context);
       expect(result).to.equal('The weather is 22°C and Sunny.');
     });
 
@@ -91,7 +91,7 @@
       };
 
       const template = 'User: {{ fetchUserName() }}';
-      const result = await env.renderStringAsync(template, context);
+      const result = await env.renderString(template, context);
       expect(result).to.equal('User: John Doe');
     });
 
@@ -104,7 +104,7 @@
       };
 
       const template = 'User: {{ fetchUser(1).name }}';
-      const result = await env.renderStringAsync(template, context);
+      const result = await env.renderString(template, context);
       expect(result).to.equal('User: John Doe');
     });
 
@@ -117,7 +117,7 @@
       };
 
       const template = '{% set user = fetchUser(1) %}User: {{ user.name }} ({{ user.email }})';
-      const result = await env.renderStringAsync(template, context);
+      const result = await env.renderString(template, context);
       expect(result).to.equal('User: John Doe (john@example.com)');
     });
 
@@ -130,7 +130,7 @@
       };
 
       const template = '{% set result = 1 + getValue() %}Result = {{ result }}';
-      const result = await env.renderStringAsync(template, context);
+      const result = await env.renderString(template, context);
       expect(result).to.equal('Result = 2');
     });
 
@@ -167,7 +167,7 @@
         First title: {{ fetchUserPostsFirstTitle(user.id) }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
         User: John Doe
         First title: First post
@@ -198,7 +198,7 @@
         Posts: {{ userPosts | join(', ') }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
         User: John Doe
         Posts: Post 1, Post 2
@@ -236,7 +236,7 @@
         Permissions: {{ permissions | join(', ') }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
         User: John Doe
         Role: Admin
@@ -268,7 +268,7 @@
         {{ report }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
         Report for John Doe in IT
         `);
@@ -292,7 +292,7 @@
         {%- endfor %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           - Data for ID 1
           - Data for ID 2
@@ -334,7 +334,7 @@
         {%- endfor %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
         User: John Doe
         Posts:
@@ -358,7 +358,7 @@
         {%- endfor %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           - Item 1
           - Item 2
@@ -381,7 +381,7 @@
         {%- endfor %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           A-1
           B-2
@@ -407,7 +407,7 @@
         {%- endfor %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           Alice:
           - Post 1 by User 1
@@ -436,7 +436,7 @@
         {%- endfor %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           Alice: Admin
           Bob: User
@@ -461,7 +461,7 @@
         {%- endfor %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           A-1 (First)
           B-2
@@ -487,7 +487,7 @@
           {{ processUser(name, age) }}
         {%- endfor %}`;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           John is 30 years old
           Jane is 25 years old
@@ -513,7 +513,7 @@
           {{ formatUserAge(name, age) }}
         {%- endfor %}`;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           John: 30 years
           Jane: 25 years
@@ -544,7 +544,7 @@
           {{ formatEmployee(name, getTitle(dept)) }}
         {%- endfor %}`;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           John - Engineer
           Jane - Manager
@@ -581,7 +581,7 @@
           {%- endif -%}
         {%- endfor %}`;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           John :Can write
           Jane :Cannot write
@@ -609,7 +609,7 @@
           {%- endfor %}
         {%- endfor %}`;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`
           IT:
             - John (developer)
@@ -631,11 +631,11 @@
         };
 
         const template = '{% if isUserAdmin(1) %}Admin{% else %}Not admin{% endif %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('Admin');
 
         const template2 = '{% if isUserAdmin(2) %}Admin{% else %}Not admin{% endif %}';
-        const result2 = await env.renderStringAsync(template2, context);
+        const result2 = await env.renderString(template2, context);
         expect(result2).to.equal('Not admin');
       });
 
@@ -645,7 +645,7 @@
         };
 
         const template = '{% if userStatus == "active" %}User is active{% else %}User is not active{% endif %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('User is active');
       });
 
@@ -665,7 +665,7 @@
         {%- else -%}Regular user
         {%- endif -%}`;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('Admin user');
 
         const template2 = `
@@ -677,7 +677,7 @@
           Regular user
         {%- endif -%}`;
 
-        const result2 = await env.renderStringAsync(template2, context);
+        const result2 = await env.renderString(template2, context);
         expect(result2).to.equal('Moderator user');
       });
 
@@ -699,7 +699,7 @@
         {%- endif -%}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('Hello, Admin John!');
 
         const template2 = `
@@ -707,7 +707,7 @@
         {%- else -%}Hello, User {{ getUserName(2) }}!
         {%- endif -%}`;
 
-        const result2 = await env.renderStringAsync(template2, context);
+        const result2 = await env.renderString(template2, context);
         expect(result2).to.equal('Hello, User Jane!');
       });
 
@@ -732,7 +732,7 @@
           {%- endif -%}
           `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('Inactive User');
 
         const template2 = `
@@ -744,7 +744,7 @@
           {%- endif -%}
           `;
 
-        const result2 = await env.renderStringAsync(template2, context);
+        const result2 = await env.renderString(template2, context);
         expect(result2.trim()).to.equal('Active User');
       });
     });
@@ -764,7 +764,7 @@
           }
         };
         const template = '{{ "hello" | uppercase }}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('HELLO');
       });
 
@@ -776,7 +776,7 @@
           }
         };
         const template = '{{ "Admin" if isAdmin() else "User" }}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('Admin');
       });
     });
@@ -794,7 +794,7 @@
           H:{{ fetchTitle(id) }}
         {%- endmacro -%}
         {{ header(1) }} {{ header(2) }}`;
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal(`H:Hello H:World`);
       });
 
@@ -821,7 +821,7 @@
         {{ article(fetchTitle(), fetchContent()) }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(unescape(result.trim())).to.equal(`
         <article>
           <h1>Async Title</h1>
@@ -858,7 +858,7 @@
         {{ userProfile(fetchUser(1)) }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(unescape(result.trim())).to.equal(`
         <div class="user-profile">
           <h2>User 1</h2>
@@ -899,7 +899,7 @@
         {{ page(fetchHeader(), fetchContent(), fetchFooter()) }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(unescape(result.trim())).to.equal(`
         <div class="page">
           <header>Async Header</header>
@@ -936,7 +936,7 @@
         {{ userProfile(fetchUser(2)) }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(unescape(result.trim())).to.equal(`
         <div class="user-profile">
           <h2>User 1</h2>
@@ -972,7 +972,7 @@
             asyncValue: Promise.resolve('async result')
           };
 
-          const rendered = await env.renderStringAsync(template, context);
+          const rendered = await env.renderString(template, context);
           expect(rendered.trim()).to.equal('async result');
         });
 
@@ -987,7 +987,7 @@
             {%- endcall %}
           `;
 
-          const result = await env.renderStringAsync(template);
+          const result = await env.renderString(template);
           expect(result.trim()).to.equal('The result is: 3');
         });
 
@@ -1007,7 +1007,7 @@
             secondValue: Promise.resolve('second')
           };
 
-          const rendered = await env.renderStringAsync(template, context);
+          const rendered = await env.renderString(template, context);
           expect(rendered.trim()).to.equal('Results: first, second');
         });
       });
@@ -1034,7 +1034,7 @@
             asyncValue: Promise.resolve('content')
           };
 
-          const rendered = await env.renderStringAsync(template, context);
+          const rendered = await env.renderString(template, context);
           expect(rendered.trim()).to.equal('Outer(Inner(content))');
         });
       });
@@ -1058,7 +1058,7 @@
             asyncValue: Promise.resolve('shown')
           };
 
-          const rendered = await env.renderStringAsync(template, context);
+          const rendered = await env.renderString(template, context);
           expect(rendered.trim()).to.equal('shown');
         });
 
@@ -1079,7 +1079,7 @@
             asyncItems: Promise.resolve(['a', 'b', 'c'])
           };
 
-          const rendered = await env.renderStringAsync(template, context);
+          const rendered = await env.renderString(template, context);
           expect(rendered.trim().replace(/\s+/g, ' ')).to.equal('a b c');
         });
       });
@@ -1101,7 +1101,7 @@
             asyncContent: Promise.resolve('42')
           };
 
-          const rendered = await env.renderStringAsync(template, context);
+          const rendered = await env.renderString(template, context);
           expect(rendered.trim()).to.equal('Result: 42');
         });
       });
@@ -1127,7 +1127,7 @@
           };
 
           try {
-            await env.renderStringAsync(template, context);
+            await env.renderString(template, context);
           } catch (error) {
             expect(error.message).to.contain('Async error');
           }
@@ -1155,7 +1155,7 @@
           };
 
           try {
-            await env.renderStringAsync(template, context);
+            await env.renderString(template, context);
           }
           catch (error) {
             expect(error.message).to.contain('Nested async error');
@@ -1283,7 +1283,7 @@
           }
         };
         const template = '{{ getUser().name }} is {{ getUser().roles[0] }}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('John is admin');
       });
 
@@ -1298,7 +1298,7 @@
 
         let noError = false;
         try {
-          await env.renderStringAsync(template, context);
+          await env.renderString(template, context);
           noError = true;
         } catch (error) {
           expect(error instanceof Error).to.equal(true);
@@ -1335,7 +1335,7 @@
           Regular function: {{ regularFunc() }}
           Inline value: {{ "Inline" }}
         `;
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal(`
           Async function (String): Hello
           Async function (Number): 42
@@ -1365,7 +1365,7 @@
           Mixed: {{ addAsync(asyncNum, subtractSync(staticNum, 1)) }}
           With inline: {{ addAsync(2, 3) + 5 }}
         `;
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal(`
           Async function: 5
           Async getter: 5
@@ -1394,7 +1394,7 @@
           Mixed: {{ asyncGreaterThan(asyncX, 3) and syncEqual(staticY, 10) }}
           With inline: {{ asyncX > 3 and 7 < staticY }}
         `;
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal(`
           Async function: true
           Async getter: true
@@ -1423,7 +1423,7 @@
           Mixed: {{ "yes" if (asyncTrue() and not staticFalse) else "no" }}
           With inline: {{ "yes" if (asyncTrue() and true) else "no" }}
         `;
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal(`
           Async function: yes
           Async getter: no
@@ -1456,7 +1456,7 @@
             {{ user.name }}: {{ ("Adult" if isAdult(user.age) else "Minor") }} (Age: {{ user.age }}, Discount: {{ (asyncDiscount * 100 if user.age > adultAge else 0) }}%)
           {% endfor %}
         `;
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal(`
           Alice: Adult (Age: 30, Discount: 10%)
           Bob: Adult (Age: 25, Discount: 10%)
@@ -1480,7 +1480,7 @@
           }
         };
         const template = '{% block content %}{{ getMessage() }}{% endblock %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Hello, World!');
       });
 
@@ -1493,7 +1493,7 @@
         };
         loader.addTemplate('base.njk', '<div>{% block content %}Base Content{% endblock %}</div>');
         const childTemplate = '{% extends "base.njk" %}{% block content %}{{ getContent() }}{% endblock %}';
-        const result = await env.renderStringAsync(childTemplate, context);
+        const result = await env.renderString(childTemplate, context);
         expect(result.trim()).to.equal('<div>Async Child Content</div>');
       });
 
@@ -1509,7 +1509,7 @@
           }
         };
         const template = '{% block outer %}{{ getOuter() }} {% block inner %}{{ getInner() }}{% endblock %}{% endblock %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Async Outer Async Inner');
       });
 
@@ -1525,7 +1525,7 @@
           }
         };
         const template = '{% for item in getItems() %}{% block item %}{{ processItem(item) }}{% endblock %}{% endfor %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Processed AProcessed BProcessed C');
       });
 
@@ -1541,7 +1541,7 @@
           }
         };
         const template = '{% block greeting %}{{ getGreeting(getName()) }}{% endblock %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Hello, John!');
       });
 
@@ -1558,7 +1558,7 @@
         };
         loader.addTemplate('base.njk', '{% block content %}{{ getBaseContent() }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content %}{{ super() }} + {{ getChildContent() }}{% endblock %}';
-        const result = await env.renderStringAsync(childTemplate, context);
+        const result = await env.renderString(childTemplate, context);
         expect(result.trim()).to.equal('Async Base Content + Async Child Content');
       });
 
@@ -1580,7 +1580,7 @@
         loader.addTemplate('grand.njk', '{% block a %}{{ getA() }}{% endblock %}{% block b %}{{ getB() }}{% endblock %}{% block c %}{{ getC() }}{% endblock %}');
         loader.addTemplate('parent.njk', '{% extends "grand.njk" %}{% block b %}Modified {{ getB() }}{% endblock %}');
         const childTemplate = '{% extends "parent.njk" %}{% block c %}Modified {{ getC() }}{% endblock %}';
-        const result = await env.renderStringAsync(childTemplate, context);
+        const result = await env.renderString(childTemplate, context);
         expect(result.trim()).to.equal('Async AModified Async BModified Async C');
       });
 
@@ -1608,7 +1608,7 @@
           {% endfor %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal(`Item: APPLE
             Item: BANANA
             Item: CHERRY`);
@@ -1626,7 +1626,7 @@
           }
         };
         const template = '{% block content %}{% if shouldRender() %}{{ getContent() }}{% endif %}{% endblock %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Conditional Content');
       });
     });
@@ -1796,7 +1796,7 @@
         env.addExtension('GreetExtension', greetExtension);
 
         const template = '{% greet "John" %}';
-        const result = await env.renderStringAsync(template);
+        const result = await env.renderString(template);
         expect(result).to.equal('Hello, John!');
       });
 
@@ -1817,7 +1817,7 @@
         });
 
         const template = '{% greet "John" %}';
-        const result = await env.renderStringAsync(template);
+        const result = await env.renderString(template);
         expect(result).to.equal('Hello, John!');
       });
 
@@ -1836,7 +1836,7 @@
         });
 
         const template = '{% greet "John" %}';
-        const result = await env.renderStringAsync(template);
+        const result = await env.renderString(template);
         expect(result).to.equal('Hello, John!');
       });
 
@@ -1849,7 +1849,7 @@
         env.addExtension('AddExtension', addExtension);
 
         const template = '{% add 5, 3 %}';
-        const result = await env.renderStringAsync(template);
+        const result = await env.renderString(template);
         expect(result).to.equal('8');
       });
 
@@ -1869,7 +1869,7 @@
             {%- endfor %}
           </ul>`;
 
-        const result = await env.renderStringAsync(template);
+        const result = await env.renderString(template);
         const expected = `
           <ul>
               <li>Alice</li>
@@ -1904,7 +1904,7 @@
             {%- endfor %}
           </ul>`;
 
-        const result = await env.renderStringAsync(template);
+        const result = await env.renderString(template);
         const expected = `
           <ul>
               <li>Alice</li>
@@ -1942,7 +1942,7 @@
             {%- endfor %}
           </ul>`;
 
-        const result = await env.renderStringAsync(template);//@todo - this will not work with renderString, nunjucks bug? - test
+        const result = await env.renderString(template);//@todo - this will not work with renderString, nunjucks bug? - test
         const expected = `
           <ul>
               <li>Alice</li>
@@ -1967,7 +1967,7 @@
         const template = '{% asyncError %}';
 
         try {
-          await env.renderStringAsync(template);
+          await env.renderString(template);
           // If we reach this point, the test should fail
           expect().fail('Expected an error to be thrown');
         } catch (error) {
@@ -1993,7 +1993,7 @@
         };
 
         const template = '{% greet getName() %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('Hello, Alice!');
       });
 
@@ -2022,7 +2022,7 @@
         };
 
         const template = '{% introduce getName(), getRole() %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('This is Bob, our manager.');
       });
 
@@ -2051,7 +2051,7 @@
         };
 
         const template = '{% describeUser getName(), 30, getCity() %}';
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result).to.equal('Charlie, aged 30, lives in New York.');
       });
 
@@ -2090,7 +2090,7 @@
             {% end${extName} %}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           const expected = `
             <section>
               This is some content in ${extName}.
@@ -2143,7 +2143,7 @@
             {% end${extName} %}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           const expected = `
             <section>
               This is main content in ${extName}.
@@ -2200,7 +2200,7 @@
             {{ forms.field(getFieldName(), getFieldValue()) }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(unescape(result.trim())).to.equal(
             `<div class="field">
               <input type="text" name="username" value="john_doe" />
@@ -2221,7 +2221,7 @@
             {{ label(getLabelText()) }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(unescape(result.trim())).to.equal(
             `<div>
               <label>Enter Username:</label>
@@ -2256,7 +2256,7 @@
             {{ forms.statusLabel() }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(unescape(result.trim())).to.equal(
             `<input name="user" value="john_doe" />
             <label>Status: active</label>`
@@ -2273,7 +2273,7 @@
             {{ forms.userField() }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(unescape(result.trim())).to.equal(
             '<input name="user" value="" />'
           );
@@ -2303,7 +2303,7 @@
             {{ form.field() }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(result.trim()).to.equal('Form 1 Field');
         });
       });
@@ -2367,7 +2367,7 @@
               {{- forms.delayedGreeting(getName()) -}}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(result).to.equal('Hello, Alice (delayed)!');
         });
 
@@ -2391,7 +2391,7 @@
             {{ gm.greetWithContext() }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(unescape(result.trim())).to.equal('Alice');
         });
 
@@ -2419,7 +2419,7 @@
               {{- macros.wrapper(nameValue) -}}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(result).to.equal(`Bob!`);
         });
 
@@ -2439,7 +2439,7 @@
               {%- import "nested-template.njk" as templates -%}{{- templates.wrapper(getName(), getCount()) -}}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(unescape(result.trim())).to.equal(
                   `<main>Hello, Bob (delayed)!</main>
                   Count: 0Count: 1`);
@@ -2458,7 +2458,7 @@
               {{- loop.listItems(getItems()) -}}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(unescape(result)).to.equal(
             '<ul><li>one</li><li>two</li><li>three</li></ul>');
         });
@@ -2481,7 +2481,7 @@
             {{ greet(getName()) }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(result.trim()).to.equal('Hello, Alice!');
         });
 
@@ -2500,7 +2500,7 @@
             {{ greet() }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(result.trim()).to.equal('Hello, Bob!');
         });
 
@@ -2523,7 +2523,7 @@
             {{ macros.greet(getName()) }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(result.trim()).to.equal('Hello, Charlie!');
         });
 
@@ -2546,7 +2546,7 @@
             {{ macros.greet() }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(result.trim()).to.equal('Hello, Diana!');
         });
 
@@ -2569,7 +2569,7 @@
             {{ greet() }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(result.trim()).to.equal('Hi, Eve!');
         });
 
@@ -2592,7 +2592,7 @@
             {{ greet() }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(result.trim()).to.equal('Greetings, Frank!');
         });
       });
@@ -2638,7 +2638,7 @@
             {{ api.userEndpoint(getApiUrl, getApiKey, "123") }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(result.trim()).to.equal(
             'https://api.example.com/users/123?key=secret-key-123'
           );
@@ -2675,7 +2675,7 @@
             {{ forms.formattedField(getName(), "john_doe") }}
           `;
 
-          const result = await env.renderStringAsync(template, context);
+          const result = await env.renderString(template, context);
           expect(unescape(result.trim())).to.equal(
             '<input name="username" value="JOHN_DOE" />'
           );
@@ -2710,7 +2710,7 @@
           {% endswitch %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Beta');
       });
 
@@ -2740,7 +2740,7 @@
           {% endswitch %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('First B');
       });
 
@@ -2764,7 +2764,7 @@
           {% endswitch %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('No match');
       });
 
@@ -2789,7 +2789,7 @@
           {% endswitch %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Dynamic Content');
       });
 
@@ -2814,7 +2814,7 @@
           {%- endfor -%}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('ABC');
       });
 
@@ -2845,7 +2845,7 @@
           {%- endswitch -%}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Outer A:Inner 1');
       });
 
@@ -2874,7 +2874,7 @@
           {% endswitch %}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Match 1');
       });
 
@@ -2894,7 +2894,7 @@
         `;
 
         try {
-          await env.renderStringAsync(template, context);
+          await env.renderString(template, context);
           expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error.message).to.contain('Switch expression error');
@@ -2918,7 +2918,7 @@
         `;
 
         try {
-          await env.renderStringAsync(template, context);
+          await env.renderString(template, context);
           expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error.message).to.contain('Case expression error');
@@ -2951,7 +2951,7 @@
           {{ x }},{{ y }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('20,20');
       });
     });
@@ -2981,7 +2981,7 @@
           {{ greeting }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Hello, John!\n            Welcome to our site.');
       });
 
@@ -3006,7 +3006,7 @@
           {{ userInfo }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('First Name: John\n            Last Name: Doe');
       });
 
@@ -3037,7 +3037,7 @@
           {{ outer }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Welcome Goodbye');
       });
 
@@ -3063,7 +3063,7 @@
           {{ userList }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Alice: admin Bob: user Charlie: user');
       });
 
@@ -3087,7 +3087,7 @@
           {{ pageHeader }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(unescape(result.trim())).to.equal('<h1>Welcome</h1>');
       });
 
@@ -3114,7 +3114,7 @@
           {{ headers.render(getTitle()) }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(unescape(result.trim())).to.equal('<header>Welcome</header>');
       });
 
@@ -3139,7 +3139,7 @@
           {{ greeting }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Hello, JOHN!');
       });
 
@@ -3160,7 +3160,7 @@
         `;
 
         try {
-          await env.renderStringAsync(template, context);
+          await env.renderString(template, context);
           expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error.message).to.contain('Failed to get name');
@@ -3197,7 +3197,7 @@
           {{ userList }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Alice: read write Bob: read');
       });
 
@@ -3221,7 +3221,7 @@
           Result: {{ calculation }}
         `;
 
-        const result = await env.renderStringAsync(template, context);
+        const result = await env.renderString(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Result: 20');
       });
     });
