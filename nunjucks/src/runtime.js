@@ -479,14 +479,10 @@ function promisify(fn) {
   };
 }
 
-function resolveArguments(fn, skipArguments = 0) {
-  return async function(...args) {
-    const skippedArgs = args.slice(0, skipArguments);
-    const remainingArgs = args.slice(skipArguments);
-
+async function resolveAll(args) {
     const promiseIndices = [];
     const promiseArgs = [];
-    remainingArgs.forEach((arg, index) => {
+    args.forEach((arg, index) => {
       if (arg && typeof arg.then === 'function') {
         promiseIndices.push(index);
         promiseArgs.push(arg);
@@ -494,15 +490,26 @@ function resolveArguments(fn, skipArguments = 0) {
     });
 
     if (promiseArgs.length === 0) {
-      return fn.apply(this, args);
+      return;//no changes
+    }
+
+    if (promiseArgs.length === 1) {
+      // Fast path for single promise
+      args[promiseIndices[0]] = await promiseArgs[0];
     }
 
     const resolvedPromises = await Promise.all(promiseArgs);
 
     promiseIndices.forEach((index, i) => {
-      remainingArgs[index] = resolvedPromises[i];
+      args[index] = resolvedPromises[i];
     });
+}
 
+function resolveArguments(fn, skipArguments = 0) {
+  return async function(...args) {
+    const skippedArgs = args.slice(0, skipArguments);
+    const remainingArgs = args.slice(skipArguments);
+    resolveAll(remainingArgs);
     const finalArgs = [...skippedArgs, ...remainingArgs];
 
     return fn.apply(this, finalArgs);
@@ -663,6 +670,7 @@ module.exports = {
   ensureDefined: ensureDefined,
   ensureDefinedAsync: ensureDefinedAsync,
   promisify: promisify,
+  resolveAll: resolveAll,
   resolveArguments: resolveArguments,
   flattentBuffer: flattentBuffer,
   memberLookup: memberLookup,
