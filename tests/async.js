@@ -2954,6 +2954,90 @@
         const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('20,20');
       });
+
+      it('should handle async values in set expressions with math operations', async () => {
+        const context = {
+          async getBase() {
+            await delay(5);
+            return 10;
+          },
+          async getMultiplier() {
+            await delay(3);
+            return 2;
+          }
+        };
+
+        const template = `
+          {% set result = getBase() * getMultiplier() + 5 %}
+          {{ result }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('25');
+      });
+
+      it('should handle async values in set expressions with string operations', async () => {
+        const context = {
+          async getPrefix() {
+            await delay(5);
+            return 'Hello';
+          },
+          async getSuffix() {
+            await delay(3);
+            return 'World';
+          }
+        };
+
+        const template = `
+          {% set greeting = getPrefix() + ", " + getSuffix() + "!" %}
+          {{ greeting }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Hello, World!');
+      });
+
+      it('should handle async values in set expressions with comparisons', async () => {
+        const context = {
+          async getValue1() {
+            await delay(5);
+            return 10;
+          },
+          async getValue2() {
+            await delay(3);
+            return 20;
+          }
+        };
+
+        const template = `
+          {% set isGreater = getValue1() > getValue2() %}
+          {{ isGreater }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('false');
+      });
+
+      it('should handle errors in async set expressions', async () => {
+        const context = {
+          async getValue() {
+            await delay(5);
+            throw new Error('Failed to get value');
+          }
+        };
+
+        const template = `
+          {% set result = getValue() * 2 %}
+          {{ result }}
+        `;
+
+        try {
+          await env.renderString(template, context);
+          expect().fail('Expected an error to be thrown');
+        } catch (error) {
+          expect(error.message).to.contain('Failed to get value');
+        }
+      });
     });
 
     describe('Async Set Block Tests', () => {
@@ -3223,6 +3307,262 @@
 
         const result = await env.renderString(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Result: 20');
+      });
+    });
+
+    describe('Regular Nunjucks Async Filter Tests', () => {
+      beforeEach(() => {
+        // Add async filter using the standard Nunjucks callback-style API
+        env.addFilter('asyncUppercase', (str, callback) => {
+          setTimeout(() => {
+            callback(null, str.toUpperCase());
+          }, 5);
+        }, true); // true flag indicates this is an async filter
+
+        env.addFilter('asyncReverse', (str, callback) => {
+          setTimeout(() => {
+            callback(null, str.split('').reverse().join(''));
+          }, 3);
+        }, true);
+      });
+
+      it('should handle standard async filter', async () => {
+        const template = '{{ "hello" | asyncUppercase }}';
+        const result = await env.renderString(template);
+        expect(result).to.equal('HELLO');
+      });
+
+      it('should handle chained standard async filters', async () => {
+        const template = '{{ "hello" | asyncUppercase | asyncReverse }}';
+        const result = await env.renderString(template);
+        expect(result).to.equal('OLLEH');
+      });
+
+      it('should handle standard async filter with async value', async () => {
+        const context = {
+          async getText() {
+            await delay(5);
+            return 'hello';
+          }
+        };
+
+        const template = '{{ getText() | asyncUppercase }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('HELLO');
+      });
+
+      it('should handle errors in standard async filters', async () => {
+        env.addFilter('asyncError', (str, callback) => {
+          setTimeout(() => {
+            callback(new Error('Filter error'));
+          }, 5);
+        }, true);
+
+        const template = '{{ "test" | asyncError }}';
+
+        try {
+          await env.renderString(template);
+          expect().fail('Expected an error to be thrown');
+        } catch (error) {
+          expect(error.message).to.contain('Filter error');
+        }
+      });
+
+      it('should handle standard async filters in set statements', async () => {
+        const template = `
+          {% set result = "hello" | asyncUppercase %}
+          {{ result }}
+        `;
+
+        const result = await env.renderString(template);
+        expect(result.trim()).to.equal('HELLO');
+      });
+
+      it('should handle standard async filters in if conditions', async () => {
+        const template = `
+          {% if "yes" | asyncUppercase == "YES" %}
+            correct
+          {% else %}
+            incorrect
+          {% endif %}
+        `;
+
+        const result = await env.renderString(template);
+        expect(result.trim()).to.equal('correct');
+      });
+    });
+
+    describe('For Loop with Else Tests', () => {
+      it('should handle else in for loop with async empty array', async () => {
+        const context = {
+          async getItems() {
+            await delay(5);
+            return [];
+          }
+        };
+
+        const template = `
+          {% for item in getItems() %}
+            {{ item }}
+          {% else %}
+            no items
+          {% endfor %}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('no items');
+      });
+
+      it('should not execute else in for loop with async non-empty array', async () => {
+        const context = {
+          async getItems() {
+            await delay(5);
+            return ['a', 'b', 'c'];
+          }
+        };
+
+        const template = `
+          {%- for item in getItems() -%}
+            {{ item }}
+          {%- else -%}
+            no items
+          {%- endfor -%}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('abc');
+      });
+
+      it('should handle async values inside for-else loop body', async () => {
+        const context = {
+          async getItems() {
+            await delay(5);
+            return [];
+          },
+          async getEmptyMessage() {
+            await delay(3);
+            return 'The list is empty';
+          }
+        };
+
+        const template = `
+          {% for item in getItems() %}
+            {{ item }}
+          {% else %}
+            {{ getEmptyMessage() }}
+          {% endfor %}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('The list is empty');
+      });
+
+      it('should handle nested for-else loops with async values', async () => {
+        const context = {
+          async getOuterItems() {
+            await delay(5);
+            return ['a', 'b'];
+          },
+          async getInnerItems(outer) {
+            await delay(3);
+            return outer === 'a' ? ['1', '2'] : [];
+          }
+        };
+
+        const template = `
+          {% for outer in getOuterItems() %}
+            {{ outer }}:
+            {% for inner in getInnerItems(outer) %}
+              {{ inner }}
+            {% else %}
+              empty
+            {% endfor %}
+          {% else %}
+            no outer items
+          {% endfor %}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim().replace(/\s+/g, ' ')).to.equal('a: 1 2 b: empty');
+      });
+
+      it('should handle errors in async for-else loops', async () => {
+        const context = {
+          async getItems() {
+            await delay(5);
+            throw new Error('Failed to get items');
+          }
+        };
+
+        const template = `
+          {% for item in getItems() %}
+            {{ item }}
+          {% else %}
+            no items
+          {% endfor %}
+        `;
+
+        try {
+          await env.renderString(template, context);
+          expect().fail('Expected an error to be thrown');
+        } catch (error) {
+          expect(error.message).to.contain('Failed to get items');
+        }
+      });
+
+      it('should handle async functions in loop and else conditions', async () => {
+        const context = {
+          items: [],
+          async shouldShowItems() {
+            await delay(5);
+            return false;
+          },
+          async getEmptyMessage() {
+            await delay(3);
+            return 'No items to display';
+          }
+        };
+
+        const template = `
+          {% if shouldShowItems() %}
+            {% for item in items %}
+              {{ item }}
+            {% else %}
+              {{ getEmptyMessage() }}
+            {% endfor %}
+          {% else %}
+            Items hidden
+          {% endif %}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Items hidden');
+      });
+
+      it('should handle for-else with async filter in the loop sequence', async () => {
+        env.addFilter('asyncFilter', (arr, callback) => {
+          setTimeout(() => {
+            callback(null, arr.filter(x => x > 2));
+          }, 5);
+        }, true);
+
+        const context = {
+          async getNumbers() {
+            await delay(5);
+            return [1, 2, 3, 4];
+          }
+        };
+
+        const template = `
+          {% for num in getNumbers() | asyncFilter %}
+            {{ num }}
+          {% else %}
+            no numbers > 2
+          {% endfor %}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('34');
       });
     });
 
