@@ -3554,11 +3554,11 @@
         };
 
         const template = `
-          {% for num in getNumbers() | asyncFilter %}
+          {%- for num in getNumbers() | asyncFilter -%}
             {{ num }}
-          {% else %}
+          {%- else -%}
             no numbers > 2
-          {% endfor %}
+          {%- endfor -%}
         `;
 
         const result = await env.renderString(template, context);
