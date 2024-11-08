@@ -490,7 +490,7 @@ async function resolveAll(args) {
     });
 
     if (promiseArgs.length === 0) {
-      return;//no changes
+      return args;//no changes
     }
 
     if (promiseArgs.length === 1) {
@@ -503,6 +503,8 @@ async function resolveAll(args) {
     promiseIndices.forEach((index, i) => {
       args[index] = resolvedPromises[i];
     });
+
+    return args;
 }
 
 function resolveArguments(fn, skipArguments = 0) {

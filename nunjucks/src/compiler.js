@@ -754,17 +754,22 @@ class Compiler extends Obj {
     });
   }
 
+  //@todo - handle async return value
   compileFilter(node, frame) {
     var name = node.name;
 
     this._emitAwaitBegin();
     this.assertType(name, nodes.Symbol);
+
     this._emit('env.getFilter("' + name.value + '").call(context, ');
     this._compileAggregate(node.args, frame);
     this._emit(')');
+
     this._emitAwaitEnd();
   }
 
+  //@todo - do proper async, not callback
+  //@todo - wrap
   compileFilterAsync(node, frame) {
     var name = node.name;
     var symbol = node.symbol.value;
@@ -773,10 +778,20 @@ class Compiler extends Obj {
 
     frame.set(symbol, symbol);
 
-    this._emit('env.getFilter("' + name.value + '").call(context, ');
-    this._compileAggregate(node.args, frame);
-    this._emitLine(', ' + this._makeCallback(symbol));
+    if (this.isAsync) {
+        const argsArray = this._tmpid();
+        this._emitLine(`let ${argsArray} = `);
+        this._compileAggregate(node.args, frame, '[', ']');
+        this._emitLine(';');
 
+        this._emitLine(`runtime.resolveAll(${argsArray}).then(resolvedArgs => {`);
+        this._emitLine(`  env.getFilter("${name.value}").call(context, ...resolvedArgs, ${this._makeCallback(symbol)}`);
+        this._addScopeLevel();//close the then()
+    } else {
+        this._emit('env.getFilter("' + name.value + '").call(context, ');
+        this._compileAggregate(node.args, frame);
+        this._emitLine(', ' + this._makeCallback(symbol));
+    }
     this._addScopeLevel();
   }
 
