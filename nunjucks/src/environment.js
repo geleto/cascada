@@ -243,7 +243,7 @@ class Environment extends EmitterObj {
         const loader = this.loaders[i];
         tmpl = loader.cache[this.resolveTemplate(loader, parentName, name)];
         if (tmpl) {
-          if (tmpl.isAsync !== isAsync) {
+          if (!!tmpl.isAsync !== isAsync) {
             throw new Error('The same template can not be compiled in both async and sync mode');
           }
           break;
@@ -281,8 +281,8 @@ class Environment extends EmitterObj {
       let newTmpl;
       if (!info) {
         newTmpl = isAsync?
-          new Template(noopTmplSrcAsync, this, '', eagerCompile) :
-          new AsyncTemplate(noopTmplSrc, this, '', eagerCompile);
+          new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile) :
+          new Template(noopTmplSrc, this, '', eagerCompile);
       } else {
         newTmpl = isAsync?
           new AsyncTemplate(info.src, this, info.path, eagerCompile) :
