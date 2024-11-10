@@ -146,7 +146,7 @@ class Compiler extends Obj {
   //@todo - option whether it's ok to return a promise
   _emitAsyncValue(emitFunc) {
     if (this.isAsync) {
-      this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}`);//do not await if not in an async block
+      //this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}`);//do not await if not in an async block
       this._emitLine(`(async (astate)=>{`);
       this._emit('let frame = astate.snapshotFrame;');
       const res = this._tmpid();
@@ -733,7 +733,7 @@ class Compiler extends Obj {
     // variables within an expression. An expression in javascript
     // like (x, y, z) returns the last value, and x and y can be
     // anything
-    this._emitAsyncValue(()=>{
+    //this._emitAsyncValue(()=>{
       this._emit('(lineno = ' + node.lineno +
         ', colno = ' + node.colno + ', ');
 
@@ -751,21 +751,20 @@ class Compiler extends Obj {
       this._emit(')');
 
       this._emitAwaitEnd();
-    });
+    //});
   }
 
-  //@todo - handle async return value
   compileFilter(node, frame) {
     var name = node.name;
 
-    this._emitAwaitBegin();
+    //this._emitAwaitBegin();
     this.assertType(name, nodes.Symbol);
 
     this._emit('env.getFilter("' + name.value + '").call(context, ');
     this._compileAggregate(node.args, frame);
     this._emit(')');
 
-    this._emitAwaitEnd();
+    //this._emitAwaitEnd();
   }
 
   //@todo - do proper async, not callback
@@ -824,8 +823,8 @@ class Compiler extends Obj {
     if (node.value) {
       this._emit(ids.join(' = ') + ' = ');
       if(this.isAsync) {
-        //@todo - in the future will wrap the expression only if it has a lookup
-        this._emitAsyncValue( () => {
+        //@todo - in the future will wrap the expression only if it has a lookup/funcall
+        this._emitAsyncValue( () => {//todo - remove this
           this._compileExpression(node.value, frame);
         });
       }
