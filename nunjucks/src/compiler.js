@@ -109,13 +109,11 @@ class Compiler extends Obj {
 
   // wrap await calls in this, maybe we should only astate.enterClosure(frame)/leaveClosure()
   // the async blocks
-  _emitAwaitBegin() {
+  _emitAwait(emitFunc) {
     if (this.isAsync) {
       this._emit('(await ');
     }
-  }
-
-  _emitAwaitEnd() {
+    emitFunc();
     if (this.isAsync) {
       this._emit(')');
     }
@@ -124,8 +122,8 @@ class Compiler extends Obj {
   // an async block that does not have a value should be wrapped in this
   _emitAsyncBlockBegin() {
     if (this.isAsync) {
-      this._emit(`(async (astate)=>{`);
-      this._emit('let frame = astate.snapshotFrame;');
+      this._emitLine(`(async (astate)=>{`);
+      this._emitLine('let frame = astate.snapshotFrame;');
       this.asyncClosureDepth++;
     }
   }
@@ -214,6 +212,32 @@ class Compiler extends Obj {
     //in the non-callback case, using the rendered buffer will throw the error
   }
 
+  _emitAddToBuffer(renderFunction) {
+    if (this.isAsync) {
+        this.asyncClosureDepth++;
+        this._emitLine(`(async (astate)=>{`);
+        this._emit('let frame = astate.snapshotFrame;');
+
+        this._emitLine(`let index = ${this.buffer}_index++;`);
+
+        const returnId = this._tmpid();
+        this._emitLine(`let ${returnId};`);
+        renderFunction.call(this, returnId);
+
+        this._emitLine(';');
+        this._emit(`${this.buffer}[index] = ${returnId};`);
+
+        this._emitLine(';astate.leaveClosure();');
+        this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
+        this.asyncClosureDepth--;
+        this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
+        this._emitLine('.finally(()=>{});');
+
+    } else {
+      this._emit(`${this.buffer} += ${returnId};`);
+    }
+  }
+
   _emitAddToBufferBegin(addClosure = true) {
     if (this.isAsync) {
       if (addClosure) {
@@ -232,9 +256,9 @@ class Compiler extends Obj {
   }
 
   _emitAddToBufferEnd(addClosure = true) {
+    this._emitLine(';');
     if (this.isAsync && addClosure) {
-
-       this._emitLine('astate.leaveClosure();');
+      this._emitLine(';astate.leaveClosure();');
       this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this.asyncClosureDepth--;
       this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
@@ -546,10 +570,10 @@ class Compiler extends Obj {
     } else {
       // @todo - omit this for function calls?
       // (parent instanceof nodes.FunCall && parent.name === node)
-      this._emitAwaitBegin();
-      this._emit('runtime.contextOrFrameLookup(' +
-        'context, frame, "' + name + '")');
-      this._emitAwaitEnd();
+      this._emitAwait( ()=>{
+        this._emit('runtime.contextOrFrameLookup(' +
+          'context, frame, "' + name + '")');
+      });
     }
   }
 
@@ -703,13 +727,13 @@ class Compiler extends Obj {
   }
 
   compileLookupVal(node, frame) {
-    this._emitAwaitBegin();
-    this._emit('runtime.memberLookup((');
-    this._compileExpression(node.target, frame);
-    this._emit('),');
-    this._compileExpression(node.val, frame);
-    this._emit(')');
-    this._emitAwaitEnd();
+    this._emitAwait( ()=>{
+      this._emit('runtime.memberLookup((');
+      this._compileExpression(node.target, frame);
+      this._emit('),');
+      this._compileExpression(node.val, frame);
+      this._emit(')');
+    });
   }
 
   _getNodeName(node) {
@@ -737,20 +761,19 @@ class Compiler extends Obj {
       this._emit('(lineno = ' + node.lineno +
         ', colno = ' + node.colno + ', ');
 
-      this._emitAwaitBegin();
-      this._emit('runtime.callWrap(');
-      // Compile it as normal.
-      this._compileExpression(node.name, frame);
+      this._emitAwait( ()=>{
+        this._emit('runtime.callWrap(');
+        // Compile it as normal.
+        this._compileExpression(node.name, frame);
 
-      // Output the name of what we're calling so we can get friendly errors
-      // if the lookup fails.
-      this._emit(', "' + this._getNodeName(node.name).replace(/"/g, '\\"') + '", context, ');
+        // Output the name of what we're calling so we can get friendly errors
+        // if the lookup fails.
+        this._emit(', "' + this._getNodeName(node.name).replace(/"/g, '\\"') + '", context, ');
 
-      this._compileAggregate(node.args, frame, '[', '])');
+        this._compileAggregate(node.args, frame, '[', '])');
 
-      this._emit(')');
-
-      this._emitAwaitEnd();
+        this._emit(')');
+      });
     //});
   }
 
@@ -823,8 +846,7 @@ class Compiler extends Obj {
     if (node.value) {
       this._emit(ids.join(' = ') + ' = ');
       if(this.isAsync) {
-        //@todo - in the future will wrap the expression only if it has a lookup/funcall
-        this._emitAsyncValue( () => {//todo - remove this
+        this._emitAsyncValue( () => {
           this._compileExpression(node.value, frame);
         });
       }
@@ -1279,14 +1301,10 @@ class Compiler extends Obj {
     const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
     this._emit('env.getTemplate(');
 
-    if(this.isAsync) {
-      this._emitAsyncValue( () => {
-        this._compileExpression(node.template, frame);
-      });
-    }
-    else {
+    //getTemplate accepts promise names
+    this._emitAsyncValue( () => {
       this._compileExpression(node.template, frame);
-    }
+    });
 
     this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
     return parentTemplateId;
@@ -1425,6 +1443,42 @@ class Compiler extends Obj {
   }
 
   compileInclude(node, frame) {
+    this._emitAddToBuffer( (resultVar)=> {
+
+      this._emitLine('await (async function() {');
+
+      // Get the template
+      const templateVar = this._tmpid();
+      const templateNameVar = this._tmpid();
+
+      // Get the template name expression
+      this._emit(`let ${templateNameVar} = `);
+      this._compileExpression(node.template, frame);
+      this._emitLine(';');
+
+      // Promisify the getTemplate call
+      this._emitLine(`let ${templateVar} = await new Promise((resolve, reject) => {`);
+      this._emit(`  env.getTemplate(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'}, (err, tmpl) => {`);
+      this._emitLine(`    if (err) reject(err); else resolve(tmpl);`);
+      this._emitLine('  });');
+      this._emitLine('});');
+
+      // Promisify the render call
+      this._emitLine(`${resultVar} = await new Promise((resolve, reject) => {`);
+      this._emit(`  ${templateVar}.render(context.getVariables(), frame`);
+      if (this.isAsync) {
+        this._emit(', astate');
+      }
+      this._emitLine(`, (err, res) => {`);
+      this._emitLine(`    if (err) reject(err); else resolve(res);`);
+      this._emitLine('  });');
+      this._emitLine('});');
+
+      this._emitLine('})();');
+    });
+  }
+
+  compileIncludeOld(node, frame) {
     this._emitLine('let tasks = [];');
     this._emitLine('tasks.push(');
     this._emitLine('function(callback) {');
