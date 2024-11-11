@@ -213,17 +213,15 @@ class Compiler extends Obj {
   }
 
   _emitAddToBuffer(renderFunction) {
+    const returnId = this._tmpid();
     if (this.isAsync) {
         this.asyncClosureDepth++;
         this._emitLine(`(async (astate)=>{`);
         this._emit('let frame = astate.snapshotFrame;');
-
         this._emitLine(`let index = ${this.buffer}_index++;`);
 
-        const returnId = this._tmpid();
         this._emitLine(`let ${returnId};`);
         renderFunction.call(this, returnId);
-
         this._emitLine(';');
         this._emit(`${this.buffer}[index] = ${returnId};`);
 
@@ -234,6 +232,8 @@ class Compiler extends Obj {
         this._emitLine('.finally(()=>{});');
 
     } else {
+      this._emitLine(`let ${returnId};`);
+      renderFunction.call(this, returnId);
       this._emit(`${this.buffer} += ${returnId};`);
     }
   }
@@ -1443,10 +1443,11 @@ class Compiler extends Obj {
   }
 
   compileInclude(node, frame) {
+    if(!this.isAsync) {
+      this.compileIncludeSync(node, frame);
+      return;
+    }
     this._emitAddToBuffer( (resultVar)=> {
-
-      this._emitLine('await (async function() {');
-
       // Get the template
       const templateVar = this._tmpid();
       const templateNameVar = this._tmpid();
@@ -1473,12 +1474,12 @@ class Compiler extends Obj {
       this._emitLine(`    if (err) reject(err); else resolve(res);`);
       this._emitLine('  });');
       this._emitLine('});');
-
-      this._emitLine('})();');
     });
   }
 
-  compileIncludeOld(node, frame) {
+  compileIncludeSync(node, frame) {
+    //we can't use the async implementation with (async(){...})().then(...
+    //as the .render() method is expected to return the result immediately
     this._emitLine('let tasks = [];');
     this._emitLine('tasks.push(');
     this._emitLine('function(callback) {');
