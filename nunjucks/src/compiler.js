@@ -1426,15 +1426,19 @@ class Compiler extends Obj {
     var name = node.blockName.value;
     var id = node.symbol.value;
 
-    const cb = this._makeCallback(id);
     if(this.isAsync) {
-      this._emitLine(`context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, ${cb}`);
+      this._emitLine(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime, astate);`);
+      //this._emitLine(`context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, ${cb}`);
     }
     else{
+      const cb = this._makeCallback(id);
       this._emitLine(`context.getSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
     }
     this._emitLine(`${id} = runtime.markSafe(${id});`);
-    this._addScopeLevel();
+
+    if(!this.isAsync) {
+      this._addScopeLevel();
+    }
     frame.set(id, id);
   }
 

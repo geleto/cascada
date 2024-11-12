@@ -391,7 +391,12 @@ function markSafe(val) {
     return new SafeString(val);
   } else if (type !== 'function') {
     return val;
-  } else {
+  } else if (type === 'object' && val.then && typeof val.then === 'function'){
+    return (async (v) => {
+      return markSafe(await v);
+    })(val);
+  }
+  else {
     return function wrapSafe(args) {
       var ret = val.apply(this, arguments);
 
