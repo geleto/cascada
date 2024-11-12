@@ -566,7 +566,11 @@ class Compiler extends Obj {
 
     if (v) {
       //for now the only place that sets async symbol is the async filter
-      this._emit(`(await ${v})`);
+      if(this.isAsync) {
+        this._emit(`(await ${v})`);
+      } else {
+        this._emit(v);
+      }
     } else {
       // @todo - omit this for function calls?
       // (parent instanceof nodes.FunCall && parent.name === node)
