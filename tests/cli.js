@@ -29,6 +29,7 @@
 
   describe('precompile cli', function() {
     it('should echo a compiled template to stdout', function(done) {
+      this.timeout(5000); // execFile can be slow on Windows
       execPrecompile(['tests/templates/item.njk'], function(err, stdout, stderr) {
         if (err) {
           done(err);
@@ -45,6 +46,7 @@
         '--name', 'item.njk',
         'tests/templates/item.njk',
       ];
+      this.timeout(5000); // execFile can be slow on Windows
       execPrecompile(args, function(err, stdout, stderr) {
         if (err) {
           done(err);
