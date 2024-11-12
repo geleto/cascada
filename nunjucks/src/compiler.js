@@ -817,11 +817,7 @@ class Compiler extends Obj {
           this._emitLine(`await runtime.resolveAll(${argsArray});`);
 
           // Promisify the filter call
-          this._emitLine(`let ${res} = await new Promise((resolve, reject) => {`);
-          this._emit(`env.getFilter("${name.value}").call(context, ...${argsArray}, (err, result) => {`);
-          this._emitLine(`    if (err) reject(err); else resolve(result);`);
-          this._emitLine('  });');
-          this._emitLine('});');
+          this._emitLine(`let ${res} = await runtime.promisify(env.getFilter("${name.value}").bind(env))(...${argsArray});`);
 
         }, res);
         this._emitLine(';');
