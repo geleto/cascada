@@ -92,6 +92,27 @@
 	{
 		"type": "node",
 		"request": "launch",
+		"name": "Debug no-prep Node Tests",
+		"runtimeExecutable": "npm",
+		"runtimeArgs": [
+			"run-script",
+			"test:node-no-prep"
+		],
+		"env": {
+			"NODE_ENV": "test",
+			"NODE_PATH": "${workspaceFolder}/tests/test-node-pkgs"
+		},
+		"cwd": "${workspaceFolder}",
+		"console": "integratedTerminal",
+		"internalConsoleOptions": "neverOpen",
+		"autoAttachChildProcesses": true,
+		"skipFiles": [
+			"<node_internals>/**"
+		]
+	},
+	{
+		"type": "node",
+		"request": "launch",
 		"name": "Run Precompile Script",
 		"program": "${workspaceFolder}/scripts/runprecompile.js",
 		"cwd": "${workspaceFolder}",
