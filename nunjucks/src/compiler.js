@@ -210,9 +210,6 @@ class Compiler extends Obj {
     if(callbackName){
       this._emitLine(`.catch(e=>{${callbackName}(runtime.handleError(e, lineno, colno))});`);
     }
-    else {
-      this._emitLine(';');
-    }
     //in the non-callback case, using the rendered buffer will throw the error
   }
 
@@ -262,7 +259,7 @@ class Compiler extends Obj {
     this._emitLine(';');
     if (this.isAsync && addClosure) {
       this.asyncClosureDepth--;
-      this._emitLine(';astate.leaveClosure();');
+      this._emitLine('astate.leaveClosure();');
       this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))});');
     }
