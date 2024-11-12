@@ -88,5 +88,16 @@
 		"skipFiles": [
 			"<node_internals>/**"
 		]
+	},
+	{
+		"type": "node",
+		"request": "launch",
+		"name": "Run Precompile Script",
+		"program": "${workspaceFolder}/scripts/runprecompile.js",
+		"cwd": "${workspaceFolder}",
+		"internalConsoleOptions": "openOnSessionStart",
+		"skipFiles": [
+			"<node_internals>/**"
+		]
 	}]
   }
