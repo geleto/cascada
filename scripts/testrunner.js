@@ -20,7 +20,7 @@ let mergeNodeTestsCoverage = process.argv.includes('fullTest');
 const NODE_TESTS_COVERAGE_FILE = 'coverage-final.json';
 
 const coverageConfig = {
-  dir: path.join(__dirname, '../.nyc_output'),
+  dir: path.join(__dirname, '../coverage'),
   files: [
     'browser-std.json',
     'browser-slim.json'],
