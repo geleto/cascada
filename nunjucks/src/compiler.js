@@ -1470,23 +1470,11 @@ class Compiler extends Obj {
       this._compileExpression(node.template, frame);
       this._emitLine(';');
 
-      // Promisify the getTemplate call
-      this._emitLine(`let ${templateVar} = await new Promise((resolve, reject) => {`);
-      this._emit(`  env.getTemplate(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'}, (err, tmpl) => {`);
-      this._emitLine(`    if (err) reject(err); else resolve(tmpl);`);
-      this._emitLine('  });');
-      this._emitLine('});');
+      // getTemplate
+      this._emitLine(`let ${templateVar} = await runtime.promisify(env.getTemplate.bind(env))(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
-      // Promisify the render call
-      this._emitLine(`${resultVar} = await new Promise((resolve, reject) => {`);
-      this._emit(`  ${templateVar}.render(context.getVariables(), frame`);
-      if (this.isAsync) {
-        this._emit(', astate');
-      }
-      this._emitLine(`, (err, res) => {`);
-      this._emitLine(`    if (err) reject(err); else resolve(res);`);
-      this._emitLine('  });');
-      this._emitLine('});');
+      // render
+      this._emitLine(`${resultVar} = await runtime.promisify(${templateVar}.render.bind(${templateVar}))(context.getVariables(), frame${this.isAsync ? ', astate' : ''});`);
     });
   }
 
