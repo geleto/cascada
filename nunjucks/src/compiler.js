@@ -565,7 +565,7 @@ class Compiler extends Obj {
     var v = frame.lookup(name);
 
     if (v) {
-      //for now the only place that sets async symbol is the async filter
+      //for now the only places that set async symbol are the async filter and super()
       if(this.isAsync) {
         this._emit(`(await ${v})`);
       } else {
@@ -1428,7 +1428,6 @@ class Compiler extends Obj {
 
     if(this.isAsync) {
       this._emitLine(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime, astate);`);
-      //this._emitLine(`context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, ${cb}`);
     }
     else{
       const cb = this._makeCallback(id);
