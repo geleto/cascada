@@ -134,21 +134,23 @@ class Compiler extends Obj {
       if(finalBlockFunction) {
         finalBlockFunction.call(this);
       }
-      this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this.asyncClosureDepth--;
-      this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-      this._emitLine('.finally(()=>{});');
+      this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
+      this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))});');
     }
   }
 
   //@todo - option whether it's ok to return a promise
-  _emitAsyncValue(emitFunc) {
+  _emitAsyncValue(emitFunc, res) {
     if (this.isAsync) {
       //this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}`);//do not await if not in an async block
       this._emitLine(`(async (astate)=>{`);
-      this._emit('let frame = astate.snapshotFrame;');
-      const res = this._tmpid();
-      this._emitLine(`let ${res} = `);
+      this._emitLine('let frame = astate.snapshotFrame;');
+      if(res===undefined) {
+        res = this._tmpid();
+        this._emitLine(`let ${res} = `);
+      }
+
       this.asyncClosureDepth++;
 
       emitFunc();
@@ -160,7 +162,6 @@ class Compiler extends Obj {
       this.asyncClosureDepth--;
       // The error will be re-thrown when the ewturned value is awaited:
       //this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-      this._emitLine('.finally(()=>{})');
     }
     else {
       emitFunc();
@@ -179,8 +180,8 @@ class Compiler extends Obj {
       return;
     }
 
-    this._emit(`(async (astate)=>{`);
-    this._emit('let frame = astate.snapshotFrame;');
+    this._emitLine(`(async (astate)=>{`);
+    this._emitLine('let frame = astate.snapshotFrame;');
 
     const id = this._pushBuffer();//@todo - probably not needed after snapshots?
 
@@ -207,7 +208,10 @@ class Compiler extends Obj {
     this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
 
     if(callbackName){
-      this._emitLine(`.catch(e=>{${callbackName}(runtime.handleError(e, lineno, colno))})`);
+      this._emitLine(`.catch(e=>{${callbackName}(runtime.handleError(e, lineno, colno))});`);
+    }
+    else {
+      this._emitLine(';');
     }
     //in the non-callback case, using the rendered buffer will throw the error
   }
@@ -217,7 +221,7 @@ class Compiler extends Obj {
     if (this.isAsync) {
         this.asyncClosureDepth++;
         this._emitLine(`(async (astate)=>{`);
-        this._emit('let frame = astate.snapshotFrame;');
+        this._emitLine('let frame = astate.snapshotFrame;');
         this._emitLine(`let index = ${this.buffer}_index++;`);
 
         this._emitLine(`let ${returnId};`);
@@ -225,11 +229,10 @@ class Compiler extends Obj {
         this._emitLine(';');
         this._emit(`${this.buffer}[index] = ${returnId};`);
 
+        this.asyncClosureDepth--;
         this._emitLine(';astate.leaveClosure();');
         this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
-        this.asyncClosureDepth--;
-        this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-        this._emitLine('.finally(()=>{});');
+        this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))});');
 
     } else {
       this._emitLine(`let ${returnId};`);
@@ -242,7 +245,7 @@ class Compiler extends Obj {
     if (this.isAsync) {
       if (addClosure) {
         this._emitLine(`(async (astate)=>{`);
-        this._emit('let frame = astate.snapshotFrame;');
+        this._emitLine('let frame = astate.snapshotFrame;');
 
         this._emitLine(`let index = ${this.buffer}_index++;`);
         this._emit(`${this.buffer}[index] = `);//@todo - ${this.buffer}[${this.buffer}_index++], else line
@@ -258,11 +261,10 @@ class Compiler extends Obj {
   _emitAddToBufferEnd(addClosure = true) {
     this._emitLine(';');
     if (this.isAsync && addClosure) {
+      this.asyncClosureDepth--;
       this._emitLine(';astate.leaveClosure();');
       this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
-      this.asyncClosureDepth--;
-      this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-      this._emitLine('.finally(()=>{});');
+      this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))});');
     }
   }
 
@@ -566,7 +568,8 @@ class Compiler extends Obj {
     var v = frame.lookup(name);
 
     if (v) {
-      this._emit(v);
+      //for now the only place that sets async symbol is the async filter
+      this._emit(`(await ${v})`);
     } else {
       // @todo - omit this for function calls?
       // (parent instanceof nodes.FunCall && parent.name === node)
@@ -801,20 +804,33 @@ class Compiler extends Obj {
     frame.set(symbol, symbol);
 
     if (this.isAsync) {
-        const argsArray = this._tmpid();
-        this._emitLine(`let ${argsArray} = `);
-        this._compileAggregate(node.args, frame, '[', ']');
-        this._emitLine(';');
+        const res = this._tmpid();
+        this._emit(`let ${symbol} = `);
+        this._emitAsyncValue( () => {
+          const argsArray = this._tmpid();
+          this._emitLine(`let ${argsArray} = `);
 
-        this._emitLine(`runtime.resolveAll(${argsArray}).then(resolvedArgs => {`);
-        this._emitLine(`  env.getFilter("${name.value}").call(context, ...resolvedArgs, ${this._makeCallback(symbol)}`);
-        this._addScopeLevel();//close the then()
+          //@todo - do not resolve if only literal
+          this._compileAggregate(node.args, frame, '[', ']');//todo - short path for 1 argument - 99% of the cases, test multiarg, incl async
+          this._emitLine(';');
+          this._emitLine(`await runtime.resolveAll(${argsArray});`);
+
+          // Promisify the filter call
+          this._emitLine(`let ${res} = await new Promise((resolve, reject) => {`);
+          this._emit(`env.getFilter("${name.value}").call(context, ...${argsArray}, (err, result) => {`);
+          this._emitLine(`    if (err) reject(err); else resolve(result);`);
+          this._emitLine('  });');
+          this._emitLine('});');
+
+        }, res);
+        this._emitLine(';');
     } else {
         this._emit('env.getFilter("' + name.value + '").call(context, ');
         this._compileAggregate(node.args, frame);
         this._emitLine(', ' + this._makeCallback(symbol));
+        this._addScopeLevel();
     }
-    this._addScopeLevel();
+
   }
 
   compileKeywordArgs(node, frame) {

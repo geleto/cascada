@@ -4,17 +4,20 @@
   var expect;
   var unescape;
   var AsyncEnvironment;
+  //var Environment;
   var lexer;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
+    //Environment = require('../nunjucks/src/environment').Environment;
     lexer = require('../nunjucks/src/lexer');
     unescape = require('he').unescape;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
+    //Environment = nunjucks.Environment;
     lexer = nunjucks.lexer;
   }
 
@@ -3325,6 +3328,20 @@
           }, 3);
         }, true);
       });
+
+      /*it.only('should handle standard async filter - non-async', (done) => {
+        const template = '{{ "hello" | asyncUppercase }}';
+        const senv = new Environment();
+        senv.addFilter('asyncUppercase', (str, callback) => {
+          setTimeout(() => {
+            callback(null, str.toUpperCase());
+          }, 5);
+        }, true); // true flag indicates this is an async filter
+        senv.renderString(template, (err, res) => {
+          expect(res).to.equal('HELLO');
+          done();
+        });
+      });*/
 
       it('should handle standard async filter', async () => {
         const template = '{{ "hello" | asyncUppercase }}';
