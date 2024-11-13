@@ -1373,11 +1373,23 @@ class Compiler extends Obj {
       this._addScopeLevel();
     }
 
-    const withoutContextArguments = this.isAsync ? 'null, null, astate, ' : '';
-    this._emitLine(importedId + '.getExported(' +
-      (node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync? 'astate, ' : '') : withoutContextArguments) +
-      this._makeCallback(importedId));
-    this._addScopeLevel();
+    if (this.isAsync) {
+      const res = this._tmpid();
+      this._emit(`${importedId} = `);
+      this._emitAsyncValue(() => {
+        this._emitLine(`let ${res} = await ${importedId};`);
+        this._emitLine(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${
+          node.withContext
+            ? `context.getVariables(), frame, astate`
+            : `null, null, astate`
+        });`);
+      }, res);
+    } else {
+      this._emitLine(`${importedId}.getExported(${
+        node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync ? 'astate, ' : '') : ''
+      }${this._makeCallback(importedId)});`);
+      this._addScopeLevel();
+    }
 
     node.names.children.forEach((nameNode) => {
       let name;
@@ -1393,11 +1405,22 @@ class Compiler extends Obj {
         alias = name;
       }
 
-      this._emitLine(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
-      this._emitLine(`${id} = ${importedId}.${name};`);
-      this._emitLine('} else {');
-      this._emitLine(`cb(new Error("cannot import '${name}'")); return;`);
-      this._emitLine('}');
+      if (this.isAsync) {
+        this._emitLine(`${id} = (async () => {`);
+        this._emitLine(`  let exported = await ${importedId};`);
+        this._emitLine(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
+        this._emitLine(`    return exported["${name}"];`);
+        this._emitLine(`  } else {`);
+        this._emitLine(`    throw new Error("cannot import '${name}'");`);
+        this._emitLine(`  }`);
+        this._emitLine(`})();`);
+      } else {
+        this._emitLine(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
+        this._emitLine(`${id} = ${importedId}.${name};`);
+        this._emitLine('} else {');
+        this._emitLine(`cb(new Error("cannot import '${name}'")); return;`);
+        this._emitLine('}');
+      }
 
       frame.set(alias, id);
 
