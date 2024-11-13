@@ -1334,9 +1334,6 @@ class Compiler extends Obj {
   compileImport(node, frame) {
     const target = node.target.value;
     const id = this._compileGetTemplate(node, frame, false, false);
-    if (!this.isAsync) {
-      this._addScopeLevel();
-    }
 
     if (this.isAsync) {
       const res = this._tmpid();
@@ -1350,11 +1347,10 @@ class Compiler extends Obj {
         });`);
       }, res);
     } else {
-      this._emitLine(`${id}.getExported(
-        ${node.withContext
-          ? `context.getVariables(), frame`
-          : `null, null`},
-        ${this._makeCallback(id)});`);
+      this._addScopeLevel();
+      this._emitLine(id + '.getExported(' +
+        (node.withContext ? 'context.getVariables(), frame, ' : '') +
+        this._makeCallback(id));
       this._addScopeLevel();
     }
 
@@ -1367,11 +1363,47 @@ class Compiler extends Obj {
     }
   }
 
+  compileFromImportOld(node, frame) {
+    const importedId = this._compileGetTemplate(node, frame, false, false);
+    this._addScopeLevel();
+
+    this._emitLine(importedId + '.getExported(' +
+      (node.withContext ? 'context.getVariables(), frame, ' : '') +
+      this._makeCallback(importedId));
+    this._addScopeLevel();
+
+    node.names.children.forEach((nameNode) => {
+      var name;
+      var alias;
+      var id = this._tmpid();
+
+      if (nameNode instanceof nodes.Pair) {
+        name = nameNode.key.value;
+        alias = nameNode.value.value;
+      } else {
+        name = nameNode.value;
+        alias = name;
+      }
+
+      this._emitLine(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
+      this._emitLine(`var ${id} = ${importedId}.${name};`);
+      this._emitLine('} else {');
+      this._emitLine(`cb(new Error("cannot import '${name}'")); return;`);
+      this._emitLine('}');
+
+      frame.set(alias, id);
+
+      if (frame.parent) {
+        this._emitLine(`frame.set("${alias}", ${id});`);
+      } else {
+        this._emitLine(`context.setVariable("${alias}", ${id});`);
+      }
+    });
+    return;
+  }
+
   compileFromImport(node, frame) {
     const importedId = this._compileGetTemplate(node, frame, false, false);
-    if (!this.isAsync) {
-      this._addScopeLevel();
-    }
 
     if (this.isAsync) {
       const res = this._tmpid();
@@ -1385,9 +1417,10 @@ class Compiler extends Obj {
         });`);
       }, res);
     } else {
-      this._emitLine(`${importedId}.getExported(${
-        node.withContext ? 'context.getVariables(), frame, ' + (this.isAsync ? 'astate, ' : '') : ''
-      }${this._makeCallback(importedId)});`);
+      this._addScopeLevel();//after _compileGetTemplate
+      this._emitLine(importedId + '.getExported(' +
+        (node.withContext ? 'context.getVariables(), frame, ' : '') +
+        this._makeCallback(importedId));
       this._addScopeLevel();
     }
 
