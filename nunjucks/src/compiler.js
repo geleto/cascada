@@ -1309,32 +1309,54 @@ class Compiler extends Obj {
   _compileGetTemplate(node, frame, eagerCompile, ignoreMissing) {
     const parentTemplateId = this._tmpid();
     const parentName = this._templateName();
-    const cb = this._makeCallback(parentTemplateId);
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
     const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
-    this._emit('env.getTemplate(');
 
-    //getTemplate accepts promise names
-    this._emitAsyncValue( () => {
+    if (this.isAsync) {
+      this._emit(`let ${parentTemplateId} = runtime.promisify(env.getTemplate.bind(env))(`);
+
+      //getTemplate accepts promise names
+      this._emitAsyncValue( () => {
+        this._compileExpression(node.template, frame);
+      });
+
+      this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg})`);
+    } else {
+      const cb = this._makeCallback(parentTemplateId);
+      this._emit('env.getTemplate(');
       this._compileExpression(node.template, frame);
-    });
+      this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
+    }
 
-    this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
     return parentTemplateId;
   }
 
   compileImport(node, frame) {
     const target = node.target.value;
     const id = this._compileGetTemplate(node, frame, false, false);
-    this._addScopeLevel();
+    if (!this.isAsync) {
+      this._addScopeLevel();
+    }
 
-    //@todo - in isAsync mode, the variables and macros should be immediately available as promises
-    const withoutContextArguments = this.isAsync ? 'null, null, astate, ' : '';
-    this._emitLine(id + '.getExported(' +
-      (node.withContext ?
-        'context.getVariables(), frame, ' + (this.isAsync? 'astate, ' : '') : withoutContextArguments) +
-      this._makeCallback(id));
-    this._addScopeLevel();
+    if (this.isAsync) {
+      const res = this._tmpid();
+      this._emit(`${id} = `);
+      this._emitAsyncValue( () => {
+        this._emitLine(`let ${res} = await ${id};`);
+        this._emitLine(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${
+          node.withContext
+            ? `context.getVariables(), frame, astate`
+            : `null, null, astate`
+        });`);
+      }, res);
+    } else {
+      this._emitLine(`${id}.getExported(
+        ${node.withContext
+          ? `context.getVariables(), frame`
+          : `null, null`},
+        ${this._makeCallback(id)});`);
+      this._addScopeLevel();
+    }
 
     frame.set(target, id);
 
@@ -1347,7 +1369,9 @@ class Compiler extends Obj {
 
   compileFromImport(node, frame) {
     const importedId = this._compileGetTemplate(node, frame, false, false);
-    this._addScopeLevel();
+    if (!this.isAsync) {
+      this._addScopeLevel();
+    }
 
     const withoutContextArguments = this.isAsync ? 'null, null, astate, ' : '';
     this._emitLine(importedId + '.getExported(' +
@@ -1455,7 +1479,9 @@ class Compiler extends Obj {
     this._emitLine(`context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
     this._emitLine('}');
 
-    this._addScopeLevel();
+    if (!this.isAsync) {
+      this._addScopeLevel();
+    }
   }
 
   compileInclude(node, frame) {
