@@ -557,6 +557,31 @@ class Context extends Obj {
     return this.blocks[name][0];
   }
 
+  prepareForAsyncBlocks() {
+    this.asyncBlocksPromise = new Promise((resolve, reject) => {
+      this.asyncBlocksResolver = resolve;
+    }).then(() => {
+      delete this.asyncBlocksPromise;
+      delete this.asyncBlocksResolver;
+    });
+  }
+
+  async getAsyncBlock(name) {
+    if (this.blocks[name]) {
+      return this.getBlock(name);
+    }
+    if( this.asyncBlocksPromise ){
+      await this.asyncBlocksPromise;
+    }
+    return this.getBlock(name);
+  }
+
+  async finsihsAsyncBlocks() {
+    if( this.asyncBlocksResolver ){
+      this.asyncBlocksResolver();
+    }
+  }
+
   getSuper(env, name, block, frame, runtime, astate, cb) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];

@@ -1306,6 +1306,7 @@ class Compiler extends Obj {
     this._emit(`return ${funcId};})()`);
   }
 
+  //todo - detect when _compileExpression outputs a literal and _emitAsyncValue is not needed
   _compileGetTemplate(node, frame, eagerCompile, ignoreMissing) {
     const parentTemplateId = this._tmpid();
     const parentName = this._templateName();
@@ -1313,14 +1314,16 @@ class Compiler extends Obj {
     const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
 
     if (this.isAsync) {
-      this._emit(`let ${parentTemplateId} = runtime.promisify(env.getTemplate.bind(env))(`);
+      const getTemplateFunc = this._tmpid();
+      this._emitLine(`const ${getTemplateFunc} = runtime.promisify(env.getTemplate.bind(env));`);
+      this._emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
 
-      //getTemplate accepts promise names
+      //getTemplate accepts promise names, todo - optimize for literals
       this._emitAsyncValue( () => {
         this._compileExpression(node.template, frame);
       });
 
-      this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg})`);
+      this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     } else {
       const cb = this._makeCallback(parentTemplateId);
       this._emit('env.getTemplate(');
@@ -1361,45 +1364,6 @@ class Compiler extends Obj {
     } else {
       this._emitLine(`context.setVariable("${target}", ${id});`);
     }
-  }
-
-  compileFromImportOld(node, frame) {
-    const importedId = this._compileGetTemplate(node, frame, false, false);
-    this._addScopeLevel();
-
-    this._emitLine(importedId + '.getExported(' +
-      (node.withContext ? 'context.getVariables(), frame, ' : '') +
-      this._makeCallback(importedId));
-    this._addScopeLevel();
-
-    node.names.children.forEach((nameNode) => {
-      var name;
-      var alias;
-      var id = this._tmpid();
-
-      if (nameNode instanceof nodes.Pair) {
-        name = nameNode.key.value;
-        alias = nameNode.value.value;
-      } else {
-        name = nameNode.value;
-        alias = name;
-      }
-
-      this._emitLine(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
-      this._emitLine(`var ${id} = ${importedId}.${name};`);
-      this._emitLine('} else {');
-      this._emitLine(`cb(new Error("cannot import '${name}'")); return;`);
-      this._emitLine('}');
-
-      frame.set(alias, id);
-
-      if (frame.parent) {
-        this._emitLine(`frame.set("${alias}", ${id});`);
-      } else {
-        this._emitLine(`context.setVariable("${alias}", ${id});`);
-      }
-    });
-    return;
   }
 
   compileFromImport(node, frame) {
@@ -1466,7 +1430,7 @@ class Compiler extends Obj {
   }
 
   compileBlock(node) {
-    var id = this._tmpid();
+    //var id = this._tmpid();
 
     // If we are executing outside a block (creating a top-level
     // block), we really don't want to execute its code because it
@@ -1478,28 +1442,34 @@ class Compiler extends Obj {
     // because blocks can have side effects, but it seems like a
     // waste of performance to always execute huge top-level
     // blocks twice
-    if (!this.inBlock) {
-      if(this.isAsync) {
-        this._emit('(parentTemplate ? function(e, c, f, r, a, cb) { cb(""); } : ');
-      }
-      else {
-        this._emit('(parentTemplate ? function(e, c, f, r, cb) { cb(""); } : ');
-      }
-    }
-    this._emit(`context.getBlock("${node.name.value}")`);
-    if (!this.inBlock) {
-      this._emit(')');
-    }
+
     if(this.isAsync) {
-      this._emitLine('(env, context, frame, runtime, astate, ' + this._makeCallback(id));
+      this._emitAddToBuffer( (id)=> {
+        if (!this.inBlock) {
+          this._emit(`if(parentTemplate) ${id}=""; else {`);
+        }
+        const blockFunc = this._tmpid();
+        this._emitLine(`let ${blockFunc} = await context.getAsyncBlock("${node.name.value}");`);
+        this._emitLine(`${blockFunc} = runtime.promisify(${blockFunc}.bind(context));`);
+        this._emitLine(`${id} = await ${blockFunc}(env, context, frame, runtime, astate);`);
+        if (!this.inBlock) {
+          this._emitLine('}');
+        }
+      });
     }
     else {
+      let id = this._tmpid();
+      if (!this.inBlock) {
+        this._emit('(parentTemplate ? function(e, c, f, r, cb) { cb(""); } : ');
+      }
+      this._emit(`context.getBlock("${node.name.value}")`);
+      if (!this.inBlock) {
+        this._emit(')');
+      }
       this._emitLine('(env, context, frame, runtime, ' + this._makeCallback(id));
+      this._emitLine(`${this.buffer} += ${id};`);
+      this._addScopeLevel();
     }
-    this._emitAddToBufferBegin(false);
-    this._emitLine(`${id};`);
-    this._emitAddToBufferEnd(false);
-    this._addScopeLevel();
   }
 
   compileSuper(node, frame) {
@@ -1524,12 +1494,20 @@ class Compiler extends Obj {
   compileExtends(node, frame) {
     var k = this._tmpid();
 
+    this._emitLine('context.prepareForAsyncBlocks();');
+
     const parentTemplateId = this._compileGetTemplate(node, frame, true, false);
 
     // extends is a dynamic tag and can occur within a block like
     // `if`, so if this happens we need to capture the parent
     // template in the top-level scope
-    this._emitLine(`parentTemplate = ${parentTemplateId}`);
+    if(this.isAsync) {
+      this._emitAsyncBlockBegin();
+      this._emitLine(`let parentTemplate = await ${parentTemplateId};`);
+    }
+    else {
+      this._emitLine(`parentTemplate = ${parentTemplateId}`);
+    }
 
     this._emitLine(`for(let ${k} in parentTemplate.blocks) {`);
     this._emitLine(`context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
@@ -1537,6 +1515,10 @@ class Compiler extends Obj {
 
     if (!this.isAsync) {
       this._addScopeLevel();
+    }
+    else {
+      this._emitLine('context.finsihsAsyncBlocks()');
+      this._emitAsyncBlockEnd();
     }
   }
 
