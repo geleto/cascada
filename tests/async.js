@@ -1487,6 +1487,22 @@
         expect(result.trim()).to.equal('Hello, World!');
       });
 
+      /*it('should handle template inheritance with blocks and async content - non-async', (done) => {
+        const context = {
+          getContent() {
+            return 'Async Child Content';
+          }
+        };
+        let senv = new Environment(loader);
+
+        loader.addTemplate('base.njk', '<div>{% block content %}Base Content{% endblock %}</div>');
+        const childTemplate = '{% extends "base.njk" %}{% block content %}{{ getContent() }}{% endblock %}';
+        senv.renderString(childTemplate, context, function(err, result){
+          expect(result.trim()).to.equal('<div>Async Child Content</div>');
+          done();
+        });
+      });*/
+
       it('should handle template inheritance with blocks and async content', async () => {
         const context = {
           async getContent() {

@@ -567,6 +567,10 @@ class Context extends Obj {
   }
 
   async getAsyncBlock(name) {
+    // this breaks super(), why?
+    //if (this.blocks[name]) {
+    //  return this.getBlock(name);
+    //}
     if( this.asyncBlocksPromise ){
       await this.asyncBlocksPromise;
     }
