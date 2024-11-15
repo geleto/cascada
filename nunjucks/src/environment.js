@@ -567,9 +567,6 @@ class Context extends Obj {
   }
 
   async getAsyncBlock(name) {
-    if (this.blocks[name]) {
-      return this.getBlock(name);
-    }
     if( this.asyncBlocksPromise ){
       await this.asyncBlocksPromise;
     }

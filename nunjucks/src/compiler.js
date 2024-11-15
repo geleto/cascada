@@ -1460,7 +1460,7 @@ class Compiler extends Obj {
     else {
       let id = this._tmpid();
       if (!this.inBlock) {
-        this._emit('(parentTemplate ? function(e, c, f, r, cb) { cb(""); } : ');
+        this._emit('(parentTemplate ? function(e, c, f, r, cb) { cb(null, ""); } : ');
       }
       this._emit(`context.getBlock("${node.name.value}")`);
       if (!this.inBlock) {
@@ -1494,20 +1494,22 @@ class Compiler extends Obj {
   compileExtends(node, frame) {
     var k = this._tmpid();
 
-    this._emitLine('context.prepareForAsyncBlocks();');
+    if(this.isAsync) {
+      this._emitLine('context.prepareForAsyncBlocks();');
+    }
 
     const parentTemplateId = this._compileGetTemplate(node, frame, true, false);
 
     // extends is a dynamic tag and can occur within a block like
     // `if`, so if this happens we need to capture the parent
     // template in the top-level scope
+
     if(this.isAsync) {
       this._emitAsyncBlockBegin();
-      this._emitLine(`let parentTemplate = await ${parentTemplateId};`);
     }
-    else {
-      this._emitLine(`parentTemplate = ${parentTemplateId}`);
-    }
+
+    //isAsync: set the global parent template, compileRoot will use it after waitAllClosures
+    this._emitLine(`parentTemplate = ${this.isAsync?'await ':''}${parentTemplateId};`);
 
     this._emitLine(`for(let ${k} in parentTemplate.blocks) {`);
     this._emitLine(`context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
@@ -1664,20 +1666,21 @@ class Compiler extends Obj {
       this._emitLine('cb(runtime.handleError(e, lineno, colno))');
       this._emitLine('});');
       this._emitLine('} else {');
-    }
-    this._emitLine('if(parentTemplate) {');
-    if (this.isAsync) {
+      this._emitLine('if(parentTemplate) {');
       this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
-    }
-    else {
-      this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, cb);');
-    }
-    this._emitLine('} else {');
-    this._emitLine(`cb(null, ${this.buffer});`);
-    this._emitLine('}');
-    if (this.isAsync) {
+      this._emitLine('} else {');
+      this._emitLine(`cb(null, ${this.buffer});`);
+      this._emitLine('}');
       this._emitLine('}');
     }
+    else {
+      this._emitLine('if(parentTemplate) {');
+      this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, cb);');
+      this._emitLine('} else {');
+      this._emitLine(`cb(null, ${this.buffer});`);
+      this._emitLine('}');
+    }
+
     this._emitFuncEnd(true);
 
     this.inBlock = true;
