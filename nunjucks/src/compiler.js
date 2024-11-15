@@ -781,6 +781,7 @@ class Compiler extends Obj {
     //});
   }
 
+  //@todo - in isAsync mode, the filter may return a promise
   compileFilter(node, frame) {
     var name = node.name;
 
@@ -794,8 +795,6 @@ class Compiler extends Obj {
     //this._emitAwaitEnd();
   }
 
-  //@todo - do proper async, not callback
-  //@todo - wrap
   compileFilterAsync(node, frame) {
     var name = node.name;
     var symbol = node.symbol.value;
@@ -1120,10 +1119,14 @@ class Compiler extends Obj {
   }
 
   _compileAsyncLoop(node, frame, parallel) {
+    if(this.isAsync) {
+      this.compileFor(node, frame, true);
+      return;
+    }
     // This shares some code with the For tag, but not enough to
     // worry about. This iterates across an object asynchronously,
     // but not in parallel.
-    var i, len, arr, asyncMethod;
+    let i, len, arr, asyncMethod;
 
     if( this.isAsync ) {
       this.compileFor(node, frame);//, !parallel); - @todo - implement serialAsync
