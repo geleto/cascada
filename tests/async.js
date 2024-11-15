@@ -2178,7 +2178,6 @@
 
     describe('Async Import Tests', () => {
       let loader;
-
       beforeEach(() => {
         loader = new StringLoader();
         env = new AsyncEnvironment(loader);
@@ -3596,6 +3595,260 @@
 
         const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('34');
+      });
+    });
+
+    describe('Async Functionality Tests', () => {
+      let loader;
+
+      beforeEach(() => {
+        loader = new StringLoader();
+        env = new AsyncEnvironment(loader);
+      });
+      describe('Template Inheritance and Nested Blocks', () => {
+        it('should handle template inheritance with blocks and async content', async () => {
+          const context = {
+            async getContent() {
+              await delay(1);
+              return 'Async Child Content';
+            }
+          };
+          loader.addTemplate('base.njk', '<div>{% block content %}Base Content{% endblock %}</div>');
+          const childTemplate = '{% extends "base.njk" %}{% block content %}{{ getContent() }}{% endblock %}';
+          const result = await env.renderString(childTemplate, context);
+          expect(result.trim()).to.equal('<div>Async Child Content</div>');
+        });
+
+        it('should handle nested blocks with async content', async () => {
+          const context = {
+            async getOuter() {
+              await delay(2);
+              return 'Async Outer';
+            },
+            async getInner() {
+              await delay(1);
+              return 'Async Inner';
+            }
+          };
+          const template = '{% block outer %}{{ getOuter() }} {% block inner %}{{ getInner() }}{% endblock %}{% endblock %}';
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('Async Outer Async Inner');
+        });
+      });
+
+      describe('Parallel Argument Resolution', () => {
+        beforeEach(() => {
+          env = new AsyncEnvironment(loader);
+        });
+        it('should handle function calls with multiple async arguments resolved in parallel', async () => {
+          const context = {
+            async getFirst() {
+              await delay(2);
+              return 'First';
+            },
+            async getSecond() {
+              await delay(1);
+              return 'Second';
+            },
+            combine(a, b) {
+              return `${a} and ${b}`;
+            }
+          };
+          const template = '{{ combine(getFirst(), getSecond()) }}';
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('First and Second');
+        });
+
+        it('should handle macros where arguments are async and resolved in parallel', async () => {
+          const context = {
+            async getArg1() {
+              await delay(2);
+              return 'Arg1';
+            },
+            async getArg2() {
+              await delay(1);
+              return 'Arg2';
+            }
+          };
+          const template = `
+            {% macro combine(a, b) %}
+              {{ a }} and {{ b }}
+            {% endmacro %}
+            {{ combine(getArg1(), getArg2()) }}
+          `;
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('Arg1 and Arg2');
+        });
+
+        it('should handle filters with multiple async arguments resolved in parallel', async () => {
+          env.addFilter('append', async (base, ...args) => {
+            await delay(2);
+            return base + args.join('');
+          });
+
+          const context = {
+            async getFirst() {
+              await delay(2);
+              return 'First';
+            },
+            async getSecond() {
+              await delay(1);
+              return 'Second';
+            },
+            async getThird() {
+              await delay(3);
+              return 'Third';
+            }
+          };
+          const template = '{{ "Values: " | append(getFirst(), getSecond(), getThird()) }}';
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('Values: FirstSecondThird');
+        });
+
+      });
+
+      describe('Binary Operations and Comparisons', () => {
+        beforeEach(() => {
+          env = new AsyncEnvironment();
+        });
+        it('should perform addition with async operands resolved in parallel', async () => {
+          const context = {
+            async getNum1() {
+              await delay(2);
+              return 5;
+            },
+            async getNum2() {
+              await delay(1);
+              return 10;
+            }
+          };
+          const template = '{{ getNum1() + getNum2() }}';
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('15');
+        });
+
+        it('should handle comparisons where both sides are async expressions', async () => {
+          const context = {
+            async getValue1() {
+              await delay(2);
+              return 10;
+            },
+            async getValue2() {
+              await delay(1);
+              return 10;
+            }
+          };
+          const template = '{% if getValue1() == getValue2() %}Equal{% else %}Not Equal{% endif %}';
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('Equal');
+        });
+      });
+
+      describe('Arrays, Dictionaries, and Nested Structures', () => {
+        beforeEach(() => {
+          env = new AsyncEnvironment();
+        });
+        it('should handle arrays with elements resolved in parallel', async () => {
+          const context = {
+            async getItem1() {
+              await delay(2);
+              return 'Item1';
+            },
+            async getItem2() {
+              await delay(1);
+              return 'Item2';
+            }
+          };
+          const template = '{% set myArray = [getItem1(), getItem2()] %}{{ myArray | join(", ") }}';
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('Item1, Item2');
+        });
+
+        it('should handle dictionaries with values resolved in parallel', async () => {
+          const context = {
+            async getValue1() {
+              await delay(2);
+              return 'Value1';
+            },
+            async getValue2() {
+              await delay(1);
+              return 'Value2';
+          }
+          };
+          const template = '{% set myDict = {"key1": getValue1(), "key2": getValue2()} %}{{ myDict["key1"] }}, {{ myDict["key2"] }}';
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('Value1, Value2');
+        });
+
+        it('should handle nested arrays and dictionaries with async elements resolved in parallel', async () => {
+          const context = {
+            async getValueA() {
+              await delay(3);
+              return 'A';
+            },
+            async getValueB() {
+              await delay(2);
+              return 'B';
+            },
+            async getValueC() {
+              await delay(1);
+              return 'C';
+            }
+          };
+          const template = `
+            {%- set myData = {
+              "list": [getValueA(), getValueB(), getValueC()],
+              "dict": {
+                "key1": getValueA(),
+                "key2": getValueB(),
+                "key3": getValueC()
+              }
+            } -%}
+            List: {{ myData.list | join(", ") }}\nDict: {{ myData.dict.key1 }}, {{ myData.dict.key2 }}, {{ myData.dict.key3 }}
+          `;
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('List: A, B, C\nDict: A, B, C');
+        });
+      });
+
+      describe('Import multiple items', () => {
+
+        beforeEach(() => {
+          loader = new StringLoader();
+          env = new AsyncEnvironment(loader);
+        });
+
+        it('should import multiple items resolved in parallel', async () => {
+          loader.addTemplate('macros.njk', `
+            {% macro asyncMacro1() %}
+              {% set result1 = getAsyncValue1() %}
+              [Macro1: {{ result1 }}]
+            {% endmacro %}
+            {% macro asyncMacro2() %}
+              {% set result2 = getAsyncValue2() %}
+              [Macro2: {{ result2 }}]
+            {% endmacro %}
+          `);
+
+          const context = {
+            async getAsyncValue1() {
+              await delay(2);
+              return 'Value1';
+            },
+            async getAsyncValue2() {
+              await delay(1);
+              return 'Value2';
+            }
+          };
+
+          const template = `
+            {% from "macros.njk" import asyncMacro1, asyncMacro2 %}
+            {{ asyncMacro1() }} {{ asyncMacro2() }}
+          `;
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('[Macro1: Value1] [Macro2: Value2]');
+        });
+
       });
     });
 
