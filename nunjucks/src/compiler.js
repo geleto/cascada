@@ -130,13 +130,18 @@ class Compiler extends Obj {
 
   _emitAsyncBlockEnd(finalBlockFunction = null) {
     if (this.isAsync) {
-      this._emitLine('astate.leaveClosure();');
       if(finalBlockFunction) {
         finalBlockFunction.call(this);
       }
+      this._emitLine('astate.leaveClosure();');
       this.asyncClosureDepth--;
       this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))});');
+    }
+    else {
+      if(finalBlockFunction) {
+        finalBlockFunction.call(this);
+      }
     }
   }
 
@@ -1593,14 +1598,16 @@ class Compiler extends Obj {
     var buffer = this.buffer;
     this.buffer = 'output';
     if(this.isAsync) {
-      this._emitAsyncBlockBegin();
-      this._emitLine('let output = [];');
-      this.compile(node.body, frame);
-      this._emitAsyncBlockEnd(()=>{
-        this._emitLine('await astate.waitAllClosures()');
-        this._emitLine(`return runtime.flattentBuffer(output);`);
-        //todo - return the output immediately as a promise - waitAllClosuresAndFlattem
-      });
+      let res = this._tmpid();
+      this._emitAsyncValue( () => {
+        this._emitLine('let output = [];');
+
+        this.compile(node.body, frame);//write to output
+
+        this._emitLine('await astate.waitAllClosures(1)');
+        this._emitLine(`let ${res} = runtime.flattentBuffer(output);`);
+        //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
+      }, res);
     }
     else{
       this._emitLine('(function() {');
