@@ -122,26 +122,23 @@ class Compiler extends Obj {
   // an async block that does not have a value should be wrapped in this
   _emitAsyncBlockBegin() {
     if (this.isAsync) {
-      this._emitLine(`(async (astate)=>{`);
+      this._emitLine(`(async (astate) => {`);
+      this._emitLine('try {');
       this._emitLine('let frame = astate.snapshotFrame;');
       this.asyncClosureDepth++;
     }
   }
 
-  _emitAsyncBlockEnd(finalBlockFunction = null) {
+  _emitAsyncBlockEnd() {
     if (this.isAsync) {
-      if(finalBlockFunction) {
-        finalBlockFunction.call(this);
-      }
-      this._emitLine('astate.leaveClosure();');
       this.asyncClosureDepth--;
-      this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
-      this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))});');
-    }
-    else {
-      if(finalBlockFunction) {
-        finalBlockFunction.call(this);
-      }
+      this._emitLine(`} catch (e) {`);
+      this._emitLine(`  cb(runtime.handleError(e, lineno, colno));`);
+      this._emitLine(`} finally {`);
+      this._emitLine('  astate.leaveClosure();');
+
+      this._emitLine(`}`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot()));`);
     }
   }
 
