@@ -181,9 +181,10 @@ class Compiler extends Obj {
     }
 
     this._emitLine(`(async (astate)=>{`);
+    this._emitLine('try {');
     this._emitLine('let frame = astate.snapshotFrame;');
 
-    const id = this._pushBuffer();//@todo - probably not needed after snapshots?
+    const id = this._pushBuffer();//@todo - better way to get the buffer, see compileCapture
 
     const originalAsyncClosureDepth = this.asyncClosureDepth;
     this.asyncClosureDepth = 0;
@@ -192,24 +193,27 @@ class Compiler extends Obj {
 
     this.asyncClosureDepth = originalAsyncClosureDepth;
 
-    //this._emitLine(';');
+    //this._emitLine(';');//this may be needed in some cases
     this._popBuffer();
 
-    this._emitLine('astate.leaveClosure();');
-    this._emitLine('await astate.waitAllClosures();');
+    this._emitLine('await astate.waitAllClosures(1);');
     this._emitLine(`${id} = runtime.flattentBuffer(${id});`);
 
     //return via callback or directly
-    if(callbackName) {
-      this._emitLine(`${callbackName}(null, ${id});`);
+    if (callbackName) {
+      this._emitLine(`  ${callbackName}(null, ${id});`);
     }
-    this._emitLine(`return ${id};`);
-
+    this._emitLine(`  return ${id};`);
+    this._emitLine(`} catch (e) {`);
+    if (callbackName) {
+      this._emitLine(`  ${callbackName}(runtime.handleError(e, lineno, colno));`);
+    } else {
+      this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+    }
+    this._emitLine('} finally {');
+    this._emitLine('  astate.leaveClosure();');
+    this._emitLine('}');
     this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
-
-    if(callbackName){
-      this._emitLine(`.catch(e=>{${callbackName}(runtime.handleError(e, lineno, colno))});`);
-    }
     //in the non-callback case, using the rendered buffer will throw the error
   }
 
