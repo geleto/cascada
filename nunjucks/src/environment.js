@@ -439,6 +439,7 @@ class AsyncEnvironment extends Environment {
 class AsyncState {
   constructor(parent = null) {
     this.activeClosures = 0;
+    this.waitClosuresCount = 0;
     this.parent = parent;
     this.completionPromise = null;
     this.completionResolver = null;
@@ -461,7 +462,7 @@ class AsyncState {
   leaveClosure() {
     this.activeClosures--;
 
-    if (this.activeClosures === 0) {
+    if (this.activeClosures === this.waitClosuresCount ) {
       if (this.completionResolver) {
         this.completionResolver();
         // Reset both promise and resolver
@@ -486,8 +487,10 @@ class AsyncState {
     }
   }
 
-  async waitAllClosures() {
-    if (this.activeClosures === 0) {
+  // can use only one closureCount value at a time
+  async waitAllClosures(closureCount = 0) {
+    this.waitClosuresCount = closureCount;
+    if (this.activeClosures === closureCount) {
       return Promise.resolve();
     }
 
