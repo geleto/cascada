@@ -142,30 +142,28 @@ class Compiler extends Obj {
     }
   }
 
-  //@todo - option whether it's ok to return a promise
   _emitAsyncValue(emitFunc, res) {
     if (this.isAsync) {
-      //this._emitLine(`${this.asyncClosureDepth > 0 ? 'await ' : ''}`);//do not await if not in an async block
-      this._emitLine(`(async (astate)=>{`);
-      this._emitLine('let frame = astate.snapshotFrame;');
-      if(res===undefined) {
+      this._emitLine(`(async (astate) => {`);
+      this._emitLine('try {');
+      this._emitLine('  let frame = astate.snapshotFrame;');
+      if (res === undefined) {
         res = this._tmpid();
-        this._emitLine(`let ${res} = `);
+        this._emitLine(`  let ${res} = `);
       }
 
       this.asyncClosureDepth++;
-
       emitFunc();
-
       this._emitLine(';');
-      this._emitLine('astate.leaveClosure();');
-      this._emitLine(`return ${res};`);
+      this._emitLine(`  return ${res};`);
+      this._emitLine(`} catch (e) {`);
+      this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+      this._emitLine('} finally {');
+      this._emitLine('  astate.leaveClosure();');
+      this._emitLine('}');
       this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this.asyncClosureDepth--;
-      // The error will be re-thrown when the ewturned value is awaited:
-      //this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))})');
-    }
-    else {
+    } else {
       emitFunc();
     }
   }
