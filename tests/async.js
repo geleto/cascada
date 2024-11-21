@@ -3820,14 +3820,14 @@
 
         it('should import multiple items resolved in parallel', async () => {
           loader.addTemplate('macros.njk', `
-            {% macro asyncMacro1() %}
-              {% set result1 = getAsyncValue1() %}
+            {% macro asyncMacro1() -%}
+              {%- set result1 = getAsyncValue1() -%}
               [Macro1: {{ result1 }}]
-            {% endmacro %}
-            {% macro asyncMacro2() %}
-              {% set result2 = getAsyncValue2() %}
+            {%- endmacro %}
+            {% macro asyncMacro2() -%}
+              {%- set result2 = getAsyncValue2() -%}
               [Macro2: {{ result2 }}]
-            {% endmacro %}
+            {%- endmacro %}
           `);
 
           const context = {
@@ -3842,8 +3842,8 @@
           };
 
           const template = `
-            {% from "macros.njk" import asyncMacro1, asyncMacro2 %}
-            {{ asyncMacro1() }} {{ asyncMacro2() }}
+            {%- import "macros.njk" as macros with context -%}
+            {{ macros.asyncMacro1() }} {{ macros.asyncMacro2() }}
           `;
           const result = await env.renderString(template, context);
           expect(result.trim()).to.equal('[Macro1: Value1] [Macro2: Value2]');

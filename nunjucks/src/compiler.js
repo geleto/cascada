@@ -144,18 +144,31 @@ class Compiler extends Obj {
 
   _emitAsyncValue(emitFunc, res) {
     if (this.isAsync) {
-      this._emitLine(`(async (astate) => {`);
-      this._emitLine('try {');
-      this._emitLine('  let frame = astate.snapshotFrame;');
+      this._emitAsyncValueBegin();
       if (res === undefined) {
         res = this._tmpid();
         this._emitLine(`  let ${res} = `);
       }
-
-      this.asyncClosureDepth++;
       emitFunc();
       this._emitLine(';');
-      this._emitLine(`  return ${res};`);
+      this._emitLine('  return ' + res + ';');
+      this._emitAsyncValueEnd();
+    } else {
+      emitFunc();
+    }
+  }
+
+  _emitAsyncValueBegin() {
+    if (this.isAsync) {
+      this._emitLine(`(async (astate) => {`);
+      this._emitLine('try {');
+      this._emitLine('  let frame = astate.snapshotFrame;');
+      this.asyncClosureDepth++;
+    }
+  }
+
+  _emitAsyncValueEnd() {
+    if (this.isAsync) {
       this._emitLine(`} catch (e) {`);
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
       this._emitLine('} finally {');
@@ -163,8 +176,6 @@ class Compiler extends Obj {
       this._emitLine('}');
       this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this.asyncClosureDepth--;
-    } else {
-      emitFunc();
     }
   }
 
@@ -220,20 +231,24 @@ class Compiler extends Obj {
   _emitAddToBuffer(renderFunction) {
     const returnId = this._tmpid();
     if (this.isAsync) {
-        this.asyncClosureDepth++;
-        this._emitLine(`(async (astate)=>{`);
-        this._emitLine('let frame = astate.snapshotFrame;');
-        this._emitLine(`let index = ${this.buffer}_index++;`);
+      this.asyncClosureDepth++;
+      this._emitLine(`(async (astate)=>{`);
+      this._emitLine('try {');
+      this._emitLine('let frame = astate.snapshotFrame;');
+      this._emitLine(`let index = ${this.buffer}_index++;`);
 
-        this._emitLine(`let ${returnId};`);
-        renderFunction.call(this, returnId);
-        this._emitLine(';');
-        this._emit(`${this.buffer}[index] = ${returnId};`);
+      this._emitLine(`let ${returnId};`);
+      renderFunction.call(this, returnId);
+      this._emitLine(';');
+      this._emit(`${this.buffer}[index] = ${returnId};`);
 
-        this.asyncClosureDepth--;
-        this._emitLine(';astate.leaveClosure();');
-        this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
-        this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))});');
+      this.asyncClosureDepth--;
+      this._emitLine('} catch (e) {');
+      this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+      this._emitLine('} finally {');
+      this._emitLine('  astate.leaveClosure();');
+      this._emitLine('}');
+      this._emitLine(`})(astate.enterClosure(frame.snapshot()));`);
 
     } else {
       this._emitLine(`let ${returnId};`);
@@ -246,13 +261,13 @@ class Compiler extends Obj {
     if (this.isAsync) {
       if (addClosure) {
         this._emitLine(`(async (astate)=>{`);
+        this._emitLine('try {');
         this._emitLine('let frame = astate.snapshotFrame;');
-
         this._emitLine(`let index = ${this.buffer}_index++;`);
-        this._emit(`${this.buffer}[index] = `);//@todo - ${this.buffer}[${this.buffer}_index++], else line
+        this._emit(`${this.buffer}[index] = `);
         this.asyncClosureDepth++;
       } else {
-        this._emitLine(`${this.buffer}[${this.buffer}_index++] = `);
+        this._emitLine(`${this.buffer}[${this.buffer}_index++] = `);//@todo - ${this.buffer}[${this.buffer}_index++], else line
       }
     } else {
       this._emit(`${this.buffer} += `);
@@ -263,9 +278,12 @@ class Compiler extends Obj {
     this._emitLine(';');
     if (this.isAsync && addClosure) {
       this.asyncClosureDepth--;
-      this._emitLine('astate.leaveClosure();');
+      this._emitLine('} catch (e) {');
+      this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+      this._emitLine('} finally {');
+      this._emitLine('  astate.leaveClosure();');
+      this._emitLine('}');
       this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
-      this._emitLine('.catch(e=>{cb(runtime.handleError(e, lineno, colno))});');
     }
   }
 
@@ -1248,12 +1266,21 @@ class Compiler extends Obj {
       `let ${funcId} = runtime.makeMacro(`,
       `[${argNames.join(', ')}], `,
       `[${kwargNames.join(', ')}], `,
-      `function (${realNames.join(', ')}) {`,
+      `function (${realNames.join(', ')}, astate) {`,
       'let callerFrame = frame;',
       'frame = ' + ((keepFrame) ? 'frame.push(true);' : 'frame.new();'),
       'kwargs = kwargs || {};',
       'if (Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
       'frame.set("caller", kwargs.caller); }');
+
+    let err = this._tmpid();
+    if(this.isAsync) {
+      this._emitLines(
+        `let ${err} = null;`,
+        'function cb(err) {',
+        `if(err) {${err} = err;}`,
+        '}');
+    }
 
     // Expose the arguments to the template. Don't need to use
     // random names because the function
@@ -1282,8 +1309,20 @@ class Compiler extends Obj {
     });
 
     this._emitLine('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
-    this._emitLine(`return ${this.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
-    this._emitLine('});');
+    //return the buffer, in async mode it may not be ready yet
+    //this._emitLine(`return ${this.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
+    this._emitLine('return ' + (
+      this.isAsync?
+      `astate.waitAllClosures().then(() => {if (${err}) throw ${err}; return runtime.newSafeStringAsync(${bufferId});}).catch(error => Promise.reject(error));`:
+      `new runtime.SafeString(${bufferId})`
+      )
+    );
+
+    if (this.isAsync) {
+      this._emitLine('}, astate);');
+    } else {
+      this._emitLine('});');
+    }
     this._popBuffer();
 
     return funcId;
@@ -1410,6 +1449,7 @@ class Compiler extends Obj {
       }
 
       if (this.isAsync) {
+        //@todo - error handling in the async() function
         this._emitLine(`${id} = (async () => {`);
         this._emitLine(`  let exported = await ${importedId};`);
         this._emitLine(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);

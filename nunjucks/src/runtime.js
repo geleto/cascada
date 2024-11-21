@@ -261,7 +261,7 @@ class AsyncFrame {
   }
 }
 
-function makeMacro(argNames, kwargNames, func) {
+function makeMacro(argNames, kwargNames, func, astate) {
   return function macro(...macroArgs) {
     var argCount = numArgs(macroArgs);
     var args;
@@ -293,8 +293,14 @@ function makeMacro(argNames, kwargNames, func) {
       args.push(kwargs);
     } else {
       args = macroArgs;
+      if(astate && Object.keys(kwargs).length === 0){
+        args.push({});//kwargs
+      }
     }
 
+    if(astate) {
+      args.push(astate.new());
+    }
     return func.apply(this, args);
   };
 }
