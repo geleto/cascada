@@ -137,6 +137,34 @@
       expect(result).to.equal('Result = 2');
     });
 
+    it('should handle function calls with promise and async function arguments', async () => {
+      const context = {
+        // A regular function that expects resolved values
+        processUserData(name, age, city) {
+          return `${name} (${age}) from ${city}`;
+        },
+
+        // Returns a promise directly
+        namePromise: Promise.resolve('John'),
+
+        // An async function that returns age
+        async getAge() {
+          await delay(5);
+          return 25;
+        },
+
+        // An async function that returns city
+        async getLocation() {
+          await delay(3);
+          return 'New York';
+        }
+      };
+
+      const template = '{{ processUserData(namePromise, getAge(), getLocation()) }}';
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('John (25) from New York');
+    });
+
     describe('Dependent Async Functions', () => {
       // Test for dependent async functions (user and user's posts)
       it('should correctly resolve async functions with dependent arguments', async () => {
@@ -3680,7 +3708,7 @@
           expect(result.trim()).to.equal('Arg1 and Arg2');
         });
 
-        it('should handle filters with multiple async arguments resolved in parallel', async () => {
+        it('should handle filters with multiple async arguments resolved', async () => {
           env.addFilter('append', async (base, ...args) => {
             await delay(2);
             return base + args.join('');
@@ -3818,7 +3846,7 @@
           env = new AsyncEnvironment(loader);
         });
 
-        it('should import multiple items resolved in parallel', async () => {
+        it('should "import as" multiple async macros and use them', async () => {
           loader.addTemplate('macros.njk', `
             {% macro asyncMacro1() -%}
               {%- set result1 = getAsyncValue1() -%}
@@ -3845,6 +3873,39 @@
             {%- import "macros.njk" as macros with context -%}
             {{ macros.asyncMacro1() }} {{ macros.asyncMacro2() }}
           `;
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('[Macro1: Value1] [Macro2: Value2]');
+        });
+
+        it('should "from import" multiple async macros and use them', async () => {
+          loader.addTemplate('macros.njk', `
+            {% macro asyncMacro1() %}
+              {%- set result1 = getAsyncValue1() -%}
+              [Macro1: {{ result1 }}]
+            {%- endmacro -%}
+
+            {%- macro asyncMacro2() -%}
+              {%- set result2 = getAsyncValue2() -%}
+              [Macro2: {{ result2 }}]
+            {% endmacro %}
+          `);
+
+          const context = {
+            async getAsyncValue1() {
+              await delay(2);
+              return 'Value1';
+            },
+            async getAsyncValue2() {
+              await delay(1);
+              return 'Value2';
+            }
+          };
+
+          const template = `
+            {% from "macros.njk" import asyncMacro1, asyncMacro2 with context %}
+            {{ asyncMacro1() }} {{ asyncMacro2() }}
+          `;
+
           const result = await env.renderString(template, context);
           expect(result.trim()).to.equal('[Macro1: Value1] [Macro2: Value2]');
         });
