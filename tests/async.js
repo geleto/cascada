@@ -1717,7 +1717,7 @@
 
             // Return a CallExtension node with arguments and content bodies
             if (this.parallel) {
-              return new nodes.CallExtensionParallel(this, 'run', args, contentArgs);
+              return new nodes.CallExtensionUnresolvedArgs(this, 'run', args, contentArgs);
             } else if (this.oldAsync) {
               return new nodes.CallExtensionAsync(this, 'run', args, contentArgs);
             } else {
@@ -1726,7 +1726,7 @@
           } else {
             // Return a CallExtension node without body
             if (this.parallel) {
-              return new nodes.CallExtensionParallel(this, 'run', args);
+              return new nodes.CallExtensionUnresolvedArgs(this, 'run', args);
             } else if (this.oldAsync) {
               return new nodes.CallExtensionAsync(this, 'run', args);
             } else {

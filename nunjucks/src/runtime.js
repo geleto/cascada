@@ -426,6 +426,11 @@ function suppressValue(val, autoescape) {
 }
 
 function suppressValueAsync(val, autoescape) {
+  if( val && typeof val.then === 'function'){
+    return val.then((v) => {
+      return suppressValueAsync(v, autoescape);
+    });
+  }
   if (Array.isArray(val)) {
     if (autoescape) {
       // append the function to the array, so it will be
@@ -490,32 +495,40 @@ function promisify(fn) {
   };
 }
 
+// It's ok to use consequitive awaits when promises have been already in progress by the time you start awaiting them,
+// Thus using sequential await in a loop does not introduce significant delays compared to Promise.all.
+// not so if the promise is cteated right before the await, e.g. await fetch(url)
 async function resolveAll(args) {
-    const promiseIndices = [];
-    const promiseArgs = [];
-    args.forEach((arg, index) => {
-      if (arg && typeof arg.then === 'function') {
-        promiseIndices.push(index);
-        promiseArgs.push(arg);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] && typeof args[i].then === 'function') {
+      args[i] = await args[i];
+    }
+  }
+  return args;
+}
+
+async function resolveObjectProperties(obj) {
+  for (const key in obj) {
+    if (obj[key] && typeof obj[key].then === 'function') {
+      obj[key] = await obj[key];
+    }
+  }
+  return obj;
+}
+
+async function resolveDuo(arg1, arg2) {
+  return [
+    arg1 && typeof arg1.then === 'function' ? await arg1 : arg1,
+    arg2 && typeof arg2.then === 'function' ? await arg2 : arg2
+  ];
+}
+
+function resolveSingle(value) {
+  return value && typeof value.then === 'function' ? value : {
+      then(onFulfilled) {
+          return onFulfilled ? onFulfilled(value) : value;
       }
-    });
-
-    if (promiseArgs.length === 0) {
-      return args;//no changes
-    }
-
-    if (promiseArgs.length === 1) {
-      // Fast path for single promise
-      args[promiseIndices[0]] = await promiseArgs[0];
-    }
-
-    const resolvedPromises = await Promise.all(promiseArgs);
-
-    promiseIndices.forEach((index, i) => {
-      args[index] = resolvedPromises[i];
-    });
-
-    return args;
+  };
 }
 
 function resolveArguments(fn, skipArguments = 0) {
@@ -552,6 +565,12 @@ function memberLookup(obj, val) {
   }
 
   return obj[val];
+}
+
+function memberLookupAsync(obj, val) {
+  return resolveDuo(obj, val).then(([resolvedOb, resolvedVal]) => {
+    return memberLookup(resolvedOb, resolvedVal);
+  });
 }
 
 function callWrap(obj, name, context, args) {
@@ -684,9 +703,13 @@ module.exports = {
   ensureDefinedAsync: ensureDefinedAsync,
   promisify: promisify,
   resolveAll: resolveAll,
+  resolveDuo: resolveDuo,
+  resolveSingle: resolveSingle,
+  resolveObjectProperties: resolveObjectProperties,
   resolveArguments: resolveArguments,
   flattentBuffer: flattentBuffer,
   memberLookup: memberLookup,
+  memberLookupAsync: memberLookupAsync,
   contextOrFrameLookup: contextOrFrameLookup,
   callWrap: callWrap,
   handleError: handleError,
