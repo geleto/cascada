@@ -322,7 +322,7 @@ class Compiler extends Obj {
   }
 
   //awaiting a non-promise value is slow and should be avoided
-  _emitAwaitIfPromiseVar(varName) {
+  /*_emitAwaitIfPromiseVar(varName) {
     if(CONDITIONAL_AWAIT) {
       this._emitLine(`\n((${varName} && typeof ${varName}.then === 'function') ? await ${varName} : ${varName})`);
     } else {
@@ -340,7 +340,7 @@ class Compiler extends Obj {
         // In case of regular await, emit the standard await directly
         this._emitLine(`await ${code}`);
     }
-  }
+  }*/
 
   _addScopeLevel() {
     this._scopeClosers += '})';
@@ -385,15 +385,22 @@ class Compiler extends Obj {
   }
 
   _compileAggregate(node, frame, startChar, endChar, resolveItems = false) {
-    if (startChar) {
-      this._emit(startChar);
-    }
+    let doResolve = resolveItems && this.isAsync;//@todo - detect if the nodes need to be resolved, for start just literals
 
-    if (resolveItems && this.isAsync) {
-      if(startChar==='(') {
-        this._emit('...');
+    if(doResolve) {
+      switch(startChar) {
+        case '[':
+          this._emit('await runtime.resolveAll([');
+          break;
+        case '{':
+          this._emit('await runtime.resolveObjectProperties({');
+          break;
+        case '(':
+          this._emit('(...await runtime.resolveAll([');
+          break;
       }
-      this._emit(`await runtime.resolveAll([`);
+    } else {
+      this._emit(startChar);
     }
 
     node.children.forEach((child, i) => {
@@ -404,11 +411,19 @@ class Compiler extends Obj {
       this.compile(child, frame);
     });
 
-    if (resolveItems && this.isAsync) {
-      this._emit('])');
-    }
-
-    if (endChar) {
+    if(doResolve) {
+      switch(endChar) {
+        case ']':
+          this._emit('])');
+          break;
+        case '}':
+          this._emit('})');
+          break;
+        case ')':
+          this._emit(']))');
+          break;
+      }
+    } else {
       this._emit(endChar);
     }
   }
@@ -617,19 +632,7 @@ class Compiler extends Obj {
   }
 
   compileDict(node, frame) {
-    //this._compileAggregate(node, frame, '{', '}'), true;
-    if (this.isAsync) {
-      this._emit('runtime.resolveAllPairs({');
-      node.children.forEach((child, i) => {
-        if (i > 0) {
-          this._emit(',');
-        }
-        this.compile(child, frame);//a pair
-      });
-      this._emit('})');
-    } else {
-      this._compileAggregate(node, frame, '{', '}');
-    }
+    this._compileAggregate(node, frame, '{', '}', true);
   }
 
   compilePair(node, frame) {
@@ -666,7 +669,7 @@ class Compiler extends Obj {
     this._emit('(');
     this.compile(node.cond, frame);
     if (this.isAsync) {
-      this._emit(').then(function(cond) { return cond');
+      this._emit(').then(async function(cond) { return cond');
     }
     this._emit('?');
     this.compile(node.body, frame);
@@ -806,25 +809,39 @@ class Compiler extends Obj {
 
   compileCompare(node, frame) {
     if (this.isAsync) {
-      this._emit('runtime.resolveAll([');
+      //use resolveDuo for expr and the first op, await the rest as they will be optionally resolved (make the function async)
+      this._emit('runtime.resolveDuo([');
       this.compile(node.expr, frame);
       node.ops.forEach((op) => {
         this._emit(',');
         this.compile(op.expr, frame);
       });
-      this._emit(']).then(function([');
-      let args = ['expr'];
-      for (let i = 0; i < node.ops.length; i++) {
-        args.push('expr' + i);
-      }
-      this._emit(args.join(','));
-      this._emit(']){');
-      for (let i = 0; i < node.ops.length; i++) {
-        let op = node.ops[i];
-        this._emit('if(!(expr ' + compareOps[op.type] + ' expr' + i + ')) return false;');
-        this._emit('expr = expr' + i + ';');
-      }
-      this._emit('return true;})');
+      this._emit(']).then(async function(results){');
+      this._emit(`return results[0] ${compareOps[node.ops[0].type]} results[1]`);
+      node.ops.forEach((op, index) => {
+        if(index>0) {
+          this._emit(` ${compareOps[op.type]} `);
+          this._emitAwait(()=> {
+            this.compile(op.expr, frame);
+          });
+        }
+      });
+      this._emit('})');
+
+      //@todo - use resolveDuo for expr and the first op, await the rest as they will be optionally resolved (make the function async)
+      /*this._emit('runtime.resolveAll([');
+      this.compile(node.expr, frame);
+      node.ops.forEach((op) => {
+        this._emit(',');
+        this.compile(op.expr, frame);
+      });
+      this._emit(']).then(function(results){');
+      this._emit('return results[0]');
+      node.ops.forEach((op, index) => {
+        this._emit(` ${compareOps[op.type]} `);
+        this._emit(`results[${index + 1}]`);
+      });
+      this._emit('})');*/
     } else {
       this.compile(node.expr, frame);
 
@@ -876,9 +893,7 @@ class Compiler extends Obj {
       this.compile(node.name, frame);
     });
     this._emit(', "' + this._getNodeName(node.name).replace(/"/g, '\\"') + '", context, ');
-      this._emitAwait( ()=> {
-      this._compileAggregate(node.args, frame, '[', ']', true);
-    });
+    this._compileAggregate(node.args, frame, '[', ']', true);
     this._emit('))');
 
   }
