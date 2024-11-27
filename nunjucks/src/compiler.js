@@ -7,7 +7,7 @@ const {TemplateError} = require('./lib');
 const {Frame, AsyncFrame} = require('./runtime');
 const {Obj} = require('./object');
 
-const CONDITIONAL_AWAIT = true;//awaiting a non-promise value is slow and should be avoided
+//const CONDITIONAL_AWAIT = true;//awaiting a non-promise value is slow and should be avoided
 
 // These are all the same for now, but shouldn't be passed straight
 // through
@@ -884,9 +884,9 @@ class Compiler extends Obj {
     } else {
       // In sync mode, compile as usual.
       this._emit('runtime.callWrap(');
-      this.compile(node.name, frame);
+      this.compileAwaited(node.name, frame);
       this._emit(', "' + funcName + '", context, ');
-      this._compileAggregate(node.args, frame);
+      this._compileAggregate(node.args, frame, '[', ']');
       this._emit('))');
     }
   }
