@@ -385,43 +385,73 @@ class Compiler extends Obj {
   }
 
   _compileAggregate(node, frame, startChar, endChar, resolveItems = false) {
-    let doResolve = resolveItems && this.isAsync;//@todo - detect if the nodes need to be resolved, for start just literals
+    let doResolve = resolveItems && this.isAsync;
 
-    if(doResolve) {
-      switch(startChar) {
+    if (doResolve) {
+      switch (startChar) {
         case '[':
-          this._emit('await runtime.resolveAll([');
+          if (node.children.length === 0) {
+            this._emit('[]');
+            return;
+          }
+          if (node.children.length === 1) {
+            this._emit('[await ');
+          } else if (node.children.length === 2) {
+            this._emit('await runtime.resolveDuo([');
+          } else {
+            this._emit('await runtime.resolveAll([');
+          }
           break;
         case '{':
+          if (node.children.length === 0) {
+            this._emit('{}');
+            return;
+          }
           this._emit('await runtime.resolveObjectProperties({');
           break;
         case '(':
-          this._emit('(...await runtime.resolveAll([');
-          break;
+          if (node.children.length === 0) {
+            this._emit('()');
+            return;
+          }
+          if (node.children.length === 1) {
+            this._emit('(');
+            this._emitAwait(() => {
+              this.compile(node.children[0], frame);
+            });
+            this._emit(')');
+            return;
+          }
+          this._emit('(...');
+          this._compileAggregate(node, frame, '[', ']', true);
+          this._emit(')');
+          return;
       }
     } else {
       this._emit(startChar);
     }
 
+    // Compile the arguments if not already handled
     node.children.forEach((child, i) => {
       if (i > 0) {
         this._emit(',');
       }
-
       this.compile(child, frame);
     });
 
-    if(doResolve) {
-      switch(endChar) {
+    if (doResolve) {
+      switch (endChar) {
         case ']':
-          this._emit('])');
+          if (node.children.length === 1) {
+            this._emit(']');
+          } else {
+            this._emit('])');
+          }
           break;
         case '}':
           this._emit('})');
           break;
-        case ')':
-          this._emit(']))');
-          break;
+        // No need to handle ')' here since all '(' cases return early
       }
     } else {
       this._emit(endChar);
@@ -809,15 +839,14 @@ class Compiler extends Obj {
 
   compileCompare(node, frame) {
     if (this.isAsync) {
-      //use resolveDuo for expr and the first op, await the rest as they will be optionally resolved (make the function async)
-      this._emit('runtime.resolveDuo([');
+      //@todo - add test for >1 async compare ops
+      //use resolveDuo for expr and the first op, optionally await the rest
+      this._emit('runtime.resolveDuo(');
       this.compile(node.expr, frame);
-      node.ops.forEach((op) => {
-        this._emit(',');
-        this.compile(op.expr, frame);
-      });
-      this._emit(']).then(async function(results){');
-      this._emit(`return results[0] ${compareOps[node.ops[0].type]} results[1]`);
+      this._emit(',');
+      this.compile(node.ops[0].expr, frame);
+      this._emit(').then(async function([expr, ref1]){');
+      this._emit(`return expr ${compareOps[node.ops[0].type]} ref1`);
       node.ops.forEach((op, index) => {
         if(index>0) {
           this._emit(` ${compareOps[op.type]} `);
@@ -828,7 +857,6 @@ class Compiler extends Obj {
       });
       this._emit('})');
 
-      //@todo - use resolveDuo for expr and the first op, await the rest as they will be optionally resolved (make the function async)
       /*this._emit('runtime.resolveAll([');
       this.compile(node.expr, frame);
       node.ops.forEach((op) => {
@@ -909,7 +937,7 @@ class Compiler extends Obj {
       this._emit('env.getFilter("' + name.value + '"), ');
       this._compileAggregate(node.args, frame, '', '', false, true);
       this._emit('])');
-      this._emit('.then(function([filterFunc,args]){ return filterFunc.call(context, ...args); })');
+      this._emit('.then(function(args){ return args[0].call(context, ...args.slice(1)); })');
     } else {
       this._emit('env.getFilter("' + name.value + '").call(context, ');
       this._compileAggregate(node.args, frame);
@@ -940,7 +968,7 @@ class Compiler extends Obj {
             `let ${symbol} = runtime.resolveAll(${argsArray})`,
             `  .then(resolvedArgs => {`,
             `    return runtime.promisify(env.getFilter("${name.value}").bind(env))(...resolvedArgs);`,
-            `  })`
+            `  });`
           );
           /*this._emitLine(`await runtime.resolveAll(${argsArray});`);
 
