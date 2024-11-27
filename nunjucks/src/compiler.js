@@ -1006,13 +1006,13 @@ class Compiler extends Obj {
     this._emitBufferBlockBegin();
 
     this._emit('switch (');
-    this.compile(node.expr, frame);
+    this.compileAwaited(node.expr, frame);
     this._emit(') {');
     node.cases.forEach((c, i) => {
       this._emit('case ');
       this.compileAwaited(c.cond, frame);
       this._emit(': ');
-      this.compileAwaited(c.body, frame);
+      this.compile(c.body, frame);
       // preserve fall-throughs
       if (c.body.children.length) {
         this._emitLine('break;');
@@ -1020,7 +1020,7 @@ class Compiler extends Obj {
     });
     if (node.default) {
       this._emit('default:');
-      this.compileAwaited(node.default, frame);
+      this.compile(node.default, frame);
     }
     this._emit('}');
 
