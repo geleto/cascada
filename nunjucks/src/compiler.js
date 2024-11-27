@@ -854,20 +854,34 @@ class Compiler extends Obj {
   }
 
   compileFunCall(node, frame) {
-    // Keep track of line/col info at runtime by settings
-    // variables within an expression. An expression in javascript
+    // Keep track of line/col info at runtime by setting
+    // variables within an expression. An expression in JavaScript
     // like (x, y, z) returns the last value, and x and y can be
-    // anything
-    this._emit('(lineno = ' + node.lineno +
-      ', colno = ' + node.colno + ', ');
+    // anything.
+    this._emit('(lineno = ' + node.lineno + ', colno = ' + node.colno + ', ');
 
-    //@todo - the object and the arguments are resolved sequentially
-    this._emit('runtime.callWrap(');
-    this.compileAwaited(node.name, frame);
-    this._emit(', "' + this._getNodeName(node.name).replace(/"/g, '\\"') + '", context, ');
-    this._compileAggregate(node.args, frame, '[', ']', true);
-    this._emit('))');
+    const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
+    if (this.isAsync) {
+      // In async mode, resolve the function and arguments in parallel.
+      this._emit('runtime.resolveAll([');
+      // Compile the function name.
+      this.compile(node.name, frame);
+      // Compile the arguments.
+      if (node.args.children.length > 0) {
+        this._emit(', ');
+        this._compileAggregate(node.args, frame, '', '', false, true);
+      }
+      this._emit('])');
+      this._emit('.then(function(resolved){ return runtime.callWrap(resolved[0], "' + funcName + '", context, resolved.slice(1)); }))');
+    } else {
+      // In sync mode, compile as usual.
+      this._emit('runtime.callWrap(');
+      this.compile(node.name, frame);
+      this._emit(', "' + funcName + '", context, ');
+      this._compileAggregate(node.args, frame);
+      this._emit('))');
+    }
   }
 
   //@todo - in isAsync mode, the filter may return a promise
