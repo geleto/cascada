@@ -863,17 +863,24 @@ class Compiler extends Obj {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
     if (this.isAsync) {
-      // In async mode, resolve the function and arguments in parallel.
-      this._emit('runtime.resolveAll([');
-      // Compile the function name.
-      this.compile(node.name, frame);
-      // Compile the arguments.
-      if (node.args.children.length > 0) {
-        this._emit(', ');
-        this._compileAggregate(node.args, frame, '', '', false, true);
+      if (node.name instanceof nodes.Literal) {
+        // Function name is constant, so resolve only the arguments.
+        this._compileAggregate(node.args, frame, '[', ']', true); // Resolve arguments using _compileAggregate.
+        this._emit(`.then(function(resolvedArgs){ return runtime.callWrap(env.getFilter("${funcName}"), "${funcName}", context, resolvedArgs); })`);
+      } else {
+        // Function name is dynamic, so resolve both function and arguments.
+        // In async mode, resolve the function and arguments in parallel.
+        this._emit('runtime.resolveAll([');
+        // Compile the function name.
+        this.compile(node.name, frame);
+        // Compile the arguments.
+        if (node.args.children.length > 0) {
+          this._emit(', ');
+          this._compileAggregate(node.args, frame, '', '', false, true);
+        }
+        this._emit('])');
+        this._emit('.then(function(resolved){ return runtime.callWrap(resolved[0], "' + funcName + '", context, resolved.slice(1)); }))');
       }
-      this._emit('])');
-      this._emit('.then(function(resolved){ return runtime.callWrap(resolved[0], "' + funcName + '", context, resolved.slice(1)); }))');
     } else {
       // In sync mode, compile as usual.
       this._emit('runtime.callWrap(');
