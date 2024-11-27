@@ -107,18 +107,6 @@ class Compiler extends Obj {
     this.buffer = null;
   }
 
-  // wrap await calls in this, maybe we should only astate.enterClosure(frame)/leaveClosure()
-  // the async blocks
-  _emitAwait(emitFunc) {
-    if (this.isAsync) {
-      this._emit('(await ');
-    }
-    emitFunc();
-    if (this.isAsync) {
-      this._emit(')');
-    }
-  }
-
   // an async block that does not have a value should be wrapped in this
   _emitAsyncBlockBegin() {
     if (this.isAsync) {
@@ -386,6 +374,10 @@ class Compiler extends Obj {
 
   _compileAggregate(node, frame, startChar, endChar, resolveItems = false) {
     let doResolve = resolveItems && this.isAsync;
+    if(doResolve) {
+      //check if at least one child is not a literal, todo: check for much more than literal
+      doResolve = node.children.some(child => !(child instanceof nodes.Literal));
+    }
 
     if (doResolve) {
       switch (startChar) {
@@ -416,9 +408,7 @@ class Compiler extends Obj {
           }
           if (node.children.length === 1) {
             this._emit('(');
-            this._emitAwait(() => {
-              this.compile(node.children[0], frame);
-            });
+            this.compileAwaited(node.children[0], frame);;
             this._emit(')');
             return;
           }
@@ -458,43 +448,6 @@ class Compiler extends Obj {
     } else {
       this._emit(endChar);
     }
-  }
-
-  _compileExpression(node, frame) {
-    // TODO: I'm not really sure if this type check is worth it or
-    // not.
-    this.assertType(
-      node,
-      nodes.Literal,
-      nodes.Symbol,
-      nodes.Group,
-      nodes.Array,
-      nodes.Dict,
-      nodes.FunCall,
-      nodes.Caller,
-      nodes.Filter,
-      nodes.LookupVal,
-      nodes.Compare,
-      nodes.InlineIf,
-      nodes.In,
-      nodes.Is,
-      nodes.And,
-      nodes.Or,
-      nodes.Not,
-      nodes.Add,
-      nodes.Concat,
-      nodes.Sub,
-      nodes.Mul,
-      nodes.Div,
-      nodes.FloorDiv,
-      nodes.Mod,
-      nodes.Pow,
-      nodes.Neg,
-      nodes.Pos,
-      nodes.Compare,
-      nodes.NodeList
-    );
-    this.compile(node, frame);
   }
 
   assertType(node, ...types) {
@@ -686,9 +639,7 @@ class Compiler extends Obj {
     else {
       //todo: this is not the most parrallel friendly way to do this,
       //if there are multiple async keys, they will be resolved in series
-      this._emitAwait(()=> {
-        this.compile(key, frame);
-      });
+      this.compileAwaited(key, frame);
     }
     this._emit(': ');
     this._compileExpression(val, frame);
@@ -852,9 +803,7 @@ class Compiler extends Obj {
       node.ops.forEach((op, index) => {
         if(index>0) {
           this._emit(` ${compareOps[op.type]} `);
-          this._emitAwait(()=> {
-            this.compile(op.expr, frame);
-          });
+          this.compileAwaited(op.expr, frame);
         }
       });
       this._emit('})');
@@ -919,9 +868,7 @@ class Compiler extends Obj {
 
     //@todo - the object and the arguments are resolved sequentially
     this._emit('runtime.callWrap(');
-    this._emitAwait( ()=> {
-      this.compile(node.name, frame);
-    });
+    this.compileAwaited(node.name, frame);
     this._emit(', "' + this._getNodeName(node.name).replace(/"/g, '\\"') + '", context, ');
     this._compileAggregate(node.args, frame, '[', ']', true);
     this._emit('))');
@@ -1054,6 +1001,7 @@ class Compiler extends Obj {
     });
   }
 
+  //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
     this._emitBufferBlockBegin();
 
@@ -1062,9 +1010,9 @@ class Compiler extends Obj {
     this._emit(') {');
     node.cases.forEach((c, i) => {
       this._emit('case ');
-      this.compile(c.cond, frame);
+      this.compileAwaited(c.cond, frame);
       this._emit(': ');
-      this.compile(c.body, frame);
+      this.compileAwaited(c.body, frame);
       // preserve fall-throughs
       if (c.body.children.length) {
         this._emitLine('break;');
@@ -1072,7 +1020,7 @@ class Compiler extends Obj {
     });
     if (node.default) {
       this._emit('default:');
-      this.compile(node.default, frame);
+      this.compileAwaited(node.default, frame);
     }
     this._emit('}');
 
@@ -1157,9 +1105,7 @@ class Compiler extends Obj {
     this._emitLine('frame = frame.push();');
 
     this._emit(`let ${arr} = `);
-    this._emitAwait( () => {
-      this._compileExpression(node.arr, frame);
-    });
+    this._compileAwaitedExpression(node.arr, frame);
     this._emitLine(';');
     this._emitLine(`let ${len};`);
 
@@ -1907,6 +1853,64 @@ class Compiler extends Obj {
     } else {
       this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno);
     }
+  }
+
+  //@todo - optimize, check for much more than literal
+  compileAwaited(node, frame) {
+    if(this.isAsync && !(node instanceof nodes.Literal)) {
+      this._emit('(await ');
+      this.compile(node, frame);
+      this._emit(')');
+    } else {
+      this.compile(node, frame);
+    }
+  }
+
+  _compileAwaitedExpression(node, frame) {
+    if(this.isAsync && !(node instanceof nodes.Literal)) {
+      this._emit('(await ');
+      this._compileExpression(node, frame);
+      this._emit(')');
+    } else {
+      this._compileExpression(node, frame);
+    }
+  }
+
+  _compileExpression(node, frame) {
+    // TODO: I'm not really sure if this type check is worth it or
+    // not.
+    this.assertType(
+      node,
+      nodes.Literal,
+      nodes.Symbol,
+      nodes.Group,
+      nodes.Array,
+      nodes.Dict,
+      nodes.FunCall,
+      nodes.Caller,
+      nodes.Filter,
+      nodes.LookupVal,
+      nodes.Compare,
+      nodes.InlineIf,
+      nodes.In,
+      nodes.Is,
+      nodes.And,
+      nodes.Or,
+      nodes.Not,
+      nodes.Add,
+      nodes.Concat,
+      nodes.Sub,
+      nodes.Mul,
+      nodes.Div,
+      nodes.FloorDiv,
+      nodes.Mod,
+      nodes.Pow,
+      nodes.Neg,
+      nodes.Pos,
+      nodes.Compare,
+      nodes.NodeList
+    );
+    this.compile(node, frame);
   }
 
   getCode() {
