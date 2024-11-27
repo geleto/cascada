@@ -810,6 +810,54 @@
         const result = await env.renderString(template, context);
         expect(result).to.equal('Admin');
       });
+
+      it('should handle async values in "in" operator', async () => {
+        const context = {
+          list: (async () => {
+            await delay(5);
+            return [1, 2, 3];
+          })(),
+          item: (async () => {
+            await delay(5);
+            return 2;
+          })()
+        };
+
+        const result = await env.renderString('{{ item in list }}', context);
+        expect(result).to.equal('true');
+      });
+
+      it('should calculate power with async values', async () => {
+        const context = {
+          base: (async () => {
+            await delay(5);
+            return 2;
+          })(),
+          exp: (async () => {
+            await delay(5);
+            return 3;
+          })()
+        };
+
+        const result = await env.renderString('{{ base ** exp }}', context);
+        expect(result).to.equal('8');
+      });
+
+      it('should perform floor division with async values', async () => {
+        const context = {
+          dividend: (async () => {
+            await delay(5);
+            return 7;
+          })(),
+          divisor: (async () => {
+            await delay(5);
+            return 2;
+          })()
+        };
+
+        const result = await env.renderString('{{ dividend // divisor }}', context);
+        expect(result).to.equal('3');
+      });
     });
 
     describe('Async operations in macros', () => {

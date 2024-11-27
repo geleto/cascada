@@ -666,11 +666,7 @@ class Compiler extends Obj {
   }
 
   compileIn(node, frame) {
-    this._emit('runtime.inOperator(');
-    this.compile(node.left, frame);
-    this._emit(',');
-    this.compile(node.right, frame);
-    this._emit(')');
+    this._binFuncEmitter(node, frame, 'runtime.inOperator');
   }
 
   compileIs(node, frame) {
@@ -688,6 +684,24 @@ class Compiler extends Obj {
       this.compile(node.right.args, frame);
     }
     this._emit(') === true');
+  }
+
+  _binFuncEmitter(node, frame, funcName, separator = ',') {
+    if (this.isAsync) {
+      this._emit('(');
+      this._emit('runtime.resolveDuo(');
+      this.compile(node.left, frame);
+      this._emit(',');
+      this.compile(node.right, frame);
+      this._emit(')');
+      this._emit(`.then(function([left,right]){return ${funcName}(left${separator}right);}))`);
+    } else {
+      this._emit(`${funcName}(`);
+      this.compile(node.left, frame);
+      this._emit(separator);
+      this.compile(node.right, frame);
+      this._emit(')');
+    }
   }
 
   _binOpEmitter(node, frame, str) {
@@ -755,31 +769,12 @@ class Compiler extends Obj {
   }
 
   compileFloorDiv(node, frame) {
-    this._emit('Math.floor(');
-    this.compile(node.left, frame);
-    this._emit(' / ');
-    this.compile(node.right, frame);
-    this._emit(')');
+    this._binFuncEmitter(node, frame, 'Math.floor', ' / ');
   }
 
-  //@use binOp or add test
+  //@use add test
   compilePow(node, frame) {
-    if (this.isAsync) {
-      this._emit('(');
-      this._emit('runtime.resolveDuo(');
-      this.compile(node.left, frame);
-      this._emit(',');
-      this.compile(node.right, frame);
-      this._emit(')');
-      this._emit('.then(function([left,right]){return Math.pow(left, right);})');
-      this._emit(')');
-    } else {
-      this._emit('Math.pow(');
-      this.compile(node.left, frame);
-      this._emit(', ');
-      this.compile(node.right, frame);
-      this._emit(')');
-    }
+    this._binFuncEmitter(node, frame, 'Math.pow');
   }
 
   compileNeg(node, frame) {
