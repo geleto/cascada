@@ -743,6 +743,27 @@
         expect(result).to.equal('User is active');
       });
 
+      it('should correctly resolve multiple async compare operations', async () => {
+        const context = {
+          value1: (async () => {
+            await delay(5);
+            return 5;
+          })(),
+          value2: (async () => {
+            await delay(5);
+            return 10;
+          })(),
+          value3: (async () => {
+            await delay(5);
+            return 15;
+          })()
+        };
+
+        const template = '{% if value1 < value2 < value3 %}Yes{% else %}No{% endif %}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('Yes');
+      });
+
       it('should handle multiple async conditions in if/else if/else', async () => {
         const context = {
           async getUserRole(id) {
@@ -3907,26 +3928,6 @@
           expect(result.trim()).to.equal('Equal');
         });
 
-        it('should correctly resolve multiple async compare operations', async () => {
-          const context = {
-            value1: (async () => {
-              await delay(5);
-              return 5;
-            })(),
-            value2: (async () => {
-              await delay(5);
-              return 10;
-            })(),
-            value3: (async () => {
-              await delay(5);
-              return 15;
-            })()
-          };
-
-          const template = '{% if value1 < value2 < value3 %}Yes{% else %}No{% endif %}';
-          const result = await env.renderString(template, context);
-          expect(result).to.equal('Yes');
-        });
       });
 
       describe('Arrays, Dictionaries, and Nested Structures', () => {

@@ -255,7 +255,7 @@ class Compiler extends Obj {
         this._emit(`${this.buffer}[index] = `);
         this.asyncClosureDepth++;
       } else {
-        this._emitLine(`${this.buffer}[${this.buffer}_index++] = `);//@todo - ${this.buffer}[${this.buffer}_index++], else line
+        this._emitLine(`${this.buffer}[${this.buffer}_index++] = `);
       }
     } else {
       this._emit(`${this.buffer} += `);
@@ -806,7 +806,6 @@ class Compiler extends Obj {
 
   compileCompare(node, frame) {
     if (this.isAsync) {
-      //@todo - add test for >1 async compare ops
       //use resolveDuo for expr and the first op, optionally await the rest
       this._emit('runtime.resolveDuo(');
       this.compile(node.expr, frame);
@@ -846,14 +845,11 @@ class Compiler extends Obj {
   }
 
   compileLookupVal(node, frame) {
-    //todo - runtime.memberLookupAsync which will return a promise
-    //this._emitAwait( ()=>{
-      this._emit(`runtime.memberLookup${this.isAsync?'Async':''}((`);
-      this._compileExpression(node.target, frame);
-      this._emit('),');
-      this._compileExpression(node.val, frame);
-      this._emit(')');
-    //});
+    this._emit(`runtime.memberLookup${this.isAsync?'Async':''}((`);
+    this._compileExpression(node.target, frame);
+    this._emit('),');
+    this._compileExpression(node.val, frame);
+    this._emit(')');
   }
 
   _getNodeName(node) {
@@ -938,29 +934,19 @@ class Compiler extends Obj {
     frame.set(symbol, symbol);
 
     if (this.isAsync) {
-        //const res = this._tmpid();
-        //this._emit(`let ${symbol} = `);
-        //this._emitAsyncValue( () => {//@todo, not needed
-          const argsArray = this._tmpid();
-          this._emitLine(`let ${argsArray} = `);
+      const argsArray = this._tmpid();
+      this._emitLine(`let ${argsArray} = `);
 
-          //@todo - do not resolve if only literal
-          this._compileAggregate(node.args, frame, '[', ']');//todo - short path for 1 argument - 99% of the cases
-          this._emitLine(';');
+      //@todo - do not resolve if only literal
+      this._compileAggregate(node.args, frame, '[', ']');//todo - short path for 1 argument - 99% of the cases
+      this._emitLine(';');
 
-          this._emitLines(
-            `let ${symbol} = runtime.resolveAll(${argsArray})`,
-            `  .then(resolvedArgs => {`,
-            `    return runtime.promisify(env.getFilter("${name.value}").bind(env))(...resolvedArgs);`,
-            `  });`
-          );
-          /*this._emitLine(`await runtime.resolveAll(${argsArray});`);
-
-          // Promisify the filter call
-          this._emitLine(`let ${symbol} = await runtime.promisify(env.getFilter("${name.value}").bind(env))(...${argsArray});`);*/
-
-        //}, res);
-        //this._emitLine(';');
+      this._emitLines(
+        `let ${symbol} = runtime.resolveAll(${argsArray})`,
+        `  .then(resolvedArgs => {`,
+        `    return runtime.promisify(env.getFilter("${name.value}").bind(env))(...resolvedArgs);`,
+        `  });`
+      );
     } else {
         this._emit('env.getFilter("' + name.value + '").call(context, ');
         this._compileAggregate(node.args, frame);
@@ -1062,7 +1048,7 @@ class Compiler extends Obj {
     this._emitBufferBlockEnd();
   }
 
-  //todo - get rid of the callback
+  //todo! - get rid of the callback
   compileIf(node, frame, async) {
     this._emitBufferBlockBegin();
 
@@ -1469,7 +1455,6 @@ class Compiler extends Obj {
     this._emit(`return ${funcId};})()`);
   }
 
-  //todo - detect when _compileExpression outputs a literal and _emitAsyncValue is not needed
   _compileGetTemplate(node, frame, eagerCompile, ignoreMissing) {
     const parentTemplateId = this._tmpid();
     const parentName = this._templateName();
@@ -1481,10 +1466,7 @@ class Compiler extends Obj {
       this._emitLine(`const ${getTemplateFunc} = runtime.promisify(env.getTemplate.bind(env));`);
       this._emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
 
-      //getTemplate accepts promise names, todo - optimize for literals
-      this._emitAsyncValue( () => {
-        this._compileExpression(node.template, frame);
-      });
+      this._compileExpression(node.template, frame);
 
       this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     } else {
