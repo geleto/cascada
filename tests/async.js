@@ -98,6 +98,69 @@
       expect(result).to.equal('User: John Doe');
     });
 
+    it('should correctly resolve a dynamic function name', async () => {
+      const context = {
+        dynamicFunction: async (arg) => {
+          await delay(5);
+          return `Hello, ${arg}!`;
+        },
+        argPromise: (async () => {
+          await delay(5);
+          return 'World';
+        })()
+      };
+
+      const template = '{{ dynamicFunction(argPromise) }}';
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('Hello, World!');
+    });
+
+    it('should correctly call a function with 2 async arguments', async () => {
+      const context = {
+        add: async (a, b) => {
+          await delay(5);
+          return a + b;
+        },
+        arg1: (async () => {
+          await delay(5);
+          return 3;
+        })(),
+        arg2: (async () => {
+          await delay(5);
+          return 7;
+        })()
+      };
+
+      const template = '{{ add(arg1, arg2) }}';
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('10');
+    });
+
+    it('should correctly call a function with 3 async arguments', async () => {
+      const context = {
+        multiplyAndAdd: async (a, b, c) => {
+          await delay(5);
+          return a * b + c;
+        },
+        arg1: (async () => {
+          await delay(5);
+          return 2;
+        })(),
+        arg2: (async () => {
+          await delay(5);
+          return 5;
+        })(),
+        arg3: (async () => {
+          await delay(5);
+          return 3;
+        })()
+      };
+
+      const template = '{{ multiplyAndAdd(arg1, arg2, arg3) }}';
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('13');
+    });
+
     it('should correctly resolve an async function followed by member resolution in output', async () => {
       const context = {
         async fetchUser(id) {
@@ -3110,6 +3173,31 @@
 
         const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('false');
+      });
+
+      it('should correctly resolve "is" operator with async left-hand side and arguments', async () => {
+        const context = {
+          testValue: (async () => {
+            await delay(5);
+            return 10;
+          })(),
+          testFunction: async (value, threshold) => {
+            await delay(5);
+            return value > threshold;
+          },
+          threshold: (async () => {
+            await delay(5);
+            return 5;
+          })()
+        };
+
+        env.addGlobal('isGreaterThan', async (value, threshold) => {
+          return await context.testFunction(value, threshold);
+        });
+
+        const template = '{% if testValue is isGreaterThan(threshold) %}Yes{% else %}No{% endif %}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('Yes');
       });
 
       it('should handle errors in async set expressions', async () => {
