@@ -397,7 +397,7 @@ class Compiler extends Obj {
           if (node.children.length === 1) {
             this._emit('[await ');
           } else if (node.children.length === 2) {
-            this._emit('await runtime.resolveDuo([');
+            this._emit('await runtime.resolveDuo(');
           } else {
             this._emit('await runtime.resolveAll([');
           }
@@ -444,6 +444,8 @@ class Compiler extends Obj {
         case ']':
           if (node.children.length === 1) {
             this._emit(']');
+          } else if (node.children.length === 2) {
+            this._emit(')');
           } else {
             this._emit('])');
           }

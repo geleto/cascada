@@ -518,8 +518,8 @@ async function resolveObjectProperties(obj) {
 
 async function resolveDuo(arg1, arg2) {
   return [
-    arg1 && typeof arg1.then === 'function' ? await arg1 : arg1,
-    arg2 && typeof arg2.then === 'function' ? await arg2 : arg2
+    (arg1 && typeof arg1.then === 'function') ? await arg1 : arg1,
+    (arg2 && typeof arg2.then === 'function') ? await arg2 : arg2
   ];
 }
 
