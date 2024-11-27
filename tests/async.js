@@ -3191,7 +3191,7 @@
           })()
         };
 
-        env.addGlobal('isGreaterThan', async (value, threshold) => {
+        env.addTest('isGreaterThan', async (value, threshold) => {
           return await context.testFunction(value, threshold);
         });
 
@@ -3905,6 +3905,27 @@
           const template = '{% if getValue1() == getValue2() %}Equal{% else %}Not Equal{% endif %}';
           const result = await env.renderString(template, context);
           expect(result.trim()).to.equal('Equal');
+        });
+
+        it('should correctly resolve multiple async compare operations', async () => {
+          const context = {
+            value1: (async () => {
+              await delay(5);
+              return 5;
+            })(),
+            value2: (async () => {
+              await delay(5);
+              return 10;
+            })(),
+            value3: (async () => {
+              await delay(5);
+              return 15;
+            })()
+          };
+
+          const template = '{% if value1 < value2 < value3 %}Yes{% else %}No{% endif %}';
+          const result = await env.renderString(template, context);
+          expect(result).to.equal('Yes');
         });
       });
 

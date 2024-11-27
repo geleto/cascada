@@ -670,20 +670,39 @@ class Compiler extends Obj {
   }
 
   compileIs(node, frame) {
-    // first, we need to try to get the name of the test function, if it's a
-    // callable (i.e., has args) and not a symbol.
-    var right = node.right.name
-      ? node.right.name.value
-      // otherwise go with the symbol value
-      : node.right.value;
-    this._emit('env.getTest("' + right + '").call(context, ');
-    this.compile(node.left, frame);
-    // compile the arguments for the callable if they exist
-    if (node.right.args) {
-      this._emit(',');
-      this.compile(node.right.args, frame);
+    const testName = node.right.name ? node.right.name.value : node.right.value;
+    const testFunc = `env.getTest("${testName}")`;
+
+    if (this.isAsync) {
+      // Resolve the left-hand side and arguments (if any)
+      this._emit('runtime.resolveAll([');
+      this.compile(node.left, frame);
+      if (node.right.args && node.right.args.children.length > 0) {
+        this._emit(', ');
+        this._compileAggregate(node.right.args, frame, '', '', true);
+      }
+      this._emit('])');
+      // Then execute the test with resolved values
+      this._emit('.then(async function(args){');
+      this._emit(`  const testFunc = ${testFunc};`);
+      this._emit(`  if (!testFunc) { throw new Error("test not found: ${testName}"); }`);
+      this._emit('  const result = await testFunc.call(context, args[0]');
+      if (node.right.args && node.right.args.children.length > 0) {
+        this._emit(', ...args.slice(1)');
+      }
+      this._emit(');');
+      this._emit('  return result === true;');
+      this._emit('})');
+    } else {
+      this._emit(`(${testFunc} ? ${testFunc}.call(context, `);
+      this.compile(node.left, frame);
+      if (node.right.args) {
+        this._emit(', ');
+        this.compile(node.right.args, frame);
+      }
+      this._emit(`) : (function() { throw new Error("test not found: ${testName}"); })())`);
+      this._emit(' === true');
     }
-    this._emit(') === true');
   }
 
   _binFuncEmitter(node, frame, funcName, separator = ',') {
@@ -1882,6 +1901,7 @@ class Compiler extends Obj {
     }
   }
 
+  //todo - optimize, check for much more than literal
   _compileAwaitedExpression(node, frame) {
     if(this.isAsync && !(node instanceof nodes.Literal)) {
       this._emit('(await ');
