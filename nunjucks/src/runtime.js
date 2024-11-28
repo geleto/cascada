@@ -535,7 +535,7 @@ function resolveArguments(fn, skipArguments = 0) {
   return async function(...args) {
     const skippedArgs = args.slice(0, skipArguments);
     const remainingArgs = args.slice(skipArguments);
-    resolveAll(remainingArgs);
+    await resolveAll(remainingArgs);
     const finalArgs = [...skippedArgs, ...remainingArgs];
 
     return fn.apply(this, finalArgs);
