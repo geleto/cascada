@@ -30,7 +30,7 @@
 
     getSource(name) {
       if (!this.templates.has(name)) {
-        throw new Error(`Template ${name} not found`);
+        return null;// return null rather than throw an error so that ignore missing works
       }
 
       return {
@@ -4070,6 +4070,6 @@
 
       });
     });
-
   });
+
 }());
