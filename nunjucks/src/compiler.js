@@ -372,7 +372,8 @@ class Compiler extends Obj {
     });
   }
 
-  _compileAggregate(node, frame, startChar, endChar, resolveItems = false) {
+  //expressions is used only for '(onlyArgument)'
+  _compileAggregate(node, frame, startChar, endChar, resolveItems = false, expressionRoot = false) {
     let doResolve = resolveItems && this.isAsync;
     if(doResolve) {
       //check if at least one child is not a literal, todo: check for much more than literal
@@ -408,12 +409,21 @@ class Compiler extends Obj {
           }
           if (node.children.length === 1) {
             this._emit('(');
-            this.compileAwaited(node.children[0], frame);;
+            if(resolveItems) {
+              if(expressionRoot) {
+                this._compileAwaitedExpression(node.children[0], frame);
+              } else {
+                this.compileAwaited(node.children[0], frame);
+              }
+            }
+            else {
+              this.compile(node.children[0], frame);
+            }
             this._emit(')');
             return;
           }
           this._emit('(...');
-          this._compileAggregate(node, frame, '[', ']', true);
+          this._compileAggregate(node, frame, '[', ']', resolveItems, expressionRoot );
           this._emit(')');
           return;
       }
@@ -508,7 +518,7 @@ class Compiler extends Obj {
         // Tag arguments are passed normally to the call. Note
         // that keyword arguments are turned into a single js
         // object as the last argument, if they exist.
-        this._compileExpression(arg, frame);
+        this.compile(arg, frame);
 
         if (i !== args.children.length - 1 || contentArgs.length) {
           this._emit(',');
@@ -608,16 +618,16 @@ class Compiler extends Obj {
     }
   }
 
-  compileGroup(node, frame) {
-    this._compileAggregate(node, frame, '(', ')', true);
+  compileGroup(node, frame, expressionRoot) {
+    this._compileAggregate(node, frame, '(', ')', true, expressionRoot);
   }
 
-  compileArray(node, frame) {
-    this._compileAggregate(node, frame, '[', ']', true);
+  compileArray(node, frame, expressionRoot) {
+    this._compileAggregate(node, frame, '[', ']', true, true);
   }
 
-  compileDict(node, frame) {
-    this._compileAggregate(node, frame, '{', '}', true);
+  compileDict(node, frame, expressionRoot) {
+    this._compileAggregate(node, frame, '{', '}', true, true);
   }
 
   compilePair(node, frame) {
@@ -642,7 +652,7 @@ class Compiler extends Obj {
       this.compileAwaited(key, frame);
     }
     this._emit(': ');
-    this._compileExpression(val, frame);
+    this.compile(val, frame);
   }
 
   compileInlineIf(node, frame) {
@@ -679,7 +689,7 @@ class Compiler extends Obj {
       this.compile(node.left, frame);
       if (node.right.args && node.right.args.children.length > 0) {
         this._emit(', ');
-        this._compileAggregate(node.right.args, frame, '', '', true);
+        this._compileAggregate(node.right.args, frame, '', '', false, true);
       }
       this._emit('])');
       // Then execute the test with resolved values
@@ -846,9 +856,9 @@ class Compiler extends Obj {
 
   compileLookupVal(node, frame) {
     this._emit(`runtime.memberLookup${this.isAsync?'Async':''}((`);
-    this._compileExpression(node.target, frame);
+    this.compile(node.target, frame);
     this._emit('),');
-    this._compileExpression(node.val, frame);
+    this.compile(node.val, frame);
     this._emit(')');
   }
 
@@ -891,7 +901,7 @@ class Compiler extends Obj {
         // Compile the arguments.
         if (node.args.children.length > 0) {
           this._emit(', ');
-          this._compileAggregate(node.args, frame, '', '', false, true);
+          this._compileAggregate(node.args, frame, '', '', false);
         }
         this._emit('])');
         this._emit('.then(function(resolved){ return runtime.callWrap(resolved[0], "' + funcName + '", context, resolved.slice(1)); }))');
@@ -915,12 +925,12 @@ class Compiler extends Obj {
     if (this.isAsync) {
       this._emit('runtime.resolveAll([');
       this._emit('env.getFilter("' + name.value + '"), ');
-      this._compileAggregate(node.args, frame, '', '', false, true);
+      this._compileAggregate(node.args, frame, '', '');
       this._emit('])');
       this._emit('.then(function(args){ return args[0].call(context, ...args.slice(1)); })');
     } else {
       this._emit('env.getFilter("' + name.value + '").call(context, ');
-      this._compileAggregate(node.args, frame);
+      this._compileAggregate(node.args, frame, '', '');
       this._emit(')');
     }
   }
@@ -984,14 +994,7 @@ class Compiler extends Obj {
 
     if (node.value) {
       this._emit(ids.join(' = ') + ' = ');
-      if(this.isAsync) {
-        this._emitAsyncValue( () => {
-          this._compileExpression(node.value, frame);
-        });
-      }
-      else{
-        this._compileExpression(node.value, frame);
-      }
+      this._compileExpression(node.value, frame);
       this._emitLine(';');
     } else {
       // set block
@@ -1027,11 +1030,11 @@ class Compiler extends Obj {
     this._emitBufferBlockBegin();
 
     this._emit('switch (');
-    this.compileAwaited(node.expr, frame);
+    this._compileAwaitedExpression(node.expr, frame);
     this._emit(') {');
     node.cases.forEach((c, i) => {
       this._emit('case ');
-      this.compileAwaited(c.cond, frame);
+      this._compileAwaitedExpression(c.cond, frame);
       this._emit(': ');
       this.compile(c.body, frame);
       // preserve fall-throughs
@@ -1053,10 +1056,7 @@ class Compiler extends Obj {
     this._emitBufferBlockBegin();
 
     this._emit('if(');
-    if (this.isAsync) {
-      this._emit('await ');
-    }
-    this.compile(node.cond, frame);
+    this._compileAwaitedExpression(node.cond, frame);
     this._emit('){');
 
     this._withScopedSyntax(() => {
@@ -1465,9 +1465,7 @@ class Compiler extends Obj {
       const getTemplateFunc = this._tmpid();
       this._emitLine(`const ${getTemplateFunc} = runtime.promisify(env.getTemplate.bind(env));`);
       this._emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
-
       this._compileExpression(node.template, frame);
-
       this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     } else {
       const cb = this._makeCallback(parentTemplateId);
@@ -1781,7 +1779,7 @@ class Compiler extends Obj {
         if (this.throwOnUndefined) {
           this._emit(`${this.isAsync ? 'await runtime.ensureDefinedAsync(' : 'runtime.ensureDefined('}`);
         }
-        this.compile(child, frame);
+        this._compileExpression(child, frame);
         if (this.throwOnUndefined) {
           this._emit(`,${node.lineno},${node.colno})`);
         }
@@ -1928,7 +1926,15 @@ class Compiler extends Obj {
       nodes.Compare,
       nodes.NodeList
     );
-    this.compile(node, frame);
+
+    // @todo emitAsync only if the node requires async context
+    if(!this.isAsync || node instanceof nodes.Literal) {
+      this.compile(node, frame, true);
+    } else {
+      this._emitAsyncValue( () => {
+        this.compile(node, frame, true);
+      });
+    }
   }
 
   getCode() {
