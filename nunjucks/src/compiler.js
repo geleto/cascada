@@ -7,7 +7,9 @@ const {TemplateError} = require('./lib');
 const {Frame, AsyncFrame} = require('./runtime');
 const {Obj} = require('./object');
 
-//const CONDITIONAL_AWAIT = true;//awaiting a non-promise value is slow and should be avoided
+const OPTIMIZE_ASYNC = true;//optimize async operations
+
+// these are nodes that may perform async operations even if their children do not
 const asyncOperationNodes = new Set([
   //expression nodes
   'LookupVal', 'Symbol', 'FunCall', 'Filter', 'Caller', 'CallExtension', 'CallExtensionAsync', 'CallExtensionUnresolvedArgs',
@@ -324,7 +326,7 @@ class Compiler extends Obj {
 
   //awaiting a non-promise value is slow and should be avoided
   /*_emitAwaitIfPromiseVar(varName) {
-    if(CONDITIONAL_AWAIT) {
+    if(OPTIMIZE_ASYNC) {
       this._emitLine(`\n((${varName} && typeof ${varName}.then === 'function') ? await ${varName} : ${varName})`);
     } else {
       this._emitLine(`\nawait ${varName}`);
@@ -332,7 +334,7 @@ class Compiler extends Obj {
   }
 
   _emitAwaitIfPromiseVoid(code) {
-    if (CONDITIONAL_AWAIT) {
+    if (OPTIMIZE_ASYNC) {
         const tempVar = this._tmpid();  // Generate a unique temporary variable
         // Start a block to handle the conditional await logic
         this._emitLine(`{ let ${tempVar} = ${code};`);
@@ -385,12 +387,13 @@ class Compiler extends Obj {
     });
   }
 
-  //expressions is used only for '(onlyArgument)'
+  //expressions is used only for '(onlyArgument)' - todo get rid of this, use resolveSingle
+  //@todo - resolve only isAsync children
   _compileAggregate(node, frame, startChar, endChar, resolveItems = false, expressionRoot = false) {
     let doResolve = resolveItems && node.isAsync;
     if(doResolve) {
-      //check if at least one child is not a literal, todo: check for much more than literal
-      doResolve = node.children.some(child => !(child instanceof nodes.Literal));
+      //resolve if at least one child is async
+      doResolve = node.children.some(child => child.isAsync);
     }
 
     if (doResolve) {
@@ -656,7 +659,7 @@ class Compiler extends Obj {
         key.colno);
     }
 
-    if(!node.isAsync || key instanceof nodes.Literal) {
+    if(!node.isAsync) {
       this.compile(key, frame);
     }
     else {
@@ -901,8 +904,8 @@ class Compiler extends Obj {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
     if (node.isAsync) {
-      if (node.name instanceof nodes.Literal) {
-        // Function name is constant, so resolve only the arguments.
+      if (!node.name.isAsync) {
+        // Function name is not async, so resolve only the arguments.
         this._compileAggregate(node.args, frame, '[', ']', true); // Resolve arguments using _compileAggregate.
         this._emit(`.then(function(resolvedArgs){ return runtime.callWrap(env.getFilter("${funcName}"), "${funcName}", context, resolvedArgs); })`);
       } else {
@@ -960,7 +963,6 @@ class Compiler extends Obj {
       const argsArray = this._tmpid();
       this._emitLine(`let ${argsArray} = `);
 
-      //@todo - do not resolve if only literal
       this._compileAggregate(node.args, frame, '[', ']');//todo - short path for 1 argument - 99% of the cases
       this._emitLine(';');
 
@@ -1813,7 +1815,7 @@ class Compiler extends Obj {
 
   //in asyncMode, will store in each node whether it has an isAsync child
   propagateIsAsync(node) {
-    let hasAsync = this.asyncMode? asyncOperationNodes.has(node.typename) : false;
+    let hasAsync = (this.asyncMode || !OPTIMIZE_ASYNC) ? asyncOperationNodes.has(node.typename) : false;
 
     for (const key in node) {
       if (Array.isArray(node[key])) {
@@ -1923,7 +1925,7 @@ class Compiler extends Obj {
 
   //@todo - optimize, check for much more than literal
   compileAwaited(node, frame) {
-    if(node.isAsync && !(node instanceof nodes.Literal)) {
+    if(node.isAsync) {
       this._emit('(await ');
       this.compile(node, frame);
       this._emit(')');
@@ -1934,7 +1936,7 @@ class Compiler extends Obj {
 
   //todo - optimize, check for much more than literal
   _compileAwaitedExpression(node, frame) {
-    if(node.isAsync && !(node instanceof nodes.Literal)) {
+    if(node.isAsync) {
       this._emit('(await ');
       this._compileExpression(node, frame);
       this._emit(')');
@@ -1979,7 +1981,7 @@ class Compiler extends Obj {
     );
 
     // @todo emitAsync only if the node requires async context
-    if(!node.isAsync || node instanceof nodes.Literal) {
+    if(!node.isAsync) {
       this.compile(node, frame, true);
     } else {
       this._emitAsyncValue( node, () => {
