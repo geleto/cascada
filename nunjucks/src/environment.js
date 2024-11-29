@@ -210,7 +210,7 @@ class Environment extends EmitterObj {
     return this._getTemplate(name, eagerCompile, parentName, ignoreMissing, false, cb);
   }
 
-  _getTemplate(name, eagerCompile, parentName, ignoreMissing, isAsync, cb) {
+  _getTemplate(name, eagerCompile, parentName, ignoreMissing, asyncMode, cb) {
     var that = this;
     var tmpl = null;
     if (name && name.raw) {
@@ -218,9 +218,9 @@ class Environment extends EmitterObj {
       name = name.raw;
     }
 
-    if (lib.isFunction(isAsync)) {
-      cb = isAsync;
-      isAsync = false;
+    if (lib.isFunction(asyncMode)) {
+      cb = asyncMode;
+      asyncMode = false;
     }
 
     if (lib.isFunction(ignoreMissing)) {
@@ -248,7 +248,7 @@ class Environment extends EmitterObj {
         const loader = this.loaders[i];
         tmpl = loader.cache[this.resolveTemplate(loader, parentName, name)];
         if (tmpl) {
-          if (!!tmpl.isAsync !== isAsync) {
+          if (!!tmpl.asyncMode !== asyncMode) {
             throw new Error('The same template can not be compiled in both async and sync mode');
           }
           break;
@@ -285,11 +285,11 @@ class Environment extends EmitterObj {
       }
       let newTmpl;
       if (!info) {
-        newTmpl = isAsync?
+        newTmpl = asyncMode?
           new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile) :
           new Template(noopTmplSrc, this, '', eagerCompile);
       } else {
-        newTmpl = isAsync?
+        newTmpl = asyncMode?
           new AsyncTemplate(info.src, this, info.path, eagerCompile) :
           new Template(info.src, this, info.path, eagerCompile);
         if (!info.noCache) {
@@ -628,9 +628,9 @@ class Context extends Obj {
 }
 
 class Template extends Obj {
-  init(src, env, path, eagerCompile, isAsync) {
+  init(src, env, path, eagerCompile, asyncMode) {
     this.env = env || new Environment();
-    this.isAsync = isAsync;
+    this.asyncMode = asyncMode;
 
     if (lib.isObject(src)) {
       switch (src.type) {
@@ -699,7 +699,7 @@ class Template extends Obj {
       frame = parentFrame.push(true);
     }
     else {
-      frame = this.isAsync? new AsyncFrame : new Frame();
+      frame = this.asyncMode? new AsyncFrame : new Frame();
     }
     frame.topLevel = true;
     let syncResult = null;
@@ -734,7 +734,7 @@ class Template extends Obj {
       }
     };
 
-    if (this.isAsync) {
+    if (this.asyncMode) {
       this.rootRenderFunc(this.env, context, frame, globalRuntime,
         astate || new AsyncState(), callback);
     } else {
@@ -776,7 +776,7 @@ class Template extends Obj {
       frame = parentFrame.push();
     }
     else {
-      if( this.isAsync ){
+      if( this.asyncMode ){
         frame = new AsyncFrame();
         frame.isIncluded = true;
       }
@@ -795,7 +795,7 @@ class Template extends Obj {
         cb(null, context.getExported());
       }
     };
-    if (this.isAsync) {
+    if (this.asyncMode) {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, astate || new AsyncState(), callback);
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
@@ -820,7 +820,7 @@ class Template extends Obj {
         this.env.asyncFilters,
         this.env.extensionsList,
         this.path,
-        this.isAsync,
+        this.asyncMode,
         this.env.opts);
 
       let func;

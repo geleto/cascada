@@ -8,6 +8,11 @@ const {Frame, AsyncFrame} = require('./runtime');
 const {Obj} = require('./object');
 
 //const CONDITIONAL_AWAIT = true;//awaiting a non-promise value is slow and should be avoided
+const asyncOperationNodes = new Set([
+  //expression nodes
+  'LookupVal', 'Symbol', 'FunCall', 'Filter', 'Caller', 'CallExtension', 'CallExtensionAsync', 'CallExtensionUnresolvedArgs',
+  //control nodes that can be async even if their children are not
+  'Extends', 'Include', 'Import', 'FromImport', 'Super']);
 
 // These are all the same for now, but shouldn't be passed straight
 // through
@@ -23,7 +28,7 @@ const compareOps = {
 };
 
 class Compiler extends Obj {
-  init(templateName, throwOnUndefined, isAsync) {
+  init(templateName, throwOnUndefined, asyncMode) {
     this.templateName = templateName;
     this.codebuf = [];
     this.lastId = 0;
@@ -32,7 +37,7 @@ class Compiler extends Obj {
     this._scopeClosers = '';
     this.inBlock = false;
     this.throwOnUndefined = throwOnUndefined;
-    this.isAsync = isAsync;
+    this.asyncMode = asyncMode;
     this.asyncClosureDepth = 0;
   }
 
@@ -51,7 +56,7 @@ class Compiler extends Obj {
     const id = this._tmpid();
     this.bufferStack.push(this.buffer);
     this.buffer = id;
-    if (this.isAsync) {
+    if (this.asyncMode) {
       this._emitLine(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
     } else {
       this._emitLine(`let ${this.buffer} = "";`);
@@ -78,7 +83,7 @@ class Compiler extends Obj {
   _emitFuncBegin(node, name) {
     this.buffer = 'output';
     this._scopeClosers = '';
-    if (this.isAsync) {
+    if (node.isAsync) {
       this._emitLine(`function ${name}(env, context, frame, runtime, astate, cb) {`);
     } else {
       this._emitLine(`function ${name}(env, context, frame, runtime, cb) {`);
@@ -86,7 +91,7 @@ class Compiler extends Obj {
     this._emitLine(`let lineno = ${node.lineno};`);
     this._emitLine(`let colno = ${node.colno};`);
     // this._emitLine(`let ${this.buffer} = "";`);
-    if (this.isAsync) {
+    if (this.asyncMode) {
       this._emit(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
     } else {
       this._emit(`let ${this.buffer} = "";`);
@@ -108,8 +113,8 @@ class Compiler extends Obj {
   }
 
   // an async block that does not have a value should be wrapped in this
-  _emitAsyncBlockBegin() {
-    if (this.isAsync) {
+  _emitAsyncBlockBegin( node ) {
+    if (node.isAsync) {
       this._emitLine(`(async (astate) => {`);
       this._emitLine('try {');
       this._emitLine('let frame = astate.snapshotFrame;');
@@ -117,8 +122,8 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAsyncBlockEnd() {
-    if (this.isAsync) {
+  _emitAsyncBlockEnd( node ) {
+    if (node.isAsync) {
       this.asyncClosureDepth--;
       this._emitLine(`} catch (e) {`);
       this._emitLine(`  cb(runtime.handleError(e, lineno, colno));`);
@@ -130,9 +135,9 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAsyncValue(emitFunc, res) {
-    if (this.isAsync) {
-      this._emitAsyncValueBegin();
+  _emitAsyncValue( node, emitFunc, res) {
+    if (node.isAsync) {
+      this._emitAsyncValueBegin( node );
       if (res === undefined) {
         res = this._tmpid();
         this._emitLine(`  let ${res} = `);
@@ -140,14 +145,14 @@ class Compiler extends Obj {
       emitFunc();
       this._emitLine(';');
       this._emitLine('  return ' + res + ';');
-      this._emitAsyncValueEnd();
+      this._emitAsyncValueEnd( node );
     } else {
       emitFunc();
     }
   }
 
-  _emitAsyncValueBegin() {
-    if (this.isAsync) {
+  _emitAsyncValueBegin( node ) {
+    if (node.isAsync) {
       this._emitLine(`(async (astate) => {`);
       this._emitLine('try {');
       this._emitLine('  let frame = astate.snapshotFrame;');
@@ -155,8 +160,8 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAsyncValueEnd() {
-    if (this.isAsync) {
+  _emitAsyncValueEnd( node ) {
+    if (node.isAsync) {
       this._emitLine(`} catch (e) {`);
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
       this._emitLine('} finally {');
@@ -167,8 +172,8 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAsyncRenderClosure(innerBodyFunction, callbackName = null) {
-    if(!this.isAsync) {
+  _emitAsyncRenderClosure( node, innerBodyFunction, callbackName = null) {
+    if(!node.isAsync) {
       const id = this._pushBuffer();
       innerBodyFunction.call(this);
       this._popBuffer();
@@ -216,9 +221,9 @@ class Compiler extends Obj {
     //in the non-callback case, using the rendered buffer will throw the error
   }
 
-  _emitAddToBuffer(renderFunction) {
+  _emitAddToBuffer( node, renderFunction) {
     const returnId = this._tmpid();
-    if (this.isAsync) {
+    if (node.isAsync) {
       this.asyncClosureDepth++;
       this._emitLine(`(async (astate)=>{`);
       this._emitLine('try {');
@@ -241,12 +246,16 @@ class Compiler extends Obj {
     } else {
       this._emitLine(`let ${returnId};`);
       renderFunction.call(this, returnId);
-      this._emit(`${this.buffer} += ${returnId};`);
+      if(this.asyncMode) {
+        this._emit(`${this.buffer}[index] = ${returnId};`);
+      } else {
+        this._emit(`${this.buffer} += ${returnId};`);
+      }
     }
   }
 
-  _emitAddToBufferBegin(addClosure = true) {
-    if (this.isAsync) {
+  _emitAddToBufferBegin(node, addClosure = true) {
+    if (node.isAsync) {
       if (addClosure) {
         this._emitLine(`(async (astate)=>{`);
         this._emitLine('try {');
@@ -258,13 +267,17 @@ class Compiler extends Obj {
         this._emitLine(`${this.buffer}[${this.buffer}_index++] = `);
       }
     } else {
-      this._emit(`${this.buffer} += `);
+      if(this.asyncMode) {
+        this._emitLine(`${this.buffer}[${this.buffer}_index++] = `);
+      } else {
+        this._emit(`${this.buffer} += `);
+      }
     }
   }
 
-  _emitAddToBufferEnd(addClosure = true) {
+  _emitAddToBufferEnd(node, addClosure = true) {
     this._emitLine(';');
-    if (this.isAsync && addClosure) {
+    if (node.isAsync && addClosure) {
       this.asyncClosureDepth--;
       this._emitLine('} catch (e) {');
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
@@ -275,10 +288,10 @@ class Compiler extends Obj {
     }
   }
 
-  _emitBufferBlockBegin() {
-    if (this.isAsync) {
+  _emitBufferBlockBegin(node) {
+    if (node.isAsync) {
       // Start the async closure
-      this._emitAsyncBlockBegin();
+      this._emitAsyncBlockBegin( node );
 
       // Push the current buffer onto the stack
       this.bufferStack.push(this.buffer);
@@ -299,10 +312,10 @@ class Compiler extends Obj {
     }
   }
 
-  _emitBufferBlockEnd() {
-    if (this.isAsync) {
+  _emitBufferBlockEnd(node) {
+    if (node.isAsync) {
       // End the async closure
-      this._emitAsyncBlockEnd();
+      this._emitAsyncBlockEnd( node );
 
       // Restore the previous buffer from the stack
       this.buffer = this.bufferStack.pop();
@@ -374,7 +387,7 @@ class Compiler extends Obj {
 
   //expressions is used only for '(onlyArgument)'
   _compileAggregate(node, frame, startChar, endChar, resolveItems = false, expressionRoot = false) {
-    let doResolve = resolveItems && this.isAsync;
+    let doResolve = resolveItems && node.isAsync;
     if(doResolve) {
       //check if at least one child is not a literal, todo: check for much more than literal
       doResolve = node.children.some(child => !(child instanceof nodes.Literal));
@@ -477,17 +490,17 @@ class Compiler extends Obj {
     var autoescape = typeof node.autoescape === 'boolean' ? node.autoescape : true;
     var noExtensionCallback = !async || parallel;//assign the return value directly, no callback
 
-    parallel = parallel && this.isAsync;
+    parallel = parallel && node.isAsync;
 
-    if (noExtensionCallback || this.isAsync) {
+    if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
       this._emitLine(`let ${ext} = env.getExtension("${node.extName}");`);
 
-      this._emitAddToBufferBegin();
-      this._emit(this.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
+      this._emitAddToBufferBegin( node );
+      this._emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
       if(noExtensionCallback) {
         //the extension returns a value directly
-        if(!this.isAsync || parallel) {
+        if(!node.isAsync || parallel) {
           //send the arguments as they are - promises or values
           this._emit(`${ext}["${node.prop}"](context`);
         }
@@ -535,7 +548,7 @@ class Compiler extends Obj {
         if (arg) {
           if(parallel) {
             //in parallel mode, the contentArgs are promises
-            this._emitAsyncRenderClosure( function() {
+            this._emitAsyncRenderClosure( node, function() {
               this.compile(arg, frame);
             });
           }
@@ -545,7 +558,7 @@ class Compiler extends Obj {
             this._emitLine('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
 
             this._withScopedSyntax(() => {
-              this._emitAsyncRenderClosure( function() {
+              this._emitAsyncRenderClosure( node, function() {
                 this.compile(arg, frame);
               }, 'cb');
               this._emitLine(';');
@@ -559,16 +572,16 @@ class Compiler extends Obj {
       });
     }
 
-    if (noExtensionCallback || this.isAsync) {
+    if (noExtensionCallback || node.isAsync) {
       this._emit(`)`);//close the extension call
       this._emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
-      this._emitAddToBufferEnd();
+      this._emitAddToBufferEnd(node);
     } else {
       const res = this._tmpid();
       this._emitLine(', ' + this._makeCallback(res));
-      this._emitAddToBufferBegin();
-      this._emit(`${this.isAsync ? 'await runtime.suppressValueAsync' : 'runtime.suppressValue'}(${res}, ${autoescape} && env.opts.autoescape);`);
-      this._emitAddToBufferEnd();
+      this._emitAddToBufferBegin( node );
+      this._emit(`${node.isAsync ? 'await runtime.suppressValueAsync' : 'runtime.suppressValue'}(${res}, ${autoescape} && env.opts.autoescape);`);
+      this._emitAddToBufferEnd(node);
 
       this._addScopeLevel();
     }
@@ -643,7 +656,7 @@ class Compiler extends Obj {
         key.colno);
     }
 
-    if(!this.isAsync || key instanceof nodes.Literal) {
+    if(!node.isAsync || key instanceof nodes.Literal) {
       this.compile(key, frame);
     }
     else {
@@ -656,12 +669,12 @@ class Compiler extends Obj {
   }
 
   compileInlineIf(node, frame) {
-    if (this.isAsync) {
+    if (node.isAsync) {
       this._emit('runtime.resolveSingle');
     }
     this._emit('(');
     this.compile(node.cond, frame);
-    if (this.isAsync) {
+    if (node.isAsync) {
       this._emit(').then(async function(cond) { return cond');
     }
     this._emit('?');
@@ -672,7 +685,7 @@ class Compiler extends Obj {
     } else {
       this._emit('""');
     }
-    this._emit(this.isAsync ? '})'  : ')');
+    this._emit(node.isAsync ? '})'  : ')');
   }
 
   compileIn(node, frame) {
@@ -683,7 +696,7 @@ class Compiler extends Obj {
     const testName = node.right.name ? node.right.name.value : node.right.value;
     const testFunc = `env.getTest("${testName}")`;
 
-    if (this.isAsync) {
+    if (node.isAsync) {
       // Resolve the left-hand side and arguments (if any)
       this._emit('runtime.resolveAll([');
       this.compile(node.left, frame);
@@ -716,7 +729,7 @@ class Compiler extends Obj {
   }
 
   _binFuncEmitter(node, frame, funcName, separator = ',') {
-    if (this.isAsync) {
+    if (node.isAsync) {
       this._emit('(');
       this._emit('runtime.resolveDuo(');
       this.compile(node.left, frame);
@@ -734,7 +747,7 @@ class Compiler extends Obj {
   }
 
   _binOpEmitter(node, frame, str) {
-    if (this.isAsync) {
+    if (node.isAsync) {
       this._emit('runtime.resolveDuo(');
       this.compile(node.left, frame);
       this._emit(',');
@@ -749,7 +762,7 @@ class Compiler extends Obj {
   }
 
   _unaryOpEmitter(node, frame, operator) {
-    if (this.isAsync) {
+    if (node.isAsync) {
       this._emit('runtime.resolveSingle(');
       this.compile(node.target, frame);
       this._emit(`).then(function(target){return ${operator}target;})`);
@@ -815,7 +828,7 @@ class Compiler extends Obj {
   }
 
   compileCompare(node, frame) {
-    if (this.isAsync) {
+    if (node.isAsync) {
       //use resolveDuo for expr and the first op, optionally await the rest
       this._emit('runtime.resolveDuo(');
       this.compile(node.expr, frame);
@@ -855,7 +868,7 @@ class Compiler extends Obj {
   }
 
   compileLookupVal(node, frame) {
-    this._emit(`runtime.memberLookup${this.isAsync?'Async':''}((`);
+    this._emit(`runtime.memberLookup${node.isAsync?'Async':''}((`);
     this.compile(node.target, frame);
     this._emit('),');
     this.compile(node.val, frame);
@@ -887,7 +900,7 @@ class Compiler extends Obj {
 
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
-    if (this.isAsync) {
+    if (node.isAsync) {
       if (node.name instanceof nodes.Literal) {
         // Function name is constant, so resolve only the arguments.
         this._compileAggregate(node.args, frame, '[', ']', true); // Resolve arguments using _compileAggregate.
@@ -922,7 +935,7 @@ class Compiler extends Obj {
 
     this.assertType(name, nodes.Symbol);
 
-    if (this.isAsync) {
+    if (node.isAsync) {
       this._emit('runtime.resolveAll([');
       this._emit('env.getFilter("' + name.value + '"), ');
       this._compileAggregate(node.args, frame, '', '');
@@ -943,7 +956,7 @@ class Compiler extends Obj {
 
     frame.set(symbol, symbol);
 
-    if (this.isAsync) {
+    if (node.isAsync) {
       const argsArray = this._tmpid();
       this._emitLine(`let ${argsArray} = `);
 
@@ -999,7 +1012,7 @@ class Compiler extends Obj {
     } else {
       // set block
       this._emit(ids.join(' = ') + ' = ');
-      this._emitAsyncValue( () => {
+      this._emitAsyncValue( node, () => {
         this.compile(node.body, frame);
         this._emitLine(';');
       });
@@ -1027,7 +1040,7 @@ class Compiler extends Obj {
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
-    this._emitBufferBlockBegin();
+    this._emitBufferBlockBegin(node);
 
     this._emit('switch (');
     this._compileAwaitedExpression(node.expr, frame);
@@ -1048,12 +1061,12 @@ class Compiler extends Obj {
     }
     this._emit('}');
 
-    this._emitBufferBlockEnd();
+    this._emitBufferBlockEnd(node);
   }
 
   //todo! - get rid of the callback
   compileIf(node, frame, async) {
-    this._emitBufferBlockBegin();
+    this._emitBufferBlockBegin(node);
 
     this._emit('if(');
     this._compileAwaitedExpression(node.cond, frame);
@@ -1081,11 +1094,11 @@ class Compiler extends Obj {
 
     this._emit('}');
 
-    this._emitBufferBlockEnd();
+    this._emitBufferBlockEnd(node);
   }
 
   compileIfAsync(node, frame) {
-    if(this.isAsync) {
+    if(node.isAsync) {
       this.compileIf(node, frame);
     } else {
       this._emit('(function(cb) {');
@@ -1116,7 +1129,7 @@ class Compiler extends Obj {
     // as fast as possible. ForAsync also shares some of this, but
     // not much.
 
-    this._emitBufferBlockBegin();
+    this._emitBufferBlockBegin(node);
 
     const i = this._tmpid();
     const len = this._tmpid();
@@ -1145,9 +1158,9 @@ class Compiler extends Obj {
       this._emitLine(`${len} = ${arr}.length;`);
       this._emitLine(`for(${i}=0; ${i} < ${arr}.length; ${i}++) {`);
 
-      if (this.isAsync && !serialAsync) {
+      if (node.isAsync && !serialAsync) {
         this._emitLine('frame = frame.push();');
-        this._emitBufferBlockBegin();
+        this._emitBufferBlockBegin(node);
       }
 
       // Bind each declared var
@@ -1163,8 +1176,8 @@ class Compiler extends Obj {
         this.compile(node.body, frame);
       });
 
-      if (this.isAsync && !serialAsync) {
-        this._emitBufferBlockEnd();
+      if (node.isAsync && !serialAsync) {
+        this._emitBufferBlockEnd(node);
         this._emitLine('frame = frame.pop();');
       }
 
@@ -1181,9 +1194,9 @@ class Compiler extends Obj {
       this._emitLine(`${len} = runtime.keys(${arr}).length;`);
       this._emitLine(`for(let ${k} in ${arr}) {`);
 
-      if (this.isAsync) {
+      if (node.isAsync) {
         this._emitLine('frame = frame.push();');
-        this._emitBufferBlockBegin();
+        this._emitBufferBlockBegin(node);
       }
 
       this._emitLine(`${i}++;`);
@@ -1196,8 +1209,8 @@ class Compiler extends Obj {
         this.compile(node.body, frame);
       });
 
-      if (this.isAsync) {
-        this._emitBufferBlockEnd();
+      if (node.isAsync) {
+        this._emitBufferBlockEnd(node);
         this._emitLine('frame = frame.pop();');
       }
 
@@ -1212,9 +1225,9 @@ class Compiler extends Obj {
       this._emitLine(`${len} = ${arr}.length;`);
       this._emitLine(`for(let ${i}=0; ${i} < ${arr}.length; ${i}++) {`);
 
-      if (this.isAsync) {
+      if (node.isAsync) {
         this._emitLine('frame = frame.push();');
-        this._emitBufferBlockBegin();
+        this._emitBufferBlockBegin(node);
       }
 
       this._emitLine(`let ${v} = ${arr}[${i}];`);
@@ -1226,8 +1239,8 @@ class Compiler extends Obj {
         this.compile(node.body, frame);
       });
 
-      if (this.isAsync) {
-        this._emitBufferBlockEnd();
+      if (node.isAsync) {
+        this._emitBufferBlockEnd(node);
         this._emitLine('frame = frame.pop();');
       }
 
@@ -1237,19 +1250,19 @@ class Compiler extends Obj {
     this._emitLine('}');
     if (node.else_) {
       this._emitLine(`if (!${len}) {`);
-      this._emitBufferBlockBegin();
+      this._emitBufferBlockBegin(node);
       this.compile(node.else_, frame);
-      this._emitBufferBlockEnd();
+      this._emitBufferBlockEnd(node);
       this._emitLine('}');
     }
 
     this._emitLine('frame = frame.pop();');
-    this._emitBufferBlockEnd();
+    this._emitBufferBlockEnd(node);
   }
 
 
   _compileAsyncLoop(node, frame, parallel) {
-    if(this.isAsync) {
+    if(node.isAsync) {
       this.compileFor(node, frame, true);
       return;
     }
@@ -1313,7 +1326,11 @@ class Compiler extends Obj {
     this._addScopeLevel();
 
     if (parallel) {
-      this._emitLine(this.buffer + ' += ' + output + ';');
+      if(this.asyncMode) {
+        this._emit(`${this.buffer}[index++] = ${output};`);
+      } else {
+        this._emitLine(`${this.buffer} += ${output};`);
+      }
     }
 
     if (node.else_) {
@@ -1363,7 +1380,7 @@ class Compiler extends Obj {
     if (keepFrame) {
       currFrame = frame.push(true);
     } else {
-      currFrame = this.isAsync ? new AsyncFrame() : new Frame();
+      currFrame = node.isAsync ? new AsyncFrame() : new Frame();
     }
     this._emitLines(
       `let ${funcId} = runtime.makeMacro(`,
@@ -1377,7 +1394,7 @@ class Compiler extends Obj {
       'frame.set("caller", kwargs.caller); }');
 
     let err = this._tmpid();
-    if(this.isAsync) {
+    if(node.isAsync) {
       this._emitLines(
         `let ${err} = null;`,
         'function cb(err) {',
@@ -1413,15 +1430,15 @@ class Compiler extends Obj {
 
     this._emitLine('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
     //return the buffer, in async mode it may not be ready yet
-    //this._emitLine(`return ${this.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
+    //this._emitLine(`return ${node.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
     this._emitLine('return ' + (
-      this.isAsync?
+      node.isAsync?
       `astate.waitAllClosures().then(() => {if (${err}) throw ${err}; return runtime.newSafeStringAsync(${bufferId});}).catch(error => Promise.reject(error));`:
       `new runtime.SafeString(${bufferId})`
       )
     );
 
-    if (this.isAsync) {
+    if (node.isAsync) {
       this._emitLine('}, astate);');
     } else {
       this._emitLine('});');
@@ -1461,7 +1478,7 @@ class Compiler extends Obj {
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
     const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
 
-    if (this.isAsync) {
+    if (node.isAsync) {
       const getTemplateFunc = this._tmpid();
       this._emitLine(`const ${getTemplateFunc} = runtime.promisify(env.getTemplate.bind(env));`);
       this._emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
@@ -1481,10 +1498,10 @@ class Compiler extends Obj {
     const target = node.target.value;
     const id = this._compileGetTemplate(node, frame, false, false);
 
-    if (this.isAsync) {
+    if (node.isAsync) {
       const res = this._tmpid();
       this._emit(`${id} = `);
-      this._emitAsyncValue( () => {
+      this._emitAsyncValue( node, () => {
         this._emitLine(`let ${res} = await ${id};`);
         this._emitLine(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${
           node.withContext
@@ -1512,10 +1529,10 @@ class Compiler extends Obj {
   compileFromImport(node, frame) {
     const importedId = this._compileGetTemplate(node, frame, false, false);
 
-    if (this.isAsync) {
+    if (node.isAsync) {
       const res = this._tmpid();
       this._emit(`${importedId} = `);
-      this._emitAsyncValue(() => {
+      this._emitAsyncValue( node,() => {
         this._emitLine(`let ${res} = await ${importedId};`);
         this._emitLine(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${
           node.withContext
@@ -1545,7 +1562,7 @@ class Compiler extends Obj {
         alias = name;
       }
 
-      if (this.isAsync) {
+      if (node.isAsync) {
         //@todo - error handling in the async() function
         this._emitLine(`${id} = (async () => {`);
         this._emitLine(`  let exported = await ${importedId};`);
@@ -1587,8 +1604,8 @@ class Compiler extends Obj {
     // waste of performance to always execute huge top-level
     // blocks twice
 
-    if(this.isAsync) {
-      this._emitAddToBuffer( (id)=> {
+    if(node.isAsync) {
+      this._emitAddToBuffer( node, (id)=> {
         if (!this.inBlock) {
           this._emit(`if(parentTemplate) ${id}=""; else {`);
         }
@@ -1611,7 +1628,12 @@ class Compiler extends Obj {
         this._emit(')');
       }
       this._emitLine('(env, context, frame, runtime, ' + this._makeCallback(id));
-      this._emitLine(`${this.buffer} += ${id};`);
+
+      if(this.asyncMode) {
+        this._emit(`${this.buffer}[index++] = ${id};`);
+      } else {
+        this._emitLine(`${this.buffer} += ${id};`);
+      }
       this._addScopeLevel();
     }
   }
@@ -1620,7 +1642,7 @@ class Compiler extends Obj {
     var name = node.blockName.value;
     var id = node.symbol.value;
 
-    if(this.isAsync) {
+    if(node.isAsync) {
       this._emitLine(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime, astate);`);
     }
     else{
@@ -1629,7 +1651,7 @@ class Compiler extends Obj {
     }
     this._emitLine(`${id} = runtime.markSafe(${id});`);
 
-    if(!this.isAsync) {
+    if(!node.isAsync) {
       this._addScopeLevel();
     }
     frame.set(id, id);
@@ -1638,7 +1660,7 @@ class Compiler extends Obj {
   compileExtends(node, frame) {
     var k = this._tmpid();
 
-    if(this.isAsync) {
+    if(node.isAsync) {
       this._emitLine('context.prepareForAsyncBlocks();');
     }
 
@@ -1648,32 +1670,32 @@ class Compiler extends Obj {
     // `if`, so if this happens we need to capture the parent
     // template in the top-level scope
 
-    if(this.isAsync) {
-      this._emitAsyncBlockBegin();
+    if(node.isAsync) {
+      this._emitAsyncBlockBegin( node );
     }
 
     //isAsync: set the global parent template, compileRoot will use it after waitAllClosures
-    this._emitLine(`parentTemplate = ${this.isAsync?'await ':''}${parentTemplateId};`);
+    this._emitLine(`parentTemplate = ${node.isAsync?'await ':''}${parentTemplateId};`);
 
     this._emitLine(`for(let ${k} in parentTemplate.blocks) {`);
     this._emitLine(`context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
     this._emitLine('}');
 
-    if (!this.isAsync) {
+    if (!node.isAsync) {
       this._addScopeLevel();
     }
     else {
       this._emitLine('context.finsihsAsyncBlocks()');
-      this._emitAsyncBlockEnd();
+      this._emitAsyncBlockEnd( node );
     }
   }
 
   compileInclude(node, frame) {
-    if(!this.isAsync) {
+    if(!node.isAsync) {
       this.compileIncludeSync(node, frame);
       return;
     }
-    this._emitAddToBuffer( (resultVar)=> {
+    this._emitAddToBuffer( node, (resultVar)=> {
       // Get the template
       const templateVar = this._tmpid();
       const templateNameVar = this._tmpid();
@@ -1687,7 +1709,7 @@ class Compiler extends Obj {
       this._emitLine(`let ${templateVar} = await runtime.promisify(env.getTemplate.bind(env))(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
       // render
-      this._emitLine(`${resultVar} = await runtime.promisify(${templateVar}.render.bind(${templateVar}))(context.getVariables(), frame${this.isAsync ? ', astate' : ''});`);
+      this._emitLine(`${resultVar} = await runtime.promisify(${templateVar}.render.bind(${templateVar}))(context.getVariables(), frame${node.isAsync ? ', astate' : ''});`);
     });
   }
 
@@ -1698,26 +1720,26 @@ class Compiler extends Obj {
     this._emitLine('tasks.push(');
     this._emitLine('function(callback) {');
 
-    this._emitAsyncBlockBegin();
+    this._emitAsyncBlockBegin( node );
     const id = this._compileGetTemplate(node, frame, false, node.ignoreMissing);
     this._emitLine(`callback(null,${id});});`);
-    this._emitAsyncBlockEnd();
+    this._emitAsyncBlockEnd( node );
 
     this._emitLine('});');
 
     const id2 = this._tmpid();
     this._emitLine('tasks.push(');
     this._emitLine('function(template, callback){');
-    this._emitLine('template.render(context.getVariables(), frame, ' + (this.isAsync ? 'astate,' : '') + this._makeCallback(id2));
+    this._emitLine('template.render(context.getVariables(), frame, ' + (node.isAsync ? 'astate,' : '') + this._makeCallback(id2));
     this._emitLine('callback(null,' + id2 + ');});');
     this._emitLine('});');
 
     this._emitLine('tasks.push(');
     this._emitLine('function(result, callback){');
-    this._emitAddToBufferBegin(false);
+    this._emitAddToBufferBegin(node, false);
     // this._emitLine(`${this.buffer} += result;`);
     this._emitLine(`result;`);
-    this._emitAddToBufferEnd(false);
+    this._emitAddToBufferEnd(node, false);
     this._emitLine('callback(null);');
     this._emitLine('});');
     this._emitLine('env.waterfall(tasks, function(){');
@@ -1733,9 +1755,9 @@ class Compiler extends Obj {
     // so the set block writes to the capture output instead of the buffer
     var buffer = this.buffer;
     this.buffer = 'output';
-    if(this.isAsync) {
+    if(node.isAsync) {
       let res = this._tmpid();
-      this._emitAsyncValue( () => {
+      this._emitAsyncValue( node, () => {
         this._emitLine('let output = [];');
 
         this.compile(node.body, frame);//write to output
@@ -1766,30 +1788,55 @@ class Compiler extends Obj {
       // autoescaped, so simply output it for optimization
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
-          this._emitAddToBufferBegin(false);
+          this._emitAddToBufferBegin(node, false);
           // this._emit(`${this.buffer} += `);
           this.compileLiteral(child, frame);
-          this._emitAddToBufferEnd(false);
+          this._emitAddToBufferEnd(node, false);
           this._emitLine(';');
         }
       } else {
-        this._emitAddToBufferBegin();
-        this._emit(`${this.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
+        this._emitAddToBufferBegin(node);
+        this._emit(`${node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
 
         if (this.throwOnUndefined) {
-          this._emit(`${this.isAsync ? 'await runtime.ensureDefinedAsync(' : 'runtime.ensureDefined('}`);
+          this._emit(`${node.isAsync ? 'await runtime.ensureDefinedAsync(' : 'runtime.ensureDefined('}`);
         }
         this._compileExpression(child, frame);
         if (this.throwOnUndefined) {
           this._emit(`,${node.lineno},${node.colno})`);
         }
         this._emit(', env.opts.autoescape);\n');
-        this._emitAddToBufferEnd();
+        this._emitAddToBufferEnd(node);
       }
     });
   }
 
+  //in asyncMode, will store in each node whether it has an isAsync child
+  propagateIsAsync(node) {
+    let hasAsync = this.asyncMode? asyncOperationNodes.has(node.typename) : false;
+
+    for (const key in node) {
+      if (Array.isArray(node[key])) {
+        node[key].forEach(item => {
+          const childHasAsync = this.propagateIsAsync(item);
+          hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
+        });
+      }
+      else if (typeof node[key] === 'object' && node[key] !== null) {
+        const childHasAsync = this.propagateIsAsync(node[key]);
+        hasAsync = this.asyncMode? hasAsync || childHasAsync : false;
+      }
+    }
+
+    if(node.typename) {
+      node.isAsync = hasAsync;
+    }
+    return hasAsync;
+  }
+
   compileRoot(node, frame) {
+    this.propagateIsAsync(node);
+
     if (frame) {
       this.fail('compileRoot: root node can\'t have frame');
     }
@@ -1799,7 +1846,7 @@ class Compiler extends Obj {
     this._emitFuncBegin(node, 'root');
     this._emitLine('let parentTemplate = null;');
     this._compileChildren(node, frame);
-    if (this.isAsync) {
+    if (this.asyncMode) {
       this._emitLine('let isIncluded = !!(frame.parent || frame.isIncluded);');
       this._emitLine('if(!isIncluded){');
       this._emitLine('astate.waitAllClosures().then(() => {');
@@ -1872,7 +1919,7 @@ class Compiler extends Obj {
 
   //@todo - optimize, check for much more than literal
   compileAwaited(node, frame) {
-    if(this.isAsync && !(node instanceof nodes.Literal)) {
+    if(node.isAsync && !(node instanceof nodes.Literal)) {
       this._emit('(await ');
       this.compile(node, frame);
       this._emit(')');
@@ -1883,7 +1930,7 @@ class Compiler extends Obj {
 
   //todo - optimize, check for much more than literal
   _compileAwaitedExpression(node, frame) {
-    if(this.isAsync && !(node instanceof nodes.Literal)) {
+    if(node.isAsync && !(node instanceof nodes.Literal)) {
       this._emit('(await ');
       this._compileExpression(node, frame);
       this._emit(')');
@@ -1928,10 +1975,10 @@ class Compiler extends Obj {
     );
 
     // @todo emitAsync only if the node requires async context
-    if(!this.isAsync || node instanceof nodes.Literal) {
+    if(!node.isAsync || node instanceof nodes.Literal) {
       this.compile(node, frame, true);
     } else {
-      this._emitAsyncValue( () => {
+      this._emitAsyncValue( node, () => {
         this.compile(node, frame, true);
       });
     }

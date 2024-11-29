@@ -65,18 +65,18 @@ module.exports = {
   reset() {
     e = undefined;
   },
-  compile(src, env, path, eagerCompile, isAsync) {
+  compile(src, env, path, eagerCompile, asyncMode) {
     if (!e) {
       configure();
     }
-    return new Template(src, env, path, eagerCompile, isAsync);
+    return new Template(src, env, path, eagerCompile, asyncMode);
   },
-  render(name, ctx, isAsync, cb) {
+  render(name, ctx, asyncMode, cb) {
     if (!e) {
       configure();
     }
 
-    return e.render(name, ctx, isAsync, cb);
+    return e.render(name, ctx, asyncMode, cb);
   },
   renderString(src, ctx, cb) {
     if (!e) {
