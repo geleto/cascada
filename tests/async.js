@@ -1121,10 +1121,6 @@
 
     describe('Async Nunjucks Caller Functionality', () => {
 
-      beforeEach(() => {
-        env = new AsyncEnvironment();
-      });
-
       describe('Async Caller Basic Usage', () => {
         it('should handle async value in caller content', async () => {
           const template = `
@@ -1441,9 +1437,6 @@
     });
 
     describe('Complex Async Scenarios', () => {
-      beforeEach(() => {
-        env = new AsyncEnvironment();
-      });
       it('should handle async functions returning complex objects', async () => {
         const context = {
           async getUser() {
@@ -1478,9 +1471,6 @@
     });
 
     describe('Async Nunjucks Expressions', () => {
-      beforeEach(() => {
-        env = new AsyncEnvironment();
-      });
 
       const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -1817,9 +1807,6 @@
     });
 
     describe('Async Custom Extensions', () => {
-      beforeEach(() => {
-        env = new AsyncEnvironment();
-      });
 
       class AsyncExtension {
         constructor(tagName, method, options = {}) {
@@ -2868,9 +2855,6 @@
     });
 
     describe('Async Switch Statement Tests', () => {
-      beforeEach(() => {
-        env = new AsyncEnvironment();
-      });
 
       // Basic switch functionality
       it('should handle basic switch with async switch value', async () => {
@@ -3899,9 +3883,6 @@
       });
 
       describe('Binary Operations and Comparisons', () => {
-        beforeEach(() => {
-          env = new AsyncEnvironment();
-        });
         it('should perform addition with async operands resolved in parallel', async () => {
           const context = {
             async getNum1() {
@@ -3937,9 +3918,6 @@
       });
 
       describe('Arrays, Dictionaries, and Nested Structures', () => {
-        beforeEach(() => {
-          env = new AsyncEnvironment();
-        });
         it('should handle arrays with elements resolved in parallel', async () => {
           const context = {
             async getItem1() {
@@ -4076,89 +4054,86 @@
 
       });
     });
-  });
 
-  describe('Async Dictionary Template Operations', () => {
-    let env;
-    beforeEach(() => {
-      env = new AsyncEnvironment();
-    });
+    describe('Async Dictionary Template Operations', () => {
 
-    it('should handle dictionary creation with async values in template', async () => {
-      const context = {
-        async getKetchupAmount() {
-          await delay(5);
-          return '5 tbsp';
-        },
-        async getMustardAmount() {
-          await delay(3);
-          return '1 tbsp';
-        }
-      };
+      it('should handle dictionary creation with async values in template', async () => {
+        const context = {
+          async getKetchupAmount() {
+            await delay(5);
+            return '5 tbsp';
+          },
+          async getMustardAmount() {
+            await delay(3);
+            return '1 tbsp';
+          }
+        };
 
-      const template = `
-        {%- set recipe = {
-          ketchup: getKetchupAmount(),
-          mustard: getMustardAmount(),
-          pickle: '0 tbsp'
-        } -%}
-        {%- for ingredient, amount in recipe -%}
-          {{ amount }} of {{ ingredient }}
-        {%- endfor -%}
-      `;
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('5 tbsp of ketchup1 tbsp of mustard0 tbsp of pickle');
-    });
+        const template = `
+          {%- set recipe = {
+            ketchup: getKetchupAmount(),
+            mustard: getMustardAmount(),
+            pickle: '0 tbsp'
+          } -%}
+          {%- for ingredient, amount in recipe -%}
+            {{ amount }} of {{ ingredient }}
+          {%- endfor -%}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('5 tbsp of ketchup1 tbsp of mustard0 tbsp of pickle');
+      });
 
-    it('should handle array of dictionaries creation with async values', async () => {
-      const context = {
-        async getTitle1() {
-          await delay(5);
-          return 'foo';
-        },
-        async getTitle2() {
-          await delay(3);
-          return 'bar';
-        }
-      };
+      it('should handle array of dictionaries creation with async values', async () => {
+        const context = {
+          async getTitle1() {
+            await delay(5);
+            return 'foo';
+          },
+          async getTitle2() {
+            await delay(3);
+            return 'bar';
+          }
+        };
 
-      const template = `
-        {%- set items = [
-          { title: getTitle1(), id: 1 },
-          { title: getTitle2(), id: 2 }
-        ] -%}
-        {%- for item in items -%}
-          {{ item.title }}:{{ item.id }}
-        {%- endfor -%}
-      `;
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('foo:1bar:2');
-    });
+        const template = `
+          {%- set items = [
+            { title: getTitle1(), id: 1 },
+            { title: getTitle2(), id: 2 }
+          ] -%}
+          {%- for item in items -%}
+            {{ item.title }}:{{ item.id }}
+          {%- endfor -%}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('foo:1bar:2');
+      });
 
-    it('should handle quoted string keys with async values', async () => {
-      const context = {
-        async getAmount1() {
-          await delay(5);
-          return '5 tbsp';
-        },
-        async getAmount2() {
-          await delay(3);
-          return '1 tbsp';
-        }
-      };
+      it('should handle quoted string keys with async values', async () => {
+        const context = {
+          async getAmount1() {
+            await delay(5);
+            return '5 tbsp';
+          },
+          async getAmount2() {
+            await delay(3);
+            return '1 tbsp';
+          }
+        };
 
-      const template = `
-        {%- set recipe = {
-          "ketchup": getAmount1(),
-          'mustard': getAmount2(),
-          pickle: '0 tbsp'
-        } -%}
-        {%- for ingredient, amount in recipe -%}
-          {{ amount }} of {{ ingredient }}
-        {%- endfor -%}
-      `;
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('5 tbsp of ketchup1 tbsp of mustard0 tbsp of pickle');
+        const template = `
+          {%- set recipe = {
+            "ketchup": getAmount1(),
+            'mustard': getAmount2(),
+            pickle: '0 tbsp'
+          } -%}
+          {%- for ingredient, amount in recipe -%}
+            {{ amount }} of {{ ingredient }}
+          {%- endfor -%}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('5 tbsp of ketchup1 tbsp of mustard0 tbsp of pickle');
+      });
+
     });
 
   });
