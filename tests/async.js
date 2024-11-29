@@ -53,9 +53,9 @@
     });
 
     describe('Basic Async Rendering', () => {
-      it.only('should correctly render a template with no context and async operations in async mode', async () => {
+      it('should correctly render a template with no context and async operations in async mode', async () => {
         const template = 'Hello World! 1 + 1 = {{ 1 + 1 }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderString(template);
         expect(result).to.equal('Hello World! 1 + 1 = 2');
       });
 

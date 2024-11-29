@@ -83,7 +83,7 @@ class Compiler extends Obj {
   _emitFuncBegin(node, name) {
     this.buffer = 'output';
     this._scopeClosers = '';
-    if (node.isAsync) {
+    if (this.asyncMode) {
       this._emitLine(`function ${name}(env, context, frame, runtime, astate, cb) {`);
     } else {
       this._emitLine(`function ${name}(env, context, frame, runtime, cb) {`);
@@ -1846,7 +1846,7 @@ class Compiler extends Obj {
     this._emitFuncBegin(node, 'root');
     this._emitLine('let parentTemplate = null;');
     this._compileChildren(node, frame);
-    if (this.asyncMode) {
+    if (node.isAsync) {
       this._emitLine('let isIncluded = !!(frame.parent || frame.isIncluded);');
       this._emitLine('if(!isIncluded){');
       this._emitLine('astate.waitAllClosures().then(() => {');
@@ -1868,9 +1868,13 @@ class Compiler extends Obj {
     }
     else {
       this._emitLine('if(parentTemplate) {');
-      this._emitLine('parentTemplate.rootRenderFunc(env, context, frame, runtime, cb);');
+      this._emitLine(`parentTemplate.rootRenderFunc(env, context, frame, runtime, ${this.asyncMode?'astate, ':''}cb);`);
       this._emitLine('} else {');
-      this._emitLine(`cb(null, ${this.buffer});`);
+      if(this.asyncMode) {
+        this._emitLine(`cb(null, runtime.flattentBuffer(${this.buffer}));`);
+      } else {
+        this._emitLine(`cb(null, ${this.buffer});`);
+      }
       this._emitLine('}');
     }
 
