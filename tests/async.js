@@ -53,6 +53,12 @@
     });
 
     describe('Basic Async Rendering', () => {
+      it.only('should correctly render a template with no context and async operations in async mode', async () => {
+        const template = 'Hello World! 1 + 1 = {{ 1 + 1 }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('Hello World! 1 + 1 = 2');
+      });
+
       // Test for async getter
       it('should correctly render an async getter', async () => {
         const context = {
