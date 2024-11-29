@@ -659,14 +659,7 @@ class Compiler extends Obj {
         key.colno);
     }
 
-    if(!node.isAsync) {
-      this.compile(key, frame);
-    }
-    else {
-      //todo: this is not the most parrallel friendly way to do this,
-      //if there are multiple async keys, they will be resolved in series
-      this.compileAwaited(key, frame);
-    }
+    this.compile(key, frame);
     this._emit(': ');
     this.compile(val, frame);
   }

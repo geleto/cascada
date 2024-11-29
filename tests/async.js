@@ -4078,4 +4078,89 @@
     });
   });
 
+  describe('Async Dictionary Template Operations', () => {
+    let env;
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    it('should handle dictionary creation with async values in template', async () => {
+      const context = {
+        async getKetchupAmount() {
+          await delay(5);
+          return '5 tbsp';
+        },
+        async getMustardAmount() {
+          await delay(3);
+          return '1 tbsp';
+        }
+      };
+
+      const template = `
+        {%- set recipe = {
+          ketchup: getKetchupAmount(),
+          mustard: getMustardAmount(),
+          pickle: '0 tbsp'
+        } -%}
+        {%- for ingredient, amount in recipe -%}
+          {{ amount }} of {{ ingredient }}
+        {%- endfor -%}
+      `;
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('5 tbsp of ketchup1 tbsp of mustard0 tbsp of pickle');
+    });
+
+    it('should handle array of dictionaries creation with async values', async () => {
+      const context = {
+        async getTitle1() {
+          await delay(5);
+          return 'foo';
+        },
+        async getTitle2() {
+          await delay(3);
+          return 'bar';
+        }
+      };
+
+      const template = `
+        {%- set items = [
+          { title: getTitle1(), id: 1 },
+          { title: getTitle2(), id: 2 }
+        ] -%}
+        {%- for item in items -%}
+          {{ item.title }}:{{ item.id }}
+        {%- endfor -%}
+      `;
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('foo:1bar:2');
+    });
+
+    it('should handle quoted string keys with async values', async () => {
+      const context = {
+        async getAmount1() {
+          await delay(5);
+          return '5 tbsp';
+        },
+        async getAmount2() {
+          await delay(3);
+          return '1 tbsp';
+        }
+      };
+
+      const template = `
+        {%- set recipe = {
+          "ketchup": getAmount1(),
+          'mustard': getAmount2(),
+          pickle: '0 tbsp'
+        } -%}
+        {%- for ingredient, amount in recipe -%}
+          {{ amount }} of {{ ingredient }}
+        {%- endfor -%}
+      `;
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('5 tbsp of ketchup1 tbsp of mustard0 tbsp of pickle');
+    });
+
+  });
+
 }());
