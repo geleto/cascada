@@ -1813,9 +1813,10 @@ class Compiler extends Obj {
     });
   }
 
-  //in asyncMode, will store in each node whether it has an isAsync child
+  //in async mode: store node.isAsync=true if the node or a child node performs async operations
+  //when !OPTIMIZE_ASYNC - all nodes are treated as async
   propagateIsAsync(node) {
-    let hasAsync = (this.asyncMode || !OPTIMIZE_ASYNC) ? asyncOperationNodes.has(node.typename) : false;
+    let hasAsync = this.asyncMode ? !OPTIMIZE_ASYNC || asyncOperationNodes.has(node.typename) : false;
 
     for (const key in node) {
       if (Array.isArray(node[key])) {
