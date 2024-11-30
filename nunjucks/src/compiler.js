@@ -919,7 +919,7 @@ class Compiler extends Obj {
     } else {
       // In sync mode, compile as usual.
       this._emit('runtime.callWrap(');
-      this.compileAwaited(node.name, frame);
+      this.compile(node.name, frame);
       this._emit(', "' + funcName + '", context, ');
       this._compileAggregate(node.args, frame, '[', ']', false, false);
       this._emit('))');
