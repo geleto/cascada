@@ -389,7 +389,7 @@ class Compiler extends Obj {
 
   //expressions is used only for '(onlyArgument)' - todo get rid of this, use resolveSingle
   //@todo - resolve only isAsync children
-  _compileAggregate(node, frame, startChar, endChar, resolveItems = false, expressionRoot = false) {
+  _compileAggregate(node, frame, startChar, endChar, resolveItems, expressionRoot) {
     let doResolve = resolveItems && node.isAsync;
     if(doResolve) {
       //resolve if at least one child is async
@@ -633,15 +633,15 @@ class Compiler extends Obj {
     }
   }
 
-  compileGroup(node, frame, expressionRoot) {
-    this._compileAggregate(node, frame, '(', ')', true, expressionRoot);
+  compileGroup(node, frame) {
+    this._compileAggregate(node, frame, '(', ')', true, true);
   }
 
-  compileArray(node, frame, expressionRoot) {
+  compileArray(node, frame) {
     this._compileAggregate(node, frame, '[', ']', true, true);
   }
 
-  compileDict(node, frame, expressionRoot) {
+  compileDict(node, frame) {
     //do not resolve dictionary values, this is handled by memberLookupAsync
     this._compileAggregate(node, frame, '{', '}', false, true);
   }
@@ -900,7 +900,7 @@ class Compiler extends Obj {
     if (node.isAsync) {
       if (!node.name.isAsync) {
         // Function name is not async, so resolve only the arguments.
-        this._compileAggregate(node.args, frame, '[', ']', true); // Resolve arguments using _compileAggregate.
+        this._compileAggregate(node.args, frame, '[', ']', true, false); // Resolve arguments using _compileAggregate.
         this._emit(`.then(function(resolvedArgs){ return runtime.callWrap(env.getFilter("${funcName}"), "${funcName}", context, resolvedArgs); })`);
       } else {
         // Function name is dynamic, so resolve both function and arguments.
@@ -911,7 +911,7 @@ class Compiler extends Obj {
         // Compile the arguments.
         if (node.args.children.length > 0) {
           this._emit(', ');
-          this._compileAggregate(node.args, frame, '', '', false);
+          this._compileAggregate(node.args, frame, '', '', false, false);
         }
         this._emit('])');
         this._emit('.then(function(resolved){ return runtime.callWrap(resolved[0], "' + funcName + '", context, resolved.slice(1)); }))');
@@ -921,7 +921,7 @@ class Compiler extends Obj {
       this._emit('runtime.callWrap(');
       this.compileAwaited(node.name, frame);
       this._emit(', "' + funcName + '", context, ');
-      this._compileAggregate(node.args, frame, '[', ']');
+      this._compileAggregate(node.args, frame, '[', ']', false, false);
       this._emit('))');
     }
   }
@@ -935,12 +935,12 @@ class Compiler extends Obj {
     if (node.isAsync) {
       this._emit('runtime.resolveAll([');
       this._emit('env.getFilter("' + name.value + '"), ');
-      this._compileAggregate(node.args, frame, '', '');
+      this._compileAggregate(node.args, frame, '', '', false, false);
       this._emit('])');
       this._emit('.then(function(args){ return args[0].call(context, ...args.slice(1)); })');
     } else {
       this._emit('env.getFilter("' + name.value + '").call(context, ');
-      this._compileAggregate(node.args, frame, '', '');
+      this._compileAggregate(node.args, frame, '', '', false, false);
       this._emit(')');
     }
   }
@@ -957,7 +957,7 @@ class Compiler extends Obj {
       const argsArray = this._tmpid();
       this._emitLine(`let ${argsArray} = `);
 
-      this._compileAggregate(node.args, frame, '[', ']');//todo - short path for 1 argument - 99% of the cases
+      this._compileAggregate(node.args, frame, '[', ']', false, false);//todo - short path for 1 argument - 99% of the cases
       this._emitLine(';');
 
       this._emitLines(
@@ -968,7 +968,7 @@ class Compiler extends Obj {
       );
     } else {
         this._emit('env.getFilter("' + name.value + '").call(context, ');
-        this._compileAggregate(node.args, frame);
+        this._compileAggregate(node.args, frame, '', '', false, false);
         this._emitLine(', ' + this._makeCallback(symbol));
         this._addScopeLevel();
     }
