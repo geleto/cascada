@@ -1975,14 +1975,7 @@ class Compiler extends Obj {
       nodes.NodeList
     );
 
-    // @todo emitAsync only if the node requires async context
-    if(!node.isAsync) {
-      this.compile(node, frame, true);
-    } else {
-      this._emitAsyncValue( node, () => {
-        this.compile(node, frame, true);
-      });
-    }
+    this.compile(node, frame, true);
   }
 
   getCode() {
