@@ -404,7 +404,6 @@ class Compiler extends Obj {
             return;
           }
           if (node.children.length === 1) {
-            //this._emit('[await ');
             this._emit('runtime.resolveSingle(');
           } else if (node.children.length === 2) {
             this._emit('runtime.resolveDuo(');
@@ -426,12 +425,8 @@ class Compiler extends Obj {
           }
           if (node.children.length === 1) {
             this._emit('(');
-            if(resolveItems) {
-              if(expressionRoot) {
-                this._compileAwaitedExpression(node.children[0], frame);
-              } else {
-                this.compileAwaited(node.children[0], frame);
-              }
+            if(expressionRoot){
+              this._compileExpression(node.children[0], frame)
             }
             else {
               this.compile(node.children[0], frame);
@@ -453,7 +448,12 @@ class Compiler extends Obj {
       if (i > 0) {
         this._emit(',');
       }
-      this.compile(child, frame);
+      if(expressionRoot && startChar!='{'){
+        this._compileExpression(child, frame)
+      }
+      else {
+        this.compile(child, frame);
+      }
     });
 
     if (doResolve) {
@@ -661,7 +661,7 @@ class Compiler extends Obj {
 
     this.compile(key, frame);
     this._emit(': ');
-    this.compile(val, frame);
+    this._compileExpression(val, frame);
   }
 
   compileInlineIf(node, frame) {
