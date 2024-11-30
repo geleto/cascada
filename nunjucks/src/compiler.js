@@ -404,11 +404,12 @@ class Compiler extends Obj {
             return;
           }
           if (node.children.length === 1) {
-            this._emit('[await ');
+            //this._emit('[await ');
+            this._emit('runtime.resolveSingle(');
           } else if (node.children.length === 2) {
-            this._emit('await runtime.resolveDuo(');
+            this._emit('runtime.resolveDuo(');
           } else {
-            this._emit('await runtime.resolveAll([');
+            this._emit('runtime.resolveAll([');
           }
           break;
         case '{':
@@ -416,7 +417,7 @@ class Compiler extends Obj {
             this._emit('{}');
             return;
           }
-          this._emit('await runtime.resolveObjectProperties({');
+          this._emit('runtime.resolveObjectProperties({');
           break;
         case '(':
           if (node.children.length === 0) {
@@ -458,9 +459,7 @@ class Compiler extends Obj {
     if (doResolve) {
       switch (endChar) {
         case ']':
-          if (node.children.length === 1) {
-            this._emit(']');
-          } else if (node.children.length === 2) {
+          if (node.children.length <= 2) {
             this._emit(')');
           } else {
             this._emit('])');
@@ -643,7 +642,8 @@ class Compiler extends Obj {
   }
 
   compileDict(node, frame, expressionRoot) {
-    this._compileAggregate(node, frame, '{', '}', true, true);
+    //do not resolve dictionary values, this is handled by memberLookupAsync
+    this._compileAggregate(node, frame, '{', '}', false, true);
   }
 
   compilePair(node, frame) {
@@ -695,6 +695,7 @@ class Compiler extends Obj {
     if (node.isAsync) {
       // Resolve the left-hand side and arguments (if any)
       this._emit('runtime.resolveAll([');
+      //@todo - merge node.left and node.right.args and then _compileAggregate with '[', ']'
       this.compile(node.left, frame);
       if (node.right.args && node.right.args.children.length > 0) {
         this._emit(', ');
