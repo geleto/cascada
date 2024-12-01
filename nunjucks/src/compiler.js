@@ -1829,7 +1829,9 @@ class Compiler extends Obj {
   }
 
   compileRoot(node, frame) {
-    this.propagateIsAsync(node);
+    if(this.asyncMode) {
+      this.propagateIsAsync(node);
+    }
 
     if (frame) {
       this.fail('compileRoot: root node can\'t have frame');
