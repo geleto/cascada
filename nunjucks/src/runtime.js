@@ -523,12 +523,19 @@ async function resolveDuo(arg1, arg2) {
   ];
 }
 
+//@todo - no need for condition and false branch, if something breaks - check why, amybe it wants the then to not return a promise
 function resolveSingle(value) {
   return value && typeof value.then === 'function' ? value : {
       then(onFulfilled) {
           return onFulfilled ? onFulfilled(value) : value;
       }
   };
+}
+
+async function resolveSingleArr(value) {
+  return [
+    (value && typeof value.then === 'function') ? [await value] : [value]
+  ];
 }
 
 function resolveArguments(fn, skipArguments = 0) {
@@ -705,6 +712,7 @@ module.exports = {
   resolveAll: resolveAll,
   resolveDuo: resolveDuo,
   resolveSingle: resolveSingle,
+  resolveSingleArr: resolveSingleArr,
   resolveObjectProperties: resolveObjectProperties,
   resolveArguments: resolveArguments,
   flattentBuffer: flattentBuffer,

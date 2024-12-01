@@ -387,92 +387,87 @@ class Compiler extends Obj {
     });
   }
 
-  //expressions is used only for '(onlyArgument)' - todo get rid of this, use resolveSingle
-  //@todo - resolve only isAsync children
-  _compileAggregate(node, frame, startChar, endChar, resolveItems, expressionRoot) {
-    let doResolve = resolveItems && node.isAsync;
-    if(doResolve) {
-      //resolve if at least one child is async
-      doResolve = node.children.some(child => child.isAsync);
-    }
+  _compileFunctionAggregate(node, frame, funcName) {
+    this._compileAggregate(node, frame, '[', ']', true, true, (result) => {
+      this._emit(`${funcName}(...${result})`);
+    });
+  }
 
+  _compileAggregate(node, frame, startChar, endChar, resolveItems, expressionRoot, compileThen) {
+    let doResolve = resolveItems && node.isAsync && node.children.some(child => child.isAsync);
     if (doResolve) {
       switch (startChar) {
         case '[':
-          if (node.children.length === 0) {
-            this._emit('[]');
-            return;
-          }
           if (node.children.length === 1) {
-            this._emit('runtime.resolveSingle(');
+            this._emit('runtime.resolveSingleArr(');
+            this._emitArguments(node, frame, expressionRoot, startChar);
+            this._emit(')');
           } else if (node.children.length === 2) {
             this._emit('runtime.resolveDuo(');
+            this._emitArguments(node, frame, expressionRoot, startChar);
+            this._emit(')');
           } else {
             this._emit('runtime.resolveAll([');
+            this._emitArguments(node, frame, expressionRoot, startChar);
+            this._emit('])');
           }
           break;
         case '{':
-          if (node.children.length === 0) {
-            this._emit('{}');
-            return;
-          }
           this._emit('runtime.resolveObjectProperties({');
+          this._emitArguments(node, frame, expressionRoot, startChar);
+          this._emit('})');
           break;
-        case '(':
-          if (node.children.length === 0) {
-            this._emit('()');
-            return;
-          }
-          if (node.children.length === 1) {
-            this._emit('(');
-            if(expressionRoot){
-              this._compileExpression(node.children[0], frame)
+        case '(': {
+            this._emit('runtime.resolveAll([');
+            this._emitArguments(node, frame, expressionRoot, '[');
+            this._emit(']).then(function(');
+            const result = this._tmpid();
+            this._emit(`${result}){ return (`);
+            for(let i = 0; i < node.children.length; i++) {
+              if(i > 0) {
+                this._emit(',');
+              }
+              this._emit(`${result}[${i}]`);
             }
-            else {
-              this.compile(node.children[0], frame);
-            }
-            this._emit(')');
-            return;
+            this._emit('); })');
           }
-          this._emit('(...');
-          this._compileAggregate(node, frame, '[', ']', resolveItems, expressionRoot );
-          this._emit(')');
-          return;
+          break;
+      }
+
+      if (compileThen) {
+        const result = this._tmpid();
+        this._emit(`.then(function(${result}){ return `);
+        compileThen.call(this, result, node.children.length);
+        this._emit('; })');
       }
     } else {
-      this._emit(startChar);
+      if (compileThen) {
+        const result = this._tmpid();
+        this._emit(`(function(${result}){ return `);
+        compileThen.call(this, result, node.children.length);
+        this._emit('; })(');
+        this._emit(startChar);
+        this._emitArguments(node, frame, expressionRoot, startChar);
+        this._emit(endChar + ')');
+      } else {
+        this._emit(startChar);
+        this._emitArguments(node, frame, expressionRoot, startChar);
+        this._emit(endChar);
+      }
     }
+  }
 
-    // Compile the arguments if not already handled
+  _emitArguments(node, frame, expressionRoot, startChar) {
     node.children.forEach((child, i) => {
       if (i > 0) {
         this._emit(',');
       }
-      if(expressionRoot && startChar!='{'){
-        this._compileExpression(child, frame)
-      }
-      else {
+      if (expressionRoot && startChar !== '{') {
+        this._compileExpression(child, frame);
+      } else {
         this.compile(child, frame);
       }
     });
-
-    if (doResolve) {
-      switch (endChar) {
-        case ']':
-          if (node.children.length <= 2) {
-            this._emit(')');
-          } else {
-            this._emit('])');
-          }
-          break;
-        case '}':
-          this._emit('})');
-          break;
-        // No need to handle ')' here since all '(' cases return early
-      }
-    } else {
-      this._emit(endChar);
-    }
   }
 
   assertType(node, ...types) {
@@ -693,14 +688,12 @@ class Compiler extends Obj {
     const testFunc = `env.getTest("${testName}")`;
 
     if (node.isAsync) {
+      const mergedNode = {
+        children: (node.right.args && node.right.args.children.length > 0) ? [node.left, ...node.right.args.children] : [node.left]
+      };
       // Resolve the left-hand side and arguments (if any)
       this._emit('runtime.resolveAll([');
-      //@todo - merge node.left and node.right.args and then _compileAggregate with '[', ']'
-      this.compile(node.left, frame);
-      if (node.right.args && node.right.args.children.length > 0) {
-        this._emit(', ');
-        this._compileAggregate(node.right.args, frame, '', '', false, true);
-      }
+      this._compileAggregate(mergedNode, frame, '', '', false, true);
       this._emit('])');
       // Then execute the test with resolved values
       this._emit('.then(async function(args){');
@@ -905,14 +898,13 @@ class Compiler extends Obj {
       } else {
         // Function name is dynamic, so resolve both function and arguments.
         // In async mode, resolve the function and arguments in parallel.
+
+        const mergedNode = {
+          children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
+        };
+
         this._emit('runtime.resolveAll([');
-        // Compile the function name.
-        this.compile(node.name, frame);
-        // Compile the arguments.
-        if (node.args.children.length > 0) {
-          this._emit(', ');
-          this._compileAggregate(node.args, frame, '', '', false, false);
-        }
+        this._compileAggregate(mergedNode, frame, '', '', false, false);
         this._emit('])');
         this._emit('.then(function(resolved){ return runtime.callWrap(resolved[0], "' + funcName + '", context, resolved.slice(1)); }))');
       }
@@ -926,6 +918,10 @@ class Compiler extends Obj {
     }
   }
 
+  compileFilterGet(node, frame) {
+    this._emit('env.getFilter("' + node.value + '")');
+  }
+
   //@todo - in isAsync mode, the filter may return a promise
   compileFilter(node, frame) {
     var name = node.name;
@@ -933,9 +929,12 @@ class Compiler extends Obj {
     this.assertType(name, nodes.Symbol);
 
     if (node.isAsync) {
+      const filterGetNode = {value:name.value, typename:'FilterGet'};
+      const mergedNode = {
+        children: [filterGetNode, ...node.args.children]
+      };
       this._emit('runtime.resolveAll([');
-      this._emit('env.getFilter("' + name.value + '"), ');
-      this._compileAggregate(node.args, frame, '', '', false, false);
+      this._compileAggregate(mergedNode, frame, '', '', false, false);
       this._emit('])');
       this._emit('.then(function(args){ return args[0].call(context, ...args.slice(1)); })');
     } else {
@@ -949,20 +948,16 @@ class Compiler extends Obj {
     var name = node.name;
     var symbol = node.symbol.value;
 
+
     this.assertType(name, nodes.Symbol);
 
     frame.set(symbol, symbol);
 
     if (node.isAsync) {
-      const argsArray = this._tmpid();
-      this._emitLine(`let ${argsArray} = `);
-
-      this._compileAggregate(node.args, frame, '[', ']', false, false);//todo - short path for 1 argument - 99% of the cases
-      this._emitLine(';');
-
+      this._emitLine(`let ${symbol} = runtime.resolveAll(`);
+      this._compileAggregate(node.args, frame, '[', ']', false, false);
       this._emitLines(
-        `let ${symbol} = runtime.resolveAll(${argsArray})`,
-        `  .then(resolvedArgs => {`,
+        `  ).then(resolvedArgs => {`,
         `    return runtime.promisify(env.getFilter("${name.value}").bind(env))(...resolvedArgs);`,
         `  });`
       );

@@ -1471,16 +1471,13 @@
     });
 
     describe('Async Nunjucks Expressions', () => {
-
-      const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-
       it('should handle mixed parameter types in expressions', async () => {
         const context = {
-          async textFunc() { await pause(10); return 'Hello'; },
-          async numFunc() { await pause(6); return 42; },
+          async textFunc() { await delay(10); return 'Hello'; },
+          async numFunc() { await delay(6); return 42; },
 
-          get asyncList() { return pause(8).then(() => [1, 2, 'three'].toString()); },
-          get asyncObj() { return pause(2).then(() => ({a: 1, b: 2})); },
+          get asyncList() { return delay(8).then(() => [1, 2, 'three'].toString()); },
+          get asyncObj() { return delay(2).then(() => ({a: 1, b: 2})); },
 
           staticFlag: true,
           regularFunc: () => 'Regular',
@@ -1508,9 +1505,9 @@
 
       it('should handle mixed parameter types in math operations', async () => {
         const context = {
-          async addAsync(a, b) { await pause(5); return a + b; },
+          async addAsync(a, b) { await delay(5); return a + b; },
 
-          get asyncNum() { return pause(6).then(() => 5); },
+          get asyncNum() { return delay(6).then(() => 5); },
 
           subtractSync: (a, b) => a - b,
 
@@ -1537,9 +1534,9 @@
 
       it('should handle mixed parameter types in comparisons and logic', async () => {
         const context = {
-          async asyncGreaterThan(a, b) { await pause(10); return a > b; },
+          async asyncGreaterThan(a, b) { await delay(10); return a > b; },
 
-          get asyncX() { return pause(2).then(() => 5); },
+          get asyncX() { return delay(2).then(() => 5); },
 
           syncEqual: (a, b) => a === b,
 
@@ -1566,9 +1563,9 @@
 
       it('should handle mixed parameter types in if expressions', async () => {
         const context = {
-          async asyncTrue() { await pause(3); return true; },
+          async asyncTrue() { await delay(3); return true; },
 
-          get asyncFalse() { return pause(2).then(() => false); },
+          get asyncFalse() { return delay(2).then(() => false); },
 
           syncTrue: () => true,
 
@@ -1596,7 +1593,7 @@
       it('should handle mixed parameter types in complex nested expressions', async () => {
         const context = {
           async fetchUsers() {
-            await pause(5);
+            await delay(5);
             return [
               { name: 'Alice', age: 30 },
               { name: 'Bob', age: 25 },
@@ -1604,7 +1601,7 @@
             ];
           },
 
-          get asyncDiscount() { return pause(5).then(() => 0.1); },
+          get asyncDiscount() { return delay(5).then(() => 0.1); },
 
           isAdult: (age) => age >= 18,
 
@@ -1620,6 +1617,145 @@
           Alice: Adult (Age: 30, Discount: 10%)
           Bob: Adult (Age: 25, Discount: 10%)
           Charlie: Adult (Age: 35, Discount: 10%)
+        `.trim());
+      });
+
+      it('should handle simple arithmetic groups', async () => {
+        const context = {
+          async fetchNumber() { await delay(5); return 2; },
+        };
+
+        const template = `
+          Result: {{ (1 + 2) * fetchNumber() }}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(`Result: 6`)
+      });
+
+      it('should handle simple group with async values', async () => {
+        const context = {
+          fetchA: new Promise(resolve =>
+            setTimeout(() => resolve(1), 3)
+          ),
+          fetchB: new Promise(resolve =>
+            setTimeout(() => resolve(2), 5)
+          )
+        };
+
+        const template = `
+          Result: {{ (fetchA + fetchB) + 1 }}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(`Result: 4`);
+      });
+
+      it('should handle groups with async and static values', async () => {
+        const context = {
+          async fetchValue() { await delay(5); return 10; },
+          staticValue: 5,
+        };
+
+        const template = `
+          Result: {{ (fetchValue() + staticValue) * 2 }}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(`Result: 30`);
+      });
+
+      it('should handle groups with commas and operations', async () => {
+        const context = {
+          async fetchNumber() { await delay(5); return 3; },
+          staticValue: 4,
+        };
+
+        const template = `
+          Result: {{ (1 + fetchNumber(), staticValue, 5) + 1 }}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(`Result: 6`);
+      });
+
+      //
+      it('should handle nested groups with async dependencies', async () => {
+        const context = {
+          async fetchA() { await delay(3); return 1; },
+          async fetchB() { await delay(5); return 2; },
+          async fetchC() { await delay(7); return 3; },
+        };
+
+        const template = `
+          Result: {{ ((fetchA() + fetchB()) * fetchC()) + 1 }}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(`Result: 10`);
+      });
+
+      it('should handle groups in conditional logic', async () => {
+        const context = {
+          async fetchFlag() { await delay(3); return true; },
+          staticValue: 5,
+        };
+
+        const template = `
+          Result: {{ ("yes" if (fetchFlag() and staticValue > 3) else "no") }}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(`Result: yes`);
+      });
+
+      it('should handle groups with commas and multiple values', async () => {
+        const context = {
+          async fetchValue() { await delay(5); return 4; },
+          staticValue: 2,
+        };
+
+        const template = `
+          Result: {{ (fetchValue(), staticValue, fetchValue() + staticValue) }}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(`Result: 6`);
+      });
+
+      it('should handle errors inside groups gracefully', async () => {
+        const context = {
+          async fetchError() { throw new Error('Test group error'); },
+          staticValue: 3,
+        };
+
+        const template = `Result: {{ (1 + fetchError(), staticValue + 2) }}`;
+        try {
+          await env.renderString(template, context);
+          // If we reach this point, the test should fail
+          expect().fail('Expected an error to be thrown');
+        } catch (error) {
+          expect(error instanceof Error).to.equal(true);
+          expect(error.message).to.contain('Test group error');
+        }
+
+      });
+
+      it('should handle groups in loops', async () => {
+        const context = {
+          async fetchValues() {
+            await delay(5);
+            return [1, 2, 3];
+          },
+          async increment(x) {
+            await delay(2);
+            return x + 1;
+          },
+        };
+
+        const template = `
+          {% for val in fetchValues() %}
+          Result: {{ (val, increment(val), val * 2) }}
+          {%- endfor %}
+        `;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(`
+          Result: 2
+          Result: 4
+          Result: 6
         `.trim());
       });
     });
