@@ -1810,8 +1810,10 @@ class Compiler extends Obj {
     for (const key in node) {
       if (Array.isArray(node[key])) {
         node[key].forEach(item => {
-          const childHasAsync = this.propagateIsAsync(item);
-          hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
+          if(item && typeof item === 'object') {
+            const childHasAsync = this.propagateIsAsync(item);
+            hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
+          }
         });
       }
       else if (typeof node[key] === 'object' && node[key] !== null) {
