@@ -12,9 +12,10 @@ const OPTIMIZE_ASYNC = true;//optimize async operations
 // these are nodes that may perform async operations even if their children do not
 const asyncOperationNodes = new Set([
   //expression nodes
-  'LookupVal', 'Symbol', 'FunCall', 'Filter', 'Caller', 'CallExtension', 'CallExtensionAsync', 'CallExtensionUnresolvedArgs',
+  'LookupVal', 'Symbol', 'FunCall', 'Filter', 'Caller', 'CallExtension', 'CallExtensionAsync', 'CallExtensionUnresolvedArgs', 'Is',
   //control nodes that can be async even if their children are not
-  'Extends', 'Include', 'Import', 'FromImport', 'Super']);
+  'Extends', 'Include', 'Import', 'FromImport', 'Super'
+]);
 
 // These are all the same for now, but shouldn't be passed straight
 // through
@@ -388,13 +389,13 @@ class Compiler extends Obj {
   }
 
   _compileFunctionAggregate(node, frame, funcName) {
-    this._compileAggregate(node, frame, '[', ']', true, true, (result) => {
-      this._emit(`${funcName}(...${result})`);
+    this._compileAggregate(node, frame, '[', ']', true, true, function(result) {
+      this._emit(`return ${funcName}(...${result})`);
     });
   }
 
-  _compileAggregate(node, frame, startChar, endChar, resolveItems, expressionRoot, compileThen) {
-    let doResolve = resolveItems && node.isAsync && node.children.some(child => child.isAsync);
+  _compileAggregate(node, frame, startChar, endChar, resolveItems, expressionRoot, compileThen, asyncThen) {
+    let doResolve = resolveItems && this.asyncMode && node.isAsync && node.children.some(child => child.isAsync);
     if (doResolve) {
       switch (startChar) {
         case '[':
@@ -436,16 +437,16 @@ class Compiler extends Obj {
 
       if (compileThen) {
         const result = this._tmpid();
-        this._emit(`.then(function(${result}){ return `);
+        this._emit(`.then(${asyncThen?'async ':''}function(${result}){`);
         compileThen.call(this, result, node.children.length);
-        this._emit('; })');
+        this._emit(' })');
       }
     } else {
       if (compileThen) {
         const result = this._tmpid();
-        this._emit(`(function(${result}){ return `);
+        this._emitLine(`(${asyncThen?'async ':''}function(${result}){`);
         compileThen.call(this, result, node.children.length);
-        this._emit('; })(');
+        this._emit('})(');
         this._emit(startChar);
         this._emitArguments(node, frame, expressionRoot, startChar);
         this._emit(endChar + ')');
@@ -689,23 +690,20 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
       const mergedNode = {
+        isAsync: node.left.isAsync || node.right.isAsync,
         children: (node.right.args && node.right.args.children.length > 0) ? [node.left, ...node.right.args.children] : [node.left]
       };
       // Resolve the left-hand side and arguments (if any)
-      this._emit('runtime.resolveAll([');
-      this._compileAggregate(mergedNode, frame, '', '', false, true);
-      this._emit('])');
-      // Then execute the test with resolved values
-      this._emit('.then(async function(args){');
-      this._emit(`  const testFunc = ${testFunc};`);
-      this._emit(`  if (!testFunc) { throw new Error("test not found: ${testName}"); }`);
-      this._emit('  const result = await testFunc.call(context, args[0]');
-      if (node.right.args && node.right.args.children.length > 0) {
-        this._emit(', ...args.slice(1)');
-      }
-      this._emit(');');
-      this._emit('  return result === true;');
-      this._emit('})');
+      this._compileAggregate(mergedNode, frame, '[', ']', true, true, function(args){
+        this._emitLine(`  const testFunc = ${testFunc};`);
+        this._emitLine(`  if (!testFunc) { throw new Error("test not found: ${testName}"); }`);
+        this._emitLine(`  const result = await testFunc.call(context, ${args}[0]`);
+        if (node.right.args && node.right.args.children.length > 0) {
+          this._emitLine(`, ...${args}.slice(1)`);
+        }
+        this._emitLine(');');
+        this._emitLine('  return result === true;');
+      }, true);
     } else {
       this._emit(`(${testFunc} ? ${testFunc}.call(context, `);
       this.compile(node.left, frame);
@@ -833,20 +831,6 @@ class Compiler extends Obj {
         }
       });
       this._emit('})');
-
-      /*this._emit('runtime.resolveAll([');
-      this.compile(node.expr, frame);
-      node.ops.forEach((op) => {
-        this._emit(',');
-        this.compile(op.expr, frame);
-      });
-      this._emit(']).then(function(results){');
-      this._emit('return results[0]');
-      node.ops.forEach((op, index) => {
-        this._emit(` ${compareOps[op.type]} `);
-        this._emit(`results[${index + 1}]`);
-      });
-      this._emit('})');*/
     } else {
       this.compile(node.expr, frame);
 
@@ -900,6 +884,7 @@ class Compiler extends Obj {
         // In async mode, resolve the function and arguments in parallel.
 
         const mergedNode = {
+          isAsync: node.name.isAsync || node.args.isAsync,
           children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
         };
 
@@ -931,6 +916,7 @@ class Compiler extends Obj {
     if (node.isAsync) {
       const filterGetNode = {value:name.value, typename:'FilterGet'};
       const mergedNode = {
+        isAsync: true,
         children: [filterGetNode, ...node.args.children]
       };
       this._emit('runtime.resolveAll([');
@@ -1917,7 +1903,6 @@ class Compiler extends Obj {
     }
   }
 
-  //@todo - optimize, check for much more than literal
   compileAwaited(node, frame) {
     if(node.isAsync) {
       this._emit('(await ');
