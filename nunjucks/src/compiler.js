@@ -875,10 +875,26 @@ class Compiler extends Obj {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
     if (node.isAsync) {
-      if (!node.name.isAsync) {
+      let asyncName = node.name.isAsync;
+      if(node.name.typename === 'Symbol' && !frame.lookup(node.name.value)) {
+        asyncName = false;
+      }
+      if (!asyncName) {
+        //this probably never happens because the name of the function can come from a variable
+        //which is set to async value and it's very hard to know if this is the case at compile time
+        // {% set asyncFunc = getAsyncFunction() %}
+        // {{ asyncFunc(arg1, arg2) }}
         // Function name is not async, so resolve only the arguments.
-        this._compileAggregate(node.args, frame, '[', ']', true, false); // Resolve arguments using _compileAggregate.
-        this._emit(`.then(function(resolvedArgs){ return runtime.callWrap(env.getFilter("${funcName}"), "${funcName}", context, resolvedArgs); })`);
+        this._compileAggregate(node.args, frame, '[', ']', true, false, function(result){
+          this._emit(`return runtime.callWrap(`);
+          this.compile(node.name, frame);
+          this._emitLine(`, "${funcName}", context, ${result});`);
+        }); // Resolve arguments using _compileAggregate.
+        this._emitLine(')');//(lineno, ...
+        /*this._emitLine(`.then(function(resolvedArgs){`);
+        this._emit(`return runtime.callWrap(`);
+        this.compile(node.name, frame);
+        this._emitLine(`, "${funcName}", context, resolvedArgs); })`);*/
       } else {
         // Function name is dynamic, so resolve both function and arguments.
         // In async mode, resolve the function and arguments in parallel.
