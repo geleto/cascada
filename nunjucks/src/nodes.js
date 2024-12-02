@@ -48,6 +48,10 @@ class Node extends Obj {
       func(this[field], field);
     });
   }
+
+  checkIsAsync(frame) {
+    return !!this.isAsync;
+  }
 }
 
 // Abstract nodes
@@ -74,7 +78,15 @@ class NodeList extends Node {
 
 const Root = NodeList.extend('Root');
 const Literal = Value.extend('Literal');
-const Symbol = Value.extend('Symbol');
+
+//const Symbol = Value.extend('Symbol');
+class Symbol extends Value {
+  get typename() { return 'Symbol'; }
+  checkIsAsync(frame) {
+    return !!frame.lookup(this.value);//if the name is a frame variable - it can be async
+  }
+}
+
 const Group = NodeList.extend('Group');
 const ArrayNode = NodeList.extend('Array');
 const Pair = Node.extend('Pair', { fields: ['key', 'value'] });
