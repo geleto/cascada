@@ -534,7 +534,7 @@ function resolveSingle(value) {
 
 async function resolveSingleArr(value) {
   return [
-    (value && typeof value.then === 'function') ? [await value] : [value]
+    (value && typeof value.then === 'function') ? await value : value
   ];
 }
 
