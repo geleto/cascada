@@ -935,10 +935,10 @@ class Compiler extends Obj {
         isAsync: true,
         children: [filterGetNode, ...node.args.children]
       };
-      this._emit('runtime.resolveAll([');
-      this._compileAggregate(mergedNode, frame, '', '', false, false);
-      this._emit('])');
-      this._emit('.then(function(args){ return args[0].call(context, ...args.slice(1)); })');
+
+      this._compileAggregate(mergedNode, frame, '[', ']', true, false, function(result){
+        this._emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
+      });
     } else {
       this._emit('env.getFilter("' + name.value + '").call(context, ');
       this._compileAggregate(node.args, frame, '', '', false, false);
