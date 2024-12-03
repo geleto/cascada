@@ -138,6 +138,7 @@ class Compiler extends Obj {
     }
   }
 
+  //@todo - do this only if a child is using frame
   _emitAsyncValue( node, emitFunc, res) {
     if (node.isAsync) {
       this._emitAsyncValueBegin( node );
@@ -946,11 +947,11 @@ class Compiler extends Obj {
   }
 
   compileFilterAsync(node, frame) {
-    if(!this.insideExpression){
+    /*if(!this.insideExpression){
       //async filters set a frame var with the result and often precede the control node that uses them
       this._compileExpression(node, frame);
       return;
-    }
+    }*/
 
     let name = node.name;
     let symbol = node.symbol.value;
@@ -961,8 +962,12 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
       this._emitLine(`let ${symbol} = `);
-      this._compileAggregate(node.args, frame, '[', ']', true, false, function(result){
-        this._emit(`return runtime.promisify(env.getFilter("${name.value}").bind(env))(...${result});`);
+      this._emitAsyncValue( node, () => {
+        //@todo - do this only if a child uses frame, from within _emitAsyncValue
+        //@todo - this should be done with _compileExpression in the future
+        this._compileAggregate(node.args, frame, '[', ']', true, false, function(result){
+          this._emit(`return runtime.promisify(env.getFilter("${name.value}").bind(env))(...${result});`);
+        });
       });
       this._emit(';');
 
