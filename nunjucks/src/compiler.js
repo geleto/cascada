@@ -959,7 +959,7 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
       this._emitLine(`let ${symbol} = `);
-      this._emitAsyncValue( node, () => {
+      this._emitAsyncValue( node.args, () => {
         //@todo - do this only if a child uses frame, from within _emitAsyncValue
         //@todo - this should be done with _compileExpression in the future
         this._compileAggregate(node.args, frame, '[', ']', true, false, function(result){
@@ -1005,7 +1005,7 @@ class Compiler extends Obj {
     if (node.value) {
       this._emit(ids.join(' = ') + ' = ');
       if(node.isAsync) {
-        this._emitAsyncValue( node, () => {
+        this._emitAsyncValue( node.value, () => {
           //@todo - do this only if a child uses frame, from within _emitAsyncValue
           this.compile(node.value, frame);
           this._emitLine(';');
@@ -1017,7 +1017,7 @@ class Compiler extends Obj {
     } else {
       // set block
       this._emit(ids.join(' = ') + ' = ');
-      this._emitAsyncValue( node, () => {
+      this._emitAsyncValue( node.body, () => {
         this.compile(node.body, frame);
         this._emitLine(';');
       });
@@ -1782,7 +1782,7 @@ class Compiler extends Obj {
     this.buffer = 'output';
     if(node.isAsync) {
       let res = this._tmpid();
-      this._emitAsyncValue( node, () => {
+      this._emitAsyncValue( node.body, () => {
         this._emitLine('let output = [];');
 
         this.compile(node.body, frame);//write to output
