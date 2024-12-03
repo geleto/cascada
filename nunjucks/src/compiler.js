@@ -881,6 +881,7 @@ class Compiler extends Obj {
       if(node.name.typename === 'Symbol' && !frame.lookup(node.name.value)) {
         asyncName = false;
       }
+      asyncName = true;
       if (!asyncName) {
         //this probably never happens because the name of the function can come from a variable
         //which is set to async value and it's very hard to know if this is the case at compile time
@@ -892,11 +893,6 @@ class Compiler extends Obj {
           this.compile(node.name, frame);
           this._emitLine(`, "${funcName}", context, ${result});`);
         }); // Resolve arguments using _compileAggregate.
-        this._emitLine(')');//(lineno, ...
-        /*this._emitLine(`.then(function(resolvedArgs){`);
-        this._emit(`return runtime.callWrap(`);
-        this.compile(node.name, frame);
-        this._emitLine(`, "${funcName}", context, resolvedArgs); })`);*/
       } else {
         // Function name is dynamic, so resolve both function and arguments.
         // In async mode, resolve the function and arguments in parallel.
@@ -906,11 +902,11 @@ class Compiler extends Obj {
           children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
         };
 
-        this._emit('runtime.resolveAll([');
-        this._compileAggregate(mergedNode, frame, '', '', false, false);
-        this._emit('])');
-        this._emit('.then(function(resolved){ return runtime.callWrap(resolved[0], "' + funcName + '", context, resolved.slice(1)); }))');
+        this._compileAggregate(mergedNode, frame, '[', ']', true, false, function(result){
+          this._emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
+        });
       }
+      this._emitLine(')');//(lineno, ...
     } else {
       // In sync mode, compile as usual.
       this._emit('runtime.callWrap(');
