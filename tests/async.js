@@ -282,7 +282,7 @@
           },
           async fetchUserName(id) {
             await delay(4);
-            return id === 1 ? 'John Doe' : 'Jane Doe';
+            return id === 1 ? 'John Doe' : 'Marry Jane';
           },
           async fetchUserPosts(name) {
             await delay(3);
@@ -3655,20 +3655,6 @@
         }, true);
       });
 
-      /*it.only('should handle standard async filter - non-async', (done) => {
-        const template = '{{ "hello" | asyncUppercase }}';
-        const senv = new Environment();
-        senv.addFilter('asyncUppercase', (str, callback) => {
-          setTimeout(() => {
-            callback(null, str.toUpperCase());
-          }, 5);
-        }, true); // true flag indicates this is an async filter
-        senv.renderString(template, (err, res) => {
-          expect(res).to.equal('HELLO');
-          done();
-        });
-      });*/
-
       it('should handle standard async filter', async () => {
         const template = '{{ "hello" | asyncUppercase }}';
         const result = await env.renderString(template);
@@ -3692,6 +3678,38 @@
         const template = '{{ getText() | asyncUppercase }}';
         const result = await env.renderString(template, context);
         expect(result).to.equal('HELLO');
+      });
+
+      it('should handle expression with concatenation and multiple filters', async () => {
+        const context = {
+          async getText() {
+            await delay(5);
+            return 'hello';
+          },
+          suffix: 'world'
+        };
+
+        // Template that combines async function, string concatenation, and multiple filters
+        const template = '{{ getText() | asyncUppercase + " " + suffix | asyncReverse }}';
+
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('HELLO dlrow');  // Fixed expectation
+      });
+
+      it('should handle expression with concatenation and multiple filters and grouping', async () => {
+        const context = {
+          async getText() {
+            await delay(5);
+            return 'hello';
+          },
+          suffix: 'world'
+        };
+
+        // Template that uses parentheses to group the concatenation before applying the reverse filter
+        const template = '{{ (getText() | asyncUppercase + " " + suffix) | asyncReverse }}';
+
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('dlrow OLLEH');
       });
 
       it('should handle errors in standard async filters', async () => {
@@ -4269,6 +4287,161 @@
         const result = await env.renderString(template, context);
         expect(result).to.equal('5 tbsp of ketchup1 tbsp of mustard0 tbsp of pickle');
       });
+
+    });
+
+    describe('Function/filter/input/etc.. name stored in variable', () => {
+      let loader;
+
+      beforeEach(() => {
+        loader = new StringLoader();
+        env = new AsyncEnvironment(loader);
+      });
+
+      it('should handle async function calls from variables', async () => {
+        const context = {
+          async greet(name) {
+            await delay(5);
+            return `Hello, ${name}!`;
+          }
+        };
+
+        const template = '{% set myFunc = greet %}{{ myFunc("World") }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('Hello, World!');
+      });
+
+      it('should handle async filters stored in variables', async () => {
+        env.addFilter('upperCase', async (str) => {
+          await delay(5);
+          return str.toUpperCase();
+        });
+
+        const template = '{% set myFilter = filters.upperCase %}{{ "hello" | myFilter }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('HELLO');
+      });
+
+
+      it('should handle async lookup keys', async () => {
+        const context = {
+          async getData() {
+            await delay(5);
+            return { theKey: 'value' };
+          },
+          async getKey() {
+            await delay(5);
+            return 'theKey';
+          }
+        };
+
+        const template = '{% set key = getKey() %} {{ (await getData())[key] }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('value');
+      });
+
+      it('should handle function calls with async symbols', async () => {
+        const context = {
+          async fetchGreeting() {
+            await delay(5);
+            return (name) => `Hello, ${name}!`;
+          }
+        };
+
+        const template = `
+          {% set greetFunc = fetchGreeting() %}
+          {{ greetFunc("World") }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Hello, World!');
+      });
+
+      it('should handle from-import with an async template name', async () => {
+        // Add the dynamic template to the loader
+        loader.addTemplate('async_template.njk', `
+          {% macro greet(name) %}
+            Hello, {{ name }}!
+          {% endmacro %}
+        `);
+
+        const context = {
+          async getTemplateName() {
+            await delay(5); // Simulate async operation
+            return 'async_template.njk';
+          },
+        };
+
+        const template = `
+          {% from getTemplateName() import greet %}
+          {{ greet("World") }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Hello, World!');
+      });
+
+      it('should handle import with an async template name', async () => {
+        // Add the dynamic template to the loader
+        loader.addTemplate('async_library.njk', `
+          {% macro getData() %}
+            Async Fetched Data
+          {% endmacro %}
+        `);
+
+        const context = {
+          async getLibraryName() {
+            await delay(5); // Simulate async operation
+            return 'async_library.njk';
+          },
+        };
+
+        const template = `
+          {% import getLibraryName() as lib %}
+          {{ lib.getData() }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Async Fetched Data');
+      });
+
+      it('should correctly resolve "is" operator with test function name as a promise', async () => {
+        const context = {
+          testValue: (async () => {
+            await delay(5);
+            return 10;
+          })(),
+          dynamicTestName: (async () => {
+            await delay(5);
+            return 'isGreaterThan'; // The function name resolves after a delay
+          })(),
+          testFunction: async (value, threshold) => {
+            await delay(5);
+            return value > threshold;
+          },
+          threshold: (async () => {
+            await delay(5);
+            return 5;
+          })(),
+        };
+
+        env.addTest('isGreaterThan', async (value, threshold) => {
+          return await context.testFunction(value, threshold);
+        });
+
+        const template = `
+          {% set testName = dynamicTestName %}
+          {% if testValue is testName(threshold) %}
+            Yes
+          {% else %}
+            No
+          {% endif %}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Yes');
+      });
+
 
     });
 
