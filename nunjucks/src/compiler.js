@@ -400,6 +400,7 @@ class Compiler extends Obj {
       switch (startChar) {
         case '[':
           if (node.children.length === 1) {
+            //@todo - if compileThen resolveSingle and pass the value directly, similar with []
             this._emit('runtime.resolveSingleArr(');
             this._emitArguments(node, frame, expressionRoot, startChar);
             this._emit(')');
@@ -920,10 +921,9 @@ class Compiler extends Obj {
   }
 
   compileFilterGet(node, frame) {
-    this._emit('env.getFilter("' + node.value + '")');
+    this._emit('env.getFilter("' + node.value + '")');//@todo I think this can not be async
   }
 
-  //@todo - in isAsync mode, the filter may return a promise
   compileFilter(node, frame) {
     var name = node.name;
 
@@ -935,7 +935,6 @@ class Compiler extends Obj {
         isAsync: true,
         children: [filterGetNode, ...node.args.children]
       };
-
       this._compileAggregate(mergedNode, frame, '[', ']', true, false, function(result){
         this._emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
       });
@@ -947,22 +946,33 @@ class Compiler extends Obj {
   }
 
   compileFilterAsync(node, frame) {
-    var name = node.name;
-    var symbol = node.symbol.value;
+    if(!this.insideExpression){
+      //async filters set a frame var with the result and often precede the control node that uses them
+      this._compileExpression(node, frame);
+      return;
+    }
 
+    let name = node.name;
+    let symbol = node.symbol.value;
 
     this.assertType(name, nodes.Symbol);
 
     frame.set(symbol, symbol);
 
     if (node.isAsync) {
-      this._emitLine(`let ${symbol} = runtime.resolveAll(`);
+      this._emitLine(`let ${symbol} = `);
+      this._compileAggregate(node.args, frame, '[', ']', true, false, function(result){
+        this._emit(`return runtime.promisify(env.getFilter("${name.value}").bind(env))(...${result});`);
+      });
+      this._emit(';');
+
+      /*this._emitLine(`let ${symbol} = runtime.resolveAll(`);
       this._compileAggregate(node.args, frame, '[', ']', false, false);
       this._emitLines(
         `  ).then(resolvedArgs => {`,
         `    return runtime.promisify(env.getFilter("${name.value}").bind(env))(...resolvedArgs);`,
         `  });`
-      );
+      );*/
     } else {
         this._emit('env.getFilter("' + name.value + '").call(context, ');
         this._compileAggregate(node.args, frame, '', '', false, false);
@@ -1974,8 +1984,10 @@ class Compiler extends Obj {
       nodes.Compare,
       nodes.NodeList
     );
-
+    let inside = this.insideExpression;
+    this.insideExpression = true;
     this.compile(node, frame, true);
+    this.insideExpression = inside;
   }
 
   getCode() {
