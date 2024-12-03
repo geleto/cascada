@@ -4311,7 +4311,7 @@
         expect(result).to.equal('Hello, World!');
       });
 
-      it.only('should handle async lookup keys', async () => {
+      it('should handle async lookup keys', async () => {
         const context = {
           async getData() {
             await delay(5);

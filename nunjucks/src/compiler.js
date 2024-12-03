@@ -1004,8 +1004,16 @@ class Compiler extends Obj {
 
     if (node.value) {
       this._emit(ids.join(' = ') + ' = ');
-      this._compileExpression(node.value, frame);
-      this._emitLine(';');
+      if(node.isAsync) {
+        this._emitAsyncValue( node, () => {
+          //@todo - do this only if a child uses frame, from within _emitAsyncValue
+          this.compile(node.value, frame);
+          this._emitLine(';');
+        });
+      } else {
+        this._compileExpression(node.value, frame);
+        this._emitLine(';');
+      }
     } else {
       // set block
       this._emit(ids.join(' = ') + ' = ');
@@ -1469,7 +1477,7 @@ class Compiler extends Obj {
     this._emit(`return ${funcId};})()`);
   }
 
-  _compileGetTemplate(node, frame, eagerCompile, ignoreMissing) {
+  _compileGetTemplate(node, frame, eagerCompile, ignoreMissing, asyncWrap) {
     const parentTemplateId = this._tmpid();
     const parentName = this._templateName();
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
@@ -1479,7 +1487,13 @@ class Compiler extends Obj {
       const getTemplateFunc = this._tmpid();
       this._emitLine(`const ${getTemplateFunc} = runtime.promisify(env.getTemplate.bind(env));`);
       this._emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
-      this._compileExpression(node.template, frame);
+      if (asyncWrap) {
+        this._emitAsyncValue( node.template, () => {
+          this._compileExpression(node.template, frame);
+        });
+      } else {
+        this._compileExpression(node.template, frame);
+      }
       this._emitLine(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     } else {
       const cb = this._makeCallback(parentTemplateId);
@@ -1493,7 +1507,7 @@ class Compiler extends Obj {
 
   compileImport(node, frame) {
     const target = node.target.value;
-    const id = this._compileGetTemplate(node, frame, false, false);
+    const id = this._compileGetTemplate(node, frame, false, false, true);
 
     if (node.isAsync) {
       const res = this._tmpid();
@@ -1524,7 +1538,7 @@ class Compiler extends Obj {
   }
 
   compileFromImport(node, frame) {
-    const importedId = this._compileGetTemplate(node, frame, false, false);
+    const importedId = this._compileGetTemplate(node, frame, false, false, true);
 
     if (node.isAsync) {
       const res = this._tmpid();
@@ -1661,7 +1675,7 @@ class Compiler extends Obj {
       this._emitLine('context.prepareForAsyncBlocks();');
     }
 
-    const parentTemplateId = this._compileGetTemplate(node, frame, true, false);
+    const parentTemplateId = this._compileGetTemplate(node, frame, true, false, true);
 
     // extends is a dynamic tag and can occur within a block like
     // `if`, so if this happens we need to capture the parent
@@ -1717,10 +1731,10 @@ class Compiler extends Obj {
     this._emitLine('tasks.push(');
     this._emitLine('function(callback) {');
 
-    this._emitAsyncBlockBegin( node );
-    const id = this._compileGetTemplate(node, frame, false, node.ignoreMissing);
+    //this._emitAsyncBlockBegin( node );
+    const id = this._compileGetTemplate(node, frame, false, node.ignoreMissing, false);
     this._emitLine(`callback(null,${id});});`);
-    this._emitAsyncBlockEnd( node );
+    //this._emitAsyncBlockEnd( node );
 
     this._emitLine('});');
 
@@ -1978,10 +1992,11 @@ class Compiler extends Obj {
       nodes.Compare,
       nodes.NodeList
     );
-    let inside = this.insideExpression;
-    this.insideExpression = true;
+    if(node.isAsync && this.asyncClosureDepth===0) {
+      //this will change in the future - only if a child node need the frame
+      throw new Error('All expressions must be wrapped in an async IIFE');
+    }
     this.compile(node, frame, true);
-    this.insideExpression = inside;
   }
 
   getCode() {
