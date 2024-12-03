@@ -1071,29 +1071,43 @@ class Compiler extends Obj {
 
   //todo! - get rid of the callback
   compileIf(node, frame, async) {
+    if(this.asyncMode && node.isAsync) {
+      async = false;
+    }
+
     this._emitBufferBlockBegin(node);
 
     this._emit('if(');
     this._compileAwaitedExpression(node.cond, frame);
     this._emit('){');
 
-    this._withScopedSyntax(() => {
+    if(this.asyncMode) {
       this.compile(node.body, frame);
-      if (async) {
-        this._emit('cb()');
-      }
-    });
-
-    this._emit('} else {');
-
-    if (node.else_) {
+    }
+    else {
       this._withScopedSyntax(() => {
-        this.compile(node.else_, frame);
+        this.compile(node.body, frame);
         if (async) {
           this._emit('cb()');
         }
       });
-    } else if (async) {
+    }
+
+    this._emit('} else {');
+
+    if (node.else_) {
+      if(this.asyncMode) {
+        this.compile(node.else_, frame);
+      }
+      else {
+        this._withScopedSyntax(() => {
+          this.compile(node.else_, frame);
+          if (async) {
+            this._emit('cb()');
+          }
+        });
+      }
+    } else if (async && !this.asyncMode) {
       this._emit('cb()');
     }
 
