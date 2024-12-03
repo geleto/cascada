@@ -389,6 +389,7 @@ class Compiler extends Obj {
     });
   }
 
+  //todo
   _compileFunctionAggregate(node, frame, funcName) {
     this._compileAggregate(node, frame, '[', ']', true, true, function(result) {
       this._emit(`return ${funcName}(...${result})`);
@@ -966,14 +967,6 @@ class Compiler extends Obj {
         });
       });
       this._emit(';');
-
-      /*this._emitLine(`let ${symbol} = runtime.resolveAll(`);
-      this._compileAggregate(node.args, frame, '[', ']', false, false);
-      this._emitLines(
-        `  ).then(resolvedArgs => {`,
-        `    return runtime.promisify(env.getFilter("${name.value}").bind(env))(...resolvedArgs);`,
-        `  });`
-      );*/
     } else {
         this._emit('env.getFilter("' + name.value + '").call(context, ');
         this._compileAggregate(node.args, frame, '', '', false, false);

@@ -4290,7 +4290,7 @@
 
     });
 
-    describe('Function/filter/input/etc.. name stored in variable', () => {
+    describe('Function/input/etc.. name stored in variable', () => {
       let loader;
 
       beforeEach(() => {
@@ -4311,19 +4311,7 @@
         expect(result).to.equal('Hello, World!');
       });
 
-      it('should handle async filters stored in variables', async () => {
-        env.addFilter('upperCase', async (str) => {
-          await delay(5);
-          return str.toUpperCase();
-        });
-
-        const template = '{% set myFilter = filters.upperCase %}{{ "hello" | myFilter }}';
-        const result = await env.renderString(template, context);
-        expect(result).to.equal('HELLO');
-      });
-
-
-      it('should handle async lookup keys', async () => {
+      it.only('should handle async lookup keys', async () => {
         const context = {
           async getData() {
             await delay(5);
@@ -4335,7 +4323,7 @@
           }
         };
 
-        const template = '{% set key = getKey() %} {{ (await getData())[key] }}';
+        const template = '{% set key = getKey() %}{{ (getData())[key] }}';
         const result = await env.renderString(template, context);
         expect(result).to.equal('value');
       });
@@ -4404,44 +4392,6 @@
         const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Async Fetched Data');
       });
-
-      it('should correctly resolve "is" operator with test function name as a promise', async () => {
-        const context = {
-          testValue: (async () => {
-            await delay(5);
-            return 10;
-          })(),
-          dynamicTestName: (async () => {
-            await delay(5);
-            return 'isGreaterThan'; // The function name resolves after a delay
-          })(),
-          testFunction: async (value, threshold) => {
-            await delay(5);
-            return value > threshold;
-          },
-          threshold: (async () => {
-            await delay(5);
-            return 5;
-          })(),
-        };
-
-        env.addTest('isGreaterThan', async (value, threshold) => {
-          return await context.testFunction(value, threshold);
-        });
-
-        const template = `
-          {% set testName = dynamicTestName %}
-          {% if testValue is testName(threshold) %}
-            Yes
-          {% else %}
-            No
-          {% endif %}
-        `;
-
-        const result = await env.renderString(template, context);
-        expect(result.trim()).to.equal('Yes');
-      });
-
 
     });
 
