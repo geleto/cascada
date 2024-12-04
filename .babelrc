@@ -21,7 +21,8 @@
         "**/node_modules/**",
         "**/*.min.js",
         "scripts/**"
-      ]
+      ],
+      "compact": false
     }
   }
 }
