@@ -1152,29 +1152,84 @@ class Compiler extends Obj {
     const i = this._tmpid();
     const len = this._tmpid();
     const arr = this._tmpid();
+    const didIterate = this._tmpid();
     frame = frame.push();
-
-    this._emitLine('frame = frame.push();');
 
     this._emit(`let ${arr} = `);
     this._compileAwaitedExpression(node.arr, frame);
     this._emitLine(';');
     this._emitLine(`let ${len};`);
+    this._emitLine(`let ${didIterate} = false;`);
 
     this._emit(`if(${arr}) {`);
-    this._emitLine(arr + ' = runtime.fromIterator(' + arr + ');');
 
-    // If multiple names are passed, we need to bind them
-    // appropriately
+    if (node.isAsync) {
+      this._emitLine(`if(${arr}[Symbol.asyncIterator]) {`);
+      this._emitLine(`const iterator = ${arr}[Symbol.asyncIterator]();`);
+      this._emitLine(`let iterNext;`);
+      this._emitLine(`let iterCount = 0;`);
+      this._emitLine(`while((iterNext = await iterator.next()), !iterNext.done) {`);
+
+      // Set didIterate to true
+      this._emitLine(`${didIterate} = true;`);
+
+      // Push frame and setup buffer before setting variables
+      this._emitLine('frame = frame.push();');
+      this._emitBufferBlockBegin(node);
+
+      if (node.name instanceof nodes.Array) {
+        // Handle destructuring with error checking
+        this._emitLine('try {');
+        node.name.children.forEach((child, u) => {
+          let tid = this._tmpid();
+          this._emitLine(`if (!Array.isArray(iterNext.value) || iterNext.value.length <= ${u}) throw new Error("Not enough values to destructure");`);
+          this._emitLine(`let ${tid} = iterNext.value[${u}];`);
+          this._emitLine(`frame.set("${child.value}", ${tid});`);
+          frame.set(child.value, tid);
+        });
+        this._emitLine('} catch(e) { throw new Error("Failed to destructure async iterator value: " + e.message); }');
+      } else {
+        const v = this._tmpid();
+        frame.set(node.name.value, v);
+        this._emitLine(`let ${v} = iterNext.value;`);
+        this._emitLine(`frame.set("${node.name.value}", ${v});`);
+      }
+
+      // Set loop variables, length undefined for async iterators
+      this._emitLine('frame.set("loop.index", iterCount + 1);');
+      this._emitLine('frame.set("loop.index0", iterCount);');
+      this._emitLine('frame.set("loop.revindex", undefined);');
+      this._emitLine('frame.set("loop.revindex0", undefined);');
+      this._emitLine('frame.set("loop.first", iterCount === 0);');
+      this._emitLine('frame.set("loop.last", undefined);');
+      this._emitLine('frame.set("loop.length", undefined);');
+
+      this._withScopedSyntax(() => {
+        this.compile(node.body, frame);
+      });
+
+      this._emitBufferBlockEnd(node);
+      this._emitLine('frame = frame.pop();');
+
+      // Increment count after processing
+      this._emitLine('iterCount++;');
+
+      this._emitLine('}'); // End while
+      this._emitLine('} else {'); // Not async iterator
+    }
+
+    // Original sync iterator code
+    this._emitLine(`${arr} = runtime.fromIterator(${arr});`);
+
     if (node.name instanceof nodes.Array) {
       this._emitLine(`let ${i};`);
 
-      // The object could be an array or object. Note that the
-      // body of the loop is duplicated for each condition, but
-      // we are optimizing for speed over size.
       this._emitLine(`if(runtime.isArray(${arr})) {`);
       this._emitLine(`${len} = ${arr}.length;`);
       this._emitLine(`for(${i}=0; ${i} < ${arr}.length; ${i}++) {`);
+
+      // Set didIterate to true
+      this._emitLine(`${didIterate} = true;`);
 
       if (node.isAsync && !serialAsync) {
         this._emitLine('frame = frame.push();');
@@ -1185,8 +1240,8 @@ class Compiler extends Obj {
       node.name.children.forEach((child, u) => {
         let tid = this._tmpid();
         this._emitLine(`let ${tid} = ${arr}[${i}][${u}];`);
-        this._emitLine(`frame.set("${child.value}", ${tid});`);// fixed nunjucks bug with array unpacking
-        frame.set(node.name.children[u].value, tid);
+        this._emitLine(`frame.set("${child.value}", ${tid});`);
+        frame.set(child.value, tid);
       });
 
       this._emitLoopBindings(node, arr, i, len);
@@ -1211,6 +1266,9 @@ class Compiler extends Obj {
       this._emitLine(`${i} = -1;`);
       this._emitLine(`${len} = runtime.keys(${arr}).length;`);
       this._emitLine(`for(let ${k} in ${arr}) {`);
+
+      // Set didIterate to true
+      this._emitLine(`${didIterate} = true;`);
 
       if (node.isAsync) {
         this._emitLine('frame = frame.push();');
@@ -1243,6 +1301,9 @@ class Compiler extends Obj {
       this._emitLine(`${len} = ${arr}.length;`);
       this._emitLine(`for(let ${i}=0; ${i} < ${arr}.length; ${i}++) {`);
 
+      // Set didIterate to true
+      this._emitLine(`${didIterate} = true;`);
+
       if (node.isAsync) {
         this._emitLine('frame = frame.push();');
         this._emitBufferBlockBegin(node);
@@ -1265,9 +1326,13 @@ class Compiler extends Obj {
       this._emitLine('}');
     }
 
-    this._emitLine('}');
+    if (node.isAsync) {
+      this._emitLine('}'); // End async iterator check
+    }
+    this._emitLine('}'); // End if(arr)
+
     if (node.else_) {
-      this._emitLine(`if (!${len}) {`);
+      this._emitLine(`if (!${didIterate}) {`);
       this._emitBufferBlockBegin(node);
       this.compile(node.else_, frame);
       this._emitBufferBlockEnd(node);
@@ -1277,7 +1342,6 @@ class Compiler extends Obj {
     this._emitLine('frame = frame.pop();');
     this._emitBufferBlockEnd(node);
   }
-
 
   _compileAsyncLoop(node, frame, parallel) {
     if(node.isAsync) {

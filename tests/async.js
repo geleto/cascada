@@ -3916,6 +3916,87 @@
       });
     });
 
+    describe('Async Iterator Tests', () => {
+      it('should correctly handle async iterators in a for loop', async () => {
+        const context = {
+          async *asyncGenerator() {
+            for (let i = 1; i <= 3; i++) {
+              await delay(5);
+              yield i;
+            }
+          }
+        };
+        const template = `{%- for num in asyncGenerator() %} - Number {{ num }}
+        {%- else %}
+          No numbers
+        {%- endfor %}`;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(
+          '- Number 1 - Number 2 - Number 3'
+        );
+      });
+
+      it('should execute else block when async iterator is empty', async () => {
+        const context = {
+          async *emptyAsyncGenerator() {
+            // No items yielded
+          }
+        };
+        const template = `{%- for item in emptyAsyncGenerator() %}
+          - Item {{ item }}
+        {%- else %}
+          No items
+        {%- endfor %}`;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('No items');
+      });
+
+      it('should correctly handle loop variables in async iterators', async () => {
+        const context = {
+          async *asyncGenerator() {
+            for (let i = 1; i <= 3; i++) {
+              await delay(5);
+              yield i;
+            }
+          }
+        };
+        const template = `{%- for num in asyncGenerator() %} - Index: {{ loop.index }}, First: {{ loop.first }}, Last: {{ loop.last }}
+        {%- endfor %}`;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(
+          '- Index: 1, First: true, Last: ' +
+          ' - Index: 2, First: false, Last: ' +
+          ' - Index: 3, First: false, Last:'
+        );
+      });
+
+      it('should correctly handle nested async iterators', async () => {
+        const context = {
+          async *outerGenerator() {
+            for (let i = 1; i <= 2; i++) {
+              await delay(5);
+              yield i;
+            }
+          },
+          async *innerGenerator(num) {
+            for (let j = 1; j <= num; j++) {
+              await delay(5);
+              yield j;
+            }
+          }
+        };
+        const template =
+        `{%- for outer in outerGenerator() -%}
+          >Outer {{ outer }}:
+          {%- for inner in innerGenerator(outer) %} - Inner {{ inner }} {% endfor -%}
+        {%- endfor %}`;
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal(
+          `>Outer 1: - Inner 1 >Outer 2: - Inner 1  - Inner 2`
+        );
+      });
+    });
+
     describe('Async Functionality Tests', () => {
       let loader;
 

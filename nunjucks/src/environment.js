@@ -168,10 +168,7 @@ class Environment extends EmitterObj {
   }
 
   //@todo
-  //3 types of filters
-  //1. regular, but also can return promise
-  //2. regular async with callback
-  //3. parallel, the arguments are not resolved, use resolveAll
+  //add option to send unresolved values to the filter
   addFilter(name, func, async) {
     var wrapped = func;
 
