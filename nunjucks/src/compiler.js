@@ -522,7 +522,7 @@ class Compiler extends Obj {
       this._emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
     }
 
-    if (args || contentArgs.length) {
+    if ((args && args.children.length) || contentArgs.length) {
       this._emit(',');
     }
 
@@ -551,14 +551,14 @@ class Compiler extends Obj {
         }
 
         if (arg) {
-          if(!resolveArgs) {
-            //in parallel mode, the contentArgs are promises
+          if(node.isAsync && !resolveArgs) {
+            //when args are not resolved, the contentArgs are promises
             this._emitAsyncRenderClosure( node, function() {
               this.compile(arg, frame);
             });
           }
           else {
-            //in non-paralle mode, the contentArgs are callback functions
+            //when not resolve args, the contentArgs are callback functions
             this._emitLine('function(cb) {');
             this._emitLine('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
 
