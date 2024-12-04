@@ -510,14 +510,19 @@ class Compiler extends Obj {
         }
       } else {
         //isAsync, the callback should be promisified
-        this._emit(`runtime.promisify(${ext}["${node.prop}"].bind(${ext}))(context`);
+        if(!resolveArgs) {
+          this._emit(`runtime.promisify(${ext}["${node.prop}"].bind(${ext}))(context`);
+        }
+        else {
+          this._emit(`runtime.resolveArguments(runtime.promisify(${ext}["${node.prop}"].bind(${ext})), 1)(context`);
+        }
       }
     } else {
       //use the original nunjucks callback mechanism
       this._emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
     }
 
-    if (args || contentArgs) {
+    if (args || contentArgs.length) {
       this._emit(',');
     }
 

@@ -1949,7 +1949,7 @@
           this.tags = [tagName, 'separator'];
           this.method = method;
           this.supportsBody = options.supportsBody || false;
-          this.parallel = options.parallel || false;
+          this.doNotResolveArgs = options.doNotResolveArgs || false;
           this.oldAsync = options.oldAsync || false;
           this.numContentArgs = 0; // Will be set during parsing
         }
@@ -1971,28 +1971,16 @@
           parser.advanceAfterBlockEnd(tok.value); // Move parser past the block end
 
           let contentArgs = [];
-
           if (this.supportsBody) {
             contentArgs = this.parseBody(parser, nodes, tok.value);
             this.numContentArgs = contentArgs.length;
+          }
 
-            // Return a CallExtension node with arguments and content bodies
-            if (this.parallel) {
-              return new nodes.CallExtension(this, 'run', args, contentArgs, false);
-            } else if (this.oldAsync) {
-              return new nodes.CallExtensionAsync(this, 'run', args, contentArgs, true);
-            } else {
-              return new nodes.CallExtension(this, 'run', args, contentArgs, true);
-            }
+          // Return a CallExtension node with arguments and optional content bodies
+          if (this.oldAsync) {
+            return new nodes.CallExtensionAsync(this, 'run', args, contentArgs, !this.doNotResolveArgs);
           } else {
-            // Return a CallExtension node without body
-            if (this.parallel) {
-              return new nodes.CallExtension(this, 'run', args, false);
-            } else if (this.oldAsync) {
-              return new nodes.CallExtensionAsync(this, 'run', args, true);
-            } else {
-              return new nodes.CallExtension(this, 'run', args, true);
-            }
+            return new nodes.CallExtension(this, 'run', args, contentArgs, !this.doNotResolveArgs);
           }
         }
 
@@ -2034,7 +2022,7 @@
         }
 
         async run(context, ...args) {
-          if(this.parallel) {
+          if(this.doNotResolveArgs) {
             await Promise.all(args);
           }
 
@@ -2047,7 +2035,7 @@
           const bodies = [];
           for(let i=0; i<this.numContentArgs; i++) {
             let body = args.pop();
-            if(!this.parallel) {
+            if(!this.doNotResolveArgs) {
               // Render the body content if it's a function
               body = await new Promise((resolve, reject) => {
                 body((err, res) => {
@@ -2366,15 +2354,16 @@
       it('should handle an extension with a single content block', async () => {
         const options = [
           {supportsBody: true, extName: 'wrap'},//the old API, but returning async value
-          {supportsBody: true, extName: 'pwrap', parallel: true},
+          {supportsBody: true, extName: 'pwrap', doNotResolveArgs: true},
           {supportsBody: true, extName: 'awrap', oldAsync: true},
+          {supportsBody: true, extName: 'apwrap', oldAsync: true, doNotResolveArgs: true},
         ]
         for(const option of options) {
           const extName = option.extName;
           const wrapExtension = new AsyncExtension(
             extName,
             async (context, tagName, bodyContent) => {
-              if( option.parallel ) {
+              if( option.doNotResolveArgs ) {
                 bodyContent = await bodyContent;
               }
               await delay(5);
@@ -2412,7 +2401,7 @@
       it('should handle an extension with multiple content blocks', async () => {
         const options = [
           { supportsBody: true, extName: 'wrap' },
-          { supportsBody: true, extName: 'pwrap', parallel: true },
+          { supportsBody: true, extName: 'pwrap', doNotResolveArgs: true },
           { supportsBody: true, extName: 'awrap', oldAsync: true },
         ];
         for (const option of options) {
