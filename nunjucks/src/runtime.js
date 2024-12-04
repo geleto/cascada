@@ -698,6 +698,106 @@ function fromIterator(arr) {
   }
 }
 
+// runtime.js
+async function iterate(arr, loopBody, loopElse, frame, options = {}) {
+  let didIterate = false;
+  const loopVars = options.loopVars || [];
+  const isAsync = options.async || false;
+
+  if (arr) {
+    if (isAsync && typeof arr[Symbol.asyncIterator] === 'function') {
+      const iterator = arr[Symbol.asyncIterator]();
+      let index = 0;
+      let result;
+
+      while ((result = await iterator.next()), !result.done) {
+        didIterate = true;
+        const value = result.value;
+
+        const loop = {
+          index: index + 1,
+          index0: index,
+          revindex: undefined,
+          revindex0: undefined,
+          first: index === 0,
+          last: undefined,
+          length: undefined,
+        };
+
+        if (loopVars.length === 1) {
+          await loopBody(value, loop);
+        } else {
+          if (!Array.isArray(value)) {
+            throw new Error('Expected an array for destructuring');
+          }
+          await loopBody(...value.slice(0, loopVars.length), loop);
+        }
+
+        index++;
+      }
+    } else {
+      arr = fromIterator(arr);
+
+      if (Array.isArray(arr)) {
+        const len = arr.length;
+
+        for (let i = 0; i < len; i++) {
+          didIterate = true;
+          const value = arr[i];
+
+          const loop = {
+            index: i + 1,
+            index0: i,
+            revindex: len - i,
+            revindex0: len - i - 1,
+            first: i === 0,
+            last: i === len - 1,
+            length: len,
+          };
+
+          if (loopVars.length === 1) {
+            await loopBody(value, loop);
+          } else {
+            if (!Array.isArray(value)) {
+              throw new Error('Expected an array for destructuring');
+            }
+            await loopBody(...value.slice(0, loopVars.length), loop);
+          }
+        }
+      } else {
+        const keys = Object.keys(arr);
+        const len = keys.length;
+
+        for (let i = 0; i < len; i++) {
+          didIterate = true;
+          const key = keys[i];
+          const value = arr[key];
+
+          const loop = {
+            index: i + 1,
+            index0: i,
+            revindex: len - i,
+            revindex0: len - i - 1,
+            first: i === 0,
+            last: i === len - 1,
+            length: len,
+          };
+
+          if (loopVars.length === 2) {
+            await loopBody(key, value, loop);
+          } else {
+            throw new Error('Expected two variables for key/value iteration');
+          }
+        }
+      }
+    }
+  }
+
+  if (!didIterate && loopElse) {
+    await loopElse();
+  }
+}
+
 module.exports = {
   Frame: Frame,
   AsyncFrame: AsyncFrame,
@@ -730,5 +830,6 @@ module.exports = {
   asyncEach: asyncEach,
   asyncAll: asyncAll,
   inOperator: lib.inOperator,
-  fromIterator: fromIterator
+  fromIterator: fromIterator,
+  iterate: iterate
 };
