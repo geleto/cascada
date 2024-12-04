@@ -12,7 +12,7 @@ const OPTIMIZE_ASYNC = true;//optimize async operations
 // these are nodes that may perform async operations even if their children do not
 const asyncOperationNodes = new Set([
   //expression nodes
-  'LookupVal', 'Symbol', 'FunCall', 'Filter', 'Caller', 'CallExtension', 'CallExtensionAsync', 'CallExtensionUnresolvedArgs', 'Is',
+  'LookupVal', 'Symbol', 'FunCall', 'Filter', 'Caller', 'CallExtension', 'CallExtensionAsync', 'Is',
   //control nodes that can be async even if their children are not
   'Extends', 'Include', 'Import', 'FromImport', 'Super'
 ]);
@@ -483,15 +483,14 @@ class Compiler extends Obj {
   /**
    * CallExtension - no callback, can return either value or promise
    * CallExtensionAsync - uses callback, async = true. This was the way to handle the old nunjucks async
-   * CallExtensionUnresolvedArgs - parameters can be promises, can return either value or promise, parallel = true
+   * @todo - rewrite with _emitAggregate
    */
-  compileCallExtension(node, frame, async, parallel) {
+  compileCallExtension(node, frame, async) {
     var args = node.args;
     var contentArgs = node.contentArgs;
     var autoescape = typeof node.autoescape === 'boolean' ? node.autoescape : true;
-    var noExtensionCallback = !async || parallel;//assign the return value directly, no callback
-
-    parallel = parallel && node.isAsync;
+    var noExtensionCallback = !async;//assign the return value directly, no callback
+    var resolveArgs = node.resolveArgs && node.isAsync;
 
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
@@ -501,12 +500,12 @@ class Compiler extends Obj {
       this._emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
       if(noExtensionCallback) {
         //the extension returns a value directly
-        if(!node.isAsync || parallel) {
+        if(!resolveArgs) {
           //send the arguments as they are - promises or values
           this._emit(`${ext}["${node.prop}"](context`);
         }
         else {
-          //async but not parallel - resolve the arguments before calling the function
+          //resolve the arguments before calling the function
           this._emit(`runtime.resolveArguments(${ext}["${node.prop}"].bind(${ext}), 1)(context`);
         }
       } else {
@@ -547,7 +546,7 @@ class Compiler extends Obj {
         }
 
         if (arg) {
-          if(parallel) {
+          if(!resolveArgs) {
             //in parallel mode, the contentArgs are promises
             this._emitAsyncRenderClosure( node, function() {
               this.compile(arg, frame);
@@ -591,11 +590,6 @@ class Compiler extends Obj {
   compileCallExtensionAsync(node, frame) {
     this.compileCallExtension(node, frame, true);
   }
-
-  compileCallExtensionUnresolvedArgs(node, frame) {
-    this.compileCallExtension(node, frame, true, true);
-  }
-
 
   compileNodeList(node, frame) {
     this._compileChildren(node, frame);

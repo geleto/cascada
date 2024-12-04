@@ -145,19 +145,27 @@ const Neg = UnaryOp.extend('Neg');
 const Pos = UnaryOp.extend('Pos');
 const Compare = Node.extend('Compare', { fields: ['expr', 'ops'] });
 const CompareOperand = Node.extend('CompareOperand', { fields: ['expr', 'type'] });
+
 const CallExtension = Node.extend('CallExtension', {
-  init(ext, prop, args, contentArgs) {
+  init(ext, prop, args, contentArgs, resolveArgs = true) {
     this.parent();
     this.extName = ext.__name || ext;
     this.prop = prop;
     this.args = args || new NodeList();
     this.contentArgs = contentArgs || [];
     this.autoescape = ext.autoescape;
+    this.resolveArgs = resolveArgs;
   },
   fields: ['extName', 'prop', 'args', 'contentArgs']
 });
-const CallExtensionAsync = CallExtension.extend('CallExtensionAsync');
-const CallExtensionUnresolvedArgs = CallExtension.extend('CallExtensionUnresolvedArgs');
+
+//const CallExtensionAsync = CallExtension.extend('CallExtensionAsync');
+const CallExtensionAsync = CallExtension.extend('CallExtensionAsync', {
+  int(ext, prop, args, contentArgs, resolveArgs = true) {
+    this.parent(ext, prop, args, contentArgs, resolveArgs);
+  }
+});
+
 
 // This is hacky, but this is just a debugging function anyway
 function print(str, indent, inline) {
@@ -278,7 +286,6 @@ module.exports = {
 
   CallExtension: CallExtension,
   CallExtensionAsync: CallExtensionAsync,
-  CallExtensionUnresolvedArgs: CallExtensionUnresolvedArgs,
 
   printNodes: printNodes
 };
