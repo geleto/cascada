@@ -1127,107 +1127,134 @@ class Compiler extends Obj {
   }
 
   compileFor(node, frame) {
-    this._emitBufferBlockBegin(node);
+    // Begin buffer block for the node
+    if(node.isAsync) {
+      this._emitBufferBlockBegin(node);
+    } else {
+      this._emitLine('frame = frame.push();');
+    }
+    frame = frame.push();
 
+    // Evaluate the array expression
     const arr = this._tmpid();
     this._emit(`let ${arr} = `);
     this._compileAwaitedExpression(node.arr, frame);
     this._emitLine(';');
 
-    frame = frame.push(); // Push frame before iteration starts
-    this._emitLine('frame = frame.push();');
 
+
+    // Determine loop variable names
     const loopVars = [];
     if (node.name instanceof nodes.Array) {
-        node.name.children.forEach((child) => {
-            loopVars.push(child.value);
-            frame.set(child.value, child.value);
-        });
+      node.name.children.forEach((child) => {
+        loopVars.push(child.value);
+        frame.set(child.value, child.value);
+      });
     } else {
-        loopVars.push(node.name.value);
-        frame.set(node.name.value, node.name.value);
+      loopVars.push(node.name.value);
+      frame.set(node.name.value, node.name.value);
     }
 
-    const didIterate = this._tmpid();
-    this._emitLine(`let ${didIterate} = false;`);
-
+    // Determine if we're in async mode
     const isAsync = this.asyncMode && node.isAsync;
 
+    // Define the loop body function
     const loopBodyFunc = this._tmpid();
     this._emit(`let ${loopBodyFunc} = `);
 
+    // Function declaration based on async mode
     if (isAsync) {
-        this._emit(`async function(`);
+      this._emit('async function(');
     } else {
-        this._emit(`function(`);
+      this._emit('function(');
     }
 
+    // Function parameters
     loopVars.forEach((varName, index) => {
-        if (index > 0) {
-            this._emit(', ');
-        }
-        this._emit(varName);
+      if (index > 0) {
+        this._emit(', ');
+      }
+      this._emit(varName);
     });
     const loopIndex = this._tmpid();
     const loopLength = this._tmpid();
     this._emit(`, ${loopIndex}, ${loopLength}) {`);
 
-    // Ensure frame push inside the loop body
-    this._emitLine('frame = frame.push();');
-
-    this._emitBufferBlockBegin(node);
-    loopVars.forEach((varName) => {
-        this._emitLine(`frame.set("${varName}", ${varName});`);
-    });
-    this._emitLoopBindings(loopIndex, loopLength);
-
-    const bodyFrame = frame.push();
-    this._withScopedSyntax(() => {
-        this.compile(node.body, bodyFrame);
-    });
-
-    this._emitBufferBlockEnd(node);
-    this._emitLine('frame = frame.pop();'); // Pop frame after loop body
-    this._emitLine('};');
-
-    let elseFuncId = 'null';
-    if (node.else_) {
-        elseFuncId = this._tmpid();
-        this._emit(`let ${elseFuncId} = `);
-
-        if (isAsync) {
-            this._emit(`async function() {`);
-        } else {
-            this._emit(`function() {`);
-        }
-
-        this._emitLine('frame = frame.push();');
-        this._emitBufferBlockBegin(node);
-
-        const elseFrame = frame.push();
-        this.compile(node.else_, elseFrame);
-
-        this._emitBufferBlockEnd(node);
-        this._emitLine('frame = frame.pop();'); // Pop frame after else block
-        this._emitLine('};');
+    // Begin buffer block for the loop body
+    if(node.isAsync) {
+      this._emitBufferBlockBegin(node);
+      frame = frame.push();
     }
 
-    this._emit(
-        `${isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, { loopVars: [`
-    );
-    loopVars.forEach((varName, index) => {
-        if (index > 0) {
-            this._emit(', ');
-        }
-        this._emit(`"${varName}"`);
+    // Set loop variables in the frame
+    loopVars.forEach((varName) => {
+      this._emitLine(`frame.set("${varName}", ${varName});`);
     });
-    this._emit(`], async: ${isAsync} });`);
 
-    this._emitLine('frame = frame.pop();'); // Pop frame after loop
-    this._emitBufferBlockEnd(node);
+    // Set loop bindings
+    this._emitLoopBindings(loopIndex, loopLength);
+
+    // Compile the loop body with the updated frame
+    //const bodyFrame = frame.push();
+    this._withScopedSyntax(() => {
+      this.compile(node.body, frame);//bodyFrame);
+    });
+
+    // End buffer block for the loop body and **always** pop the frame
+    if(node.isAsync) {
+     this._emitBufferBlockEnd(node);
+     frame = frame.pop();
+    }
+
+    // Close the loop body function
+    this._emitLine('};');
+
+    // Define the else function if it exists
+    let elseFuncId = 'null';
+    if (node.else_) {
+      elseFuncId = this._tmpid();
+      this._emit(`let ${elseFuncId} = `);
+
+      // Function declaration based on async mode
+      if (isAsync) {
+        this._emit('async function() {');
+      } else {
+        this._emit('function() {');
+      }
+
+      // Begin buffer block for the else block
+      if(node.isAsync) {
+        this._emitBufferBlockBegin(node);
+        frame = frame.push();
+      }
+
+      this.compile(node.else_, frame);
+
+      if(node.isAsync) {
+        this._emitBufferBlockEnd(node);
+        frame = frame.pop();
+      }
+      this._emitLine('};');
+    }
+
+    // Call the runtime loop function
+    this._emit(`${isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, {loopVars: [`);
+    loopVars.forEach((varName, index) => {
+      if (index > 0) {
+        this._emit(', ');
+      }
+      this._emit(`"${varName}"`);
+    });
+    this._emit(`], async: ${isAsync}});`);
+
+    // End buffer block for the node
+    if(node.isAsync) {
+      this._emitBufferBlockEnd(node);
+    } else {
+      this._emitLine('frame = frame.pop();');
+    }
+    frame = frame.pop();
   }
-
-
 
   _emitAsyncLoopBindings(node, arr, i, len) {
     const bindings = [
