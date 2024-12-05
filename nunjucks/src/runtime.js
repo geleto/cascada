@@ -698,7 +698,6 @@ function fromIterator(arr) {
   }
 }
 
-// runtime.js
 async function iterate(arr, loopBody, loopElse, frame, options = {}) {
   let didIterate = false;
   const loopVars = options.loopVars || [];
@@ -707,33 +706,26 @@ async function iterate(arr, loopBody, loopElse, frame, options = {}) {
   if (arr) {
     if (isAsync && typeof arr[Symbol.asyncIterator] === 'function') {
       const iterator = arr[Symbol.asyncIterator]();
-      let index = 0;
       let result;
+      const values = [];
 
       while ((result = await iterator.next()), !result.done) {
-        didIterate = true;
-        const value = result.value;
+        values.push(result.value);
+      }
 
-        const loop = {
-          index: index + 1,
-          index0: index,
-          revindex: undefined,
-          revindex0: undefined,
-          first: index === 0,
-          last: undefined,
-          length: undefined,
-        };
+      const len = values.length;
+      for (let i = 0; i < len; i++) {
+        didIterate = true;
+        const value = values[i];
 
         if (loopVars.length === 1) {
-          await loopBody(value, loop);
+          await loopBody(value, i, len);
         } else {
           if (!Array.isArray(value)) {
             throw new Error('Expected an array for destructuring');
           }
-          await loopBody(...value.slice(0, loopVars.length), loop);
+          await loopBody(...value.slice(0, loopVars.length), i, len);
         }
-
-        index++;
       }
     } else {
       arr = fromIterator(arr);
@@ -745,23 +737,13 @@ async function iterate(arr, loopBody, loopElse, frame, options = {}) {
           didIterate = true;
           const value = arr[i];
 
-          const loop = {
-            index: i + 1,
-            index0: i,
-            revindex: len - i,
-            revindex0: len - i - 1,
-            first: i === 0,
-            last: i === len - 1,
-            length: len,
-          };
-
           if (loopVars.length === 1) {
-            await loopBody(value, loop);
+            loopBody(value, i, len);
           } else {
             if (!Array.isArray(value)) {
               throw new Error('Expected an array for destructuring');
             }
-            await loopBody(...value.slice(0, loopVars.length), loop);
+            loopBody(...value.slice(0, loopVars.length), i, len);
           }
         }
       } else {
@@ -773,18 +755,8 @@ async function iterate(arr, loopBody, loopElse, frame, options = {}) {
           const key = keys[i];
           const value = arr[key];
 
-          const loop = {
-            index: i + 1,
-            index0: i,
-            revindex: len - i,
-            revindex0: len - i - 1,
-            first: i === 0,
-            last: i === len - 1,
-            length: len,
-          };
-
           if (loopVars.length === 2) {
-            await loopBody(key, value, loop);
+            loopBody(key, value, i, len);
           } else {
             throw new Error('Expected two variables for key/value iteration');
           }
