@@ -1223,7 +1223,13 @@ class Compiler extends Obj {
     this._emitBufferBlockBegin(node);
 
     // Handle array unpacking within the loop body
-    if (node.name instanceof nodes.Array) {
+    if (loopVars.length === 2 && !Array.isArray(arr)) {
+      // Object key/value iteration
+      const [keyVar, valueVar] = loopVars;
+      this._emitLine(`frame.set("${keyVar}", ${keyVar});`);
+      this._emitLine(`frame.set("${valueVar}", ${valueVar});`);
+    } else if (node.name instanceof nodes.Array) {
+      // Array destructuring
       node.name.children.forEach((child, index) => {
         const varName = child.value;
         const tid = this._tmpid();
@@ -1231,10 +1237,9 @@ class Compiler extends Obj {
         this._emitLine(`frame.set("${child.value}", ${tid});`);
       });
     } else {
-      // Set single loop variable in the frame
-      loopVars.forEach((varName) => {
-        this._emitLine(`frame.set("${varName}", ${varName});`);
-      });
+      // Single variable loop
+      const varName = node.name.value;
+      this._emitLine(`frame.set("${varName}", ${varName});`);
     }
 
     // Set loop bindings

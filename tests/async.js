@@ -743,6 +743,61 @@
           eggs costs $3.99`);
       });
 
+      it('should handle object iteration with async functions', async () => {
+        const context = {
+          inventory: {
+            milk: 10,
+            bread: 5,
+            eggs: 0
+          },
+          async checkAvailability(item, quantity) {
+            await delay(10);
+            if (quantity === 0) {
+              return `${item} - out of stock`;
+            }
+            return `${item} - ${quantity} in stock`;
+          }
+        };
+
+        const template = `
+        {%- for item, qty in inventory %}
+          {{ checkAvailability(item, qty) }}
+        {%- endfor %}`;
+
+        const result = await env.renderString(template, context);
+        expect(result).to.equal(`
+          milk - 10 in stock
+          bread - 5 in stock
+          eggs - out of stock`);
+      });
+
+      it('should handle object iteration with nested async calls and array unpacking', async () => {
+        const context = {
+          staffByDept: {
+            IT: [['John', 'senior'], ['Jane', 'junior']],
+            HR: [['Bob', 'manager'], ['Alice', 'intern']]
+          },
+          async getDeptSummary(dept, staff) {
+            await delay(10);
+            const details = await Promise.all(staff.map(async ([name, level]) => {
+              await delay(5);
+              return `${name} (${level})`;
+            }));
+            return `${dept}: ${details.join(', ')}`;
+          }
+        };
+
+        const template = `
+        {%- for dept, staff in staffByDept %}
+          {{ getDeptSummary(dept, staff) }}
+        {%- endfor %}`;
+
+        const result = await env.renderString(template, context);
+        expect(result).to.equal(`
+          IT: John (senior), Jane (junior)
+          HR: Bob (manager), Alice (intern)`);
+      });
+
     });
 
     describe('Conditional Statements', () => {
