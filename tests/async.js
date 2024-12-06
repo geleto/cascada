@@ -798,6 +798,32 @@
           HR: Bob (manager), Alice (intern)`);
       });
 
+      it('should handle iterating objects with promise values', async () => {
+        const context = {
+          async getInventory() {
+            await delay(10);
+            return {
+              milk: Promise.resolve(10),
+              bread: Promise.resolve(5)
+            };
+          },
+          async format(item, qty) {
+            await delay(5);
+            return `${item}: ${qty}`;
+          }
+        };
+
+        const template = `
+        {%- for item, qty in getInventory() %}
+          {{ format(item, qty) }}
+        {%- endfor %}`;
+
+        const result = await env.renderString(template, context);
+        expect(result).to.equal(`
+          milk: 10
+          bread: 5`);
+      });
+
     });
 
     describe('Conditional Statements', () => {
