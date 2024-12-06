@@ -3964,9 +3964,9 @@
         {%- endfor %}`;
         const result = await env.renderString(template, context);
         expect(result.trim()).to.equal(
-          '- Index: 1, First: true, Last: ' +
-          ' - Index: 2, First: false, Last: ' +
-          ' - Index: 3, First: false, Last:'
+          '- Index: 1, First: true, Last: false' +
+          ' - Index: 2, First: false, Last: false' +
+          ' - Index: 3, First: false, Last: true'
         );
       });
 

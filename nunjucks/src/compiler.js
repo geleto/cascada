@@ -116,16 +116,24 @@ class Compiler extends Obj {
   }
 
   // an async block that does not have a value should be wrapped in this
-  _emitAsyncBlockBegin( node ) {
+  _emitAsyncBlockBegin( node, frame ) {
     if (node.isAsync) {
       this._emitLine(`(async (astate) => {`);
       this._emitLine('try {');
       this._emitLine('let frame = astate.snapshotFrame;');
       this.asyncClosureDepth++;
     }
+    if(frame){
+      frame = frame.push();
+      if(!node.isAsync){
+        this._emitLine('frame = frame.push();');
+      }
+      return frame;
+    }
+    return null;
   }
 
-  _emitAsyncBlockEnd( node ) {
+  _emitAsyncBlockEnd( node, frame ) {
     if (node.isAsync) {
       this.asyncClosureDepth--;
       this._emitLine(`} catch (e) {`);
@@ -136,6 +144,14 @@ class Compiler extends Obj {
       this._emitLine(`}`);
       this._emitLine(`})(astate.enterClosure(frame.snapshot()));`);
     }
+    if(frame){
+      frame = frame.pop();
+      if(!node.isAsync){
+        this._emitLine('frame = frame.pop();');
+      }
+      return frame;
+    }
+    return null;
   }
 
   //@todo - do this only if a child is using frame
@@ -155,16 +171,24 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAsyncValueBegin( node ) {
+  _emitAsyncValueBegin( node, frame ) {
     if (node.isAsync) {
       this._emitLine(`(async (astate) => {`);
       this._emitLine('try {');
       this._emitLine('  let frame = astate.snapshotFrame;');
       this.asyncClosureDepth++;
     }
+    if(frame){
+      frame = frame.push();
+      if(!node.isAsync){
+        this._emitLine('frame = frame.push();');
+      }
+      return frame;
+    }
+    return null;
   }
 
-  _emitAsyncValueEnd( node ) {
+  _emitAsyncValueEnd( node, frame ) {
     if (node.isAsync) {
       this._emitLine(`} catch (e) {`);
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
@@ -174,6 +198,14 @@ class Compiler extends Obj {
       this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
       this.asyncClosureDepth--;
     }
+    if(frame){
+      frame = frame.pop();
+      if(!node.isAsync){
+        this._emitLine('frame = frame.pop();');
+      }
+      return frame;
+    }
+    return null;
   }
 
   _emitAsyncRenderClosure( node, innerBodyFunction, callbackName = null) {
@@ -292,10 +324,10 @@ class Compiler extends Obj {
     }
   }
 
-  _emitBufferBlockBegin(node) {
+  _emitBufferBlockBegin(node, frame) {
     if (node.isAsync) {
       // Start the async closure
-      this._emitAsyncBlockBegin( node );
+      frame = this._emitAsyncBlockBegin( node, frame );
 
       // Push the current buffer onto the stack
       this.bufferStack.push(this.buffer);
@@ -312,18 +344,30 @@ class Compiler extends Obj {
 
       // Update the buffer reference
       this.buffer = newBuffer;
-      // No need to update bufferIndex; we'll use `${this.buffer}_index` when needed
+      // No need to update bufferIndex, we'll use `${this.buffer}_index` when needed
+      return frame;
+    } else if (frame) {
+      frame = frame.push();
+      this._emitLine('frame = frame.push();');
+      return frame;
     }
+    return null;
   }
 
-  _emitBufferBlockEnd(node) {
+  _emitBufferBlockEnd(node, frame) {
     if (node.isAsync) {
       // End the async closure
-      this._emitAsyncBlockEnd( node );
+      frame = this._emitAsyncBlockEnd( node, frame );
 
       // Restore the previous buffer from the stack
       this.buffer = this.bufferStack.pop();
+      return frame;
+    } else if (frame){
+      frame = frame.pop();
+      this._emitLine('frame = frame.pop();');
+      return frame;
     }
+    return null;
   }
 
   //awaiting a non-promise value is slow and should be avoided
@@ -1126,14 +1170,10 @@ class Compiler extends Obj {
     }
   }
 
+  //@todo - in asyncMode each loop body is in separate context even if !node.isAsync
   compileFor(node, frame) {
     // Begin buffer block for the node
-    if(node.isAsync) {
-      this._emitBufferBlockBegin(node);
-    } else {
-      this._emitLine('frame = frame.push();');
-    }
-    frame = frame.push();
+    frame = this._emitBufferBlockBegin(node, frame);
 
     // Evaluate the array expression
     const arr = this._tmpid();
@@ -1248,12 +1288,7 @@ class Compiler extends Obj {
     this._emit(`], async: ${isAsync}});`);
 
     // End buffer block for the node
-    if(node.isAsync) {
-      this._emitBufferBlockEnd(node);
-    } else {
-      this._emitLine('frame = frame.pop();');
-    }
-    frame = frame.pop();
+    frame = this._emitBufferBlockEnd(node, frame);
   }
 
   _emitAsyncLoopBindings(node, arr, i, len) {
