@@ -2238,7 +2238,7 @@
             {%- endfor %}
           </ul>`;
 
-        const result = await env.renderString(template);//@todo - this will not work with renderString, nunjucks bug? - test
+        const result = await env.renderString(template);
         const expected = `
           <ul>
               <li>Alice</li>

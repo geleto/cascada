@@ -1172,7 +1172,9 @@ class Compiler extends Obj {
 
   //@todo - in asyncMode each loop body is in separate context even if !node.isAsync
   compileFor(node, frame) {
-    // Begin buffer block for the node
+    // Some of this code is ugly, but it keeps the generated code
+    // as fast as possible. ForAsync also shares some of this, but
+    // not much.
     frame = this._emitBufferBlockBegin(node, frame);
 
     // Evaluate the array expression
@@ -1180,8 +1182,6 @@ class Compiler extends Obj {
     this._emit(`let ${arr} = `);
     this._compileAwaitedExpression(node.arr, frame);
     this._emitLine(';');
-
-
 
     // Determine loop variable names
     const loopVars = [];
@@ -1221,10 +1221,7 @@ class Compiler extends Obj {
     this._emit(`, ${loopIndex}, ${loopLength}) {`);
 
     // Begin buffer block for the loop body
-    if(node.isAsync) {
-      this._emitBufferBlockBegin(node);
-      frame = frame.push();
-    }
+    this._emitBufferBlockBegin(node);
 
     // Set loop variables in the frame
     loopVars.forEach((varName) => {
@@ -1241,10 +1238,7 @@ class Compiler extends Obj {
     });
 
     // End buffer block for the loop body and **always** pop the frame
-    if(node.isAsync) {
-     this._emitBufferBlockEnd(node);
-     frame = frame.pop();
-    }
+    this._emitBufferBlockEnd(node);
 
     // Close the loop body function
     this._emitLine('};');
@@ -1263,17 +1257,10 @@ class Compiler extends Obj {
       }
 
       // Begin buffer block for the else block
-      if(node.isAsync) {
-        this._emitBufferBlockBegin(node);
-        frame = frame.push();
-      }
-
+      this._emitBufferBlockBegin(node);
       this.compile(node.else_, frame);
+      this._emitBufferBlockEnd(node);
 
-      if(node.isAsync) {
-        this._emitBufferBlockEnd(node);
-        frame = frame.pop();
-      }
       this._emitLine('};');
     }
 
@@ -1337,8 +1324,8 @@ class Compiler extends Obj {
     len = this._tmpid();
     arr = this._tmpid();
     asyncMethod = parallel ? 'asyncAll' : 'asyncEach';
-    frame = frame.push();
 
+    frame = frame.push();
     this._emitLine('frame = frame.push();');
 
     this._emit('let ' + arr + ' = runtime.fromIterator(');
