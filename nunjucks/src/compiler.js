@@ -1223,21 +1223,30 @@ class Compiler extends Obj {
     // Begin buffer block for the loop body
     this._emitBufferBlockBegin(node);
 
-    // Set loop variables in the frame
-    loopVars.forEach((varName) => {
-      this._emitLine(`frame.set("${varName}", ${varName});`);
-    });
+    // Handle array unpacking within the loop body
+    if (node.name instanceof nodes.Array) {
+      node.name.children.forEach((child, index) => {
+        const varName = child.value;
+        const tid = this._tmpid();
+        this._emitLine(`let ${tid} = Array.isArray(${varName}) ? ${varName}[${index}] : undefined;`);
+        this._emitLine(`frame.set("${child.value}", ${tid});`);
+      });
+    } else {
+      // Set single loop variable in the frame
+      loopVars.forEach((varName) => {
+        this._emitLine(`frame.set("${varName}", ${varName});`);
+      });
+    }
 
     // Set loop bindings
     this._emitLoopBindings(loopIndex, loopLength);
 
     // Compile the loop body with the updated frame
-    //const bodyFrame = frame.push();
     this._withScopedSyntax(() => {
-      this.compile(node.body, frame);//bodyFrame);
+      this.compile(node.body, frame);
     });
 
-    // End buffer block for the loop body and **always** pop the frame
+    // End buffer block for the loop body
     this._emitBufferBlockEnd(node);
 
     // Close the loop body function

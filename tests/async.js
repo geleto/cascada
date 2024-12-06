@@ -719,6 +719,30 @@
             - Alice (manager)`
         );
       });
+
+      it('should handle object iterations with nested async calls', async () => {
+        const context = {
+          data: {
+            products: { milk: 2.99, bread: 1.99, eggs: 3.99 },
+            async getDescription(item, price) {
+              await delay(10);
+              return `${item} costs $${price}`;
+            }
+          }
+        };
+
+        const template = `
+        {%- for item, price in data.products %}
+          {{ data.getDescription(item, price) }}
+        {%- endfor %}`;
+
+        const result = await env.renderString(template, context);
+        expect(result).to.equal(`
+          milk costs $2.99
+          bread costs $1.99
+          eggs costs $3.99`);
+      });
+
     });
 
     describe('Conditional Statements', () => {
