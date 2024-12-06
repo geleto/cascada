@@ -197,8 +197,8 @@ class AsyncFrame {
     return new AsyncFrame();//undefined, this.isolateWrites);
   }
 
-  snapshot() {
-    let snapshotFrame = new AsyncFrame(this, this.isolateWrites);
+  snapshot(createScope = false) {
+    let snapshotFrame = new AsyncFrame(this, this.isolateWrites);//@todo - should isolateWrites be passed here?
     snapshotFrame.isSnapshot = true;
     this._addSnapshot(snapshotFrame);
     return snapshotFrame;

@@ -142,7 +142,7 @@ class Compiler extends Obj {
       this._emitLine('  astate.leaveClosure();');
 
       this._emitLine(`}`);
-      this._emitLine(`})(astate.enterClosure(frame.snapshot()));`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot(${!!frame})));`);
     }
     if(frame){
       frame = frame.pop();
@@ -195,7 +195,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveClosure();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot(${!!frame})))`);
       this.asyncClosureDepth--;
     }
     if(frame){
@@ -253,7 +253,7 @@ class Compiler extends Obj {
     this._emitLine('} finally {');
     this._emitLine('  astate.leaveClosure();');
     this._emitLine('}');
-    this._emitLine(`})(astate.enterClosure(frame.snapshot()))`);
+    this._emitLine(`})(astate.enterClosure(frame.snapshot(true)))`);
     //in the non-callback case, using the rendered buffer will throw the error
   }
 
@@ -1175,6 +1175,8 @@ class Compiler extends Obj {
     // Some of this code is ugly, but it keeps the generated code
     // as fast as possible. ForAsync also shares some of this, but
     // not much.
+
+    //@todo - if node.arr is not async - we can create the buffer block without async block in it and just push the frame
     frame = this._emitBufferBlockBegin(node, frame);
 
     // Evaluate the array expression
@@ -1195,15 +1197,12 @@ class Compiler extends Obj {
       frame.set(node.name.value, node.name.value);
     }
 
-    // Determine if we're in async mode
-    const isAsync = this.asyncMode && node.isAsync;
-
     // Define the loop body function
     const loopBodyFunc = this._tmpid();
     this._emit(`let ${loopBodyFunc} = `);
 
     // Function declaration based on async mode
-    if (isAsync) {
+    if (node.isAsync) {
       this._emit('async function(');
     } else {
       this._emit('function(');
@@ -1259,7 +1258,7 @@ class Compiler extends Obj {
       this._emit(`let ${elseFuncId} = `);
 
       // Function declaration based on async mode
-      if (isAsync) {
+      if (node.isAsync) {
         this._emit('async function() {');
       } else {
         this._emit('function() {');
@@ -1274,14 +1273,14 @@ class Compiler extends Obj {
     }
 
     // Call the runtime loop function
-    this._emit(`${isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, {loopVars: [`);
+    this._emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, {loopVars: [`);
     loopVars.forEach((varName, index) => {
       if (index > 0) {
         this._emit(', ');
       }
       this._emit(`"${varName}"`);
     });
-    this._emit(`], async: ${isAsync}});`);
+    this._emit(`], async: ${node.isAsync}});`);
 
     // End buffer block for the node
     frame = this._emitBufferBlockEnd(node, frame);
@@ -1398,6 +1397,7 @@ class Compiler extends Obj {
     }
 
     this._emitLine('frame = frame.pop();');
+    frame = frame.pop();// - not in nunjucks and breaks one test, todo - investigate
   }
 
   compileAsyncEach(node, frame) {
