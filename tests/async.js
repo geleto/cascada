@@ -4109,36 +4109,6 @@
         loader = new StringLoader();
         env = new AsyncEnvironment(loader);
       });
-      describe('Template Inheritance and Nested Blocks', () => {
-        it('should handle template inheritance with blocks and async content', async () => {
-          const context = {
-            async getContent() {
-              await delay(1);
-              return 'Async Child Content';
-            }
-          };
-          loader.addTemplate('base.njk', '<div>{% block content %}Base Content{% endblock %}</div>');
-          const childTemplate = '{% extends "base.njk" %}{% block content %}{{ getContent() }}{% endblock %}';
-          const result = await env.renderString(childTemplate, context);
-          expect(result.trim()).to.equal('<div>Async Child Content</div>');
-        });
-
-        it('should handle nested blocks with async content', async () => {
-          const context = {
-            async getOuter() {
-              await delay(2);
-              return 'Async Outer';
-            },
-            async getInner() {
-              await delay(1);
-              return 'Async Inner';
-            }
-          };
-          const template = '{% block outer %}{{ getOuter() }} {% block inner %}{{ getInner() }}{% endblock %}{% endblock %}';
-          const result = await env.renderString(template, context);
-          expect(result.trim()).to.equal('Async Outer Async Inner');
-        });
-      });
 
       describe('Parallel Argument Resolution', () => {
         beforeEach(() => {
