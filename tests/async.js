@@ -4,20 +4,20 @@
   var expect;
   var unescape;
   var AsyncEnvironment;
-  //var Environment;
+  var Environment;
   var lexer;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
-    //Environment = require('../nunjucks/src/environment').Environment;
+    Environment = require('../nunjucks/src/environment').Environment;
     lexer = require('../nunjucks/src/lexer');
     unescape = require('he').unescape;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
-    //Environment = nunjucks.Environment;
+    Environment = nunjucks.Environment;
     lexer = nunjucks.lexer;
   }
 
@@ -4538,6 +4538,212 @@
         expect(result.trim()).to.equal('Async Fetched Data');
       });
 
+    });
+
+    describe('Simple race conditions with sets', () => {
+      let loader;
+      beforeEach(() => {
+        loader = new StringLoader();
+        env = new AsyncEnvironment(loader);
+      });
+
+      it('should correctly handle assignments in order irrespective of block delays ', async () => {
+        const context = {
+          slowCondition: (async () => {
+            await delay(5);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set value = 1 -%}
+          {%- if slowCondition -%}
+            {%- set value = 2 -%}
+          {%- endif -%}
+          {{ value }}`;
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('2');
+      });
+
+      it('Frame snapshot should get values that still have not been assigned ', async () => {
+        const context = {
+          slowCondition: (async () => {
+            await delay(6);
+            return true;
+          })(),
+          anotherSlowCondition: (async () => {
+            await delay(3);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set value = 1 -%}
+          {%- if slowCondition -%}
+            {%- set value = 2 -%}
+          {%- endif -%}
+          {%- if anotherSlowCondition -%}
+            {{ value }}
+          {%- endif -%}
+          {%- set value = 3 -%}`
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('2');
+      });
+    });
+
+
+    describe('Race conditions: Async Template Inheritance, Macros, and Super', () => {
+
+      let loader;
+      beforeEach(() => {
+        loader = new StringLoader();
+        env = new AsyncEnvironment(loader);
+      });
+
+      it('should handle extends with async super() and set', async () => {
+        const template = `
+          {%- extends "base_for_super.njk" -%}
+          {%- block content -%}
+            {%- set val = getPreSuperVal() -%}
+            {{ super()}}
+            {%- set val = getPostSuperVal() -%}
+            {{ val }}
+          {%- endblock -%}
+        `;
+
+        loader.addTemplate('base_for_super.njk', `
+          Base Content:
+          {%- block content -%}
+          Base Block: {{ val }}
+          {%- endblock -%}
+          `);
+
+        const context = {
+          async getPreSuperVal() {
+            await delay(5);
+            return 'PreSuperVal';
+          },
+          async getPostSuperVal() {
+            await delay(10);
+            return 'PostSuperVal';
+          }
+        };
+
+        // If sync worked:
+        // "Base Content:
+        //  Base Block: PreSuperVal
+        //  PostSuperVal"
+        expect((await env.renderString(template, context)).trim()).to.equal('Base Content:Base Block: PreSuperVal PostSuperVal');
+      })
+
+
+      // Macro with caller.
+      // Outside: val=1
+      // If condition async => sets val='OuterVal'
+      // Caller block sets val='InnerVal'
+      // Inside macro we see 'OuterVal' then 'InnerVal', after macro call val should be 'OuterVal' again.
+      // Without sync, these scoping rules won't hold.
+
+
+      it('should handle macro with async caller block', async () => {
+        const template = `
+          {%- import "macros_caller.njk" as m -%}
+          {%- set val = 1 -%}
+          {%- if slowCondition -%}
+            {%- set val = getOuterVal() -%}
+          {%- endif -%}
+          {%- call m.show(val) -%}
+            {%- set val = getInnerVal() -%}
+            Inner: {{ val }}
+          {%- endcall -%}
+          Final val: {{ val }}`;
+
+        loader.addTemplate('macros_caller.njk', `
+          {%- macro show(value) -%}
+          Macro Start: {{ value }} {{ caller() }} Macro End
+          {%- endmacro -%}
+          `);
+
+        const context = {
+          slowCondition: (async () => { await delay(2); return true; })(),
+          async getOuterVal() {
+            await delay(5);
+            return 'OuterVal';
+          },
+          async getInnerVal() {
+            await delay(3);
+            return 'InnerVal';
+          }
+        };
+
+        // If sync worked:
+        // Macro sees "OuterVal" then caller sets val='InnerVal'
+        // Inside macro: "Macro Start: OuterVal Inner: InnerVal Macro End"
+        // Outside macro: val should still be 'OuterVal'
+        // "Final val: OuterVal"
+        expect((await env.renderString(template, context)).trim()).to.equal('Macro Start: OuterVal Inner: InnerVal Macro End Final val: OuterVal');
+      });
+
+
+      // Parent template and child override with async val.
+      // Child sets val before super() is called.
+      // If sync worked, parent sees updated val.
+      // Without sync, parent might see old/undefined val.
+
+
+      it('should handle async extends with delayed parent template and block overrides', async () => {
+        const template = `
+          {% extends "parent_delayed.njk" %}
+          {% block content %}
+            {% set val = getVal() %}
+            {{ super() }}
+            Child sees value: {{ val }}
+          {% endblock %}
+        `;
+
+        loader.addTemplate('parent_delayed.njk', `
+          Parent Start
+          {% block content %}
+          Parent sees value: {{ val }}
+          {% endblock %}
+          Parent End
+          `);
+
+        const context = {
+          async getVal() {
+            await delay(8);
+            return 'ChildVal';
+          }
+        };
+
+        // If sync worked:
+        // "Parent Start
+        //  Parent sees value: ChildVal
+        //  Child sees value: ChildVal
+        //  Parent End"
+        expect((await env.renderString(template, context)).replace(/\s+/g,' ')).to.equal('Parent Start Parent sees value: ChildVal Child sees value: ChildVal Parent End');
+      });
+
+    });
+
+    describe('Non-async tests in AsyncEnvironment', () => {
+      let loader;
+      beforeEach(() => {
+        loader = new StringLoader();
+        env = new AsyncEnvironment(loader);
+      });
+
+      it.only('Var lookup optimization: Should correctly set a variable from a child frame ', () => {
+        const template = `
+          {%- set x = 42 -%}
+            {%- if true -%}
+            {%- set x = x + 1 -%}
+          {%- endif -%}
+          {{ x }}`;
+
+          const result = env.renderString(template);
+          expect(result).to.equal('43');
+      });
     });
 
   });

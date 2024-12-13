@@ -17,6 +17,8 @@ const asyncOperationNodes = new Set([
   'Extends', 'Include', 'Import', 'FromImport', 'Super'
 ]);
 
+AsyncFrame.inCompilerContext = true;
+
 // These are all the same for now, but shouldn't be passed straight
 // through
 const compareOps = {
@@ -116,6 +118,7 @@ class Compiler extends Obj {
   }
 
   // an async block that does not have a value should be wrapped in this
+  //@todo - maybe this should be replced by _emitBufferBlockBegin, so that each async block has a buffer
   _emitAsyncBlockBegin( node, frame, createScope ) {
     if (node.isAsync) {
       this._emitLine(`(async (astate) => {`);
@@ -142,7 +145,7 @@ class Compiler extends Obj {
       this._emitLine('  astate.leaveClosure();');
 
       this._emitLine(`}`);
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getPromisifiedVars(frame)})));`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getMutableVars(frame)})));`);
     }
     if(createScope){
       frame = frame.pop();
@@ -187,7 +190,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveClosure();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getPromisifiedVars(frame)})))`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getMutableVars(frame)})))`);
       this.asyncClosureDepth--;
     }
   }
@@ -237,7 +240,7 @@ class Compiler extends Obj {
     this._emitLine('} finally {');
     this._emitLine('  astate.leaveClosure();');
     this._emitLine('}');
-    this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getPromisifiedVars(frame)})))`);
+    this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getMutableVars(frame)})))`);
     //in the non-callback case, using the rendered buffer will throw the error
   }
 
@@ -261,7 +264,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveClosure();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getPromisifiedVars(frame)})));`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getMutableVars(frame)})));`);
 
     } else {
       this._emitLine(`let ${returnId};`);
@@ -304,7 +307,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveClosure();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getPromisifiedVars(frame)})))`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getMutableVars(frame)})))`);
     }
   }
 
@@ -648,7 +651,9 @@ class Compiler extends Obj {
     var name = node.value;
     var v = frame.lookup(name);
 
-    this._updateFrameReads(frame, name);
+    if(this.asyncMode) {
+      this._updateFrameReads(frame, name);
+    }
 
     if (v) {
       //for now the only places that set async symbol are the async filter and super()
@@ -1030,7 +1035,9 @@ class Compiler extends Obj {
 
       ids.push(id);
 
-      this._updateFrameWrites(frame, name);
+      if(this.asyncMode) {
+        this._updateFrameWrites(frame, name);
+      }
     });
 
     if (node.value) {
@@ -1076,11 +1083,11 @@ class Compiler extends Obj {
 
   _updateFrameWrites(frame, name) {
     //store the writes and variable declarations down the scope chain
-    while( frame.parent && !frame.isolateWrites ) {// the root scope node does not store writes and vars
+    if( frame.parent && !frame.isolateWrites ) {// the root scope node does not store writes and vars
       //search for the var in the scope chain
       let vf = frame;
       do {
-        if( vf.vars && vf.vars.has(name) ) {
+        if( vf.setVars && vf.setVars.has(name) ) {
           break;//found the var in vf
         }
         if(vf.isolateWrites) {
@@ -1093,10 +1100,10 @@ class Compiler extends Obj {
 
       if(!vf) {
         //declare a new variable in the current frame
-        if(!frame.vars) {
-          frame.vars = new Set([name]);
+        if(!frame.setVars) {
+          frame.setVars = new Set([name]);
         } else {
-          frame.vars.add(name);
+          frame.setVars.add(name);
         }
         vf = frame;
       }
@@ -1122,7 +1129,7 @@ class Compiler extends Obj {
   }
 
   //returns the arguments as string
-  _getPromisifiedVars(frame) {
+  _getMutableVars(frame) {
     if(!frame.readWrites){
       return '';
     }
@@ -1842,10 +1849,8 @@ class Compiler extends Obj {
     this._emitLine('tasks.push(');
     this._emitLine('function(callback) {');
 
-    //this._emitAsyncBlockBegin( node );
     const id = this._compileGetTemplate(node, frame, false, node.ignoreMissing, false);
     this._emitLine(`callback(null,${id});});`);
-    //this._emitAsyncBlockEnd( node );
 
     this._emitLine('});');
 

@@ -109,6 +109,8 @@ class AsyncFrame {
     this.isSnapshot = false;
   }
 
+  static inCompilerContext = false;
+
   set(name, val, resolveUp) {
     let lastTimelineRecord = this.timeline[this.timeline.length - 1];
     if(lastTimelineRecord.frames && lastTimelineRecord.frames.size > 0){
@@ -121,6 +123,12 @@ class AsyncFrame {
     let parts = name.split('.');
     let obj = lastTimelineRecord.variables;
     let frame = this;
+
+    if( this.asyncVars && parts[0] in this.asyncVars ){
+      //when inside an async block, vars that are tracked are kept in asyncVars
+      obj = this.asyncVars;
+      resolveUp = false;
+    }
 
     if (resolveUp) {
       if ((frame = this.resolve(parts[0], true))) {
@@ -139,6 +147,10 @@ class AsyncFrame {
     }
 
     obj[parts[parts.length - 1]] = val;
+
+    if( obj === this.asyncVars ){
+      this._trackAssignment(parts[0]);
+    }
   }
 
   get(name) {
@@ -160,6 +172,10 @@ class AsyncFrame {
     }
     for(let i = trIndex; i >= 0; i--){
       let timelineRecord = this.timeline[i];
+      let asyncVal = this.asyncVars && this.asyncVars[name];
+      if(asyncVal !== undefined){
+        return asyncVal;
+      }
       let val = timelineRecord.variables[name];
       if (val !== undefined) {
         return val;
@@ -197,11 +213,76 @@ class AsyncFrame {
     return new AsyncFrame();//undefined, this.isolateWrites);
   }
 
-  snapshot(createScope = false) {
+  snapshot(varsSetCount) {
     let snapshotFrame = new AsyncFrame(this, this.isolateWrites);//@todo - should isolateWrites be passed here?
     snapshotFrame.isSnapshot = true;
     this._addSnapshot(snapshotFrame);
+
+    if(!varsSetCount){
+      return snapshotFrame;
+    }
+
+    this.varsSetCount = varsSetCount;
+    //check if varsSetCount is not empty
+    if(Object.keys(varsSetCount).length > 0){
+      snapshotFrame.varResolves = snapshotFrame.varResolves || {};//or in snapshot?
+    }
+
+    for (let varName in varsSetCount) { // eslint-disable-line guard-for-in
+
+      let val = this.get(varName);
+
+      // replace/set the original variable with a promise
+      let varPromise = new Promise((resolve)=>{
+        snapshotFrame.varResolves[varName] = resolve;
+      });
+      this.set(varName, varPromise, true);
+
+      this.asyncVars = this.asyncVars || {};
+      this.asyncVars[varName] = val;//will use this value int the async block
+    }
     return snapshotFrame;
+  }
+
+  //when all assignments to a variable are done, resolve the promise for that variable
+  _trackAssignment(varName){
+    if(this.varsSetCount && varName in this.varsSetCount){
+      if(this.varsSetCount[varName]===0) {
+        throw new Error(`Variable ${varName} write counter turned negative in onSetVar`);
+      }
+      this.varsSetCount[varName]--;
+      if(this.varsSetCount[varName]===0){
+        this.varResolves[varName](this.get(varName));
+        delete this.varResolves[varName];
+      }
+    }
+    if(this.parent && this.parent.parent && !this.parent.isolateWrites){
+      this.parent._trackAssignment(varName);
+    }
+  }
+
+  //A branch is active that skips some assignment, track them as if they are performed
+  _trackMissedAssignments(varCounts){
+    if(!this.varsSetCount ){
+      throw new Error('Can not resolve vars: no set vars counts in this frame');
+    }
+    // eslint-disable-next-line guard-for-in
+    for(let varName in varCounts){
+      if(!(varName in this.varsSetCount)){
+        throw new Error('Can not resolve var: var not in set vars counts');
+      }
+      this.varsSetCount[varName] -= varCounts[varName];
+      if(this.varsSetCount[varName]<0){
+        throw new Error(`Variable ${varName} write counter turned negative  in resolveSetVars.`);
+      }
+      if(this.varsSetCount[varName]===0){
+        this.varResolves[varName](this.get(varName));
+        delete this.varResolves[varName];
+      }
+    }
+    if(this.parent && this.parent.parent && !this.parent.isolateWrites){
+      this.parent._trackMissedAssignments(varCounts);
+    }
   }
 
   _addSnapshot(snapshotFrame) {
