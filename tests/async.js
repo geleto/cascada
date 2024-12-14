@@ -4733,7 +4733,7 @@
         env = new AsyncEnvironment(loader);
       });
 
-      it.only('Var lookup optimization: Should correctly set a variable from a child frame ', () => {
+      it(`Should correctly set a variable from a child if's frame `, () => {
         const template = `
           {%- set x = 42 -%}
             {%- if true -%}

@@ -102,6 +102,12 @@ class AsyncFrame {
     this.parent = parent;
     this.topLevel = false;
 
+    if(AsyncFrame.inCompilerContext){
+      this.id = parent? parent.id + 1 : 0;
+    } else {
+      this.promiseDataById = parent ? parent.promiseDataById : [];//shared between all frames
+    }
+
     // if this is true, writes (set) should never propagate upwards past
     // this frame to its parent (though reads may).
     this.isolateWrites = isolateWrites;
@@ -213,47 +219,68 @@ class AsyncFrame {
     return new AsyncFrame();//undefined, this.isolateWrites);
   }
 
-  snapshot(varsSetCount) {
+  snapshot(id, depends, writeCounters) {
     let snapshotFrame = new AsyncFrame(this, this.isolateWrites);//@todo - should isolateWrites be passed here?
     snapshotFrame.isSnapshot = true;
     this._addSnapshot(snapshotFrame);
 
-    if(!varsSetCount){
-      return snapshotFrame;
+    this.id = id;
+
+    if(depends){
+      for(let varName in depends) { // eslint-disable-line guard-for-in
+        this._initPromiseData(depends[varName], varName);
+        this.asyncVars = this.asyncVars || {};
+        this.asyncVars[varName] = this.get(varName);
+      }
     }
 
-    this.varsSetCount = varsSetCount;
-    //check if varsSetCount is not empty
-    if(Object.keys(varsSetCount).length > 0){
-      snapshotFrame.varResolves = snapshotFrame.varResolves || {};//or in snapshot?
+    if(writeCounters) {
+      this.writeCounters = writeCounters;
+      for (let varName in writeCounters) { // eslint-disable-line guard-for-in
+        //this.promiseData = this._initPromiseData(id, varName);//@todo - cretae promise data only from reads?
+        this.promiseData = this.promiseDataById[id] = this.promiseDataById[id] || {};
+        this.asyncVars = this.asyncVars || {};
+        this.asyncVars[varName] = this.get(varName);//will use this value while the async block is active
+      }
     }
 
-    for (let varName in varsSetCount) { // eslint-disable-line guard-for-in
-
-      let val = this.get(varName);
-
-      // replace/set the original variable with a promise
-      let varPromise = new Promise((resolve)=>{
-        snapshotFrame.varResolves[varName] = resolve;
-      });
-      this.set(varName, varPromise, true);
-
-      this.asyncVars = this.asyncVars || {};
-      this.asyncVars[varName] = val;//will use this value int the async block
-    }
     return snapshotFrame;
+  }
+
+  _initPromiseData(dependId, varName){
+    this.promiseDataById[dependId] = this.promiseDataById[dependId] || {};
+    if(!this.promiseDataById[dependId][varName]){
+      let resolve;
+      //@todo - do not create the promise until it is needed by a read
+      let value = new Promise((res)=>{
+        resolve = res;
+      });
+      this.promiseDataById[dependId][varName] = { value, resolve };
+    }
   }
 
   //when all assignments to a variable are done, resolve the promise for that variable
   _trackAssignment(varName){
-    if(this.varsSetCount && varName in this.varsSetCount){
-      if(this.varsSetCount[varName]===0) {
-        throw new Error(`Variable ${varName} write counter turned negative in onSetVar`);
+    if(this.writeCounters && varName in this.writeCounters){
+      if(this.writeCounters[varName]===0) {
+        throw new Error(`Variable ${varName} write counter turned negative in _trackAssignment`);
       }
-      this.varsSetCount[varName]--;
-      if(this.varsSetCount[varName]===0){
-        this.varResolves[varName](this.get(varName));
-        delete this.varResolves[varName];
+      this.writeCounters[varName]--;
+      if(this.writeCounters[varName]===0){
+        let value = this.asyncVars[varName];
+
+        this.promiseData = this.promiseData || {};
+        if(!this.promiseDataById[this.id]){
+          this.promiseDataById[this.id] = promiseData;
+        }
+
+        if(this.promiseData[varName]){
+          this.promiseData[varName].resolve(value);
+          this.promiseData[varName].value = value;//no longer promise wrapped
+        } else {
+          //no async block has requested to read this var yet - set it to the final value
+          this.promiseData[varName] = {value};
+        }
       }
     }
     if(this.parent && this.parent.parent && !this.parent.isolateWrites){
@@ -263,19 +290,19 @@ class AsyncFrame {
 
   //A branch is active that skips some assignment, track them as if they are performed
   _trackMissedAssignments(varCounts){
-    if(!this.varsSetCount ){
+    if(!this.writeCounters ){
       throw new Error('Can not resolve vars: no set vars counts in this frame');
     }
     // eslint-disable-next-line guard-for-in
     for(let varName in varCounts){
-      if(!(varName in this.varsSetCount)){
+      if(!(varName in this.writeCounters)){
         throw new Error('Can not resolve var: var not in set vars counts');
       }
-      this.varsSetCount[varName] -= varCounts[varName];
-      if(this.varsSetCount[varName]<0){
-        throw new Error(`Variable ${varName} write counter turned negative  in resolveSetVars.`);
+      this.writeCounters[varName] -= varCounts[varName];
+      if(this.writeCounters[varName]<0){
+        throw new Error(`Variable ${varName} write counter turned negative in _trackMissedAssignments`);
       }
-      if(this.varsSetCount[varName]===0){
+      if(this.writeCounters[varName]===0){
         this.varResolves[varName](this.get(varName));
         delete this.varResolves[varName];
       }

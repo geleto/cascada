@@ -17,8 +17,6 @@ const asyncOperationNodes = new Set([
   'Extends', 'Include', 'Import', 'FromImport', 'Super'
 ]);
 
-AsyncFrame.inCompilerContext = true;
-
 // These are all the same for now, but shouldn't be passed straight
 // through
 const compareOps = {
@@ -145,7 +143,7 @@ class Compiler extends Obj {
       this._emitLine('  astate.leaveClosure();');
 
       this._emitLine(`}`);
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getMutableVars(frame)})));`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getSnapshotArguments(frame)})));`);
     }
     if(createScope){
       frame = frame.pop();
@@ -190,7 +188,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveClosure();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getMutableVars(frame)})))`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getSnapshotArguments(frame)})))`);
       this.asyncClosureDepth--;
     }
   }
@@ -240,7 +238,7 @@ class Compiler extends Obj {
     this._emitLine('} finally {');
     this._emitLine('  astate.leaveClosure();');
     this._emitLine('}');
-    this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getMutableVars(frame)})))`);
+    this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getSnapshotArguments(frame)})))`);
     //in the non-callback case, using the rendered buffer will throw the error
   }
 
@@ -264,7 +262,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveClosure();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getMutableVars(frame)})));`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getSnapshotArguments(frame)})));`);
 
     } else {
       this._emitLine(`let ${returnId};`);
@@ -307,7 +305,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveClosure();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getMutableVars(frame)})))`);
+      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getSnapshotArguments(frame)})))`);
     }
   }
 
@@ -1083,61 +1081,72 @@ class Compiler extends Obj {
 
   _updateFrameWrites(frame, name) {
     //store the writes and variable declarations down the scope chain
-    if( frame.parent && !frame.isolateWrites ) {// the root scope node does not store writes and vars
-      //search for the var in the scope chain
-      let vf = frame;
-      do {
-        if( vf.setVars && vf.setVars.has(name) ) {
-          break;//found the var in vf
-        }
-        if(vf.isolateWrites) {
-          vf = null;
-          break;
-        }
-        vf = vf.parent;
+    //search for the var in the scope chain
+    let vf = frame;
+    do {
+      if( vf.setVars && vf.setVars.has(name) ) {
+        break;//found the var in vf
       }
-      while( vf );
-
-      if(!vf) {
-        //declare a new variable in the current frame
-        if(!frame.setVars) {
-          frame.setVars = new Set([name]);
-        } else {
-          frame.setVars.add(name);
-        }
-        vf = frame;
+      if(vf.isolateWrites) {
+        vf = null;
+        break;
       }
-
-      //store the writes down the scope chain, but stop before the vf frame
-      while( frame!==vf ) {
-        frame.writes = frame.writes || {};
-        frame.writes[name] = frame.writes[name]? frame.writes[name] + 1 : 1;
-        frame = frame.parent;
-      }
+      vf = vf.parent;
     }
-  }
+    while( vf );
 
-  _updateFrameReads(frame, name) {
-    //store the frames that have been written and then read
-    while( frame.parent && !frame.isolateWrites ) {// the root scope node does not store writes and vars
-      if(frame.writes && frame.writes[name]) {
-        frame.readWrites = frame.readWrites || new Set();
-        frame.readWrites.add(name);
+    if(!vf) {
+      //declare a new variable in the current frame
+      if(!frame.setVars) {
+        frame.setVars = new Set([name]);
+      } else {
+        frame.setVars.add(name);
       }
+      vf = frame;
+    }
+
+    //store the last frame to write the variable
+    vf.writeIds = vf.writeIds || {};
+    vf.writeIds[name] = frame.id;
+
+    //store the writes down the scope chain, but stop before the vf frame
+    while( frame!==vf ) {
+      frame.writeCounts = frame.writeCounts || {};//@todo - only async block snapshot frames
+      frame.writeCounts[name] = frame.writeCounts[name]? frame.writeCounts[name] + 1 : 1;
+
       frame = frame.parent;
     }
   }
 
+  _updateFrameReads(frame, name) {
+    let vf = frame;
+    do {
+      if( vf.setVars && vf.setVars.has(name) ) {
+        break;//found the var in vf
+      }
+      if(vf.isolateWrites) {
+        vf = null;
+        break;
+      }
+      vf = vf.parent;
+    }
+    while( vf );
+
+    if(vf && vf.writeIds && vf.writeIds[name]) {
+      //the variable is declared in the vf frame
+      frame.readDepends = frame.readDepends || {};//@todo - only async block snapshot frames
+      frame.readDepends[name] = vf.writeIds[name];
+    }
+  }
+
   //returns the arguments as string
-  _getMutableVars(frame) {
-    if(!frame.readWrites){
+  _getSnapshotArguments(frame) {
+    if(!frame.writeCounts && !frame.readDepends){
       return '';
     }
-    let promisifiedVars = {};
-    frame.readWrites.forEach((name) => {
-        promisifiedVars[name] = frame.writes[name];
-    });
-    return JSON.stringify(promisifiedVars);
+    let readDependsString = frame.readDepends? JSON.stringify(frame.readDepends) : 'null';
+    //@todo - optimize frame.id to skip
+    return frame.id + ',' + readDependsString + (frame.writeCounts? ',' + JSON.stringify(frame.writeCounts) : '');
   }
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
@@ -2122,6 +2131,7 @@ class Compiler extends Obj {
 
 module.exports = {
   compile: function compile(src, asyncFilters, extensions, name, isAsync, opts = {}) {
+    AsyncFrame.inCompilerContext = true;
     if (typeof isAsync === 'object') {
       opts = isAsync;
       isAsync = false;
@@ -2138,6 +2148,7 @@ module.exports = {
       asyncFilters,
       name
     ));
+    AsyncFrame.inCompilerContext = false;
     return c.getCode();
   },
 
