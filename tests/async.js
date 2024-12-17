@@ -4,20 +4,20 @@
   var expect;
   var unescape;
   var AsyncEnvironment;
-  var Environment;
+  //var Environment;
   var lexer;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
-    Environment = require('../nunjucks/src/environment').Environment;
+    //Environment = require('../nunjucks/src/environment').Environment;
     lexer = require('../nunjucks/src/lexer');
     unescape = require('he').unescape;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
-    Environment = nunjucks.Environment;
+    //Environment = nunjucks.Environment;
     lexer = nunjucks.lexer;
   }
 
@@ -676,7 +676,7 @@
           {%- set permissions = getUserPermissions(role) -%}
           {%- if 'write' in permissions -%}
             Can write
-            {%- else -%}
+          {%- else -%}
             Cannot write
           {%- endif -%}
         {%- endfor %}`;

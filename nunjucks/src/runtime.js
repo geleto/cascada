@@ -96,16 +96,61 @@ class TimelineRecord {
 // A frame which instances can create snapshots of itself that
 // can be used as regular frames. Further changes to the frame
 // don't affect the snapshots, and vice-versa.
+//@todo - frames that don't create scope should not host variables
 class AsyncFrame {
-  constructor(parent, isolateWrites) {
+  constructor(parent, isolateWrites, createScope=true) {
     this.timeline = [new TimelineRecord()];
     this.parent = parent;
     this.topLevel = false;
 
     if(AsyncFrame.inCompilerContext){
-      this.id = parent? parent.id + 1 : 0;
+      if(!parent){
+        this.idCounter = {value: 1};
+      }
+      else {
+        this.idCounter = parent.idCounter;
+      }
+      //the compiler generates an unique id for each async block
+      this.id = this.idCounter.value++;
+
+      //variables set from the compiler side:
+
+      //holds the current dependencies for each variable as the compiler traverses the AST
+      //it is stored in the frame where the variable is first declared
+      //the variable name is the key and the value is an id of the async block that last modifies the variable (@temp - todo an array of ids)
+      //@todo - this should be an array with all the async blocks that MAY influence the variable (incl. from speculative branches) at this time of AST traversal
+      this.varDependencies = null;
+
+      //holds the write counts for each variable that CAN be modified in an async block or its children
+      //this includes variables that are modified in branches that are not taken (e.g. both sides of an if)
+      //the counts decrement is propagated upwards before the frame that has declared the variable
+      this.writeCounts = null;
+
+      //holds the dependencies for each variable read by an async block
+      //the variable name is the key and the value is an array of ids of the async blocks that the variable depends on
+      //stored at each aync block frame that either reads or it's children read the variable
+      //propagated upwards before the frame that has declared the variable
+      this.blockDependencies = null;
+
     } else {
-      this.promiseDataById = parent ? parent.promiseDataById : [];//shared between all frames
+      //holds the id of the async block, comes from the compiler as an argument to the snapshot method
+      this.id = null;
+
+      //holds promise data for each async block that modifies variables
+      //the promise data holds a value - a promise (if block is active) or final value
+      //as well as a resolve function to use once the block is done modifying the variable
+      this.promiseDataById = parent ? parent.promiseDataById : new Map();
+
+      //holds the write counters for each variable that is modified in an async block or its children
+      //The decreminting is propagated upwards before the frame that has declared the variable
+      //the variable name is the key and the value is the number of remaining writes (including missed writes due to branches)
+      //once the counter reaches 0, the promise for the variable is resolved
+      this.writeCounters = null;
+
+      //holds the variables that are modified in an async block while it is active
+      //the variable name is the key and the value is the value of the variable
+      //once the block is done modifying a variable, the promise for the variable is resolved with this value
+      this.asyncVars = null;
     }
 
     // if this is true, writes (set) should never propagate upwards past
@@ -155,7 +200,7 @@ class AsyncFrame {
     obj[parts[parts.length - 1]] = val;
 
     if( obj === this.asyncVars ){
-      this._trackAssignment(parts[0]);
+      this._trackAsyncWrites(parts[0]);
     }
   }
 
@@ -207,8 +252,9 @@ class AsyncFrame {
     return p && p.resolve(name, forWrite, snapshotFrame || (this.isSnapshot ? this : null));
   }
 
-  push(isolateWrites) {
-    return new AsyncFrame(this, isolateWrites);
+  //@todo - frames that don't create scope should not host variables
+  push(isolateWrites, createScope=true) {
+    return new AsyncFrame(this, isolateWrites, createScope);
   }
 
   pop() {
@@ -219,16 +265,21 @@ class AsyncFrame {
     return new AsyncFrame();//undefined, this.isolateWrites);
   }
 
-  snapshot(id, depends, writeCounters) {
+  //@todo - reenterWriteCounters
+  //@todo audit snapshotFrame vs this
+  snapshot(dependIds, id, writeCounters, reenterWriteCounters) {
     let snapshotFrame = new AsyncFrame(this, this.isolateWrites);//@todo - should isolateWrites be passed here?
     snapshotFrame.isSnapshot = true;
     this._addSnapshot(snapshotFrame);
+    snapshotFrame._processDependencyData(dependIds, id, writeCounters, reenterWriteCounters);
+    return snapshotFrame;
+  }
 
+  _processDependencyData(dependIds, id, writeCounters, reenterWriteCounters) {
     this.id = id;
-
-    if(depends){
-      for(let varName in depends) { // eslint-disable-line guard-for-in
-        this._initPromiseData(depends[varName], varName);
+    if(dependIds){
+      for(let varName in dependIds) { // eslint-disable-line guard-for-in
+        this._initVariablePromiseData(dependIds[varName], varName);
         this.asyncVars = this.asyncVars || {};
         this.asyncVars[varName] = this.get(varName);
       }
@@ -237,21 +288,35 @@ class AsyncFrame {
     if(writeCounters) {
       this.writeCounters = writeCounters;
       for (let varName in writeCounters) { // eslint-disable-line guard-for-in
-        //this.promiseData = this._initPromiseData(id, varName);//@todo - cretae promise data only from reads?
-        this.promiseData = this.promiseDataById[id] = this.promiseDataById[id] || {};
+        //just create the promise data object, the promise will be created when the
+        //first async block to read this variable is encountered
+        this.promiseData = this.promiseDataById.get(id);
+        if(!this.promiseData){
+          this.promiseData = {};
+          this.promiseDataById.set(id, this.promiseData);
+        } else {
+          if(reenterWriteCounters) {
+            if( Object.keys(this.promiseData).length ){
+              //re-entering the async block while it's still active
+              this.promiseDataById = new Map();//a new promise data map
+              this.promiseDataById.reenteredFrom = this.promiseDataById;
+              //@todo - all local get variables should be queried from reenteredFrom
+            }
+          }
+        }
         this.asyncVars = this.asyncVars || {};
         this.asyncVars[varName] = this.get(varName);//will use this value while the async block is active
       }
     }
-
-    return snapshotFrame;
   }
 
-  _initPromiseData(dependId, varName){
-    this.promiseDataById[dependId] = this.promiseDataById[dependId] || {};
-    if(!this.promiseDataById[dependId][varName]){
+  _initVariablePromiseData(dependId, varName){
+    //@todo - if reentering the async block, the writeCounters will be present
+    let promiseData = this.promiseDataById.get(dependId);//should not be null
+    if(promiseData && !promiseData[varName]){
+      //create the promise for the variable
+      //@todo - do not create the promise until it is needed by a read?
       let resolve;
-      //@todo - do not create the promise until it is needed by a read
       let value = new Promise((res)=>{
         resolve = res;
       });
@@ -260,36 +325,44 @@ class AsyncFrame {
   }
 
   //when all assignments to a variable are done, resolve the promise for that variable
-  _trackAssignment(varName){
+  _trackAsyncWrites(varName){
     if(this.writeCounters && varName in this.writeCounters){
       if(this.writeCounters[varName]===0) {
-        throw new Error(`Variable ${varName} write counter turned negative in _trackAssignment`);
+        throw new Error(`Variable ${varName} write counter turned negative in _trackAsyncWrites`);
       }
       this.writeCounters[varName]--;
       if(this.writeCounters[varName]===0){
-        let value = this.asyncVars[varName];
-
-        this.promiseData = this.promiseData || {};
-        if(!this.promiseDataById[this.id]){
-          this.promiseDataById[this.id] = promiseData;
-        }
-
-        if(this.promiseData[varName]){
-          this.promiseData[varName].resolve(value);
-          this.promiseData[varName].value = value;//no longer promise wrapped
-        } else {
-          //no async block has requested to read this var yet - set it to the final value
-          this.promiseData[varName] = {value};
-        }
+        this._resolveAsyncVar(varName);
       }
     }
     if(this.parent && this.parent.parent && !this.parent.isolateWrites){
-      this.parent._trackAssignment(varName);
+      this.parent._trackAsyncWrites(varName);
+    }
+  }
+
+  _resolveAsyncVar(varName){
+    //this variable will no longer be modified, time to resolve it
+    let value = this.asyncVars[varName];
+
+    if(!this.promiseData) {
+      this.promiseData = this.promiseDataById.get(this.id);
+      if(!this.promiseData) {
+        this.promiseData = {};
+        this.promiseDataById.set(this.promiseData);
+      }
+    }
+
+    if(this.promiseData[varName]){
+      this.promiseData[varName].resolve(value);
+      this.promiseData[varName].value = value;//no longer promise wrapped
+    } else {
+      //no async block has requested to read this var yet - set it to the final value
+      this.promiseData[varName] = { value };
     }
   }
 
   //A branch is active that skips some assignment, track them as if they are performed
-  _trackMissedAssignments(varCounts){
+  trackMissedAsyncWrites(varCounts){
     if(!this.writeCounters ){
       throw new Error('Can not resolve vars: no set vars counts in this frame');
     }
@@ -303,8 +376,7 @@ class AsyncFrame {
         throw new Error(`Variable ${varName} write counter turned negative in _trackMissedAssignments`);
       }
       if(this.writeCounters[varName]===0){
-        this.varResolves[varName](this.get(varName));
-        delete this.varResolves[varName];
+        this._resolveAsyncVar(varName);
       }
     }
     if(this.parent && this.parent.parent && !this.parent.isolateWrites){
