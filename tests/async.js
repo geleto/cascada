@@ -4547,7 +4547,19 @@
         env = new AsyncEnvironment(loader);
       });
 
-      it('should correctly handle assignments in order irrespective of block delays ', async () => {
+      it(`Should correctly set a variable from a child 'if' frame `, async () => {
+        const template = `
+          {%- set x = 1 -%}
+          {%- if true -%}
+            {%- set x = 2 -%}
+          {%- endif -%}
+          {{ x }}`;
+
+          const result = await env.renderString(template);
+          expect(result).to.equal('2');
+      });
+
+      it('should correctly handle assignments irrespective if a block is delayed ', async () => {
         const context = {
           slowCondition: (async () => {
             await delay(5);
@@ -4565,7 +4577,7 @@
         expect(result).to.equal('2');
       });
 
-      it('Frame snapshot should get values that still have not been assigned ', async () => {
+      it('Should handle assignments in order despite different delays ', async () => {
         const context = {
           slowCondition: (async () => {
             await delay(6);
@@ -4724,26 +4736,6 @@
         expect((await env.renderString(template, context)).replace(/\s+/g,' ')).to.equal('Parent Start Parent sees value: ChildVal Child sees value: ChildVal Parent End');
       });
 
-    });
-
-    describe('Non-async tests in AsyncEnvironment', () => {
-      let loader;
-      beforeEach(() => {
-        loader = new StringLoader();
-        env = new AsyncEnvironment(loader);
-      });
-
-      it(`Should correctly set a variable from a child if's frame `, () => {
-        const template = `
-          {%- set x = 42 -%}
-            {%- if true -%}
-            {%- set x = x + 1 -%}
-          {%- endif -%}
-          {{ x }}`;
-
-          const result = env.renderString(template);
-          expect(result).to.equal('43');
-      });
     });
 
   });

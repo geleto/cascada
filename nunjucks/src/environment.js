@@ -445,23 +445,23 @@ class AsyncState {
     this.parent = parent;
     this.completionPromise = null;
     this.completionResolver = null;
-    this.snapshotFrame = null;//@todo - remove
+    this.asyncBlockFrame = null;//@todo - remove
   }
 
-  enterClosure(snapshotFrame) {
+  enterAsyncBlock(asyncBlockFrame) {
     const newState = new AsyncState(this);
-    newState.snapshotFrame = snapshotFrame;
+    newState.asyncBlockFrame = asyncBlockFrame;
     newState._incrementClosures();
 
     // Create a new completion promise for this specific closure chain
-    this.waitAllClosures().then(() => {
-      snapshotFrame.dispose();
-    });
+    /*this.waitAllClosures().then(() => {
+      asyncBlockFrame.dispose();// - todo - why does it succeed and then fail?
+    });*/
 
     return newState;
   }
 
-  leaveClosure() {
+  leaveAsyncBlock() {
     this.activeClosures--;
 
     if (this.activeClosures === this.waitClosuresCount ) {
@@ -476,7 +476,7 @@ class AsyncState {
     }
 
     if (this.parent) {
-      return this.parent.leaveClosure();
+      return this.parent.leaveAsyncBlock();
     }
 
     return this.parent;

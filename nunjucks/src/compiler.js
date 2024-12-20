@@ -126,7 +126,7 @@ class Compiler extends Obj {
   _emitAsyncBlock( node, frame, createScope, emitFunc){
     const aframe = this._emitAsyncBlockBegin(node, frame, createScope);
     emitFunc(aframe);
-    this._emitAsyncBlockEnd(node, frame, createScope);
+    this._emitAsyncBlockEnd(node, aframe, createScope);
   }
 
   // an async block that does not have a value should be wrapped in this
@@ -135,7 +135,7 @@ class Compiler extends Obj {
     if (node.isAsync) {
       this._emitLine(`(async (astate) => {`);
       this._emitLine('try {');
-      this._emitLine('let frame = astate.snapshotFrame;');
+      this._emitLine('let frame = astate.asyncBlockFrame;');
       this.asyncClosureDepth++;
     }
     if(createScope && !node.isAsync){
@@ -154,10 +154,10 @@ class Compiler extends Obj {
       this._emitLine(`} catch (e) {`);
       this._emitLine(`  cb(runtime.handleError(e, lineno, colno));`);
       this._emitLine(`} finally {`);
-      this._emitLine('  astate.leaveClosure();');
+      this._emitLine('  astate.leaveAsyncBlock();');
 
       this._emitLine(`}`);
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getSnapshotArguments(frame)})));`);
+      this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getSnapshotArguments(frame)})));`);
     }
     if(createScope && !node.isAsync){
       this._emitLine('frame = frame.pop();');
@@ -189,7 +189,7 @@ class Compiler extends Obj {
     if (node.isAsync) {
       this._emitLine(`(async (astate) => {`);
       this._emitLine('try {');
-      this._emitLine('  let frame = astate.snapshotFrame;');
+      this._emitLine('  let frame = astate.asyncBlockFrame;');
       this.asyncClosureDepth++;
       return frame.push(false, false);
     }
@@ -201,9 +201,9 @@ class Compiler extends Obj {
       this._emitLine(`} catch (e) {`);
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
       this._emitLine('} finally {');
-      this._emitLine('  astate.leaveClosure();');
+      this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getSnapshotArguments(frame)})))`);
+      this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getSnapshotArguments(frame)})))`);
       this.asyncClosureDepth--;
       return frame.pop();
     }
@@ -224,7 +224,7 @@ class Compiler extends Obj {
 
     this._emitLine(`(async (astate)=>{`);
     this._emitLine('try {');
-    this._emitLine('let frame = astate.snapshotFrame;');
+    this._emitLine('let frame = astate.asyncBlockFrame;');
 
     const id = this._pushBuffer();//@todo - better way to get the buffer, see compileCapture
 
@@ -255,9 +255,9 @@ class Compiler extends Obj {
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
     }
     this._emitLine('} finally {');
-    this._emitLine('  astate.leaveClosure();');
+    this._emitLine('  astate.leaveAsyncBlock();');
     this._emitLine('}');
-    this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getSnapshotArguments(frame)})))`);
+    this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getSnapshotArguments(frame)})))`);
     //in the non-callback case, using the rendered buffer will throw the error
   }
 
@@ -267,7 +267,7 @@ class Compiler extends Obj {
       this.asyncClosureDepth++;
       this._emitLine(`(async (astate)=>{`);
       this._emitLine('try {');
-      this._emitLine('let frame = astate.snapshotFrame;');
+      this._emitLine('let frame = astate.asyncBlockFrame;');
       this._emitLine(`let index = ${this.buffer}_index++;`);
 
       this._emitLine(`let ${returnId};`);
@@ -279,9 +279,9 @@ class Compiler extends Obj {
       this._emitLine('} catch (e) {');
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
       this._emitLine('} finally {');
-      this._emitLine('  astate.leaveClosure();');
+      this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getSnapshotArguments(frame)})));`);
+      this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getSnapshotArguments(frame)})));`);
 
     } else {
       this._emitLine(`let ${returnId};`);
@@ -299,7 +299,7 @@ class Compiler extends Obj {
       if (addClosure) {
         this._emitLine(`(async (astate)=>{`);
         this._emitLine('try {');
-        this._emitLine('let frame = astate.snapshotFrame;');
+        this._emitLine('let frame = astate.asyncBlockFrame;');
         this._emitLine(`let index = ${this.buffer}_index++;`);
         this._emit(`${this.buffer}[index] = `);
         this.asyncClosureDepth++;
@@ -322,9 +322,9 @@ class Compiler extends Obj {
       this._emitLine('} catch (e) {');
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
       this._emitLine('} finally {');
-      this._emitLine('  astate.leaveClosure();');
+      this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterClosure(frame.snapshot(${this._getSnapshotArguments(frame)})))`);
+      this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getSnapshotArguments(frame)})))`);
     }
   }
 
@@ -667,10 +667,6 @@ class Compiler extends Obj {
   compileSymbol(node, frame) {
     var name = node.value;
     var v = frame.lookup(name);
-
-    if(this.asyncMode) {
-      this._updateFrameReads(frame, name);
-    }
 
     if (v) {
       //for now the only places that set async symbol are the async filter and super()
@@ -1048,6 +1044,10 @@ class Compiler extends Obj {
         // Note: This relies on js allowing scope across
         // blocks, in case this is created inside an `if`
         this._emitLine('let ' + id + ';');
+
+        //@bug from nunjucks, the temporary variable is not added to the frame
+        //leave it as is because we need to use node.get to handle async scenarios
+        //frame.set(name, id);
       }
 
       ids.push(id);
@@ -1098,12 +1098,13 @@ class Compiler extends Obj {
     });
   }
 
+  //@todo - do not store writes that will not be read by the parents
   _updateFrameWrites(frame, name) {
     //store the writes and variable declarations down the scope chain
     //search for the var in the scope chain
     let vf = frame;
     do {
-      if( vf.varDependencies && vf.varDependencies[name] ) {
+      if( vf.declaredVars && vf.declaredVars.has(name) ) {
         break;//found the var in vf
       }
       if(vf.isolateWrites) {
@@ -1116,53 +1117,26 @@ class Compiler extends Obj {
 
     if(!vf) {
       //declare a new variable in the current frame
-      if(!frame.varDependencies) {
-        frame.varDependencies = {};
+      if(!frame.declaredVars) {
+        frame.declaredVars = new Set();
       }
+      frame.declaredVars.add(name);
       vf = frame;
     }
 
-    vf.varDependencies[name] = frame.id;//@todo - an array because due to speculative writes we can have multiple dependencies
-
     //store the writes down the scope chain, but stop before the vf frame
     while( frame!==vf ) {
-      frame.writeCounts = frame.writeCounts || {};//@todo - only async block snapshot frames
+      frame.writeCounts = frame.writeCounts || {};//@todo - only async block pushAsyncBlock frames
       frame.writeCounts[name] = frame.writeCounts[name]? frame.writeCounts[name] + 1 : 1;
 
       frame = frame.parent;
     }
   }
 
-  _updateFrameReads(frame, name) {
-    let vf = frame;
-    do {
-      if( vf.varDependencies && vf.varDependencies[name] ) {
-        break;//found the var in vf
-      }
-      if(vf.isolateWrites) {
-        vf = null;
-        break;
-      }
-      vf = vf.parent;
-    }
-    while( vf );
-
-    if(vf && vf.varDependencies && vf.varDependencies[name]) {
-      //the variable is declared in the vf frame and has been written to
-      frame.blockDependencies = frame.blockDependencies || {};//@todo - only async block snapshot frames
-      frame.blockDependencies[name] = vf.varDependencies[name];
-    }
-  }
-
   //returns the arguments as string
   //@todo - reenterWriteCounters
   _getSnapshotArguments(frame) {
-    if(!frame.writeCounts && !frame.blockDependencies){
-      return '';
-    }
-    let blockDependenciesString = frame.blockDependencies? JSON.stringify(frame.blockDependencies) : 'null';
-    //@todo - optimize frame.id to skip
-    return blockDependenciesString + (frame.writeCounts? ',' + frame.id + ',' + JSON.stringify(frame.writeCounts) : '');
+    return frame.writeCounts? JSON.stringify(frame.writeCounts) : '';
   }
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
@@ -1194,7 +1168,7 @@ class Compiler extends Obj {
   //todo! - get rid of the callback
   compileIf(node, frame, async) {
     if(this.asyncMode && node.isAsync) {
-      async = false;
+      async = false;//old type of async
     }
 
     this._emitBufferBlockBegin(node, frame);
@@ -1208,8 +1182,8 @@ class Compiler extends Obj {
 
     if(this.asyncMode) {
       this._emitAsyncBlock(node.body, frame, false, (f)=>{
-        trueBranchWriteCounts = f.writeCounts;
         this.compile(node.body, f);
+        trueBranchWriteCounts = f.writeCounts;
       })
     }
     else {
@@ -1228,10 +1202,10 @@ class Compiler extends Obj {
         this._emitAsyncBlock(node.else_, frame, false, (f)=>{
           if(trueBranchWriteCounts) {
             //skip the true branch writes in the false branch
-            this._emit('runtime.trackMissedAsyncWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
+            this._emit('frame.countMissedBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
           }
           falseBranchWriteCounts = f.writeCounts;
-          this.compile(node.body, f);
+          this.compile(node.else_, f);
         })
       }
       else {
@@ -1242,15 +1216,20 @@ class Compiler extends Obj {
           }
         });
       }
-    } else if (async && !this.asyncMode) {
-      this._emit('cb()');
+    } else {
+      if(this.asyncMode && trueBranchWriteCounts) {
+        this._emit('frame.countMissedBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
+      }
+      if (async && !this.asyncMode) {
+        this._emit('cb()');
+      }
     }
 
     this._emit('}');
 
     if(falseBranchWriteCounts){
       //skip the false branch writes in the true branch code
-      this._emitInsertLine(trueBranchCodePos, `runtime.trackMissedAsyncWrites(${JSON.stringify(falseBranchWriteCounts)});`);
+      this._emitInsertLine(trueBranchCodePos, `runtime.countMissedBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
     }
 
     this._emitBufferBlockEnd(node, frame);
@@ -1274,7 +1253,7 @@ class Compiler extends Obj {
     // not much.
 
     //@todo - if node.arr is not async - we can create the buffer block without async block in it and just push the frame
-    //each iteration will creates it's own snapshot anyway
+    //each iteration will creates it's own pushAsyncBlock anyway
     frame = this._emitBufferBlockBegin(node, frame, true);
 
     // Evaluate the array expression

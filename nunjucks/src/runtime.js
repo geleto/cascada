@@ -20,7 +20,6 @@ class Frame {
     this.isolateWrites = isolateWrites;
   }
 
-  // nunjucks bug?, resolveUp is not used in recursive calls
   set(name, val, resolveUp) {
     // Allow variables with dots by automatically creating the
     // nested structure
@@ -86,358 +85,176 @@ class Frame {
   }
 }
 
-class TimelineRecord {
-  constructor() {
-    this.variables = Object.create(null);
-    this.frames = null;
-  }
-}
-
-// A frame which instances can create snapshots of itself that
-// can be used as regular frames. Further changes to the frame
-// don't affect the snapshots, and vice-versa.
-//@todo - frames that don't create scope should not host variables
-class AsyncFrame {
+class AsyncFrame extends Frame {
   constructor(parent, isolateWrites, createScope=true) {
-    this.timeline = [new TimelineRecord()];
-    this.parent = parent;
-    this.topLevel = false;
+    super(parent, isolateWrites);
 
     if(AsyncFrame.inCompilerContext){
-      if(!parent){
-        this.idCounter = {value: 1};
-      }
-      else {
-        this.idCounter = parent.idCounter;
-      }
-      //the compiler generates an unique id for each async block
-      this.id = this.idCounter.value++;
+      //holds the names of the variables declared at the frame
+      this.declaredVars = undefined;
 
-      //variables set from the compiler side:
-
-      //holds the current dependencies for each variable as the compiler traverses the AST
-      //it is stored in the frame where the variable is first declared
-      //the variable name is the key and the value is an id of the async block that last modifies the variable (@temp - todo an array of ids)
-      //@todo - this should be an array with all the async blocks that MAY influence the variable (incl. from speculative branches) at this time of AST traversal
-      this.varDependencies = null;
-
-      //holds the write counts for each variable that CAN be modified in an async block or its children
-      //this includes variables that are modified in branches that are not taken (e.g. both sides of an if)
-      //the counts decrement is propagated upwards before the frame that has declared the variable
-      this.writeCounts = null;
-
-      //holds the dependencies for each variable read by an async block
-      //the variable name is the key and the value is an array of ids of the async blocks that the variable depends on
-      //stored at each aync block frame that either reads or it's children read the variable
-      //propagated upwards before the frame that has declared the variable
-      this.blockDependencies = null;
+      //holds the write counts for each variable that CAN be modified by an async block or its children
+      //this includes variables that are modified in branches that are not taken (e.g. count both sides of an if)
+      //the counts are propagated upwards before the frame that has declared the variable
+      this.writeCounts = undefined;
 
     } else {
-      //holds the id of the async block, comes from the compiler as an argument to the snapshot method
-      this.id = null;
-
-      //holds promise data for each async block that modifies variables
-      //the promise data holds a value - a promise (if block is active) or final value
-      //as well as a resolve function to use once the block is done modifying the variable
-      this.promiseDataById = parent ? parent.promiseDataById : new Map();
+      //when an async block is entered, it creates a promise for all variables that it or it's children modify
+      //the value of the variable in the parent(an asyncVar if it's async block, regular var with frame.set otherwise) is changed to the promise
+      //the promise is resolved when the block is done modifying the variable and the value is set to the final value
+      this.promiseResolves = undefined;
 
       //holds the write counters for each variable that is modified in an async block or its children
       //The decreminting is propagated upwards before the frame that has declared the variable
       //the variable name is the key and the value is the number of remaining writes (including missed writes due to branches)
       //once the counter reaches 0, the promise for the variable is resolved
-      this.writeCounters = null;
+      this.writeCounters = undefined;
 
-      //holds the variables that are modified in an async block while it is active
-      //the variable name is the key and the value is the value of the variable
+      //holds the variables that are modified in an async block frame while it is active
       //once the block is done modifying a variable, the promise for the variable is resolved with this value
-      this.asyncVars = null;
+      //TODO - how to apply the value once resolved?:
+      //write to parent if asyncVars[varName] exists
+      //write to parent if variable was declared there
+      //if not - move on to the parent's parent
+      //asyncVars[varName] is only used if the variable is not stored in the frame
+      this.asyncVars = undefined;
     }
 
     // if this is true, writes (set) should never propagate upwards past
     // this frame to its parent (though reads may).
     this.isolateWrites = isolateWrites;
 
-    this.isSnapshot = false;
+    this.isAsyncBlock = false;//not used
   }
 
   static inCompilerContext = false;
-
-  set(name, val, resolveUp) {
-    let lastTimelineRecord = this.timeline[this.timeline.length - 1];
-    if(lastTimelineRecord.frames && lastTimelineRecord.frames.size > 0){
-      //do not touch this snapshot as it has frames attached to it
-      //create a new snapshot
-      lastTimelineRecord = new TimelineRecord();
-      this.timeline.push(lastTimelineRecord);
-    }
-
-    let parts = name.split('.');
-    let obj = lastTimelineRecord.variables;
-    let frame = this;
-
-    if( this.asyncVars && parts[0] in this.asyncVars ){
-      //when inside an async block, vars that are tracked are kept in asyncVars
-      obj = this.asyncVars;
-      resolveUp = false;
-    }
-
-    if (resolveUp) {
-      if ((frame = this.resolve(parts[0], true))) {
-        frame.set(name, val);
-        return;
-      }
-    }
-
-    for (let i = 0; i < parts.length - 1; i++) {
-      const id = parts[i];
-
-      if (!obj[id]) {
-        obj[id] = {};
-      }
-      obj = obj[id];
-    }
-
-    obj[parts[parts.length - 1]] = val;
-
-    if( obj === this.asyncVars ){
-      this._trackAsyncWrites(parts[0]);
-    }
-  }
-
-  get(name) {
-    for(let i = this.timeline.length - 1; i >= 0; i--){
-      let timelineRecord = this.timeline[i];
-      let val = timelineRecord.variables[name];
-      if (val !== undefined) {
-        return val;
-      }
-    }
-    return null;
-  }
-
-  lookup(name, snapshotFrame = null) {
-    var p = this.parent;
-    let trIndex = snapshotFrame ? this._findSnapshotInTimeline(snapshotFrame) : this.timeline.length - 1;
-    if(trIndex === -1){
-      throw new Error('snapshotFrame not in the timeline');
-    }
-    for(let i = trIndex; i >= 0; i--){
-      let timelineRecord = this.timeline[i];
-      let asyncVal = this.asyncVars && this.asyncVars[name];
-      if(asyncVal !== undefined){
-        return asyncVal;
-      }
-      let val = timelineRecord.variables[name];
-      if (val !== undefined) {
-        return val;
-      }
-    }
-    return p && p.lookup(name, snapshotFrame || (this.isSnapshot ? this : null));
-  }
-
-  resolve(name, forWrite, snapshotFrame = null) {
-    var p = (forWrite && this.isolateWrites) ? undefined : this.parent;
-    let trIndex = snapshotFrame ? this._findSnapshotInTimeline(snapshotFrame) : this.timeline.length - 1;
-    if(trIndex === -1){
-      throw new Error('snapshotFrame not in the timeline');
-    }
-    for (let i = trIndex; i >= 0; i--) {
-      let timelineRecord = this.timeline[i];
-      if (timelineRecord.variables[name] !== undefined) {
-        return this;
-      }
-    }
-
-    // If not found, check parent frame
-    return p && p.resolve(name, forWrite, snapshotFrame || (this.isSnapshot ? this : null));
-  }
-
-  //@todo - frames that don't create scope should not host variables
-  push(isolateWrites, createScope=true) {
-    return new AsyncFrame(this, isolateWrites, createScope);
-  }
-
-  pop() {
-    return this.parent;
-  }
 
   new() {
     return new AsyncFrame();//undefined, this.isolateWrites);
   }
 
-  //@todo - reenterWriteCounters
-  //@todo audit snapshotFrame vs this
-  snapshot(dependIds, id, writeCounters, reenterWriteCounters) {
-    let snapshotFrame = new AsyncFrame(this, this.isolateWrites);//@todo - should isolateWrites be passed here?
-    snapshotFrame.isSnapshot = true;
-    this._addSnapshot(snapshotFrame);
-    snapshotFrame._processDependencyData(dependIds, id, writeCounters, reenterWriteCounters);
-    return snapshotFrame;
-  }
-
-  _processDependencyData(dependIds, id, writeCounters, reenterWriteCounters) {
-    this.id = id;
-    if(dependIds){
-      for(let varName in dependIds) { // eslint-disable-line guard-for-in
-        this._initVariablePromiseData(dependIds[varName], varName);
-        this.asyncVars = this.asyncVars || {};
-        this.asyncVars[varName] = this.get(varName);
+  //@todo - handle reentrant frames, count the writes even if the frame is the scope frame,
+  //second parameter to pushAsyncBlock only for recursive frames
+  //or maybe reentrant frames should keep vars in the parent scope, at least for loops
+  set(name, val, resolveUp) {
+    if(resolveUp){
+      //only set tags use resolveUp
+      //set tags do not have variables with dots, so the name is the whole variable name
+      if(name.indexOf('.') !== -1){
+        throw new Error('resolveUp should not be used with variables with dots');
       }
-    }
+      let scopeFrame = this.resolve(name, true) || this;
 
-    if(writeCounters) {
-      this.writeCounters = writeCounters;
-      for (let varName in writeCounters) { // eslint-disable-line guard-for-in
-        //just create the promise data object, the promise will be created when the
-        //first async block to read this variable is encountered
-        this.promiseData = this.promiseDataById.get(id);
-        if(!this.promiseData){
-          this.promiseData = {};
-          this.promiseDataById.set(id, this.promiseData);
-        } else {
-          if(reenterWriteCounters) {
-            if( Object.keys(this.promiseData).length ){
-              //re-entering the async block while it's still active
-              this.promiseDataById = new Map();//a new promise data map
-              this.promiseDataById.reenteredFrom = this.promiseDataById;
-              //@todo - all local get variables should be queried from reenteredFrom
-            }
-          }
+      let willResolve = false;
+      let frame = this;
+      while (frame != scopeFrame) {
+        frame._countAsyncWrites(name);
+        if( frame.promiseResolves && name in frame.promiseResolves ) {
+          //set the value in asyncVars, when the async block is done, the value will be resolved in the parent
+          //frame.asyncVars = frame.asyncVars || {};
+          frame.asyncVars[name] = val;
+          willResolve = true;
         }
-        this.asyncVars = this.asyncVars || {};
-        this.asyncVars[varName] = this.get(varName);//will use this value while the async block is active
+        frame = frame.parent;
       }
+      if (!willResolve){
+        scopeFrame.variables[name] = val;
+      }
+    } else {
+      super.set(name, val);
+      //@todo - handle for recursive frames
+      //name = name.substring(0, name.indexOf('.'));
     }
   }
 
-  _initVariablePromiseData(dependId, varName){
-    //@todo - if reentering the async block, the writeCounters will be present
-    let promiseData = this.promiseDataById.get(dependId);//should not be null
-    if(promiseData && !promiseData[varName]){
-      //create the promise for the variable
-      //@todo - do not create the promise until it is needed by a read?
-      let resolve;
-      let value = new Promise((res)=>{
-        resolve = res;
-      });
-      this.promiseDataById[dependId][varName] = { value, resolve };
+  get(name) {
+    if( this.asyncVars && name in this.asyncVars ){
+      return this.asyncVars[name];
     }
+    return super.get(name);
   }
 
   //when all assignments to a variable are done, resolve the promise for that variable
-  _trackAsyncWrites(varName){
-    if(this.writeCounters && varName in this.writeCounters){
-      if(this.writeCounters[varName]===0) {
-        throw new Error(`Variable ${varName} write counter turned negative in _trackAsyncWrites`);
-      }
-      this.writeCounters[varName]--;
-      if(this.writeCounters[varName]===0){
-        this._resolveAsyncVar(varName);
-      }
+  _countAsyncWrites(varName, decrementVal = 1){
+    if(!this.writeCounters ){
+      return;
     }
-    if(this.parent && this.parent.parent && !this.parent.isolateWrites){
-      this.parent._trackAsyncWrites(varName);
+    if(!this.writeCounters ){
+      throw new Error('Can not count vars: no vars counts in this frame');
+    }
+    let count = this.writeCounters[varName];
+    if(count<decrementVal){
+      throw new Error(`Variable ${varName} write counter ${count===undefined?'is undefined':'turned negative'} in _trackAsyncWrites`);
+    }
+    if(count===decrementVal){//zero
+      //this variable will no longer be modified, time to resolve it
+      this._resolveAsyncVar(varName);
+    } else {
+      this.writeCounters[varName] = count - decrementVal;//decrement
+    }
+  }
+
+  countMissedBranchWrites(varCounts){
+    //eslint-disable-next-line guard-for-in
+    for(let varName in varCounts){
+      let scopeFrame = this.resolve(name, true);
+      let frame = this;
+      while (frame != scopeFrame) {
+        this.countAsyncWrites(varName, varCounts[varName]);
+        frame = frame.parent;
+      }
     }
   }
 
   _resolveAsyncVar(varName){
-    //this variable will no longer be modified, time to resolve it
     let value = this.asyncVars[varName];
-
-    if(!this.promiseData) {
-      this.promiseData = this.promiseDataById.get(this.id);
-      if(!this.promiseData) {
-        this.promiseData = {};
-        this.promiseDataById.set(this.promiseData);
-      }
+    let resolveFunc = this.promiseResolves[varName];
+    resolveFunc(value);
+    //this cleanup may not be needed:
+    delete this.promiseResolves[varName];
+    delete this.asyncVars[varName];
+    if( Object.keys(this.promiseResolves).length === 0) {
+      this.promiseResolves = undefined;
     }
-
-    if(this.promiseData[varName]){
-      this.promiseData[varName].resolve(value);
-      this.promiseData[varName].value = value;//no longer promise wrapped
-    } else {
-      //no async block has requested to read this var yet - set it to the final value
-      this.promiseData[varName] = { value };
+    if( Object.keys(this.asyncVars).length === 0) {
+      this.asyncVars = undefined;
     }
   }
 
-  //A branch is active that skips some assignment, track them as if they are performed
-  trackMissedAsyncWrites(varCounts){
-    if(!this.writeCounters ){
-      throw new Error('Can not resolve vars: no set vars counts in this frame');
-    }
-    // eslint-disable-next-line guard-for-in
-    for(let varName in varCounts){
-      if(!(varName in this.writeCounters)){
-        throw new Error('Can not resolve var: var not in set vars counts');
-      }
-      this.writeCounters[varName] -= varCounts[varName];
-      if(this.writeCounters[varName]<0){
-        throw new Error(`Variable ${varName} write counter turned negative in _trackMissedAssignments`);
-      }
-      if(this.writeCounters[varName]===0){
-        this._resolveAsyncVar(varName);
-      }
-    }
-    if(this.parent && this.parent.parent && !this.parent.isolateWrites){
-      this.parent._trackMissedAssignments(varCounts);
-    }
+  push(isolateWrites) {
+    return new AsyncFrame(this, isolateWrites);
   }
 
-  _addSnapshot(snapshotFrame) {
-    let lastTimelineRecord = this.timeline[this.timeline.length - 1];
-    if(!lastTimelineRecord.frames){
-      lastTimelineRecord.frames = new Set();
+  pushAsyncBlock(writeCounters, reenterWriteCounters/* todo */) {
+    let asyncBlockFrame = new AsyncFrame(this, false);//this.isolateWrites);//@todo - should isolateWrites be passed here?
+    asyncBlockFrame.isAsyncBlock = true;
+    if(writeCounters) {
+      this.writeCounters = writeCounters;
+      this.promiseResolves = this.promiseResolves || {};
+      this.asyncVars = this.asyncVars || {};
+      // eslint-disable-next-line guard-for-in
+      for (let varName in writeCounters) {
+        //promisify the variable in the parent frame
+        if(this.parent.asyncVars && this.parent.asyncVars[varName] !== undefined){
+          this._promisifyParentVar(this.parent.asyncVars, varName);
+        } else if(this.parent.variables[varName] !== undefined) {
+          this._promisifyParentVar(this.parent.variables, varName);
+        }
+        else {
+          throw new Error('Variable not found in parent frame');
+        }
+      }
     }
-    lastTimelineRecord.frames.add(snapshotFrame);
-    if(this.parent){
-      this.parent._addSnapshot(snapshotFrame);
-    }
+    return asyncBlockFrame;
   }
 
-
-  dispose(snapshotFrame = null) {
-    if(!snapshotFrame){
-      if(!this.parent){
-        throw new Error('Cannot dispose of root frame');
-      }
-      this.parent.dispose(this);
-      return;
-    }
-    if(!snapshotFrame.isSnapshot){
-      throw new Error('Cannot dispose a frame that is not a snapshot');
-    }
-    if(this.parent){
-      this.parent.dispose(snapshotFrame);
-    }
-    //find the snapshot frame in the timeline and remove it
-    let snapPos = this._findSnapshotInTimeline(snapshotFrame);
-    if(snapPos==-1){
-      throw new Error('snapshotFrame not in the timeline');
-    }
-
-    let timelineRecord = this.timeline[snapPos];
-    timelineRecord.frames.delete(snapshotFrame);
-    if(timelineRecord.frames.size === 0){
-      if( snapPos>0 ){
-        let previousRecord = this.timeline[snapPos - 1];
-        Object.assign(previousRecord.variables, timelineRecord.variables);
-        this.timeline.splice(snapPos, 1);
-      }
-      else if(this.timeline.length > 1){
-        let nextRecord = this.timeline[snapPos + 1];
-        Object.assign(timelineRecord.variables, nextRecord.variables);
-        nextRecord.variables = timelineRecord.variables;
-        this.timeline.splice(snapPos, 1);
-      }
-    }
-  }
-
-  //retruns a the index of the record in the timeline that has snapshotFrame
-  _findSnapshotInTimeline(snapshotFrame){
-    return this.timeline.findIndex(
-      record => record.frames && record.frames.has(snapshotFrame)
-    );
+  _promisifyParentVar(parentVars, varName){
+    //use this value while the async block is active, then resolve it:
+    this.asyncVars[varName] = parentVars[varName];
+    let resolve;
+    let promise = new Promise((res)=>{ resolve = res; });
+    this.promiseResolves[varName] = resolve;
+    return promise;
   }
 }
 
