@@ -1171,7 +1171,7 @@ class Compiler extends Obj {
       async = false;//old type of async
     }
 
-    this._emitBufferBlockBegin(node, frame);
+    frame = this._emitBufferBlockBegin(node, frame);
 
     let trueBranchWriteCounts, falseBranchWriteCounts;
     let trueBranchCodePos;
@@ -1202,7 +1202,7 @@ class Compiler extends Obj {
         this._emitAsyncBlock(node.else_, frame, false, (f)=>{
           if(trueBranchWriteCounts) {
             //skip the true branch writes in the false branch
-            this._emit('frame.countMissedBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
+            this._emit('frame.skipBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
           }
           falseBranchWriteCounts = f.writeCounts;
           this.compile(node.else_, f);
@@ -1218,7 +1218,7 @@ class Compiler extends Obj {
       }
     } else {
       if(this.asyncMode && trueBranchWriteCounts) {
-        this._emit('frame.countMissedBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
+        this._emit('frame.skipBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
       }
       if (async && !this.asyncMode) {
         this._emit('cb()');
@@ -1229,10 +1229,10 @@ class Compiler extends Obj {
 
     if(falseBranchWriteCounts){
       //skip the false branch writes in the true branch code
-      this._emitInsertLine(trueBranchCodePos, `runtime.countMissedBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
+      this._emitInsertLine(trueBranchCodePos, `runtime.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
     }
 
-    this._emitBufferBlockEnd(node, frame);
+    frame = this._emitBufferBlockEnd(node, frame);
   }
 
   compileIfAsync(node, frame) {

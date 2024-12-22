@@ -4559,7 +4559,7 @@
           expect(result).to.equal('2');
       });
 
-      it('should correctly handle assignments irrespective if a block is delayed ', async () => {
+      it('should correctly handle assignments irrespective if an async block is delayed ', async () => {
         const context = {
           slowCondition: (async () => {
             await delay(5);
@@ -4578,6 +4578,34 @@
       });
 
       it('Should handle assignments in order despite different delays ', async () => {
+        const context = {
+          slowCondition: (async () => {
+            await delay(6);
+            return true;
+          })(),
+          anotherSlowCondition: (async () => {
+            await delay(3);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set value = 1 -%}
+          {%- if slowCondition -%}
+            {%- set value = 2 -%}
+          {%- endif -%}
+          {%- if anotherSlowCondition -%}
+            {%- set value = 3 -%}
+          {%- endif -%}
+          {{ value }}
+          {%- set value = 4 -%}`
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('3');
+      });
+    });
+
+    describe('Race conditions: Snapshot tests', () => {
+      it('Should snapshot current vars before starting async block ', async () => {
         const context = {
           slowCondition: (async () => {
             await delay(6);

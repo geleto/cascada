@@ -148,13 +148,13 @@ class AsyncFrame extends Frame {
       let willResolve = false;
       let frame = this;
       while (frame != scopeFrame) {
-        frame._countAsyncWrites(name);
-        if( frame.promiseResolves && name in frame.promiseResolves ) {
+        //if( frame.promiseResolves && name in frame.promiseResolves ) {
+        if (frame.asyncVars[name]!==undefined) {
           //set the value in asyncVars, when the async block is done, the value will be resolved in the parent
-          //frame.asyncVars = frame.asyncVars || {};
           frame.asyncVars[name] = val;
           willResolve = true;
         }
+        frame._countdownAsyncWrites(name, 1);
         frame = frame.parent;
       }
       if (!willResolve){
@@ -167,6 +167,7 @@ class AsyncFrame extends Frame {
     }
   }
 
+  //@todo when we start skipping block promisify - do complete get implementation here to check asyncVars at all levels
   get(name) {
     if( this.asyncVars && name in this.asyncVars ){
       return this.asyncVars[name];
@@ -175,7 +176,7 @@ class AsyncFrame extends Frame {
   }
 
   //when all assignments to a variable are done, resolve the promise for that variable
-  _countAsyncWrites(varName, decrementVal = 1){
+  _countdownAsyncWrites(varName, decrementVal = 1){
     if(!this.writeCounters ){
       return;
     }
@@ -194,13 +195,13 @@ class AsyncFrame extends Frame {
     }
   }
 
-  countMissedBranchWrites(varCounts){
+  skipBranchWrites(varCounts){
     //eslint-disable-next-line guard-for-in
     for(let varName in varCounts){
       let scopeFrame = this.resolve(name, true);
       let frame = this;
       while (frame != scopeFrame) {
-        this.countAsyncWrites(varName, varCounts[varName]);
+        frame._countdownAsyncWrites(varName, varCounts[varName]);
         frame = frame.parent;
       }
     }
@@ -229,23 +230,32 @@ class AsyncFrame extends Frame {
     let asyncBlockFrame = new AsyncFrame(this, false);//this.isolateWrites);//@todo - should isolateWrites be passed here?
     asyncBlockFrame.isAsyncBlock = true;
     if(writeCounters) {
-      this.writeCounters = writeCounters;
-      this.promiseResolves = this.promiseResolves || {};
-      this.asyncVars = this.asyncVars || {};
-      // eslint-disable-next-line guard-for-in
-      for (let varName in writeCounters) {
-        //promisify the variable in the parent frame
-        if(this.parent.asyncVars && this.parent.asyncVars[varName] !== undefined){
-          this._promisifyParentVar(this.parent.asyncVars, varName);
-        } else if(this.parent.variables[varName] !== undefined) {
-          this._promisifyParentVar(this.parent.variables, varName);
-        }
-        else {
-          throw new Error('Variable not found in parent frame');
-        }
-      }
+      asyncBlockFrame._promisifyParentVariables(writeCounters);
     }
     return asyncBlockFrame;
+  }
+
+  //@todo - skip promisify if parent has the same counts
+  _promisifyParentVariables(writeCounters){
+    this.writeCounters = writeCounters;
+    this.promiseResolves = {};
+    this.asyncVars = {};
+    let parent = this.parent;
+    // eslint-disable-next-line guard-for-in
+    for (let varName in writeCounters) {
+      //snapshot the value
+      this.asyncVars[varName] = this.get(varName);
+      //promisify the variable in the frame (parent of the new async frame)
+      //these will be resolved when the async block is done with the variable
+      if(parent.asyncVars && parent.asyncVars[varName] !== undefined){
+        this._promisifyParentVar(parent.asyncVars, varName);
+      } else if(parent.variables[varName] !== undefined) {
+        this._promisifyParentVar(parent.variables, varName);
+      }
+      else {
+        throw new Error('Variable not found in parent frame');
+      }
+    }
   }
 
   _promisifyParentVar(parentVars, varName){
@@ -254,7 +264,7 @@ class AsyncFrame extends Frame {
     let resolve;
     let promise = new Promise((res)=>{ resolve = res; });
     this.promiseResolves[varName] = resolve;
-    return promise;
+    parentVars[varName] = promise;
   }
 }
 
