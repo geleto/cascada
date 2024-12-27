@@ -96,7 +96,13 @@ class AsyncFrame extends Frame {
       //holds the write counts for each variable that CAN be modified by an async block or its children
       //this includes variables that are modified in branches that are not taken (e.g. count both sides of an if)
       //the counts are propagated upwards before the frame that has declared the variable
+      //passed as argument to pushAsyncBlock in the template source
       this.writeCounts = undefined;
+
+      //holds the names of the variables that are read in the frame or its children
+      //used when making a snapshot of the frame state when entering an async block
+      //passed as argument to pushAsyncBlock in the template source
+      this.readVars = undefined;
 
     } else {
       //when an async block is entered, it creates a promise for all variables that it or it's children modify
@@ -112,10 +118,6 @@ class AsyncFrame extends Frame {
 
       //holds the variables that are modified in an async block frame while it is active
       //once the block is done modifying a variable, the promise for the variable is resolved with this value
-      //TODO - how to apply the value once resolved?:
-      //write to parent if asyncVars[varName] exists
-      //write to parent if variable was declared there
-      //if not - move on to the parent's parent
       //asyncVars[varName] is only used if the variable is not stored in the frame
       this.asyncVars = undefined;
     }
@@ -226,20 +228,31 @@ class AsyncFrame extends Frame {
     return new AsyncFrame(this, isolateWrites);
   }
 
-  pushAsyncBlock(writeCounters, reenterWriteCounters/* todo */) {
+  pushAsyncBlock(reads, writeCounters) {
     let asyncBlockFrame = new AsyncFrame(this, false);//this.isolateWrites);//@todo - should isolateWrites be passed here?
     asyncBlockFrame.isAsyncBlock = true;
+    if(reads || writeCounters){
+      asyncBlockFrame.asyncVars = {};
+    }
+    if(reads) {
+      asyncBlockFrame._snapshotVariables(reads);
+    }
     if(writeCounters) {
       asyncBlockFrame._promisifyParentVariables(writeCounters);
     }
     return asyncBlockFrame;
   }
 
+  _snapshotVariables(reads){
+    for(const varName of reads){
+      this.asyncVars[varName] = this.get(varName);
+    }
+  }
+
   //@todo - skip promisify if parent has the same counts
   _promisifyParentVariables(writeCounters){
     this.writeCounters = writeCounters;
     this.promiseResolves = {};
-    this.asyncVars = {};
     let parent = this.parent;
     // eslint-disable-next-line guard-for-in
     for (let varName in writeCounters) {
