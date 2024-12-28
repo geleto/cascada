@@ -173,10 +173,15 @@ class Compiler extends Obj {
   }
 
   //@todo - do this only if a child is using frame
-  //@todo - _emitAsyncBlockValue
   _emitAsyncBlockValue( node, frame, emitFunc, res) {
     if (node.isAsync) {
-      frame = this._emitAsyncBlockValueBegin( node, frame );
+
+      this._emitLine(`(async (astate) => {`);
+      this._emitLine('try {');
+      this._emitLine('  let frame = astate.asyncBlockFrame;');
+      this.asyncClosureDepth++;
+      frame = frame.push(false, false);
+
       if (res === undefined) {
         res = this._tmpid();
         this._emitLine(`  let ${res} = `);
@@ -184,27 +189,7 @@ class Compiler extends Obj {
       emitFunc.call(this, frame);
       this._emitLine(';');
       this._emitLine('  return ' + res + ';');
-      frame = this._emitAsyncBlockValueEnd( node, frame );
-    } else {
-      emitFunc(frame);
-    }
-  }
 
-  //@todo - remove
-  _emitAsyncBlockValueBegin( node, frame ) {
-    if (node.isAsync) {
-      this._emitLine(`(async (astate) => {`);
-      this._emitLine('try {');
-      this._emitLine('  let frame = astate.asyncBlockFrame;');
-      this.asyncClosureDepth++;
-      return frame.push(false, false);
-    }
-    return frame;
-  }
-
-  //@todo - remove
-  _emitAsyncBlockValueEnd( node, frame ) {
-    if (node.isAsync) {
       this._emitLine(`} catch (e) {`);
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
       this._emitLine('} finally {');
@@ -212,9 +197,10 @@ class Compiler extends Obj {
       this._emitLine('}');
       this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)})))`);
       this.asyncClosureDepth--;
-      return frame.pop();
+      frame = frame.pop();
+    } else {
+      emitFunc(frame);
     }
-    return frame;
   }
 
   _emitAsyncBlockRender( node, frame, innerBodyFunction, callbackName = null) {
@@ -285,8 +271,8 @@ class Compiler extends Obj {
     const returnId = this._tmpid();
     if (node.isAsync) {
       this.asyncClosureDepth++;
-
       frame = frame.push(false, false);
+
       this._emitLine(`(async (astate)=>{`);
       this._emitLine('try {');
       this._emitLine('let frame = astate.asyncBlockFrame;');
