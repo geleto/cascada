@@ -137,9 +137,8 @@ class Compiler extends Obj {
 
   _emitAsyncBlockBegin( node, frame, createScope ) {
     if (node.isAsync) {
-      this._emitLine(`(async (astate) => {`);
+      this._emitLine(`(async (astate, frame) => {`);
       this._emitLine('try {');
-      this._emitLine('let frame = astate.asyncBlockFrame;');
       this.asyncClosureDepth++;
     }
     if(createScope && !node.isAsync){
@@ -161,7 +160,7 @@ class Compiler extends Obj {
       this._emitLine('  astate.leaveAsyncBlock();');
 
       this._emitLine(`}`);
-      this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)})));`);
+      this._emitLine(`})(astate.enterAsyncBlock(), frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)}));`);
     }
     if(createScope && !node.isAsync){
       this._emitLine('frame = frame.pop();');
@@ -176,9 +175,8 @@ class Compiler extends Obj {
   _emitAsyncBlockValue( node, frame, emitFunc, res) {
     if (node.isAsync) {
 
-      this._emitLine(`(async (astate) => {`);
+      this._emitLine(`(async (astate, frame) => {`);
       this._emitLine('try {');
-      this._emitLine('  let frame = astate.asyncBlockFrame;');
       this.asyncClosureDepth++;
       frame = frame.push(false, false);
 
@@ -195,7 +193,8 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)})))`);
+      this._emitLine(`})(astate.enterAsyncBlock(), frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)}))`);
+      //this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)})))`);
       this.asyncClosureDepth--;
       frame = frame.pop();
     } else {
@@ -216,9 +215,8 @@ class Compiler extends Obj {
     }
 
     frame = frame.push(false, false);//unscoped frame for the async block
-    this._emitLine(`(async (astate)=>{`);
+    this._emitLine(`(async (astate, frame)=>{`);
     this._emitLine('try {');
-    this._emitLine('let frame = astate.asyncBlockFrame;');
 
     const id = this._pushBuffer();//@todo - better way to get the buffer, see compileCapture
 
@@ -250,7 +248,7 @@ class Compiler extends Obj {
     this._emitLine('} finally {');
     this._emitLine('  astate.leaveAsyncBlock();');
     this._emitLine('}');
-    this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)})))`);
+    this._emitLine(`})(astate.enterAsyncBlock(), frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)}))`);
 
     frame = frame.pop();
     //in the non-callback case, using the rendered buffer will throw the error
@@ -273,9 +271,8 @@ class Compiler extends Obj {
       this.asyncClosureDepth++;
       frame = frame.push(false, false);
 
-      this._emitLine(`(async (astate)=>{`);
+      this._emitLine(`(async (astate, frame)=>{`);
       this._emitLine('try {');
-      this._emitLine('let frame = astate.asyncBlockFrame;');
       this._emitLine(`let index = ${this.buffer}_index++;`);
 
       this._emitLine(`let ${returnId};`);
@@ -290,7 +287,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)})));`);
+      this._emitLine(`})(astate.enterAsyncBlock(), frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)}));`);
 
       frame = frame.pop();
 
@@ -307,9 +304,8 @@ class Compiler extends Obj {
 
   _emitAsyncBlockAddToBufferBegin(node, frame) {
     if (node.isAsync) {
-      this._emitLine(`(async (astate)=>{`);
+      this._emitLine(`(async (astate, frame)=>{`);
       this._emitLine('try {');
-      this._emitLine('let frame = astate.asyncBlockFrame;');
       this._emitLine(`let index = ${this.buffer}_index++;`);
       this._emit(`${this.buffer}[index] = `);
       this.asyncClosureDepth++;
@@ -333,7 +329,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)})))`);
+      this._emitLine(`})(astate.enterAsyncBlock(), frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)}))`);
       return frame.pop();
     }
     return frame;
