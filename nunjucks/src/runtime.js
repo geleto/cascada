@@ -11,6 +11,7 @@ var supportsIterators = (
 // we know how to access variables. Block tags can introduce special
 // variables, for example.
 class Frame {
+  //isolateWrites - disables writing to parent frames
   constructor(parent, isolateWrites) {
     this.variables = Object.create(null);
     this.parent = parent;
@@ -177,6 +178,14 @@ class AsyncFrame extends Frame {
     return super.get(name);
   }
 
+  lookup(name) {
+    var val = (this.asyncVars && name in this.asyncVars)? this.asyncVars[name] : this.variables[name];
+    if (val !== undefined) {
+      return val;
+    }
+    return this.parent && this.parent.lookup(name);
+  }
+
   //when all assignments to a variable are done, resolve the promise for that variable
   _countdownAsyncWrites(varName, decrementVal = 1){
     if(!this.writeCounters ){
@@ -213,6 +222,7 @@ class AsyncFrame extends Frame {
     let value = this.asyncVars[varName];
     let resolveFunc = this.promiseResolves[varName];
     resolveFunc(value);
+    //@todo - if the var is the same promise - set it to the value
     //this cleanup may not be needed:
     delete this.promiseResolves[varName];
     delete this.asyncVars[varName];
@@ -233,19 +243,19 @@ class AsyncFrame extends Frame {
     asyncBlockFrame.isAsyncBlock = true;
     if(reads || writeCounters){
       asyncBlockFrame.asyncVars = {};
-    }
-    if(reads) {
-      asyncBlockFrame._snapshotVariables(reads);
-    }
-    if(writeCounters) {
-      asyncBlockFrame._promisifyParentVariables(writeCounters);
+      if(reads) {
+        asyncBlockFrame._snapshotVariables(reads);
+      }
+      if(writeCounters) {
+        asyncBlockFrame._promisifyParentVariables(writeCounters);
+      }
     }
     return asyncBlockFrame;
   }
 
   _snapshotVariables(reads){
     for(const varName of reads){
-      this.asyncVars[varName] = this.get(varName);
+      this.asyncVars[varName] = this.lookup(varName);
     }
   }
 
@@ -261,9 +271,9 @@ class AsyncFrame extends Frame {
       //promisify the variable in the frame (parent of the new async frame)
       //these will be resolved when the async block is done with the variable
       if(parent.asyncVars && parent.asyncVars[varName] !== undefined){
-        this._promisifyParentVar(parent.asyncVars, varName);
+        this._promisifyParentVar(parent, parent.asyncVars, varName);
       } else if(parent.variables[varName] !== undefined) {
-        this._promisifyParentVar(parent.variables, varName);
+        this._promisifyParentVar(parent, parent.variables, varName);
       }
       else {
         throw new Error('Variable not found in parent frame');
@@ -271,13 +281,17 @@ class AsyncFrame extends Frame {
     }
   }
 
-  _promisifyParentVar(parentVars, varName){
+  _promisifyParentVar(parentFrame, parentVars, varName){
     //use this value while the async block is active, then resolve it:
     this.asyncVars[varName] = parentVars[varName];
     let resolve;
     let promise = new Promise((res)=>{ resolve = res; });
     this.promiseResolves[varName] = resolve;
     parentVars[varName] = promise;
+    if(parentFrame.topLevel) {
+      //todo: modify the variable in the context
+      //context.setVariable(varName, promise);
+    }
   }
 }
 
@@ -728,6 +742,9 @@ async function iterate(arr, loopBody, loopElse, frame, options = {}) {
       const iterator = arr[Symbol.asyncIterator]();
       let result;
       const values = [];
+
+      //@todo - dynamically run the loops, not in advance, len becomes a promise
+      //iaAsync with regular iterator
 
       while ((result = await iterator.next()), !result.done) {
         values.push(result.value);

@@ -1149,11 +1149,29 @@ class Compiler extends Obj {
   }
 
   //@ todo - if the variable is not changed by the frame or it's children, and a parent has read it - do not store it in the frame
+  //@todo - handle included parent frames properly
   _updateFrameReads(frame, name) {
+    //find the variable declaration in the scope chain
+    //let declared = false;
+    let df = frame;
     do {
-      if( (frame.declaredVars && frame.declaredVars.has(name)) || (frame.readVars && frame.readVars.has(name)) || (frame.writeCounts && frame.writeCounts[name]) ) {
-        //found the var in vf
-        //if it's declared here we won't need to snapshot it, don't add
+      if( df.declaredVars && df.declaredVars.has(name) ) {
+        //declared = true;
+        break;//found the var declaration
+      }
+      df = df.parent;
+    }
+    while( df );//&& !df.isolateWrites );
+
+    if(!df) {
+      //a context variable
+      return;
+    }
+
+    while( frame!=df ) {
+      if( (frame.readVars && frame.readVars.has(name)) || (frame.writeCounts && frame.writeCounts[name]) ) {
+        //found the var
+        //if it's already in readVars - skip
         //if it's set here or by children - it will be snapshotted anyway, don't add
         break;
       }
@@ -1161,13 +1179,15 @@ class Compiler extends Obj {
       frame.readVars.add(name);
       frame = frame.parent;
     }
-    while( frame );
   }
 
   //returns the arguments as string
   _getAsyncBlockArguments(frame) {
     let reads = [];
-    if(frame.readVars) {
+    if(!frame.readVars && !frame.writeCounts) {
+      return '';
+    }
+    if(frame.readVars ) {
       //add each read var to a list of vars to be snapshotted, with a few exceptions
       frame.readVars.forEach((name) => {
         //skip variables that are written to, they will be snapshotted anyway
@@ -1181,7 +1201,7 @@ class Compiler extends Obj {
         reads.push(name);
       });
     }
-    return (reads? JSON.stringify(reads) : 'null') + ',' +  (frame.writeCounts? JSON.stringify(frame.writeCounts) : '');
+    return (reads.length? JSON.stringify(reads) : 'null') + ',' +  (frame.writeCounts? JSON.stringify(frame.writeCounts) : '');
   }
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
@@ -1323,7 +1343,6 @@ class Compiler extends Obj {
     const loopBodyFunc = this._tmpid();
     this._emit(`let ${loopBodyFunc} = `);
 
-    // Function declaration based on async mode
     if (node.isAsync) {
       this._emit('async function(');//@todo - think this over, does it need async block?
     } else {
@@ -1384,7 +1403,6 @@ class Compiler extends Obj {
       elseFuncId = this._tmpid();
       this._emit(`let ${elseFuncId} = `);
 
-      // Function declaration based on async mode
       if (node.isAsync) {
         this._emit('async function() {');//@todo - think this over, does it need async block?
       } else {
