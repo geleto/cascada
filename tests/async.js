@@ -4719,7 +4719,7 @@
         expect(resultC.trim()).to.equal('4');
       });
 
-      it('should handle switch with multiple async variables', async () => {
+      it('should handle switch with nested if and async conditions', async () => {
         const context = {
           whichCase: (async () => {
             await delay(3);
@@ -4736,9 +4736,18 @@
           {%- switch whichCase -%}
             {%- case 'caseA' -%}
               {%- set value = 'A' -%}
+              {%- if extraSlowVar == 'NOT_SLOW' -%}
+                {%- set value = 'Y' -%}
+              {%- else -%}
+                {%- set value = 'Z' -%}
+                {{ value }}
+                {%- set value = 'Q' -%}
+              {%- endif -%}
             {%- case 'caseB' -%}
               {%- set value = 'B' -%}
-              {{ extraSlowVar }}
+              {%- if extraSlowVar == 'SLOW' -%}
+                {%- set value = 'X' -%}
+              {%- endif -%}
             {%- case 'caseC' -%}
               {%- set value = 'C' -%}
             {%- default -%}
@@ -4747,8 +4756,24 @@
           {{ value }}
         `;
 
-        const result = await env.renderString(template, context);
-        expect(result.trim()).to.equal('B');
+        let result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('X');
+
+        context.whichCase = (async () => {
+          await delay(2);
+          return 'caseA';
+        })();
+
+        result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('ZQ');
+
+        context.extraSlowVar = (async () => {
+          await delay(1);
+          return 'NOT_SLOW';
+        })();
+
+        result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Y');
       });
 
       it('should skip writes from all but one switch case even if all conditions are slow', async () => {
