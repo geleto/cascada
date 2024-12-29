@@ -74,164 +74,164 @@
         const result = await env.renderString(template, context);
         expect(result).to.equal('Current time is: 2024-09-12T17:12:123Z');
       });
-    });
 
-    // Test for async promise variable
-    it('should correctly resolve an async Promise variable', async () => {
-      const context = {
-        weatherPromise: (async () => {
-          await delay(5);
-          return { temp: 22, condition: 'Sunny' };
-        })()
-      };
+      // Test for async promise variable
+      it('should correctly resolve an async Promise variable', async () => {
+        const context = {
+          weatherPromise: (async () => {
+            await delay(5);
+            return { temp: 22, condition: 'Sunny' };
+          })()
+        };
 
-      const template = 'The weather is {{ weatherPromise.temp }}°C and {{ weatherPromise.condition }}.';
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('The weather is 22°C and Sunny.');
-    });
+        const template = 'The weather is {{ weatherPromise.temp }}°C and {{ weatherPromise.condition }}.';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('The weather is 22°C and Sunny.');
+      });
 
-    // Test for async function
-    it('should correctly resolve an async function in output', async () => {
-      const context = {
-        async fetchUserName(id) {
-          await delay(5);
-          return 'John Doe';
-        }
-      };
+      // Test for async function
+      it('should correctly resolve an async function in output', async () => {
+        const context = {
+          async fetchUserName(id) {
+            await delay(5);
+            return 'John Doe';
+          }
+        };
 
-      const template = 'User: {{ fetchUserName() }}';
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('User: John Doe');
-    });
+        const template = 'User: {{ fetchUserName() }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('User: John Doe');
+      });
 
-    it('should correctly resolve a dynamic function name', async () => {
-      const context = {
-        dynamicFunction: async (arg) => {
-          await delay(5);
-          return `Hello, ${arg}!`;
-        },
-        argPromise: (async () => {
-          await delay(5);
-          return 'World';
-        })()
-      };
+      it('should correctly resolve a dynamic function name', async () => {
+        const context = {
+          dynamicFunction: async (arg) => {
+            await delay(5);
+            return `Hello, ${arg}!`;
+          },
+          argPromise: (async () => {
+            await delay(5);
+            return 'World';
+          })()
+        };
 
-      const template = '{{ dynamicFunction(argPromise) }}';
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('Hello, World!');
-    });
+        const template = '{{ dynamicFunction(argPromise) }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('Hello, World!');
+      });
 
-    it('should correctly call a function with 2 async arguments', async () => {
-      const context = {
-        add: async (a, b) => {
-          await delay(5);
-          return a + b;
-        },
-        arg1: (async () => {
-          await delay(5);
-          return 3;
-        })(),
-        arg2: (async () => {
-          await delay(5);
-          return 7;
-        })()
-      };
+      it('should correctly call a function with 2 async arguments', async () => {
+        const context = {
+          add: async (a, b) => {
+            await delay(5);
+            return a + b;
+          },
+          arg1: (async () => {
+            await delay(5);
+            return 3;
+          })(),
+          arg2: (async () => {
+            await delay(5);
+            return 7;
+          })()
+        };
 
-      const template = '{{ add(arg1, arg2) }}';
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('10');
-    });
+        const template = '{{ add(arg1, arg2) }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('10');
+      });
 
-    it('should correctly call a function with 3 async arguments', async () => {
-      const context = {
-        multiplyAndAdd: async (a, b, c) => {
-          await delay(5);
-          return a * b + c;
-        },
-        arg1: (async () => {
-          await delay(5);
-          return 2;
-        })(),
-        arg2: (async () => {
-          await delay(5);
-          return 5;
-        })(),
-        arg3: (async () => {
-          await delay(5);
-          return 3;
-        })()
-      };
+      it('should correctly call a function with 3 async arguments', async () => {
+        const context = {
+          multiplyAndAdd: async (a, b, c) => {
+            await delay(5);
+            return a * b + c;
+          },
+          arg1: (async () => {
+            await delay(5);
+            return 2;
+          })(),
+          arg2: (async () => {
+            await delay(5);
+            return 5;
+          })(),
+          arg3: (async () => {
+            await delay(5);
+            return 3;
+          })()
+        };
 
-      const template = '{{ multiplyAndAdd(arg1, arg2, arg3) }}';
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('13');
-    });
+        const template = '{{ multiplyAndAdd(arg1, arg2, arg3) }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('13');
+      });
 
-    it('should correctly resolve an async function followed by member resolution in output', async () => {
-      const context = {
-        async fetchUser(id) {
-          await delay(5);
-          return { id, name: 'John Doe', email: 'john@example.com' };
-        }
-      };
+      it('should correctly resolve an async function followed by member resolution in output', async () => {
+        const context = {
+          async fetchUser(id) {
+            await delay(5);
+            return { id, name: 'John Doe', email: 'john@example.com' };
+          }
+        };
 
-      const template = 'User: {{ fetchUser(1).name }}';
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('User: John Doe');
-    });
+        const template = 'User: {{ fetchUser(1).name }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('User: John Doe');
+      });
 
-    it('should correctly resolve an async function with set', async () => {
-      const context = {
-        async fetchUser(id) {
-          await delay(5);
-          return { id, name: 'John Doe', email: 'john@example.com' };
-        }
-      };
+      it('should correctly resolve an async function with set', async () => {
+        const context = {
+          async fetchUser(id) {
+            await delay(5);
+            return { id, name: 'John Doe', email: 'john@example.com' };
+          }
+        };
 
-      const template = '{% set user = fetchUser(1) %}User: {{ user.name }} ({{ user.email }})';
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('User: John Doe (john@example.com)');
-    });
+        const template = '{% set user = fetchUser(1) %}User: {{ user.name }} ({{ user.email }})';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('User: John Doe (john@example.com)');
+      });
 
-    it('should correctly resolve an async expression with set', async () => {
-      const context = {
-        async getValue(id) {
-          await delay(5);
-          return 1;
-        }
-      };
+      it('should correctly resolve an async expression with set', async () => {
+        const context = {
+          async getValue(id) {
+            await delay(5);
+            return 1;
+          }
+        };
 
-      const template = '{% set result = 1 + getValue() %}Result = {{ result }}';
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('Result = 2');
-    });
+        const template = '{% set result = 1 + getValue() %}Result = {{ result }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('Result = 2');
+      });
 
-    it('should handle function calls with promise and async function arguments', async () => {
-      const context = {
-        // A regular function that expects resolved values
-        processUserData(name, age, city) {
-          return `${name} (${age}) from ${city}`;
-        },
+      it('should handle function calls with promise and async function arguments', async () => {
+        const context = {
+          // A regular function that expects resolved values
+          processUserData(name, age, city) {
+            return `${name} (${age}) from ${city}`;
+          },
 
-        // Returns a promise directly
-        namePromise: Promise.resolve('John'),
+          // Returns a promise directly
+          namePromise: Promise.resolve('John'),
 
-        // An async function that returns age
-        async getAge() {
-          await delay(5);
-          return 25;
-        },
+          // An async function that returns age
+          async getAge() {
+            await delay(5);
+            return 25;
+          },
 
-        // An async function that returns city
-        async getLocation() {
-          await delay(3);
-          return 'New York';
-        }
-      };
+          // An async function that returns city
+          async getLocation() {
+            await delay(3);
+            return 'New York';
+          }
+        };
 
-      const template = '{{ processUserData(namePromise, getAge(), getLocation()) }}';
-      const result = await env.renderString(template, context);
-      expect(result).to.equal('John (25) from New York');
+        const template = '{{ processUserData(namePromise, getAge(), getLocation()) }}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('John (25) from New York');
+      });
     });
 
     describe('Dependent Async Functions', () => {
@@ -4604,7 +4604,8 @@
       });
     });
 
-    describe('Race conditions: Snapshot tests', () => {
+    describe('Async If/Switch Tests', () => {
+
       it('Should snapshot current vars before starting async block ', async () => {
         const context = {
           slowCondition: (async () => {
@@ -4629,8 +4630,822 @@
         const result = await env.renderString(template, context);
         expect(result).to.equal('2');
       });
+
+      it('should skip writes from the else branch when if is truthy', async () => {
+        const context = {
+          slowTruth: (async () => {
+            await delay(10);
+            return true;
+          })(),
+        };
+
+        const template = `
+          {%- set value = 1 -%}
+          {%- if slowTruth -%}
+            {%- set value = 2 -%}
+          {%- else -%}
+            {%- set value = 3 -%}
+          {%- endif -%}
+          {{ value }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('2');
+      });
+
+      it('should handle nested async if statements with concurrency', async () => {
+        const context = {
+          outer: (async () => {
+            await delay(5);
+            return true;
+          })(),
+          inner: (async () => {
+            await delay(3);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set x = 1 -%}
+          {%- if outer -%}
+            {%- set x = 10 -%}
+            {%- if inner -%}
+              {%- set x = 20 -%}
+            {%- endif -%}
+          {%- endif -%}
+          {{ x }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('20');
+      });
+
+      it('should skip all but the first truthy branch', async () => {
+        const template = `
+          {%- set value = 1 -%}
+          {%- if cond1 -%}
+            {%- set value = 2 -%}
+          {%- else -%}
+            {%- if cond2 -%}
+              {%- set value = 3 -%}
+            {%- else -%}
+              {%- set value = 4 -%}
+            {%- endif -%}
+          {%- endif -%}
+          {{ value }}
+        `;
+
+        const contextA = {
+          cond1: (async () => { await delay(5); return true; })(),
+          cond2: (async () => { await delay(1); return false; })(),
+        };
+
+        const contextB = {
+          cond1: (async () => { await delay(2); return false; })(),
+          cond2: (async () => { await delay(3); return true; })(),
+        };
+
+        const contextC = {
+          cond1: Promise.resolve(false),
+          cond2: Promise.resolve(false),
+        };
+
+        const resultA = await env.renderString(template, contextA);
+        const resultB = await env.renderString(template, contextB);
+        const resultC = await env.renderString(template, contextC);
+
+        expect(resultA.trim()).to.equal('2');
+        expect(resultB.trim()).to.equal('3');
+        expect(resultC.trim()).to.equal('4');
+      });
+
+      it('should handle switch with multiple async variables', async () => {
+        const context = {
+          whichCase: (async () => {
+            await delay(3);
+            return 'caseB';
+          })(),
+          extraSlowVar: (async () => {
+            await delay(10);
+            return 'SLOW';
+          })()
+        };
+
+        const template = `
+          {%- set value = 'initial' -%}
+          {%- switch whichCase -%}
+            {%- case 'caseA' -%}
+              {%- set value = 'A' -%}
+            {%- case 'caseB' -%}
+              {%- set value = 'B' -%}
+              {{ extraSlowVar }}
+            {%- case 'caseC' -%}
+              {%- set value = 'C' -%}
+            {%- default -%}
+              {%- set value = 'D' -%}
+          {%- endswitch -%}
+          {{ value }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('B');
+      });
+
+      it('should skip writes from all but one switch case even if all conditions are slow', async () => {
+        const context = {
+          switchKey: (async () => {
+            await delay(4);
+            return 'blue';
+          })(),
+          redSlowVar: (async () => { await delay(10); return 'RED'; })(),
+          blueSlowVar: (async () => { await delay(1); return 'BLUE'; })(),
+          greenSlowVar: (async () => { await delay(5); return 'GREEN'; })()
+        };
+
+        const template = `
+          {%- set color = 'none' -%}
+          {%- switch switchKey -%}
+            {%- case 'red' -%}
+              {%- set color = redSlowVar -%}
+            {%- case 'blue' -%}
+              {%- set color = blueSlowVar -%}
+            {%- case 'green' -%}
+              {%- set color = greenSlowVar -%}
+            {%- default -%}
+              {%- set color = 'other' -%}
+          {%- endswitch -%}
+          {{ color }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('BLUE');
+      });
+
+      it('should use default if no case matches', async () => {
+        const context = {
+          switchKey: (async () => {
+            await delay(2);
+            return 'not-a-match';
+          })()
+        };
+
+        const template = `
+          {%- set val = 1 -%}
+          {%- switch switchKey -%}
+            {%- case 'foo' -%}
+              {%- set val = 2 -%}
+            {%- case 'bar' -%}
+              {%- set val = 3 -%}
+            {%- default -%}
+              {%- set val = 99 -%}
+          {%- endswitch -%}
+          {{ val }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('99');
+      });
+
+      it('should reflect final assignment despite parallel async conditions', async () => {
+        const context = {
+          cond1: (async () => {
+            await delay(8);
+            return true;
+          })(),
+          cond2: (async () => {
+            await delay(3);
+            return true;
+          })(),
+          cond3: (async () => {
+            await delay(6);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set value = 'start' -%}
+          {%- if cond1 -%}
+            {%- set value = 'cond1' -%}
+          {%- endif -%}
+          {%- if cond2 -%}
+            {%- set value = 'cond2' -%}
+          {%- endif -%}
+          {%- if cond3 -%}
+            {%- set value = 'cond3' -%}
+          {%- endif -%}
+          {{ value }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('cond3');
+      });
+
+      it('should demonstrate snapshots in consecutive if blocks', async () => {
+        const context = {
+          slowCondition: (async () => {
+            await delay(5);
+            return true;
+          })(),
+          anotherSlowCondition: (async () => {
+            await delay(2);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set value = 1 -%}
+          {%- if slowCondition -%}
+            {%- set value = 2 -%}
+          {%- endif -%}
+          {%- if anotherSlowCondition -%}
+            {{ value }}
+          {%- endif -%}
+          {%- set value = 3 -%}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('2');
+      });
     });
 
+    describe('Advanced Async If/Switch Tests', () => {
+      let env;
+
+      beforeEach(() => {
+        const loader = new StringLoader();
+        env = new AsyncEnvironment(loader);
+      });
+
+      it('should correctly handle deeply nested async if-else structures', async () => {
+        const context = {
+          conditionA: (async () => {
+            await delay(5);
+            return true;
+          })(),
+          conditionB: (async () => {
+            await delay(10);
+            return false;
+          })(),
+          conditionC: (async () => {
+            await delay(2);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set result = 'start' -%}
+          {%- if conditionA -%}
+            {%- set result = 'A1' -%}
+            {%- if conditionB -%}
+              {%- set result = 'A1-B1' -%}
+            {%- else -%}
+              {%- set result = 'A1-B0' -%}
+              {%- if conditionC -%}
+                {%- set result = 'A1-B0-C1' -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- else -%}
+            {%- set result = 'A0' -%}
+          {%- endif -%}
+          {{ result }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('A1-B0-C1');
+      });
+
+      it('should handle mixed async switch cases with nested if statements', async () => {
+        const context = {
+          key: (async () => {
+            await delay(5);
+            return 'case2';
+          })(),
+          slowCondition1: (async () => {
+            await delay(7);
+            return true;
+          })(),
+          slowCondition2: (async () => {
+            await delay(3);
+            return false;
+          })()
+        };
+
+        const template = `
+          {%- set result = 'none' -%}
+          {%- switch key -%}
+            {%- case 'case1' -%}
+              {%- set result = 'case1' -%}
+            {%- case 'case2' -%}
+              {%- set result = 'case2' -%}
+              {%- if slowCondition1 -%}
+                {%- set result = 'case2-true' -%}
+                {%- if slowCondition2 -%}
+                  {%- set result = 'case2-true-true' -%}
+                {%- else -%}
+                  {%- set result = 'case2-true-false' -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- case 'case3' -%}
+              {%- set result = 'case3' -%}
+            {%- default -%}
+              {%- set result = 'default' -%}
+          {%- endswitch -%}
+          {{ result }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('case2-true-false');
+      });
+
+      it('should handle overlapping async writes in multiple branches', async () => {
+        const context = {
+          condA: (async () => {
+            await delay(3);
+            return true;
+          })(),
+          condB: (async () => {
+            await delay(6);
+            return true;
+          })(),
+          condC: (async () => {
+            await delay(2);
+            return false;
+          })()
+        };
+
+        const template = `
+          {%- set shared = 'start' -%}
+          {%- if condA -%}
+            {%- set shared = 'condA' -%}
+          {%- endif -%}
+          {%- if condB -%}
+            {%- set shared = 'condB' -%}
+          {%- endif -%}
+          {%- if condC -%}
+            {%- set shared = 'condC' -%}
+          {%- endif -%}
+          {{ shared }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('condB');
+      });
+
+      it('should correctly skip writes in a nested switch-case within an async if', async () => {
+        const context = {
+          outerCondition: (async () => {
+            await delay(8);
+            return true;
+          })(),
+          innerSwitchKey: (async () => {
+            await delay(4);
+            return 'caseY';
+          })()
+        };
+
+        const template = `
+          {%- set result = 'initial' -%}
+          {%- if outerCondition -%}
+            {%- switch innerSwitchKey -%}
+              {%- case 'caseX' -%}
+                {%- set result = 'outer-true-caseX' -%}
+              {%- case 'caseY' -%}
+                {%- set result = 'outer-true-caseY' -%}
+              {%- case 'caseZ' -%}
+                {%- set result = 'outer-true-caseZ' -%}
+              {%- default -%}
+                {%- set result = 'outer-true-default' -%}
+            {%- endswitch -%}
+          {%- else -%}
+            {%- set result = 'outer-false' -%}
+          {%- endif -%}
+          {{ result }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('outer-true-caseY');
+      });
+
+      it('should process multiple async nested blocks with shared variable updates', async () => {
+        const context = {
+          asyncCondition1: (async () => {
+            await delay(3);
+            return true;
+          })(),
+          asyncCondition2: (async () => {
+            await delay(6);
+            return true;
+          })(),
+          asyncCondition3: (async () => {
+            await delay(2);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set state = 'initial' -%}
+          {%- if asyncCondition1 -%}
+            {%- set state = 'condition1' -%}
+            {%- if asyncCondition2 -%}
+              {%- set state = 'condition1-2' -%}
+            {%- endif -%}
+          {%- endif -%}
+          {%- if asyncCondition3 -%}
+            {%- set state = 'condition3' -%}
+          {%- endif -%}
+          {{ state }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('condition3');
+      });
+
+      it('should handle conflicting writes from async if and switch cases', async () => {
+        const context = {
+          conditionIf: (async () => {
+            await delay(5);
+            return true;
+          })(),
+          conditionSwitchKey: (async () => {
+            await delay(3);
+            return 'case2';
+          })()
+        };
+
+        const template = `
+          {%- set result = 'start' -%}
+          {%- if conditionIf -%}
+            {%- set result = 'if-branch' -%}
+          {%- endif -%}
+          {%- switch conditionSwitchKey -%}
+            {%- case 'case1' -%}
+              {%- set result = 'switch-case1' -%}
+            {%- case 'case2' -%}
+              {%- set result = 'switch-case2' -%}
+            {%- case 'case3' -%}
+              {%- set result = 'switch-case3' -%}
+            {%- default -%}
+              {%- set result = 'switch-default' -%}
+          {%- endswitch -%}
+          {{ result }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('switch-case2');
+      });
+
+      it('should handle variable snapshots across nested if blocks with async conditions', async () => {
+        const context = {
+          conditionA: (async () => {
+            await delay(5);
+            return true;
+          })(),
+          conditionB: (async () => {
+            await delay(3);
+            return false;
+          })(),
+          conditionC: (async () => {
+            await delay(6);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set result = 'initial' -%}
+          {%- if conditionA -%}
+            {%- set result = 'A' -%}
+            {%- if conditionB -%}
+              {%- set result = 'A-B' -%}
+            {%- else -%}
+              {%- set result = 'A-B-not' -%}
+            {%- endif -%}
+          {%- endif -%}
+          {%- if conditionC -%}
+            {{ result }}
+          {%- endif -%}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('A-B-not');
+      });
+    });
+
+    describe('Complex Async If/Switch Concurrency Tests 2', () => {
+      /**
+       * Helper function to simulate a delay-based async value.
+       * If you already have one, you can remove this.
+       */
+      function makeAsyncValue(value, ms = 10) {
+        return (async () => {
+          await delay(ms);
+          return value;
+        })();
+      }
+
+      /**
+       * 1) Deeply Nested If
+       *    - outerIf1 => sets X if true
+       *    - within the same block, nestedIf => sets X again
+       *    - then outerIf2 => sets Y
+       *    - tests that each block’s concurrency is respected
+       */
+      it('should handle deeply nested if statements with concurrency', async () => {
+        const context = {
+          outerIf1: makeAsyncValue(true, 15),
+          nestedIf: makeAsyncValue(true, 5),
+          outerIf2: makeAsyncValue(true, 1)
+        };
+
+        const template = `
+          {%- set x = 0 -%}
+          {%- set y = 0 -%}
+          {%- if outerIf1 -%}
+            {%- set x = 1 -%}
+            {%- if nestedIf -%}
+              {%- set x = 2 -%}
+            {%- endif -%}
+          {%- endif -%}
+
+          {%- if outerIf2 -%}
+            {%- set y = x * 10 -%}
+          {%- endif -%}
+          X={{ x }} Y={{ y }}
+        `;
+
+        // Explanation:
+        // - outerIf1 => true => x=1
+        // - nestedIf => true => x=2
+        // - outerIf2 => true => y = x * 10 = 2 * 10 = 20
+        // Final => x=2, y=20
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('X=2 Y=20');
+      });
+
+      /**
+       * 2) Switch inside an If
+       *    - if slowFlag => uses a switch
+       *    - switch picks a color with multiple async variables
+       *    - tests that if the outer if is false, switch block is skipped
+       */
+      it('should skip the entire switch if the outer if is false', async () => {
+        const contextTrue = {
+          slowFlag: makeAsyncValue(true, 5),
+          colorKey: makeAsyncValue('blue', 2),
+          redAsync: makeAsyncValue('RED!', 8),
+          blueAsync: makeAsyncValue('BLUE!', 1),
+          greenAsync: makeAsyncValue('GREEN!', 4),
+        };
+        const contextFalse = {
+          slowFlag: makeAsyncValue(false, 5),
+          colorKey: makeAsyncValue('red', 2), // would normally pick red but outer if is false
+          redAsync: makeAsyncValue('RED!', 8),
+          blueAsync: makeAsyncValue('BLUE!', 1),
+          greenAsync: makeAsyncValue('GREEN!', 4),
+        };
+
+        const template = `
+          {%- set output = 'none' -%}
+          {%- if slowFlag -%}
+            {%- switch colorKey -%}
+              {%- case 'red' -%}
+                {%- set output = redAsync -%}
+              {%- case 'blue' -%}
+                {%- set output = blueAsync -%}
+              {%- default -%}
+                {%- set output = greenAsync -%}
+            {%- endswitch -%}
+          {%- endif -%}
+          {{ output }}
+        `;
+
+        const resultTrue = await env.renderString(template, contextTrue);
+        expect(resultTrue.trim()).to.equal('BLUE!');
+
+        // Outer if is false => entire switch block is skipped => output remains 'none'
+        const resultFalse = await env.renderString(template, contextFalse);
+        expect(resultFalse.trim()).to.equal('none');
+      });
+
+      /**
+       * 3) Multiple if blocks & a final set:
+       *    - Tests that final set is *logically after* earlier if blocks,
+       *      even if earlier ifs finish "late" in real time.
+       */
+      it('should preserve template order with multiple async ifs and final set', async () => {
+        const context = {
+          cond1: makeAsyncValue(true, 20),  // finishes late
+          cond2: makeAsyncValue(true, 5),   // finishes sooner
+          cond3: makeAsyncValue(true, 10)   // finishes in between
+        };
+
+        const template = `
+          {%- set result = 'start' -%}
+          {%- if cond1 -%}
+            {%- set result = result + ' > cond1' -%}
+          {%- endif -%}
+          {%- if cond2 -%}
+            {%- set result = result + ' > cond2' -%}
+          {%- endif -%}
+          {%- if cond3 -%}
+            {%- set result = result + ' > cond3' -%}
+          {%- endif -%}
+          {%- set result = result + ' > final' -%}
+          {{ result }}
+        `;
+
+        // Execution order in code:
+        // 1) cond1 => sets result = 'start > cond1'
+        // 2) cond2 => sets result = 'start > cond1 > cond2'
+        // 3) cond3 => sets result = 'start > cond1 > cond2 > cond3'
+        // 4) final => 'start > cond1 > cond2 > cond3 > final'
+        // cond1 is physically the slowest to resolve, but in template order,
+        // it's the first "if" => must complete first logically.
+        const result = await env.renderString(template, context);
+        expect(unescape(result.trim())).to.equal('start > cond1 > cond2 > cond3 > final');
+      });
+
+      /**
+       * 4) Switch that modifies multiple variables in each branch
+       *    - Tests concurrency skipping across multiple variables
+       *    - Each case sets x and y differently
+       */
+      it('should skip multiple variable writes in non-matching switch cases', async () => {
+        const context = {
+          which: makeAsyncValue('B', 8),
+        };
+
+        const template = `
+          {%- set x = 0 -%}
+          {%- set y = 0 -%}
+          {%- switch which -%}
+            {%- case 'A' -%}
+              {%- set x = 10 -%}
+              {%- set y = 100 -%}
+            {%- case 'B' -%}
+              {%- set x = 20 -%}
+              {%- set y = 200 -%}
+            {%- default -%}
+              {%- set x = 30 -%}
+              {%- set y = 300 -%}
+          {%- endswitch -%}
+          X={{ x }} Y={{ y }}
+        `;
+
+        // Should pick case 'B' => x=20, y=200
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('X=20 Y=200');
+      });
+
+      /**
+       * 5) Complex concurrency: nested if inside each switch case,
+       *    each modifies a shared variable in a different way
+       */
+      it('should skip nested if writes for non-chosen switch case', async () => {
+        const context = {
+          mainKey: makeAsyncValue('green', 5),
+          conditionRed: makeAsyncValue(true, 10),    // won't matter if switch picks green
+          conditionBlue: makeAsyncValue(false, 8),
+          conditionGreen: makeAsyncValue(true, 1)    // relevant only in "green" case
+        };
+
+        const template = `
+          {%- set color = 'none' -%}
+          {%- switch mainKey -%}
+            {%- case 'red' -%}
+              {%- set color = 'red' -%}
+              {%- if conditionRed -%}
+                {%- set color = 'dark-red' -%}
+              {%- endif -%}
+            {%- case 'blue' -%}
+              {%- set color = 'blue' -%}
+              {%- if conditionBlue -%}
+                {%- set color = 'light-blue' -%}
+              {%- endif -%}
+            {%- case 'green' -%}
+              {%- set color = 'green' -%}
+              {%- if conditionGreen -%}
+                {%- set color = 'lime-green' -%}
+              {%- endif -%}
+            {%- default -%}
+              {%- set color = 'other' -%}
+          {%- endswitch -%}
+          {{ color }}
+        `;
+
+        // mainKey => 'green' => sets color='green'
+        // conditionGreen => true => color='lime-green'
+        // All other cases are skipped (including the nested if in those branches).
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('lime-green');
+      });
+
+      /**
+       * 6) If statements referencing multiple variables:
+       *    - Each if modifies a different variable
+       *    - Another if references both variables
+       *    - Tests combined concurrency: "snapshots" of multiple variables
+       */
+      it('should handle multiple variables set in multiple async ifs and read them in another if', async () => {
+        const context = {
+          condA: makeAsyncValue(true, 6),
+          condB: makeAsyncValue(true, 3),
+          condC: makeAsyncValue(true, 10)
+        };
+
+        const template = `
+          {%- set varA = 0 -%}
+          {%- set varB = 0 -%}
+
+          {%- if condA -%}
+            {%- set varA = 5 -%}
+          {%- endif -%}
+
+          {%- if condB -%}
+            {%- set varB = 10 -%}
+          {%- endif -%}
+
+          {%- if condC -%}
+            {{ varA + varB }}
+          {%- endif -%}
+        `;
+
+        // Expected: "15"
+        // Explanation:
+        //  - If condA => varA=5
+        //  - If condB => varB=10
+        //  - If condC => output varA+varB=5+10=15
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('15');
+      });
+
+      /**
+       * 7) Chain of if statements, each referencing the same variable,
+       *    to ensure sequential logic is strictly enforced
+       */
+      it('should finalize the value from the last if but preserve correct order of assignment', async () => {
+        const context = {
+          c1: makeAsyncValue(true, 12),
+          c2: makeAsyncValue(true, 2),
+          c3: makeAsyncValue(false, 9) // last if won't execute
+        };
+
+        const template = `
+          {%- set counter = 0 -%}
+          {%- if c1 -%}
+            {%- set counter = counter + 10 -%}
+          {%- endif -%}
+
+          {%- if c2 -%}
+            {%- set counter = counter + 100 -%}
+          {%- endif -%}
+
+          {%- if c3 -%}
+            {%- set counter = counter + 1000 -%}
+          {%- endif -%}
+          {{ counter }}
+        `;
+
+        // Logical order of if statements:
+        //  1) if c1 => +10
+        //  2) if c2 => +100
+        //  3) if c3 => +1000 (but it's false => skip)
+        // => final = 110
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('110');
+      });
+
+      /**
+       * 8) Switch with fallback to default,
+       *    plus a subsequent if that uses the value set in default
+       */
+      it('should allow default in switch, then a subsequent if to pick up the new value', async () => {
+        const context = {
+          switchVal: makeAsyncValue('unknown', 5),
+          checkVar: makeAsyncValue(true, 2)
+        };
+
+        const template = `
+          {%- set chosen = 'none' -%}
+          {%- switch switchVal -%}
+            {%- case 'alpha' -%}
+              {%- set chosen = 'A' -%}
+            {%- case 'beta' -%}
+              {%- set chosen = 'B' -%}
+            {%- default -%}
+              {%- set chosen = 'default' -%}
+          {%- endswitch -%}
+
+          {%- if checkVar -%}
+            {{ chosen }}
+          {%- endif -%}
+        `;
+
+        // switchVal => 'unknown' => default => chosen='default'
+        // Then if => outputs 'default'
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('default');
+      });
+    });
 
     describe('Race conditions: Async Template Inheritance, Macros, and Super', () => {
 
@@ -4695,13 +5510,11 @@
           {%- call m.show(val) -%}
             {%- set val = getInnerVal() -%}
             Inner: {{ val }}
-          {%- endcall -%}
-          Final val: {{ val }}`;
+          {%- endcall %} Final val: {{ val }}`;
 
         loader.addTemplate('macros_caller.njk', `
           {%- macro show(value) -%}
-          Macro Start: {{ value }} {{ caller() }} Macro End
-          {%- endmacro -%}
+          Macro Start: {{ value }} {{ caller() }} Macro End {%- endmacro -%}
           `);
 
         const context = {
