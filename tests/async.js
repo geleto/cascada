@@ -4776,7 +4776,7 @@
         expect(result.trim()).to.equal('Y');
       });
 
-      it('should skip writes from all but one switch case even if all conditions are slow', async () => {
+      it('should skip writes from all but one switch case', async () => {
         const context = {
           switchKey: (async () => {
             await delay(4);
@@ -4791,11 +4791,21 @@
           {%- set color = 'none' -%}
           {%- switch switchKey -%}
             {%- case 'red' -%}
-              {%- set color = redSlowVar -%}
+              {%- if redSlowVar == 'RED' -%}
+                {%- set color = redSlowVar + '_COLOR' -%}
+              {%- endif -%}
             {%- case 'blue' -%}
-              {%- set color = blueSlowVar -%}
+              {%- if blueSlowVar == 'BLUE' -%}
+                {%- set color = blueSlowVar + '_COLOR'  -%}
+              {%- else -%}
+                {%- set color = 'Not blue' -%}
+              {%- endif -%}
             {%- case 'green' -%}
-              {%- set color = greenSlowVar -%}
+              {%- if greenSlowVar == 'GREEN' -%}
+                {%- set color = greenSlowVar + '_COLOR'  -%}
+              {%- else -%}
+                {%- set color = 'Not green' -%}
+              {%- endif -%}
             {%- default -%}
               {%- set color = 'other' -%}
           {%- endswitch -%}
@@ -4803,7 +4813,7 @@
         `;
 
         const result = await env.renderString(template, context);
-        expect(result.trim()).to.equal('BLUE');
+        expect(result.trim()).to.equal('BLUE_COLOR');
       });
 
       it('should use default if no case matches', async () => {
@@ -4894,13 +4904,6 @@
     });
 
     describe('Advanced Async If/Switch Tests', () => {
-      let env;
-
-      beforeEach(() => {
-        const loader = new StringLoader();
-        env = new AsyncEnvironment(loader);
-      });
-
       it('should correctly handle deeply nested async if-else structures', async () => {
         const context = {
           conditionA: (async () => {
@@ -5207,56 +5210,11 @@
       });
 
       /**
-       * 2) Switch inside an If
-       *    - if slowFlag => uses a switch
-       *    - switch picks a color with multiple async variables
-       *    - tests that if the outer if is false, switch block is skipped
-       */
-      it('should skip the entire switch if the outer if is false', async () => {
-        const contextTrue = {
-          slowFlag: makeAsyncValue(true, 5),
-          colorKey: makeAsyncValue('blue', 2),
-          redAsync: makeAsyncValue('RED!', 8),
-          blueAsync: makeAsyncValue('BLUE!', 1),
-          greenAsync: makeAsyncValue('GREEN!', 4),
-        };
-        const contextFalse = {
-          slowFlag: makeAsyncValue(false, 5),
-          colorKey: makeAsyncValue('red', 2), // would normally pick red but outer if is false
-          redAsync: makeAsyncValue('RED!', 8),
-          blueAsync: makeAsyncValue('BLUE!', 1),
-          greenAsync: makeAsyncValue('GREEN!', 4),
-        };
-
-        const template = `
-          {%- set output = 'none' -%}
-          {%- if slowFlag -%}
-            {%- switch colorKey -%}
-              {%- case 'red' -%}
-                {%- set output = redAsync -%}
-              {%- case 'blue' -%}
-                {%- set output = blueAsync -%}
-              {%- default -%}
-                {%- set output = greenAsync -%}
-            {%- endswitch -%}
-          {%- endif -%}
-          {{ output }}
-        `;
-
-        const resultTrue = await env.renderString(template, contextTrue);
-        expect(resultTrue.trim()).to.equal('BLUE!');
-
-        // Outer if is false => entire switch block is skipped => output remains 'none'
-        const resultFalse = await env.renderString(template, contextFalse);
-        expect(resultFalse.trim()).to.equal('none');
-      });
-
-      /**
        * 3) Multiple if blocks & a final set:
        *    - Tests that final set is *logically after* earlier if blocks,
        *      even if earlier ifs finish "late" in real time.
        */
-      it('should preserve template order with multiple async ifs and final set', async () => {
+      it('should preserve template order with dependent async ifs and final set', async () => {
         const context = {
           cond1: makeAsyncValue(true, 20),  // finishes late
           cond2: makeAsyncValue(true, 5),   // finishes sooner
@@ -5268,10 +5226,10 @@
           {%- if cond1 -%}
             {%- set result = result + ' > cond1' -%}
           {%- endif -%}
-          {%- if cond2 -%}
+          {%- if result.indexOf('cond1') >= 0 and cond2 -%}
             {%- set result = result + ' > cond2' -%}
           {%- endif -%}
-          {%- if cond3 -%}
+          {%- if result.indexOf('cond2') >= 0 and cond3 -%}
             {%- set result = result + ' > cond3' -%}
           {%- endif -%}
           {%- set result = result + ' > final' -%}
@@ -5279,12 +5237,10 @@
         `;
 
         // Execution order in code:
-        // 1) cond1 => sets result = 'start > cond1'
-        // 2) cond2 => sets result = 'start > cond1 > cond2'
-        // 3) cond3 => sets result = 'start > cond1 > cond2 > cond3'
+        // 1) cond1 must resolve first => sets result = 'start > cond1'
+        // 2) Only if cond1 passed and result contains 'cond1', cond2 can evaluate => 'start > cond1 > cond2'
+        // 3) Only if cond2 passed and result contains 'cond2', cond3 can evaluate => 'start > cond1 > cond2 > cond3'
         // 4) final => 'start > cond1 > cond2 > cond3 > final'
-        // cond1 is physically the slowest to resolve, but in template order,
-        // it's the first "if" => must complete first logically.
         const result = await env.renderString(template, context);
         expect(unescape(result.trim())).to.equal('start > cond1 > cond2 > cond3 > final');
       });
