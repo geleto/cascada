@@ -1328,8 +1328,8 @@ class Compiler extends Obj {
     if (node.else_) {
       if(this.asyncMode) {
         this._emitAsyncBlock(node.else_, frame, false, (f)=>{
-          falseBranchWriteCounts = f.writeCounts;
           this.compile(node.else_, f);
+          falseBranchWriteCounts = f.writeCounts;
         })
       }
       else {
@@ -1350,7 +1350,7 @@ class Compiler extends Obj {
 
     if(falseBranchWriteCounts){
       //skip the false branch writes in the true branch code
-      this._emitInsertLine(trueBranchCodePos, `runtime.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
+      this._emitInsertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
     }
 
     frame = this._emitAsyncBlockBufferNodeEnd(node, frame);
