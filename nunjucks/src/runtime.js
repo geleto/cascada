@@ -748,11 +748,8 @@ function fromIterator(arr) {
   }
 }
 
-async function iterate(arr, loopBody, loopElse, frame, options = {}) {
+async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = false) {
   let didIterate = false;
-  const loopVars = options.loopVars || [];
-  const isAsync = options.async || false;
-
   if (arr) {
     if (isAsync && typeof arr[Symbol.asyncIterator] === 'function') {
       const iterator = arr[Symbol.asyncIterator]();

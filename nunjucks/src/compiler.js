@@ -1147,7 +1147,6 @@ class Compiler extends Obj {
     }
   }
 
-  //@ todo - if the variable is not changed by the frame or it's children, and a parent has read it - do not store it in the frame
   //@todo - handle included parent frames properly
   _updateFrameReads(frame, name) {
     //find the variable declaration in the scope chain
@@ -1477,14 +1476,14 @@ class Compiler extends Obj {
     }
 
     // Call the runtime loop function
-    this._emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, {loopVars: [`);
+    this._emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, [`);
     loopVars.forEach((varName, index) => {
       if (index > 0) {
         this._emit(', ');
       }
       this._emit(`"${varName}"`);
     });
-    this._emit(`], async: ${node.isAsync}});`);
+    this._emit(`], ${node.isAsync});`);
 
     // End buffer block for the node
     frame = this._emitAsyncBlockBufferNodeEnd(node, frame, true);
