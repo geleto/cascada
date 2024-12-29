@@ -90,6 +90,8 @@ class AsyncFrame extends Frame {
   constructor(parent, isolateWrites, createScope=true) {
     super(parent, isolateWrites);
 
+    this.createScope = createScope;
+
     if(AsyncFrame.inCompilerContext){
       //holds the names of the variables declared at the frame
       this.declaredVars = undefined;
@@ -146,7 +148,21 @@ class AsyncFrame extends Frame {
       if(name.indexOf('.') !== -1){
         throw new Error('resolveUp should not be used with variables with dots');
       }
-      let scopeFrame = this.resolve(name, true) || this;
+      let scopeFrame = this.resolve(name, true);
+
+      if(!scopeFrame){
+        //add the variable here unless !createScope in which case try the root
+        if(!this.createScope){
+          this.parent.set(name, val);
+          scopeFrame = this.resolve(name, true);
+          if(!scopeFrame){
+            throw new Error('Variable should have been added in a parent frame');
+          }
+        }
+        else {
+          scopeFrame = this;//create the variable in this frame
+        }
+      }
 
       let willResolve = false;
       let frame = this;

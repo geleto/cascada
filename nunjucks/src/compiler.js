@@ -1128,6 +1128,9 @@ class Compiler extends Obj {
 
     if(!vf) {
       //declare a new variable in the current frame
+      while( !frame.createScope ) {
+        frame = frame.parent;//skip the frames that can not create a new scope
+      }
       if(!frame.declaredVars) {
         frame.declaredVars = new Set();
       }
