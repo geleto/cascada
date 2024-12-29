@@ -209,7 +209,7 @@ class AsyncFrame extends Frame {
   skipBranchWrites(varCounts){
     //eslint-disable-next-line guard-for-in
     for(let varName in varCounts){
-      let scopeFrame = this.resolve(name, true);
+      let scopeFrame = this.resolve(varName, true);
       let frame = this;
       while (frame != scopeFrame) {
         frame._countdownAsyncWrites(varName, varCounts[varName]);
