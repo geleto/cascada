@@ -84,7 +84,7 @@ class Compiler extends Obj {
   }
 
   _emitInsert(pos, code) {
-    this.codebuf.splice(pos, 0, code);
+    this.codebuf[pos] += code;
   }
 
   _emitInsertLine(pos, code) {
@@ -1204,24 +1204,84 @@ class Compiler extends Obj {
   compileSwitch(node, frame) {
     frame = this._emitAsyncBlockBufferNodeBegin(node, frame);
 
+    const branchPositions = [];
+    const branchWriteCounts = [];
+
+    // Helper to combine all write counts
+    const combineWriteCounts = (counts) => {
+      const combined = {};
+      counts.forEach((count) => {
+        if (!count) return;
+        Object.entries(count).forEach(([key, value]) => {
+          combined[key] = (combined[key] || 0) + value;
+        });
+      });
+      return combined;
+    };
+
+    // Helper to exclude current branch writes from combined writes
+    const excludeCurrentWrites = (combined, current) => {
+      const filtered = { ...combined };
+      if (current) {
+        Object.keys(current).forEach((key) => {
+          if (filtered[key]) {
+            filtered[key] -= current[key];
+            if (filtered[key] <= 0) {
+              delete filtered[key];
+            }
+          }
+        });
+      }
+      return filtered;
+    };
+
+    // Emit switch statement
     this._emit('switch (');
     this._compileAwaitedExpression(node.expr, frame);
     this._emit(') {');
+
+    // Compile cases
     node.cases.forEach((c, i) => {
       this._emit('case ');
       this._compileAwaitedExpression(c.cond, frame);
       this._emit(': ');
-      this.compile(c.body, frame);
-      // preserve fall-throughs
-      if (c.body.children.length) {
-        this._emitLine('break;');
+
+      branchPositions.push(this.codebuf.length);
+      this._emit('');
+
+      this._emitAsyncBlock(c.body, frame, false, (f) => {
+        this.compile(c.body, f);
+        branchWriteCounts.push(f.writeCounts || {});
+      });
+
+      this._emitLine('break;');
+    });
+
+    // Compile default case, if present
+    if (node.default) {
+      this._emit('default: ');
+
+      branchPositions.push(this.codebuf.length);
+      this._emit('');
+
+      this._emitAsyncBlock(node.default, frame, false, (f) => {
+        this.compile(node.default, f);
+        branchWriteCounts.push(f.writeCounts || {});
+      });
+    }
+
+    this._emit('}');
+
+    // Combine writes from all branches
+    const totalWrites = combineWriteCounts(branchWriteCounts);
+
+    // Insert skip statements for each case, including default
+    branchPositions.forEach((pos, i) => {
+      const writesToSkip = excludeCurrentWrites(totalWrites, branchWriteCounts[i]);
+      if (Object.keys(writesToSkip).length > 0) {
+        this._emitInsertLine(pos, `frame.skipBranchWrites(${JSON.stringify(writesToSkip)});`);
       }
     });
-    if (node.default) {
-      this._emit('default:');
-      this.compile(node.default, frame);
-    }
-    this._emit('}');
 
     frame = this._emitAsyncBlockBufferNodeEnd(node, frame);
   }
@@ -1242,6 +1302,8 @@ class Compiler extends Obj {
     this._emit('){');
 
     if(this.asyncMode) {
+      trueBranchCodePos = this.codebuf.length;
+      this._emit('');
       this._emitAsyncBlock(node.body, frame, false, (f)=>{
         this.compile(node.body, f);
         trueBranchWriteCounts = f.writeCounts;
@@ -1258,13 +1320,14 @@ class Compiler extends Obj {
 
     this._emit('} else {');
 
+    if(trueBranchWriteCounts) {
+      //skip the true branch writes in the false branch
+      this._emit('frame.skipBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
+    }
+
     if (node.else_) {
       if(this.asyncMode) {
         this._emitAsyncBlock(node.else_, frame, false, (f)=>{
-          if(trueBranchWriteCounts) {
-            //skip the true branch writes in the false branch
-            this._emit('frame.skipBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
-          }
           falseBranchWriteCounts = f.writeCounts;
           this.compile(node.else_, f);
         })
@@ -1278,9 +1341,6 @@ class Compiler extends Obj {
         });
       }
     } else {
-      if(this.asyncMode && trueBranchWriteCounts) {
-        this._emit('frame.skipBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
-      }
       if (async && !this.asyncMode) {
         this._emit('cb()');
       }
