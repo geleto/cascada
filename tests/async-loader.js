@@ -6,20 +6,6 @@
   var AsyncEnvironment;
   //var Environment;
 
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
-    //Environment = require('../nunjucks/src/environment').Environment;
-    unescape = require('he').unescape;
-  } else {
-    expect = window.expect;
-    unescape = window.he.unescape;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    //Environment = nunjucks.Environment;
-  }
-
-  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
   class StringLoader {
     constructor() {
       this.templates = new Map();
@@ -41,6 +27,25 @@
       this.templates.set(name, content);
     }
   }
+
+  if (typeof require !== 'undefined') {
+    expect = require('expect.js');
+    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
+    //Environment = require('../nunjucks/src/environment').Environment;
+    unescape = require('he').unescape;
+
+    if (module.exports) {
+      module.exports = StringLoader;
+    }
+  } else {
+    expect = window.expect;
+    unescape = window.he.unescape;
+    AsyncEnvironment = nunjucks.AsyncEnvironment;
+    //Environment = nunjucks.Environment;
+    window.StringLoader = StringLoader;
+  }
+
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   describe('Async mode with loaded templates', () => {
     let loader;
@@ -816,103 +821,7 @@
         });
       });
 
-    describe('Race conditions: Async Template Inheritance, Macros, and Super', () => {
-      it('should handle extends with async super() and set', async () => {
-        const template = `
-          {%- extends "base_for_super.njk" -%}
-          {%- block content -%}
-            {%- set val = getPreSuperVal() -%}
-            {{ super()}}
-            {%- set val = getPostSuperVal() -%}
-            {{ val }}
-          {%- endblock -%}
-        `;
-
-        loader.addTemplate('base_for_super.njk', `
-          Base Content:
-          {%- block content -%}
-          Base Block: {{ val }}
-          {%- endblock -%}
-          `);
-
-        const context = {
-          async getPreSuperVal() {
-            await delay(5);
-            return 'PreSuperVal';
-          },
-          async getPostSuperVal() {
-            await delay(10);
-            return 'PostSuperVal';
-          }
-        };
-
-        expect((await env.renderString(template, context)).trim()).to.equal('Base Content:Base Block: PreSuperVal PostSuperVal');
-      })
-
-      it('should handle macro with async caller block', async () => {
-        const template = `
-          {%- import "macros_caller.njk" as m -%}
-          {%- set val = 1 -%}
-          {%- if slowCondition -%}
-            {%- set val = getOuterVal() -%}
-          {%- endif -%}
-          {%- call m.show(val) -%}
-            {%- set val = getInnerVal() -%}
-            Inner: {{ val }}
-          {%- endcall %} Final val: {{ val }}`;
-
-        loader.addTemplate('macros_caller.njk', `
-          {%- macro show(value) -%}
-          Macro Start: {{ value }} {{ caller() }} Macro End {%- endmacro -%}
-          `);
-
-        const context = {
-          slowCondition: (async () => { await delay(2); return true; })(),
-          async getOuterVal() {
-            await delay(5);
-            return 'OuterVal';
-          },
-          async getInnerVal() {
-            await delay(3);
-            return 'InnerVal';
-          }
-        };
-
-        expect((await env.renderString(template, context)).trim()).to.equal('Macro Start: OuterVal Inner: InnerVal Macro End Final val: OuterVal');
-      });
-
-      it('should handle async extends with delayed parent template and block overrides', async () => {
-        const template = `
-          {% extends "parent_delayed.njk" %}
-          {% block content %}
-            {% set val = getVal() %}
-            {{ super() }}
-            Child sees value: {{ val }}
-          {% endblock %}
-        `;
-
-        loader.addTemplate('parent_delayed.njk', `
-          Parent Start
-          {% block content %}
-          Parent sees value: {{ val }}
-          {% endblock %}
-          Parent End
-          `);
-
-        const context = {
-          async getVal() {
-            await delay(8);
-            return 'ChildVal';
-          }
-        };
-
-        expect((await env.renderString(template, context)).replace(/\s+/g,' ')).to.equal('Parent Start Parent sees value: ChildVal Child sees value: ChildVal Parent End');
-      });
-
-    });
-
     describe('Import multiple items', () => {
-
       it('should "import as" multiple async macros and use them', async () => {
         loader.addTemplate('macros.njk', `
           {% macro asyncMacro1() -%}
