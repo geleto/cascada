@@ -1251,12 +1251,13 @@ class Compiler extends Obj {
       branchPositions.push(this.codebuf.length);
       this._emit('');
 
-      this._emitAsyncBlock(c.body, frame, false, (f) => {
-        this.compile(c.body, f);
-        branchWriteCounts.push(f.writeCounts || {});
-      });
-
-      this._emitLine('break;');
+      if(c.body.children.length) {
+        this._emitAsyncBlock(c.body, frame, false, (f) => {
+          this.compile(c.body, f);
+          branchWriteCounts.push(f.writeCounts || {});
+        });
+        this._emitLine('break;');
+      }
     });
 
     // Compile default case, if present
