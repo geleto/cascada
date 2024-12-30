@@ -230,7 +230,6 @@ class AsyncFrame extends Frame {
   }
 
   skipBranchWrites(varCounts){
-    //eslint-disable-next-line guard-for-in
     for(let varName in varCounts){
       let scopeFrame = this.resolve(varName, true);
       let frame = this;
@@ -252,12 +251,8 @@ class AsyncFrame extends Frame {
     //@todo - if the var is the same promise - set it to the value
     //this cleanup may not be needed:
     delete this.promiseResolves[varName];
-    delete this.asyncVars[varName];
     if( Object.keys(this.promiseResolves).length === 0) {
       this.promiseResolves = undefined;
-    }
-    if( Object.keys(this.asyncVars).length === 0) {
-      this.asyncVars = undefined;
     }
   }
 
@@ -294,7 +289,7 @@ class AsyncFrame extends Frame {
     // eslint-disable-next-line guard-for-in
     for (let varName in writeCounters) {
       //snapshot the value
-      this.asyncVars[varName] = this.get(varName);
+      this.asyncVars[varName] = this.lookup(varName);
       //promisify the variable in the frame (parent of the new async frame)
       //these will be resolved when the async block is done with the variable
       if(parent.asyncVars && parent.asyncVars[varName] !== undefined){

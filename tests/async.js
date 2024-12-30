@@ -4631,7 +4631,7 @@
         expect(result).to.equal('2');
       });
 
-      it('Should snapshot current vars before starting async block, with an else block', async () => {
+      it('Should write-snapshot (because of idle else branch) current vars before starting async block', async () => {
         const context = {
           slowCondition: (async () => {
             await delay(6);
