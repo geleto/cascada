@@ -1884,22 +1884,6 @@
         expect(result.trim()).to.equal('Hello, World!');
       });
 
-      /*it('should handle template inheritance with blocks and async content - non-async', (done) => {
-        const context = {
-          getContent() {
-            return 'Async Child Content';
-          }
-        };
-        let senv = new Environment(loader);
-
-        loader.addTemplate('base.njk', '<div>{% block content %}Base Content{% endblock %}</div>');
-        const childTemplate = '{% extends "base.njk" %}{% block content %}{{ getContent() }}{% endblock %}';
-        senv.renderString(childTemplate, context, function(err, result){
-          expect(result.trim()).to.equal('<div>Async Child Content</div>');
-          done();
-        });
-      });*/
-
       it('should handle template inheritance with blocks and async content', async () => {
         const context = {
           async getContent() {
@@ -2865,139 +2849,6 @@
         });
       });
 
-      describe('Nunjucks Async Macro Handling Tests', () => {
-
-        it('should handle async function passed as argument to macro', async () => {
-          const context = {
-            async getName() {
-              await delay(5);
-              return 'Alice';
-            }
-          };
-
-          const template = `
-            {%- macro greet(name) -%}
-              Hello, {{ name }}!
-            {%- endmacro -%}
-            {{ greet(getName()) }}
-          `;
-
-          const result = await env.renderString(template, context);
-          expect(result.trim()).to.equal('Hello, Alice!');
-        });
-
-        it('should handle async function called within macro', async () => {
-          const context = {
-            async getName() {
-              await delay(5);
-              return 'Bob';
-            }
-          };
-
-          const template = `
-            {%- macro greet() -%}
-              Hello, {{ getName() }}!
-            {%- endmacro -%}
-            {{ greet() }}
-          `;
-
-          const result = await env.renderString(template, context);
-          expect(result.trim()).to.equal('Hello, Bob!');
-        });
-
-        it('should handle async function in imported macro', async () => {
-          loader.addTemplate('greet_macro.njk', `
-            {%- macro greet(name) -%}
-              Hello, {{ name }}!
-            {%- endmacro -%}
-          `);
-
-          const context = {
-            async getName() {
-              await delay(5);
-              return 'Charlie';
-            }
-          };
-
-          const template = `
-            {% import "greet_macro.njk" as macros %}
-            {{ macros.greet(getName()) }}
-          `;
-
-          const result = await env.renderString(template, context);
-          expect(result.trim()).to.equal('Hello, Charlie!');
-        });
-
-        it('should handle async function called within imported macro with context', async () => {
-          loader.addTemplate('greet_macro_with_context.njk', `
-            {%- macro greet() -%}
-              Hello, {{ getName() }}!
-            {%- endmacro -%}
-          `);
-
-          const context = {
-            async getName() {
-              await delay(5);
-              return 'Diana';
-            }
-          };
-
-          const template = `
-            {% import "greet_macro_with_context.njk" as macros with context %}
-            {{ macros.greet() }}
-          `;
-
-          const result = await env.renderString(template, context);
-          expect(result.trim()).to.equal('Hello, Diana!');
-        });
-
-        it('should handle macro using async variable from context', async () => {
-          const context = {
-            async greeting() {
-              await delay(2);
-              return 'Hi';
-            },
-            async name() {
-              await delay(3);
-              return 'Eve';
-            }
-          };
-
-          const template = `
-            {%- macro greet() -%}
-              {{ greeting() }}, {{ name() }}!
-            {%- endmacro -%}
-            {{ greet() }}
-          `;
-
-          const result = await env.renderString(template, context);
-          expect(result.trim()).to.equal('Hi, Eve!');
-        });
-
-        it('should handle async logic inside macro', async () => {
-          const context = {
-            async getGreeting() {
-              await delay(2);
-              return 'Greetings';
-            },
-            async getName() {
-              await delay(3);
-              return 'Frank';
-            }
-          };
-
-          const template = `
-            {%- macro greet() -%}
-              {{ getGreeting() }}, {{ getName() }}!
-            {%- endmacro -%}
-            {{ greet() }}
-          `;
-
-          const result = await env.renderString(template, context);
-          expect(result.trim()).to.equal('Greetings, Frank!');
-        });
-      });
-
       // Let's also fix the Dependencies section
       describe('Import with Dependencies', () => {
         beforeEach(() => {
@@ -3047,7 +2898,7 @@
 
       });
 
-      describe('Import with Async Filter Usage', () => {
+      describe('Imported Macros', () => {
         beforeEach(() => {
           // Add async filter
           env.addFilter('uppercase', async (str) => {
@@ -3081,6 +2932,139 @@
             '<input name="username" value="JOHN_DOE" />'
           );
         });
+
+        it('should handle async function in imported macro', async () => {
+          loader.addTemplate('greet_macro.njk', `
+            {%- macro greet(name) -%}
+              Hello, {{ name }}!
+            {%- endmacro -%}
+          `);
+
+          const context = {
+            async getName() {
+              await delay(5);
+              return 'Charlie';
+            }
+          };
+
+          const template = `
+            {% import "greet_macro.njk" as macros %}
+            {{ macros.greet(getName()) }}
+          `;
+
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('Hello, Charlie!');
+        });
+
+        it('should handle async function called within imported macro with context', async () => {
+          loader.addTemplate('greet_macro_with_context.njk', `
+            {%- macro greet() -%}
+              Hello, {{ getName() }}!
+            {%- endmacro -%}
+          `);
+
+          const context = {
+            async getName() {
+              await delay(5);
+              return 'Diana';
+            }
+          };
+
+          const template = `
+            {% import "greet_macro_with_context.njk" as macros with context %}
+            {{ macros.greet() }}
+          `;
+
+          const result = await env.renderString(template, context);
+          expect(result.trim()).to.equal('Hello, Diana!');
+        });
+      });
+    });
+
+    describe('Nunjucks Async Macro Handling Tests', () => {
+
+      it('should handle async function passed as argument to macro', async () => {
+        const context = {
+          async getName() {
+            await delay(5);
+            return 'Alice';
+          }
+        };
+
+        const template = `
+          {%- macro greet(name) -%}
+            Hello, {{ name }}!
+          {%- endmacro -%}
+          {{ greet(getName()) }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Hello, Alice!');
+      });
+
+      it('should handle async function called within macro', async () => {
+        const context = {
+          async getName() {
+            await delay(5);
+            return 'Bob';
+          }
+        };
+
+        const template = `
+          {%- macro greet() -%}
+            Hello, {{ getName() }}!
+          {%- endmacro -%}
+          {{ greet() }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Hello, Bob!');
+      });
+
+      it('should handle macro using async variable from context', async () => {
+        const context = {
+          async greeting() {
+            await delay(2);
+            return 'Hi';
+          },
+          async name() {
+            await delay(3);
+            return 'Eve';
+          }
+        };
+
+        const template = `
+          {%- macro greet() -%}
+            {{ greeting() }}, {{ name() }}!
+          {%- endmacro -%}
+          {{ greet() }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Hi, Eve!');
+      });
+
+      it('should handle async logic inside macro', async () => {
+        const context = {
+          async getGreeting() {
+            await delay(2);
+            return 'Greetings';
+          },
+          async getName() {
+            await delay(3);
+            return 'Frank';
+          }
+        };
+
+        const template = `
+          {%- macro greet() -%}
+            {{ getGreeting() }}, {{ getName() }}!
+          {%- endmacro -%}
+          {{ greet() }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Greetings, Frank!');
       });
     });
 
@@ -5214,10 +5198,6 @@
     });
 
     describe('Complex Async If/Switch Concurrency Tests 2', () => {
-      /**
-       * Helper function to simulate a delay-based async value.
-       * If you already have one, you can remove this.
-       */
       function makeAsyncValue(value, ms = 10) {
         return (async () => {
           await delay(ms);
@@ -5225,13 +5205,6 @@
         })();
       }
 
-      /**
-       * 1) Deeply Nested If
-       *    - outerIf1 => sets X if true
-       *    - within the same block, nestedIf => sets X again
-       *    - then outerIf2 => sets Y
-       *    - tests that each block’s concurrency is respected
-       */
       it('should handle deeply nested if statements with concurrency', async () => {
         const context = {
           outerIf1: makeAsyncValue(true, 15),
@@ -5291,20 +5264,10 @@
           {{ result }}
         `;
 
-        // Execution order in code:
-        // 1) cond1 must resolve first => sets result = 'start > cond1'
-        // 2) Only if cond1 passed and result contains 'cond1', cond2 can evaluate => 'start > cond1 > cond2'
-        // 3) Only if cond2 passed and result contains 'cond2', cond3 can evaluate => 'start > cond1 > cond2 > cond3'
-        // 4) final => 'start > cond1 > cond2 > cond3 > final'
         const result = await env.renderString(template, context);
         expect(unescape(result.trim())).to.equal('start > cond1 > cond2 > cond3 > final');
       });
 
-      /**
-       * 4) Switch that modifies multiple variables in each branch
-       *    - Tests concurrency skipping across multiple variables
-       *    - Each case sets x and y differently
-       */
       it('should skip multiple variable writes in non-matching switch cases', async () => {
         const context = {
           which: makeAsyncValue('B', 8),
@@ -5367,20 +5330,10 @@
           {%- endswitch -%}
           {{ color }}
         `;
-
-        // mainKey => 'green' => sets color='green'
-        // conditionGreen => true => color='lime-green'
-        // All other cases are skipped (including the nested if in those branches).
         const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('lime-green');
       });
 
-      /**
-       * 6) If statements referencing multiple variables:
-       *    - Each if modifies a different variable
-       *    - Another if references both variables
-       *    - Tests combined concurrency: "snapshots" of multiple variables
-       */
       it('should handle multiple variables set in multiple async ifs and read them in another if', async () => {
         const context = {
           condA: makeAsyncValue(true, 6),
@@ -5404,20 +5357,10 @@
             {{ varA + varB }}
           {%- endif -%}
         `;
-
-        // Expected: "15"
-        // Explanation:
-        //  - If condA => varA=5
-        //  - If condB => varB=10
-        //  - If condC => output varA+varB=5+10=15
         const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('15');
       });
 
-      /**
-       * 7) Chain of if statements, each referencing the same variable,
-       *    to ensure sequential logic is strictly enforced
-       */
       it('should finalize the value from the last if but preserve correct order of assignment', async () => {
         const context = {
           c1: makeAsyncValue(true, 12),
@@ -5441,19 +5384,10 @@
           {{ counter }}
         `;
 
-        // Logical order of if statements:
-        //  1) if c1 => +10
-        //  2) if c2 => +100
-        //  3) if c3 => +1000 (but it's false => skip)
-        // => final = 110
         const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('110');
       });
 
-      /**
-       * 8) Switch with fallback to default,
-       *    plus a subsequent if that uses the value set in default
-       */
       it('should allow default in switch, then a subsequent if to pick up the new value', async () => {
         const context = {
           switchVal: makeAsyncValue('unknown', 5),
@@ -5476,8 +5410,6 @@
           {%- endif -%}
         `;
 
-        // switchVal => 'unknown' => default => chosen='default'
-        // Then if => outputs 'default'
         const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('default');
       });
@@ -5520,21 +5452,8 @@
           }
         };
 
-        // If sync worked:
-        // "Base Content:
-        //  Base Block: PreSuperVal
-        //  PostSuperVal"
         expect((await env.renderString(template, context)).trim()).to.equal('Base Content:Base Block: PreSuperVal PostSuperVal');
       })
-
-
-      // Macro with caller.
-      // Outside: val=1
-      // If condition async => sets val='OuterVal'
-      // Caller block sets val='InnerVal'
-      // Inside macro we see 'OuterVal' then 'InnerVal', after macro call val should be 'OuterVal' again.
-      // Without sync, these scoping rules won't hold.
-
 
       it('should handle macro with async caller block', async () => {
         const template = `
@@ -5565,20 +5484,8 @@
           }
         };
 
-        // If sync worked:
-        // Macro sees "OuterVal" then caller sets val='InnerVal'
-        // Inside macro: "Macro Start: OuterVal Inner: InnerVal Macro End"
-        // Outside macro: val should still be 'OuterVal'
-        // "Final val: OuterVal"
         expect((await env.renderString(template, context)).trim()).to.equal('Macro Start: OuterVal Inner: InnerVal Macro End Final val: OuterVal');
       });
-
-
-      // Parent template and child override with async val.
-      // Child sets val before super() is called.
-      // If sync worked, parent sees updated val.
-      // Without sync, parent might see old/undefined val.
-
 
       it('should handle async extends with delayed parent template and block overrides', async () => {
         const template = `
@@ -5605,11 +5512,6 @@
           }
         };
 
-        // If sync worked:
-        // "Parent Start
-        //  Parent sees value: ChildVal
-        //  Child sees value: ChildVal
-        //  Parent End"
         expect((await env.renderString(template, context)).replace(/\s+/g,' ')).to.equal('Parent Start Parent sees value: ChildVal Child sees value: ChildVal Parent End');
       });
 
