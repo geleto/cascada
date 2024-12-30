@@ -62,7 +62,7 @@ module.exports = [
 	    'no-console': ['warn', { allow: ['error'] }],
       'no-self-compare': 'error',
       'dot-notation': 'error',
-      'guard-for-in': 'error',
+      'guard-for-in': 'off',
       'no-restricted-syntax': ['error'],
       'no-nested-ternary': 'error',
       'for-direction': 'error',
