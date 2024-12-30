@@ -4631,6 +4631,30 @@
         expect(result).to.equal('2');
       });
 
+      it('Should snapshot current vars before starting async block, with an else block', async () => {
+        const context = {
+          slowCondition: (async () => {
+            await delay(6);
+            return true;
+          })(),
+          anotherSlowCondition: (async () => {
+            await delay(3);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set value = 1 -%}
+          {%- if anotherSlowCondition -%}
+            {{ value }}
+          {%- else -%}
+            {%- set value = 100 -%}
+          {%- endif -%}
+          {%- set value = 3 -%}`
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('1');
+      });
+
       it('should skip writes from the else branch when if is truthy', async () => {
         const context = {
           slowTruth: (async () => {
@@ -4672,6 +4696,37 @@
             {%- if inner -%}
               {%- set x = 20 -%}
             {%- endif -%}
+          {%- endif -%}
+          {{ x }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('20');
+      });
+
+      it('should handle nested async if statements with concurrency, and else blocks', async () => {
+        const context = {
+          outer: (async () => {
+            await delay(5);
+            return true;
+          })(),
+          inner: (async () => {
+            await delay(3);
+            return true;
+          })()
+        };
+
+        const template = `
+          {%- set x = 1 -%}
+          {%- if outer -%}
+            {%- set x = 10 -%}
+            {%- if inner -%}
+              {%- set x = 20 -%}
+            {%- else -%}
+              {%- set x = 100 -%}
+            {%- endif -%}
+          {%- else -%}
+            {%- set x = 200 -%}
           {%- endif -%}
           {{ x }}
         `;

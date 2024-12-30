@@ -1127,22 +1127,27 @@ class Compiler extends Obj {
     while( vf );
 
     if(!vf) {
-      //declare a new variable in the current frame
-      while( !frame.createScope ) {
-        frame = frame.parent;//skip the frames that can not create a new scope
-      }
-      if(!frame.declaredVars) {
-        frame.declaredVars = new Set();
-      }
-      frame.declaredVars.add(name);
+      //declare a new variable in the current frame (or a parent if !createScope)
       vf = frame;
+      while( !vf.createScope ) {
+        vf = vf.parent;//skip the frames that can not create a new scope
+      }
+      if(!vf.declaredVars) {
+        vf.declaredVars = new Set();
+      }
+      vf.declaredVars.add(name);
     }
 
-    //store the writes down the scope chain, but stop before the vf frame
-    while( frame!==vf ) {
-      frame.writeCounts = frame.writeCounts || {};//@todo - only async block pushAsyncBlock frames
-      frame.writeCounts[name] = frame.writeCounts[name]? frame.writeCounts[name] + 1 : 1;
-
+    //count the sets in the current frame/async block, propagate the first write down the chain
+    //do not count for the frame where the variable is declared
+    while(frame!=vf) {
+      if(!frame.writeCounts || !frame.writeCounts[name]) {
+        frame.writeCounts = frame.writeCounts || {};
+        frame.writeCounts[name] = 1;//first write, countiune to the parent frames (only 1 write per async block is propagated)
+      } else {
+        frame.writeCounts[name]++;
+        break;//subsequent writes are not propagated
+      }
       frame = frame.parent;
     }
   }
@@ -1254,7 +1259,7 @@ class Compiler extends Obj {
       if(c.body.children.length) {
         this._emitAsyncBlock(c.body, frame, false, (f) => {
           this.compile(c.body, f);
-          branchWriteCounts.push(f.writeCounts || {});
+          branchWriteCounts.push(this.countsTo1(f.writeCounts) || {});
         });
         this._emitLine('break;');
       }
@@ -1269,7 +1274,7 @@ class Compiler extends Obj {
 
       this._emitAsyncBlock(node.default, frame, false, (f) => {
         this.compile(node.default, f);
-        branchWriteCounts.push(f.writeCounts || {});
+        branchWriteCounts.push(this.countsTo1(f.writeCounts) || {});
       });
     }
 
@@ -1287,6 +1292,19 @@ class Compiler extends Obj {
     });
 
     frame = this._emitAsyncBlockBufferNodeEnd(node, frame);
+  }
+
+  //within an async block, each set is counted, but when propagating the writes to the parent async block
+  //only the first write is propagated
+  countsTo1(writeCounts) {
+    if(!writeCounts) {
+      return undefined;
+    }
+    let firstWritesOnly = {};
+    for(let key in writeCounts) {
+      firstWritesOnly[key] = 1;
+    }
+    return firstWritesOnly;
   }
 
   //todo! - get rid of the callback
@@ -1309,7 +1327,7 @@ class Compiler extends Obj {
       this._emit('');
       this._emitAsyncBlock(node.body, frame, false, (f)=>{
         this.compile(node.body, f);
-        trueBranchWriteCounts = f.writeCounts;
+        trueBranchWriteCounts = this.countsTo1(f.writeCounts);
       })
     }
     else {
@@ -1332,7 +1350,7 @@ class Compiler extends Obj {
       if(this.asyncMode) {
         this._emitAsyncBlock(node.else_, frame, false, (f)=>{
           this.compile(node.else_, f);
-          falseBranchWriteCounts = f.writeCounts;
+          falseBranchWriteCounts = this.countsTo1(f.writeCounts);
         })
       }
       else {

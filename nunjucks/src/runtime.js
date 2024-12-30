@@ -166,20 +166,25 @@ class AsyncFrame extends Frame {
 
       let willResolve = false;
       let frame = this;
+      let countdownPropagate = true;
       while (frame != scopeFrame) {
-        //if( frame.promiseResolves && name in frame.promiseResolves ) {
         if (frame.asyncVars[name]!==undefined) {
           //set the value in asyncVars, when the async block is done, the value will be resolved in the parent
           frame.asyncVars[name] = val;
           willResolve = true;
         }
-        frame._countdownAsyncWrites(name, 1);
+        if(countdownPropagate && !frame._countdownAsyncWrites(name, 1)) {
+          countdownPropagate = false;
+          break;//has not reached zero yet, do not countdown up the chain
+        }
         frame = frame.parent;
       }
       if (!willResolve){
+        //just assign the value in the scope frame with no async trickery
         scopeFrame.variables[name] = val;
       }
     } else {
+      //not for set tags
       super.set(name, val);
       //@todo - handle for recursive frames
       //name = name.substring(0, name.indexOf('.'));
@@ -205,7 +210,7 @@ class AsyncFrame extends Frame {
   //when all assignments to a variable are done, resolve the promise for that variable
   _countdownAsyncWrites(varName, decrementVal = 1){
     if(!this.writeCounters ){
-      return;
+      return true;//try up the chain
     }
     if(!this.writeCounters ){
       throw new Error('Can not count vars: no vars counts in this frame');
@@ -217,8 +222,10 @@ class AsyncFrame extends Frame {
     if(count===decrementVal){//zero
       //this variable will no longer be modified, time to resolve it
       this._resolveAsyncVar(varName);
+      return true;//propagate up the chain as a single write
     } else {
       this.writeCounters[varName] = count - decrementVal;//decrement
+      return false;//more left to write, do not propagate up
     }
   }
 
@@ -227,8 +234,12 @@ class AsyncFrame extends Frame {
     for(let varName in varCounts){
       let scopeFrame = this.resolve(varName, true);
       let frame = this;
+      let count = varCounts[varName];
       while (frame != scopeFrame) {
-        frame._countdownAsyncWrites(varName, varCounts[varName]);
+        if(!frame._countdownAsyncWrites(varName, count))
+          break;//has not reached zero yet, do not propagate up
+        //reached zero, propagate up as a single write
+        count = 1;
         frame = frame.parent;
       }
     }
