@@ -4,7 +4,7 @@
 	var expect;
 	var unescape;
 	var AsyncEnvironment;
-  var StringLoader;
+  	var StringLoader;
 	//var Environment;
 	//var lexer;
 
@@ -14,7 +14,7 @@
 	  //Environment = require('../nunjucks/src/environment').Environment;
 	  //lexer = require('../nunjucks/src/lexer');
 	  unescape = require('he').unescape;
-    StringLoader = require('./async-loader');
+    	StringLoader = require('./pasync-loader');
 	} else {
 	  expect = window.expect;
 	  unescape = window.he.unescape;
