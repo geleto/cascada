@@ -26,7 +26,158 @@
 		env = new AsyncEnvironment();
 	  });
 
+    describe('Basic Set Expression Tests', () => {
+      it('should correctly render a template with no context and non-async expression in async mode', async () => {
+        const template = 'Hello World! 1 + 1 = {{ 1 + 1 }}';
+        const result = await env.renderString(template);
+        expect(result).to.equal('Hello World! 1 + 1 = 2');
+      });
+
+      it('should handle multiple targets with async expression', async () => {
+        const context = {
+          async getBase() {
+            await delay(5);
+            return 10;
+          },
+          async getMultiplier() {
+            await delay(3);
+            return 2;
+          }
+        };
+
+        const template = `
+          {% set x, y = getBase() * getMultiplier() %}
+          {{ x }},{{ y }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('20,20');
+      });
+
+      it('should handle async values in set expressions with math operations', async () => {
+        const context = {
+          async getBase() {
+            await delay(5);
+            return 10;
+          },
+          async getMultiplier() {
+            await delay(3);
+            return 2;
+          }
+        };
+
+        const template = `
+          {% set result = getBase() * getMultiplier() + 5 %}
+          {{ result }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('25');
+      });
+
+      it('should handle async values in set expressions with string operations', async () => {
+        const context = {
+          async getPrefix() {
+            await delay(5);
+            return 'Hello';
+          },
+          async getSuffix() {
+            await delay(3);
+            return 'World';
+          }
+        };
+
+        const template = `
+          {% set greeting = getPrefix() + ", " + getSuffix() + "!" %}
+          {{ greeting }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Hello, World!');
+      });
+
+      it('should handle async values in set expressions with comparisons', async () => {
+        const context = {
+          async getValue1() {
+            await delay(5);
+            return 10;
+          },
+          async getValue2() {
+            await delay(3);
+            return 20;
+          }
+        };
+
+        const template = `
+          {% set isGreater = getValue1() > getValue2() %}
+          {{ isGreater }}
+        `;
+
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('false');
+      });
+
+      it('should correctly resolve "is" operator with async left-hand side and arguments', async () => {
+        const context = {
+          testValue: (async () => {
+            await delay(5);
+            return 10;
+          })(),
+          testFunction: async (value, threshold) => {
+            await delay(5);
+            return value > threshold;
+          },
+          threshold: (async () => {
+            await delay(5);
+            return 5;
+          })()
+        };
+
+        env.addTest('isGreaterThan', async (value, threshold) => {
+          return await context.testFunction(value, threshold);
+        });
+
+        const template = '{% if testValue is isGreaterThan(threshold) %}Yes{% else %}No{% endif %}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('Yes');
+      });
+
+      it('should handle errors in async set expressions', async () => {
+        const context = {
+          async getValue() {
+            await delay(5);
+            throw new Error('Failed to get value');
+          }
+        };
+
+        const template = `
+          {% set result = getValue() * 2 %}
+          {{ result }}
+        `;
+
+        try {
+          await env.renderString(template, context);
+          expect().fail('Expected an error to be thrown');
+        } catch (error) {
+          expect(error.message).to.contain('Failed to get value');
+        }
+      });
+    });
+
 	  describe('Async Nunjucks Expressions', () => {
+		it('should correctly resolve an async expression with set', async () => {
+			const context = {
+			  async getValue(id) {
+				await delay(5);
+				return 1;
+			  }
+			};
+
+			const template = '{% set result = 1 + getValue() %}Result = {{ result }}';
+			const result = await env.renderString(template, context);
+			expect(result).to.equal('Result = 2');
+		  });
+
 		it('should handle mixed parameter types in expressions', async () => {
 		  const context = {
 			async textFunc() { await delay(10); return 'Hello'; },
@@ -396,5 +547,38 @@
 		});
 	  });
 
+	  describe('Binary Operations and Comparisons', () => {
+      it('should perform addition with async operands resolved in parallel', async () => {
+        const context = {
+          async getNum1() {
+            await delay(2);
+            return 5;
+          },
+          async getNum2() {
+            await delay(1);
+            return 10;
+          }
+        };
+        const template = '{{ getNum1() + getNum2() }}';
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('15');
+      });
+
+      it('should handle comparisons where both sides are async expressions', async () => {
+        const context = {
+          async getValue1() {
+            await delay(2);
+            return 10;
+          },
+          async getValue2() {
+            await delay(1);
+            return 10;
+          }
+        };
+        const template = '{% if getValue1() == getValue2() %}Equal{% else %}Not Equal{% endif %}';
+        const result = await env.renderString(template, context);
+        expect(result.trim()).to.equal('Equal');
+      });
+    });
 	});
 }());
