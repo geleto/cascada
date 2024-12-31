@@ -90,7 +90,7 @@
     "test:node": "cross-env NODE_ENV=test npm run test:prep && npm run test:node-no-prep",
     "test:browser-no-prep": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/testrunner.js",
     "test:browser": "cross-env NODE_ENV=test npm run test:prep && npm run test:browser-no-prep",
-    "test:pasync": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register tests/async.js tests/async-loader.js tests/async-race.js",
+    "test:pasync": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register tests/async.js tests/async-loader.js tests/async-race.js tests/async-custom.js",
     "test": "npm run test:prep && npm run test:node-no-prep && npm run test:browser-no-prep  -- fullTest"
   },
   "bin": {
