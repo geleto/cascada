@@ -11,12 +11,13 @@ module.exports = [
       'coverage/**',
       'dist/**',
       'docs/**',
-      'tests/**',
       'bench/**'
     ]
   },
   {
     files: ['**/*.js'],
+    plugins: ['mocha'],
+    extends: ['plugin:mocha/recommended'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',

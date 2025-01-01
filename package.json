@@ -52,6 +52,7 @@
     "core-js": "^3.38.1",
     "cross-env": "^7.0.3",
     "eslint": "^9.13.0",
+    "eslint-plugin-mocha": "^10.5.0",
     "expect.js": "*",
     "express": "4.x",
     "fs-extra": "^11.2.0",
