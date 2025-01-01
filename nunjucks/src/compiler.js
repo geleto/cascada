@@ -3,9 +3,9 @@
 const parser = require('./parser');
 const transformer = require('./transformer');
 const nodes = require('./nodes');
-const {TemplateError} = require('./lib');
-const {Frame, AsyncFrame} = require('./runtime');
-const {Obj} = require('./object');
+const { TemplateError } = require('./lib');
+const { Frame, AsyncFrame } = require('./runtime');
+const { Obj } = require('./object');
 
 const OPTIMIZE_ASYNC = true;//optimize async operations
 
@@ -27,7 +27,7 @@ const compareOps = {
   '<': '<',
   '>': '>',
   '<=': '<=',
-  '>=': '>='
+  '>=': '>=',
 };
 
 class Compiler extends Obj {
@@ -129,7 +129,7 @@ class Compiler extends Obj {
   // - there is only one active child (e.g. if/else) that has output
   //in all other cases, use _emitAsyncBlockBufferNode
   //to make sure there are no race conditions for the buffer position
-  _emitAsyncBlock( node, frame, createScope, emitFunc){
+  _emitAsyncBlock(node, frame, createScope, emitFunc) {
     const aframe = this._emitAsyncBlockBegin(node, frame, createScope);
     emitFunc(aframe);
     this._emitAsyncBlockEnd(node, aframe, createScope);
