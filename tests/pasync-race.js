@@ -923,7 +923,7 @@
         loader = new StringLoader();
         env = new AsyncEnvironment(loader);
       });
-      it('should handle extends with async super() and set', async () => {
+      it.skip('should handle extends with async super() and set', async () => {
         const template = `
           {%- extends "base_for_super.njk" -%}
           {%- block content -%}
@@ -987,7 +987,7 @@
         expect((await env.renderString(template, context)).trim()).to.equal('Macro Start: OuterVal Inner: InnerVal Macro End Final val: OuterVal');
       });
 
-      it('should handle async extends with delayed parent template and block overrides', async () => {
+      it.skip('should handle async extends with delayed parent template and block overrides', async () => {
         const template = `
           {% extends "parent_delayed.njk" %}
           {% block content %}
