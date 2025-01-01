@@ -282,11 +282,11 @@ class Environment extends EmitterObj {
       }
       let newTmpl;
       if (!info) {
-        newTmpl = asyncMode?
+        newTmpl = asyncMode ?
           new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile) :
           new Template(noopTmplSrc, this, '', eagerCompile);
       } else {
-        newTmpl = asyncMode?
+        newTmpl = asyncMode ?
           new AsyncTemplate(info.src, this, info.path, eagerCompile) :
           new Template(info.src, this, info.path, eagerCompile);
         if (!info.noCache) {
@@ -386,14 +386,14 @@ class AsyncEnvironment extends Environment {
     }
     opts = opts || {};
 
-    try{
+    try {
       const result = this._asyncRender(src, ctx, false, opts);
-      if(cb){
-        cb(null, result)
+      if (cb) {
+        cb(null, result);
       }
       return result;
     }
-    catch(err){
+    catch (err) {
       if (cb) cb(err);
       throw err;
     }
@@ -428,7 +428,7 @@ class AsyncEnvironment extends Environment {
   }
 
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
-    if(typeof name.then === 'function') { // it's a promise
+    if (typeof name.then === 'function') { // it's a promise
       return name.then((resolvedName) => {
         this._getTemplate(resolvedName, eagerCompile, parentName, ignoreMissing, true, cb);
       });
@@ -464,7 +464,7 @@ class AsyncState {
   leaveAsyncBlock() {
     this.activeClosures--;
 
-    if (this.activeClosures === this.waitClosuresCount ) {
+    if (this.activeClosures === this.waitClosuresCount) {
       if (this.completionResolver) {
         this.completionResolver();
         // Reset both promise and resolver
@@ -576,14 +576,14 @@ class Context extends Obj {
     //if (this.blocks[name]) {
     //  return this.getBlock(name);
     //}
-    if( this.asyncBlocksPromise ){
+    if (this.asyncBlocksPromise) {
       await this.asyncBlocksPromise;
     }
     return this.getBlock(name);
   }
 
   async finsihsAsyncBlocks() {
-    if( this.asyncBlocksResolver ){
+    if (this.asyncBlocksResolver) {
       this.asyncBlocksResolver();
     }
   }
@@ -593,7 +593,7 @@ class Context extends Obj {
     var blk = this.blocks[name][idx + 1];
     var context = this;
 
-    if(typeof astate === 'function') {
+    if (typeof astate === 'function') {
       cb = astate;
       astate = null;
     }
@@ -602,7 +602,7 @@ class Context extends Obj {
       throw new Error('no super block available for "' + name + '"');
     }
 
-    if(astate) {
+    if (astate) {
       //async mode
       blk(env, context, frame, runtime, astate, cb);
     }
@@ -692,11 +692,11 @@ class Template extends Obj {
 
     const context = new Context(ctx || {}, this.blocks, this.env);
     let frame;
-    if(parentFrame){
+    if (parentFrame) {
       frame = parentFrame.push(true);
     }
     else {
-      frame = this.asyncMode? new AsyncFrame : new Frame();
+      frame = this.asyncMode ? new AsyncFrame : new Frame();
     }
     frame.topLevel = true;
     let syncResult = null;
@@ -769,11 +769,11 @@ class Template extends Obj {
     }
 
     let frame;
-    if(parentFrame){
+    if (parentFrame) {
       frame = parentFrame.push();
     }
     else {
-      if( this.asyncMode ){
+      if (this.asyncMode) {
         frame = new AsyncFrame();
         frame.isIncluded = true;
       }

@@ -87,12 +87,12 @@ class Frame {
 }
 
 class AsyncFrame extends Frame {
-  constructor(parent, isolateWrites, createScope=true) {
+  constructor(parent, isolateWrites, createScope = true) {
     super(parent, isolateWrites);
 
     this.createScope = createScope;
 
-    if(AsyncFrame.inCompilerContext){
+    if (AsyncFrame.inCompilerContext) {
       //holds the names of the variables declared at the frame
       this.declaredVars = undefined;
 
@@ -142,20 +142,20 @@ class AsyncFrame extends Frame {
   //second parameter to pushAsyncBlock only for recursive frames
   //or maybe reentrant frames should keep vars in the parent scope, at least for loops
   set(name, val, resolveUp) {
-    if(resolveUp){
+    if (resolveUp) {
       //only set tags use resolveUp
       //set tags do not have variables with dots, so the name is the whole variable name
-      if(name.indexOf('.') !== -1){
+      if (name.indexOf('.') !== -1) {
         throw new Error('resolveUp should not be used with variables with dots');
       }
       let scopeFrame = this.resolve(name, true);
 
-      if(!scopeFrame){
+      if (!scopeFrame) {
         //add the variable here unless !createScope in which case try the root
-        if(!this.createScope){
+        if (!this.createScope) {
           this.parent.set(name, val);
           scopeFrame = this.resolve(name, true);
-          if(!scopeFrame){
+          if (!scopeFrame) {
             throw new Error('Variable should have been added in a parent frame');
           }
         }
@@ -168,18 +168,18 @@ class AsyncFrame extends Frame {
       let frame = this;
       let countdownPropagate = true;
       while (frame != scopeFrame) {
-        if (frame.asyncVars[name]!==undefined) {
+        if (frame.asyncVars[name] !== undefined) {
           //set the value in asyncVars, when the async block is done, the value will be resolved in the parent
           frame.asyncVars[name] = val;
           willResolve = true;
         }
-        if(countdownPropagate && !frame._countdownAsyncWrites(name, 1)) {
+        if (countdownPropagate && !frame._countdownAsyncWrites(name, 1)) {
           countdownPropagate = false;
           break;//has not reached zero yet, do not countdown up the chain
         }
         frame = frame.parent;
       }
-      if (!willResolve){
+      if (!willResolve) {
         //just assign the value in the scope frame with no async trickery
         scopeFrame.variables[name] = val;
       }
@@ -193,14 +193,14 @@ class AsyncFrame extends Frame {
 
   //@todo when we start skipping block promisify - do complete get implementation here to check asyncVars at all levels
   get(name) {
-    if( this.asyncVars && name in this.asyncVars ){
+    if (this.asyncVars && name in this.asyncVars) {
       return this.asyncVars[name];
     }
     return super.get(name);
   }
 
   lookup(name) {
-    var val = (this.asyncVars && name in this.asyncVars)? this.asyncVars[name] : this.variables[name];
+    var val = (this.asyncVars && name in this.asyncVars) ? this.asyncVars[name] : this.variables[name];
     if (val !== undefined) {
       return val;
     }
@@ -208,18 +208,18 @@ class AsyncFrame extends Frame {
   }
 
   //when all assignments to a variable are done, resolve the promise for that variable
-  _countdownAsyncWrites(varName, decrementVal = 1){
-    if(!this.writeCounters ){
+  _countdownAsyncWrites(varName, decrementVal = 1) {
+    if (!this.writeCounters) {
       return true;//try up the chain
     }
-    if(!this.writeCounters ){
+    if (!this.writeCounters) {
       throw new Error('Can not count vars: no vars counts in this frame');
     }
     let count = this.writeCounters[varName];
-    if(count<decrementVal){
-      throw new Error(`Variable ${varName} write counter ${count===undefined?'is undefined':'turned negative'} in _trackAsyncWrites`);
+    if (count < decrementVal) {
+      throw new Error(`Variable ${varName} write counter ${count === undefined ? 'is undefined' : 'turned negative'} in _trackAsyncWrites`);
     }
-    if(count===decrementVal){//zero
+    if (count === decrementVal) {//zero
       //this variable will no longer be modified, time to resolve it
       this._resolveAsyncVar(varName);
       return true;//propagate up the chain as a single write
@@ -229,13 +229,13 @@ class AsyncFrame extends Frame {
     }
   }
 
-  skipBranchWrites(varCounts){
-    for(let varName in varCounts){
+  skipBranchWrites(varCounts) {
+    for (let varName in varCounts) {
       let scopeFrame = this.resolve(varName, true);
       let frame = this;
       let count = varCounts[varName];
       while (frame != scopeFrame) {
-        if(!frame._countdownAsyncWrites(varName, count))
+        if (!frame._countdownAsyncWrites(varName, count))
           break;//has not reached zero yet, do not propagate up
         //reached zero, propagate up as a single write
         count = 1;
@@ -244,14 +244,14 @@ class AsyncFrame extends Frame {
     }
   }
 
-  _resolveAsyncVar(varName){
+  _resolveAsyncVar(varName) {
     let value = this.asyncVars[varName];
     let resolveFunc = this.promiseResolves[varName];
     resolveFunc(value);
     //@todo - if the var is the same promise - set it to the value
     //this cleanup may not be needed:
     delete this.promiseResolves[varName];
-    if( Object.keys(this.promiseResolves).length === 0) {
+    if (Object.keys(this.promiseResolves).length === 0) {
       this.promiseResolves = undefined;
     }
   }
@@ -263,26 +263,26 @@ class AsyncFrame extends Frame {
   pushAsyncBlock(reads, writeCounters) {
     let asyncBlockFrame = new AsyncFrame(this, false);//this.isolateWrites);//@todo - should isolateWrites be passed here?
     asyncBlockFrame.isAsyncBlock = true;
-    if(reads || writeCounters){
+    if (reads || writeCounters) {
       asyncBlockFrame.asyncVars = {};
-      if(reads) {
+      if (reads) {
         asyncBlockFrame._snapshotVariables(reads);
       }
-      if(writeCounters) {
+      if (writeCounters) {
         asyncBlockFrame._promisifyParentVariables(writeCounters);
       }
     }
     return asyncBlockFrame;
   }
 
-  _snapshotVariables(reads){
-    for(const varName of reads){
+  _snapshotVariables(reads) {
+    for (const varName of reads) {
       this.asyncVars[varName] = this.lookup(varName);
     }
   }
 
   //@todo - skip promisify if parent has the same counts
-  _promisifyParentVariables(writeCounters){
+  _promisifyParentVariables(writeCounters) {
     this.writeCounters = writeCounters;
     this.promiseResolves = {};
     let parent = this.parent;
@@ -292,9 +292,9 @@ class AsyncFrame extends Frame {
       this.asyncVars[varName] = this.lookup(varName);
       //promisify the variable in the frame (parent of the new async frame)
       //these will be resolved when the async block is done with the variable
-      if(parent.asyncVars && parent.asyncVars[varName] !== undefined){
+      if (parent.asyncVars && parent.asyncVars[varName] !== undefined) {
         this._promisifyParentVar(parent, parent.asyncVars, varName);
-      } else if(parent.variables[varName] !== undefined) {
+      } else if (parent.variables[varName] !== undefined) {
         this._promisifyParentVar(parent, parent.variables, varName);
       }
       else {
@@ -303,14 +303,14 @@ class AsyncFrame extends Frame {
     }
   }
 
-  _promisifyParentVar(parentFrame, parentVars, varName){
+  _promisifyParentVar(parentFrame, parentVars, varName) {
     //use this value while the async block is active, then resolve it:
     this.asyncVars[varName] = parentVars[varName];
     let resolve;
-    let promise = new Promise((res)=>{ resolve = res; });
+    let promise = new Promise((res) => { resolve = res; });
     this.promiseResolves[varName] = resolve;
     parentVars[varName] = promise;
-    if(parentFrame.topLevel) {
+    if (parentFrame.topLevel) {
       //todo: modify the variable in the context
       //context.setVariable(varName, promise);
     }
@@ -349,12 +349,12 @@ function makeMacro(argNames, kwargNames, func, astate) {
       args.push(kwargs);
     } else {
       args = macroArgs;
-      if(astate && Object.keys(kwargs).length === 0){
+      if (astate && Object.keys(kwargs).length === 0) {
         args.push({});//kwargs
       }
     }
 
-    if(astate) {
+    if (astate) {
       args.push(astate.new());
     }
     return func.apply(this, args);
@@ -453,7 +453,7 @@ function markSafe(val) {
     return new SafeString(val);
   } else if (type !== 'function') {
     return val;
-  } else if (type === 'object' && val.then && typeof val.then === 'function'){
+  } else if (type === 'object' && val.then && typeof val.then === 'function') {
     return (async (v) => {
       return markSafe(await v);
     })(val);
@@ -482,7 +482,7 @@ function suppressValue(val, autoescape) {
 }
 
 function suppressValueAsync(val, autoescape) {
-  if( val && typeof val.then === 'function'){
+  if (val && typeof val.then === 'function') {
     return val.then((v) => {
       return suppressValueAsync(v, autoescape);
     });
@@ -536,7 +536,7 @@ function ensureDefinedAsync(val, lineno, colno) {
 }
 
 function promisify(fn) {
-  return function(...args) {
+  return function (...args) {
     return new Promise((resolve, reject) => {
       const callback = (error, ...results) => {
         if (error) {
@@ -582,9 +582,9 @@ async function resolveDuo(arg1, arg2) {
 //@todo - no need for condition and false branch, if something breaks - check why, amybe it wants the then to not return a promise
 function resolveSingle(value) {
   return value && typeof value.then === 'function' ? value : {
-      then(onFulfilled) {
-          return onFulfilled ? onFulfilled(value) : value;
-      }
+    then(onFulfilled) {
+      return onFulfilled ? onFulfilled(value) : value;
+    }
   };
 }
 
@@ -595,7 +595,7 @@ async function resolveSingleArr(value) {
 }
 
 function resolveArguments(fn, skipArguments = 0) {
-  return async function(...args) {
+  return async function (...args) {
     const skippedArgs = args.slice(0, skipArguments);
     const remainingArgs = args.slice(skipArguments);
     await resolveAll(remainingArgs);
@@ -624,7 +624,7 @@ function memberLookup(obj, val) {
   }
 
   if (typeof obj[val] === 'function') {
-    return (...args) => obj[val].apply(obj, args);
+    return (...args) => obj[val](...args);
   }
 
   return obj[val];
