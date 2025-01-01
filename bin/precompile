@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-var {program} = require('commander');
-var precompile = require('../src/precompile').precompile;
-var Environment = require('../src/environment').Environment;
-var lib = require('../src/lib');
+var { program } = require('commander');
+var precompile = require('../dist/cjs/src/precompile').precompile;
+var Environment = require('../dist/cjs/src/environment').Environment;
+var lib = require('../dist/cjs/src/lib');
 
 var cmdpath = null;
 
 program
-  .storeOptionsAsProperties(false)
+  .storeOptionsAsProperties(false);
 
 program
   .name('precompile')
@@ -48,10 +48,10 @@ if (opts.wrapper) {
 }
 
 console.log(precompile(cmdpath, {
-  env : env,
-  force : opts.force,
-  name : opts.name,
+  env: env,
+  force: opts.force,
+  name: opts.name,
   wrapper: opts.wrapper,
-  include : [].concat(opts.include),
-  exclude : [].concat(opts.exclude)
+  include: [].concat(opts.include),
+  exclude: [].concat(opts.exclude)
 }));
