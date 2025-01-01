@@ -3,7 +3,7 @@ coverage
 .#*
 docs/_site
 docs/files
-/src/
+/dist/
 /index.js
 /index.js.map
 /tests/browser/nunjucks*
