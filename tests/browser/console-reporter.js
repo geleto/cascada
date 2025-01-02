@@ -1,4 +1,6 @@
-class ConsoleReporter {
+/* eslint-disable no-console */
+
+export class ConsoleReporter {
   constructor(runner) {
     const stats = runner.stats;
     const testResults = new Map();

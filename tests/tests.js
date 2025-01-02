@@ -116,7 +116,6 @@
     });
 
     it('mapping should detect Maps or hashes', function() {
-      /* global Map */
       var map1, map2, mapOneIsMapping, mapTwoIsMapping;
       if (typeof Map === 'undefined') {
         this.skip();
@@ -200,7 +199,6 @@
     });
 
     it('iterable should detect that a Map is iterable', function() {
-      /* global Map */
       if (typeof Map === 'undefined') {
         this.skip();
       } else {
@@ -209,7 +207,6 @@
     });
 
     it('iterable should detect that a Set is not non-iterable', function() {
-      /* global Set */
       if (typeof Set === 'undefined') {
         this.skip();
       } else {

@@ -1,30 +1,30 @@
-(function() {
-	'use strict';
+(function () {
+  'use strict';
 
-	var expect;
-	//var unescape;
-	var AsyncEnvironment;
-	//var Environment;
+  var expect;
+  //var unescape;
+  var AsyncEnvironment;
+  //var Environment;
 
-	if (typeof require !== 'undefined') {
-	  expect = require('expect.js');
-	  AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
-	  //Environment = require('../nunjucks/src/environment').Environment;
-	  //unescape = require('he').unescape;
-	} else {
-	  expect = window.expect;
-	  //unescape = window.he.unescape;
-	  AsyncEnvironment = nunjucks.AsyncEnvironment;
-	  //Environment = nunjucks.Environment;
-	}
+  if (typeof require !== 'undefined') {
+    expect = require('expect.js');
+    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
+    //Environment = require('../nunjucks/src/environment').Environment;
+    //unescape = require('he').unescape;
+  } else {
+    expect = window.expect;
+    //unescape = window.he.unescape;
+    AsyncEnvironment = nunjucks.AsyncEnvironment;
+    //Environment = nunjucks.Environment;
+  }
 
-	const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-	describe('Async mode - calls and arguments', () => {
-      let env;
-      beforeEach(() => {
+  describe('Async mode - calls and arguments', () => {
+    let env;
+    beforeEach(() => {
       env = new AsyncEnvironment();
-	  });
+    });
 
     describe('Async Function Tests', () => {
       it('should correctly resolve an async function in output', async () => {
@@ -249,30 +249,30 @@
 
     });
 
-		describe('Dependent Async Functions', () => {
-			// Test for dependent async functions (user and user's posts)
-			it('should correctly resolve async functions with dependent arguments', async () => {
+    describe('Dependent Async Functions', () => {
+      // Test for dependent async functions (user and user's posts)
+      it('should correctly resolve async functions with dependent arguments', async () => {
         const userPosts =
           [
-          [
-            { id: 1, title: 'User #0 first post', content: 'Hello from user 0!' },
-          ],
-          [
-            { id: 1, title: 'First post', content: 'Hello world!' },
-            { id: 2, title: 'Second post', content: 'Async is awesome!' }
-          ]
+            [
+              { id: 1, title: 'User #0 first post', content: 'Hello from user 0!' },
+            ],
+            [
+              { id: 1, title: 'First post', content: 'Hello world!' },
+              { id: 2, title: 'Second post', content: 'Async is awesome!' }
+            ]
           ];
         const context = {
           async fetchUser(id) {
-          await delay(10);
-          return { id, name: 'John Doe' };
+            await delay(10);
+            return { id, name: 'John Doe' };
           },
           async fetchUserPostsFirstTitle(userId) {
-          await delay(5);
-          if (userId < 0 || userId >= userPosts.length) {
-            throw new Error('userId out of range');
-          }
-          return userPosts[userId][0].title;
+            await delay(5);
+            if (userId < 0 || userId >= userPosts.length) {
+              throw new Error('userId out of range');
+            }
+            return userPosts[userId][0].title;
           }
         };
 
@@ -287,9 +287,9 @@
           User: John Doe
           First title: First post
         `);
-			});
+      });
 
-			it('should handle a chain of dependent async functions', async () => {
+      it('should handle a chain of dependent async functions', async () => {
         const context = {
           async fetchUserId() {
             await delay(5);
@@ -318,10 +318,10 @@
           User: John Doe
           Posts: Post 1, Post 2
         `);
-			});
+      });
 
-			// New test: Complex dependent async functions
-			it('should handle complex dependent async functions', async () => {
+      // New test: Complex dependent async functions
+      it('should handle complex dependent async functions', async () => {
         const context = {
           async fetchUserId() {
             await delay(5);
@@ -357,10 +357,10 @@
           Role: Admin
           Permissions: read, write, delete
         `);
-			});
+      });
 
-			// New test: Handling async functions with multiple dependencies
-			it('should handle async functions with multiple dependencies', async () => {
+      // New test: Handling async functions with multiple dependencies
+      it('should handle async functions with multiple dependencies', async () => {
         const context = {
           async fetchUser(id) {
             await delay(5);
@@ -384,8 +384,8 @@
 
         const result = await env.renderString(template, context);
         expect(result).to.equal(`Report for John Doe in IT`);
-			});
-		});
+      });
+    });
 
     describe('Parallel Argument Resolution', () => {
       it('should handle function calls with multiple async arguments resolved in parallel', async () => {
@@ -454,5 +454,5 @@
       });
 
     });
-	});
+  });
 }());

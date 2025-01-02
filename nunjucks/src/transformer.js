@@ -140,7 +140,7 @@ function liftSuper(ast) {
     let hasSuper = false;
     const symbol = gensym();
 
-    blockNode.body = walk(blockNode.body, (node) => { // eslint-disable-line consistent-return
+    blockNode.body = walk(blockNode.body, (node) => {
       if (node instanceof nodes.FunCall && node.name.value === 'super') {
         hasSuper = true;
         return new nodes.Symbol(node.lineno, node.colno, symbol);

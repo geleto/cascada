@@ -154,12 +154,12 @@ async function runTests() {
   try {
 
     //the coverage file from the node tests has to be read in advance because nyc initialization deletes it
-    if( mergeNodeTestsCoverage ){
-      try{
+    if (mergeNodeTestsCoverage) {
+      try {
         coverageConfig.files.push(NODE_TESTS_COVERAGE_FILE);
         coverageConfig.fileData[NODE_TESTS_COVERAGE_FILE] = JSON.parse(await fs.readFile(coverageConfig.getFullPath(NODE_TESTS_COVERAGE_FILE), 'utf8'));
         console.log('node coverage file loaded');
-      }catch(e){
+      } catch (e) {
         console.error(`Failed to open node tests coverage file ${coverageConfig.getFullPath(NODE_TESTS_COVERAGE_FILE)} , error: ${e}`);
       }
     }
@@ -199,11 +199,11 @@ async function runTests() {
         const fileCoverageMap = libCoverage.createCoverageMap(coverageData);
         coverageMap.merge(fileCoverageMap);
       } catch (error) {
-        if( file===NODE_TESTS_COVERAGE_FILE ){
+        if (file === NODE_TESTS_COVERAGE_FILE) {
           mergeNodeTestsCoverage = false;
           console.error(`Error processing Node tests coverage file ${file}:`, error);
         }
-        else{
+        else {
           console.error(`Error processing browser coverage file ${file}:`, error);
         }
       }
@@ -213,10 +213,10 @@ async function runTests() {
     const mergedCoverageFile = path.join(coverageConfig.dir, 'merged-coverage.json');
     await fs.writeFile(mergedCoverageFile, JSON.stringify(coverageMap));
 
-    if (mergeNodeTestsCoverage){
+    if (mergeNodeTestsCoverage) {
       console.log('\nCombined Coverage Summary from Node and browser tests:');
     }
-    else{
+    else {
       console.log('\nCoverage Summary from browser tests:');
     }
 

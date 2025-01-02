@@ -486,7 +486,6 @@
             },
             'showing test\nshowing 1\nshowing 2\nshowing 3\n');
         });
-        /* global Set */
         it('should work with Set builtin', function() {
           if (typeof Set === 'undefined') {
             this.skip();
@@ -504,7 +503,6 @@
               'empty');
           }
         });
-        /* global Map */
         it('should work with Map builtin', function() {
           if (typeof Map === 'undefined') {
             this.skip();
@@ -874,7 +872,7 @@
       finish(done);
     });
 
-    it('should compile macros', function(done) {
+    it('should compile simple macro', function(done) {
       equal(
         '{% macro foo() %}This is a macro{% endmacro %}' +
         '{{ foo() }}',

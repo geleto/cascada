@@ -1,166 +1,165 @@
-(function() {
-	'use strict';
+(function () {
+  'use strict';
 
-	var expect;
-	var unescape;
-	var AsyncEnvironment;
-	//var Environment;
-	var lexer;
+  var expect;
+  var unescape;
+  var AsyncEnvironment;
+  //var Environment;
+  var lexer;
 
-	if (typeof require !== 'undefined') {
-	  expect = require('expect.js');
-	  AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
-	  //Environment = require('../nunjucks/src/environment').Environment;
-	  lexer = require('../nunjucks/src/lexer');
-	  unescape = require('he').unescape;
-	} else {
-	  expect = window.expect;
-	  unescape = window.he.unescape;
-	  AsyncEnvironment = nunjucks.AsyncEnvironment;
-	  //Environment = nunjucks.Environment;
-	  lexer = nunjucks.lexer;
-	}
+  if (typeof require !== 'undefined') {
+    expect = require('expect.js');
+    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
+    //Environment = require('../nunjucks/src/environment').Environment;
+    lexer = require('../nunjucks/src/lexer');
+    unescape = require('he').unescape;
+  } else {
+    expect = window.expect;
+    unescape = window.he.unescape;
+    AsyncEnvironment = nunjucks.AsyncEnvironment;
+    //Environment = nunjucks.Environment;
+    lexer = nunjucks.lexer;
+  }
 
-	const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   class AsyncExtension {
-	  constructor(tagName, method, options = {}) {
-		this.tags = [tagName, 'separator'];
-		this.method = method;
-		this.supportsBody = options.supportsBody || false;
-		this.doNotResolveArgs = options.doNotResolveArgs || false;
-		this.oldAsync = options.oldAsync || false;
-		this.numContentArgs = 0; // Will be set during parsing
-	  }
+    constructor(tagName, method, options = {}) {
+      this.tags = [tagName, 'separator'];
+      this.method = method;
+      this.supportsBody = options.supportsBody || false;
+      this.doNotResolveArgs = options.doNotResolveArgs || false;
+      this.oldAsync = options.oldAsync || false;
+      this.numContentArgs = 0; // Will be set during parsing
+    }
 
-	  parse(parser, nodes) {
-		const tok = parser.nextToken(); // Get the tag token
+    parse(parser, nodes) {
+      const tok = parser.nextToken(); // Get the tag token
 
-		if (tok.value === this.tags[0]) {
-		  // Parsing the main tag (e.g., 'wrap')
-		  return this.parseMainTag(parser, nodes, tok);
-		} else {
-		  parser.fail(`Unexpected tag: ${tok.value}`, tok.lineno, tok.colno);
-		  return undefined;
-		}
-	  }
+      if (tok.value === this.tags[0]) {
+        // Parsing the main tag (e.g., 'wrap')
+        return this.parseMainTag(parser, nodes, tok);
+      } else {
+        parser.fail(`Unexpected tag: ${tok.value}`, tok.lineno, tok.colno);
+        return undefined;
+      }
+    }
 
-	  parseMainTag(parser, nodes, tok) {
-		const args = parser.parseSignature(null, true); // Parse arguments
-		parser.advanceAfterBlockEnd(tok.value); // Move parser past the block end
+    parseMainTag(parser, nodes, tok) {
+      const args = parser.parseSignature(null, true); // Parse arguments
+      parser.advanceAfterBlockEnd(tok.value); // Move parser past the block end
 
-		let contentArgs = [];
-		if (this.supportsBody) {
-		  contentArgs = this.parseBody(parser, nodes, tok.value);
-		  this.numContentArgs = contentArgs.length;
-		}
+      let contentArgs = [];
+      if (this.supportsBody) {
+        contentArgs = this.parseBody(parser, nodes, tok.value);
+        this.numContentArgs = contentArgs.length;
+      }
 
-		// Return a CallExtension node with arguments and optional content bodies
-		if (this.oldAsync) {
-		  return new nodes.CallExtensionAsync(this, 'run', args, contentArgs, !this.doNotResolveArgs);
-		} else {
-		  return new nodes.CallExtension(this, 'run', args, contentArgs, !this.doNotResolveArgs);
-		}
-	  }
+      // Return a CallExtension node with arguments and optional content bodies
+      if (this.oldAsync) {
+        return new nodes.CallExtensionAsync(this, 'run', args, contentArgs, !this.doNotResolveArgs);
+      } else {
+        return new nodes.CallExtension(this, 'run', args, contentArgs, !this.doNotResolveArgs);
+      }
+    }
 
-	  parseBody(parser, nodes, tagName) {
-		const bodies = [];
+    parseBody(parser, nodes, tagName) {
+      const bodies = [];
 
-		while (true) {
-		  const body = parser.parseUntilBlocks('separator', 'end' + tagName);
-		  bodies.push(body);
+      while (true) {
+        const body = parser.parseUntilBlocks('separator', 'end' + tagName);
+        bodies.push(body);
 
-		  // After parseUntilBlocks, the parser is at the tag name token (TOKEN_SYMBOL)
-		  const tagTok = parser.nextToken(); // Should be TOKEN_SYMBOL
+        // After parseUntilBlocks, the parser is at the tag name token (TOKEN_SYMBOL)
+        const tagTok = parser.nextToken(); // Should be TOKEN_SYMBOL
 
-		  if (tagTok.type !== lexer.TOKEN_SYMBOL) {
-			parser.fail('Expected tag name', tagTok.lineno, tagTok.colno);
-		  }
+        if (tagTok.type !== lexer.TOKEN_SYMBOL) {
+          parser.fail('Expected tag name', tagTok.lineno, tagTok.colno);
+        }
 
-		  const tagNameValue = tagTok.value;
+        const tagNameValue = tagTok.value;
 
-		  // Advance after block end (this moves past '%}')
-		  parser.advanceAfterBlockEnd(tagNameValue);
+        // Advance after block end (this moves past '%}')
+        parser.advanceAfterBlockEnd(tagNameValue);
 
-		  if (tagNameValue === 'separator') {
-			// Continue parsing the next body
-			continue;
-		  } else if (tagNameValue === 'end' + tagName) {
-			// End of the tag block
-			break;
-		  } else {
-			parser.fail(
-			  `Unexpected tag "${tagNameValue}" in extension`,
-			  tagTok.lineno,
-			  tagTok.colno
-			);
-		  }
-		}
+        if (tagNameValue === 'separator') {
+          // Continue parsing the next body
+          continue;
+        } else if (tagNameValue === 'end' + tagName) {
+          // End of the tag block
+          break;
+        } else {
+          parser.fail(
+            `Unexpected tag "${tagNameValue}" in extension`,
+            tagTok.lineno,
+            tagTok.colno
+          );
+        }
+      }
 
-		return bodies; // Return array of bodies
-	  }
+      return bodies; // Return array of bodies
+    }
 
-	  async run(context, ...args) {
-		if(this.doNotResolveArgs) {
-		  await Promise.all(args);
-		}
+    async run(context, ...args) {
+      if (this.doNotResolveArgs) {
+        await Promise.all(args);
+      }
 
-		let callback = null;
-		if(this.oldAsync) {
-		  //the old async uses a callback as the last argument
-		  callback = args.pop();
-		}
+      let callback = null;
+      if (this.oldAsync) {
+        //the old async uses a callback as the last argument
+        callback = args.pop();
+      }
 
-		const bodies = [];
-		for(let i=0; i<this.numContentArgs; i++) {
-		  let body = args.pop();
-		  if(!this.doNotResolveArgs) {
-			// Render the body content if it's a function
-			body = await new Promise((resolve, reject) => {
-			  body((err, res) => {
-				if (err) reject(err);
-				else resolve(res);
-			  });
-			});
-		  }
-		  else {
-			body = await body;
-		  }
-		  bodies.unshift(body);
-		}
+      const bodies = [];
+      for (let i = 0; i < this.numContentArgs; i++) {
+        let body = args.pop();
+        if (!this.doNotResolveArgs) {
+          // Render the body content if it's a function
+          body = await new Promise((resolve, reject) => {
+            body((err, res) => {
+              if (err) reject(err);
+              else resolve(res);
+            });
+          });
+        }
+        else {
+          body = await body;
+        }
+        bodies.unshift(body);
+      }
 
-		const bodyContent = await this.method(context, ...args, bodies.length > 1 ? bodies : bodies[0]);
+      const bodyContent = await this.method(context, ...args, bodies.length > 1 ? bodies : bodies[0]);
 
-		if(callback) {
-		  callback(null, bodyContent);
-		  return undefined;
-		}
-		else {
-		  return bodyContent;
-		}
+      if (callback) {
+        callback(null, bodyContent);
+        return undefined;
+      }
+      else {
+        return bodyContent;
+      }
 
-		/*if (this.supportsBody && typeof args[args.length - 1] === 'function') {
-		  const body = args.pop();
+      /*if (this.supportsBody && typeof args[args.length - 1] === 'function') {
+        const body = args.pop();
+        if(this.parallel) {
+        bodyContent = body;
+        }
+        else {
+        // Render the body content if it's a function
+        bodyContent = await new Promise((resolve, reject) => {
+          body((err, res) => {
+          if (err) reject(err);
+          else resolve(res);
+          });
+        });
+        }
+      }*/
 
-		  if(this.parallel) {
-			bodyContent = body;
-		  }
-		  else {
-			// Render the body content if it's a function
-			bodyContent = await new Promise((resolve, reject) => {
-			  body((err, res) => {
-				if (err) reject(err);
-				else resolve(res);
-			  });
-			});
-		  }
-		}*/
+      // Call the method with arguments and the rendered body content
+      //const result = await this.method(context, ...args, bodyContent);
 
-		// Call the method with arguments and the rendered body content
-		//const result = await this.method(context, ...args, bodyContent);
-
-	  }
-	}
+    }
+  }
 
   describe('Async mode - custom extensions and filters', () => {
     let env;
@@ -171,8 +170,8 @@
     describe('Async Custom Extensions', () => {
       it('should handle a simple async extension function', async () => {
         const greetExtension = new AsyncExtension('greet', async (context, name) => {
-        await delay(5);
-        return `Hello, ${name}!`;
+          await delay(5);
+          return `Hello, ${name}!`;
         });
 
         env.addExtension('GreetExtension', greetExtension);
@@ -184,18 +183,18 @@
 
       it('should handle a simple callback extension function (old async)', async () => {
         env.addExtension('getName', {
-        tags: ['greet'],
-        parse(parser, nodes) {
-          var tok = parser.nextToken();
-          var args = parser.parseSignature(null, true);
-          parser.advanceAfterBlockEnd(tok.value);
-          return new nodes.CallExtensionAsync(this, 'run', args);
-        },
-        run(context, name, callback) {
-          setTimeout(() => {
-          callback(null, `Hello, ${name}!`);
-          }, 5);
-        }
+          tags: ['greet'],
+          parse(parser, nodes) {
+            var tok = parser.nextToken();
+            var args = parser.parseSignature(null, true);
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtensionAsync(this, 'run', args);
+          },
+          run(context, name, callback) {
+            setTimeout(() => {
+              callback(null, `Hello, ${name}!`);
+            }, 5);
+          }
         });
 
         const template = '{% greet "John" %}';
@@ -205,16 +204,16 @@
 
       it('should handle a simple old-style extension function (old sync)', async () => {
         env.addExtension('getName', {
-        tags: ['greet'],
-        parse(parser, nodes) {
-          var tok = parser.nextToken();
-          var args = parser.parseSignature(null, true);
-          parser.advanceAfterBlockEnd(tok.value);
-          return new nodes.CallExtension(this, 'run', args);
-        },
-        run(context, name) {
-          return `Hello, ${name}!`;
-        }
+          tags: ['greet'],
+          parse(parser, nodes) {
+            var tok = parser.nextToken();
+            var args = parser.parseSignature(null, true);
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtension(this, 'run', args);
+          },
+          run(context, name) {
+            return `Hello, ${name}!`;
+          }
         });
 
         const template = '{% greet "John" %}';
@@ -224,8 +223,8 @@
 
       it('should handle an async extension function with multiple arguments', async () => {
         const addExtension = new AsyncExtension('add', async (context, a, b) => {
-        await delay(5);
-        return a + b;
+          await delay(5);
+          return a + b;
         });
 
         env.addExtension('AddExtension', addExtension);
@@ -237,9 +236,9 @@
 
       it('should handle async extension tags in loops', async () => {
         const getNameExtension = new AsyncExtension('getName', async (context, number) => {
-        await delay(5-number);
-        const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
-        return names[number % names.length];
+          await delay(5 - number);
+          const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
+          return names[number % names.length];
         });
 
         env.addExtension('GetNameExtension', getNameExtension);
@@ -266,17 +265,17 @@
 
       it('should handle sync extension tags in loops (old sync)', async () => {
         env.addExtension('getNameSync', {
-        tags: ['getName'],
-        parse(parser, nodes) {
-          var tok = parser.nextToken();
-          var args = parser.parseSignature(null, true);
-          parser.advanceAfterBlockEnd(tok.value);
-          return new nodes.CallExtension(this, 'run', args);
-        },
-        run(context, number) {
-          const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
-          return names[number % names.length];
-        }
+          tags: ['getName'],
+          parse(parser, nodes) {
+            var tok = parser.nextToken();
+            var args = parser.parseSignature(null, true);
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtension(this, 'run', args);
+          },
+          run(context, number) {
+            const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
+            return names[number % names.length];
+          }
         });
 
         const template = `
@@ -301,20 +300,20 @@
 
       it('should handle async extension tags in loops (old async)', async () => {
         env.addExtension('getNameAsync', {
-        tags: ['getName'],
-        parse(parser, nodes) {
-          var tok = parser.nextToken();
-          var args = parser.parseSignature(null, true);
-          parser.advanceAfterBlockEnd(tok.value);
-          return new nodes.CallExtensionAsync(this, 'run', args);
-        },
-        run(context, number, callback) {
-          const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
-          setTimeout(() => {
-          const result = names[number % names.length];
-          callback(null, result); // Pass the result back via the callback
-          }, 5); // Simulate a small asynchronous delay
-        }
+          tags: ['getName'],
+          parse(parser, nodes) {
+            var tok = parser.nextToken();
+            var args = parser.parseSignature(null, true);
+            parser.advanceAfterBlockEnd(tok.value);
+            return new nodes.CallExtensionAsync(this, 'run', args);
+          },
+          run(context, number, callback) {
+            const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eve'];
+            setTimeout(() => {
+              const result = names[number % names.length];
+              callback(null, result); // Pass the result back via the callback
+            }, 5); // Simulate a small asynchronous delay
+          }
         });
 
         const template = `
@@ -340,8 +339,8 @@
 
       it('should properly handle errors thrown in async extension tags', async () => {
         const asyncErrorExtension = new AsyncExtension('asyncError', async () => {
-        await delay(10); // Simulate some async operation
-        throw new Error('Async extension error');
+          await delay(10); // Simulate some async operation
+          throw new Error('Async extension error');
         });
 
         env.addExtension('AsyncErrorExtension', asyncErrorExtension);
@@ -349,29 +348,29 @@
         const template = '{% asyncError %}';
 
         try {
-        await env.renderString(template);
-        // If we reach this point, the test should fail
-        expect().fail('Expected an error to be thrown');
+          await env.renderString(template);
+          // If we reach this point, the test should fail
+          expect().fail('Expected an error to be thrown');
         } catch (error) {
-        expect(error instanceof Error).to.equal(true);
-        expect(error.message).to.contain('Async extension error');
+          expect(error instanceof Error).to.equal(true);
+          expect(error.message).to.contain('Async extension error');
         }
       });
 
       it('should handle an extension tag with one async parameter', async () => {
         const greetExtension = new AsyncExtension('greet', async (context, namePromise) => {
-        const name = await namePromise;
-        await delay(5); // simulate some async operation
-        return `Hello, ${name}!`;
+          const name = await namePromise;
+          await delay(5); // simulate some async operation
+          return `Hello, ${name}!`;
         });
 
         env.addExtension('GreetExtension', greetExtension);
 
         const context = {
-        getName: async () => {
-          await delay(10);
-          return 'Alice';
-        },
+          getName: async () => {
+            await delay(10);
+            return 'Alice';
+          },
         };
 
         const template = '{% greet getName() %}';
@@ -381,26 +380,26 @@
 
       it('should handle an extension tag with two async parameters', async () => {
         const introduceExtension = new AsyncExtension(
-        'introduce',
-        async (context, namePromise, rolePromise) => {
-          const name = await namePromise;
-          const role = await rolePromise;
-          await delay(5); // simulate some async operation
-          return `This is ${name}, our ${role}.`;
-        }
+          'introduce',
+          async (context, namePromise, rolePromise) => {
+            const name = await namePromise;
+            const role = await rolePromise;
+            await delay(5); // simulate some async operation
+            return `This is ${name}, our ${role}.`;
+          }
         );
 
         env.addExtension('IntroduceExtension', introduceExtension);
 
         const context = {
-        getName: async () => {
-          await delay(10);
-          return 'Bob';
-        },
-        getRole: async () => {
-          await delay(15);
-          return 'manager';
-        },
+          getName: async () => {
+            await delay(10);
+            return 'Bob';
+          },
+          getRole: async () => {
+            await delay(15);
+            return 'manager';
+          },
         };
 
         const template = '{% introduce getName(), getRole() %}';
@@ -410,26 +409,26 @@
 
       it('should handle an extension tag with mixed async and non-async parameters', async () => {
         const describeUserExtension = new AsyncExtension(
-        'describeUser',
-        async (context, namePromise, age, cityPromise) => {
-          const name = await namePromise;
-          const city = await cityPromise;
-          await delay(5); // simulate some async operation
-          return `${name}, aged ${age}, lives in ${city}.`;
-        }
+          'describeUser',
+          async (context, namePromise, age, cityPromise) => {
+            const name = await namePromise;
+            const city = await cityPromise;
+            await delay(5); // simulate some async operation
+            return `${name}, aged ${age}, lives in ${city}.`;
+          }
         );
 
         env.addExtension('DescribeUserExtension', describeUserExtension);
 
         const context = {
-        getName: async () => {
-          await delay(10);
-          return 'Charlie';
-        },
-        getCity: async () => {
-          await delay(15);
-          return 'New York';
-        },
+          getName: async () => {
+            await delay(10);
+            return 'Charlie';
+          },
+          getCity: async () => {
+            await delay(15);
+            return 'New York';
+          },
         };
 
         const template = '{% describeUser getName(), 30, getCity() %}';
@@ -439,86 +438,86 @@
 
       it('should handle an extension with a single content block', async () => {
         const options = [
-        {supportsBody: true, extName: 'wrap'},//the old API, but returning async value
-        {supportsBody: true, extName: 'pwrap', doNotResolveArgs: true},
-        {supportsBody: true, extName: 'awrap', oldAsync: true},
-        {supportsBody: true, extName: 'apwrap', oldAsync: true, doNotResolveArgs: true},
-        ]
-        for(const option of options) {
-        const extName = option.extName;
-        const wrapExtension = new AsyncExtension(
-          extName,
-          async (context, tagName, bodyContent) => {
-          if( option.doNotResolveArgs ) {
-            bodyContent = await bodyContent;
-          }
-          await delay(5);
-          return `<${tagName}>${bodyContent}</${tagName}>`;
-          },
-          option
-        );
+          { supportsBody: true, extName: 'wrap' }, //the old API, but returning async value
+          { supportsBody: true, extName: 'pwrap', doNotResolveArgs: true },
+          { supportsBody: true, extName: 'awrap', oldAsync: true },
+          { supportsBody: true, extName: 'apwrap', oldAsync: true, doNotResolveArgs: true },
+        ];
+        for (const option of options) {
+          const extName = option.extName;
+          const wrapExtension = new AsyncExtension(
+            extName,
+            async (context, tagName, bodyContent) => {
+              if (option.doNotResolveArgs) {
+                bodyContent = await bodyContent;
+              }
+              await delay(5);
+              return `<${tagName}>${bodyContent}</${tagName}>`;
+            },
+            option
+          );
 
-        env.addExtension(extName, wrapExtension);
+          env.addExtension(extName, wrapExtension);
 
-        const context = {
-          getExtName: async () => {
-          await delay(3);
-          return extName;
-          }
-        };
+          const context = {
+            getExtName: async () => {
+              await delay(3);
+              return extName;
+            }
+          };
 
-        const template = `
+          const template = `
           {% ${extName} "section" %}
           This is some content in {{getExtName()}}.
           {% end${extName} %}
         `;
 
-        const result = await env.renderString(template, context);
-        const expected = `
+          const result = await env.renderString(template, context);
+          const expected = `
           <section>
           This is some content in ${extName}.
           </section>
         `;
 
-        expect(unescape(result.trim())).to.equal(expected.trim());
+          expect(unescape(result.trim())).to.equal(expected.trim());
         }
       });
 
       it('should handle an extension with multiple content blocks', async () => {
         const options = [
-        { supportsBody: true, extName: 'wrap' },
-        { supportsBody: true, extName: 'pwrap', doNotResolveArgs: true },
-        { supportsBody: true, extName: 'awrap', oldAsync: true },
+          { supportsBody: true, extName: 'wrap' },
+          { supportsBody: true, extName: 'pwrap', doNotResolveArgs: true },
+          { supportsBody: true, extName: 'awrap', oldAsync: true },
         ];
         for (const option of options) {
-        const extName = option.extName;
-        const wrapExtension = new AsyncExtension(
-          extName,
-          async (context, tagName, contentBlocks) => {
+          const extName = option.extName;
+          const wrapExtension = new AsyncExtension(
+            extName,
+            async (context, tagName, contentBlocks) => {
 
-          await delay(5);
+              await delay(5);
 
-          // Join the content blocks with a separator if alternative content exists
-          const mainContent = contentBlocks[0];
-          const altContent = contentBlocks[1] || '';
-          const result = `<${tagName}>${mainContent}</${tagName}>` +
-                  (altContent ? `<alt>${altContent}</alt>` : '');
+              // Join the content blocks with a separator if alternative content exists
+              const mainContent = contentBlocks[0];
+              const altContent = contentBlocks[1] || '';
+              const result = `<${tagName}>${mainContent}</${tagName}>` +
+                (altContent ? `<alt>${altContent}</alt>` : '');
 
-          return result;
-          },
-          option
-        );
+              return result;
+            },
+            option
+          );
 
-        env.addExtension(extName, wrapExtension);
+          env.addExtension(extName, wrapExtension);
 
-        const context = {
-          getExtName: async () => {
-          await delay(3);
-          return extName;
-          }
-        };
+          const context = {
+            getExtName: async () => {
+              await delay(3);
+              return extName;
+            }
+          };
 
-        const template = `
+          const template = `
           {% ${extName} "section" %}
           This is main content in {{getExtName()}}.
           {% separator %}
@@ -526,8 +525,8 @@
           {% end${extName} %}
         `;
 
-        const result = await env.renderString(template, context);
-        const expected = `
+          const result = await env.renderString(template, context);
+          const expected = `
           <section>
           This is main content in ${extName}.
           </section><alt>
@@ -535,7 +534,7 @@
           </alt>
         `;
 
-        expect(unescape(result.trim())).to.equal(expected.trim());
+          expect(unescape(result.trim())).to.equal(expected.trim());
         }
       });
     });

@@ -538,7 +538,6 @@
         }, '2');
       });
       it('should output the length of a Map', function test() {
-        /* global Map */
         var map;
         if (typeof Map === 'undefined') {
           this.skip();
@@ -551,7 +550,6 @@
         }
       });
       it('should output the length of a Set', function test() {
-        /* global Set */
         var set;
         if (typeof Set === 'undefined') {
           this.skip();

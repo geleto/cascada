@@ -95,7 +95,6 @@
     return rand + '.njk';
   }
 
-  // eslint-disable-next-line consistent-return
   function render(str, ctx, opts, env, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;

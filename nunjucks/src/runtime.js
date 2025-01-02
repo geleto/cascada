@@ -286,7 +286,6 @@ class AsyncFrame extends Frame {
     this.writeCounters = writeCounters;
     this.promiseResolves = {};
     let parent = this.parent;
-    // eslint-disable-next-line guard-for-in
     for (let varName in writeCounters) {
       //snapshot the value
       this.asyncVars[varName] = this.lookup(varName);

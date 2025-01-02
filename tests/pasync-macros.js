@@ -1,38 +1,38 @@
-(function() {
-	'use strict';
+(function () {
+  'use strict';
 
-	var expect;
-	//var unescape;
-	var AsyncEnvironment;
-	//var Environment;
+  var expect;
+  //var unescape;
+  var AsyncEnvironment;
+  //var Environment;
 
-	if (typeof require !== 'undefined') {
-	  expect = require('expect.js');
-	  AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
-	  //Environment = require('../nunjucks/src/environment').Environment;
-	  //unescape = require('he').unescape;
-	} else {
-	  expect = window.expect;
-	  //unescape = window.he.unescape;
-	  AsyncEnvironment = nunjucks.AsyncEnvironment;
-	  //Environment = nunjucks.Environment;
-	}
+  if (typeof require !== 'undefined') {
+    expect = require('expect.js');
+    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
+    //Environment = require('../nunjucks/src/environment').Environment;
+    //unescape = require('he').unescape;
+  } else {
+    expect = window.expect;
+    //unescape = window.he.unescape;
+    AsyncEnvironment = nunjucks.AsyncEnvironment;
+    //Environment = nunjucks.Environment;
+  }
 
-	const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-	describe('Async mode - macros', () => {
-	  let env;
-	  beforeEach(() => {
-		env = new AsyncEnvironment();
-	  });
+  describe('Async mode - macros', () => {
+    let env;
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
 
-	  describe('Nunjucks Async Macro Handling Tests', () => {
+    describe('Nunjucks Async Macro Handling Tests', () => {
       it('should handle async function passed as argument to macro', async () => {
         const context = {
-        async getName() {
-          await delay(5);
-          return 'Alice';
-        }
+          async getName() {
+            await delay(5);
+            return 'Alice';
+          }
         };
 
         const template = `
@@ -48,10 +48,10 @@
 
       it('should handle async function called within macro', async () => {
         const context = {
-        async getName() {
-          await delay(5);
-          return 'Bob';
-        }
+          async getName() {
+            await delay(5);
+            return 'Bob';
+          }
         };
 
         const template = `
@@ -67,14 +67,14 @@
 
       it('should handle macro using async variable from context', async () => {
         const context = {
-        async greeting() {
-          await delay(2);
-          return 'Hi';
-        },
-        async name() {
-          await delay(3);
-          return 'Eve';
-        }
+          async greeting() {
+            await delay(2);
+            return 'Hi';
+          },
+          async name() {
+            await delay(3);
+            return 'Eve';
+          }
         };
 
         const template = `
@@ -90,14 +90,14 @@
 
       it('should handle async logic inside macro', async () => {
         const context = {
-        async getGreeting() {
-          await delay(2);
-          return 'Greetings';
-        },
-        async getName() {
-          await delay(3);
-          return 'Frank';
-        }
+          async getGreeting() {
+            await delay(2);
+            return 'Greetings';
+          },
+          async getName() {
+            await delay(3);
+            return 'Frank';
+          }
         };
 
         const template = `
@@ -110,7 +110,7 @@
         const result = await env.renderString(template, context);
         expect(result.trim()).to.equal('Greetings, Frank!');
       });
-	  });
+    });
 
     describe('Async operations in macros', () => {
       it('should handle async functions in macro calls', async () => {
@@ -281,11 +281,11 @@
       });
     });
 
-	  describe('Async Nunjucks Caller Functionality', () => {
+    describe('Async Nunjucks Caller Functionality', () => {
 
       describe('Async Caller Basic Usage', () => {
         it('should handle async value in caller content', async () => {
-        const template = `
+          const template = `
           {% macro wrapper() %}
           {{ caller() }}
           {% endmacro %}
@@ -295,16 +295,16 @@
           {% endcall %}
         `;
 
-        const context = {
-          asyncValue: Promise.resolve('async result')
-        };
+          const context = {
+            asyncValue: Promise.resolve('async result')
+          };
 
-        const rendered = await env.renderString(template, context);
-        expect(rendered.trim()).to.equal('async result');
+          const rendered = await env.renderString(template, context);
+          expect(rendered.trim()).to.equal('async result');
         });
 
         it('caller should work in ternary condition', async () => {
-        const template = `
+          const template = `
           {% macro add(x, y) %}
           {{ caller() if caller else 0 }}: {{ x + y }}
           {% endmacro%}
@@ -314,12 +314,12 @@
           {%- endcall %}
         `;
 
-        const result = await env.renderString(template);
-        expect(result.trim()).to.equal('The result is: 3');
+          const result = await env.renderString(template);
+          expect(result.trim()).to.equal('The result is: 3');
         });
 
         it('should handle multiple async values in caller', async () => {
-        const template = `
+          const template = `
           {%- macro format() -%}
           Results: {{ caller() }}
           {%- endmacro -%}
@@ -329,19 +329,19 @@
           {%- endcall -%}
         `;
 
-        const context = {
-          firstValue: Promise.resolve('first'),
-          secondValue: Promise.resolve('second')
-        };
+          const context = {
+            firstValue: Promise.resolve('first'),
+            secondValue: Promise.resolve('second')
+          };
 
-        const rendered = await env.renderString(template, context);
-        expect(rendered.trim()).to.equal('Results: first, second');
+          const rendered = await env.renderString(template, context);
+          expect(rendered.trim()).to.equal('Results: first, second');
         });
       });
 
       describe('Nested Async Callers', () => {
         it('should handle nested async callers', async () => {
-        const template = `
+          const template = `
           {%- macro outer() -%}
           Outer({{ caller() }})
           {%- endmacro -%}
@@ -357,18 +357,18 @@
           {%- endcall -%}
         `;
 
-        const context = {
-          asyncValue: Promise.resolve('content')
-        };
+          const context = {
+            asyncValue: Promise.resolve('content')
+          };
 
-        const rendered = await env.renderString(template, context);
-        expect(rendered.trim()).to.equal('Outer(Inner(content))');
+          const rendered = await env.renderString(template, context);
+          expect(rendered.trim()).to.equal('Outer(Inner(content))');
         });
       });
 
       describe('Async Caller with Control Structures', () => {
         it('should handle async values in if conditions within caller', async () => {
-        const template = `
+          const template = `
           {% macro wrapper() %}
           {{ caller() }}
           {% endmacro %}
@@ -380,17 +380,17 @@
           {% endcall %}
         `;
 
-        const context = {
-          asyncCondition: Promise.resolve(true),
-          asyncValue: Promise.resolve('shown')
-        };
+          const context = {
+            asyncCondition: Promise.resolve(true),
+            asyncValue: Promise.resolve('shown')
+          };
 
-        const rendered = await env.renderString(template, context);
-        expect(rendered.trim()).to.equal('shown');
+          const rendered = await env.renderString(template, context);
+          expect(rendered.trim()).to.equal('shown');
         });
 
         it('should handle async values in for loops within caller', async () => {
-        const template = `
+          const template = `
           {% macro wrapper() %}
           {{ caller() }}
           {% endmacro %}
@@ -402,18 +402,18 @@
           {% endcall %}
         `;
 
-        const context = {
-          asyncItems: Promise.resolve(['a', 'b', 'c'])
-        };
+          const context = {
+            asyncItems: Promise.resolve(['a', 'b', 'c'])
+          };
 
-        const rendered = await env.renderString(template, context);
-        expect(rendered.trim().replace(/\s+/g, ' ')).to.equal('a b c');
+          const rendered = await env.renderString(template, context);
+          expect(rendered.trim().replace(/\s+/g, ' ')).to.equal('a b c');
         });
       });
 
       describe('Async Caller with Macro Arguments', () => {
         it('should handle async values in macro arguments', async () => {
-        const template = `
+          const template = `
           {%- macro format(prefix) -%}
           {{ prefix }}: {{ caller() }}
           {%- endmacro -%}
@@ -423,19 +423,19 @@
           {%- endcall -%}
         `;
 
-        const context = {
-          asyncPrefix: Promise.resolve('Result'),
-          asyncContent: Promise.resolve('42')
-        };
+          const context = {
+            asyncPrefix: Promise.resolve('Result'),
+            asyncContent: Promise.resolve('42')
+          };
 
-        const rendered = await env.renderString(template, context);
-        expect(rendered.trim()).to.equal('Result: 42');
+          const rendered = await env.renderString(template, context);
+          expect(rendered.trim()).to.equal('Result: 42');
         });
       });
 
       describe('Async Caller Error Cases', () => {
         it('should properly handle rejected promises in caller content', async () => {
-        const template = `
+          const template = `
           {% macro wrapper() %}
           {{ caller() }}
           {% endmacro %}
@@ -445,23 +445,23 @@
           {% endcall %}
         `;
 
-        const context = {
-          //asyncError: Promise.reject(new Error('Async error'))
-          async getAsyncError() {
-          await delay(5);
-          throw new Error('Async error');
-          }
-        };
+          const context = {
+            //asyncError: Promise.reject(new Error('Async error'))
+            async getAsyncError() {
+              await delay(5);
+              throw new Error('Async error');
+            }
+          };
 
-        try {
-          await env.renderString(template, context);
-        } catch (error) {
-          expect(error.message).to.contain('Async error');
-        }
+          try {
+            await env.renderString(template, context);
+          } catch (error) {
+            expect(error.message).to.contain('Async error');
+          }
         });
 
         it('should handle async errors in nested callers', async () => {
-        const template = `
+          const template = `
           {% macro outer() %}
           {{ caller() }}
           {% endmacro %}
@@ -477,18 +477,18 @@
           {% endcall %}
         `;
 
-        const context = {
-          asyncError: Promise.reject(new Error('Nested async error'))
-        };
+          const context = {
+            asyncError: Promise.reject(new Error('Nested async error'))
+          };
 
-        try {
-          await env.renderString(template, context);
-        }
-        catch (error) {
-          expect(error.message).to.contain('Nested async error');
-        }
+          try {
+            await env.renderString(template, context);
+          }
+          catch (error) {
+            expect(error.message).to.contain('Nested async error');
+          }
         });
       });
-	  });
-	});
+    });
+  });
 })();

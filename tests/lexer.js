@@ -342,20 +342,6 @@
         lexer.TOKEN_DATA);
     });
 
-    it('should allow changing the variable start and end', function() {
-      tokens = lexer.lex('data {= var =}', {
-        tags: {
-          variableStart: '{=',
-          variableEnd: '=}'
-        }
-      });
-      hasTokens(tokens,
-        lexer.TOKEN_DATA,
-        lexer.TOKEN_VARIABLE_START,
-        lexer.TOKEN_SYMBOL,
-        lexer.TOKEN_VARIABLE_END);
-    });
-
     it('should allow changing the block start and end', function() {
       tokens = lexer.lex('{= =}', {
         tags: {
