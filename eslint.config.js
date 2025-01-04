@@ -1,3 +1,5 @@
+/* eslint-disable no-undef */
+
 const js = require('@eslint/js');
 const globals = require('globals');
 const mochaPlugin = require('eslint-plugin-mocha');
