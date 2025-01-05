@@ -5,22 +5,23 @@ Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) templat
 ## Table of Contents
 - [Background](#background)
 - [Why Cascada?](#why-cascada)
- - [1. Transparent Async Support](#1-transparent-async-support)
- - [2. Automatic Parallel Processing](#2-automatic-parallel-processing)
- - [3. Smart Dependency Management](#3-smart-dependency-management)
+  - [1. Transparent Async Support](#1-transparent-async-support)
+  - [2. Automatic Parallel Processing](#2-automatic-parallel-processing)
+  - [3. Smart Dependency Management](#3-smart-dependency-management)
 - [Core Async Features](#core-async-features)
- - [Asynchronous Data](#asynchronous-data)
- - [Async Iterators and Generators](#async-iterators-and-generators)
+  - [Asynchronous Data](#asynchronous-data)
+  - [Async Iterators and Generators](#async-iterators-and-generators)
 - [API](#api)
+  - [Getting Started](#getting-started)
+  - [Key Differences](#key-differences)
 - [Parallelization Examples](#parallelization-examples)
- - [1. Variables](#1-variables)
- - [2. Expressions](#2-expressions)
- - [3. Async Functions](#3-async-functions)
- - [4. Loop Iterations](#4-loop-iterations)
- - [5. Template Includes](#5-template-includes)
- - [6. Async Filters](#6-async-filters)
+  - [1. Variables](#1-variables)
+  - [2. Expressions](#2-expressions)
+  - [3. Async Functions](#3-async-functions)
+  - [4. Loop Iterations](#4-loop-iterations)
+  - [5. Template Includes](#5-template-includes)
+  - [6. Async Filters](#6-async-filters)
 - [Templating Features](#templating-features)
-- [Getting Started](#getting-started)
 - [Best Practices](#best-practices)
 
 ## Background
@@ -91,6 +92,19 @@ env.addGlobal('crawlPages', async function* (url) {
 ## API
 
 While Cascada maintains compatibility with the traditional [Nunjucks API](https://mozilla.github.io/nunjucks/api.html) that uses callbacks, it introduces a simpler promise-based API for working with async templates.
+
+#### Getting Started
+```javascript
+const { AsyncEnvironment } = require('cascada');
+
+const env = new AsyncEnvironment();
+const context = {
+  data: Promise.resolve({ message: "Hello" })
+};
+
+env.renderString("Message: {{ data.message }}", context)
+   .then(result => console.log(result));
+```
 
 #### Key Differences:
 
@@ -191,19 +205,6 @@ Cascada fully supports the Nunjucks template syntax and features. You can refere
 - **First-class Functions**: Macros with support for default values and keyword arguments
 - **Expression System**: Complex expressions including inline conditionals and mathematical operations
 - **Template Composition**: Inheritance (extend), content embedding (include), and importing (import)
-
-## Getting Started
-```javascript
-const { AsyncEnvironment } = require('cascada');
-
-const env = new AsyncEnvironment();
-const context = {
-  data: Promise.resolve({ message: "Hello" })
-};
-
-env.renderString("Message: {{ data.message }}", context)
-   .then(result => console.log(result));
-```
 
 ## Best Practices
 
