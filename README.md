@@ -2,11 +2,31 @@
 
 Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling.
 
-## The Problem
+## Table of Contents
+- [Background](#background)
+- [Why Cascada?](#why-cascada)
+ - [1. Transparent Async Support](#1-transparent-async-support)
+ - [2. Automatic Parallel Processing](#2-automatic-parallel-processing)
+ - [3. Smart Dependency Management](#3-smart-dependency-management)
+- [Core Async Features](#core-async-features)
+ - [Asynchronous Data](#asynchronous-data)
+ - [Async Iterators and Generators](#async-iterators-and-generators)
+- [API](#api)
+- [Parallelization Examples](#parallelization-examples)
+ - [1. Variables](#1-variables)
+ - [2. Expressions](#2-expressions)
+ - [3. Async Functions](#3-async-functions)
+ - [4. Loop Iterations](#4-loop-iterations)
+ - [5. Template Includes](#5-template-includes)
+ - [6. Async Filters](#6-async-filters)
+- [Templating Features](#templating-features)
+- [Getting Started](#getting-started)
+- [Best Practices](#best-practices)
+
+## Background
 
 Traditional template engines either require pre-resolving all async data before rendering or use special syntax for async operations. None provide automatic parallelization - operations run sequentially by default, and any parallel processing requires explicit orchestration through special constructs.
 
-## Motivation
 Cascada was developed with AI agent workflows in mind, where template rendering often involves multiple long-running operations like LLM calls, reasoning steps, or external API requests.
 
 ## Why Cascada?
@@ -25,7 +45,7 @@ Cascada takes a radically different approach by making async operation handling 
 - Ensures correct execution order
 - Related operations wait for prerequisites while unrelated ones proceed in parallel
 
-## Key Features
+## Core Async Features
 
 #### Asynchronous Data
 Promise values and functions can be added to the context object or as globals:
@@ -50,6 +70,7 @@ Use naturally in templates:
 ```
 
 #### Async Iterators and Generators
+Handle sequences of asynchronous values generated over time, ideal for processing async data as it becomes available from APIs, streams, message queues, or dependent iterations.
 ```javascript
 env.addGlobal('crawlPages', async function* (url) {
     do {
@@ -111,7 +132,7 @@ The key differences are
  - Use the regular CallExtension node instead of CallExtensionAsync (which is for the old callback API)
  - The run() method is async and return a promise directly
 
-## Parallel Processing Examples
+## Parallelization Examples
 Cascada automatically parallelizes operations that can safely run concurrently:
 
 #### 1. Variables
@@ -171,7 +192,20 @@ Cascada fully supports the Nunjucks template syntax and features. You can refere
 - **Expression System**: Complex expressions including inline conditionals and mathematical operations
 - **Template Composition**: Inheritance (extend), content embedding (include), and importing (import)
 
-## Implementation Strategies
+## Getting Started
+```javascript
+const { AsyncEnvironment } = require('cascada');
+
+const env = new AsyncEnvironment();
+const context = {
+  data: Promise.resolve({ message: "Hello" })
+};
+
+env.renderString("Message: {{ data.message }}", context)
+   .then(result => console.log(result));
+```
+
+## Best Practices
 
 1. **Divide Into Independent Tasks**
 Break down complex operations into smaller, independent components that don't rely on each other's results.
@@ -194,4 +228,6 @@ Create purpose-built API methods that return data in the exact shape needed by t
 7. **Use Imported Macros Over Includes**
 Prefer macros over includes for better parallelization when passing variables between templates.
 
-
+8. **Do not use the old async tags**
+Do not use the old async versions of the following Nunjucks tags, as they will prevent parallel rendering: `asyncEach`, `asyncAll`, `asyncMacro`.
+Instead, use the standard synchronous versions of these tags (each, for, macro) in combination with async values.
