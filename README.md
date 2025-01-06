@@ -115,42 +115,48 @@ env.renderString("Message: {{ data.message }}", context)
 #### Key Differences:
 
 1. Use `AsyncEnvironment` instead of `Environment`:
-```javascript
-const env = new AsyncEnvironment();
-```
+	```javascript
+	const env = new AsyncEnvironment();
+	```
 
 2. Promise-based render methods
-```javascript
-const result = await env.renderString('Hello {{ username }}', context);
-```
+	```javascript
+	const result = await env.renderString('Hello {{ username }}', context);
+	```
 
 3. Filters and Extensions use promises by default:
- ```javascript
- env.addFilter('translate', async (text, lang) => {
-	return translator.translate(text, lang);
- });
-```
+	```javascript
+	env.addFilter('translate', async (text, lang) => {
+		return translator.translate(text, lang);
+	});
+	```
 4. Custom Async Extensions:
- ```javascript
-env.addExtension('Fetch', {
-	tags: ['fetch'],
-	parse(parser, nodes) {
-		parser.nextToken();
-		return new nodes.CallExtension(this, 'run', [parser.parseExpression()]);
-	},
-	async run(context, url) {
-		return fetch(url);
-	}
-});
-```
-Both fetches run concurrently:
-```njk
-Config: {% fetch "/api/config" %}
-Data: {% fetch "/api/data" %}
-```
-The key differences are:
- - Use the regular CallExtension node instead of CallExtensionAsync (which is for the old callback API)
- - The run() method is async and return a promise directly
+	```javascript
+	env.addExtension('Fetch', {
+		tags: ['fetch'],
+		parse(parser, nodes) {
+			parser.nextToken();
+			return new nodes.CallExtension(this, 'run', [parser.parseExpression()]);
+		},
+		async run(context, url) {
+			return fetch(url);
+		}
+	});
+	```
+	Both fetches run concurrently:
+	```njk
+	Config: {% fetch "/api/config" %}
+	Data: {% fetch "/api/data" %}
+	```
+	The key differences are:
+	- Use the regular CallExtension node instead of CallExtensionAsync (which is for the old callback API)
+	- The run() method is async and return a promise directly
+
+5. Cascada introduces several updates and improvements to the development and testing environment:
+	- **Updated Libraries**
+	- **Revamped Build Scripts**
+	- **Updated Testing Frameworks and Scripts**: Testing and has been improved, including improved coverage tests and the use of **Playwright** for browser tests.
+	- **ESM Module Support**: The development environment now fully supports ECMAScript Modules (ESM), while retaining compatibility with the older CommonJS bindings.
 
 ## Parallelization Examples
 Cascada automatically parallelizes operations that can safely run concurrently:
@@ -271,6 +277,7 @@ Cascada is still under development. The following tasks remain to be completed:
 - **Address Parallelism Inefficiencies**: Resolve some known inefficiencies in parallel execution, such as the current behavior where all elements in template-declared arrays must be resolved together before individual elements can be accessed.
 - **Optimizations**: Apply some low-hanging fruit optimizations.
 - **Extensive Testing**: Conduct additional tests to ensure robustness and coverage across various scenarios.
+- **TypeScript Definitions**:  Implement TypeScript definitions as part of the library to ensure the API is fully typed.
 
 ## Best Practices
 

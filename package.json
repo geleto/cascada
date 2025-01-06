@@ -2,7 +2,7 @@
   "name": "nunjucks",
   "description": "A powerful templating engine with inheritance, asynchronous control, and more (jinja2 inspired)",
   "version": "3.2.4",
-  "author": "James Long <longster@gmail.com>",
+  "author": "Angel Popov<geleto@gmail.com>",
   "main": "dist/cjs/index.js",
   "module": "dist/nunjucks.esm.js",
   "exports": {
