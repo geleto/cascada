@@ -1,4 +1,4 @@
-# Cascada - async templating with automatic parallelization
+# Cascada - async-enabled templating with automatic parallelization
 
 Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling.
 

@@ -1,6 +1,6 @@
 {
-  "name": "nunjucks",
-  "description": "A powerful templating engine with inheritance, asynchronous control, and more (jinja2 inspired)",
+  "name": "cascada",
+  "description": "Async-enabled templating with automatic parallelization",
   "version": "3.2.4",
   "author": "Angel Popov<geleto@gmail.com>",
   "main": "dist/cjs/index.js",
@@ -122,14 +122,18 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mozilla/nunjucks.git"
+    "url": "https://github.com/geleto/cascada.git"
   },
   "keywords": [
     "template",
-    "templating"
+    "templating",
+    "template engine",
+    "async",
+    "parallel",
+    "concurrency"
   ],
   "license": "BSD-2-Clause",
   "bugs": {
-    "url": "https://github.com/mozilla/nunjucks/issues"
+    "url": "https://github.com/geleto/cascada/issues"
   }
 }

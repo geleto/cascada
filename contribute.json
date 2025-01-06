@@ -1,22 +1,26 @@
 {
-    "name": "Nunjucks",
-    "description": "Nunjucks is a full featured templating engine for javascript. It is heavily inspired by jinja2.",
+    "name": "Cascada",
+    "description": "Async-enabled templating with automatic parallelization",
     "repository": {
-        "url": "https://github.com/mozilla/nunjucks",
-        "license": "BSD 2-Clause",
-        "tests": "https://travis-ci.org/mozilla/nunjucks"
+        "url": "https://github.com/geleto/cascada",
+        "license": "BSD 2-Clause"
     },
     "participate": {
-        "home": "https://github.com/mozilla/nunjucks",
-        "docs": "https://github.com/mozilla/nunjucks"
+        "home": "https://github.com/geleto/cascada",
+        "docs": "https://github.com/geleto/cascada"
     },
     "bugs": {
-        "list": "https://github.com/mozilla/nunjucks/issues",
-        "report": "https://github.com/mozilla/nunjucks/issues/new"
+        "list": "https://github.com/geleto/cascada/issues",
+        "report": "https://github.com/geleto/cascada/issues/new"
     },
     "keywords": [
         "javascript",
         "node.js",
-        "jinja"
+        "jinja",
+        "nunjucks",
+        "async",
+        "concurrency",
+        "parallel",
+        "template engine"
     ]
 }
