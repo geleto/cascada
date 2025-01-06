@@ -2,6 +2,8 @@
 
 Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling.
 
+**Note**: This is an ongoing project under active development. For details on the current progress and remaining tasks, please refer to the [Development Status and Roadmap](#development-status-and-roadmap) section.
+
 ## Table of Contents
 - [Background](#background)
 - [Why Cascada?](#why-cascada)
@@ -22,6 +24,10 @@ Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) templat
   - [5. Template Includes](#5-template-includes)
   - [6. Async Filters](#6-async-filters)
 - [Templating Features](#templating-features)
+- [Technical Constraints](#technical-constraints)
+  - [Cross-Template Variable Access](#cross-template-variable-access)
+  - [Dependency Declarations](#dependency-declarations)
+- [Development Status and Roadmap](#development-status-and-roadmap)
 - [Best Practices](#best-practices)
 
 ## Background
@@ -142,7 +148,7 @@ Both fetches run concurrently:
 Config: {% fetch "/api/config" %}
 Data: {% fetch "/api/data" %}
 ```
-The key differences are
+The key differences are:
  - Use the regular CallExtension node instead of CallExtensionAsync (which is for the old callback API)
  - The run() method is async and return a promise directly
 
@@ -201,34 +207,102 @@ Both translations run in parallel:
 
 Cascada fully supports the Nunjucks template syntax and features. You can reference the [Nunjucks Templating Documentation](https://mozilla.github.io/nunjucks/templating.html) for complete details. Key features include:
 
-- **Full Programming Constructs**: Variables, loops, conditionals, functions, and scoping rules
-- **First-class Functions**: Macros with support for default values and keyword arguments
-- **Expression System**: Complex expressions including inline conditionals and mathematical operations
-- **Template Composition**: Inheritance (extend), content embedding (include), and importing (import)
+- **Full programming constructs**: variables, loops, conditionals, functions, and scoping rules
+- **First-class functions**: macros with support for default values and keyword arguments
+- **Expression system**: complex expressions including inline conditionals and mathematical operations
+- **Template composition**: inheritance (extend), content embedding (include), and importing (import)
+
+## Technical Constraints
+
+### Cross-Template Variable Access
+To maintain Cascada’s parallelization capabilities, variable scopes must be known at compile time for proper dependency management. However, certain scenarios involve accessing variables across templates, which can complicate this:
+ - **Included templates** (`include`): Included templates have **read-only** access to parent variables.
+ - **Extended Templates** (`extends`): Blocks in child templates can **read and modify** parent variables.
+
+### Dependency Declarations
+To address these challenges, dependencies must be explicitly declared:
+1. **Included Templates**
+   Declare dependencies with {% depends %} to ensure proper tracking:
+   ```njk
+   {% depends var1, var2 %}
+   ```
+   Consider using imported macros instead of includes. Macros allow for better encapsulation and improved parallelization by avoiding unnecessary variable scope sharing.
+
+2. **Dynamic Includes**
+   For templates with dynamic names (determined at runtime), specify dependencies in the `include` tag:
+   ```njk
+   {% include includedTemplateName + ".njk" depends = var1, var2 %}
+   ```
+
+3. **Extended Templates and Blocks**
+   In the parent template, explicitly separate **read-only** and **read-write** variables to define their roles. The child template uses `depends` to declare its dependencies **only if the parent template is dynamically determined**.
+
+   - **Parent Template**:
+     Use `readonly` for variables that cannot be modified and `readwrite` for variables that can:
+     ```njk
+     {% set frameVar1 = "Value 1" %}
+     {% set frameVar2 = "Another Read-Only Value" %}
+     {% block content readonly frameVar1, frameVar2 readwrite frameVar3 %}
+         {% set frameVar3 = "Value 3" %}
+     {% endblock %}
+     ```
+
+   - **Child Template**:
+     If the parent template is dynamically determined, use `depends` in the child template to explicitly declare its dependencies:
+     ```njk
+     {% extends "parentTemplate_" + dynamicPart + ".njk" %}
+
+     {% block content depends frameVar1, frameVar2, frameVar3 %}
+         <h1>{{ frameVar1 }}</h1>
+         <h2>{{ frameVar2 }}</h2>
+         {% set frameVar3 = "Updated Value" %}
+     {% endblock %}
+     ```
+
+
+## Development Status and Roadmap
+
+Cascada is still under development. The following tasks remain to be completed:
+
+- **Dependency Declarations**: Finalize and integrate explicit dependency declaration features ([see Dependency Declarations](#dependency-declarations)).
+- **Variable Scoping and Dependency Management for Loops**: Ensure proper variable handling and dependency management within loop contexts.
+- **Async Iterators**: Complete implementation of async iterators to enable real-time processing instead of waiting for all elements before processing begins.
+- **Complete Async API**: Finalize the API for precompiled templates - implement `asyncCompile` and `AsyncTemplate`.
+- **Address Parallelism Inefficiencies**: Resolve some known inefficiencies in parallel execution, such as the current behavior where all elements in template-declared arrays must be resolved together before individual elements can be accessed.
+- **Optimizations**: Apply some low-hanging fruit optimizations.
+- **Extensive Testing**: Conduct additional tests to ensure robustness and coverage across various scenarios.
 
 ## Best Practices
 
-1. **Divide Into Independent Tasks**
-Break down complex operations into smaller, independent components that don't rely on each other's results.
+1. **Divide into independent tasks**
+
+	Break down complex operations into smaller, independent components that don't rely on each other's results.
 
 2. **Balance**
-Find the right balance between parallelization and operational complexity. Consider batching many small operations.
 
-3. **Smart Dependencies**
-Design your template structure to minimize dependencies between operations.
+	Find the right balance between parallelization and operational complexity. Consider batching many small operations.
 
-4. **Pure Functions**
-Use functions that depend only on their input parameters for predictable parallel execution.
+3. **Minimize Dependencies**
 
-5. **Direct API Access**
-Consider exposing APIs directly to templates instead of pre-processing all data.
+	Design your template structure to minimize dependencies between operations.
 
-6. **API Layer Design**
-Create purpose-built API methods that return data in the exact shape needed by templates.
+4. **Pure functions**
 
-7. **Use Imported Macros Over Includes**
-Prefer macros over includes for better parallelization when passing variables between templates.
+	Use functions that depend only on their input parameters for predictable parallel execution.
+
+5. **Direct API access**
+
+	Consider exposing APIs directly to templates instead of pre-processing all data.
+
+6. **API layer design**
+
+	Create purpose-built API methods that return data in the exact shape needed by templates.
+
+7. **Use imported macros over includes**
+
+	Use imported macros instead of includes wherever possible. Macros allow for better encapsulation and improved parallelization by avoiding unnecessary variable scope sharing.
 
 8. **Do not use the old async tags**
-Do not use the old async versions of the following Nunjucks tags, as they will prevent parallel rendering: `asyncEach`, `asyncAll`, `asyncMacro`.
+
+	Do not use the old async versions of the following Nunjucks tags, as they will prevent parallel rendering: `asyncEach`, `asyncAll`, `asyncMacro`.
 Instead, use the standard synchronous versions of these tags (each, for, macro) in combination with async values.
