@@ -696,13 +696,12 @@ class Compiler extends Obj {
   }
 
   //todo - do not resolve, instead resolve it at the point of use: output or argument to functions, filters. Add tests
-  //or better - return a promise
+  //do not return a promise for the whole thing so that resolved elements can be used as soon as possible
   compileArray(node, frame) {
     this._compileAggregate(node, frame, '[', ']', true, true);
   }
 
   //todo - Add other usage tests - function argument, filter argument, output
-  //maybe return a promise if there are async properties
   compileDict(node, frame) {
     //do not resolve dictionary values, this is handled by memberLookupAsync
     this._compileAggregate(node, frame, '{', '}', false, true);
