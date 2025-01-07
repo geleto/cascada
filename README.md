@@ -27,8 +27,8 @@ Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) templat
 - [Technical Constraints](#technical-constraints)
   - [Cross-Template Variable Access](#cross-template-variable-access)
   - [Dependency Declarations](#dependency-declarations)
-- [Development Status and Roadmap](#development-status-and-roadmap)
 - [Best Practices](#best-practices)
+- [Development Status and Roadmap](#development-status-and-roadmap)
 
 ## Background
 
@@ -265,20 +265,6 @@ To address these challenges, dependencies must be explicitly declared:
      {% endblock %}
      ```
 
-
-## Development Status and Roadmap
-
-Cascada is still under development. The following tasks remain to be completed:
-
-- **Dependency Declarations**: Finalize and integrate explicit dependency declaration features ([see Dependency Declarations](#dependency-declarations)).
-- **Variable Scoping and Dependency Management for Loops**: Ensure proper variable handling and dependency management within loop contexts.
-- **Async Iterators**: Complete implementation of async iterators to enable real-time processing instead of waiting for all elements before processing begins.
-- **Complete Async API**: Finalize the API for precompiled templates - implement `asyncCompile` and `AsyncTemplate`.
-- **Address Parallelism Inefficiencies**: Resolve some known inefficiencies in parallel execution, such as the current behavior where all elements in template-declared arrays must be resolved together before individual elements can be accessed.
-- **Optimizations**: Apply some low-hanging fruit optimizations.
-- **Extensive Testing**: Conduct additional tests to ensure robustness and coverage across various scenarios.
-- **TypeScript Definitions**:  Implement TypeScript definitions as part of the library to ensure the API is fully typed.
-
 ## Best Practices
 
 1. **Divide into independent tasks**
@@ -313,3 +299,19 @@ Cascada is still under development. The following tasks remain to be completed:
 
 	Do not use the old async versions of the following Nunjucks tags, as they will prevent parallel rendering: `asyncEach`, `asyncAll`, `asyncMacro`.
 Instead, use the standard synchronous versions of these tags (each, for, macro) in combination with async values.
+
+## Development Status and Roadmap
+
+Cascada is still under development. The following tasks remain to be completed:
+
+- **Dependency declarations**: Finalize and integrate explicit dependency declaration features ([see Dependency Declarations](#dependency-declarations)).
+- **Variable scoping and dependency management for loops**: Ensure proper variable handling and dependency management within loop contexts.
+- **Async iterators**: Complete implementation of async iterators to enable real-time processing instead of waiting for all elements before processing begins.
+- **Complete async API**: Finalize the API for precompiled templates - implement `asyncCompile` and `AsyncTemplate`.
+- **Address parallelism inefficiencies**: Resolve some known inefficiencies in parallel execution, such as the current behavior where all elements in template-declared arrays must be resolved together before individual elements can be accessed.
+- **Optimizations**: Apply some low-hanging fruit optimizations.
+- **Extensive testing**: Conduct additional tests to ensure robustness and coverage across various scenarios.
+- **TypeScript definitions**:  Implement TypeScript definitions as part of the library to ensure the API is fully typed.**
+- **New templating features**:
+ - While loops
+ - Error handling inside the template `{% try %}/{% except %}`
