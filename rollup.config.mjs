@@ -42,7 +42,7 @@ export default {
   ],
   output: [
     {
-      file: 'dist/nunjucks.esm.js',
+      file: 'dist/cascada.esm.js',
       format: 'es',
     },
   ],
