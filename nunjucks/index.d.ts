@@ -3,24 +3,38 @@ export type Callback<E, T> = (err: E | null, res: T | null) => void;
 
 export function render(name: string, context?: object): string;
 export function render(name: string, context?: object, callback?: TemplateCallback<string>): void;
+export function renderAsync(name: string, context?: object): Promise<string>;
 
 export function renderString(src: string, context: object): string;
 export function renderString(src: string, context: object, callback?: TemplateCallback<string>): void;
+export function renderStringAsync(src: string, context: object): Promise<string>;
 
-export function compile(src: string, env?: Environment, callback?: TemplateCallback<Template>): Template;
+export function compile(src: string, env?: Environment, path:string, eagerCompile:boolean): Template;
+export function compileAsync(src: string, env?: AsyncEnvironment, path:string, eagerCompile:boolean): AsyncTemplate;
 
 export function precompile(path: string, opts?: PrecompileOptions): string;
 export function precompileString(src: string, opts?: PrecompileOptions): string;
 
-export interface PrecompileOptions {
+export function precompileAsync(path: string, opts?: PrecompileOptionsAsync): string;
+export function precompileStringAsync(src: string, opts?: PrecompileOptionsAsync): string;
+
+export interface PrecompileOptionsBase {
     name?: string | undefined;
     asFunction?: boolean | undefined;
     force?: boolean | undefined;
-    env?: Environment | undefined;
     include?: string[] | undefined;
     exclude?: string[] | undefined;
     wrapper?(templates: { name: string; template: string }, opts: PrecompileOptions): string;
 }
+
+export interface PrecompileOptions extends PrecompileOptionsBase {
+    env?: Environment | undefined;
+}
+
+export interface PrecompileOptionsAsync extends PrecompileOptionsBase {
+    env?: AsyncEnvironment | undefined;
+}
+
 
 export class Template {
     constructor(src: string, env?: Environment, path?: string, eagerCompile?: boolean);
@@ -28,10 +42,19 @@ export class Template {
     render(context?: object, callback?: TemplateCallback<string>): void;
 }
 
+export class AsyncTemplate {
+    constructor(src: string, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean);
+    render(context?: object): Promise<string>;
+    render(context?: object, callback?: TemplateCallback<string>): void;
+}
+
 export function configure(options: ConfigureOptions): Environment;
 export function configure(path: string | string[], options?: ConfigureOptions): Environment;
 
-export interface ConfigureOptions {
+export function configureAsync(options: ConfigureOptionsAsync): AsyncEnvironment;
+export function configureAsync(path: string | string[], options?: ConfigureOptionsAsync): AsyncEnvironment;
+
+interface ConfigureOptions {
     autoescape?: boolean | undefined;
     throwOnUndefined?: boolean | undefined;
     trimBlocks?: boolean | undefined;
@@ -92,6 +115,16 @@ export class Environment {
     ): void;
 }
 
+export class AsyncEnvironment extends Environment {
+    constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptionsAsync);
+    render(name: string, context?: object): Promise<string>;
+
+    renderString(name: string, context: object): Promise<string>;
+
+    getTemplate(name: string, eagerCompile?: boolean): AsyncTemplate;
+    getTemplate(name: string, eagerCompile?: boolean, callback?: Callback<Error, AsyncTemplate>): void;
+}
+
 export interface Extension {
     tags: string[];
     // Parser API is undocumented it is suggested to check the source: https://github.com/mozilla/nunjucks/blob/master/src/parser.js
@@ -108,14 +141,12 @@ export type ILoaderAny = ILoader | ILoaderAsync | WebLoader;
 /** A synchronous loader. */
 export interface ILoader {
     async?: false | undefined;
-
     getSource: (name: string) => LoaderSource;
 }
 
 /** An asynchronous loader. */
 export interface ILoaderAsync {
     async: true;
-
     getSource: (name: string, callback: Callback<Error, LoaderSource>) => void;
 }
 

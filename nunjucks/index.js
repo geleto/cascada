@@ -14,8 +14,10 @@ const installJinjaCompat = require('./src/jinja-compat');
 
 // A single instance of an environment, since this is so commonly used
 let e;
+// A single instance of an async environment
+let asyncE;
 
-function configure(templatesPath, opts) {
+function configure(templatesPath, opts, forAsync = false) {
   opts = opts || {};
   if (lib.isObject(templatesPath)) {
     opts = templatesPath;
@@ -35,13 +37,17 @@ function configure(templatesPath, opts) {
     });
   }
 
-  e = new Environment(TemplateLoader, opts);
+  e = forAsync ? new AsyncEnvironment(TemplateLoader, opts) : new Environment(TemplateLoader, opts);
 
   if (opts && opts.express) {
     e.express(opts.express);
   }
 
   return e;
+}
+
+function configureAsync(templatesPath, opts) {
+  return configure(templatesPath, opts, true);
 }
 
 module.exports = {
@@ -71,9 +77,9 @@ module.exports = {
     }
     return new Template(src, env, path, eagerCompile);
   },
-  asyncCompile(src, env, path, eagerCompile) {
-    if (!e) {
-      configure();
+  compileAsync(src, env, path, eagerCompile) {
+    if (!asyncE) {
+      configureAsync();
     }
     return new AsyncTemplate(src, env, path, eagerCompile);
   },
@@ -84,6 +90,13 @@ module.exports = {
 
     return e.render(name, ctx, asyncMode, cb);
   },
+  renderAsync(name, ctx, asyncMode) {
+    if (!asyncE) {
+      configureAsync();
+    }
+
+    return asyncE.render(name, ctx, asyncMode);
+  },
   renderString(src, ctx, cb) {
     if (!e) {
       configure();
@@ -91,6 +104,14 @@ module.exports = {
 
     return e.renderString(src, ctx, cb);
   },
+  renderStringAsync(src, ctx, cb) {
+    if (!asyncE) {
+      configureAsync();
+    }
+    return asyncE.renderString(src, ctx, cb);
+  },
   precompile: (precompile) ? precompile.precompile : undefined,
   precompileString: (precompile) ? precompile.precompileString : undefined,
+  precompileAsync: (precompile) ? precompile.precompileAsync : undefined,
+  precompileStringAsync: (precompile) ? precompile.precompileStringAsync : undefined,
 };

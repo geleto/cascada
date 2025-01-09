@@ -302,7 +302,7 @@ Instead, use the standard synchronous versions of these tags (each, for, macro) 
 
 ## Development Status and Roadmap
 
-Cascada is still under development. The following tasks remain to be completed:
+Cascada is still under active development. The following tasks remain to be completed:
 
 - **Dependency declarations**: Finalize and integrate explicit dependency declaration features ([see Dependency Declarations](#dependency-declarations)).
 - **Variable scoping and dependency management for loops**: Ensure proper variable handling and dependency management within loop contexts.

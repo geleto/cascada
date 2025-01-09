@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const {_prettifyError} = require('./lib');
 const compiler = require('./compiler');
-const {Environment} = require('./environment');
+const {Environment, AsyncEnvironment} = require('./environment');
 const precompileGlobal = require('./precompile-global');
 
 function match(filename, patterns) {
@@ -26,7 +26,19 @@ function precompileString(str, opts) {
   return wrapper([_precompile(str, opts.name, env)], opts);
 }
 
-function precompile(input, opts) {
+function precompileStringAsync(str, opts) {
+  opts = opts || {};
+  opts.isString = true;
+  const env = opts.asyncEnv || new AsyncEnvironment([]);
+  const wrapper = opts.wrapper || precompileGlobal;
+
+  if (!opts.name) {
+    throw new Error('the "name" option is required when compiling a string');
+  }
+  return wrapper([_precompile(str, opts.name, env)], opts);
+}
+
+function precompile(input, opts, isAsync = false) {
   // The following options are available:
   //
   // * name: name of the template (auto-generated when compiling a directory)
@@ -42,11 +54,11 @@ function precompile(input, opts) {
   //       A custom loader will be necessary to load your custom wrapper.
 
   opts = opts || {};
-  const env = opts.env || new Environment([]);
+  const env = isAsync ? opts.asyncEnv || new AsyncEnvironment([]) : opts.env || new Environment([]);
   const wrapper = opts.wrapper || precompileGlobal;
 
   if (opts.isString) {
-    return precompileString(input, opts);
+    return isAsync ? precompileStringAsync(input, opts) : precompileString(input, opts);
   }
 
   const pathStats = fs.existsSync(input) && fs.statSync(input);
@@ -103,6 +115,10 @@ function precompile(input, opts) {
   return wrapper(precompiled, opts);
 }
 
+function precompileAsync(input, opts) {
+  return precompile(input, opts, true);
+}
+
 function _precompile(str, name, env) {
   env = env || new Environment([]);
 
@@ -130,5 +146,8 @@ function _precompile(str, name, env) {
 
 module.exports = {
   precompile: precompile,
-  precompileString: precompileString
+  precompileAsync: precompileAsync,
+  precompileString: precompileString,
+  precompileStringAsync: precompileStringAsync,
+
 };
