@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const {_prettifyError} = require('./lib');
 const compiler = require('./compiler');
-const {Environment, AsyncEnvironment} = require('./environment');
+const {Environment, PAsyncEnvironment} = require('./environment');
 const precompileGlobal = require('./precompile-global');
 
 function match(filename, patterns) {
@@ -26,10 +26,10 @@ function precompileString(str, opts) {
   return wrapper([_precompile(str, opts.name, env)], opts);
 }
 
-function precompileStringAsync(str, opts) {
+function precompileStringPAsync(str, opts) {
   opts = opts || {};
   opts.isString = true;
-  const env = opts.asyncEnv || new AsyncEnvironment([]);
+  const env = opts.asyncEnv || new PAsyncEnvironment([]);
   const wrapper = opts.wrapper || precompileGlobal;
 
   if (!opts.name) {
@@ -54,11 +54,11 @@ function precompile(input, opts, isAsync = false) {
   //       A custom loader will be necessary to load your custom wrapper.
 
   opts = opts || {};
-  const env = isAsync ? opts.asyncEnv || new AsyncEnvironment([]) : opts.env || new Environment([]);
+  const env = isAsync ? opts.asyncEnv || new PAsyncEnvironment([]) : opts.env || new Environment([]);
   const wrapper = opts.wrapper || precompileGlobal;
 
   if (opts.isString) {
-    return isAsync ? precompileStringAsync(input, opts) : precompileString(input, opts);
+    return isAsync ? precompileStringPAsync(input, opts) : precompileString(input, opts);
   }
 
   const pathStats = fs.existsSync(input) && fs.statSync(input);
@@ -115,7 +115,7 @@ function precompile(input, opts, isAsync = false) {
   return wrapper(precompiled, opts);
 }
 
-function precompileAsync(input, opts) {
+function precompilePAsync(input, opts) {
   return precompile(input, opts, true);
 }
 
@@ -146,8 +146,8 @@ function _precompile(str, name, env) {
 
 module.exports = {
   precompile: precompile,
-  precompileAsync: precompileAsync,
+  precompilePAsync: precompilePAsync,
   precompileString: precompileString,
-  precompileStringAsync: precompileStringAsync,
+  precompileStringPAsync: precompileStringPAsync,
 
 };

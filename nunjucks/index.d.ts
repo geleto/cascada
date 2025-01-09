@@ -3,20 +3,20 @@ export type Callback<E, T> = (err: E | null, res: T | null) => void;
 
 export function render(name: string, context?: object): string;
 export function render(name: string, context?: object, callback?: TemplateCallback<string>): void;
-export function renderAsync(name: string, context?: object): Promise<string>;
+export function renderPAsync(name: string, context?: object): Promise<string>;
 
 export function renderString(src: string, context: object): string;
 export function renderString(src: string, context: object, callback?: TemplateCallback<string>): void;
-export function renderStringAsync(src: string, context: object): Promise<string>;
+export function renderStringPAsync(src: string, context: object, callback?: TemplateCallback<string>): Promise<string>;
 
 export function compile(src: string, env?: Environment, path:string, eagerCompile:boolean): Template;
-export function compileAsync(src: string, env?: AsyncEnvironment, path:string, eagerCompile:boolean): AsyncTemplate;
+export function compilePAsync(src: string, env?: PAsyncEnvironment, path:string, eagerCompile:boolean): PAsyncTemplate;
 
 export function precompile(path: string, opts?: PrecompileOptions): string;
 export function precompileString(src: string, opts?: PrecompileOptions): string;
 
-export function precompileAsync(path: string, opts?: PrecompileOptionsAsync): string;
-export function precompileStringAsync(src: string, opts?: PrecompileOptionsAsync): string;
+export function precompilePAsync(path: string, opts?: PrecompileOptionsPAsync): string;
+export function precompileStringPAsync(src: string, opts?: PrecompileOptionsPAsync): string;
 
 export interface PrecompileOptionsBase {
     name?: string | undefined;
@@ -31,8 +31,8 @@ export interface PrecompileOptions extends PrecompileOptionsBase {
     env?: Environment | undefined;
 }
 
-export interface PrecompileOptionsAsync extends PrecompileOptionsBase {
-    env?: AsyncEnvironment | undefined;
+export interface PrecompileOptionsPAsync extends PrecompileOptionsBase {
+    env?: PAsyncEnvironment | undefined;
 }
 
 
@@ -42,8 +42,8 @@ export class Template {
     render(context?: object, callback?: TemplateCallback<string>): void;
 }
 
-export class AsyncTemplate {
-    constructor(src: string, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean);
+export class PAsyncTemplate {
+    constructor(src: string, env?: PAsyncEnvironment, path?: string, eagerCompile?: boolean);
     render(context?: object): Promise<string>;
     render(context?: object, callback?: TemplateCallback<string>): void;
 }
@@ -51,8 +51,8 @@ export class AsyncTemplate {
 export function configure(options: ConfigureOptions): Environment;
 export function configure(path: string | string[], options?: ConfigureOptions): Environment;
 
-export function configureAsync(options: ConfigureOptionsAsync): AsyncEnvironment;
-export function configureAsync(path: string | string[], options?: ConfigureOptionsAsync): AsyncEnvironment;
+export function configurePAsync(options: ConfigureOptionsPAsync): PAsyncEnvironment;
+export function configurePAsync(path: string | string[], options?: ConfigureOptionsPAsync): PAsyncEnvironment;
 
 interface ConfigureOptions {
     autoescape?: boolean | undefined;
@@ -115,14 +115,14 @@ export class Environment {
     ): void;
 }
 
-export class AsyncEnvironment extends Environment {
-    constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptionsAsync);
+export class PAsyncEnvironment extends Environment {
+    constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptionsPAsync);
     render(name: string, context?: object): Promise<string>;
 
     renderString(name: string, context: object): Promise<string>;
 
-    getTemplate(name: string, eagerCompile?: boolean): AsyncTemplate;
-    getTemplate(name: string, eagerCompile?: boolean, callback?: Callback<Error, AsyncTemplate>): void;
+    getTemplate(name: string, eagerCompile?: boolean): PAsyncTemplate;
+    getTemplate(name: string, eagerCompile?: boolean, callback?: Callback<Error, PAsyncTemplate>): void;
 }
 
 export interface Extension {
@@ -148,6 +148,12 @@ export interface ILoader {
 export interface ILoaderAsync {
     async: true;
     getSource: (name: string, callback: Callback<Error, LoaderSource>) => void;
+}
+
+/** An asynchronous loader returning a Promise. */
+export interface ILoaderPAsync {
+    async: true;
+    getSource: (name: string) => Promise<LoaderSource>;//@todo, wrap ILoaderAsync
 }
 
 // Needs both Loader and ILoader since nunjucks uses a custom object system

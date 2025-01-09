@@ -3,18 +3,18 @@
 
   var expect;
   //var unescape;
-  var AsyncEnvironment;
+  var PAsyncEnvironment;
   //var Environment;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
+    PAsyncEnvironment = require('../nunjucks/src/environment').PAsyncEnvironment;
     //Environment = require('../nunjucks/src/environment').Environment;
     //unescape = require('he').unescape;
   } else {
     expect = window.expect;
     //unescape = window.he.unescape;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
+    PAsyncEnvironment = nunjucks.PAsyncEnvironment;
     //Environment = nunjucks.Environment;
   }
 
@@ -23,7 +23,7 @@
   describe('Async mode - structures: arrays, dictionaries and lookup keys', () => {
     let env;
     beforeEach(() => {
-      env = new AsyncEnvironment();
+      env = new PAsyncEnvironment();
     });
 
     describe('Arrays, Dictionaries, Lookup keys and Nested Structures', () => {

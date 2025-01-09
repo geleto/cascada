@@ -10,7 +10,7 @@ const tests = require('./tests');
 const globals = require('./globals');
 const { Obj, EmitterObj } = require('./object');
 const globalRuntime = require('./runtime');
-const { handleError, Frame, AsyncFrame } = globalRuntime;
+const { handleError, Frame, PAsyncFrame } = globalRuntime;
 const expressApp = require('./express-app');
 
 // If the user is using the async API, *always* call it
@@ -283,11 +283,11 @@ class Environment extends EmitterObj {
       let newTmpl;
       if (!info) {
         newTmpl = asyncMode ?
-          new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile) :
+          new PAsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile) :
           new Template(noopTmplSrc, this, '', eagerCompile);
       } else {
         newTmpl = asyncMode ?
-          new AsyncTemplate(info.src, this, info.path, eagerCompile) :
+          new PAsyncTemplate(info.src, this, info.path, eagerCompile) :
           new Template(info.src, this, info.path, eagerCompile);
         if (!info.noCache) {
           info.loader.cache[name] = newTmpl;
@@ -370,12 +370,12 @@ class Environment extends EmitterObj {
   }
 }
 
-class AsyncEnvironment extends Environment {
+class PAsyncEnvironment extends Environment {
   init(loaders, opts) {
     super.init(loaders, opts);
   }
 
-  async renderAsync(templateName, ctx, parentFrame) {
+  async renderPAsync(templateName, ctx, parentFrame) {
     return this._asyncRender(templateName, ctx, true, parentFrame);
   }
 
@@ -420,7 +420,7 @@ class AsyncEnvironment extends Environment {
         });
       } else {
         // render template string
-        const tmpl = new AsyncTemplate(template, this, opts.path);
+        const tmpl = new PAsyncTemplate(template, this, opts.path);
         tmpl.render(ctx, callback);
       }
     });
@@ -438,7 +438,7 @@ class AsyncEnvironment extends Environment {
 }
 
 //@todo - move to runtime
-class AsyncState {
+class PAsyncState {
   constructor(parent = null) {
     this.activeClosures = 0;
     this.waitClosuresCount = 0;
@@ -449,7 +449,7 @@ class AsyncState {
   }
 
   enterAsyncBlock(asyncBlockFrame) {
-    const newState = new AsyncState(this);
+    const newState = new PAsyncState(this);
     newState.asyncBlockFrame = asyncBlockFrame;
     newState._incrementClosures();
 
@@ -510,7 +510,7 @@ class AsyncState {
   }
 
   new() {
-    return new AsyncState();
+    return new PAsyncState();
   }
 }
 
@@ -696,7 +696,7 @@ class Template extends Obj {
       frame = parentFrame.push(true);
     }
     else {
-      frame = this.asyncMode ? new AsyncFrame : new Frame();
+      frame = this.asyncMode ? new PAsyncFrame : new Frame();
     }
     frame.topLevel = true;
     let syncResult = null;
@@ -733,7 +733,7 @@ class Template extends Obj {
 
     if (this.asyncMode) {
       this.rootRenderFunc(this.env, context, frame, globalRuntime,
-        astate || new AsyncState(), callback);
+        astate || new PAsyncState(), callback);
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     }
@@ -774,7 +774,7 @@ class Template extends Obj {
     }
     else {
       if (this.asyncMode) {
-        frame = new AsyncFrame();
+        frame = new PAsyncFrame();
         frame.isIncluded = true;
       }
       else {
@@ -793,7 +793,7 @@ class Template extends Obj {
       }
     };
     if (this.asyncMode) {
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate || new AsyncState(), callback);
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate || new PAsyncState(), callback);
     } else {
       this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
     }
@@ -879,16 +879,16 @@ class Template extends Obj {
   }
 }
 
-class AsyncTemplate extends Template {
+class PAsyncTemplate extends Template {
   init(src, env, path, eagerCompile) {
-    env = env || new AsyncEnvironment();
+    env = env || new PAsyncEnvironment();
     super.init(src, env, path, eagerCompile, true);
   }
 }
 
 module.exports = {
   Environment: Environment,
-  AsyncEnvironment: AsyncEnvironment,
+  PAsyncEnvironment: PAsyncEnvironment,
   Template: Template,
-  AsyncTemplate: AsyncTemplate
+  PAsyncTemplate: PAsyncTemplate
 };

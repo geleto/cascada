@@ -101,9 +101,9 @@ While Cascada maintains compatibility with the traditional [Nunjucks API](https:
 
 #### Getting Started
 ```javascript
-const { AsyncEnvironment } = require('cascada');
+const { PAsyncEnvironment } = require('cascada');
 
-const env = new AsyncEnvironment();
+const env = new PAsyncEnvironment();
 const context = {
   data: Promise.resolve({ message: "Hello" })
 };
@@ -114,9 +114,9 @@ env.renderString("Message: {{ data.message }}", context)
 
 #### Key Differences:
 
-1. Use `AsyncEnvironment` instead of `Environment`:
+1. Use `PAsyncEnvironment` instead of `Environment`:
 	```javascript
-	const env = new AsyncEnvironment();
+	const env = new PAsyncEnvironment();
 	```
 
 2. Promise-based render methods
@@ -307,7 +307,7 @@ Cascada is still under active development. The following tasks remain to be comp
 - **Dependency declarations**: Finalize and integrate explicit dependency declaration features ([see Dependency Declarations](#dependency-declarations)).
 - **Variable scoping and dependency management for loops**: Ensure proper variable handling and dependency management within loop contexts.
 - **Async iterators**: Complete implementation of async iterators to enable real-time processing instead of waiting for all elements before processing begins.
-- **Complete async API**: Finalize the API for precompiled templates - implement `asyncCompile` and `AsyncTemplate`.
+- **Complete async API**: Finalize the API for precompiled templates - implement `asyncCompile` and `PAsyncTemplate`.
 - **Address parallelism inefficiencies**: Resolve some known inefficiencies in parallel execution, such as the current behavior where all elements in template-declared arrays must be resolved together before individual elements can be accessed.
 - **Optimizations**: Apply some low-hanging fruit optimizations.
 - **Extensive testing**: Conduct additional tests to ensure robustness and coverage across various scenarios.
