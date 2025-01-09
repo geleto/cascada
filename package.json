@@ -8,14 +8,17 @@
   "exports": {
     ".": {
       "require": "./dist/cjs/index.js",
-      "import": "./dist/cascada.esm.js"
+      "import": "./dist/cascada.esm.js",
+      "types": "./dist/index.d.ts"
     }
   },
+  "types": "./dist/index.d.ts",
   "files": [
     "bin/**",
     "browser/**",
     "dist/**",
-    "src/**"
+    "src/**",
+    "dist/index.d.ts"
   ],
   "dependencies": {
     "@babel/plugin-transform-classes": "^7.25.9",
@@ -24,6 +27,7 @@
     "a-sync-waterfall": "^1.0.1",
     "asap": "^2.0.6",
     "commander": "^12.1.0",
+    "cpy-cli": "^5.0.0",
     "globals": "^15.11.0",
     "he": "^1.2.0",
     "istanbul-lib-coverage": "^3.2.2",
@@ -94,7 +98,8 @@
     "prepare": "npm run build",
     "build:transpile": "babel nunjucks --out-dir dist/cjs",
     "build:bundle": "node scripts/bundle.js",
-    "build": "npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm",
+    "build:types": "cpy nunjucks/index.d.ts dist/cjs/ --flat && cpy nunjucks/index.d.ts dist/ --flat",
+    "build": "npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types",
     "build:esm": "npx rollup -c rollup.config.mjs",
     "test:prep": "cross-env NODE_ENV=test npm run build && node scripts/runprecompile.js",
     "test:node-no-prep": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --require @babel/register tests",
