@@ -435,6 +435,17 @@ class PAsyncEnvironment extends Environment {
     }
     return this._getTemplate(name, eagerCompile, parentName, ignoreMissing, true, cb);
   }
+
+  addFilterPAsync(name, func) {
+    var wrapped = function(val, cb) {
+      func(val)
+        .then(function(result) { cb(null, result); })
+        .catch(function(err) { cb(err); });
+    };
+    this.asyncFilters.push(name);
+    this.filters[name] = wrapped;
+    return this;
+  }
 }
 
 //@todo - move to runtime

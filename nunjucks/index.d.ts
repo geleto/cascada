@@ -123,6 +123,8 @@ export class PAsyncEnvironment extends Environment {
 
     getTemplate(name: string, eagerCompile?: boolean): PAsyncTemplate;
     getTemplate(name: string, eagerCompile?: boolean, callback?: Callback<Error, PAsyncTemplate>): void;
+
+    addFilterPAsync(name: string, func: (val: any) => Promise<any>): PAsyncEnvironment;
 }
 
 export interface Extension {
