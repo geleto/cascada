@@ -371,8 +371,56 @@ class Environment extends EmitterObj {
 }
 
 class PAsyncEnvironment extends Environment {
-  init(loaders, opts) {
+  init(loaders, opts, parent = null) {
     super.init(loaders, opts);
+    if (parent) {
+      this._inheritFromParent(parent);
+    }
+  }
+
+  _inheritFromParent(parent) {
+    // Merge opts from parent
+    this.opts = {
+      ...parent.opts,
+      ...this.opts
+    };
+
+    // Merge loaders, handling duplicates
+    const parentLoaders = parent.loaders || [];
+    parentLoaders.forEach(parentLoader => {
+      if (!this.loaders.includes(parentLoader)) {
+        this.loaders.unshift(parentLoader);
+      }
+    });
+
+    // Copy non-lib filters and their async status from parent
+    this.filters = {};
+    this.asyncFilters = [];
+    const libFilters = lib._entries(filters);
+
+    Object.keys(parent.filters).forEach(name => {
+      if (!libFilters.some(([libName]) => libName === name)) {
+        this.filters[name] = parent.filters[name];
+        if (parent.asyncFilters.includes(name)) {
+          this.asyncFilters.push(name);
+        }
+      }
+    });
+
+    // Copy tests from parent, excluding lib tests
+    const libTests = lib._entries(tests);
+    Object.entries(parent.tests).forEach(([name, test]) => {
+      if (!libTests.some(([libName]) => libName === name)) {
+        this.tests[name] = test;
+      }
+    });
+
+    // Copy extensions from parent
+    this.extensions = { ...parent.extensions };
+    this.extensionsList = [...parent.extensionsList];
+
+    // Copy globals from parent
+    this.globals = { ...parent.globals };
   }
 
   async renderPAsync(templateName, ctx, parentFrame) {

@@ -116,7 +116,7 @@ export class Environment {
 }
 
 export class PAsyncEnvironment extends Environment {
-    constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptionsPAsync);
+    constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptionsPAsync, parent?: PAsyncEnvironment);
     render(name: string, context?: object): Promise<string>;
 
     renderString(name: string, context: object): Promise<string>;
