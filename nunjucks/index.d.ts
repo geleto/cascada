@@ -9,8 +9,8 @@ export function renderString(src: string, context: object): string;
 export function renderString(src: string, context: object, callback?: TemplateCallback<string>): void;
 export function renderStringPAsync(src: string, context: object, callback?: TemplateCallback<string>): Promise<string>;
 
-export function compile(src: string, env?: Environment, path:string, eagerCompile:boolean): Template;
-export function compilePAsync(src: string, env?: PAsyncEnvironment, path:string, eagerCompile:boolean): PAsyncTemplate;
+export function compile(src: string, env?: Environment, path?:string, eagerCompile?:boolean): Template;
+export function compilePAsync(src: string, env?: PAsyncEnvironment, path?:string, eagerCompile?:boolean): PAsyncTemplate;
 
 export function precompile(path: string, opts?: PrecompileOptions): string;
 export function precompileString(src: string, opts?: PrecompileOptions): string;
@@ -123,6 +123,7 @@ export class PAsyncEnvironment extends Environment {
 
     getTemplate(name: string, eagerCompile?: boolean): PAsyncTemplate;
     getTemplate(name: string, eagerCompile?: boolean, callback?: Callback<Error, PAsyncTemplate>): void;
+    getTemplatePAsync(name: string, eagerCompile?: boolean): Promise<PAsyncTemplate>;
 
     addFilterPAsync(name: string, func: (val: any) => Promise<any>): PAsyncEnvironment;
 }

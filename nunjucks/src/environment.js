@@ -428,12 +428,24 @@ class PAsyncEnvironment extends Environment {
   }
 
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
-    if (typeof name.then === 'function') { // it's a promise
+    if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
         this._getTemplate(resolvedName, eagerCompile, parentName, ignoreMissing, true, cb);
       });
     }
     return this._getTemplate(name, eagerCompile, parentName, ignoreMissing, true, cb);
+  }
+
+  async getTemplatePAsync(name, eagerCompile, parentName, ignoreMissing) {
+    return new Promise((resolve, reject) => {
+      this.getTemplate(name, eagerCompile, parentName, ignoreMissing, (error, template) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(template);
+        }
+      });
+    });
   }
 
   addFilterPAsync(name, func) {
