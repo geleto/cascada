@@ -51,8 +51,8 @@ export class PAsyncTemplate {
 export function configure(options: ConfigureOptions): Environment;
 export function configure(path: string | string[], options?: ConfigureOptions): Environment;
 
-export function configurePAsync(options: ConfigureOptionsPAsync): PAsyncEnvironment;
-export function configurePAsync(path: string | string[], options?: ConfigureOptionsPAsync): PAsyncEnvironment;
+export function configurePAsync(options: ConfigureOptions): PAsyncEnvironment;
+export function configurePAsync(path: string | string[], options?: ConfigureOptions): PAsyncEnvironment;
 
 interface ConfigureOptions {
     autoescape?: boolean | undefined;
@@ -116,7 +116,7 @@ export class Environment {
 }
 
 export class PAsyncEnvironment extends Environment {
-    constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptionsPAsync);
+    constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptions);
     render(name: string, context?: object): Promise<string>;
 
     renderString(name: string, context: object): Promise<string>;
@@ -141,22 +141,22 @@ export type ILoaderAny = ILoader | ILoaderAsync | WebLoader;
 // WebLoader is part of the union because it can be both sync or async depending
 // on its constructor arguments, which possibly could only be known on runtime.
 
-/** A synchronous loader. */
+/** A synchronous loader. Return null instead of throwing error to handle properly ignoreMissing */
 export interface ILoader {
     async?: false | undefined;
-    getSource: (name: string) => LoaderSource;
+    getSource: (name: string) => LoaderSource | null;
 }
 
 /** An asynchronous loader. */
 export interface ILoaderAsync {
     async: true;
-    getSource: (name: string, callback: Callback<Error, LoaderSource>) => void;
+    getSource: (name: string, callback: Callback<Error, LoaderSource | null>) => void;
 }
 
 /** An asynchronous loader returning a Promise. */
 export interface ILoaderPAsync {
     async: true;
-    getSource: (name: string) => Promise<LoaderSource>;//@todo, wrap ILoaderAsync
+    getSource: (name: string) => Promise<LoaderSource | null>;//@todo, wrap ILoaderAsync
 }
 
 // Needs both Loader and ILoader since nunjucks uses a custom object system
