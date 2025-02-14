@@ -3,16 +3,17 @@
   "description": "Async-enabled templating with automatic parallelization",
   "version": "3.2.4",
   "author": "Angel Popov<geleto@gmail.com>",
+
   "main": "dist/cjs/index.js",
-  "module": "dist/cascada.esm.js",
+  "module": "dist/esm/index.js",
   "exports": {
     ".": {
       "require": "./dist/cjs/index.js",
-      "import": "./dist/cascada.esm.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/esm/index.mjs",
+      "types": "./dist/types/index.d.ts" 
     }
   },
-  "types": "./dist/index.d.ts",
+  "types": "./dist/types/index.d.ts", 
   "files": [
     "bin/**",
     "browser/**",
@@ -98,7 +99,7 @@
     "prepare": "npm run build",
     "build:transpile": "babel nunjucks --out-dir dist/cjs",
     "build:bundle": "node scripts/bundle.js",
-    "build:types": "cpy nunjucks/index.d.ts dist/cjs/ --flat && cpy nunjucks/index.d.ts dist/ --flat",
+    "build:types": "cpy nunjucks/index.d.ts dist/types/ --flat",
     "build": "npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types",
     "build:esm": "npx rollup -c rollup.config.mjs",
     "test:prep": "cross-env NODE_ENV=test npm run build && node scripts/runprecompile.js",

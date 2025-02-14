@@ -37,13 +37,19 @@ function configure(templatesPath, opts, forAsync = false) {
     });
   }
 
-  e = forAsync ? new PAsyncEnvironment(TemplateLoader, opts) : new Environment(TemplateLoader, opts);
-
-  if (opts && opts.express) {
-    e.express(opts.express);
+  if (forAsync) {
+    asyncE = new PAsyncEnvironment(TemplateLoader, opts);
+    if (opts && opts.express) {
+      asyncE.express(opts.express);
+    }
+    return asyncE;
+  } else {
+    e = new Environment(TemplateLoader, opts);
+    if (opts && opts.express) {
+      e.express(opts.express);
+    }
+    return e;
   }
-
-  return e;
 }
 
 function configurePAsync(templatesPath, opts) {
