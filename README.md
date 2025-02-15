@@ -15,7 +15,7 @@ Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) templat
   - [Async Iterators and Generators](#async-iterators-and-generators)
 - [API](#api)
   - [Getting Started](#getting-started)
-  - [Key Differences](#key-differences)
+  - [New Async API Classes and Functions](#new-async-api-classes-and-functions)
     - [1. PAsyncEnvironment Method Mappings](#1-pasynccenvironment-method-mappings)
     - [2. Function Mappings](#2-function-mappings)
     - [3. Class Mappings](#3-class-mappings)
@@ -120,7 +120,7 @@ const context = {
 env.renderString("Message: {{ data.message }}", context)
    .then(result => console.log(result));
 ```
-### Key Differences
+### New Async API Classes and Functions
 
 Cascada uses the "PAsync" prefix/suffix to indicate Promise-based versions of Nunjucks functions and classes. For async template processing, use `PAsyncEnvironment` instead of `Environment` - it provides the same interface but returns Promises instead of using callbacks.
 
