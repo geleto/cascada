@@ -38,10 +38,8 @@ Cascada was developed with AI agent workflows in mind, where template rendering 
 
 ## Why Cascada?
 
-Cascada takes a radically different approach by making async operation handling completely transparent while maximizing performance through automatic parallelization:
-
 ### 1. Transparent Async Support
-- Use promises, async functions, and async iterators anywhere in your templates
+- Set promises, async functions, and async iterators in your context object and use them anywhere in your templates
 - No special syntax needed - write templates as if all data were synchronous
 
 ### 2. Automatic Parallel Processing
@@ -64,7 +62,7 @@ const context = {
     getPosts: (userId) => fetch(`https://api.example.com/users/${userId}/posts`).then(res => res.json())
 }
 ```
-Use naturally in templates:
+Use naturally in templates, no await needed:
 ```njk
 <h1>Welcome {{ user.name }}!</h1>
 {% for post in getPosts(user.id) %}
@@ -99,7 +97,7 @@ env.addGlobal('crawlPages', async function* (url) {
 
 While Cascada maintains compatibility with the traditional [Nunjucks API](https://mozilla.github.io/nunjucks/api.html) that uses callbacks, it introduces a simpler promise-based API for working with async templates.
 
-#### Getting Started
+### Getting Started
 ```javascript
 const { PAsyncEnvironment } = require('cascada');
 
@@ -111,46 +109,109 @@ const context = {
 env.renderString("Message: {{ data.message }}", context)
    .then(result => console.log(result));
 ```
+### Key Differences
 
-#### Key Differences:
+Cascada uses the "PAsync" prefix/suffix to indicate Promise-based versions of Nunjucks functions and classes. For async template processing, use `PAsyncEnvironment` instead of `Environment` - it provides the same interface but returns Promises instead of using callbacks.
 
-1. Use `PAsyncEnvironment` instead of `Environment`:
-	```javascript
-	const env = new PAsyncEnvironment();
-	```
+#### 1. PAsyncEnvironment Method Mappings
 
-2. Promise-based render methods
-	```javascript
-	const result = await env.renderString('Hello {{ username }}', context);
-	```
+Most methods in PAsyncEnvironment keep their original names but return Promises:
 
-3. Filters and Extensions use promises by default:
-	```javascript
-	env.addFilter('translate', async (text, lang) => {
-		return translator.translate(text, lang);
-	});
-	```
-4. Custom Async Extensions:
-	```javascript
-	env.addExtension('Fetch', {
-		tags: ['fetch'],
-		parse(parser, nodes) {
-			parser.nextToken();
-			return new nodes.CallExtension(this, 'run', [parser.parseExpression()]);
-		},
-		async run(context, url) {
-			return fetch(url);
-		}
-	});
-	```
-	Both fetches run concurrently:
-	```njk
-	Config: {% fetch "/api/config" %}
-	Data: {% fetch "/api/data" %}
-	```
-	The key differences are:
-	- Use the regular CallExtension node instead of CallExtensionAsync (which is for the old callback API)
-	- The run() method is async and return a promise directly
+| Method | In Environment | In PAsyncEnvironment |
+|--------|---------------|---------------------|
+| `render` | Returns string or accepts callback | Returns Promise<string> |
+| `renderString` | Returns string or accepts callback | Returns Promise<string> |
+| `getTemplate` | Returns Template or accepts callback | Returns Promise<PAsyncTemplate> |
+
+Additional async-specific methods:
+- `getTemplatePAsync()`: Promise-based template loading
+- `addFilterPAsync()`: Add Promise-returning filters
+
+#### 2. Function Mappings
+
+New top-level functions use the PAsync suffix:
+
+| Nunjucks Function | Cascada Equivalent | Difference |
+|------------------|-------------------|------------|
+| `render` | `renderPAsync` | Returns a Promise instead of string (or accepting callback parameter) |
+| `renderString` | `renderStringPAsync` | Returns a Promise instead of string (or accepting callback parameter) |
+| `compile` | `compilePAsync` | Returns a PAsyncTemplate instead of Template, requires PAsyncEnvironment instead of Environment |
+| `precompile` | `precompilePAsync` | Requires PrecompileOptionsPAsync instead of PrecompileOptions, which uses PAsyncEnvironment instead of Environment |
+| `precompileString` | `precompileStringPAsync` | Requires PrecompileOptionsPAsync instead of PrecompileOptions, which uses PAsyncEnvironment instead of Environment |
+
+#### 3. Class Mappings
+
+| Nunjucks Class | Cascada Equivalent | Key Differences |
+|----------------|-------------------|-----------------|
+| `Environment` | `PAsyncEnvironment` | - Extends `Environment`<br>- Methods keep same names but return Promises<br>- Adds async-specific methods |
+| `Template` | `PAsyncTemplate` | - `render()` returns Promise<br>- Works with PAsyncEnvironment |
+
+#### 4. API Examples
+
+##### Basic Template Rendering
+```javascript
+// Initialize async environment
+const env = new PAsyncEnvironment();
+
+// Promise-based rendering
+const result = await env.renderString('Hello {{ username }}', context);
+```
+
+##### Async Filters
+```javascript
+// Add async filter
+env.addFilter('translate', async (text, lang) => {
+    return translator.translate(text, lang);
+});
+
+// Use in template
+const template = 'Hello {{ "World" | translate("es") }}';
+```
+
+##### Async Extensions
+```javascript
+// Define async extension
+env.addExtension('Fetch', {
+    tags: ['fetch'],
+    parse(parser, nodes) {
+        parser.nextToken();
+        return new nodes.CallExtension(this, 'run', [parser.parseExpression()]);
+    },
+    async run(context, url) {
+        return fetch(url);
+    }
+});
+```
+Both fetches run concurrently:
+```njk
+Config: {% fetch "/api/config" %}
+Data: {% fetch "/api/data" %}
+```
+The key differences to keep in mind when developing asyn extensions:
+- Use the regular CallExtension node instead of CallExtensionAsync (which is for the old callback API)
+- The run() method is async and return a promise directly
+
+##### Async Context Data
+```javascript
+const context = {
+    user: fetch('https://api.example.com/user/1').then(res => res.json()),
+    posts: async (userId) => {
+        const res = await fetch(`https://api.example.com/users/${userId}/posts`);
+        return res.json();
+    }
+};
+
+// Use in template
+await env.renderString('Welcome {{ user.name }}! Posts: {{ posts(user.id) }}', context);
+```
+
+The key patterns in Cascada are:
+1. Environment methods keep their names but return Promises
+2. New top-level functions use the PAsync suffix
+3. All async operations return Promises instead of using callbacks
+4. Async extensions use `return await` instead of callbacks
+5. Context can contain promises and async functions that resolve automatically
+
 
 5. Cascada introduces several updates and improvements to the development and testing environment:
 	- **Updated Libraries**
@@ -218,12 +279,104 @@ Cascada fully supports the Nunjucks template syntax and features. You can refere
 - **Expression system**: complex expressions including inline conditionals and mathematical operations
 - **Template composition**: inheritance (extend), content embedding (include), and importing (import)
 
+## Additional Tags
+
+Cascada supports additional tags, not found in Nunjucks:
+- `depends` tag: See [Cross-Template Variable Access](#cross-template-variable-access)
+- `try`/`retry`/`except` tags for error handling
+- `while` loop for conditional iteration
+
+### The try/retry/except Tags
+
+**Note**: This feature is not yet implemented. 
+
+Cascada's async nature makes error handling particularly important. When an error occurs and is handled by except:
+- Variables whose final values are already determined (execution has moved past any point where they could change) retain those values
+- Variables that could still change (their values depend on operations after the error point) are rejected because their final values cannot be determined
+- Template execution continues after the except block
+
+```njk
+{% try %}
+    {% set a = "safe value" %}
+    {{ someAsyncOperation() }}
+    {% set b = "never set" %}
+{% retry if askUser('Retry operation?') %}
+    Retrying... (attempt {{ retry.count }})
+    Failed operation: {{ retry.source }}
+{% except %}
+    {# 'a' retains "safe value" because it was set before the error
+       'b' is rejected because we never reached its assignment #}
+    {{ throwError('Operation failed permanently') }}
+{% endtry %}
+```
+
+Key features:
+- `try` block contains code that might fail
+- `retry` block handles errors and can retry the failed operation
+- If retry condition is true, execution continues from the point of failure
+- If retry condition is false, control passes to the except block
+- Special variables in retry block:
+  - `retry.count`: Number of retry attempts so far
+  - `retry.source`: Name/path of the operation that failed (e.g., 'fetch', 'userApi.getProfile')
+- Error handling in except block:
+  - `error`: The error object that caused the failure
+  - Can throw errors using context methods (e.g., `throwError` must be provided in context)
+
+Examples:
+
+1. API call with retry based on error source:
+```njk
+{% try %}
+    {% set userData = fetchUserData(userId) %}
+    {% set extraData = processUserData(userData) %}
+{% retry if retry.source == 'fetchUserData' and retry.count < 3 %}
+    {% set warningMessage = 'Retrying user data fetch (attempt ' + retry.count + ')' %}
+{% except %}
+    {# userData and extraData are rejected if fetchUserData fails
+       only userData retains value if processUserData fails #}
+    {{ throwError('Failed to fetch user data: ' + error.message) }}
+{% endtry %}
+```
+
+### The while Tag
+
+**Note**: This feature is not yet implemented. 
+
+`while` creates a loop that continues as long as a condition is true. Unlike `for`, it doesn't iterate over collections but instead repeats until a condition becomes false. It fully supports async iterators and async conditions.
+
+```njk
+{% while condition %}
+    Template content
+{% endwhile %}
+```
+
+Inside while loops, you have access to these special variables:
+* `loop.index`: current iteration (1 indexed)
+* `loop.index0`: current iteration (0 indexed)
+* `loop.first`: boolean indicating first iteration
+* `loop.revindex`: number of iterations from end (undefined until loop completes)
+* `loop.revindex0`: number of iterations from end (undefined until loop completes)
+
+Example with async iterator:
+```njk
+{% set stream = createAsyncStream() %}
+{% while await stream.hasNext() %}
+    {% set chunk = await stream.next() %}
+    Processing chunk {{ loop.index }}: {{ chunk }}
+{% endwhile %}
+```
+
 ## Technical Constraints
 
-### Cross-Template Variable Access
-To maintain Cascada’s parallelization capabilities, variable scopes must be known at compile time for proper dependency management. However, certain scenarios involve accessing variables across templates, which can complicate this:
+### Cross-Template Mutable Variable Access
+
+**Note**: This feature is not yet implemented. 
+
+To maintain Cascada’s parallelization capabilities, mutable variable scopes must be known at compile time for proper dependency management. However, certain scenarios involve accessing and changing variables across templates:
  - **Included templates** (`include`): Included templates have **read-only** access to parent variables.
  - **Extended Templates** (`extends`): Blocks in child templates can **read and modify** parent variables.
+ 
+ The variables of the parent template can not be known, thus variable dependencies need to be declared.
 
 ### Dependency Declarations
 To address these challenges, dependencies must be explicitly declared:
@@ -304,14 +457,18 @@ Instead, use the standard synchronous versions of these tags (each, for, macro) 
 
 Cascada is still under active development. The following tasks remain to be completed:
 
-- **Dependency declarations**: Finalize and integrate explicit dependency declaration features ([see Dependency Declarations](#dependency-declarations)).
-- **Variable scoping and dependency management for loops**: Ensure proper variable handling and dependency management within loop contexts.
-- **Async iterators**: Complete implementation of async iterators to enable real-time processing instead of waiting for all elements before processing begins.
-- **Complete async API**: Finalize the API for precompiled templates - implement `asyncCompile` and `PAsyncTemplate`.
-- **Address parallelism inefficiencies**: Resolve some known inefficiencies in parallel execution, such as the current behavior where all elements in template-declared arrays must be resolved together before individual elements can be accessed.
-- **Optimizations**: Apply some low-hanging fruit optimizations.
-- **Extensive testing**: Conduct additional tests to ensure robustness and coverage across various scenarios.
-- **TypeScript definitions**:  Implement TypeScript definitions as part of the library to ensure the API is fully typed.**
-- **New templating features**:
- - While loops
- - Error handling inside the template `{% try %}/{% except %}`
+### Core Functionality
+- **Dependency declarations**: Finalize and integrate explicit dependency declaration features ([see Technical Constraints: Cross-Template Variable Access](#cross-template-variable-access))
+- **Variable scoping and dependency management for loops**: Ensure proper variable handling and dependency management within loop contexts
+- **Async iterators**: Complete implementation of async iterators to enable real-time processing instead of waiting for all elements before processing begins
+
+### Performance and Testing
+- **Address parallelism inefficiencies**: Resolve some known inefficiencies in parallel execution, such as the current behavior where all elements in template-declared arrays must be resolved together before individual elements can be accessed
+- **Optimizations**: Apply some low-hanging fruit optimizations
+- **Extensive testing**: Conduct additional tests to ensure robustness and coverage across various scenarios
+
+### New Template Features
+- **Additional Tags**:
+  - `while` loops for conditional iteration
+  - Error handling with `{% try %}/{% retry %}/{% except %}`
+  - `depends` tag for explicit dependency declarations
