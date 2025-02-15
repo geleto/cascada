@@ -16,6 +16,11 @@ Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) templat
 - [API](#api)
   - [Getting Started](#getting-started)
   - [Key Differences](#key-differences)
+    - [1. PAsyncEnvironment Method Mappings](#1-pasynccenvironment-method-mappings)
+    - [2. Function Mappings](#2-function-mappings)
+    - [3. Class Mappings](#3-class-mappings)
+    - [4. API Examples](#4-api-examples)
+    - [5. Development Environment Updates](#5-development-environment-updates)
 - [Parallelization Examples](#parallelization-examples)
   - [1. Variables](#1-variables)
   - [2. Expressions](#2-expressions)
@@ -24,12 +29,18 @@ Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) templat
   - [5. Template Includes](#5-template-includes)
   - [6. Async Filters](#6-async-filters)
 - [Templating Features](#templating-features)
+  - [Additional Tags](#additional-tags)
+  - [The try/retry/except Tags](#the-tryretryexcept-tags)
+  - [The while Tag](#the-while-tag)
 - [Technical Constraints](#technical-constraints)
-  - [Cross-Template Variable Access](#cross-template-variable-access)
+  - [Cross-Template Mutable Variable Access](#cross-template-mutable-variable-access)
   - [Dependency Declarations](#dependency-declarations)
 - [Best Practices](#best-practices)
 - [Development Status and Roadmap](#development-status-and-roadmap)
-
+  - [Core Functionality](#core-functionality)
+  - [Performance and Testing](#performance-and-testing)
+  - [New Template Features](#new-template-features)
+  
 ## Background
 
 Traditional template engines either require pre-resolving all async data before rendering or use special syntax for async operations. None provide automatic parallelization - operations run sequentially by default, and any parallel processing requires explicit orchestration through special constructs.
