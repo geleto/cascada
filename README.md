@@ -218,6 +218,7 @@ The key patterns in Cascada are:
 	- **Revamped Build Scripts**
 	- **Updated Testing Frameworks and Scripts**: Testing and has been improved, including improved coverage tests and the use of **Playwright** for browser tests.
 	- **ESM Module Support**: The development environment now fully supports ECMAScript Modules (ESM), while retaining compatibility with the older CommonJS bindings.
+  - **TypeScript definitions**: Implement TypeScript definitions as part of the library to ensure the API is fully typed
 
 ## Parallelization Examples
 Cascada automatically parallelizes operations that can safely run concurrently:
