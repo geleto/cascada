@@ -7,8 +7,8 @@ Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) templat
 ## Table of Contents
 - [Motivation](#motivation)
 - [Why Cascada?](#why-cascada)
-- [Core Async Features](#core-async-features)
 - [Getting Started](#getting-started)
+- [Core Async Features](#core-async-features)
 - [Parallelization Examples](#parallelization-examples)
 - [Templating Features](#templating-features)
 - [Technical Constraints](#technical-constraints)
@@ -34,6 +34,27 @@ Cascada was developed with AI agent workflows in mind, where template rendering 
 ### 3. Smart Dependency Management
 - Ensures correct execution order
 - Related operations wait for prerequisites while unrelated ones proceed in parallel
+
+
+## Getting Started
+```javascript
+const { AsyncEnvironment } = require('cascada');
+
+const env = new AsyncEnvironment();
+const context = {
+  post: fetch('https://api.example.com/posts/1')
+    .then(res => res.json()),
+  getReplies: (postId) => fetch(`https://api.example.com/posts/${postId}/replies`)
+    .then(res => res.json())
+};
+
+const template = `<h1>{{ post.title }}</h1>
+  {% for reply in getReplies(post.id) %}
+    <div class="reply">{{ reply.content }}</div>
+  {% endfor %}`;
+
+env.renderString(template, context).then(result => console.log(result));
+```
 
 ## Core Async Features
 
@@ -76,26 +97,6 @@ env.addGlobal('crawlPages', async function* (url) {
     <h2>{{ page.title }}</h2>
     <p>{{ page.description }}</p>
 {% endfor %}
-```
-
-## Getting Started
-```javascript
-const { AsyncEnvironment } = require('cascada');
-
-const env = new AsyncEnvironment();
-const context = {
-  post: fetch('https://api.example.com/posts/1')
-    .then(res => res.json()),
-  getReplies: (postId) => fetch(`https://api.example.com/posts/${postId}/replies`)
-    .then(res => res.json())
-};
-
-const template = `<h1>{{ post.title }}</h1>
-  {% for reply in getReplies(post.id) %}
-    <div class="reply">{{ reply.content }}</div>
-  {% endfor %}`;
-
-env.renderString(template, context).then(result => console.log(result));
 ```
 
 ## Parallelization Examples
