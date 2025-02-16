@@ -7,6 +7,7 @@ Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) templat
 ## Table of Contents
 - [Motivation](#motivation)
 - [Why Cascada?](#why-cascada)
+- [Installation](#installation)
 - [Getting Started](#getting-started)
 - [Core Async Features](#core-async-features)
 - [Parallelization Examples](#parallelization-examples)
@@ -35,10 +36,15 @@ Cascada was developed with AI agent workflows in mind, where template rendering 
 - Ensures correct execution order
 - Related operations wait for prerequisites while unrelated ones proceed in parallel
 
+## Installation
+
+```bash
+npm install cascada-tmpl
+```
 
 ## Getting Started
 ```javascript
-const { AsyncEnvironment } = require('cascada');
+import { AsyncEnvironment } from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
 const context = {
@@ -55,6 +61,7 @@ const template = `<h1>{{ post.title }}</h1>
 
 env.renderString(template, context).then(result => console.log(result));
 ```
+This example shows how Cascada handles async operations seamlessly: a post is fetched and its replies are loaded using its ID. The template engine automatically handles promise resolution and dependencies.
 
 ## Core Async Features
 
@@ -259,7 +266,7 @@ To maintain Cascada’s parallelization capabilities, mutable variable scopes mu
  
  The variables of the parent template can not be known, thus variable dependencies need to be declared.
 
-### Dependency Declarations
+#### Dependency Declarations
 To address these challenges, dependencies must be explicitly declared:
 1. **Included Templates**
    Declare dependencies with {% depends %} to ensure proper tracking:
@@ -406,11 +413,11 @@ The key patterns in Cascada are:
 5. Context can contain promises and async functions that resolve automatically
 
 
-5. Cascada introduces several updates and improvements to the development and testing environment:
-	- **Updated Libraries**
+5. Cascada introduces several updates and improvements to the Nunjucks development and testing environment:
+	- **ESM Module Support**: The development environment now fully supports ECMAScript Modules (ESM), while retaining compatibility with the older CommonJS bindings.
+  - **Updated Libraries**
 	- **Revamped Build Scripts**
 	- **Updated Testing Frameworks and Scripts**: Testing and has been improved, including improved coverage tests and the use of **Playwright** for browser tests.
-	- **ESM Module Support**: The development environment now fully supports ECMAScript Modules (ESM), while retaining compatibility with the older CommonJS bindings.
   - **TypeScript definitions**: Implement TypeScript definitions as part of the library to ensure the API is fully typed
 
 ## Best Practices
