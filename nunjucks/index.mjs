@@ -1,5 +1,5 @@
 import lib from './src/lib.js';
-import {Environment, PAsyncEnvironment, Template, PAsyncTemplate} from './src/environment.js';
+import {Environment, AsyncEnvironment, Template, AsyncTemplate} from './src/environment.js';
 import Loader from './src/loader.js';
 import * as loaders from './src/loaders.js';
 import * as precompileModule from './src/precompile.js';
@@ -36,7 +36,7 @@ function configure(templatesPath, opts, forAsync = false) {
   }
 
   if (forAsync) {
-    asyncE = new PAsyncEnvironment(TemplateLoader, opts);
+    asyncE = new AsyncEnvironment(TemplateLoader, opts);
     if (opts && opts.express) {
       asyncE.express(opts.express);
     }
@@ -50,16 +50,16 @@ function configure(templatesPath, opts, forAsync = false) {
   }
 }
 
-function configurePAsync(templatesPath, opts) {
+function configureAsync(templatesPath, opts) {
   return configure(templatesPath, opts, true);
 }
 
 // Named exports
 export {
   Environment,
-  PAsyncEnvironment,
+  AsyncEnvironment,
   Template,
-  PAsyncTemplate,
+  AsyncTemplate,
   Loader,
   compiler,
   parser,
@@ -82,8 +82,8 @@ export const {
 // Export precompile functions
 export const precompile = precompileModule ? precompileModule.precompile : undefined;
 export const precompileString = precompileModule ? precompileModule.precompileString : undefined;
-export const precompilePAsync = precompileModule ? precompileModule.precompilePAsync : undefined;
-export const precompileStringPAsync = precompileModule ? precompileModule.precompileStringPAsync : undefined;
+export const precompileAsync = precompileModule ? precompileModule.precompileAsync : undefined;
+export const precompileStringAsync = precompileModule ? precompileModule.precompileStringAsync : undefined;
 
 export function reset() {
   e = undefined;
@@ -97,11 +97,11 @@ export function compile(src, env, path, eagerCompile) {
   return new Template(src, env, path, eagerCompile);
 }
 
-export function compilePAsync(src, env, path, eagerCompile) {
+export function compileAsync(src, env, path, eagerCompile) {
   if (!asyncE) {
-    configurePAsync();
+    configureAsync();
   }
-  return new PAsyncTemplate(src, env, path, eagerCompile);
+  return new AsyncTemplate(src, env, path, eagerCompile);
 }
 
 export function render(name, ctx, asyncMode, cb) {
@@ -111,9 +111,9 @@ export function render(name, ctx, asyncMode, cb) {
   return e.render(name, ctx, asyncMode, cb);
 }
 
-export function renderPAsync(name, ctx) {
+export function renderAsync(name, ctx) {
   if (!asyncE) {
-    configurePAsync();
+    configureAsync();
   }
   return asyncE.render(name, ctx, true);
 }
@@ -125,9 +125,9 @@ export function renderString(src, ctx, cb) {
   return e.renderString(src, ctx, cb);
 }
 
-export function renderStringPAsync(src, ctx, cb) {
+export function renderStringAsync(src, ctx, cb) {
   if (!asyncE) {
-    configurePAsync();
+    configureAsync();
   }
   return asyncE.renderString(src, ctx, cb);
 }
@@ -135,9 +135,9 @@ export function renderStringPAsync(src, ctx, cb) {
 // Default export
 export default {
   Environment,
-  PAsyncEnvironment,
+  AsyncEnvironment,
   Template,
-  PAsyncTemplate,
+  AsyncTemplate,
   Loader,
   FileSystemLoader: loaders.FileSystemLoader,
   NodeResolveLoader: loaders.NodeResolveLoader,
@@ -153,13 +153,13 @@ export default {
   configure,
   reset,
   compile,
-  compilePAsync,
+  compileAsync,
   render,
-  renderPAsync,
+  renderAsync,
   renderString,
-  renderStringPAsync,
+  renderStringAsync,
   precompile,
   precompileString,
-  precompilePAsync,
-  precompileStringPAsync
+  precompileAsync,
+  precompileStringAsync
 };

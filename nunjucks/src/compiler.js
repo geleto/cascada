@@ -4,7 +4,7 @@ const parser = require('./parser');
 const transformer = require('./transformer');
 const nodes = require('./nodes');
 const { TemplateError } = require('./lib');
-const { Frame, PAsyncFrame } = require('./runtime');
+const { Frame, AsyncFrame } = require('./runtime');
 const { Obj } = require('./object');
 
 const OPTIMIZE_ASYNC = true;//optimize async operations
@@ -1664,7 +1664,7 @@ class Compiler extends Obj {
     if (keepFrame) {
       currFrame = frame.push(true);
     } else {
-      currFrame = frame.new();//node.isAsync ? new PAsyncFrame() : new Frame();//
+      currFrame = frame.new();//node.isAsync ? new AsyncFrame() : new Frame();//
     }
     this._emitLines(
       `let ${funcId} = runtime.makeMacro(`,
@@ -2136,7 +2136,7 @@ class Compiler extends Obj {
       this.fail('compileRoot: root node can\'t have frame');
     }
 
-    frame = this.asyncMode ? new PAsyncFrame() : new Frame();
+    frame = this.asyncMode ? new AsyncFrame() : new Frame();
 
     this._emitFuncBegin(node, 'root');
     this._emitLine('let parentTemplate = null;');
@@ -2285,7 +2285,7 @@ class Compiler extends Obj {
 
 module.exports = {
   compile: function compile(src, asyncFilters, extensions, name, isAsync, opts = {}) {
-    PAsyncFrame.inCompilerContext = true;
+    AsyncFrame.inCompilerContext = true;
     if (typeof isAsync === 'object') {
       opts = isAsync;
       isAsync = false;
@@ -2302,7 +2302,7 @@ module.exports = {
       asyncFilters,
       name
     ));
-    PAsyncFrame.inCompilerContext = false;
+    AsyncFrame.inCompilerContext = false;
     return c.getCode();
   },
 

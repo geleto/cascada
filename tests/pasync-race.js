@@ -3,14 +3,14 @@
 
   var expect;
   var unescape;
-  var PAsyncEnvironment;
+  var AsyncEnvironment;
   var StringLoader;
   //var Environment;
   //var lexer;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    PAsyncEnvironment = require('../nunjucks/src/environment').PAsyncEnvironment;
+    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
     //Environment = require('../nunjucks/src/environment').Environment;
     //lexer = require('../nunjucks/src/lexer');
     unescape = require('he').unescape;
@@ -18,7 +18,7 @@
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
-    PAsyncEnvironment = nunjucks.PAsyncEnvironment;
+    AsyncEnvironment = nunjucks.AsyncEnvironment;
     StringLoader = window.StringLoader;
     //Environment = nunjucks.Environment;
     //lexer = nunjucks.lexer;
@@ -29,7 +29,7 @@
   describe('Async mode race conditions tests', () => {
     let env;
     beforeEach(() => {
-      env = new PAsyncEnvironment();
+      env = new AsyncEnvironment();
     });
 
     describe('Simple race conditions with sets', () => {
@@ -921,7 +921,7 @@
       let loader;
       beforeEach(() => {
         loader = new StringLoader();
-        env = new PAsyncEnvironment(loader);
+        env = new AsyncEnvironment(loader);
       });
       it.skip('should handle extends with async super() and set', async () => {
         const template = `

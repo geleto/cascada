@@ -84,9 +84,9 @@ While Cascada maintains compatibility with the traditional [Nunjucks API](https:
 
 ### Getting Started
 ```javascript
-const { PAsyncEnvironment } = require('cascada');
+const { AsyncEnvironment } = require('cascada');
 
-const env = new PAsyncEnvironment();
+const env = new AsyncEnvironment();
 const context = {
   data: Promise.resolve({ message: "Hello" })
 };
@@ -96,47 +96,47 @@ env.renderString("Message: {{ data.message }}", context)
 ```
 ### New Async API Classes and Functions
 
-Cascada uses the "PAsync" prefix/suffix to indicate Promise-based versions of Nunjucks functions and classes. For async template processing, use `PAsyncEnvironment` instead of `Environment` - it provides the same interface but returns Promises instead of using callbacks.
+Cascada uses the "Async" prefix/suffix to indicate Promise-based versions of Nunjucks functions and classes. For async template processing, use `AsyncEnvironment` instead of `Environment` - it provides the same interface but returns Promises instead of using callbacks.
 
-#### 1. PAsyncEnvironment Method Mappings
+#### 1. AsyncEnvironment Method Mappings
 
-Most methods in PAsyncEnvironment keep their original names but return Promises:
+Most methods in AsyncEnvironment keep their original names but return Promises:
 
-| Method | In Environment | In PAsyncEnvironment |
+| Method | In Environment | In AsyncEnvironment |
 |--------|---------------|---------------------|
 | `render` | Returns string or accepts callback | Returns Promise<string> |
 | `renderString` | Returns string or accepts callback | Returns Promise<string> |
-| `getTemplate` | Returns Template or accepts callback | Returns Promise<PAsyncTemplate> |
+| `getTemplate` | Returns Template or accepts callback | Returns Promise<AsyncTemplate> |
 
 Additional async-specific methods:
-- `getTemplatePAsync()`: Promise-based template loading
-- `addFilterPAsync()`: Add Promise-returning filters
+- `getTemplateAsync()`: Promise-based template loading
+- `addFilterAsync()`: Add Promise-returning filters
 
 #### 2. Function Mappings
 
-New top-level functions use the PAsync suffix:
+New top-level functions use the Async suffix:
 
 | Nunjucks Function | Cascada Equivalent | Difference |
 |------------------|-------------------|------------|
-| `render` | `renderPAsync` | Returns a Promise instead of string (or accepting callback parameter) |
-| `renderString` | `renderStringPAsync` | Returns a Promise instead of string (or accepting callback parameter) |
-| `compile` | `compilePAsync` | Returns a PAsyncTemplate instead of Template, requires PAsyncEnvironment instead of Environment |
-| `precompile` | `precompilePAsync` | Requires PrecompileOptionsPAsync instead of PrecompileOptions, which uses PAsyncEnvironment instead of Environment |
-| `precompileString` | `precompileStringPAsync` | Requires PrecompileOptionsPAsync instead of PrecompileOptions, which uses PAsyncEnvironment instead of Environment |
+| `render` | `renderAsync` | Returns a Promise instead of string (or accepting callback parameter) |
+| `renderString` | `renderStringAsync` | Returns a Promise instead of string (or accepting callback parameter) |
+| `compile` | `compileAsync` | Returns a AsyncTemplate instead of Template, requires AsyncEnvironment instead of Environment |
+| `precompile` | `precompileAsync` | Requires PrecompileOptionsAsync instead of PrecompileOptions, which uses AsyncEnvironment instead of Environment |
+| `precompileString` | `precompileStringAsync` | Requires PrecompileOptionsAsync instead of PrecompileOptions, which uses AsyncEnvironment instead of Environment |
 
 #### 3. Class Mappings
 
 | Nunjucks Class | Cascada Equivalent | Key Differences |
 |----------------|-------------------|-----------------|
-| `Environment` | `PAsyncEnvironment` | - Extends `Environment`<br>- Methods keep same names but return Promises<br>- Adds async-specific methods |
-| `Template` | `PAsyncTemplate` | - `render()` returns Promise<br>- Works with PAsyncEnvironment |
+| `Environment` | `AsyncEnvironment` | - Extends `Environment`<br>- Methods keep same names but return Promises<br>- Adds async-specific methods |
+| `Template` | `AsyncTemplate` | - `render()` returns Promise<br>- Works with AsyncEnvironment |
 
 #### 4. API Examples
 
 ##### Basic Template Rendering
 ```javascript
 // Initialize async environment
-const env = new PAsyncEnvironment();
+const env = new AsyncEnvironment();
 
 // Promise-based rendering
 const result = await env.renderString('Hello {{ username }}', context);
@@ -192,7 +192,7 @@ await env.renderString('Welcome {{ user.name }}! Posts: {{ posts(user.id) }}', c
 
 The key patterns in Cascada are:
 1. Environment methods keep their names but return Promises
-2. New top-level functions use the PAsync suffix
+2. New top-level functions use the Async suffix
 3. All async operations return Promises instead of using callbacks
 4. Async extensions use `return await` instead of callbacks
 5. Context can contain promises and async functions that resolve automatically

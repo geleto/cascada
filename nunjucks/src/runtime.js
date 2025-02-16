@@ -86,13 +86,13 @@ class Frame {
   }
 }
 
-class PAsyncFrame extends Frame {
+class AsyncFrame extends Frame {
   constructor(parent, isolateWrites, createScope = true) {
     super(parent, isolateWrites);
 
     this.createScope = createScope;
 
-    if (PAsyncFrame.inCompilerContext) {
+    if (AsyncFrame.inCompilerContext) {
       //holds the names of the variables declared at the frame
       this.declaredVars = undefined;
 
@@ -135,7 +135,7 @@ class PAsyncFrame extends Frame {
   static inCompilerContext = false;
 
   new() {
-    return new PAsyncFrame();//undefined, this.isolateWrites);
+    return new AsyncFrame();//undefined, this.isolateWrites);
   }
 
   //@todo - handle reentrant frames, count the writes even if the frame is the scope frame,
@@ -257,11 +257,11 @@ class PAsyncFrame extends Frame {
   }
 
   push(isolateWrites) {
-    return new PAsyncFrame(this, isolateWrites);
+    return new AsyncFrame(this, isolateWrites);
   }
 
   pushAsyncBlock(reads, writeCounters) {
-    let asyncBlockFrame = new PAsyncFrame(this, false);//this.isolateWrites);//@todo - should isolateWrites be passed here?
+    let asyncBlockFrame = new AsyncFrame(this, false);//this.isolateWrites);//@todo - should isolateWrites be passed here?
     asyncBlockFrame.isAsyncBlock = true;
     if (reads || writeCounters) {
       asyncBlockFrame.asyncVars = {};
@@ -827,7 +827,7 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
 
 module.exports = {
   Frame: Frame,
-  PAsyncFrame: PAsyncFrame,
+  AsyncFrame: AsyncFrame,
   makeMacro: makeMacro,
   makeKeywordArgs: makeKeywordArgs,
   numArgs: numArgs,

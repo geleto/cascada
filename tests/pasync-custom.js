@@ -3,20 +3,20 @@
 
   var expect;
   var unescape;
-  var PAsyncEnvironment;
+  var AsyncEnvironment;
   //var Environment;
   var lexer;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    PAsyncEnvironment = require('../nunjucks/src/environment').PAsyncEnvironment;
+    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
     //Environment = require('../nunjucks/src/environment').Environment;
     lexer = require('../nunjucks/src/lexer');
     unescape = require('he').unescape;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
-    PAsyncEnvironment = nunjucks.PAsyncEnvironment;
+    AsyncEnvironment = nunjucks.AsyncEnvironment;
     //Environment = nunjucks.Environment;
     lexer = nunjucks.lexer;
   }
@@ -164,7 +164,7 @@
   describe('Async mode - custom extensions and filters', () => {
     let env;
     beforeEach(() => {
-      env = new PAsyncEnvironment();
+      env = new AsyncEnvironment();
     });
 
     describe('Async Custom Extensions', () => {

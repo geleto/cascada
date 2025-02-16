@@ -1,7 +1,7 @@
 'use strict';
 
 const lib = require('./src/lib');
-const {Environment, PAsyncEnvironment, Template, PAsyncTemplate} = require('./src/environment');
+const {Environment, AsyncEnvironment, Template, AsyncTemplate} = require('./src/environment');
 const Loader = require('./src/loader');
 const loaders = require('./src/loaders');
 const precompile = require('./src/precompile');
@@ -38,7 +38,7 @@ function configure(templatesPath, opts, forAsync = false) {
   }
 
   if (forAsync) {
-    asyncE = new PAsyncEnvironment(TemplateLoader, opts);
+    asyncE = new AsyncEnvironment(TemplateLoader, opts);
     if (opts && opts.express) {
       asyncE.express(opts.express);
     }
@@ -52,15 +52,15 @@ function configure(templatesPath, opts, forAsync = false) {
   }
 }
 
-function configurePAsync(templatesPath, opts) {
+function configureAsync(templatesPath, opts) {
   return configure(templatesPath, opts, true);
 }
 
 module.exports = {
   Environment: Environment,
-  PAsyncEnvironment: PAsyncEnvironment,
+  AsyncEnvironment: AsyncEnvironment,
   Template: Template,
-  PAsyncTemplate: PAsyncTemplate,
+  AsyncTemplate: AsyncTemplate,
   Loader: Loader,
   FileSystemLoader: loaders.FileSystemLoader,
   NodeResolveLoader: loaders.NodeResolveLoader,
@@ -83,11 +83,11 @@ module.exports = {
     }
     return new Template(src, env, path, eagerCompile);
   },
-  compilePAsync(src, env, path, eagerCompile) {
+  compileAsync(src, env, path, eagerCompile) {
     if (!asyncE) {
-      configurePAsync();
+      configureAsync();
     }
-    return new PAsyncTemplate(src, env, path, eagerCompile);
+    return new AsyncTemplate(src, env, path, eagerCompile);
   },
   render(name, ctx, asyncMode, cb) {
     if (!e) {
@@ -96,9 +96,9 @@ module.exports = {
 
     return e.render(name, ctx, asyncMode, cb);
   },
-  renderPAsync(name, ctx) {
+  renderAsync(name, ctx) {
     if (!asyncE) {
-      configurePAsync();
+      configureAsync();
     }
     return asyncE.render(name, ctx, true);
   },
@@ -108,14 +108,14 @@ module.exports = {
     }
     return e.renderString(src, ctx, cb);
   },
-  renderStringPAsync(src, ctx, cb) {
+  renderStringAsync(src, ctx, cb) {
     if (!asyncE) {
-      configurePAsync();
+      configureAsync();
     }
     return asyncE.renderString(src, ctx, cb);
   },
   precompile: (precompile) ? precompile.precompile : undefined,
   precompileString: (precompile) ? precompile.precompileString : undefined,
-  precompilePAsync: (precompile) ? precompile.precompilePAsync : undefined,
-  precompileStringPAsync: (precompile) ? precompile.precompileStringPAsync : undefined,
+  precompileAsync: (precompile) ? precompile.precompileAsync : undefined,
+  precompileStringAsync: (precompile) ? precompile.precompileStringAsync : undefined,
 };
