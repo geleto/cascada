@@ -5,43 +5,17 @@ Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) templat
 **Note**: This is an ongoing project under active development. For details on the current progress and remaining tasks, please refer to the [Development Status and Roadmap](#development-status-and-roadmap) section.
 
 ## Table of Contents
-- [Background](#background)
+## Table of Contents
+- [Motivation](#motivation)
 - [Why Cascada?](#why-cascada)
-  - [1. Transparent Async Support](#1-transparent-async-support)
-  - [2. Automatic Parallel Processing](#2-automatic-parallel-processing)
-  - [3. Smart Dependency Management](#3-smart-dependency-management)
 - [Core Async Features](#core-async-features)
-  - [Asynchronous Data](#asynchronous-data)
-  - [Async Iterators and Generators](#async-iterators-and-generators)
 - [API](#api)
-  - [Getting Started](#getting-started)
-  - [New Async API Classes and Functions](#new-async-api-classes-and-functions)
-    - [1. PAsyncEnvironment Method Mappings](#1-pasynccenvironment-method-mappings)
-    - [2. Function Mappings](#2-function-mappings)
-    - [3. Class Mappings](#3-class-mappings)
-    - [4. API Examples](#4-api-examples)
-    - [5. Development Environment Updates](#5-development-environment-updates)
 - [Parallelization Examples](#parallelization-examples)
-  - [1. Variables](#1-variables)
-  - [2. Expressions](#2-expressions)
-  - [3. Async Functions](#3-async-functions)
-  - [4. Loop Iterations](#4-loop-iterations)
-  - [5. Template Includes](#5-template-includes)
-  - [6. Async Filters](#6-async-filters)
 - [Templating Features](#templating-features)
-  - [Additional Tags](#additional-tags)
-  - [The try/retry/except Tags](#the-tryretryexcept-tags)
-  - [The while Tag](#the-while-tag)
 - [Technical Constraints](#technical-constraints)
-  - [Cross-Template Mutable Variable Access](#cross-template-mutable-variable-access)
-  - [Dependency Declarations](#dependency-declarations)
 - [Best Practices](#best-practices)
-- [Development Status and Roadmap](#development-status-and-roadmap)
-  - [Core Functionality](#core-functionality)
-  - [Performance and Testing](#performance-and-testing)
-  - [New Template Features](#new-template-features)
-  
-## Background
+- [Development Status and Roadmap](#development-status-and-roadmap)  
+## Motivation
 
 Traditional template engines either require pre-resolving all async data before rendering or use special syntax for async operations. None provide automatic parallelization - operations run sequentially by default, and any parallel processing requires explicit orchestration through special constructs.
 
