@@ -1,6 +1,6 @@
 {
   "name": "cascada-tmpl",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A template engine with advanced async capabilities with automatic implicit concurrency",
   "license": "BSD-2-Clause",
   "author": "Angel Popov<geleto@gmail.com>",
@@ -10,10 +10,10 @@
     ".": {
       "require": "./dist/cjs/index.js",
       "import": "./dist/esm/index.mjs",
-      "types": "./dist/types/index.d.ts" 
+      "types": "./dist/types/index.d.ts"
     }
   },
-  "types": "./dist/types/index.d.ts", 
+  "types": "./dist/types/index.d.ts",
   "files": [
     "bin/**",
     "browser/**",
@@ -111,7 +111,7 @@
     "test": "npm run test:prep && npm run test:node-no-prep && npm run test:browser-no-prep -- fullTest"
   },
   "bin": {
-    "cascada-precompile": "./bin/precompile"
+    "cascada-precompile": "bin/precompile"
   },
   "nyc": {
     "extends": "@istanbuljs/nyc-config-babel",
@@ -128,7 +128,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/geleto/cascada.git"
+    "url": "git+https://github.com/geleto/cascada.git"
   },
   "keywords": [
     "template",
