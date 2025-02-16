@@ -1,25 +1,28 @@
 # Cascada - async-enabled templating with automatic parallelization
 
-Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling.
+Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling. Cascada provides a complete templating system with full programming constructs (variables, loops, conditionals), first-class functions and macros, complex expression support, and rich template composition through inheritance, includes, and imports.
 
 **Note**: This is an ongoing project under active development. For details on the current progress and remaining tasks, please refer to the [Development Status and Roadmap](#development-status-and-roadmap) section.
 
 ## Table of Contents
-## Table of Contents
 - [Motivation](#motivation)
 - [Why Cascada?](#why-cascada)
 - [Core Async Features](#core-async-features)
-- [API](#api)
+- [Getting Started](#getting-started)
 - [Parallelization Examples](#parallelization-examples)
 - [Templating Features](#templating-features)
 - [Technical Constraints](#technical-constraints)
+- [API](#api)
 - [Best Practices](#best-practices)
-- [Development Status and Roadmap](#development-status-and-roadmap)  
-## Motivation
+- [Development Status and Roadmap](#development-status-and-roadmap)
 
-Traditional template engines either require pre-resolving all async data before rendering or use special syntax for async operations. None provide automatic parallelization - operations run sequentially by default, and any parallel processing requires explicit orchestration through special constructs.
+## Motivation
+Traditional template engines face significant limitations when handling asynchronous operations, typically requiring either pre-resolution of all async data before rendering begins or special syntax for async operations. These engines lack built-in support for automatic concurrency - they process operations sequentially by default, and any parallel processing requires manual orchestration through limited specialized constructs. Even when parallel processing is explicitly configured, it is impractical to effectively parallelize complex templates with interdependent operations. This becomes especially problematic in modern applications where complex nested templates often need to integrate data from multiple asynchronous sources like APIs, databases, and external services.
 
 Cascada was developed with AI agent workflows in mind, where template rendering often involves multiple long-running operations like LLM calls, reasoning steps, or external API requests.
+
+ If you want to see an example of this approach in action, check out [Cascador-AI](https://github.com/geleto/cascador-ai), an agent framework that leverages Cascada's automatic parallelization to orchestrate multiple LLM operations and external services through simple templates.
+
 
 ## Why Cascada?
 
@@ -78,11 +81,7 @@ env.addGlobal('crawlPages', async function* (url) {
 {% endfor %}
 ```
 
-## API
-
-While Cascada maintains compatibility with the traditional [Nunjucks API](https://mozilla.github.io/nunjucks/api.html) that uses callbacks, it introduces a simpler promise-based API for working with async templates.
-
-### Getting Started
+## Getting Started
 ```javascript
 const { AsyncEnvironment } = require('cascada');
 
@@ -94,116 +93,6 @@ const context = {
 env.renderString("Message: {{ data.message }}", context)
    .then(result => console.log(result));
 ```
-### New Async API Classes and Functions
-
-Cascada uses the "Async" prefix/suffix to indicate Promise-based versions of Nunjucks functions and classes. For async template processing, use `AsyncEnvironment` instead of `Environment` - it provides the same interface but returns Promises instead of using callbacks.
-
-#### 1. AsyncEnvironment Method Mappings
-
-Most methods in AsyncEnvironment keep their original names but return Promises:
-
-| Method | In Environment | In AsyncEnvironment |
-|--------|---------------|---------------------|
-| `render` | Returns string or accepts callback | Returns Promise<string> |
-| `renderString` | Returns string or accepts callback | Returns Promise<string> |
-| `getTemplate` | Returns Template or accepts callback | Returns Promise<AsyncTemplate> |
-
-Additional async-specific methods:
-- `getTemplateAsync()`: Promise-based template loading
-- `addFilterAsync()`: Add Promise-returning filters
-
-#### 2. Function Mappings
-
-New top-level functions use the Async suffix:
-
-| Nunjucks Function | Cascada Equivalent | Difference |
-|------------------|-------------------|------------|
-| `render` | `renderAsync` | Returns a Promise instead of string (or accepting callback parameter) |
-| `renderString` | `renderStringAsync` | Returns a Promise instead of string (or accepting callback parameter) |
-| `compile` | `compileAsync` | Returns a AsyncTemplate instead of Template, requires AsyncEnvironment instead of Environment |
-| `precompile` | `precompileAsync` | Requires PrecompileOptionsAsync instead of PrecompileOptions, which uses AsyncEnvironment instead of Environment |
-| `precompileString` | `precompileStringAsync` | Requires PrecompileOptionsAsync instead of PrecompileOptions, which uses AsyncEnvironment instead of Environment |
-
-#### 3. Class Mappings
-
-| Nunjucks Class | Cascada Equivalent | Key Differences |
-|----------------|-------------------|-----------------|
-| `Environment` | `AsyncEnvironment` | - Extends `Environment`<br>- Methods keep same names but return Promises<br>- Adds async-specific methods |
-| `Template` | `AsyncTemplate` | - `render()` returns Promise<br>- Works with AsyncEnvironment |
-
-#### 4. API Examples
-
-##### Basic Template Rendering
-```javascript
-// Initialize async environment
-const env = new AsyncEnvironment();
-
-// Promise-based rendering
-const result = await env.renderString('Hello {{ username }}', context);
-```
-
-##### Async Filters
-```javascript
-// Add async filter
-env.addFilter('translate', async (text, lang) => {
-    return translator.translate(text, lang);
-});
-
-// Use in template
-const template = 'Hello {{ "World" | translate("es") }}';
-```
-
-##### Async Extensions
-```javascript
-// Define async extension
-env.addExtension('Fetch', {
-    tags: ['fetch'],
-    parse(parser, nodes) {
-        parser.nextToken();
-        return new nodes.CallExtension(this, 'run', [parser.parseExpression()]);
-    },
-    async run(context, url) {
-        return fetch(url);
-    }
-});
-```
-Both fetches run concurrently:
-```njk
-Config: {% fetch "/api/config" %}
-Data: {% fetch "/api/data" %}
-```
-The key differences to keep in mind when developing asyn extensions:
-- Use the regular CallExtension node instead of CallExtensionAsync (which is for the old callback API)
-- The run() method is async and return a promise directly
-
-##### Async Context Data
-```javascript
-const context = {
-    user: fetch('https://api.example.com/user/1').then(res => res.json()),
-    posts: async (userId) => {
-        const res = await fetch(`https://api.example.com/users/${userId}/posts`);
-        return res.json();
-    }
-};
-
-// Use in template
-await env.renderString('Welcome {{ user.name }}! Posts: {{ posts(user.id) }}', context);
-```
-
-The key patterns in Cascada are:
-1. Environment methods keep their names but return Promises
-2. New top-level functions use the Async suffix
-3. All async operations return Promises instead of using callbacks
-4. Async extensions use `return await` instead of callbacks
-5. Context can contain promises and async functions that resolve automatically
-
-
-5. Cascada introduces several updates and improvements to the development and testing environment:
-	- **Updated Libraries**
-	- **Revamped Build Scripts**
-	- **Updated Testing Frameworks and Scripts**: Testing and has been improved, including improved coverage tests and the use of **Playwright** for browser tests.
-	- **ESM Module Support**: The development environment now fully supports ECMAScript Modules (ESM), while retaining compatibility with the older CommonJS bindings.
-  - **TypeScript definitions**: Implement TypeScript definitions as part of the library to ensure the API is fully typed
 
 ## Parallelization Examples
 Cascada automatically parallelizes operations that can safely run concurrently:
@@ -403,6 +292,120 @@ To address these challenges, dependencies must be explicitly declared:
          {% set frameVar3 = "Updated Value" %}
      {% endblock %}
      ```
+## API
+While Cascada maintains compatibility with the traditional [Nunjucks API](https://mozilla.github.io/nunjucks/api.html) that uses callbacks, it introduces a simpler promise-based API for working with async templates.
+
+
+### New Async API Classes and Functions
+
+Cascada uses the "Async" prefix/suffix to indicate Promise-based versions of Nunjucks functions and classes. For async template processing, use `AsyncEnvironment` instead of `Environment` - it provides the same interface but returns Promises instead of using callbacks.
+
+#### 1. AsyncEnvironment Method Mappings
+
+Most methods in AsyncEnvironment keep their original names but return Promises:
+
+| Method | In Environment | In AsyncEnvironment |
+|--------|---------------|---------------------|
+| `render` | Returns string or accepts callback | Returns Promise<string> |
+| `renderString` | Returns string or accepts callback | Returns Promise<string> |
+| `getTemplate` | Returns Template or accepts callback | Returns Promise<AsyncTemplate> |
+
+Additional async-specific methods:
+- `getTemplateAsync()`: Promise-based template loading
+- `addFilterAsync()`: Add Promise-returning filters
+
+#### 2. Function Mappings
+
+New top-level functions use the Async suffix:
+
+| Nunjucks Function | Cascada Equivalent | Difference |
+|------------------|-------------------|------------|
+| `render` | `renderAsync` | Returns a Promise instead of string (or accepting callback parameter) |
+| `renderString` | `renderStringAsync` | Returns a Promise instead of string (or accepting callback parameter) |
+| `compile` | `compileAsync` | Returns a AsyncTemplate instead of Template, requires AsyncEnvironment instead of Environment |
+| `precompile` | `precompileAsync` | Requires PrecompileOptionsAsync instead of PrecompileOptions, which uses AsyncEnvironment instead of Environment |
+| `precompileString` | `precompileStringAsync` | Requires PrecompileOptionsAsync instead of PrecompileOptions, which uses AsyncEnvironment instead of Environment |
+
+#### 3. Class Mappings
+
+| Nunjucks Class | Cascada Equivalent | Key Differences |
+|----------------|-------------------|-----------------|
+| `Environment` | `AsyncEnvironment` | - Extends `Environment`<br>- Methods keep same names but return Promises<br>- Adds async-specific methods |
+| `Template` | `AsyncTemplate` | - `render()` returns Promise<br>- Works with AsyncEnvironment |
+
+#### 4. API Examples
+
+##### Basic Template Rendering
+```javascript
+// Initialize async environment
+const env = new AsyncEnvironment();
+
+// Promise-based rendering
+const result = await env.renderString('Hello {{ username }}', context);
+```
+
+##### Async Filters
+```javascript
+// Add async filter
+env.addFilter('translate', async (text, lang) => {
+    return translator.translate(text, lang);
+});
+
+// Use in template
+const template = 'Hello {{ "World" | translate("es") }}';
+```
+
+##### Async Extensions
+```javascript
+// Define async extension
+env.addExtension('Fetch', {
+    tags: ['fetch'],
+    parse(parser, nodes) {
+        parser.nextToken();
+        return new nodes.CallExtension(this, 'run', [parser.parseExpression()]);
+    },
+    async run(context, url) {
+        return fetch(url);
+    }
+});
+```
+Both fetches run concurrently:
+```njk
+Config: {% fetch "/api/config" %}
+Data: {% fetch "/api/data" %}
+```
+The key differences to keep in mind when developing asyn extensions:
+- Use the regular CallExtension node instead of CallExtensionAsync (which is for the old callback API)
+- The run() method is async and return a promise directly
+
+##### Async Context Data
+```javascript
+const context = {
+    user: fetch('https://api.example.com/user/1').then(res => res.json()),
+    posts: async (userId) => {
+        const res = await fetch(`https://api.example.com/users/${userId}/posts`);
+        return res.json();
+    }
+};
+
+// Use in template
+await env.renderString('Welcome {{ user.name }}! Posts: {{ posts(user.id) }}', context);
+```
+
+The key patterns in Cascada are:
+1. Environment methods keep their names but return Promises
+2. New top-level functions use the Async suffix
+3. All async operations return Promises instead of using callbacks
+4. Async extensions use `return await` instead of callbacks
+5. Context can contain promises and async functions that resolve automatically
+
+
+5. Cascada introduces several updates and improvements to the development and testing environment:
+	- **Updated Libraries**
+	- **Revamped Build Scripts**
+	- **Updated Testing Frameworks and Scripts**: Testing and has been improved, including improved coverage tests and the use of **Playwright** for browser tests.
+	- **ESM Module Support**: The development environment now fully supports ECMAScript Modules (ESM), while retaining compatibility with the older CommonJS bindings.
+  - **TypeScript definitions**: Implement TypeScript definitions as part of the library to ensure the API is fully typed
 
 ## Best Practices
 
