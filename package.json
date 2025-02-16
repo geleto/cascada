@@ -1,9 +1,9 @@
 {
   "name": "cascada-tmpl",
-  "description": "Async-enabled templating with automatic parallelization",
-  "version": "3.2.4",
+  "version": "0.0.1",
+  "description": "A template engine with advanced async capabilities with automatic implicit concurrency",
+  "license": "BSD-2-Clause",
   "author": "Angel Popov<geleto@gmail.com>",
-
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
   "exports": {
@@ -138,7 +138,6 @@
     "parallel",
     "concurrency"
   ],
-  "license": "BSD-2-Clause",
   "bugs": {
     "url": "https://github.com/geleto/cascada/issues"
   }
