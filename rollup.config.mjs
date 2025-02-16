@@ -6,7 +6,6 @@ export default {
   input: {
     'index': 'nunjucks/index.mjs'
   },
-  preserveModules: true, // will remove this later
   plugins: [
     nodeResolve({
       preferBuiltins: true,
@@ -33,7 +32,6 @@ export default {
     dir: 'dist/esm',
     format: 'es',
     sourcemap: true,
-    preserveModules: true, // will remove this later too
     exports: 'named',
     entryFileNames: '[name].mjs'
   }
