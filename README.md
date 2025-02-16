@@ -406,19 +406,19 @@ await env.renderString('Welcome {{ user.name }}! Posts: {{ posts(user.id) }}', c
 ```
 
 The key patterns in Cascada are:
-1. Environment methods keep their names but return Promises
-2. New top-level functions use the Async suffix
-3. All async operations return Promises instead of using callbacks
-4. Async extensions use `return await` instead of callbacks
-5. Context can contain promises and async functions that resolve automatically
+- Environment methods keep their names but return Promises
+- New top-level functions use the Async suffix
+- All async operations return Promises instead of using callbacks
+- Async extensions use `return await` instead of callbacks
+- Context can contain promises and async functions that resolve automatically
 
-
-5. Cascada introduces several updates and improvements to the Nunjucks development and testing environment:
-	- **ESM Module Support**: The development environment now fully supports ECMAScript Modules (ESM), while retaining compatibility with the older CommonJS bindings.
-  - **Updated Libraries**
-	- **Revamped Build Scripts**
-	- **Updated Testing Frameworks and Scripts**: Testing and has been improved, including improved coverage tests and the use of **Playwright** for browser tests.
-  - **TypeScript definitions**: Implement TypeScript definitions as part of the library to ensure the API is fully typed
+#### 5. Other Improvements
+Cascada introduces several updates and improvements to the Nunjucks development and testing environment:
+- **ESM Module Support**: The development environment now fully supports ECMAScript Modules (ESM), while retaining compatibility with the older CommonJS bindings.
+- **Updated Libraries**
+- **Revamped Build Scripts**
+- **Updated Testing Frameworks and Scripts**: Testing and has been improved, including improved coverage tests and the use of **Playwright** for browser tests.
+- **TypeScript definitions**: Implement TypeScript definitions as part of the library to ensure the API is fully typed
 
 ## Best Practices
 
