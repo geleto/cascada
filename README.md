@@ -84,11 +84,18 @@ const { AsyncEnvironment } = require('cascada');
 
 const env = new AsyncEnvironment();
 const context = {
-  data: Promise.resolve({ message: "Hello" })
+  post: fetch('https://api.example.com/posts/1')
+    .then(res => res.json()),
+  getReplies: (postId) => fetch(`https://api.example.com/posts/${postId}/replies`)
+    .then(res => res.json())
 };
 
-env.renderString("Message: {{ data.message }}", context)
-   .then(result => console.log(result));
+const template = `<h1>{{ post.title }}</h1>
+  {% for reply in getReplies(post.id) %}
+    <div class="reply">{{ reply.content }}</div>
+  {% endfor %}`;
+
+env.renderString(template, context).then(result => console.log(result));
 ```
 
 ## Parallelization Examples
