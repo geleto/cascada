@@ -1,6 +1,6 @@
 # Cascada - async-enabled templating with automatic parallelization
 
-Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling. Cascada provides a complete templating system with full programming constructs (variables, loops, conditionals), first-class functions and macros, complex expression support, and rich template composition through inheritance, includes, and imports.
+Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling. Cascada provides a comprehensive templating system with seamless support for implicit asynchronous concurrency across its entire feature set. All advanced template features - programming constructs (variables, loops, conditionals), first-class functions and macros, complex expressions, filters, extensions, and composition through inheritance, includes, and imports - seamlessly support concurrent execution when not waiting for dependencies, without explicit async constructs.
 
 **Note**: This is an ongoing project under active development. For details on the current progress and remaining tasks, please refer to the [Development Status and Roadmap](#development-status-and-roadmap) section.
 
@@ -17,12 +17,9 @@ Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) templat
 - [Development Status and Roadmap](#development-status-and-roadmap)
 
 ## Motivation
-Traditional template engines face significant limitations when handling asynchronous operations, typically requiring either pre-resolution of all async data before rendering begins or special syntax for async operations. These engines lack built-in support for automatic concurrency - they process operations sequentially by default, and any parallel processing requires manual orchestration through limited specialized constructs. Even when parallel processing is explicitly configured, it is impractical to effectively parallelize complex templates with interdependent operations. This becomes especially problematic in modern applications where complex nested templates often need to integrate data from multiple asynchronous sources like APIs, databases, and external services.
+Traditional template engines face significant limitations when handling asynchronous operations, typically requiring either pre-resolution of all async data before rendering begins or special syntax for async operations. These engines lack built-in support for automatic concurrency - they process operations sequentially by default, and any parallel processing requires manual orchestration through limited specialized constructs. Even when parallel processing is explicitly configured, it is impractical to effectively parallelize complex templates with interdependent operations, especially where complex nested templates often need to integrate data from multiple asynchronous sources like APIs, databases, and external services.
 
-Cascada was developed with AI agent workflows in mind, where template rendering often involves multiple long-running operations like LLM calls, reasoning steps, or external API requests.
-
- If you want to see an example of this approach in action, check out [Cascador-AI](https://github.com/geleto/cascador-ai), an agent framework that leverages Cascada's automatic parallelization to orchestrate multiple LLM operations and external services through simple templates.
-
+Cascada was developed with AI agent workflows in mind, where template rendering often involves multiple long-running operations like LLM calls, reasoning steps, or external API requests. If you want to see an example of this approach in action, check out [Cascador-AI](https://github.com/geleto/cascador-ai), an agent framework that leverages Cascada's automatic parallelization to orchestrate multiple LLM operations and external services through simple templates.
 
 ## Why Cascada?
 
@@ -158,26 +155,22 @@ Cascada fully supports the Nunjucks template syntax and features. You can refere
 
 Cascada supports additional tags, not found in Nunjucks:
 - `depends` tag: See [Cross-Template Variable Access](#cross-template-variable-access)
-- `try`/`retry`/`except` tags for error handling
+- `try`/`resume`/`except` tags for error handling
 - `while` loop for conditional iteration
 
-### The try/retry/except Tags
+### The try/resume/except Tags
 
 **Note**: This feature is not yet implemented. 
 
 Cascada's async nature makes error handling particularly important. When an error occurs and is handled by except:
-- Variables whose final values are already determined (execution has moved past any point where they could change) retain those values
-- Variables that could still change (their values depend on operations after the error point) are rejected because their final values cannot be determined
-- Template execution continues after the except block
 
 ```njk
 {% try %}
     {% set a = "safe value" %}
     {{ someAsyncOperation() }}
     {% set b = "never set" %}
-{% retry if askUser('Retry operation?') %}
-    Retrying... (attempt {{ retry.count }})
-    Failed operation: {{ retry.source }}
+{% resume if askUser('Retry operation?') %}
+     {% set warningMessage = 'Resuming operation ' + resume.source + ' (attempt ' + resume.count + ')' %}
 {% except %}
     {# 'a' retains "safe value" because it was set before the error
        'b' is rejected because we never reached its assignment #}
@@ -187,15 +180,20 @@ Cascada's async nature makes error handling particularly important. When an erro
 
 Key features:
 - `try` block contains code that might fail
-- `retry` block handles errors and can retry the failed operation
-- If retry condition is true, execution continues from the point of failure
-- If retry condition is false, control passes to the except block
-- Special variables in retry block:
-  - `retry.count`: Number of retry attempts so far
-  - `retry.source`: Name/path of the operation that failed (e.g., 'fetch', 'userApi.getProfile')
+- `resume` block handles errors and can retry the failed operation
+- If resume condition is true, execution continues from the point of failure
+- If resume condition is false, control passes to the except block
+- Special variables in resume block:
+  - `resume.count`: Number of resume attempts so far
+  - `resume.source`: Name/path of the operation that failed (e.g., 'fetch', 'userApi.getProfile')
 - Error handling in except block:
   - `error`: The error object that caused the failure
   - Can throw errors using context methods (e.g., `throwError` must be provided in context)
+
+- Variable handling:
+  - Variables whose final values are already determined (execution has moved past any point where they could change) retain those values
+  - Variables that could still change inside the try block(their values can depend on operations after the error point) are rejected because their final values cannot be determined
+  - Template execution continues after the except block
 
 Examples:
 
