@@ -13,7 +13,8 @@
   }
 
   function execPrecompile(args, cb) {
-    execFile(precompileBin, args, {cwd: rootDir}, cb);
+    const isWindows = process.platform === 'win32';
+    execFile(precompileBin, args, {cwd: rootDir, shell: isWindows}, cb);
   }
 
   // https://github.com/nodejs/node/issues/34799
