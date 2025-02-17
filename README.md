@@ -1,6 +1,10 @@
 # Cascada - async-enabled templating with automatic parallelization
 
-Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling. Cascada provides a comprehensive templating system with seamless support for implicit asynchronous concurrency across its entire feature set. All advanced template features - programming constructs (variables, loops, conditionals), first-class functions and macros, complex expressions, filters, extensions, and composition through inheritance, includes, and imports - seamlessly support concurrent execution when not waiting for dependencies, without explicit async constructs.
+## Write templates that look synchronous but execute concurrently under the hood.
+
+Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling. 
+
+It provides seamless support for implicit concurrency across its entire feature set - programming constructs (variables, loops, conditionals), first-class functions and macros, complex expressions, filters, extensions, and composition through inheritance, includes, and imports.
 
 **Note**: This is an ongoing project under active development. For details on the current progress and remaining tasks, please refer to the [Development Status and Roadmap](#development-status-and-roadmap) section.
 
