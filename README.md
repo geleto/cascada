@@ -259,6 +259,21 @@ Example with async iterator:
 {% endwhile %}
 ```
 
+### The `{% do %}` Tag
+
+**Note**: This feature is not yet implemented.
+
+The `{% do %}` Cascada tag executes expressions without rendering their return values, making it useful for side-effect operations:
+
+```njk
+{% set prices = [] %}
+{% for store in ['storeA', 'storeB', 'storeC'] %}
+  {% do prices.push(fetchPrice(store)) %}
+{% endfor %}
+```
+
+This tag performs the same function as `{{ expression | reject() }}` or a `set` tag with a dummy variable, but with cleaner syntax. Important: it provides no special async handling, so the same cautions about unpredictable execution order in parallel environments still apply. See [Handling functions with side effects](#handling-functions-with-side-effects) for more details on managing side effects in Cascada's concurrent environment.
+
 ## Technical Constraints
 
 ### Handling functions with side effects
@@ -274,6 +289,18 @@ Cheapest price: {{ (prices | sort(false, false, 'value') | first).value }}
 ```
 
 Here, `fetchPrice` runs concurrently, so `prices.push()` calls happen in no fixed order. Sorting the array by `value` ensures consistent output, neutralizing the side effect’s randomness.
+
+A workaround to enforce sequential execution of side effects is to create dependencies between operations by using the output of one operation as input to the next, even if the output is just a dummy value:
+
+```njk
+{% set prices = [] %}
+{% set _ = prices.push(fetchPrice('storeA')) %}
+{% set _ = prices.push(fetchPrice('storeB', _)) %}
+{% set _ = prices.push(fetchPrice('storeC', _)) %}
+Store B price: {{ prices[1].value }}
+```
+
+This pattern ensures that operations execute in a specific order by creating an artificial dependency chain, trading parallelism for predictable side effect sequence when needed.
 
 ### Cross-Template Mutable Variable Access
 
