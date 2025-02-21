@@ -2,7 +2,7 @@
 
 ## Write templates that look synchronous but execute concurrently under the hood.
 
-Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling. 
+Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling.
 
 It provides seamless support for implicit concurrency across its entire feature set - programming constructs (variables, loops, conditionals), first-class functions and macros, complex expressions, filters, extensions, and composition through inheritance, includes, and imports.
 
@@ -179,16 +179,16 @@ Cascada supports additional tags, not found in Nunjucks:
 
 ### The try/resume/except Tags
 
-**Note**: This feature is not yet implemented. 
+**Note**: This feature is not yet implemented.
 
-Cascada's async nature makes error handling particularly important. When an error occurs and is handled by except:
+Cascada's async nature makes error handling particularly important. When an error occurs it can be handled by except:
 
 ```njk
 {% try %}
     {% set a = "safe value" %}
     {{ someAsyncOperation() }}
     {% set b = "never set" %}
-{% resume if askUser('Retry operation?') %}
+{% resume askUser('Retry operation?') %}
      {% set warningMessage = 'Resuming operation ' + resume.source + ' (attempt ' + resume.count + ')' %}
 {% except %}
     {# 'a' retains "safe value" because it was set before the error
@@ -203,6 +203,7 @@ Key features:
 - If resume condition is true, execution continues from the point of failure
 - If resume condition is false, control passes to the except block
 - Special variables in resume block:
+  - `error`: The error object that caused the failure
   - `resume.count`: Number of resume attempts so far
   - `resume.source`: Name/path of the operation that failed (e.g., 'fetch', 'userApi.getProfile')
 - Error handling in except block:
@@ -221,7 +222,7 @@ Examples:
 {% try %}
     {% set userData = fetchUserData(userId) %}
     {% set extraData = processUserData(userData) %}
-{% retry if retry.source == 'fetchUserData' and retry.count < 3 %}
+{% resume retry.source == 'fetchUserData' and retry.count < 3 %}
     {% set warningMessage = 'Retrying user data fetch (attempt ' + retry.count + ')' %}
 {% except %}
     {# userData and extraData are rejected if fetchUserData fails
@@ -232,7 +233,7 @@ Examples:
 
 ### The while Tag
 
-**Note**: This feature is not yet implemented. 
+**Note**: This feature is not yet implemented.
 
 `while` creates a loop that continues as long as a condition is true. Unlike `for`, it doesn't iterate over collections but instead repeats until a condition becomes false. It fully supports async iterators and async conditions.
 
@@ -260,14 +261,28 @@ Example with async iterator:
 
 ## Technical Constraints
 
+### Handling functions with side effects
+
+In Cascada, handling functions with side effects, requires caution due to its async, parallel execution, which can make operation order unpredictable. For instance, in a real-world example fetching product prices:
+
+```njk
+{% set prices = [] %}
+{% for store in ['storeA', 'storeB', 'storeC'] %}
+  {{- prices.push(fetchPrice(store)) | reject() }}
+{% endfor %}
+Cheapest price: {{ (prices | sort(false, false, 'value') | first).value }}
+```
+
+Here, `fetchPrice` runs concurrently, so `prices.push()` calls happen in no fixed order. Sorting the array by `value` ensures consistent output, neutralizing the side effect’s randomness.
+
 ### Cross-Template Mutable Variable Access
 
-**Note**: This feature is not yet implemented. 
+**Note**: This feature is not yet implemented.
 
 To maintain Cascada’s parallelization capabilities, mutable variable scopes must be known at compile time for proper dependency management. However, certain scenarios involve accessing and changing variables across templates:
  - **Included templates** (`include`): Included templates have **read-only** access to parent variables.
  - **Extended Templates** (`extends`): Blocks in child templates can **read and modify** parent variables.
- 
+
  The variables of the parent template can not be known, thus variable dependencies need to be declared.
 
 #### Dependency Declarations
