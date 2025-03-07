@@ -1,6 +1,6 @@
 {
   "name": "cascada-tmpl",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A template engine with advanced async capabilities with automatic implicit concurrency",
   "license": "BSD-2-Clause",
   "author": "Angel Popov<geleto@gmail.com>",
@@ -19,7 +19,8 @@
     "browser/**",
     "dist/**",
     "src/**",
-    "dist/index.d.ts"
+    "dist/index.d.ts",
+    "scripts/dev-install.js"
   ],
   "dependencies": {
     "@babel/plugin-transform-classes": "^7.25.9",
