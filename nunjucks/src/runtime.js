@@ -244,12 +244,42 @@ class AsyncFrame extends Frame {
     }
   }
 
+  /*
   _resolveAsyncVar(varName) {
     let value = this.asyncVars[varName];
     let resolveFunc = this.promiseResolves[varName];
     resolveFunc(value);
     //@todo - if the var is the same promise - set it to the value
     //this cleanup may not be needed:
+    delete this.promiseResolves[varName];
+    if (Object.keys(this.promiseResolves).length === 0) {
+      this.promiseResolves = undefined;
+    }
+  }
+  */
+
+  _resolveAsyncVar(varName) {
+    let value = this.asyncVars[varName];
+    let resolveFunc = this.promiseResolves[varName];
+
+    if (!resolveFunc) {
+      console.error(`No resolve function for variable ${varName}`);
+      return;
+    }
+
+    if (value && typeof value.then === 'function') {
+      value.then(resolvedValue => {
+        resolveFunc(resolvedValue);
+      }).catch(err => {
+        resolveFunc(Promise.reject(err));
+      });
+    } else {
+      resolveFunc(value);
+    }
+
+    //@todo - if the var is the same promise - set it to the value
+    //this cleanup may not be needed:
+    // Cleanup
     delete this.promiseResolves[varName];
     if (Object.keys(this.promiseResolves).length === 0) {
       this.promiseResolves = undefined;
