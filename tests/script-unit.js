@@ -9,7 +9,7 @@ const {
   validateBlockStructure
 } = require('../nunjucks/src/script');
 
-describe('Cascada Script Converter', function() {
+describe('Cascada Script Converter Unit', function() {
   // Unit tests for getFirstWord function
   describe('getFirstWord', function() {
     it('should return the first word of a string', function() {
