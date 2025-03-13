@@ -473,4 +473,114 @@ describe('Cascada Script Converter', function() {
       expect(result.template).to.contain('{{ "After comment" }}');
     });
   });
+
+  // Additional unit tests for script converter syntax coverage
+
+  describe('Extended Cascada Script Syntax Tests', function () {
+
+    describe('Complex Block Structures', function () {
+      it('should detect errors in deeply nested mismatched tags', function () {
+        const lines = [
+          { content: 'for x in range(10)', isComment: false },
+          { content: '  if x > 5', isComment: false },
+          { content: '    while x < 9', isComment: false },
+          { content: '      print x', isComment: false },
+          { content: '    endwhile', isComment: false },
+          { content: '  endfor', isComment: false }, // Intentional mismatch
+          { content: 'endif', isComment: false },
+        ];
+
+        const result = validateBlockStructure(lines);
+        expect(result.valid).to.be(false);
+        expect(result.error).to.contain('Unexpected \'endfor\'');
+      });
+
+      it('should validate correctly nested complex tags', function () {
+        const lines = [
+          { content: 'block header', isComment: false },
+          { content: '  for user in users', isComment: false },
+          { content: '    if user.active', isComment: false },
+          { content: '      print user.name', isComment: false },
+          { content: '    endif', isComment: false },
+          { content: '  endfor', isComment: false },
+          { content: 'endblock', isComment: false },
+        ];
+
+        const result = validateBlockStructure(lines);
+        expect(result.valid).to.be(true);
+      });
+    });
+
+    describe('Edge Case Parsing', function () {
+      it('should handle lines with unusual whitespace correctly', function () {
+        const script = 'set   x   =   10';
+        const result = scriptToTemplate(script);
+
+        expect(result.error).to.be(null);
+        expect(result.template).to.equal('{% set   x   =   10 %}\n');
+      });
+
+      it('should correctly parse lines containing Unicode characters', function () {
+        const script = 'print "Привет мир!"';
+        const result = scriptToTemplate(script);
+
+        expect(result.error).to.be(null);
+        expect(result.template).to.contain('{{ "Привет мир!" }}');
+      });
+
+      it('should handle extremely long lines gracefully', function () {
+        const longExpression = 'set long = ' + '1 + '.repeat(1000) + '1';
+        const result = scriptToTemplate(longExpression);
+
+        expect(result.error).to.be(null);
+        expect(result.template).to.contain('{% set long =');
+        expect(result.template.length).to.be.greaterThan(1000);
+      });
+    });
+
+    describe('Comment Handling', function () {
+      it('should handle comment immediately followed by code', function () {
+        const script = '// comment\nprint "Hello"';
+        const result = scriptToTemplate(script);
+
+        expect(result.error).to.be(null);
+        expect(result.template).to.equal('{# comment #}\n{{ "Hello" }}\n');
+      });
+
+      it('should handle code immediately followed by comment', function () {
+        const script = 'print "Hello"\n// comment';
+        const result = scriptToTemplate(script);
+
+        expect(result.error).to.be(null);
+        expect(result.template).to.equal('{{ "Hello" }}\n{# comment #}\n');
+      });
+
+      it('should convert multi-line comment with internal asterisks correctly', function() {
+        const script = '/* This is a\n * multi-line\n * comment */';
+        const result = scriptToTemplate(script);
+
+        expect(result.error).to.be(null);
+        expect(result.template).to.contain('{# This is a * multi-line * comment #}');
+      });
+    });
+
+    describe('Reserved Keyword Edge Cases', function () {
+      it('should handle lines where reserved keywords appear as substrings of identifiers', function () {
+        const script = 'set foreacher = 10';
+        const result = scriptToTemplate(script);
+
+        expect(result.error).to.be(null);
+        expect(result.template).to.contain('{% set foreacher = 10 %}');
+      });
+
+      it('should handle reserved keywords used in strings correctly', function () {
+        const script = 'print "This is not a for loop"';
+        const result = scriptToTemplate(script);
+
+        expect(result.error).to.be(null);
+        expect(result.template).to.contain('{{ "This is not a for loop" }}');
+      });
+    });
+  });
+
 });
