@@ -314,22 +314,31 @@ function isStartOfContinuation(line, lineIndex, allLines) {
 
   // Check if next non-comment line indicates continuation
   if (lineIndex + 1 < allLines.length) {
-    // Find the next non-comment line
     let nextNonCommentIndex = lineIndex + 1;
     let nextLine = '';
 
     while (nextNonCommentIndex < allLines.length) {
       nextLine = allLines[nextNonCommentIndex].trim();
       if (!nextLine || nextLine.startsWith('//') || nextLine.startsWith('/*')) {
-        // Skip empty lines and comments
         nextNonCommentIndex++;
       } else {
         break;
       }
     }
 
-    if (nextNonCommentIndex < allLines.length && isContinuationOfExpression(nextLine)) {
-      return true;
+    if (nextNonCommentIndex < allLines.length) {
+      // Add this check before isContinuationOfExpression
+      const nextFirstWord = getFirstWord(nextLine);
+      const nextBlockType = determineBlockType(nextFirstWord);
+
+      // If next line is a block structure, it's NOT a continuation
+      if (nextBlockType) {
+        return false;
+      }
+
+      if (isContinuationOfExpression(nextLine)) {
+        return true;
+      }
     }
   }
 
