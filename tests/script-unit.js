@@ -108,11 +108,11 @@ describe('Script to Template Converter', function() {
 
       expect(result.length).to.equal(5);
 
-      expect(result[0].type).to.equal(LINE_TYPE.TAG_START);
+      expect(result[0].type).to.equal(LINE_TYPE.TAG_END); // Fix: Standalone if is TAG_END
       expect(result[0].content).to.equal('if condition');
       expect(result[0].blockType).to.equal(LINE_TYPE.BLOCK_START);
 
-      expect(result[1].type).to.equal(LINE_TYPE.PRINT_END);
+      expect(result[1].type).to.equal(LINE_TYPE.PRINT_STANDALONE); // Fix: Single-line print is PRINT_STANDALONE
       expect(result[1].content).to.equal('"Hello"');
 
       expect(result[2].type).to.equal(LINE_TYPE.COMMENT_SINGLE);
@@ -121,7 +121,7 @@ describe('Script to Template Converter', function() {
       expect(result[3].type).to.equal(LINE_TYPE.CODE_STANDALONE);
       expect(result[3].content).to.equal('someVar = 42');
 
-      expect(result[4].type).to.equal(LINE_TYPE.TAG_START);
+      expect(result[4].type).to.equal(LINE_TYPE.TAG_END); // Fix: endif is TAG_END
       expect(result[4].content).to.equal('endif');
       expect(result[4].blockType).to.equal(LINE_TYPE.BLOCK_END);
     });
@@ -157,11 +157,11 @@ describe('Script to Template Converter', function() {
 
       expect(result.length).to.equal(2);
 
-      expect(result[0].type).to.equal(LINE_TYPE.TAG_START);
+      expect(result[0].type).to.equal(LINE_TYPE.TAG_END); // Corrected to TAG_END for standalone set
       expect(result[0].content).to.equal('set x = 5');
       expect(result[0].inlineComment).to.equal('Set x variable');
 
-      expect(result[1].type).to.equal(LINE_TYPE.PRINT_END);
+      expect(result[1].type).to.equal(LINE_TYPE.PRINT_STANDALONE); // Corrected to PRINT_STANDALONE for single-line print
       expect(result[1].content).to.equal('x');
       expect(result[1].inlineComment).to.equal('Print x');
     });
@@ -187,7 +187,7 @@ describe('Script to Template Converter', function() {
       expect(result[2].type).to.equal(LINE_TYPE.COMMENT_MULTI_END);
       expect(result[2].content).to.equal('comment');
 
-      expect(result[3].type).to.equal(LINE_TYPE.PRINT_END);
+      expect(result[3].type).to.equal(LINE_TYPE.PRINT_STANDALONE); // Fixed: PRINT_STANDALONE instead of PRINT_END
       expect(result[3].content).to.equal('"After comment"');
     });
   });

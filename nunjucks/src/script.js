@@ -366,115 +366,86 @@ function isContinuationOfExpression(line) {
 function parseLines(lines) {
   const parsedLines = [];
   let prevLineType = null;
+  let currentCommentBuffer = null; // Buffer for multi-line comments
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trimStart();
     const indent = line.indexOf(trimmed);
 
-    // Handle empty lines
     if (!trimmed) {
-      parsedLines.push({
-        content: '',
-        indentation: 0,
-        type: LINE_TYPE.EMPTY,
-        blockType: null
-      });
+      parsedLines.push({ content: '', indentation: 0, type: LINE_TYPE.EMPTY, blockType: null });
       continue;
     }
 
-    let lineInfo = {
-      content: trimmed,
-      indentation: indent,
-      type: null,
-      blockType: null
-    };
+    let lineInfo = { content: trimmed, indentation: indent, type: null, blockType: null };
 
-    // Check for comments first
     if (trimmed.startsWith('//')) {
-      // Single-line comment
       lineInfo.content = trimmed.substring(2).trim();
       lineInfo.type = LINE_TYPE.COMMENT_SINGLE;
-    }
-    else if (trimmed.startsWith('/*') && trimmed.includes('*/')) {
-      // Single-line /* ... */ comment
+    } else if (trimmed.startsWith('/*') && trimmed.includes('*/')) {
       lineInfo.content = trimmed.substring(2, trimmed.indexOf('*/')).trim();
       lineInfo.type = LINE_TYPE.COMMENT_SINGLE;
-    }
-    else if (trimmed.startsWith('/*')) {
-      // Start of multi-line comment
+    } else if (trimmed.startsWith('/*')) {
       lineInfo.content = trimmed.substring(2).trim();
       lineInfo.type = LINE_TYPE.COMMENT_MULTI_START;
-    }
-    else if (prevLineType === LINE_TYPE.COMMENT_MULTI_START ||
-      prevLineType === LINE_TYPE.COMMENT_MULTI_MIDDLE) {
-      // Middle or end of multi-line comment
+    } else if (prevLineType === LINE_TYPE.COMMENT_MULTI_START || prevLineType === LINE_TYPE.COMMENT_MULTI_MIDDLE) {
       if (trimmed.includes('*/')) {
-        // End of comment
         lineInfo.content = trimmed.substring(0, trimmed.indexOf('*/')).trim();
-        if (lineInfo.content.startsWith('*')) {
-          lineInfo.content = lineInfo.content.substring(1).trim();
-        }
+        if (lineInfo.content.startsWith('*')) lineInfo.content = lineInfo.content.substring(1).trim();
         lineInfo.type = LINE_TYPE.COMMENT_MULTI_END;
       } else {
-        // Middle of comment
         lineInfo.content = trimmed;
-        if (lineInfo.content.startsWith('*')) {
-          lineInfo.content = lineInfo.content.substring(1).trim();
-        }
+        if (lineInfo.content.startsWith('*')) lineInfo.content = lineInfo.content.substring(1).trim();
         lineInfo.type = LINE_TYPE.COMMENT_MULTI_MIDDLE;
       }
-    }
-    // Handle inline comments - keep them on the same line
-    else {
+    } else {
       const commentPos = findCommentOutsideString(trimmed);
       if (commentPos >= 0) {
         const code = trimmed.substring(0, commentPos).trim();
         const comment = trimmed.substring(commentPos + 2).trim();
         lineInfo.content = code;
-        lineInfo.inlineComment = comment; // Add inline comment to the line info
+        if ([LINE_TYPE.PRINT_START, LINE_TYPE.PRINT_CONTINUATION, LINE_TYPE.TAG_START, LINE_TYPE.TAG_CONTINUATION, LINE_TYPE.CODE_START, LINE_TYPE.CODE_CONTINUATION].includes(prevLineType)) {
+          currentCommentBuffer = currentCommentBuffer ? `${currentCommentBuffer}; ${comment}` : comment; // Buffer for multi-line
+        } else {
+          lineInfo.inlineComment = comment; // Immediate use for single-line
+        }
       }
 
-      // Now handle code lines
       const firstWord = getFirstWord(lineInfo.content);
 
-      // Prioritize continuation of multi-line constructs
-      if (prevLineType === LINE_TYPE.PRINT_START ||
-          prevLineType === LINE_TYPE.PRINT_CONTINUATION) {
+      if (prevLineType === LINE_TYPE.PRINT_START || prevLineType === LINE_TYPE.PRINT_CONTINUATION) {
         const isLastLine = !isStartOfContinuation(lineInfo.content, i, lines);
         lineInfo.type = isLastLine ? LINE_TYPE.PRINT_END : LINE_TYPE.PRINT_CONTINUATION;
-      }
-      else if (prevLineType === LINE_TYPE.CODE_START ||
-        prevLineType === LINE_TYPE.CODE_CONTINUATION) {
+        if (isLastLine && currentCommentBuffer) {
+          lineInfo.inlineComment = currentCommentBuffer;
+          currentCommentBuffer = null;
+        }
+      } else if (prevLineType === LINE_TYPE.CODE_START || prevLineType === LINE_TYPE.CODE_CONTINUATION) {
         const isLastLine = !isStartOfContinuation(lineInfo.content, i, lines);
         lineInfo.type = isLastLine ? LINE_TYPE.CODE_END : LINE_TYPE.CODE_CONTINUATION;
-      }
-      else if (prevLineType === LINE_TYPE.TAG_START ||
-        prevLineType === LINE_TYPE.TAG_CONTINUATION) {
+        if (isLastLine && currentCommentBuffer) {
+          lineInfo.inlineComment = currentCommentBuffer;
+          currentCommentBuffer = null;
+        }
+      } else if (prevLineType === LINE_TYPE.TAG_START || prevLineType === LINE_TYPE.TAG_CONTINUATION) {
         const isLastLine = !isStartOfContinuation(lineInfo.content, i, lines);
         lineInfo.type = isLastLine ? LINE_TYPE.TAG_END : LINE_TYPE.TAG_CONTINUATION;
-      }
-      // This is a new construct - classify it
-      else if (firstWord === 'print') {
+        if (isLastLine && currentCommentBuffer) {
+          lineInfo.inlineComment = currentCommentBuffer;
+          currentCommentBuffer = null;
+        }
+      } else if (firstWord === 'print') {
         lineInfo.content = lineInfo.content.substring(5).trim();
         const willContinue = isStartOfContinuation(lineInfo.content, i, lines);
         lineInfo.type = willContinue ? LINE_TYPE.PRINT_START : LINE_TYPE.PRINT_STANDALONE;
-      }
-      else if (RESERVED_KEYWORDS.has(firstWord)) {
+      } else if (RESERVED_KEYWORDS.has(firstWord)) {
         lineInfo.blockType = determineBlockType(firstWord);
         const willContinue = isStartOfContinuation(lineInfo.content, i, lines);
         lineInfo.type = willContinue ? LINE_TYPE.TAG_START : LINE_TYPE.TAG_END;
-      }
-      else {
-        // Fix: Ensure lines following PRINT_START are treated as part of print if no new construct
-        if ((prevLineType === LINE_TYPE.PRINT_START || prevLineType === LINE_TYPE.PRINT_CONTINUATION) &&
-            !firstWord) { // No new keyword means continuation of previous print
-          const isLastLine = !isStartOfContinuation(lineInfo.content, i, lines);
-          lineInfo.type = isLastLine ? LINE_TYPE.PRINT_END : LINE_TYPE.PRINT_CONTINUATION;
-        } else {
-          const willContinue = isStartOfContinuation(lineInfo.content, i, lines);
-          lineInfo.type = willContinue ? LINE_TYPE.CODE_START : LINE_TYPE.CODE_STANDALONE;
-        }
+      } else {
+        const willContinue = isStartOfContinuation(lineInfo.content, i, lines);
+        lineInfo.type = willContinue ? LINE_TYPE.CODE_START : LINE_TYPE.CODE_STANDALONE;
       }
     }
 
@@ -563,93 +534,67 @@ function validateBlockStructure(parsedLines) {
  */
 function convertLinesToTemplate(parsedLines) {
   const templateLines = [];
-
   for (const line of parsedLines) {
-    if (!line.type) {
-      continue; // Skip lines without a type (shouldn't happen)
-    }
-
+    if (!line.type) continue;
     const indent = ' '.repeat(line.indentation);
     let output = '';
-
     switch (line.type) {
       case LINE_TYPE.EMPTY:
         output = '';
         break;
-
       case LINE_TYPE.COMMENT_SINGLE:
         output = `${indent}{# ${line.content} #}`;
         break;
-
       case LINE_TYPE.COMMENT_MULTI_START:
         output = `${indent}{# ${line.content}`;
         break;
-
       case LINE_TYPE.COMMENT_MULTI_MIDDLE:
         output = `${indent}   ${line.content}`;
         break;
-
       case LINE_TYPE.COMMENT_MULTI_END:
         output = `${indent}   ${line.content} #}`;
         break;
-
       case LINE_TYPE.PRINT_START:
         output = `${indent}{{- ${line.content}`;
         break;
-
       case LINE_TYPE.PRINT_CONTINUATION:
         output = `${indent}${line.content}`;
         break;
-
       case LINE_TYPE.PRINT_END:
         output = `${indent}${line.content} -}}`;
         break;
-
       case LINE_TYPE.PRINT_STANDALONE:
         output = `${indent}{{- ${line.content} -}}`;
         break;
-
       case LINE_TYPE.TAG_START:
         output = `${indent}{%- ${line.content} -}`;
         break;
-
       case LINE_TYPE.TAG_CONTINUATION:
         output = `${indent}${line.content}`;
         break;
-
       case LINE_TYPE.TAG_END:
-        // Fix for Test 7: Ensure all TAG_END (including BLOCK_MIDDLE like 'else') use full tag syntax
         output = `${indent}{%- ${line.content} -%}`;
         break;
-
       case LINE_TYPE.CODE_STANDALONE:
         output = `${indent}{%- do ${line.content} -%}`;
         break;
-
       case LINE_TYPE.CODE_START:
         output = `${indent}{%- do ${line.content}`;
         break;
-
       case LINE_TYPE.CODE_CONTINUATION:
         output = `${indent}${line.content}`;
         break;
-
       case LINE_TYPE.CODE_END:
         output = `${indent}${line.content} -%}`;
         break;
-
       default:
         output = `${indent}${line.content || ''}`;
     }
-
-    // Add inline comment if present
-    if (line.inlineComment) {
+    if (line.inlineComment && [LINE_TYPE.PRINT_END, LINE_TYPE.PRINT_STANDALONE, LINE_TYPE.TAG_END, LINE_TYPE.CODE_END, LINE_TYPE.CODE_STANDALONE].includes(line.type)) {
       output = addInlineComment(output, line.inlineComment);
     }
-
     templateLines.push(output);
   }
-
   return templateLines;
 }
 
