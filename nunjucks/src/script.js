@@ -183,7 +183,56 @@ function parseScript(scriptStr) {
   const lines = scriptStr.split('\n');
   const result = [];
 
-  // For detecting multi-line comments
+  // Special case: handle multi-line comments with asterisks directly
+  if (lines.length > 1 && lines[0].trim().startsWith('/*') && !lines[0].trim().endsWith('*/')) {
+    // Check if this is a multi-line comment with asterisks at line starts
+    const lastLineIndex = lines.findIndex(line => line.trim().endsWith('*/'));
+    if (lastLineIndex > 0) {
+      // Build the comment content, removing asterisks at the beginning of lines
+      let commentContent = lines[0].trim().substring(2); // Remove /*
+
+      for (let i = 1; i < lastLineIndex; i++) {
+        // Remove asterisk at the beginning of each line if present
+        const lineContent = lines[i].trim();
+        commentContent += ' ' + (lineContent.startsWith('*') ? lineContent.substring(1).trim() : lineContent);
+      }
+
+      // Process the last line to remove the closing */
+      const lastLine = lines[lastLineIndex].trim();
+      commentContent += ' ' + (lastLine.startsWith('*') ?
+        lastLine.substring(1, lastLine.length - 2).trim() :
+        lastLine.substring(0, lastLine.length - 2).trim());
+
+      // Add the processed comment
+      result.push({
+        content: `/*${commentContent}*/`,
+        indentation: 0,
+        isComment: true
+      });
+
+      // Process any remaining lines
+      for (let i = lastLineIndex + 1; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+        const indent = line.indexOf(trimmed);
+
+        if (!trimmed) {
+          result.push({ content: '', indentation: 0, isComment: false });
+          continue;
+        }
+
+        result.push({
+          content: trimmed,
+          indentation: indent,
+          isComment: trimmed.startsWith('//') || trimmed.startsWith('/*')
+        });
+      }
+
+      return result;
+    }
+  }
+
+  // Regular parsing for other cases
   let inMultiLineComment = false;
   let commentBuffer = '';
   let commentIndent = 0;
@@ -199,7 +248,9 @@ function parseScript(scriptStr) {
 
       if (endPos !== -1) {
         // End of comment found
-        commentBuffer += ' ' + line.substring(0, endPos).trim();
+        // Remove leading asterisk if present
+        const lineContent = line.substring(0, endPos).trim();
+        commentBuffer += ' ' + (lineContent.startsWith('*') ? lineContent.substring(1).trim() : lineContent);
 
         // Add the complete comment
         result.push({
@@ -221,8 +272,9 @@ function parseScript(scriptStr) {
         inMultiLineComment = false;
         commentBuffer = '';
       } else {
-        // Continue collecting comment
-        commentBuffer += ' ' + trimmed;
+        // Continue collecting comment - remove leading asterisk if present
+        const lineContent = trimmed;
+        commentBuffer += ' ' + (lineContent.startsWith('*') ? lineContent.substring(1).trim() : lineContent);
       }
     } else if (trimmed.startsWith('/*')) {
       // Start of a multi-line comment
@@ -239,7 +291,7 @@ function parseScript(scriptStr) {
         // Beginning of a multi-line comment
         inMultiLineComment = true;
         commentIndent = indent;
-        commentBuffer = trimmed.substring(2); // Remove the /*
+        commentBuffer = trimmed.substring(2).trim(); // Remove the /*
       }
     } else {
       // Regular line or single-line comment
@@ -323,13 +375,16 @@ function validateBlockStructure(lines) {
         return { valid: false, error: `Line ${i + 1}: '${word}' outside of 'if' block` };
       }
     } else if (Object.values(BLOCK_TAG_PAIRS).includes(word)) {
+      // This is a closing tag - check if it matches the expected one
       if (!stack.length) {
         return { valid: false, error: `Line ${i + 1}: Unexpected '${word}'` };
       }
 
       const topTag = stack[stack.length - 1].tag;
       if (BLOCK_TAG_PAIRS[topTag] !== word) {
-        return { valid: false, error: `Line ${i + 1}: Unexpected '${word}', was expecting '${BLOCK_TAG_PAIRS[topTag]}'` };
+        // This is a mismatched tag - report the mismatch
+        const expected = BLOCK_TAG_PAIRS[topTag];
+        return { valid: false, error: `Line ${i + 1}: Unexpected '${word}', was expecting '${expected}'` };
       }
 
       stack.pop();
@@ -365,6 +420,32 @@ function convertComment(comment) {
 }
 
 function scriptToTemplate(scriptStr) {
+  // Special case for multi-line comments with asterisks
+  if (scriptStr.trim().startsWith('/*') && scriptStr.includes('\n') && scriptStr.trim().endsWith('*/')) {
+    // Extract comment content without asterisks
+    const lines = scriptStr.trim().split('\n');
+    let content = lines[0].trim().substring(2); // Remove /*
+
+    for (let i = 1; i < lines.length - 1; i++) {
+      // Remove asterisk at the beginning of each line if present
+      const lineContent = lines[i].trim();
+      content += ' ' + (lineContent.startsWith('*') ? lineContent.substring(1).trim() : lineContent);
+    }
+
+    // Process the last line to remove the closing */
+    const lastLine = lines[lines.length - 1].trim();
+    if (lastLine.endsWith('*/')) {
+      content += ' ' + (lastLine.startsWith('*') ?
+        lastLine.substring(1, lastLine.length - 2).trim() :
+        lastLine.substring(0, lastLine.length - 2).trim());
+    }
+
+    return {
+      template: `{# ${content} #}\n`,
+      error: null
+    };
+  }
+
   // Handle special case of standalone end tag
   const trimmed = scriptStr.trim();
   let firstWord = getFirstWord(trimmed);
