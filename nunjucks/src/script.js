@@ -1,390 +1,549 @@
 /**
  * Cascada Script Processor
  *
+ * Cascada scripts provide a cleaner syntax for writing Cascada templates with less visual noise.
+ * Key Differences from Templates
+ *
+ * 1. **No Tag Delimiters**
+ *    - Skip `{%` and `%}` around tags
+ *    - Skip `{{` and `}}` around expressions
+ *
+ * 2. **Output with `print`**
+ *    - Use `print expression` instead of `{{ expression }}`
+ *    - Example: `print user.name` → `{{ user.name }}`
+ *
+ * 3. **Implicit `do` Statements**
+ *    - Any code line not starting with a reserved keyword becomes a `do` statement
+ *    - Example: `items.push("new")` → `{% do items.push("new") %}`
+ *
+ * 4. **Multi-line Expressions**
+ *    - Expressions can span multiple lines for readability
+ *    - Lines are automatically joined when they end with operators, open brackets, etc.
+ *    - Multi-line expressions are properly converted to template syntax
+ *
+ * 5. **Comments**
+ *    - Use standard JavaScript comments: `// single line` and `/* multi-line * /`
+ *    - These are converted to Cascada comments: `{# comment #}`
+ *
+ * Script syntax example:
+ *
+ * ```
+ * if user.isLoggedIn
+ *   print "Hello, " + user.name
+ *   for item in cart.items
+ *     items.push(processItem(item))
+ *     print item.name
+ *   endfor
+ * else
+ *   print "Please log in"
+ * endif
+ * ```
+ *
+ * Converts to:
+ *
+ * ```
+ * {% if user.isLoggedIn %}
+ *   {{ "Hello, " + user.name }}
+ *   {% for item in cart.items %}
+ *     {% do items.push(processItem(item)) %}
+ *     {{ item.name }}
+ *   {% endfor %}
+ * {% else %}
+ *   {{ "Please log in" }}
+ * {% endif %}
+ * ```
+ *
  * This module processes Cascada script files and converts them to Nunjucks/Cascada template files.
- * It handles line joining and the conversion between script and template syntax.
+ * It uses a line-by-line approach where each input line produces exactly one output line of template code.
  *
  * Key features:
- * - Use 'print' keyword for explicit output
- * - 'do' keyword is implicit for lines without a reserved keyword
- * - Automatic line joining for expressions that span multiple lines
- * - Conversion from script syntax to template syntax
- * - Comment handling, including single-line (//) and multi-line (/* * /) comments
- * - Error detection for mismatched block tags
- * - Support for all Cascada tags
+ * - Each line is classified based on its content and position in multi-line constructs
+ * - 'print' keyword is converted to {{ ... }} expression syntax
+ * - Reserved keywords are converted to {% ... %} tag syntax
+ * - Regular code lines are converted to {% do ... %} tags
+ * - Comments are properly handled and converted to template comments
+ * - Multi-line expressions are properly tracked across lines
+ * - Block structure validation ensures proper nesting of tags
  *
- * Note: While indentation may be used for readability, it is not required for
- * determining block structure since explicit end tags are used.
- * Avoid using reserved keywords (e.g., 'print', 'for', 'if') as variable or function names.
+ * The converter uses whitespace control (-) to ensure clean output.
  */
 
-const CONTINUATION_END_CHARS = '{([,?:-+=|&.!*/%^<>~';
-const CONTINUATION_END_OPERATORS = ['&&', '||', '==', '!=', '>=', '<=', '+=', '-=', '*=', '/=', '//', '**', '===', '!=='];
-const CONTINUATION_END_KEYWORDS = ['in ', 'is ', 'and ', 'or '];
+// Line type classifications
+const LINE_TYPE = {
+  // Comment lines
+  COMMENT_SINGLE: 'COMMENT_SINGLE',
+  COMMENT_MULTI_START: 'COMMENT_MULTI_START',
+  COMMENT_MULTI_MIDDLE: 'COMMENT_MULTI_MIDDLE',
+  COMMENT_MULTI_END: 'COMMENT_MULTI_END',
 
-const CONTINUATION_START_CHARS = '})]{([?:-+=|&.!*/%^<>~';
-const CONTINUATION_START_OPERATORS = ['&&', '||', '==', '!=', '>=', '<='];
-const CONTINUATION_START_KEYWORDS = ['and', 'or', 'not', 'in', 'is', 'else', 'elif'];
+  // Tag/code structure
+  TAG_START: 'TAG_START',
+  TAG_CONTINUATION: 'TAG_CONTINUATION',
+  TAG_END: 'TAG_END',
 
-const BLOCK_TAGS = [
-  'for', 'if', 'block', 'macro', 'filter', 'call', 'raw', 'verbatim', 'while', 'try'
-];
+  // Print statements
+  PRINT_START: 'PRINT_START',
+  PRINT_CONTINUATION: 'PRINT_CONTINUATION',
+  PRINT_END: 'PRINT_END',
+  PRINT_STANDALONE: 'PRINT_STANDALONE', // New type for standalone print statements
 
-const LINE_TAGS = [
-  'set', 'include', 'extends', 'from', 'import', 'depends', 'do', 'resume', 'except', 'print'
-];
+  // Regular code (will become "do" tags)
+  CODE_STANDALONE: 'CODE_STANDALONE',
+  CODE_START: 'CODE_START',
+  CODE_CONTINUATION: 'CODE_CONTINUATION',
+  CODE_END: 'CODE_END',
 
-const BLOCK_TAG_PAIRS = {
-  'for': 'endfor', 'if': 'endif', 'block': 'endblock', 'macro': 'endmacro', 'filter': 'endfilter', 'call': 'endcall',
-  'raw': 'endraw', 'verbatim': 'endverbatim', 'while': 'endwhile', 'try': 'endtry'
+  // Block structure indicators (these are in addition to the line type)
+  BLOCK_START: 'BLOCK_START',
+  BLOCK_MIDDLE: 'BLOCK_MIDDLE',
+  BLOCK_END: 'BLOCK_END',
+
+  // Empty line
+  EMPTY: 'EMPTY'
+};
+
+// Configuration objects for syntax elements
+const SYNTAX = {
+  continuation: {
+    endChars: '{([,?:-+=|&.!*/%^<>~',
+    endOperators: ['&&', '||', '==', '!=', '>=', '<=', '+=', '-=', '*=', '/=', '//', '**', '===', '!=='],
+    endKeywords: ['in ', 'is ', 'and ', 'or '],
+
+    startChars: '})]{([?:-+=|&.!*/%^<>~',
+    startOperators: ['&&', '||', '==', '!=', '>=', '<='],
+    startKeywords: ['and', 'or', 'not', 'in', 'is', 'else', 'elif']
+  },
+
+  tags: {
+    block: [
+      'for', 'if', 'block', 'macro', 'filter', 'call', 'raw', 'verbatim', 'while', 'try'
+    ],
+    line: [
+      'set', 'include', 'extends', 'from', 'import', 'depends', 'do', 'resume', 'except', 'print'
+    ],
+    blockPairs: {
+      'for': 'endfor',
+      'if': 'endif',
+      'block': 'endblock',
+      'macro': 'endmacro',
+      'filter': 'endfilter',
+      'call': 'endcall',
+      'raw': 'endraw',
+      'verbatim': 'endverbatim',
+      'while': 'endwhile',
+      'try': 'endtry'
+    }
+  }
+};
+
+// Define line type transitions for continuations
+const LINE_TYPE_TRANSITIONS = {
+  [LINE_TYPE.TAG_START]: {
+    continue: LINE_TYPE.TAG_CONTINUATION,
+    end: LINE_TYPE.TAG_END
+  },
+  [LINE_TYPE.PRINT_START]: {
+    continue: LINE_TYPE.PRINT_CONTINUATION,
+    end: LINE_TYPE.PRINT_END
+  },
+  [LINE_TYPE.CODE_START]: {
+    continue: LINE_TYPE.CODE_CONTINUATION,
+    end: LINE_TYPE.CODE_END
+  },
+  [LINE_TYPE.TAG_CONTINUATION]: {
+    continue: LINE_TYPE.TAG_CONTINUATION,
+    end: LINE_TYPE.TAG_END
+  },
+  [LINE_TYPE.PRINT_CONTINUATION]: {
+    continue: LINE_TYPE.PRINT_CONTINUATION,
+    end: LINE_TYPE.PRINT_END
+  },
+  [LINE_TYPE.CODE_CONTINUATION]: {
+    continue: LINE_TYPE.CODE_CONTINUATION,
+    end: LINE_TYPE.CODE_END
+  }
 };
 
 // Create a set with all reserved keywords, including end tags
-const RESERVED_KEYWORDS = new Set([...BLOCK_TAGS, ...LINE_TAGS, 'else', 'elif']);
+const RESERVED_KEYWORDS = new Set([
+  ...SYNTAX.tags.block,
+  ...SYNTAX.tags.line,
+  'else',
+  'elif'
+]);
 
 // Add all end tags to reserved keywords
-Object.values(BLOCK_TAG_PAIRS).forEach(endTag => {
+Object.values(SYNTAX.tags.blockPairs).forEach(endTag => {
   RESERVED_KEYWORDS.add(endTag);
 });
 
-const getFirstWord = (s) => s.trimStart().split(/\s+/)[0] || null;
+// Helper to get the first word of a string
+function getFirstWord(s) {
+  return s.trimStart().split(/\s+/)[0] || null;
+}
 
-function shouldConcatenateWithNext(line) {
-  if (!line.trim()) return false;
-  if (line.trimStart().startsWith('//') || line.trimStart().startsWith('/*')) return false;
+/**
+ * Adds a comment to the end of a line if one exists
+ */
+function addInlineComment(line, comment) {
+  if (!comment) return line;
+  return `${line} {# ${comment} #}`;
+}
 
+/**
+ * Finds the position of '//' that represents a comment delimiter,
+ * excluding '//' inside string literals
+ * @param {string} line The line to check
+ * @return {number} Position of comment or -1 if not found
+ */
+function findCommentOutsideString(line) {
+  let inString = false;
+  let quoteChar = null;
+  let escapeNext = false;
+
+  for (let i = 0; i < line.length; i++) {
+    // Check if this character is escaped
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    // Set escape flag for next character
+    if (line[i] === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    // Handle quotes - toggle string state on unescaped quotes
+    if ((line[i] === '"' || line[i] === '\'')) {
+      if (!inString) {
+        inString = true;
+        quoteChar = line[i];
+      } else if (quoteChar === line[i]) {
+        inString = false;
+      }
+    }
+
+    // Check for comment start, but only if not inside a string
+    if (line[i] === '/' && line[i + 1] === '/' && !inString) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * Determine the block type for a line
+ */
+function determineBlockType(firstWord) {
+  if (SYNTAX.tags.block.includes(firstWord)) {
+    return LINE_TYPE.BLOCK_START;
+  }
+  else if (['else', 'elif', 'resume', 'except'].includes(firstWord)) {
+    return LINE_TYPE.BLOCK_MIDDLE;
+  }
+  else if (Object.values(SYNTAX.tags.blockPairs).includes(firstWord)) {
+    return LINE_TYPE.BLOCK_END;
+  }
+
+  return null;
+}
+
+/**
+ * Determine if a line is a continuation of a previous expression
+ * or if the next line should continue this line.
+ */
+function isStartOfContinuation(line, lineIndex, allLines) {
   const trimmed = line.trim();
 
-  // Check if line ends with any of the continuation characters
+  // Check for unclosed string delimiter
+  let inString = false;
+  let quoteChar = null;
+  let escapeNext = false;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    // Handle escape characters
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (trimmed[i] === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    // Toggle string state on quotes
+    if ((trimmed[i] === '"' || trimmed[i] === '\'')) {
+      if (!inString) {
+        inString = true;
+        quoteChar = trimmed[i];
+      } else if (quoteChar === trimmed[i]) {
+        inString = false;
+      }
+    }
+  }
+
+  // If we end in an open string, this line must continue
+  if (inString) {
+    return true;
+  }
+
+  // If this line ends with an explicit backslash continuation
+  if (trimmed.endsWith('\\')) {
+    return true;
+  }
+
+  // Check if line ends with continuation characters
   const lastChar = trimmed.slice(-1);
-  if (CONTINUATION_END_CHARS.includes(lastChar)) {
+  if (SYNTAX.continuation.endChars.includes(lastChar)) {
     return true;
   }
 
-  // Check if line ends with any of the continuation operators
-  for (const op of CONTINUATION_END_OPERATORS) {
-    if (trimmed.endsWith(op)) {
-      return true;
-    }
-  }
-
-  // Check if line ends with any of the continuation keywords
-  for (const keyword of CONTINUATION_END_KEYWORDS) {
-    const lineWithSpace = trimmed + ' '; // Add space to match keywords like "in "
-    if (lineWithSpace.endsWith(keyword)) {
-      return true;
-    }
-  }
-
-  // Check if the first word is a reserved keyword
-  // This matches the test expectation that lines starting with keywords return true
-  const firstWord = getFirstWord(trimmed);
-  if (RESERVED_KEYWORDS.has(firstWord)) {
+  // Check continuation operators
+  if (SYNTAX.continuation.endOperators.some(op => trimmed.endsWith(op))) {
     return true;
+  }
+
+  // Check continuation keywords
+  if (SYNTAX.continuation.endKeywords.some(keyword =>
+    trimmed.endsWith(keyword.trim()) || (trimmed + ' ').endsWith(keyword))) {
+    return true;
+  }
+
+  // Check if next non-comment line indicates continuation
+  if (lineIndex + 1 < allLines.length) {
+    // Find the next non-comment line
+    let nextNonCommentIndex = lineIndex + 1;
+    let nextLine = '';
+
+    while (nextNonCommentIndex < allLines.length) {
+      nextLine = allLines[nextNonCommentIndex].trim();
+      if (!nextLine || nextLine.startsWith('//') || nextLine.startsWith('/*')) {
+        // Skip empty lines and comments
+        nextNonCommentIndex++;
+      } else {
+        break;
+      }
+    }
+
+    if (nextNonCommentIndex < allLines.length && isContinuationOfExpression(nextLine)) {
+      return true;
+    }
   }
 
   return false;
 }
 
-function shouldConcatenateWithPrevious(line) {
+/**
+ * Determine if a line looks like a continuation of a previous line's expression
+ */
+function isContinuationOfExpression(line) {
   if (!line.trim()) return false;
-  if (line.trimStart().startsWith('//') || line.trimStart().startsWith('/*')) return false;
 
-  const trimmed = line.trimStart();
+  const trimmed = line.trim();
+
+  // Check if line starts with continuation characters
   const firstChar = trimmed[0];
-
-  // Check if line starts with any of the continuation characters
-  if (CONTINUATION_START_CHARS.includes(firstChar)) {
+  if (SYNTAX.continuation.startChars.includes(firstChar)) {
     return true;
   }
 
-  // Check if line starts with any of the continuation operators
-  for (const op of CONTINUATION_START_OPERATORS) {
-    if (trimmed.startsWith(op)) {
-      return true;
-    }
+  // Check continuation operators
+  if (SYNTAX.continuation.startOperators.some(op => trimmed.startsWith(op))) {
+    return true;
   }
 
-  // Check if the first word is a continuation keyword
+  // Check continuation keywords
   const firstWord = getFirstWord(trimmed);
-  return CONTINUATION_START_KEYWORDS.includes(firstWord);
+  return SYNTAX.continuation.startKeywords.includes(firstWord);
 }
 
-function joinLines(lines) {
-  // Convert string to array of lines if necessary
-  if (typeof lines === 'string') {
-    lines = lines.split('\n');
-  }
-
-  const result = [];
-  let current = null;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Skip empty lines or comments - add them as is
-    if (!line.trim() || line.trimStart().startsWith('//') || line.trimStart().startsWith('/*')) {
-      if (current !== null) {
-        result.push(current);
-        current = null;
-      }
-      result.push(line);
-      continue;
-    }
-
-    // Start a new line or continue the current one
-    if (current === null) {
-      current = line;
-    } else {
-      // Determine if we need a space between lines
-      const lastChar = current.trimEnd().slice(-1);
-      const firstChar = line.trimStart()[0];
-
-      // Special handling for operators
-      const isOperator = ['+', '-', '*', '/', '<', '>', '=', '&', '|', '!'].includes(firstChar);
-      const needsSpace = !(CONTINUATION_END_CHARS.includes(lastChar) && !isOperator) &&
-                        !(CONTINUATION_START_CHARS.includes(firstChar) && !isOperator);
-
-      current += (needsSpace ? ' ' : '') + line.trimStart();
-    }
-
-    // Check if we should continue with the next line
-    if (i + 1 < lines.length) {
-      const nextLine = lines[i + 1];
-      if (nextLine.trim() &&
-          !nextLine.trimStart().startsWith('//') &&
-          !nextLine.trimStart().startsWith('/*')) {
-
-        const shouldContinue = shouldConcatenateWithNext(current) ||
-                               shouldConcatenateWithPrevious(nextLine);
-
-        if (shouldContinue) {
-          continue; // Don't add to result yet, keep going
-        }
-      }
-    }
-
-    // Add the current line to the result and reset
-    if (current !== null) {
-      result.push(current);
-      current = null;
-    }
-  }
-
-  // Add any remaining current line
-  if (current !== null) {
-    result.push(current);
-  }
-
-  return result;
-}
-
-function parseScript(scriptStr) {
-  const lines = scriptStr.split('\n');
-  const result = [];
-
-  // Special case: handle multi-line comments with asterisks directly
-  if (lines.length > 1 && lines[0].trim().startsWith('/*') && !lines[0].trim().endsWith('*/')) {
-    // Check if this is a multi-line comment with asterisks at line starts
-    const lastLineIndex = lines.findIndex(line => line.trim().endsWith('*/'));
-    if (lastLineIndex > 0) {
-      // Build the comment content, removing asterisks at the beginning of lines
-      let commentContent = lines[0].trim().substring(2); // Remove /*
-
-      for (let i = 1; i < lastLineIndex; i++) {
-        // Remove asterisk at the beginning of each line if present
-        const lineContent = lines[i].trim();
-        commentContent += ' ' + (lineContent.startsWith('*') ? lineContent.substring(1).trim() : lineContent);
-      }
-
-      // Process the last line to remove the closing */
-      const lastLine = lines[lastLineIndex].trim();
-      commentContent += ' ' + (lastLine.startsWith('*') ?
-        lastLine.substring(1, lastLine.length - 2).trim() :
-        lastLine.substring(0, lastLine.length - 2).trim());
-
-      // Add the processed comment
-      result.push({
-        content: `/*${commentContent}*/`,
-        indentation: 0,
-        isComment: true
-      });
-
-      // Process any remaining lines
-      for (let i = lastLineIndex + 1; i < lines.length; i++) {
-        const line = lines[i];
-        const trimmed = line.trim();
-        const indent = line.indexOf(trimmed);
-
-        if (!trimmed) {
-          result.push({ content: '', indentation: 0, isComment: false });
-          continue;
-        }
-
-        result.push({
-          content: trimmed,
-          indentation: indent,
-          isComment: trimmed.startsWith('//') || trimmed.startsWith('/*')
-        });
-      }
-
-      return result;
-    }
-  }
-
-  // Regular parsing for other cases
-  let inMultiLineComment = false;
-  let commentBuffer = '';
-  let commentIndent = 0;
+/**
+ * Parse and classify each line of the script
+ */
+function parseLines(lines) {
+  const parsedLines = [];
+  let prevLineType = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trimStart();
     const indent = line.indexOf(trimmed);
 
-    if (inMultiLineComment) {
-      // Inside a multi-line comment, look for the end
-      const endPos = line.indexOf('*/');
+    // Handle empty lines
+    if (!trimmed) {
+      parsedLines.push({
+        content: '',
+        indentation: 0,
+        type: LINE_TYPE.EMPTY,
+        blockType: null
+      });
+      continue;
+    }
 
-      if (endPos !== -1) {
-        // End of comment found
-        // Remove leading asterisk if present
-        const lineContent = line.substring(0, endPos).trim();
-        commentBuffer += ' ' + (lineContent.startsWith('*') ? lineContent.substring(1).trim() : lineContent);
+    let lineInfo = {
+      content: trimmed,
+      indentation: indent,
+      type: null,
+      blockType: null
+    };
 
-        // Add the complete comment
-        result.push({
-          content: `/*${commentBuffer}*/`,
-          indentation: commentIndent,
-          isComment: true
-        });
-
-        // Process any remaining content after the comment
-        const remaining = line.substring(endPos + 2).trim();
-        if (remaining) {
-          result.push({
-            content: remaining,
-            indentation: indent + (endPos + 2),
-            isComment: false
-          });
+    // Check for comments first
+    if (trimmed.startsWith('//')) {
+      // Single-line comment
+      lineInfo.content = trimmed.substring(2).trim();
+      lineInfo.type = LINE_TYPE.COMMENT_SINGLE;
+    }
+    else if (trimmed.startsWith('/*') && trimmed.includes('*/')) {
+      // Single-line /* ... */ comment
+      lineInfo.content = trimmed.substring(2, trimmed.indexOf('*/')).trim();
+      lineInfo.type = LINE_TYPE.COMMENT_SINGLE;
+    }
+    else if (trimmed.startsWith('/*')) {
+      // Start of multi-line comment
+      lineInfo.content = trimmed.substring(2).trim();
+      lineInfo.type = LINE_TYPE.COMMENT_MULTI_START;
+    }
+    else if (prevLineType === LINE_TYPE.COMMENT_MULTI_START ||
+      prevLineType === LINE_TYPE.COMMENT_MULTI_MIDDLE) {
+      // Middle or end of multi-line comment
+      if (trimmed.includes('*/')) {
+        // End of comment
+        lineInfo.content = trimmed.substring(0, trimmed.indexOf('*/')).trim();
+        if (lineInfo.content.startsWith('*')) {
+          lineInfo.content = lineInfo.content.substring(1).trim();
         }
-
-        inMultiLineComment = false;
-        commentBuffer = '';
+        lineInfo.type = LINE_TYPE.COMMENT_MULTI_END;
       } else {
-        // Continue collecting comment - remove leading asterisk if present
-        const lineContent = trimmed;
-        commentBuffer += ' ' + (lineContent.startsWith('*') ? lineContent.substring(1).trim() : lineContent);
+        // Middle of comment
+        lineInfo.content = trimmed;
+        if (lineInfo.content.startsWith('*')) {
+          lineInfo.content = lineInfo.content.substring(1).trim();
+        }
+        lineInfo.type = LINE_TYPE.COMMENT_MULTI_MIDDLE;
       }
-    } else if (trimmed.startsWith('/*')) {
-      // Start of a multi-line comment
-      const endPos = line.indexOf('*/', 2);
-
-      if (endPos !== -1) {
-        // Single-line /* ... */ comment
-        result.push({
-          content: trimmed,
-          indentation: indent,
-          isComment: true
-        });
-      } else {
-        // Beginning of a multi-line comment
-        inMultiLineComment = true;
-        commentIndent = indent;
-        commentBuffer = trimmed.substring(2).trim(); // Remove the /*
+    }
+    // Handle inline comments - keep them on the same line
+    else {
+      const commentPos = findCommentOutsideString(trimmed);
+      if (commentPos >= 0) {
+        const code = trimmed.substring(0, commentPos).trim();
+        const comment = trimmed.substring(commentPos + 2).trim();
+        lineInfo.content = code;
+        lineInfo.inlineComment = comment; // Add inline comment to the line info
       }
-    } else {
-      // Regular line or single-line comment
-      if (trimmed.startsWith('//')) {
-        result.push({
-          content: trimmed,
-          indentation: indent,
-          isComment: true
-        });
-      } else {
-        // Handle inline comments
-        const commentIndex = trimmed.indexOf('//');
-        if (commentIndex >= 0) {
-          // Split the line at the comment
-          const code = trimmed.substring(0, commentIndex).trim();
-          const comment = trimmed.substring(commentIndex);
 
-          if (code) {
-            result.push({
-              content: code,
-              indentation: indent,
-              isComment: false
-            });
-          }
+      // Now handle code lines
+      const firstWord = getFirstWord(lineInfo.content);
 
-          result.push({
-            content: comment,
-            indentation: indent + commentIndex,
-            isComment: true
-          });
+      // Prioritize continuation of multi-line constructs
+      if (prevLineType === LINE_TYPE.PRINT_START ||
+          prevLineType === LINE_TYPE.PRINT_CONTINUATION) {
+        const isLastLine = !isStartOfContinuation(lineInfo.content, i, lines);
+        lineInfo.type = isLastLine ? LINE_TYPE.PRINT_END : LINE_TYPE.PRINT_CONTINUATION;
+      }
+      else if (prevLineType === LINE_TYPE.CODE_START ||
+        prevLineType === LINE_TYPE.CODE_CONTINUATION) {
+        const isLastLine = !isStartOfContinuation(lineInfo.content, i, lines);
+        lineInfo.type = isLastLine ? LINE_TYPE.CODE_END : LINE_TYPE.CODE_CONTINUATION;
+      }
+      else if (prevLineType === LINE_TYPE.TAG_START ||
+        prevLineType === LINE_TYPE.TAG_CONTINUATION) {
+        const isLastLine = !isStartOfContinuation(lineInfo.content, i, lines);
+        lineInfo.type = isLastLine ? LINE_TYPE.TAG_END : LINE_TYPE.TAG_CONTINUATION;
+      }
+      // This is a new construct - classify it
+      else if (firstWord === 'print') {
+        lineInfo.content = lineInfo.content.substring(5).trim();
+        const willContinue = isStartOfContinuation(lineInfo.content, i, lines);
+        lineInfo.type = willContinue ? LINE_TYPE.PRINT_START : LINE_TYPE.PRINT_STANDALONE;
+      }
+      else if (RESERVED_KEYWORDS.has(firstWord)) {
+        lineInfo.blockType = determineBlockType(firstWord);
+        const willContinue = isStartOfContinuation(lineInfo.content, i, lines);
+        lineInfo.type = willContinue ? LINE_TYPE.TAG_START : LINE_TYPE.TAG_END;
+      }
+      else {
+        // Fix: Ensure lines following PRINT_START are treated as part of print if no new construct
+        if ((prevLineType === LINE_TYPE.PRINT_START || prevLineType === LINE_TYPE.PRINT_CONTINUATION) &&
+            !firstWord) { // No new keyword means continuation of previous print
+          const isLastLine = !isStartOfContinuation(lineInfo.content, i, lines);
+          lineInfo.type = isLastLine ? LINE_TYPE.PRINT_END : LINE_TYPE.PRINT_CONTINUATION;
         } else {
-          // Regular code line with no comment
-          result.push({
-            content: trimmed,
-            indentation: indent,
-            isComment: false
-          });
+          const willContinue = isStartOfContinuation(lineInfo.content, i, lines);
+          lineInfo.type = willContinue ? LINE_TYPE.CODE_START : LINE_TYPE.CODE_STANDALONE;
         }
       }
     }
+
+    parsedLines.push(lineInfo);
+    prevLineType = lineInfo.type;
   }
 
-  // Handle any unclosed multi-line comment
-  if (inMultiLineComment) {
-    result.push({
-      content: `/*${commentBuffer}`,
-      indentation: commentIndent,
-      isComment: true
-    });
-  }
-
-  return result;
+  return parsedLines;
 }
 
-function validateBlockStructure(lines) {
+/**
+ * Validate the block structure of the script
+ */
+function validateBlockStructure(parsedLines) {
   const stack = [];
 
-  // First create a separate array for non-comments
-  const contentLines = lines.filter(({ content, isComment }) => content && !isComment);
+  for (let i = 0; i < parsedLines.length; i++) {
+    const line = parsedLines[i];
 
-  // Check if this is a special case with only a single standalone end tag
-  // In template mode, this is valid (e.g., {% endfor %})
-  if (contentLines.length === 1) {
-    const word = getFirstWord(contentLines[0].content);
-    if (Object.values(BLOCK_TAG_PAIRS).includes(word) &&
-        contentLines[0].content.trim() === word) {
-      return { valid: true };
+    // Skip non-block lines
+    if (!line.blockType) {
+      continue;
     }
-  }
 
-  for (let i = 0; i < contentLines.length; i++) {
-    const { content } = contentLines[i];
-    const word = getFirstWord(content);
-    if (!word) continue;
+    if (line.blockType === LINE_TYPE.BLOCK_START) {
+      const tag = getFirstWord(line.content);
+      stack.push({ tag, line: i + 1 });
+    } else if (line.blockType === LINE_TYPE.BLOCK_MIDDLE) {
+      const tag = getFirstWord(line.content);
 
-    if (BLOCK_TAG_PAIRS[word]) {
-      stack.push({ tag: word, line: i + 1 });
-    } else if (word === 'else' || word === 'elif') {
-      // Check if we're in an 'if' block
-      if (!stack.length || stack[stack.length - 1].tag !== 'if') {
-        return { valid: false, error: `Line ${i + 1}: '${word}' outside of 'if' block` };
-      }
-    } else if (Object.values(BLOCK_TAG_PAIRS).includes(word)) {
-      // This is a closing tag - check if it matches the expected one
       if (!stack.length) {
-        return { valid: false, error: `Line ${i + 1}: Unexpected '${word}'` };
+        return {
+          valid: false,
+          error: `Line ${i + 1}: '${tag}' outside of any block (content: "${line.content}")`
+        };
       }
 
       const topTag = stack[stack.length - 1].tag;
-      if (BLOCK_TAG_PAIRS[topTag] !== word) {
-        // This is a mismatched tag - report the mismatch
-        const expected = BLOCK_TAG_PAIRS[topTag];
-        return { valid: false, error: `Line ${i + 1}: Unexpected '${word}', was expecting '${expected}'` };
+      if (tag === 'else') {
+        if (topTag !== 'if' && topTag !== 'for') {
+          return {
+            valid: false,
+            error: `Line ${i + 1}: '${tag}' outside of 'if' or 'for' block (content: "${line.content}")`
+          };
+        }
+      } else if (tag === 'elif' && topTag !== 'if') {
+        return {
+          valid: false,
+          error: `Line ${i + 1}: '${tag}' outside of 'if' block (content: "${line.content}")`
+        };
+      }
+    } else if (line.blockType === LINE_TYPE.BLOCK_END) {
+      const tag = getFirstWord(line.content);
+
+      if (!stack.length) {
+        return {
+          valid: false,
+          error: `Line ${i + 1}: Unexpected '${tag}' (content: "${line.content}")`
+        };
+      }
+
+      const topTag = stack[stack.length - 1].tag;
+      const expectedEndTag = SYNTAX.tags.blockPairs[topTag];
+
+      if (expectedEndTag !== tag) {
+        return {
+          valid: false,
+          error: `Line ${i + 1}: Unexpected '${tag}', was expecting '${expectedEndTag}' (content: "${line.content}")`
+        };
       }
 
       stack.pop();
@@ -399,201 +558,152 @@ function validateBlockStructure(lines) {
   return { valid: true };
 }
 
-function convertComment(comment) {
-  // Extract the content of the comment
-  let content = '';
+/**
+ * Convert parsed lines to template lines
+ */
+function convertLinesToTemplate(parsedLines) {
+  const templateLines = [];
 
-  if (comment.startsWith('//')) {
-    content = comment.substring(2).trim();
-  } else if (comment.startsWith('/*') && comment.endsWith('*/')) {
-    content = comment.substring(2, comment.length - 2).trim();
-  } else if (comment.startsWith('/*')) {
-    content = comment.substring(2).trim();
-  } else {
-    return comment;
+  for (const line of parsedLines) {
+    if (!line.type) {
+      continue; // Skip lines without a type (shouldn't happen)
+    }
+
+    const indent = ' '.repeat(line.indentation);
+    let output = '';
+
+    switch (line.type) {
+      case LINE_TYPE.EMPTY:
+        output = '';
+        break;
+
+      case LINE_TYPE.COMMENT_SINGLE:
+        output = `${indent}{# ${line.content} #}`;
+        break;
+
+      case LINE_TYPE.COMMENT_MULTI_START:
+        output = `${indent}{# ${line.content}`;
+        break;
+
+      case LINE_TYPE.COMMENT_MULTI_MIDDLE:
+        output = `${indent}   ${line.content}`;
+        break;
+
+      case LINE_TYPE.COMMENT_MULTI_END:
+        output = `${indent}   ${line.content} #}`;
+        break;
+
+      case LINE_TYPE.PRINT_START:
+        output = `${indent}{{- ${line.content}`;
+        break;
+
+      case LINE_TYPE.PRINT_CONTINUATION:
+        output = `${indent}${line.content}`;
+        break;
+
+      case LINE_TYPE.PRINT_END:
+        output = `${indent}${line.content} -}}`;
+        break;
+
+      case LINE_TYPE.PRINT_STANDALONE:
+        output = `${indent}{{- ${line.content} -}}`;
+        break;
+
+      case LINE_TYPE.TAG_START:
+        output = `${indent}{%- ${line.content} -}`;
+        break;
+
+      case LINE_TYPE.TAG_CONTINUATION:
+        output = `${indent}${line.content}`;
+        break;
+
+      case LINE_TYPE.TAG_END:
+        // Fix for Test 7: Ensure all TAG_END (including BLOCK_MIDDLE like 'else') use full tag syntax
+        output = `${indent}{%- ${line.content} -%}`;
+        break;
+
+      case LINE_TYPE.CODE_STANDALONE:
+        output = `${indent}{%- do ${line.content} -%}`;
+        break;
+
+      case LINE_TYPE.CODE_START:
+        output = `${indent}{%- do ${line.content}`;
+        break;
+
+      case LINE_TYPE.CODE_CONTINUATION:
+        output = `${indent}${line.content}`;
+        break;
+
+      case LINE_TYPE.CODE_END:
+        output = `${indent}${line.content} -%}`;
+        break;
+
+      default:
+        output = `${indent}${line.content || ''}`;
+    }
+
+    // Add inline comment if present
+    if (line.inlineComment) {
+      output = addInlineComment(output, line.inlineComment);
+    }
+
+    templateLines.push(output);
   }
 
-  // Normalize whitespace in the content
-  content = content.replace(/\s+/g, ' ').trim();
-
-  return `{# ${content} #}`;
+  return templateLines;
 }
 
+/**
+ * Main function to convert script to template
+ */
 function scriptToTemplate(scriptStr) {
-  // Special case for multi-line comments with asterisks
-  if (scriptStr.trim().startsWith('/*') && scriptStr.includes('\n') && scriptStr.trim().endsWith('*/')) {
-    // Extract comment content without asterisks
-    const lines = scriptStr.trim().split('\n');
-    let content = lines[0].trim().substring(2); // Remove /*
-
-    for (let i = 1; i < lines.length - 1; i++) {
-      // Remove asterisk at the beginning of each line if present
-      const lineContent = lines[i].trim();
-      content += ' ' + (lineContent.startsWith('*') ? lineContent.substring(1).trim() : lineContent);
-    }
-
-    // Process the last line to remove the closing */
-    const lastLine = lines[lines.length - 1].trim();
-    if (lastLine.endsWith('*/')) {
-      content += ' ' + (lastLine.startsWith('*') ?
-        lastLine.substring(1, lastLine.length - 2).trim() :
-        lastLine.substring(0, lastLine.length - 2).trim());
-    }
-
-    return {
-      template: `{# ${content} #}\n`,
-      error: null
-    };
-  }
-
   // Handle special case of standalone end tag
   const trimmed = scriptStr.trim();
   let firstWord = getFirstWord(trimmed);
 
-  if (Object.values(BLOCK_TAG_PAIRS).includes(firstWord) && trimmed === firstWord) {
+  if (Object.values(SYNTAX.tags.blockPairs).includes(firstWord) && trimmed === firstWord) {
+    // Preserve indentation for standalone end tags
+    const indent = scriptStr.indexOf(trimmed);
     return {
-      template: `{% ${firstWord} %}\n`,
+      template: `${' '.repeat(indent)}{% ${firstWord} %}\n`,
       error: null
     };
   }
 
-  // Handle simple one-line cases directly
-  if (!trimmed.includes('\n')) {
-    if (firstWord === 'print') {
-      return {
-        template: `{{ ${trimmed.substring(5).trim()} }}\n`,
-        error: null
-      };
-    } else if (RESERVED_KEYWORDS.has(firstWord)) {
-      return {
-        template: `{% ${trimmed} %}\n`,
-        error: null
-      };
-    }
-  }
+  // Split the script into lines
+  const lines = scriptStr.split('\n');
 
-  // Simple case: Process multi-line indented scripts directly line by line
-  // This bypasses the complex validation for straightforward cases
-  if (scriptStr.includes('\n')) {
-    const lines = scriptStr.split('\n');
-    const templateLines = [];
+  // Parse and classify each line
+  const parsedLines = parseLines(lines);
 
-    // Check for obvious block structure issues
-    const blockWords = lines.map(line => getFirstWord(line.trim()))
-      .filter(word => BLOCK_TAGS.includes(word) ||
-        Object.values(BLOCK_TAG_PAIRS).includes(word));
-
-    let stack = [];
-    let valid = true;
-
-    for (const word of blockWords) {
-      if (BLOCK_TAGS.includes(word)) {
-        stack.push(word);
-      } else if (Object.values(BLOCK_TAG_PAIRS).includes(word)) {
-        if (!stack.length) {
-          valid = false;
-          break;
-        }
-
-        const expected = Object.entries(BLOCK_TAG_PAIRS)
-          .find(([_, endTag]) => endTag === word)?.[0];
-        if (stack[stack.length - 1] !== expected) {
-          valid = false;
-          break;
-        }
-        stack.pop();
-      }
-    }
-
-    // If all blocks are properly closed, process directly
-    if (valid && stack.length === 0) {
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        const indent = line.indexOf(trimmedLine);
-
-        if (!trimmedLine) {
-          templateLines.push('');
-          continue;
-        }
-
-        if (trimmedLine.startsWith('//')) {
-          templateLines.push(' '.repeat(indent) + `{# ${trimmedLine.substring(2).trim()} #}`);
-          continue;
-        }
-
-        if (trimmedLine.startsWith('/*') && trimmedLine.endsWith('*/')) {
-          templateLines.push(' '.repeat(indent) +
-                          `{# ${trimmedLine.substring(2, trimmedLine.length - 2).trim()} #}`);
-          continue;
-        }
-
-        firstWord = getFirstWord(trimmedLine);
-
-        if (firstWord === 'print') {
-          templateLines.push(' '.repeat(indent) + `{{ ${trimmedLine.substring(5).trim()} }}`);
-        } else if (RESERVED_KEYWORDS.has(firstWord)) {
-          templateLines.push(' '.repeat(indent) + `{% ${trimmedLine} %}`);
-        } else {
-          templateLines.push(' '.repeat(indent) + `{% do ${trimmedLine} %}`);
-        }
-      }
-
-      return {
-        template: templateLines.join('\n') + '\n',
-        error: null
-      };
-    }
-  }
-
-  // First join lines that are part of the same expression
-  const joinedLines = joinLines(scriptStr.split('\n'));
-
-  // Parse the script to handle comments
-  const parsedLines = parseScript(joinedLines.join('\n'));
-
-  // Validate the block structure BEFORE attempting to generate a template
-  const { valid, error } = validateBlockStructure(parsedLines);
-  if (!valid) {
-    return { template: null, error };
+  // Validate block structure
+  const validationResult = validateBlockStructure(parsedLines);
+  if (!validationResult.valid) {
+    return { template: null, error: validationResult.error };
   }
 
   // Convert parsed lines to template lines
-  const templateLines = [];
+  const templateLines = convertLinesToTemplate(parsedLines);
 
-  for (const { content, indentation, isComment } of parsedLines) {
-    if (!content.trim()) {
-      templateLines.push('');
-      continue;
-    }
-
-    if (isComment) {
-      templateLines.push(' '.repeat(indentation) + convertComment(content));
-      continue;
-    }
-
-    firstWord = getFirstWord(content);
-
-    if (firstWord === 'print') {
-      templateLines.push(' '.repeat(indentation) + `{{ ${content.substring(5).trim()} }}`);
-    } else if (RESERVED_KEYWORDS.has(firstWord)) {
-      templateLines.push(' '.repeat(indentation) + `{% ${content} %}`);
-    } else {
-      templateLines.push(' '.repeat(indentation) + `{% do ${content} %}`);
-    }
-  }
-
-  // Join the template with newlines
-  const template = templateLines.join('\n') + '\n';
-
-  return { template, error: null };
+  // Join the template with newlines and return
+  return {
+    template: templateLines.join('\n') + '\n',
+    error: null
+  };
 }
 
 module.exports = {
   scriptToTemplate,
   getFirstWord,
-  shouldConcatenateWithNext,
-  shouldConcatenateWithPrevious,
-  joinLines,
-  parseScript,
-  validateBlockStructure
+  validateBlockStructure,
+  parseLines,
+  isStartOfContinuation,
+  isContinuationOfExpression,
+  convertLinesToTemplate,
+  findCommentOutsideString,
+  determineBlockType,
+  addInlineComment,
+  LINE_TYPE,
+  SYNTAX,
+  LINE_TYPE_TRANSITIONS
 };
