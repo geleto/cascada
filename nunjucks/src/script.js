@@ -576,7 +576,7 @@ function convertLinesToTemplate(parsedLines) {
         output = `${indent}{{- ${line.content} -}}`;
         break;
       case LINE_TYPE.TAG_START:
-        output = `${indent}{%- ${line.content} -}`;
+        output = `${indent}{%- ${line.content} -%}`;
         break;
       case LINE_TYPE.TAG_CONTINUATION:
         output = `${indent}${line.content}`;
