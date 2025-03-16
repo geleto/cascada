@@ -471,7 +471,10 @@ function parseLines(lines) {
         lineInfo.type = willContinue ? LINE_TYPE.PRINT_START : LINE_TYPE.PRINT_STANDALONE;
       } else if (RESERVED_KEYWORDS.has(firstWord)) {
         lineInfo.blockType = determineBlockType(firstWord);
-        const willContinue = isStartOfContinuation(lineInfo.content, i, lines);
+        // Only consider it a TAG_START if it's a multi-line expression excluding block keywords
+        const willContinue = isStartOfContinuation(lineInfo.content, i, lines) &&
+                             !SYNTAX.tags.block.includes(firstWord) &&
+                             !Object.values(SYNTAX.tags.blockPairs).includes(firstWord);
         lineInfo.type = willContinue ? LINE_TYPE.TAG_START : LINE_TYPE.TAG_END;
       } else {
         const willContinue = isStartOfContinuation(lineInfo.content, i, lines);
