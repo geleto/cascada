@@ -409,13 +409,26 @@ function parseLines(lines) {
         lineInfo.type = LINE_TYPE.COMMENT_MULTI_MIDDLE;
       }
     } else {
+      // Handle comments within code lines
       const commentPos = findCommentOutsideString(trimmed);
       if (commentPos >= 0) {
         const code = trimmed.substring(0, commentPos).trim();
         const comment = trimmed.substring(commentPos + 2).trim();
         lineInfo.content = code;
-        if ([LINE_TYPE.PRINT_START, LINE_TYPE.PRINT_CONTINUATION, LINE_TYPE.TAG_START, LINE_TYPE.TAG_CONTINUATION, LINE_TYPE.CODE_START, LINE_TYPE.CODE_CONTINUATION].includes(prevLineType)) {
-          currentCommentBuffer = currentCommentBuffer ? `${currentCommentBuffer}; ${comment}` : comment; // Buffer for multi-line
+
+        // Check if this is continuing a multi-line expression
+        const isPartOfMultiline = [
+          LINE_TYPE.PRINT_START, LINE_TYPE.PRINT_CONTINUATION,
+          LINE_TYPE.TAG_START, LINE_TYPE.TAG_CONTINUATION,
+          LINE_TYPE.CODE_START, LINE_TYPE.CODE_CONTINUATION
+        ].includes(prevLineType);
+
+        // Check if this will start a new multi-line expression
+        const willStartMultiline = isStartOfContinuation(code, i, lines);
+
+        // Buffer comments for both existing multi-line expressions AND new ones
+        if (isPartOfMultiline || willStartMultiline) {
+          currentCommentBuffer = currentCommentBuffer ? `${currentCommentBuffer}; ${comment}` : comment;
         } else {
           lineInfo.inlineComment = comment; // Immediate use for single-line
         }
