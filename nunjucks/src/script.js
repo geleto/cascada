@@ -257,29 +257,35 @@ function determineBlockType(firstWord) {
 function isStartOfContinuation(line, lineIndex, allLines) {
   const trimmed = line.trim();
 
+  if (!trimmed) return false;
+
+  // Extract code part without comments for continuation checks
+  const commentPos = findCommentOutsideString(trimmed);
+  const codeContent = commentPos >= 0 ? trimmed.substring(0, commentPos).trim() : trimmed;
+
   // Check for unclosed string delimiter
   let inString = false;
   let quoteChar = null;
   let escapeNext = false;
 
-  for (let i = 0; i < trimmed.length; i++) {
+  for (let i = 0; i < codeContent.length; i++) {
     // Handle escape characters
     if (escapeNext) {
       escapeNext = false;
       continue;
     }
 
-    if (trimmed[i] === '\\') {
+    if (codeContent[i] === '\\') {
       escapeNext = true;
       continue;
     }
 
     // Toggle string state on quotes
-    if ((trimmed[i] === '"' || trimmed[i] === '\'')) {
+    if ((codeContent[i] === '"' || codeContent[i] === '\'')) {
       if (!inString) {
         inString = true;
-        quoteChar = trimmed[i];
-      } else if (quoteChar === trimmed[i]) {
+        quoteChar = codeContent[i];
+      } else if (quoteChar === codeContent[i]) {
         inString = false;
       }
     }
@@ -291,24 +297,24 @@ function isStartOfContinuation(line, lineIndex, allLines) {
   }
 
   // If this line ends with an explicit backslash continuation
-  if (trimmed.endsWith('\\')) {
+  if (codeContent.endsWith('\\')) {
     return true;
   }
 
   // Check if line ends with continuation characters
-  const lastChar = trimmed.slice(-1);
+  const lastChar = codeContent.slice(-1);
   if (SYNTAX.continuation.endChars.includes(lastChar)) {
     return true;
   }
 
   // Check continuation operators
-  if (SYNTAX.continuation.endOperators.some(op => trimmed.endsWith(op))) {
+  if (SYNTAX.continuation.endOperators.some(op => codeContent.endsWith(op))) {
     return true;
   }
 
   // Check continuation keywords
   if (SYNTAX.continuation.endKeywords.some(keyword =>
-    trimmed.endsWith(keyword.trim()) || (trimmed + ' ').endsWith(keyword))) {
+    codeContent.endsWith(keyword.trim()) || (codeContent + ' ').endsWith(keyword))) {
     return true;
   }
 
