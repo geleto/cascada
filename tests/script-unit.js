@@ -10,7 +10,9 @@ const {
   isContinuationOfExpression,
   findCommentOutsideString,
   determineBlockType,
-  LINE_TYPE,
+  addInlineComment,
+  convertLinesToTemplate,
+  LINE_TYPE
 } = require('../nunjucks/src/script');
 
 describe('Script to Template Converter', function() {
@@ -340,6 +342,221 @@ describe('Script to Template Converter', function() {
 
       expect(result.error).to.be(null);
       expect(result.template).to.equal('{{- "Hello" -}} {# Greeting #}\n');
+    });
+  });
+
+  describe('Helper Function Tests', function() {
+    describe('addInlineComment()', function() {
+      it('should add a comment to a line', function() {
+        expect(addInlineComment('line content', 'comment')).to.equal('line content {# comment #}');
+      });
+
+      it('should return the line unchanged if no comment is provided', function() {
+        expect(addInlineComment('line content', null)).to.equal('line content');
+        expect(addInlineComment('line content', '')).to.equal('line content');
+      });
+    });
+  });
+
+  describe('Line Conversion Tests', function() {
+    describe('convertLinesToTemplate()', function() {
+      it('should convert empty lines', function() {
+        const parsedLines = [{ type: LINE_TYPE.EMPTY, indentation: 0 }];
+        expect(convertLinesToTemplate(parsedLines)).to.eql(['']);
+      });
+
+      it('should convert multi-line comments', function() {
+        const parsedLines = [
+          { type: LINE_TYPE.COMMENT_MULTI_START, content: 'Start', indentation: 0 },
+          { type: LINE_TYPE.COMMENT_MULTI_MIDDLE, content: 'Middle', indentation: 2 },
+          { type: LINE_TYPE.COMMENT_MULTI_END, content: 'End', indentation: 0 }
+        ];
+        expect(convertLinesToTemplate(parsedLines)).to.eql([
+          '{# Start',
+          '     Middle',
+          '   End #}'
+        ]);
+      });
+
+      it('should convert print statements with correct delimiters', function() {
+        const parsedLines = [
+          { type: LINE_TYPE.PRINT_STANDALONE, content: '"Hello"', indentation: 2 },
+          { type: LINE_TYPE.PRINT_START, content: '"Multi', indentation: 0 },
+          { type: LINE_TYPE.PRINT_CONTINUATION, content: 'line"', indentation: 2 },
+          { type: LINE_TYPE.PRINT_END, content: '+ "!"', indentation: 0 }
+        ];
+        const result = convertLinesToTemplate(parsedLines);
+        expect(result[0]).to.equal('  {{- "Hello" -}}');
+        expect(result[1]).to.equal('{{- "Multi');
+      });
+    });
+  });
+
+  describe('Edge Case Tests', function() {
+    describe('findCommentOutsideString() edge cases', function() {
+      it('should handle nested quotes', function() {
+        expect(findCommentOutsideString('var x = "string with \\"nested\\" quotes" // comment')).to.equal(40);
+      });
+
+      it('should handle alternating quote types', function() {
+        expect(findCommentOutsideString('var x = "string with \'nested\' quotes" // comment')).to.equal(38);
+        expect(findCommentOutsideString('var x = \'string with "nested" quotes\' // comment')).to.equal(38);
+      });
+    });
+
+    describe('isStartOfContinuation() edge cases', function() {
+      it('should handle nested parentheses', function() {
+        expect(isStartOfContinuation('if (x == 1 && (y || (', 0, ['if (x == 1 && (y || (', 'z == 2))', ')'])).to.be(true);
+      });
+
+      it('should handle escaped quotes', function() {
+        expect(isStartOfContinuation('x = "string with \\"', 0, ['x = "string with \\"', 'still in string"'])).to.be(true);
+      });
+
+      it('should handle backslash continuation explicitly', function() {
+        expect(isStartOfContinuation('line ending with \\', 0, ['line ending with \\', 'continuation'])).to.be(true);
+      });
+    });
+  });
+
+  describe('Complex Scenario Tests', function() {
+    describe('parseLines() complex scenarios', function() {
+      it('should handle mixed comment types', function() {
+        const input = [
+          '// Single line comment',
+          'code /* inline comment */ more code',
+          '/* Start multi-line',
+          ' * middle',
+          ' */ code after comment'
+        ];
+
+        const result = parseLines(input);
+        expect(result[0].type).to.equal(LINE_TYPE.COMMENT_SINGLE);
+        // Test correct parsing of the remaining lines
+      });
+
+      it('should handle multi-line expressions with inline comments', function() {
+        const input = [
+          'print "start" + // First part',
+          '      "middle" + // Middle part',
+          '      "end" // End part'
+        ];
+
+        const result = parseLines(input);
+        // Verify comment buffering works across lines
+        expect(result[2].inlineComment).to.contain('First part');
+        expect(result[2].inlineComment).to.contain('Middle part');
+        expect(result[2].inlineComment).to.contain('End part');
+      });
+    });
+  });
+
+  describe('Block Validation Tests', function() {
+    describe('validateBlockStructure() complex cases', function() {
+      it('should validate try/except/resume blocks', function() {
+        const lines = [
+          { content: 'try', type: LINE_TYPE.TAG_START, blockType: LINE_TYPE.BLOCK_START },
+          { content: 'print "Try"', type: LINE_TYPE.PRINT_END },
+          { content: 'resume', type: LINE_TYPE.TAG_START, blockType: LINE_TYPE.BLOCK_MIDDLE },
+          { content: 'print "Resume"', type: LINE_TYPE.PRINT_END },
+          { content: 'except', type: LINE_TYPE.TAG_START, blockType: LINE_TYPE.BLOCK_MIDDLE },
+          { content: 'print "Except"', type: LINE_TYPE.PRINT_END },
+          { content: 'endtry', type: LINE_TYPE.TAG_START, blockType: LINE_TYPE.BLOCK_END }
+        ];
+
+        const result = validateBlockStructure(lines);
+        expect(result.valid).to.be(true);
+      });
+
+      it('should reject misplaced block elements', function() {
+        const lines = [
+          { content: 'try', type: LINE_TYPE.TAG_START, blockType: LINE_TYPE.BLOCK_START },
+          { content: 'else', type: LINE_TYPE.TAG_START, blockType: LINE_TYPE.BLOCK_MIDDLE },
+          { content: 'endtry', type: LINE_TYPE.TAG_START, blockType: LINE_TYPE.BLOCK_END }
+        ];
+
+        const result = validateBlockStructure(lines);
+        expect(result.valid).to.be(false);
+        expect(result.error).to.contain('else');
+      });
+    });
+  });
+
+  describe('Full Conversion Tests', function() {
+    describe('scriptToTemplate() additional cases', function() {
+      it('should handle whitespace preservation in indentation', function() {
+        const script = 'if x\n  print "Indented"\n    print "More indented"\nendif';
+        const result = scriptToTemplate(script);
+
+        expect(result.template).to.contain('  {{- "Indented" -}}');
+        expect(result.template).to.contain('    {{- "More indented" -}}');
+      });
+
+      it('should handle implicitly created "do" statements', function() {
+        const script = 'items.push(1)\narr[index] = value';
+        const result = scriptToTemplate(script);
+
+        expect(result.template).to.contain('{%- do items.push(1) -%}');
+        expect(result.template).to.contain('{%- do arr[index] = value -%}');
+      });
+
+      it('should handle multiline statements with operators', function() {
+        const script = 'print a &&\n  b ||\n  c';
+        const result = scriptToTemplate(script);
+
+        expect(result.template).to.contain('{{- a &&\n  b ||\n  c -}}');
+      });
+    });
+  });
+
+  describe('scriptToTemplate() - expression parsing edge cases', function() {
+    it('should handle nested brackets across multiple lines', function() {
+      const script =
+        'if (x && (\n' +
+        '     y ||\n' +
+        '     (z && w)\n' +
+        '   ))\n' +
+        '  print "True"\n' +
+        'endif';
+
+      const result = scriptToTemplate(script);
+      expect(result.error).to.be(null);
+      // Check that nesting is preserved in the template
+      expect(result.template).to.contain('if (x && (');
+      expect(result.template).to.contain('y ||');
+      expect(result.template).to.contain('(z && w)');
+    });
+
+    it('should handle unclosed quotes properly', function() {
+      const script =
+        'print "Start of string\n' +
+        '       middle of string\n' +
+        '       end of string"';
+
+      const result = scriptToTemplate(script);
+      expect(result.error).to.be(null);
+      // Check string is treated as multi-line
+      expect(result.template).to.contain('"Start of string');
+      expect(result.template).to.contain('end of string"');
+    });
+
+    it('should handle escaped quotes in strings', function() {
+      const script = 'print "String with \\"escaped quotes\\""';
+      const result = scriptToTemplate(script);
+      expect(result.error).to.be(null);
+      expect(result.template).to.contain('"String with \\"escaped quotes\\""');
+    });
+
+    it('should detect unbalanced brackets in expressions', function() {
+      const script = 'if (x && (y || z)\n  print "Missing closing bracket"\nendif';
+
+      // Note: The current implementation won't catch this error since it doesn't
+      // do full expression parsing. This test demonstrates the limitation.
+      const result = scriptToTemplate(script);
+
+      // The converter will pass this through, and the template engine would later catch it
+      expect(result.error).to.be(null);
+      expect(result.template).to.contain('if (x && (y || z)');
     });
   });
 });
