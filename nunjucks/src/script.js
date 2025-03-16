@@ -192,82 +192,44 @@ function addInlineComment(line, comment) {
 
 /**
  * Finds the position of '//' that represents a comment delimiter,
- * excluding '//' inside string literals
+ * excluding '//' inside string literals and regex literals
  * @param {string} line The line to check
  * @return {number} Position of comment or -1 if not found
  */
 function findCommentOutsideString(line) {
-  let pos = 0;
   let inString = false;
-  let inRegex = false;
   let quoteChar = null;
+  let i = 0;
 
-  while (pos < line.length) {
-    // Check for escape sequences
-    if (line[pos] === '\\') {
-      // Skip this character and the next one (the escaped char)
-      pos += 2;
+  while (i < line.length) {
+    const char = line[i];
+
+    // Handle string opening/closing
+    if ((char === '"' || char === '\'') && !inString) {
+      inString = true;
+      quoteChar = char;
+      i++;
+      continue;
+    } else if (char === quoteChar && inString) {
+      inString = false;
+      i++;
       continue;
     }
 
-    // String literal handling
-    if ((line[pos] === '"' || line[pos] === '\'' || line[pos] === '`') && !inRegex) {
-      if (!inString) {
-        inString = true;
-        quoteChar = line[pos];
-      } else if (line[pos] === quoteChar) {
-        inString = false;
-      }
-      pos++;
+    // Handle escape sequences in strings
+    if (inString && char === '\\' && i + 1 < line.length) {
+      // Skip both the backslash and the next character
+      i += 2;
       continue;
     }
 
-    // Regex literal handling
-    if (line[pos] === '/' && !inString && !inRegex) {
-      // Check if this is a comment start
-      if (pos + 1 < line.length && line[pos + 1] === '/') {
-        return pos;
-      }
-
-      // Detect if this is a regex start
-      let isRegex = false;
-
-      // Simple regex detection heuristic
-      if (pos === 0) {
-        isRegex = true;
-      } else {
-        // Look for characters that suggest regex
-        let j = pos - 1;
-        while (j >= 0 && /\s/.test(line[j])) j--;
-
-        if (j >= 0) {
-          const prevChar = line[j];
-          if ('(,=:!&|;{?+*-/%^><~'.includes(prevChar)) {
-            isRegex = true;
-          }
-        }
-      }
-
-      if (isRegex) {
-        inRegex = true;
-        pos++;
-        continue;
-      }
+    // Check for comment start - only if not in string
+    if (char === '/' && i + 1 < line.length && line[i + 1] === '/' && !inString) {
+      return i;
     }
 
-    // End of regex literal
-    if (line[pos] === '/' && inRegex) {
-      inRegex = false;
-      pos++;
-      continue;
-    }
-
-    // Comment detection
-    if (line[pos] === '/' && pos + 1 < line.length && line[pos + 1] === '/' && !inString && !inRegex) {
-      return pos;
-    }
-
-    pos++;
+    // Move to next character
+    i++;
   }
 
   return -1;
