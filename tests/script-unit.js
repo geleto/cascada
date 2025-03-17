@@ -827,23 +827,60 @@ describe('Script to Template Converter', function() {
    */
   describe('Comment and String Handling Edge Cases', function () {
     describe('findCommentOutsideString() advanced cases', function () {
-      it('should handle escaped backslashes before quotes', function () {
-        expect(findCommentOutsideString('var x = "string with \\\\" // comment')).to.equal(24);
+      it('should handle escaped backslashes before quotes', function() {
+        expect(findCommentOutsideString('var x = "string with \\\\" // comment')).to.equal(25);
       });
 
       it('should handle quoted strings inside comments', function () {
         expect(findCommentOutsideString('code // comment with "quotes" in it')).to.equal(5);
       });
 
-      it('should handle comment-like sequences in regex literals', function () {
-        // This is a limitation of the current implementation - it can't distinguish regex literals
-        expect(findCommentOutsideString('var regex = /foo\\/\\/bar/ // actual comment')).to.equal(13);
+      it('should handle comment-like sequences in regex literals', function() {
+        expect(findCommentOutsideString('var regex = /foo\\/\\/bar/ // actual comment')).to.equal(25);
       });
 
-      it('should handle template literals', function () {
-        // The current implementation doesn't specifically handle template literals
-        // This test documents the current behavior
-        expect(findCommentOutsideString('var x = `template ${var} literal` // comment')).to.equal(34);
+      it('should handle template literals with no internal //', function() {
+        expect(findCommentOutsideString('var x = `template literal` // comment')).to.equal(27);
+      });
+
+      it('should ignore // inside template literals', function() {
+        expect(findCommentOutsideString('var x = `template // inside` // outside')).to.equal(29);
+      });
+
+      it('should handle nested template literals', function() {
+        expect(findCommentOutsideString('var x = `outer ${`inner // inside`} outer` // comment')).to.equal(43);
+      });
+
+      it('should handle escaped backticks in template literals', function() {
+        expect(findCommentOutsideString('var x = `template \\` // inside\\`` // outside')).to.equal(34);
+      });
+
+      it('should handle // inside single-quoted strings', function() {
+        expect(findCommentOutsideString('var x = \'single // inside\' // outside')).to.equal(27);
+      });
+
+      it('should handle // inside double-quoted strings', function() {
+        expect(findCommentOutsideString('var x = "double // inside" // outside')).to.equal(27);
+      });
+
+      it('should handle escaped quotes in strings', function() {
+        expect(findCommentOutsideString('var x = "escaped \\" // inside" // outside')).to.equal(31);
+      });
+
+      it('should handle multiple string types in one line', function() {
+        expect(findCommentOutsideString('var x = `template` + "double" + \'single\' // comment')).to.equal(41);
+      });
+
+      it('should return -1 when there is no comment', function() {
+        expect(findCommentOutsideString('var x = `no comment here`')).to.equal(-1);
+      });
+
+      it('should handle // at the start of the string', function() {
+        expect(findCommentOutsideString('// comment at start')).to.equal(0);
+      });
+
+      it('should handle // after strings', function() {
+        expect(findCommentOutsideString('var x = "string"; // comment')).to.equal(18);
       });
     });
 
@@ -862,8 +899,8 @@ describe('Script to Template Converter', function() {
 
         // Current behavior splits the inline multi-line comment across 2nd and 3rd lines
         // These assertions describe current behavior, which could be improved
-        expect(result[1].content).to.include('code');
-        expect(result[2].content).to.include('code');
+        expect(result[1].content).to.contain('code');
+        expect(result[2].content).to.contain('code');
       });
 
       it('should handle nested-looking comment delimiters', function () {
@@ -875,7 +912,7 @@ describe('Script to Template Converter', function() {
         const result = parseLines(input);
         // The current implementation treats everything up to the first */ as the comment
         expect(result[0].type).to.equal(LINE_TYPE.COMMENT_SINGLE);
-        expect(result[0].content).to.include('outer comment with /* that looks nested');
+        expect(result[0].content).to.contain('outer comment with /* that looks nested');
       });
 
       it('should handle comments at the end of multi-line expressions', function () {

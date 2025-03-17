@@ -193,43 +193,50 @@ function addInlineComment(line, comment) {
 /**
  * Finds the position of '//' that represents a comment delimiter,
  * excluding '//' inside string literals and regex literals
- * @param {string} line The line to check
+ * @param {string} code The line to check
  * @return {number} Position of comment or -1 if not found
  */
-function findCommentOutsideString(line) {
+function findCommentOutsideString(code) {
   let inString = false;
-  let quoteChar = null;
-  let i = 0;
+  let stringChar = null;
+  let inTemplate = false;
+  let braceDepth = 0;
 
-  while (i < line.length) {
-    const char = line[i];
+  for (let i = 0; i < code.length; i++) {
+    const char = code[i];
+    const nextChar = code[i + 1];
 
-    // Handle string opening/closing
-    if ((char === '"' || char === '\'') && !inString) {
-      inString = true;
-      quoteChar = char;
-      i++;
-      continue;
-    } else if (char === quoteChar && inString) {
-      inString = false;
-      i++;
-      continue;
+    if (inString) {
+      if (char === '\\') {
+        i++; // Skip escaped char in strings
+      } else if (char === stringChar) {
+        inString = false;
+        stringChar = null;
+      }
+    } else if (inTemplate) {
+      if (char === '\\') {
+        i++; // Skip escaped char in templates
+      } else if (char === '`' && braceDepth === 0) {
+        inTemplate = false;
+      } else if (char === '$' && nextChar === '{') {
+        braceDepth++;
+        i++;
+      } else if (char === '}') {
+        if (braceDepth > 0) braceDepth--;
+      }
+    } else { // Not in string or template
+      if (char === '/' && nextChar === '/') {
+        return i; // Crucially: return the position of FIRST '/' char here
+      } else if (char === '"' || char === '\'') {
+        inString = true;
+        stringChar = char;
+      } else if (char === '`') {
+        inTemplate = true;
+        braceDepth = 0;
+      } else if (char === '\\') {
+        i++;
+      }
     }
-
-    // Handle escape sequences in strings
-    if (inString && char === '\\' && i + 1 < line.length) {
-      // Skip both the backslash and the next character
-      i += 2;
-      continue;
-    }
-
-    // Check for comment start - only if not in string
-    if (char === '/' && i + 1 < line.length && line[i + 1] === '/' && !inString) {
-      return i;
-    }
-
-    // Move to next character
-    i++;
   }
 
   return -1;
