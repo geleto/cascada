@@ -185,22 +185,25 @@ describe('Script Parser', function() {
     it('should correctly capture token positions for all token types', function() {
       const script = 'print "hello" /* comment */ + r/pattern/g';
 
-      // Calculate expected positions
+      // Calculate expected positions correctly - no gaps between tokens
       const codeStartPos = 0;
       const codeEndPos = script.indexOf('"');
       const stringStartPos = script.indexOf('"');
       const stringEndPos = script.indexOf('"', stringStartPos + 1) + 1;
+      // Space after string is part of the next CODE token
+      const code2StartPos = stringEndPos;
+      const code2EndPos = script.indexOf('/*');
       const commentStartPos = script.indexOf('/*');
       const commentEndPos = script.indexOf('*/') + 2;
-      const code2StartPos = commentEndPos;
-      const code2EndPos = script.indexOf('r/');
+      const code3StartPos = commentEndPos;
+      const code3EndPos = script.indexOf('r/');
       const regexStartPos = script.indexOf('r/');
       const regexEndPos = script.lastIndexOf('/') + 2; // +2 for the 'g' flag
 
-      console.log('DEBUG - Script:', script);
       const result = parseTemplateLine(script);
-      console.log('DEBUG - Token count:', result.tokens.length);
-      console.log('DEBUG - Tokens:', JSON.stringify(result.tokens.map(t => ({ type: t.type, value: t.value })), null, 2));
+
+      // There should be 5 tokens in total
+      expect(result.tokens).to.have.length(5);
 
       // Code token before string
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
@@ -212,20 +215,25 @@ describe('Script Parser', function() {
       expect(result.tokens[1].start).to.equal(stringStartPos);
       expect(result.tokens[1].end).to.equal(stringEndPos);
 
-      // Comment token
-      expect(result.tokens[2].type).to.equal(TOKEN_TYPES.COMMENT);
-      expect(result.tokens[2].start).to.equal(commentStartPos);
-      expect(result.tokens[2].end).to.equal(commentEndPos);
+      // Code token between string and comment (includes the space)
+      expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[2].start).to.equal(code2StartPos);
+      expect(result.tokens[2].end).to.equal(code2EndPos);
 
-      // Code token after comment
-      expect(result.tokens[3].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[3].start).to.equal(code2StartPos);
-      expect(result.tokens[3].end).to.equal(code2EndPos);
+      // Comment token
+      expect(result.tokens[3].type).to.equal(TOKEN_TYPES.COMMENT);
+      expect(result.tokens[3].start).to.equal(commentStartPos);
+      expect(result.tokens[3].end).to.equal(commentEndPos);
+
+      // Code token between comment and regex
+      expect(result.tokens[4].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[4].start).to.equal(code3StartPos);
+      expect(result.tokens[4].end).to.equal(code3EndPos);
 
       // Regex token
-      expect(result.tokens[4].type).to.equal(TOKEN_TYPES.REGEX);
-      expect(result.tokens[4].start).to.equal(regexStartPos);
-      expect(result.tokens[4].end).to.equal(regexEndPos);
+      expect(result.tokens[5].type).to.equal(TOKEN_TYPES.REGEX);
+      expect(result.tokens[5].start).to.equal(regexStartPos);
+      expect(result.tokens[5].end).to.equal(regexEndPos);
     });
   });
 
@@ -303,9 +311,9 @@ describe('Script Parser', function() {
       });
 
       it('should return false after alphanumeric characters', function() {
-        expect(isValidRegexContext('var r/pattern/', 4)).to.be(false);
-        expect(isValidRegexContext('_r/pattern/', 1)).to.be(false);
-        expect(isValidRegexContext('9r/pattern/', 1)).to.be(false);
+        expect(isValidRegexContext('varr/pattern/', 3)).to.be(false); // 'r' at index 3 is preceded by 'a' (alphanumeric)
+        expect(isValidRegexContext('_r/pattern/', 1)).to.be(false);  // 'r' at index 1 is preceded by '_' (alphanumeric)
+        expect(isValidRegexContext('9r/pattern/', 1)).to.be(false);  // 'r' at index 1 is preceded by '9' (alphanumeric)
       });
     });
 
