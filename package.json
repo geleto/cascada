@@ -103,6 +103,7 @@
     "build:types": "cpy nunjucks/index.d.ts dist/types/ --flat",
     "build": "npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types",
     "build:esm": "npx rollup -c rollup.config.mjs",
+    "test:quick": "npm run mocha",
     "test:prep": "cross-env NODE_ENV=test npm run build && node scripts/runprecompile.js",
     "test:node-no-prep": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --require @babel/register tests",
     "test:node": "cross-env NODE_ENV=test npm run test:prep && npm run test:node-no-prep",
