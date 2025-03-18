@@ -115,7 +115,7 @@
  * that can be integrated with your existing multi-line expression processing system.
  */
 
-// Constants
+// Token-related constants
 const STATES = {
   NORMAL: 'NORMAL',
   STRING: 'STRING',
@@ -140,334 +140,408 @@ const TOKEN_SUBTYPES = {
   REGEX: 'REGEX'
 };
 
+const VALID_REGEX_FLAGS = new Set(['g', 'i', 'm', 'y', 's', 'u', 'd']);
+
 /**
- * Determine if 'r/' is a valid start of a regex.
- * It must be at the beginning of the line or preceded by a non-alphanumeric-underscore character.
+ * Creates a token object
  */
-function isValidRegexContext(line, index) {
-  if (index === 0) return true; // Valid at start of line
-  const alphanumeric = 'abcdefghijklmnopqrstuvwxyz0123456789_';
-  return !alphanumeric.includes(line.charAt(index - 1).toLowerCase());
+function createToken(type, subtype, start, value = '') {
+  const token = {
+    type,
+    subtype,
+    start,
+    end: null,
+    value
+  };
+
+  // Add regex-specific properties if needed
+  if (type === TOKEN_TYPES.REGEX) {
+    token.flags = '';
+    token.incomplete = false;
+    token.isMalformed = false;
+  }
+
+  return token;
 }
 
 /**
- * Check if a potential regex pattern starting at 'r/' is a complete, valid regex.
- * This performs lookahead to confirm there's a closing slash before committing.
+ * Creates a code token
  */
-function isCompleteRegexPattern(line, startIndex) {
-  // We're already at 'r', so check the next character is '/'
-  if (startIndex + 1 >= line.length || line[startIndex + 1] !== '/') {
+function createCodeToken(start, end, value) {
+  return {
+    type: TOKEN_TYPES.CODE,
+    start,
+    end,
+    value
+  };
+}
+
+/**
+ * Finalizes any code token in progress
+ */
+function finalizeCodeToken(state) {
+  const { tokens, line, codeStart, index } = state;
+
+  if (codeStart === null || codeStart >= index) {
+    state.codeStart = null;
+    return;
+  }
+
+  tokens.push(createCodeToken(
+    codeStart,
+    index,
+    line.substring(codeStart, index)
+  ));
+
+  state.codeStart = null;
+}
+
+/**
+ * Checks if a character at the given index could be part of a valid regex pattern
+ */
+function isValidRegexContext(line, index) {
+  // Valid at start of line
+  if (index === 0) return true;
+
+  // Not valid if preceded by an identifier character or certain operators
+  const prevChar = line.charAt(index - 1);
+  return !/[a-zA-Z0-9_$)]/.test(prevChar);
+}
+
+/**
+ * Performs lookahead to verify a complete regex pattern exists
+ */
+function hasCompleteRegexPattern(line, index) {
+  // We expect 'r' at index, followed by '/'
+  if (index + 1 >= line.length || line[index + 1] !== '/') {
     return false;
   }
 
-  // Skip past 'r/'
-  let index = startIndex + 2;
+  // Look for an unescaped closing '/'
+  let i = index + 2;
   let escaped = false;
 
-  // Look for an unescaped closing '/'
-  while (index < line.length) {
-    const char = line[index];
+  while (i < line.length) {
+    const char = line[i];
 
     if (escaped) {
-      // Previous character was escape - this character is escaped
       escaped = false;
     } else if (char === '\\') {
-      // Escape character found
       escaped = true;
     } else if (char === '/') {
-      // Found an unescaped closing slash - we have a complete regex!
-      return true;
+      return true; // Found the closing slash
     }
 
-    index++;
+    i++;
   }
 
-  // No closing slash found, not a complete regex
   return false;
 }
 
 /**
- * Finalize any CODE token in progress.
+ * Process a character in the NORMAL state
  */
-function finalizeCodeToken(tokens, line, codeStart, endPos) {
-  if (codeStart === null || codeStart >= endPos) return null;
-  const codeValue = line.substring(codeStart, endPos);
-  tokens.push({
-    type: TOKEN_TYPES.CODE,
-    start: codeStart,
-    end: endPos,
-    value: codeValue
-  });
-  return null; // Reset codeStart
+function processNormalState(state) {
+  const { line, index } = state;
+  const char = line[index];
+  const nextChar = index < line.length - 1 ? line[index + 1] : '';
+
+  // Check for the start of a string
+  if (char === '\'' || char === '"' || char === '`') {
+    finalizeCodeToken(state);
+
+    // Start string state
+    state.currentState = STATES.STRING;
+    state.stringDelimiter = char;
+
+    const subtype = char === '\'' ? TOKEN_SUBTYPES.SINGLE_QUOTED :
+      char === '"' ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
+        TOKEN_SUBTYPES.TEMPLATE;
+    state.currentToken = createToken(TOKEN_TYPES.STRING, subtype, index, char);
+    return;
+  }
+
+  // Check for the start of a regex
+  if (char === 'r' && nextChar === '/' &&
+      isValidRegexContext(line, index) &&
+      hasCompleteRegexPattern(line, index)) {
+
+    finalizeCodeToken(state);
+    state.currentState = STATES.REGEX;
+    state.currentToken = createToken(TOKEN_TYPES.REGEX, TOKEN_SUBTYPES.REGEX, index, 'r/');
+    state.index++; // Skip the '/'
+    return;
+  }
+
+  // Check for the start of a comment
+  if (char === '/') {
+    if (nextChar === '/') {
+      // Single-line comment
+      finalizeCodeToken(state);
+      state.currentState = STATES.SINGLE_LINE_COMMENT;
+      state.currentToken = createToken(TOKEN_TYPES.COMMENT, TOKEN_SUBTYPES.SINGLE_LINE, index, '//');
+      state.index++; // Skip the second '/'
+    } else if (nextChar === '*') {
+      // Multi-line comment
+      finalizeCodeToken(state);
+      state.currentState = STATES.MULTI_LINE_COMMENT;
+      state.currentToken = createToken(TOKEN_TYPES.COMMENT, TOKEN_SUBTYPES.MULTI_LINE, index, '/*');
+      state.index++; // Skip the '*'
+    } else if (state.codeStart === null) {
+      state.codeStart = index;
+    }
+    return;
+  }
+
+  // Regular code
+  if (state.codeStart === null) {
+    state.codeStart = index;
+  }
 }
 
 /**
- * Handle a character when in STRING state. Returns `true` if the string has ended.
+ * Process a character in the STRING state
  */
-function parseStringChar(parserState, char) {
-  const { currentToken } = parserState;
+function processStringState(state) {
+  const { currentToken, line, index } = state;
+  const char = line[index];
 
-  if (parserState.escaped) {
-    // Escaped char: just add it
+  // Handle escaped characters
+  if (state.escaped) {
     currentToken.value += char;
-    parserState.escaped = false;
-    return false;
+    state.escaped = false;
+    return;
   }
 
   if (char === '\\') {
     currentToken.value += char;
-    parserState.escaped = true;
-    return false;
+    state.escaped = true;
+    return;
   }
 
-  // If we find the matching delimiter, end the string
-  if (char === parserState.stringDelimiter) {
+  // Check for the end of the string
+  if (char === state.stringDelimiter) {
     currentToken.value += char;
-    currentToken.end = parserState.index + 1;
-    return true;
+    currentToken.end = index + 1;
+    state.tokens.push(currentToken);
+
+    // Return to normal state
+    state.currentToken = null;
+    state.currentState = STATES.NORMAL;
+    state.codeStart = index + 1;
+    state.stringDelimiter = '';
+    return;
   }
 
-  // Otherwise, just accumulate
+  // Regular character in string
   currentToken.value += char;
-  return false;
 }
 
 /**
- * Handle a character when in REGEX state. Returns `true` if the regex has ended.
+ * Process a character in the REGEX state
  */
-function parseRegexChar(parserState, char) {
-  const { currentToken } = parserState;
-  const prevChar = parserState.index > 0 ? parserState.line[parserState.index - 1] : '';
+function processRegexState(state) {
+  const { currentToken, line, index } = state;
+  const char = line[index];
+  const prevChar = index > 0 ? line[index - 1] : '';
 
-  // Check for the closing slash - only if previous character is not an escape
-  if (char === '/' && prevChar !== '\\') {
-    currentToken.value += char;
-    parserState.index++;
+  // Add the character to the regex
+  currentToken.value += char;
 
-    // Collect flags
-    const POSSIBLE_FLAGS = ['g', 'i', 'm', 'y', 's', 'u', 'd'];
-    let regexFlags = '';
-    // Track seen flags to prevent duplicates
-    const seenFlags = new Set();
+  // Check for the end of the regex pattern
+  if (char === '/' && prevChar !== '\\' && currentToken.value.length > 2) {
+    // Look for and process flags
+    let flagsEnd = processRegexFlags(state);
 
-    while (parserState.index < parserState.line.length) {
-      const flagChar = parserState.line[parserState.index];
-      const isCurrentAFlag = POSSIBLE_FLAGS.includes(flagChar);
+    // Finalize the regex token
+    currentToken.end = flagsEnd;
+    state.tokens.push(currentToken);
 
-      if (isCurrentAFlag && !seenFlags.has(flagChar)) {
-        // Only add if this flag hasn't been seen before
-        seenFlags.add(flagChar);
-        regexFlags += flagChar;
-        currentToken.value += flagChar;
-        parserState.index++;
-      } else if (isCurrentAFlag && seenFlags.has(flagChar)) {
-        // Flag is a duplicate - mark as malformed
+    // Return to normal state
+    state.currentToken = null;
+    state.currentState = STATES.NORMAL;
+    state.codeStart = flagsEnd;
+    state.index = flagsEnd - 1; // Will be incremented in the main loop
+  }
+}
+
+/**
+ * Process regex flags after the closing slash
+ */
+function processRegexFlags(state) {
+  const { currentToken, line, index } = state;
+  let flagsEnd = index + 1;
+  const seenFlags = new Set();
+
+  // Collect all flags
+  while (flagsEnd < line.length) {
+    const flagChar = line[flagsEnd];
+
+    if (VALID_REGEX_FLAGS.has(flagChar)) {
+      if (seenFlags.has(flagChar)) {
+        // Duplicate flag
         currentToken.isMalformed = true;
-        regexFlags += flagChar;
-        currentToken.value += flagChar;
-        parserState.index++;
-      } else {
-        break;
+      }
+
+      seenFlags.add(flagChar);
+      currentToken.flags += flagChar;
+      currentToken.value += flagChar;
+      flagsEnd++;
+    } else {
+      break;
+    }
+  }
+
+  return flagsEnd;
+}
+
+/**
+ * Process a character in the SINGLE_LINE_COMMENT state
+ */
+function processSingleLineComment(state) {
+  const { currentToken, line, index } = state;
+
+  // Add the character to the comment
+  currentToken.value += line[index];
+
+  // Check if we've reached the end of the line
+  if (index === line.length - 1) {
+    currentToken.end = line.length;
+    state.tokens.push(currentToken);
+
+    // Reset state
+    state.currentToken = null;
+    state.currentState = STATES.NORMAL;
+  }
+}
+
+/**
+ * Process a character in the MULTI_LINE_COMMENT state
+ */
+function processMultiLineComment(state) {
+  const { currentToken, line, index } = state;
+  const char = line[index];
+  const prevChar = index > 0 ? line[index - 1] : '';
+
+  // Add the character to the comment
+  currentToken.value += char;
+
+  // Check for the end of the comment
+  if (char === '/' && prevChar === '*') {
+    currentToken.end = index + 1;
+    state.tokens.push(currentToken);
+
+    // Reset state
+    state.currentToken = null;
+    state.currentState = STATES.NORMAL;
+    state.codeStart = index + 1;
+  }
+}
+
+/**
+ * Finalize any open tokens at the end of the line
+ */
+function finalizeEndOfLine(state) {
+  const { line, currentToken, currentState, codeStart } = state;
+
+  // Handle unfinished tokens
+  if (currentToken) {
+    currentToken.end = line.length;
+
+    // Mark strings and regexes as incomplete
+    if (currentState === STATES.STRING || currentState === STATES.REGEX) {
+      currentToken.incomplete = true;
+
+      if (currentState === STATES.REGEX) {
+        currentToken.isMalformed = true;
       }
     }
 
-    currentToken.flags = regexFlags;
-    currentToken.end = parserState.index;
-    return true;
+    state.tokens.push(currentToken);
+  } else if (codeStart !== null && codeStart < line.length) {
+    // Handle any trailing code
+    state.tokens.push(createCodeToken(
+      codeStart,
+      line.length,
+      line.substring(codeStart, line.length)
+    ));
   }
-
-  // Just add the character to the regex
-  currentToken.value += char;
-  return false;
 }
 
 /**
- * Main parse function.
+ * Process a single character based on the current state
+ */
+function processCharacter(state) {
+  const { currentState } = state;
+
+  switch (currentState) {
+    case STATES.NORMAL:
+      processNormalState(state);
+      break;
+    case STATES.STRING:
+      processStringState(state);
+      break;
+    case STATES.REGEX:
+      processRegexState(state);
+      break;
+    case STATES.SINGLE_LINE_COMMENT:
+      processSingleLineComment(state);
+      break;
+    case STATES.MULTI_LINE_COMMENT:
+      processMultiLineComment(state);
+      break;
+  }
+}
+
+/**
+ * Parse a line of template language code
  */
 function parseTemplateLine(line, inMultiLineComment = false, stringState = null) {
-  const parserState = {
+  // Initialize parser state
+  const state = {
     line,
     index: 0,
+    tokens: [],
     currentState: inMultiLineComment ? STATES.MULTI_LINE_COMMENT : STATES.NORMAL,
     currentToken: null,
-    tokens: [],
     codeStart: inMultiLineComment ? null : 0,
-    escaped: stringState ? stringState.escaped : false,
-    stringDelimiter: stringState ? stringState.delimiter : ''
+    escaped: false,
+    stringDelimiter: ''
   };
 
-  // String continuation from previous line
+  // Handle continuation from previous line
   if (stringState && stringState.escaped) {
-    parserState.currentState = STATES.STRING;
-    parserState.currentToken = {
-      type: TOKEN_TYPES.STRING,
-      subtype: (stringState.delimiter === '\'') ? TOKEN_SUBTYPES.SINGLE_QUOTED :
-        (stringState.delimiter === '"') ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
-          TOKEN_SUBTYPES.TEMPLATE,
-      start: 0,
-      end: null,
-      value: ''
-    };
-    parserState.codeStart = null;
+    // Continuing a string from previous line
+    state.currentState = STATES.STRING;
+    state.escaped = true;
+    state.stringDelimiter = stringState.delimiter;
+
+    const subtype = stringState.delimiter === '\'' ? TOKEN_SUBTYPES.SINGLE_QUOTED :
+      stringState.delimiter === '"' ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
+        TOKEN_SUBTYPES.TEMPLATE;
+    state.currentToken = createToken(TOKEN_TYPES.STRING, subtype, 0, '');
+    state.codeStart = null;
   } else if (inMultiLineComment) {
-    parserState.currentToken = {
-      type: TOKEN_TYPES.COMMENT,
-      subtype: TOKEN_SUBTYPES.MULTI_LINE,
-      start: 0,
-      end: null,
-      value: ''
-    };
+    // Continuing a multi-line comment
+    state.currentToken = createToken(TOKEN_TYPES.COMMENT, TOKEN_SUBTYPES.MULTI_LINE, 0, '');
   }
 
-  for (; parserState.index < line.length; parserState.index++) {
-    const char = line[parserState.index];
-    const nextChar = (parserState.index < line.length - 1) ? line[parserState.index + 1] : '';
-
-    switch (parserState.currentState) {
-      case STATES.NORMAL:
-        switch (char) {
-          case '\'':
-          case '"':
-          case '`':
-            parserState.codeStart = finalizeCodeToken(parserState.tokens, line, parserState.codeStart, parserState.index);
-            parserState.currentState = STATES.STRING;
-            parserState.currentToken = {
-              type: TOKEN_TYPES.STRING,
-              subtype: (char === '\'') ? TOKEN_SUBTYPES.SINGLE_QUOTED :
-                (char === '"') ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
-                  TOKEN_SUBTYPES.TEMPLATE,
-              start: parserState.index,
-              end: null,
-              value: char
-            };
-            parserState.stringDelimiter = char;
-            break;
-
-          case 'r':
-            if (nextChar === '/' && isValidRegexContext(line, parserState.index) && isCompleteRegexPattern(line, parserState.index)) {
-              parserState.codeStart = finalizeCodeToken(parserState.tokens, line, parserState.codeStart, parserState.index);
-              parserState.currentState = STATES.REGEX;
-              parserState.currentToken = {
-                type: TOKEN_TYPES.REGEX,
-                subtype: TOKEN_SUBTYPES.REGEX,
-                start: parserState.index,
-                end: null,
-                value: 'r/',
-                flags: '',
-                incomplete: false,
-                isMalformed: false
-              };
-              parserState.index++;
-            } else if (parserState.codeStart === null) {
-              parserState.codeStart = parserState.index;
-            }
-            break;
-
-          case '/':
-            if (nextChar === '/') {
-              parserState.codeStart = finalizeCodeToken(parserState.tokens, line, parserState.codeStart, parserState.index);
-              parserState.currentState = STATES.SINGLE_LINE_COMMENT;
-              parserState.currentToken = {
-                type: TOKEN_TYPES.COMMENT,
-                subtype: TOKEN_SUBTYPES.SINGLE_LINE,
-                start: parserState.index,
-                end: null,
-                value: '//'
-              };
-              parserState.index++;
-            } else if (nextChar === '*') {
-              parserState.codeStart = finalizeCodeToken(parserState.tokens, line, parserState.codeStart, parserState.index);
-              parserState.currentState = STATES.MULTI_LINE_COMMENT;
-              parserState.currentToken = {
-                type: TOKEN_TYPES.COMMENT,
-                subtype: TOKEN_SUBTYPES.MULTI_LINE,
-                start: parserState.index,
-                end: null,
-                value: '/*'
-              };
-              parserState.index++;
-            } else if (parserState.codeStart === null) {
-              parserState.codeStart = parserState.index;
-            }
-            break;
-
-          default:
-            if (parserState.codeStart === null) {
-              parserState.codeStart = parserState.index;
-            }
-            break;
-        }
-        break;
-
-      case STATES.STRING: {
-        const ended = parseStringChar(parserState, char);
-        if (ended) {
-          parserState.tokens.push(parserState.currentToken);
-          parserState.currentToken = null;
-          parserState.currentState = STATES.NORMAL;
-          parserState.codeStart = parserState.index + 1;
-          parserState.escaped = false;
-          parserState.stringDelimiter = '';
-        }
-        break;
-      }
-
-      case STATES.REGEX: {
-        const ended = parseRegexChar(parserState, char);
-        if (ended) {
-          parserState.tokens.push(parserState.currentToken);
-          parserState.currentToken = null;
-          parserState.currentState = STATES.NORMAL;
-          parserState.codeStart = parserState.index;
-          parserState.index--; // Adjust for loop increment
-        }
-        break;
-      }
-
-      case STATES.SINGLE_LINE_COMMENT:
-        parserState.currentToken.value += char;
-        if (parserState.index === line.length - 1) {
-          parserState.currentToken.end = parserState.index + 1;
-          parserState.tokens.push(parserState.currentToken);
-          parserState.currentToken = null;
-          parserState.currentState = STATES.NORMAL;
-        }
-        break;
-
-      case STATES.MULTI_LINE_COMMENT:
-        parserState.currentToken.value += char;
-        if (char === '/' && parserState.index > 0 && line[parserState.index - 1] === '*') {
-          parserState.currentToken.end = parserState.index + 1;
-          parserState.tokens.push(parserState.currentToken);
-          parserState.currentToken = null;
-          parserState.currentState = STATES.NORMAL;
-          parserState.codeStart = parserState.index + 1;
-        }
-        break;
-    }
+  // Process the line character by character
+  while (state.index < line.length) {
+    processCharacter(state);
+    state.index++;
   }
 
-  // End of line: finalize open tokens
-  if (parserState.currentToken) {
-    parserState.currentToken.end = line.length;
-    if (parserState.currentState === STATES.STRING || parserState.currentState === STATES.REGEX) {
-      parserState.currentToken.incomplete = true;
-      if (parserState.currentState === STATES.REGEX) {
-        parserState.currentToken.isMalformed = true;
-      }
-    }
-    parserState.tokens.push(parserState.currentToken);
-  } else if (parserState.codeStart !== null) {
-    // Finalize any trailing code
-    finalizeCodeToken(parserState.tokens, line, parserState.codeStart, line.length);
-  }
+  // Handle any unfinished business
+  finalizeEndOfLine(state);
 
+  // Return the result with continuation state
   return {
-    tokens: parserState.tokens,
-    inMultiLineComment: (parserState.currentState === STATES.MULTI_LINE_COMMENT),
-    stringState: parserState.currentState === STATES.STRING ? {
-      escaped: parserState.escaped,
-      delimiter: parserState.stringDelimiter
+    tokens: state.tokens,
+    inMultiLineComment: state.currentState === STATES.MULTI_LINE_COMMENT,
+    stringState: state.currentState === STATES.STRING ? {
+      escaped: state.escaped,
+      delimiter: state.stringDelimiter
     } : null
   };
 }
@@ -479,5 +553,5 @@ module.exports = {
   TOKEN_SUBTYPES,
   parseTemplateLine,
   isValidRegexContext,
-  isCompleteRegexPattern
+  hasCompleteRegexPattern
 };

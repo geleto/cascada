@@ -4,7 +4,7 @@ const {
   TOKEN_TYPES,
   TOKEN_SUBTYPES,
   isValidRegexContext,
-  isCompleteRegexPattern
+  hasCompleteRegexPattern
 } = require('../nunjucks/src/script-parser');
 
 describe('Script Parser', function() {
@@ -452,19 +452,19 @@ describe('Script Parser', function() {
       });
     });
 
-    describe('isCompleteRegexPattern', function() {
+    describe('hasCompleteRegexPattern', function() {
       it('should return true for complete regex patterns', function() {
-        expect(isCompleteRegexPattern('r/pattern/', 0)).to.be(true);
-        expect(isCompleteRegexPattern('r/\\//g', 0)).to.be(true); // With escaped slash
+        expect(hasCompleteRegexPattern('r/pattern/', 0)).to.be(true);
+        expect(hasCompleteRegexPattern('r/\\//g', 0)).to.be(true); // With escaped slash
       });
 
       it('should return false for incomplete regex patterns', function() {
-        expect(isCompleteRegexPattern('r/pattern', 0)).to.be(false);
-        expect(isCompleteRegexPattern('r/', 0)).to.be(false);
+        expect(hasCompleteRegexPattern('r/pattern', 0)).to.be(false);
+        expect(hasCompleteRegexPattern('r/', 0)).to.be(false);
       });
 
       it('should return false if not starting with r/', function() {
-        expect(isCompleteRegexPattern('regex/pattern/', 0)).to.be(false);
+        expect(hasCompleteRegexPattern('regex/pattern/', 0)).to.be(false);
       });
     });
 
