@@ -161,6 +161,8 @@ Both translations run in parallel:
 {{ "Hello World" | translate('es') }}
 {{ "Hello World" | translate('fr') }}
 ```
+
+Note: Do not set the `async` argument of addFilter to `true` when using async function. It is for the old-style async filters that use a callback.
 ## Templating Features
 
 Cascada fully supports the Nunjucks template syntax and features. You can reference the [Nunjucks Templating Documentation](https://mozilla.github.io/nunjucks/templating.html) for complete details. Key features include:
