@@ -25,6 +25,19 @@
  *    - Use standard JavaScript comments: `// single line` and `/* multi-line * /`
  *    - These are converted to Cascada comments: `{# comment #}`
  *
+ * 6. **Strings**
+ *    - Multi-line strings are not supported
+ *    - Backticks are not supported
+ *    - Use single or double quotes for strings
+ *
+ * 7. **Tags**
+ *  - The delimiters are omitted
+ *  - Can span multiple lines
+ *  - Can break in the middle of expressions
+ *  - Can have // comments at the end of a line
+ *  - Can have /* comments in the middle of a line
+ *  - Can not have unfinished strings
+ *
  * Script syntax example:
  *
  * ```
