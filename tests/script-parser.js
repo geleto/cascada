@@ -648,4 +648,410 @@ describe('Script Parser', function() {
       expect(result.tokens[1].value).to.equal('/**/');
     });
   });
+
+  //NEW tests
+
+  describe('Template Literals with Complex Expressions', function() {
+    it('should handle template literals with nested expressions', function() {
+      const result = parseTemplateLine('print `User: ${user.info ? `${user.info.name}` : "Unknown"}`');
+
+      // Should recognize the entire template literal as a single token
+      expect(result.tokens).to.have.length(2); // CODE + STRING
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+      expect(result.tokens[1].value).to.contain('`User: ${user.info ? `${user.info.name}` : "Unknown"}`');
+    });
+
+    it('should handle template literals with nested template literals', function() {
+      const result = parseTemplateLine('print `Outer ${`Inner ${value}`}`');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+      expect(result.tokens[1].value).to.equal('`Outer ${`Inner ${value}`}`');
+    });
+
+    it('should handle escaped expressions in template literals', function() {
+      const result = parseTemplateLine('print `Not an expression: \\${escapedContent}`');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+      expect(result.tokens[1].value).to.equal('`Not an expression: \\${escapedContent}`');
+    });
+  });
+
+  describe('String Continuation Corner Cases', function() {
+    it('should handle multiple escape characters at end of line', function() {
+      const result = parseTemplateLine('print "String with double escape at end \\\\');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
+      expect(result.tokens[1].value).to.equal('"String with double escape at end \\\\');
+      expect(result.tokens[1].incomplete).to.be(true);
+
+      // The escaped backslash should result in no continuation
+      expect(result.stringState).to.be(null);
+    });
+
+    it('should handle Unicode escapes split across lines', function() {
+      const result = parseTemplateLine('print "Unicode escape \\u00');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].incomplete).to.be(true);
+
+      // Should not be escaped since \u is a Unicode escape sequence
+      expect(result.stringState).not.to.be(null);
+      expect(result.stringState.escaped).to.be(false);
+
+      // Continuation should pick up the Unicode escape sequence
+      const continuation = parseTemplateLine('7A"', false, result.stringState);
+      expect(continuation.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+      expect(continuation.tokens[0].value).to.equal('7A"');
+    });
+
+    it('should handle strings that immediately continue', function() {
+      const result1 = parseTemplateLine('print "Line 1 \\');
+      const result2 = parseTemplateLine('Line 2"', false, result1.stringState);
+
+      expect(result1.tokens[1].incomplete).to.be(true);
+      expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result2.tokens[0].value).to.equal('Line 2"');
+      expect(result2.stringState).to.be(null); // String is closed
+    });
+  });
+
+  describe('Complex Regex Patterns', function() {
+    it('should parse complex URL regex patterns', function() {
+      const script = 'validateUrl(r/^https?:\\/\\/([a-z0-9][-a-z0-9]*\\.)+[a-z]{2,}$/i)';
+      const regexStart = script.indexOf('r/');
+      const result = parseTemplateLine(script);
+
+      expect(result.tokens).to.have.length(3); // CODE + REGEX + CODE
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.REGEX);
+      expect(result.tokens[1].flags).to.equal('i');
+      expect(result.tokens[1].start).to.equal(regexStart);
+    });
+
+    it('should handle regex containing string delimiters', function() {
+      const result = parseTemplateLine('r/"quoted".*\'text\'/g.test(input)');
+
+      expect(result.tokens).to.have.length(2); // REGEX + CODE
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+      expect(result.tokens[0].value).to.equal('r/"quoted".*\'text\'/g');
+      expect(result.tokens[0].flags).to.equal('g');
+    });
+
+    it('should detect invalid regex patterns with mismatched characters', function() {
+      const result = parseTemplateLine('r/[unclosed/g');
+
+      // Since we're validating complete patterns with hasCompleteRegexPattern,
+      // this should be treated as CODE if the function is working properly
+      expect(result.tokens).to.have.length(1);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+    });
+
+    it('should handle all valid regex flags', function() {
+      const result = parseTemplateLine('r/pattern/gimsuy');
+
+      expect(result.tokens).to.have.length(1);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+      expect(result.tokens[0].flags).to.equal('gimsuy');
+      expect(result.tokens[0].isMalformed).to.be(false);
+    });
+  });
+
+  describe('Nested Token Interactions', function() {
+    it('should handle strings containing regex-like patterns', function() {
+      const result = parseTemplateLine('print "String with r/pattern/ inside"');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].value).to.equal('"String with r/pattern/ inside"');
+      // The r/pattern/ shouldn't be detected as regex inside a string
+    });
+
+    it('should handle comments containing string-like patterns', function() {
+      const result = parseTemplateLine('/* "This looks like a string" */');
+
+      expect(result.tokens).to.have.length(1);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
+      expect(result.tokens[0].value).to.equal('/* "This looks like a string" */');
+    });
+
+    it('should handle comments containing regex-like patterns', function() {
+      const result = parseTemplateLine('/* r/regex-like/g pattern */');
+
+      expect(result.tokens).to.have.length(1);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
+      expect(result.tokens[0].value).to.equal('/* r/regex-like/g pattern */');
+    });
+
+    it('should handle strings containing template-like expressions', function() {
+      const result = parseTemplateLine('print "Text ${not.executed} more"');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
+      expect(result.tokens[1].value).to.equal('"Text ${not.executed} more"');
+    });
+  });
+
+  describe('Unicode and Special Characters', function() {
+    it('should handle Unicode in strings', function() {
+      const result = parseTemplateLine('print "Unicode: 你好, 世界"');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].value).to.equal('"Unicode: 你好, 世界"');
+    });
+
+    it('should handle Unicode in regex patterns', function() {
+      const result = parseTemplateLine('r/[\\u4e00-\\u9fa5]+/u.test(name)');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+      expect(result.tokens[0].flags).to.equal('u');
+    });
+
+    it('should handle control characters in strings', function() {
+      const result = parseTemplateLine('print "Tab: \\t Newline: \\n"');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].value).to.equal('"Tab: \\t Newline: \\n"');
+    });
+  });
+
+  describe('Multi-line Comment Continuation', function() {
+    it('should handle comments spanning three or more lines', function() {
+      // First line
+      const result1 = parseTemplateLine('/* This comment spans');
+      expect(result1.inMultiLineComment).to.be(true);
+
+      // Second line
+      const result2 = parseTemplateLine('multiple lines', result1.inMultiLineComment);
+      expect(result2.inMultiLineComment).to.be(true);
+
+      // Third line
+      const result3 = parseTemplateLine('and closes here */', result2.inMultiLineComment);
+      expect(result3.inMultiLineComment).to.be(false);
+      expect(result3.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
+    });
+
+    it('should handle comments with nested comment-like sequences', function() {
+      const result = parseTemplateLine('/* comment with /* nested comment-like */ sequence */');
+
+      expect(result.tokens).to.have.length(1);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
+      expect(result.inMultiLineComment).to.be(false);
+      expect(result.tokens[0].value).to.equal('/* comment with /* nested comment-like */ sequence */');
+    });
+
+    it('should handle code after comment closes mid-line', function() {
+      const result = parseTemplateLine('/* comment */ code');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[1].value).to.equal(' code');
+    });
+  });
+
+  describe('Boundary Conditions', function() {
+    it('should handle tokens that start at index 0 and end at line end', function() {
+      const result = parseTemplateLine('"This string is the entire line"');
+
+      expect(result.tokens).to.have.length(1);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(30);
+    });
+
+    it('should handle empty strings at start of line', function() {
+      const result = parseTemplateLine('""code');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[0].value).to.equal('""');
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(2);
+
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[1].start).to.equal(2);
+    });
+
+    it('should handle empty strings at end of line', function() {
+      const result = parseTemplateLine('code""');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].end).to.equal(4);
+
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].start).to.equal(4);
+      expect(result.tokens[1].value).to.equal('""');
+    });
+
+    it('should handle adjacent tokens without whitespace', function() {
+      const result = parseTemplateLine('print"no space"/* comment */r/pattern/');
+
+      expect(result.tokens).to.have.length(4);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[2].type).to.equal(TOKEN_TYPES.COMMENT);
+      expect(result.tokens[3].type).to.equal(TOKEN_TYPES.REGEX);
+    });
+  });
+
+  describe('Error Recovery and Malformed Input', function() {
+    it('should handle unterminated strings', function() {
+      const result = parseTemplateLine('print "Unterminated string');
+
+      expect(result.tokens).to.have.length(2);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].incomplete).to.be(true);
+      expect(result.stringState).not.to.be(null);
+    });
+
+    it('should handle unterminated regex patterns', function() {
+      // This tests a case where r/ is valid but no closing slash is found
+      // In this case, it should be treated as code since hasCompleteRegexPattern should return false
+      const result = parseTemplateLine('r/unterminated');
+
+      expect(result.tokens).to.have.length(1);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+    });
+
+    it('should handle malformed regex with invalid flags', function() {
+      const result = parseTemplateLine('r/pattern/z');
+
+      expect(result.tokens).to.have.length(1);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+      // The 'z' flag is not valid but should still be included in the token value
+      expect(result.tokens[0].value).to.equal('r/pattern/z');
+
+      // The implementation might handle invalid flags differently:
+      // 1. It might include 'z' in flags but mark the token as malformed
+      // 2. It might exclude 'z' from flags entirely
+      // Let's check both possibilities
+      if (result.tokens[0].flags === 'z') {
+        expect(result.tokens[0].isMalformed).to.be(true);
+      } else {
+        expect(result.tokens[0].flags).to.equal('');
+      }
+    });
+  });
+
+  describe('Contextual Regex Detection Edge Cases', function() {
+    it('should detect regex after various operators', function() {
+      const operators = ['=', '+', '(', '[', '{', ':', ',', ';', '!'];
+
+      operators.forEach(op => {
+        const script = `${op}r/test/`;
+        const result = parseTemplateLine(script);
+
+        // Be more specific about our expectations
+        if (op === '') {
+          // Special case for empty string (start of line)
+          expect(result.tokens.length).to.equal(1);
+          expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+        } else {
+          // For operators, we should have at least 2 tokens (CODE + REGEX)
+          expect(result.tokens.length).to.be.greaterThan(1);
+          // Find the regex token - it should exist
+          const regexToken = result.tokens.find(t => t.type === TOKEN_TYPES.REGEX);
+          expect(regexToken).not.to.be(undefined);
+          expect(regexToken.value).to.equal('r/test/');
+        }
+      });
+    });
+
+    it('should not detect regex after identifiers or numbers', function() {
+      const nonTriggers = ['var', 'func', '123', '_var', 'a'];
+
+      nonTriggers.forEach(prefix => {
+        const script = `${prefix}r/test/`;
+        const result = parseTemplateLine(script);
+
+        expect(result.tokens.length).to.be.greaterThan(0);
+        const hasRegex = result.tokens.some(t => t.type === TOKEN_TYPES.REGEX);
+        expect(hasRegex).to.be(false);
+      });
+    });
+
+    it('should distinguish between division and regex in complex expressions', function() {
+      const result = parseTemplateLine('(a+b)/2; filter(r/\\w+/);');
+
+      // Find the tokens representing division vs regex
+      const divisionIndex = result.tokens.findIndex(t =>
+        t.type === TOKEN_TYPES.CODE && t.value.includes('/2'));
+
+      const regexIndex = result.tokens.findIndex(t =>
+        t.type === TOKEN_TYPES.REGEX);
+
+      expect(divisionIndex).not.to.equal(-1);
+      expect(regexIndex).not.to.equal(-1);
+    });
+
+    it('should handle regex after template literals', function() {
+      const result = parseTemplateLine('`template`r/pattern/');
+
+      expect(result.tokens.length).to.be.greaterThan(1);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[0].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.REGEX);
+    });
+  });
+
+  describe('Combined Complex Scenarios', function() {
+    it('should handle interleaved strings, comments, and regex', function() {
+      const script = 'print "string" /* comment */ + r/regex/g; x = 1/2; // End';
+      const result = parseTemplateLine(script);
+
+      // Be more specific about our expectations
+      // Expected token sequence: CODE + STRING + CODE + COMMENT + CODE + REGEX + CODE + COMMENT
+      expect(result.tokens.length).to.equal(8);
+
+      const types = result.tokens.map(t => t.type);
+
+      // Check specific token types in sequence
+      expect(types[0]).to.equal(TOKEN_TYPES.CODE);    // 'print '
+      expect(types[1]).to.equal(TOKEN_TYPES.STRING);  // '"string"'
+      expect(types[2]).to.equal(TOKEN_TYPES.CODE);    // ' '
+      expect(types[3]).to.equal(TOKEN_TYPES.COMMENT); // '/* comment */'
+      expect(types[4]).to.equal(TOKEN_TYPES.CODE);    // ' + '
+      expect(types[5]).to.equal(TOKEN_TYPES.REGEX);   // 'r/regex/g'
+      expect(types[6]).to.equal(TOKEN_TYPES.CODE);    // '; x = 1/2; '
+      expect(types[7]).to.equal(TOKEN_TYPES.COMMENT); // '// End'
+    });
+
+    it('should handle complex nesting with escaped characters', function() {
+      const script = 'fn(`outer ${escaped ? "inner \\"quoted\\"" : r/\\w+/g}`);';
+      const result = parseTemplateLine(script);
+
+      // The main token should be the template literal
+      const templateToken = result.tokens.find(t =>
+        t.type === TOKEN_TYPES.STRING && t.subtype === TOKEN_SUBTYPES.TEMPLATE);
+
+      expect(templateToken).not.to.be(undefined);
+      expect(templateToken.value).to.contain('inner \\"quoted\\"');
+      expect(templateToken.value).to.contain('r/\\w+/g');
+    });
+
+    it('should handle escaped backslashes at string boundaries', function() {
+      const script = 'print "\\\\" + "\\\\";';
+      const result = parseTemplateLine(script);
+
+      expect(result.tokens.length).to.be.greaterThan(2);
+
+      // Find the string tokens
+      const stringTokens = result.tokens.filter(t => t.type === TOKEN_TYPES.STRING);
+      expect(stringTokens).to.have.length(2);
+      expect(stringTokens[0].value).to.equal('"\\\\"');
+      expect(stringTokens[1].value).to.equal('"\\\\"');
+    });
+  });
 });
