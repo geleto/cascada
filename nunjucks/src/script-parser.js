@@ -234,19 +234,17 @@ function parseStringChar(parserState, char) {
 
 /**
  * Handle a character when in REGEX state. Returns `true` if the regex has ended.
- * Exactly matching Nunjucks implementation.
  */
 function parseRegexChar(parserState, char) {
   const { currentToken } = parserState;
   const prevChar = parserState.index > 0 ? parserState.line[parserState.index - 1] : '';
 
   // Check for the closing slash - only if previous character is not an escape
-  // Exactly like Nunjucks: current() === '/' && previous() !== '\\'
   if (char === '/' && prevChar !== '\\') {
     currentToken.value += char;
     parserState.index++;
 
-    // Collect flags (exactly matching Nunjucks' approach)
+    // Collect flags
     const POSSIBLE_FLAGS = ['g', 'i', 'm', 'y', 's', 'u', 'd'];
     let regexFlags = '';
     // Track seen flags to prevent duplicates
@@ -295,10 +293,10 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
     tokens: [],
     codeStart: inMultiLineComment ? null : 0,
     escaped: stringState ? stringState.escaped : false,
-    stringDelimiter: stringState ? stringState.delimiter : '',
-    seenFlags: []
+    stringDelimiter: stringState ? stringState.delimiter : ''
   };
 
+  // String continuation from previous line
   if (stringState && stringState.escaped) {
     parserState.currentState = STATES.STRING;
     parserState.currentToken = {
@@ -407,8 +405,7 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
           parserState.tokens.push(parserState.currentToken);
           parserState.currentToken = null;
           parserState.currentState = STATES.NORMAL;
-          parserState.codeStart = finalizeCodeToken(parserState.tokens, line, parserState.codeStart, parserState.index + 1);
-          parserState.codeStart = parserState.index + 1; // Always start a new CODE token
+          parserState.codeStart = parserState.index + 1;
           parserState.escaped = false;
           parserState.stringDelimiter = '';
         }
@@ -421,8 +418,7 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
           parserState.tokens.push(parserState.currentToken);
           parserState.currentToken = null;
           parserState.currentState = STATES.NORMAL;
-          parserState.codeStart = finalizeCodeToken(parserState.tokens, line, parserState.codeStart, parserState.index);
-          parserState.codeStart = parserState.index; // Always start a new CODE token
+          parserState.codeStart = parserState.index;
           parserState.index--; // Adjust for loop increment
         }
         break;
@@ -461,29 +457,6 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
       }
     }
     parserState.tokens.push(parserState.currentToken);
-    // Add trailing CODE token if STRING or REGEX ends the line (complete or incomplete)
-    if (parserState.currentState === STATES.STRING || parserState.currentState === STATES.REGEX) {
-      parserState.tokens.push({
-        type: TOKEN_TYPES.CODE,
-        start: line.length,
-        end: line.length,
-        value: ''
-      });
-    }
-  } else if (parserState.codeStart !== null && parserState.tokens.length > 0) {
-    // If no currentToken but codeStart is set and we have tokens (e.g., after a completed STRING/REGEX),
-    // finalize the code and add a trailing empty CODE token if it ends the line
-    finalizeCodeToken(parserState.tokens, line, parserState.codeStart, line.length);
-    if (parserState.tokens[parserState.tokens.length - 1].end === line.length &&
-        (parserState.tokens[parserState.tokens.length - 1].type === TOKEN_TYPES.STRING ||
-         parserState.tokens[parserState.tokens.length - 1].type === TOKEN_TYPES.REGEX)) {
-      parserState.tokens.push({
-        type: TOKEN_TYPES.CODE,
-        start: line.length,
-        end: line.length,
-        value: ''
-      });
-    }
   } else if (parserState.codeStart !== null) {
     // Finalize any trailing code
     finalizeCodeToken(parserState.tokens, line, parserState.codeStart, line.length);

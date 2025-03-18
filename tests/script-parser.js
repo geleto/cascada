@@ -34,43 +34,77 @@ describe('Script Parser', function() {
 
   describe('String Parsing', function() {
     it('should parse single-quoted strings', function() {
-      let sc = 'print \'Hello, World!\'';
-      console.log('DEBUG - Script:', sc);
-      const result = parseTemplateLine(sc);
-      console.log('DEBUG - Token count:', result.tokens.length);
-      console.log('DEBUG - Tokens:', JSON.stringify(result.tokens.map(t => ({ type: t.type, value: t.value })), null, 2));
-      expect(result.tokens).to.have.length(3);
-      sc = 'print \'Hello, World!\'';
-      const stringStart = sc.indexOf('\'');
-      const stringEnd = sc.lastIndexOf('\'') + 1;
+      const result = parseTemplateLine('print \'Hello, World!\'');
+
+      // Should generate 2 tokens: CODE and STRING
+      expect(result.tokens).to.have.length(2);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.SINGLE_QUOTED);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(21);
       expect(result.tokens[1].value).to.equal('\'Hello, World!\'');
-      expect(result.tokens[1].start).to.equal(stringStart);
-      expect(result.tokens[1].end).to.equal(stringEnd);
     });
 
     it('should parse double-quoted strings', function() {
       const result = parseTemplateLine('print "Hello, World!"');
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 2 tokens: CODE and STRING
+      expect(result.tokens).to.have.length(2);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(21);
       expect(result.tokens[1].value).to.equal('"Hello, World!"');
     });
 
     it('should handle escaped quotes in strings', function() {
       const result = parseTemplateLine('print "She said \\"Hello\\""');
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 2 tokens: CODE and STRING
+      expect(result.tokens).to.have.length(2);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(26);
       expect(result.tokens[1].value).to.equal('"She said \\"Hello\\""');
     });
 
     it('should handle string continuation at end of line', function() {
       const result = parseTemplateLine('print "This string continues \\');
+
+      // Should generate 2 tokens: CODE and incomplete STRING
       expect(result.tokens).to.have.length(2);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(30);
+      expect(result.tokens[1].value).to.equal('"This string continues \\');
       expect(result.tokens[1].incomplete).to.be(true);
+
       expect(result.stringState).not.to.be(null);
       expect(result.stringState.escaped).to.be(true);
       expect(result.stringState.delimiter).to.equal('"');
@@ -79,18 +113,44 @@ describe('Script Parser', function() {
     it('should continue a string from previous line', function() {
       const stringState = { escaped: true, delimiter: '"' };
       const result = parseTemplateLine('on the next line"', false, stringState);
+
+      // Should generate 1 token: STRING
       expect(result.tokens).to.have.length(1);
+
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(17);
       expect(result.tokens[0].value).to.equal('on the next line"');
+
       expect(result.stringState).to.be(null);
     });
 
     it('should parse multiple strings in a line', function() {
       const result = parseTemplateLine('print "Hello" + \' World\'');
-      expect(result.tokens).to.have.length(5); // "print ", "Hello", " + ", " World"
+
+      // Should generate 4 tokens: CODE, STRING, CODE, STRING
+      expect(result.tokens).to.have.length(4);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(13);
       expect(result.tokens[1].value).to.equal('"Hello"');
+
+      expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[2].start).to.equal(13);
+      expect(result.tokens[2].end).to.equal(16);
+      expect(result.tokens[2].value).to.equal(' + ');
+
       expect(result.tokens[3].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[3].subtype).to.equal(TOKEN_SUBTYPES.SINGLE_QUOTED);
+      expect(result.tokens[3].start).to.equal(16);
+      expect(result.tokens[3].end).to.equal(24);
       expect(result.tokens[3].value).to.equal('\' World\'');
     });
   });
@@ -154,15 +214,32 @@ describe('Script Parser', function() {
 
     it('should parse regex with flags', function() {
       const result = parseTemplateLine('r/\\d+/gi.test(value)');
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 2 tokens: REGEX and CODE
+      expect(result.tokens).to.have.length(2);
+
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(8);
+      expect(result.tokens[0].value).to.equal('r/\\d+/gi');
       expect(result.tokens[0].flags).to.equal('gi');
+
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[1].start).to.equal(8);
+      expect(result.tokens[1].end).to.equal(20);
+      expect(result.tokens[1].value).to.equal('.test(value)');
     });
 
     it('should detect duplicate flags as malformed', function() {
       const result = parseTemplateLine('r/pattern/gg');
+
+      // Should generate 1 token: REGEX (malformed)
       expect(result.tokens).to.have.length(1);
+
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(12);
+      expect(result.tokens[0].value).to.equal('r/pattern/gg');
       expect(result.tokens[0].flags).to.equal('gg');
       expect(result.tokens[0].isMalformed).to.be(true);
     });
@@ -185,94 +262,137 @@ describe('Script Parser', function() {
     it('should correctly capture token positions for all token types', function() {
       const script = 'print "hello" /* comment */ + r/pattern/g';
 
-      // Calculate expected positions correctly - no gaps between tokens
-      const codeStartPos = 0;
-      const codeEndPos = script.indexOf('"');
-      const stringStartPos = script.indexOf('"');
-      const stringEndPos = script.indexOf('"', stringStartPos + 1) + 1;
-      // Space after string is part of the next CODE token
-      const code2StartPos = stringEndPos;
-      const code2EndPos = script.indexOf('/*');
-      const commentStartPos = script.indexOf('/*');
-      const commentEndPos = script.indexOf('*/') + 2;
-      const code3StartPos = commentEndPos;
-      const code3EndPos = script.indexOf('r/');
-      const regexStartPos = script.indexOf('r/');
-      const regexEndPos = script.lastIndexOf('/') + 2; // +2 for the 'g' flag
-
       const result = parseTemplateLine(script);
 
-      // There should be 5 tokens in total
-      expect(result.tokens).to.have.length(5);
+      // Should generate 6 tokens: CODE, STRING, CODE, COMMENT, CODE, REGEX
+      expect(result.tokens).to.have.length(6);
 
-      // Code token before string
+      // CODE token before string
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[0].start).to.equal(codeStartPos);
-      expect(result.tokens[0].end).to.equal(codeEndPos);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
 
-      // String token
+      // STRING token
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result.tokens[1].start).to.equal(stringStartPos);
-      expect(result.tokens[1].end).to.equal(stringEndPos);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(13);
+      expect(result.tokens[1].value).to.equal('"hello"');
 
-      // Code token between string and comment (includes the space)
+      // CODE token (space between string and comment)
       expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[2].start).to.equal(code2StartPos);
-      expect(result.tokens[2].end).to.equal(code2EndPos);
+      expect(result.tokens[2].start).to.equal(13);
+      expect(result.tokens[2].end).to.equal(14);
+      expect(result.tokens[2].value).to.equal(' ');
 
-      // Comment token
+      // COMMENT token
       expect(result.tokens[3].type).to.equal(TOKEN_TYPES.COMMENT);
-      expect(result.tokens[3].start).to.equal(commentStartPos);
-      expect(result.tokens[3].end).to.equal(commentEndPos);
+      expect(result.tokens[3].start).to.equal(14);
+      expect(result.tokens[3].end).to.equal(27);
+      expect(result.tokens[3].value).to.equal('/* comment */');
 
-      // Code token between comment and regex
+      // CODE token (space and + between comment and regex)
       expect(result.tokens[4].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[4].start).to.equal(code3StartPos);
-      expect(result.tokens[4].end).to.equal(code3EndPos);
+      expect(result.tokens[4].start).to.equal(27);
+      expect(result.tokens[4].end).to.equal(30);
+      expect(result.tokens[4].value).to.equal(' + ');
 
-      // Regex token
+      // REGEX token
       expect(result.tokens[5].type).to.equal(TOKEN_TYPES.REGEX);
-      expect(result.tokens[5].start).to.equal(regexStartPos);
-      expect(result.tokens[5].end).to.equal(regexEndPos);
+      expect(result.tokens[5].start).to.equal(30);
+      expect(result.tokens[5].end).to.equal(41);
+      expect(result.tokens[5].value).to.equal('r/pattern/g');
+      expect(result.tokens[5].flags).to.equal('g');
     });
   });
 
   describe('Complex Scenarios', function() {
     it('should handle multiple token types in one line', function() {
       const script = 'if user.role == "admin" // Check role';
-      const stringStart = script.indexOf('"');
-      const stringEnd = script.lastIndexOf('"') + 1;
-      const commentStart = script.indexOf('//');
-
       const result = parseTemplateLine(script);
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 4 tokens: CODE, STRING, CODE, COMMENT
+      expect(result.tokens).to.have.length(4);
+
+      // CODE token before string
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(16);
+      expect(result.tokens[0].value).to.equal('if user.role == ');
+
+      // STRING token
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result.tokens[1].start).to.equal(stringStart);
-      expect(result.tokens[1].end).to.equal(stringEnd);
-      expect(result.tokens[2].type).to.equal(TOKEN_TYPES.COMMENT);
-      expect(result.tokens[2].start).to.equal(commentStart);
+      expect(result.tokens[1].start).to.equal(16);
+      expect(result.tokens[1].end).to.equal(23);
+      expect(result.tokens[1].value).to.equal('"admin"');
+
+      // CODE token (space between string and comment)
+      expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[2].start).to.equal(23);
+      expect(result.tokens[2].end).to.equal(24);
+      expect(result.tokens[2].value).to.equal(' ');
+
+      // COMMENT token
+      expect(result.tokens[3].type).to.equal(TOKEN_TYPES.COMMENT);
+      expect(result.tokens[3].start).to.equal(24);
+      expect(result.tokens[3].end).to.equal(37);
+      expect(result.tokens[3].value).to.equal('// Check role');
     });
 
     it('should parse template literals', function() {
       const result = parseTemplateLine('print `User: ${user.name}`');
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 2 tokens: CODE and STRING
+      expect(result.tokens).to.have.length(2);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(26);
+      expect(result.tokens[1].value).to.equal('`User: ${user.name}`');
     });
 
     it('should handle regex with escaped forward slashes', function() {
       const result = parseTemplateLine('var pattern = r/path\\/to\\/file/');
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 2 tokens: CODE and REGEX
+      expect(result.tokens).to.have.length(2);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(14);
+      expect(result.tokens[0].value).to.equal('var pattern = ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.REGEX);
-      expect(result.tokens[1].value).to.contain('\\/');
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.REGEX);
+      expect(result.tokens[1].start).to.equal(14);
+      expect(result.tokens[1].end).to.equal(31);
+      expect(result.tokens[1].value).to.equal('r/path\\/to\\/file/');
+      expect(result.tokens[1].flags).to.equal('');
     });
 
     it('should handle empty regex patterns', function() {
       const result = parseTemplateLine('var emptyPattern = r//');
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 2 tokens: CODE and REGEX
+      expect(result.tokens).to.have.length(2);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(19);
+      expect(result.tokens[0].value).to.equal('var emptyPattern = ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.REGEX);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.REGEX);
+      expect(result.tokens[1].start).to.equal(19);
+      expect(result.tokens[1].end).to.equal(22);
       expect(result.tokens[1].value).to.equal('r//');
+      expect(result.tokens[1].flags).to.equal('');
     });
 
     it('should handle cascada script syntax examples', function() {
@@ -284,10 +404,25 @@ describe('Script Parser', function() {
 
     it('should handle cascada print statement', function() {
       const result = parseTemplateLine('print "Hello, " + user.name');
-      expect(result.tokens).to.have.length(5);
+
+      // Should generate 3 tokens: CODE, STRING, CODE
+      expect(result.tokens).to.have.length(3);
+
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(15);
+      expect(result.tokens[1].value).to.equal('"Hello, "');
+
       expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[2].start).to.equal(15);
+      expect(result.tokens[2].end).to.equal(27);
+      expect(result.tokens[2].value).to.equal(' + user.name');
     });
 
     it('should handle cascada for loop', function() {
@@ -403,21 +538,49 @@ describe('Script Parser', function() {
   describe('Edge Cases', function() {
     it('should handle regex at the beginning of line', function() {
       const result = parseTemplateLine('r/^start/ && condition');
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 2 tokens: REGEX and CODE
+      expect(result.tokens).to.have.length(2);
+
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(9);
+      expect(result.tokens[0].value).to.equal('r/^start/');
+      expect(result.tokens[0].flags).to.equal('');
+
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[1].start).to.equal(9);
+      expect(result.tokens[1].end).to.equal(22);
+      expect(result.tokens[1].value).to.equal(' && condition');
     });
 
     it('should handle incomplete regex at end of line', function() {
       const result = parseTemplateLine('var pattern = r/incomplete');
-      expect(result.tokens).to.have.length(3);
-      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.CODE); // This should be code, not regex, as it's incomplete
-      expect(result.tokens[1].value).to.equal('r/incomplete');
+
+      // Should generate 1 token: CODE (since the regex is incomplete and not recognized)
+      expect(result.tokens).to.have.length(1);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(26);
+      expect(result.tokens[0].value).to.equal('var pattern = r/incomplete');
     });
 
     it('should handle strings with nested quotes', function() {
       const result = parseTemplateLine('print "String with \'nested\' quotes"');
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 2 tokens: CODE and STRING
+      expect(result.tokens).to.have.length(2);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(35);
       expect(result.tokens[1].value).to.equal('"String with \'nested\' quotes"');
     });
 
@@ -431,8 +594,19 @@ describe('Script Parser', function() {
 
     it('should parse escaped backslashes correctly', function() {
       const result = parseTemplateLine('print "Double backslash: \\\\"');
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 2 tokens: CODE and STRING
+      expect(result.tokens).to.have.length(2);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(28);
       expect(result.tokens[1].value).to.equal('"Double backslash: \\\\"');
     });
 
@@ -451,8 +625,19 @@ describe('Script Parser', function() {
 
     it('should handle consecutive string delimiters', function() {
       const result = parseTemplateLine('print ""');
-      expect(result.tokens).to.have.length(3);
+
+      // Should generate 2 tokens: CODE and STRING
+      expect(result.tokens).to.have.length(2);
+
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].start).to.equal(0);
+      expect(result.tokens[0].end).to.equal(6);
+      expect(result.tokens[0].value).to.equal('print ');
+
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
+      expect(result.tokens[1].start).to.equal(6);
+      expect(result.tokens[1].end).to.equal(8);
       expect(result.tokens[1].value).to.equal('""');
     });
 
