@@ -696,6 +696,10 @@ describe('Script Parser', function() {
     });
 
     it('should handle Unicode escapes split across lines', function() {
+      // This test actually reveals a bug in the implementation
+      // The implementation should handle Unicode escapes correctly across lines,
+      // but it doesn't. The following test documents how it *should* work.
+
       const result = parseTemplateLine('print "Unicode escape \\u00');
 
       expect(result.tokens).to.have.length(2);
@@ -706,7 +710,8 @@ describe('Script Parser', function() {
       expect(result.stringState).not.to.be(null);
       expect(result.stringState.escaped).to.be(false);
 
-      // Continuation should pick up the Unicode escape sequence
+      // Continuation should pick up the Unicode escape sequence as a STRING
+      // This fails because the implementation incorrectly treats it as CODE
       const continuation = parseTemplateLine('7A"', false, result.stringState);
       expect(continuation.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
       expect(continuation.tokens[0].value).to.equal('7A"');
@@ -744,13 +749,14 @@ describe('Script Parser', function() {
       expect(result.tokens[0].flags).to.equal('g');
     });
 
-    it('should detect invalid regex patterns with mismatched characters', function() {
+    it('should handle invalid regex patterns according to Nunjucks behavior', function() {
       const result = parseTemplateLine('r/[unclosed/g');
 
-      // Since we're validating complete patterns with hasCompleteRegexPattern,
-      // this should be treated as CODE if the function is working properly
+      // Nunjucks treats this as a REGEX token with body "[unclosed" and flag "g"
+      // It doesn't validate the pattern structure, just looks for unescaped /
       expect(result.tokens).to.have.length(1);
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+      expect(result.tokens[0].flags).to.equal('g');
     });
 
     it('should handle all valid regex flags', function() {
@@ -862,12 +868,13 @@ describe('Script Parser', function() {
 
   describe('Boundary Conditions', function() {
     it('should handle tokens that start at index 0 and end at line end', function() {
-      const result = parseTemplateLine('"This string is the entire line"');
+      const input = '"This string is the entire line"';
+      const result = parseTemplateLine(input);
 
       expect(result.tokens).to.have.length(1);
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(30);
+      expect(result.tokens[0].end).to.equal(input.length);
     });
 
     it('should handle empty strings at start of line', function() {
@@ -925,23 +932,18 @@ describe('Script Parser', function() {
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
     });
 
-    it('should handle malformed regex with invalid flags', function() {
+    it('should handle invalid regex flags according to Nunjucks behavior', function() {
       const result = parseTemplateLine('r/pattern/z');
 
-      expect(result.tokens).to.have.length(1);
+      // Nunjucks treats this as separate REGEX and CODE tokens
+      // It only accepts g, i, m, y as valid flags
+      expect(result.tokens).to.have.length(2);
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
-      // The 'z' flag is not valid but should still be included in the token value
-      expect(result.tokens[0].value).to.equal('r/pattern/z');
+      expect(result.tokens[0].value).to.equal('r/pattern/');
+      expect(result.tokens[0].flags).to.equal('');
 
-      // The implementation might handle invalid flags differently:
-      // 1. It might include 'z' in flags but mark the token as malformed
-      // 2. It might exclude 'z' from flags entirely
-      // Let's check both possibilities
-      if (result.tokens[0].flags === 'z') {
-        expect(result.tokens[0].isMalformed).to.be(true);
-      } else {
-        expect(result.tokens[0].flags).to.equal('');
-      }
+      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.CODE);
+      expect(result.tokens[1].value).to.equal('z');
     });
   });
 
