@@ -1518,4 +1518,245 @@ describe('Script Parser', function() {
     });
   });
 
+  /**
+ * Additional tests for comprehensive indentation support coverage
+ */
+  describe('Advanced Indentation Support', function () {
+    describe('Non-Standard Whitespace', function () {
+      it('should handle carriage return in indentation', function() {
+        const result = parseTemplateLine('\r    const x = 5;');
+        // The implementation treats \r as a character before indentation
+        // so indentation starts after \r
+        expect(result.indentation).to.equal('');
+        expect(result.tokens[0].start).to.equal(0);
+      });
+
+      it('should handle lines with zero indentation', function() {
+        const result = parseTemplateLine('const x = 5;');
+        expect(result.indentation).to.equal('');
+        expect(result.tokens[0].start).to.equal(0);
+        expect(result.tokens[0].value).to.equal('const x = 5;');
+      });
+
+      it('should handle very large indentation', function() {
+        const largeIndent = ' '.repeat(100);
+        const result = parseTemplateLine(largeIndent + 'x = 5;');
+        expect(result.indentation).to.equal(largeIndent);
+        expect(result.tokens[0].start).to.equal(100);
+      });
+    });
+
+    describe('Nested Structures with Indentation', function () {
+      it('should handle nested code blocks with varied indentation', function () {
+        // First line
+        const result1 = parseTemplateLine('if (condition) {');
+        expect(result1.indentation).to.equal('');
+
+        // Second line (indented)
+        const result2 = parseTemplateLine('    if (nestedCondition) {');
+        expect(result2.indentation).to.equal('    ');
+
+        // Third line (double indentation)
+        const result3 = parseTemplateLine('        const x = 5;');
+        expect(result3.indentation).to.equal('        ');
+      });
+
+      it('should handle nested string continuations with varying indentation', function () {
+        // First level string with continuation
+        const result1 = parseTemplateLine('const str = "First level \\');
+        expect(result1.stringState).not.to.be(null);
+
+        // Second level with different indentation
+        const result2 = parseTemplateLine('    continued with more indentation \\', false, result1.stringState);
+        expect(result2.indentation).to.equal('    ');
+        expect(result2.stringState).not.to.be(null);
+
+        // Third level with different indentation
+        const result3 = parseTemplateLine('  and then less indentation";', false, result2.stringState);
+        expect(result3.indentation).to.equal('  ');
+        expect(result3.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+      });
+    });
+
+    describe('Complex Template Literals', function () {
+      it('should handle template literals with nested expressions', function () {
+        const result = parseTemplateLine('    `Value: ${x > 5 ? `nested ${y}` : "not nested"}`;');
+        expect(result.indentation).to.equal('    ');
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[0].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+      });
+
+      it('should handle template literals with multiple expressions and indentation', function () {
+        const result = parseTemplateLine('    `${a} + ${b} = ${a + b}`;');
+        expect(result.indentation).to.equal('    ');
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[0].start).to.equal(4);
+      });
+
+      it('should handle multi-line template literal with expressions and varying indentation', function () {
+        // First line
+        const result1 = parseTemplateLine('    `Start of template ${');
+        expect(result1.indentation).to.equal('    ');
+        expect(result1.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result1.tokens[0].incomplete).to.be(true);
+        expect(result1.stringState).not.to.be(null);
+
+        // Second line with different indentation
+        const result2 = parseTemplateLine('        x > 5 ? "larger" : "smaller"', false, result1.stringState);
+        expect(result2.indentation).to.equal('        ');
+        expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+
+        // Third line closes the template
+        const result3 = parseTemplateLine('    } end of template`;', false, result2.stringState);
+        expect(result3.indentation).to.equal('    ');
+        expect(result3.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+      });
+    });
+
+    describe('Mixed Indentation Types', function () {
+      it('should handle inconsistent indentation across continuous tokens', function () {
+        // Start with spaces
+        const result1 = parseTemplateLine('    /* Start of comment');
+        expect(result1.indentation).to.equal('    ');
+        expect(result1.inMultiLineComment).to.be(true);
+
+        // Continue with tabs
+        const result2 = parseTemplateLine('\t\tmiddle of comment', result1.inMultiLineComment);
+        expect(result2.indentation).to.equal('\t\t');
+        expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
+        expect(result2.tokens[0].start).to.equal(2);
+
+        // Finish with mixed indentation
+        const result3 = parseTemplateLine('  \t  end of comment */', result2.inMultiLineComment);
+        expect(result3.indentation).to.equal('  \t  ');
+        expect(result3.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
+        expect(result3.tokens[0].start).to.equal(5);
+      });
+    });
+
+    describe('Comment-Specific Indentation Behavior', function () {
+      it('should ignore comment nestline with varying indentation', function() {
+        // First line - start outer comment
+        const result1 = parseTemplateLine('    /* Outer comment');
+        expect(result1.indentation).to.equal('    ');
+        expect(result1.inMultiLineComment).to.be(true);
+
+        // Second line - with "inner" comment syntax
+        const result2 = parseTemplateLine('        /* Nested comment-like syntax */', result1.inMultiLineComment);
+        expect(result2.indentation).to.equal('        ');
+        // The current implementation treats this as COMMENT, not CODE
+        expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
+
+        // Third line - end outer comment
+        const result3 = parseTemplateLine('    Outer comment end */', result2.inMultiLineComment);
+        expect(result3.indentation).to.equal('    ');
+        expect(result3.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result3.inMultiLineComment).to.be(false);
+      });
+    });
+
+    describe('Regex-Specific Indentation Behavior', function () {
+      it('should handle regex with flags after indentation', function() {
+        const result = parseTemplateLine('    r/pattern/gi;');
+        expect(result.indentation).to.equal('    ');
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+        expect(result.tokens[0].flags).to.equal('gi');
+      });
+
+      it('should treat incomplete regex pattern as code', function() {
+        const result = parseTemplateLine('    r/pattern');
+        expect(result.indentation).to.equal('    ');
+        // It should be a CODE token, not REGEX
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      });
+    });
+
+    describe('Multi-Line Token Sequences', function () {
+      it('should handle long sequences of continued lines with varying indentation', function () {
+        // Setup a multi-line sequence with alternating indentation
+        const lines = [
+          '/* Start a comment',              // Line 1 - no indent
+          '   with some indentation',        // Line 2 - 3 spaces
+          '     even more indentation',      // Line 3 - 5 spaces
+          ' less indentation',               // Line 4 - 1 space
+          '\tswitch to tabs',                // Line 5 - 1 tab
+          ' back to spaces */'               // Line 6 - 1 space
+        ];
+
+        // Process the sequence
+        let inComment = false;
+        let results = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          const result = parseTemplateLine(lines[i], inComment);
+          results.push(result);
+          inComment = result.inMultiLineComment;
+
+          // Verify indentation extraction
+          const expectedIndentation = i === 0 ? '' :
+            i === 1 ? '   ' :
+              i === 2 ? '     ' :
+                i === 3 ? ' ' :
+                  i === 4 ? '\t' : ' ';
+
+          expect(result.indentation).to.equal(expectedIndentation);
+
+          // Verify token is positioned correctly after indentation
+          expect(result.tokens[0].start).to.equal(expectedIndentation.length);
+        }
+
+        // Verify final result is not in comment state
+        expect(results[results.length - 1].inMultiLineComment).to.be(false);
+      });
+    });
+
+    describe('Pathological Edge Cases', function () {
+      it('should handle string with escape at end of indentation', function() {
+        // This is a strange edge case: indentation with a backslash at the end
+        // followed by a string on the next line
+        const result1 = parseTemplateLine('    \\');
+        expect(result1.indentation).to.equal('    ');
+        // The backslash should be treated as regular code
+        expect(result1.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+
+        const result2 = parseTemplateLine('"This is a new string"');
+        expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+      });
+
+      it('should handle indentation-only lines between tokens', function() {
+        // Start a string
+        const result1 = parseTemplateLine('const str = "Start string \\');
+        expect(result1.stringState).not.to.be(null);
+
+        // Line with only indentation
+        const result2 = parseTemplateLine('    ', false, result1.stringState);
+        expect(result2.indentation).to.equal('    ');
+        // The implementation treats this as a STRING token when in string continuation
+        expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+
+        // Complete the string
+        const result3 = parseTemplateLine('end string"', false, result2.stringState);
+        expect(result3.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+      });
+
+      it('should handle extreme changes in indentation', function() {
+        // Start with no indentation
+        const result1 = parseTemplateLine('/* Comment');
+        expect(result1.indentation).to.equal('');
+        expect(result1.inMultiLineComment).to.be(true);
+
+        // Jump to very large indentation
+        const largeIndent = ' '.repeat(100);
+        const result2 = parseTemplateLine(largeIndent + 'still in comment', result1.inMultiLineComment);
+        expect(result2.indentation).to.equal(largeIndent);
+        expect(result2.tokens[0].start).to.equal(100);
+
+        // Back to small indentation
+        const result3 = parseTemplateLine(' end comment */', result2.inMultiLineComment);
+        expect(result3.indentation).to.equal(' ');
+        expect(result3.tokens[0].start).to.equal(1);
+      });
+    });
+  });
+
 });

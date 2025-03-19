@@ -91,8 +91,10 @@ const VALID_REGEX_FLAGS = new Set(['g', 'i', 'm', 'y', 's', 'u', 'd']);
 
 /**
  * Extract indentation (whitespace) at the beginning of a line
+ * Only spaces and tabs are treated as indentation
  */
 function extractIndentation(line) {
+  // The original implementation - don't modify how CR is handled
   const match = line.match(/^[ \t]*/);
   return match ? match[0] : '';
 }
@@ -190,7 +192,7 @@ function hasCompleteRegexPattern(line, index) {
     i++;
   }
 
-  return false;
+  return false; // No closing slash found
 }
 
 /**
@@ -391,13 +393,15 @@ function processRegexState(state) {
 
 /**
  * Process regex flags after the closing slash
+ * - Valid flags are collected as part of the regex token
+ * - Any invalid flags or other characters are treated as separate code tokens
  */
 function processRegexFlags(state) {
   const { currentToken, line, index } = state;
   let flagsEnd = index + 1;
   const seenFlags = new Set();
 
-  // Collect all flags
+  // Collect only valid flags
   while (flagsEnd < line.length) {
     const flagChar = line[flagsEnd];
 
@@ -412,6 +416,7 @@ function processRegexFlags(state) {
       currentToken.value += flagChar;
       flagsEnd++;
     } else {
+      // Stop at first invalid character - the rest will be a separate token
       break;
     }
   }
@@ -451,6 +456,7 @@ function processMultiLineComment(state) {
   currentToken.value += char;
 
   // Check for the end of the comment - standard JavaScript behavior
+  // Only look for */ to end the comment, ignoring any "nested" comments
   if (char === '/' && prevChar === '*') {
     currentToken.end = index + 1;
     state.tokens.push(currentToken);
@@ -462,9 +468,7 @@ function processMultiLineComment(state) {
   }
 }
 
-/**
- * Finalize any open tokens at the end of the line
- */
+
 function finalizeEndOfLine(state) {
   const { line, currentToken, currentState, codeStart } = state;
 
@@ -485,6 +489,7 @@ function finalizeEndOfLine(state) {
       currentToken.incomplete = true;
 
       if (currentState === STATES.REGEX) {
+        // Mark incomplete regex as malformed
         currentToken.isMalformed = true;
       }
 
@@ -555,16 +560,36 @@ function finalizeEndOfLine(state) {
 
   // Handle the case of a line with only indentation (no tokens)
   if (state.tokens.length === 0 && state.indentation.length > 0) {
-    // For a line with only indentation, add an empty code token
-    state.tokens.push(createCodeToken(
-      state.indentation.length,
-      state.indentation.length,
-      ''
-    ));
+    // FIX: Check if we're in a string continuation state before adding an empty code token
+    if (currentState === STATES.STRING) {
+      // We're in a string state but haven't added a token yet - add a string token
+      const subtype = state.stringDelimiter === '\'' ? TOKEN_SUBTYPES.SINGLE_QUOTED :
+        state.stringDelimiter === '"' ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
+          TOKEN_SUBTYPES.TEMPLATE;
+
+      const stringToken = createToken(TOKEN_TYPES.STRING, subtype, state.indentation.length, '');
+      stringToken.end = line.length;
+      stringToken.incomplete = true;
+      state.tokens.push(stringToken);
+
+      // Also update the stringState to continue the string to the next line
+      result.stringState = {
+        escaped: false,
+        delimiter: state.stringDelimiter
+      };
+    } else {
+      // For non-string states, add an empty code token
+      state.tokens.push(createCodeToken(
+        state.indentation.length,
+        state.indentation.length,
+        ''
+      ));
+    }
   }
 
   return result;
 }
+
 
 /**
  * Process a single character based on the current state
@@ -624,6 +649,25 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
 
     state.currentToken = createToken(TOKEN_TYPES.STRING, subtype, indentation.length, '');
     state.codeStart = null;
+
+    // Special handling for empty or whitespace-only lines in string continuation
+    if (line.trim() === '') {
+      state.currentToken.value = line.substring(indentation.length);
+      state.currentToken.end = line.length;
+      state.currentToken.incomplete = true;
+      state.tokens.push(state.currentToken);
+
+      // Return early with string continuation state
+      return {
+        tokens: state.tokens,
+        inMultiLineComment: false,
+        stringState: {
+          escaped: false,
+          delimiter: stringState.delimiter
+        },
+        indentation: state.indentation
+      };
+    }
   } else if (inMultiLineComment) {
     // Continuing a multi-line comment
     state.currentToken = createToken(TOKEN_TYPES.COMMENT, TOKEN_SUBTYPES.MULTI_LINE, indentation.length, '');
