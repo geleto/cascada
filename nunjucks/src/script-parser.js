@@ -215,8 +215,8 @@ function processNormalState(state) {
 
     // For template literals, we'll need to track expression depth
     if (char === '`') {
-      state.templateDepth = 0;
-      state.bracketBalance = 0;
+      state.expressionDepth = 0;
+      state.bracketStack = [];
     }
 
     // Create token with the correct position
@@ -225,7 +225,6 @@ function processNormalState(state) {
   }
 
   // Check for $ followed by { in a template literal - should be part of the string
-  // This prevents the normal state from processing these as separate tokens
   if (state.currentState === STATES.STRING && state.stringDelimiter === '`' &&
       char === '$' && nextChar === '{') {
     state.currentToken.value += char;
@@ -303,7 +302,7 @@ function processStringState(state) {
     }
 
     // Handle expression start
-    if (char === '{' && prevChar === '$' && state.bracketStack.length === 0) {
+    if (char === '{' && prevChar === '$') {
       state.expressionDepth++;
       state.bracketStack.push('{');
       return;
@@ -311,22 +310,19 @@ function processStringState(state) {
 
     // Track bracket nesting inside expressions
     if (state.expressionDepth > 0) {
-      if (char === '{' && state.bracketStack[state.bracketStack.length - 1] !== '`') {
+      if (char === '{') {
         state.bracketStack.push('{');
-      } else if (char === '}' && state.bracketStack[state.bracketStack.length - 1] === '{') {
+      } else if (char === '}' && state.bracketStack.length > 0) {
         state.bracketStack.pop();
         if (state.bracketStack.length === 0) {
           state.expressionDepth--;
         }
-      } else if (char === '`') {
-        // Track nested template literals inside expressions
-        if (prevChar !== '\\') {
-          if (state.bracketStack[state.bracketStack.length - 1] === '`') {
-            state.bracketStack.pop(); // End of nested template
-          } else {
-            state.bracketStack.push('`'); // Start of nested template
-          }
+      } else if (char === '`' && prevChar !== '\\') {
+        // Handle nested template literals
+        if (state.nestedTemplateDepth === undefined) {
+          state.nestedTemplateDepth = 0;
         }
+        state.nestedTemplateDepth++;
       }
       return;
     }
@@ -527,6 +523,13 @@ function finalizeEndOfLine(state) {
           // Even number means they escape each other, not the line break
           // stringState remains null, which means no continuation
         }
+        // For template literals that are not closed, set stringState to continue them
+        else if (state.stringDelimiter === '`') {
+          result.stringState = {
+            escaped: false,
+            delimiter: state.stringDelimiter
+          };
+        }
         // For regular unterminated strings without escape characters at the end,
         // we set stringState to continue the string
         else if (currentToken.value.charAt(0) === state.stringDelimiter &&
@@ -588,6 +591,9 @@ function processCharacter(state) {
   }
 }
 
+/**
+ * Parse a line of template language code
+ */
 function parseTemplateLine(line, inMultiLineComment = false, stringState = null) {
   // Extract indentation from the line
   const indentation = extractIndentation(line);
@@ -633,7 +639,6 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
   const result = finalizeEndOfLine(state);
 
   // Ensure indentation is included in the result
-  // Only replace if indentation is undefined or null, not if it's an empty string
   if (result.indentation === undefined || result.indentation === null) {
     result.indentation = state.indentation;
   }
