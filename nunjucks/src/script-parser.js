@@ -320,6 +320,8 @@ function processNormalState(state) {
 function processStringState(state) {
   const { currentToken, line, index } = state;
   const char = line[index];
+  const prevChar = index > 0 ? line[index - 1] : '';
+  const nextChar = index < line.length - 1 ? line[index + 1] : '';
 
   // Handle escaped characters
   if (state.escaped) {
@@ -334,16 +336,48 @@ function processStringState(state) {
     return;
   }
 
-  // Special handling for template literals to avoid splitting them
+  // Special handling for template literals
   if (state.stringDelimiter === '`') {
-    // For template literals, we need to handle expressions like ${...}
-    // We treat the entire template literal (including expressions) as a single token
-
-    // Just add the character to the current token - no special processing
+    // Add the character to the current token
     currentToken.value += char;
 
-    // Check for the end of the template literal
-    if (char === '`' && !state.inExpression) {
+    // Initialize template tracking variables if they don't exist
+    if (state.expressionDepth === undefined) {
+      state.expressionDepth = 0;
+      state.bracketStack = [];
+    }
+
+    // Handle expression start
+    if (char === '{' && prevChar === '$' && state.bracketStack.length === 0) {
+      state.expressionDepth++;
+      state.bracketStack.push('{');
+      return;
+    }
+
+    // Track bracket nesting inside expressions
+    if (state.expressionDepth > 0) {
+      if (char === '{' && state.bracketStack[state.bracketStack.length - 1] !== '`') {
+        state.bracketStack.push('{');
+      } else if (char === '}' && state.bracketStack[state.bracketStack.length - 1] === '{') {
+        state.bracketStack.pop();
+        if (state.bracketStack.length === 0) {
+          state.expressionDepth--;
+        }
+      } else if (char === '`') {
+        // Track nested template literals inside expressions
+        if (prevChar !== '\\') {
+          if (state.bracketStack[state.bracketStack.length - 1] === '`') {
+            state.bracketStack.pop(); // End of nested template
+          } else {
+            state.bracketStack.push('`'); // Start of nested template
+          }
+        }
+      }
+      return;
+    }
+
+    // Check for the end of the template literal (only when not in expression)
+    if (char === '`' && state.expressionDepth === 0 && prevChar !== '\\') {
       currentToken.end = index + 1;
       state.tokens.push(currentToken);
 
@@ -352,6 +386,8 @@ function processStringState(state) {
       state.currentState = STATES.NORMAL;
       state.codeStart = index + 1;
       state.stringDelimiter = '';
+      state.expressionDepth = undefined;
+      state.bracketStack = undefined;
     }
     return;
   }
@@ -463,36 +499,15 @@ function processMultiLineComment(state) {
   // Add the character to the comment
   currentToken.value += char;
 
-  // Keep track of nested comment depth
-  if (!state.commentNestingLevel) {
-    state.commentNestingLevel = 1; // Initialize if not set
-  }
-
-  // Check for start of potential nested comment
-  if (char === '*' && prevChar === '/') {
-    state.potentialCommentStart = true;
-  } else if (state.potentialCommentStart && char === '/') {
-    state.commentNestingLevel++;
-    state.potentialCommentStart = false;
-  } else if (char !== '*') {
-    state.potentialCommentStart = false;
-  }
-
-  // Check for end of a comment level
+  // Check for the end of the comment - standard JavaScript behavior
   if (char === '/' && prevChar === '*') {
-    state.commentNestingLevel--;
+    currentToken.end = index + 1;
+    state.tokens.push(currentToken);
 
-    // Only end the comment if we've closed all nesting levels
-    if (state.commentNestingLevel === 0) {
-      currentToken.end = index + 1;
-      state.tokens.push(currentToken);
-
-      // Reset state
-      state.currentToken = null;
-      state.currentState = STATES.NORMAL;
-      state.codeStart = index + 1;
-      state.commentNestingLevel = undefined;
-    }
+    // Reset state
+    state.currentToken = null;
+    state.currentState = STATES.NORMAL;
+    state.codeStart = index + 1;
   }
 }
 
@@ -500,7 +515,7 @@ function processMultiLineComment(state) {
  * Finalize any open tokens at the end of the line
  */
 function finalizeEndOfLine(state) {
-  const { line, currentToken, currentState, codeStart, escaped } = state;
+  const { line, currentToken, currentState, codeStart } = state;
 
   // Handle unfinished tokens
   if (currentToken) {
@@ -541,22 +556,24 @@ function finalizeEndOfLine(state) {
       }
 
       // Odd number of backslashes means the last one escapes something on the next line
+      // Even number means the backslashes escape each other, and the string is closed
       if (backslashCount % 2 === 1) {
         return {
           tokens: state.tokens,
-          inMultiLineComment: false,
+          inMultiLineComment: currentState === STATES.MULTI_LINE_COMMENT,
           stringState: {
             escaped: true,
             delimiter: state.stringDelimiter
           }
         };
       }
+      // For even number of backslashes, fall through to the normal return
     }
   }
 
   return {
     tokens: state.tokens,
-    inMultiLineComment: state.currentState === STATES.MULTI_LINE_COMMENT,
+    inMultiLineComment: currentState === STATES.MULTI_LINE_COMMENT,
     stringState: null
   };
 }
@@ -629,14 +646,43 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
   // Handle any unfinished business
   finalizeEndOfLine(state);
 
+  // Check for double backslash case which should not continue the string
+  let finalStringState = null;
+  if (state.currentState === STATES.STRING) {
+    // Check if the last character(s) indicate continuation
+    const lastCharIndex = line.length - 1;
+    const lastChar = lastCharIndex >= 0 ? line.charAt(lastCharIndex) : '';
+
+    if (lastChar === '\\') {
+      // Count backslashes from the end
+      let backslashCount = 1;
+      let pos = lastCharIndex - 1;
+      while (pos >= 0 && line.charAt(pos) === '\\') {
+        backslashCount++;
+        pos--;
+      }
+
+      // Only set string state for continuation if we have an odd number of backslashes
+      // (even means they escape each other and don't cause continuation)
+      if (backslashCount % 2 === 1) {
+        finalStringState = {
+          escaped: true,
+          delimiter: state.stringDelimiter
+        };
+      }
+    } else {
+      finalStringState = {
+        escaped: state.escaped,
+        delimiter: state.stringDelimiter
+      };
+    }
+  }
+
   // Return the result with continuation state
   return {
     tokens: state.tokens,
     inMultiLineComment: state.currentState === STATES.MULTI_LINE_COMMENT,
-    stringState: state.currentState === STATES.STRING ? {
-      escaped: state.escaped,
-      delimiter: state.stringDelimiter
-    } : null
+    stringState: finalStringState
   };
 }
 
