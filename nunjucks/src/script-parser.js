@@ -257,7 +257,22 @@ function processNormalState(state) {
     const subtype = char === '\'' ? TOKEN_SUBTYPES.SINGLE_QUOTED :
       char === '"' ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
         TOKEN_SUBTYPES.TEMPLATE;
+
+    // For template literals, we'll need to track expression depth
+    if (char === '`') {
+      state.templateDepth = 0;
+      state.bracketBalance = 0;
+    }
+
     state.currentToken = createToken(TOKEN_TYPES.STRING, subtype, index, char);
+    return;
+  }
+
+  // Check for $ followed by { in a template literal - should be part of the string
+  // This prevents the normal state from processing these as separate tokens
+  if (state.currentState === STATES.STRING && state.stringDelimiter === '`' &&
+      char === '$' && nextChar === '{') {
+    state.currentToken.value += char;
     return;
   }
 
@@ -319,7 +334,29 @@ function processStringState(state) {
     return;
   }
 
-  // Check for the end of the string
+  // Special handling for template literals to avoid splitting them
+  if (state.stringDelimiter === '`') {
+    // For template literals, we need to handle expressions like ${...}
+    // We treat the entire template literal (including expressions) as a single token
+
+    // Just add the character to the current token - no special processing
+    currentToken.value += char;
+
+    // Check for the end of the template literal
+    if (char === '`' && !state.inExpression) {
+      currentToken.end = index + 1;
+      state.tokens.push(currentToken);
+
+      // Return to normal state
+      state.currentToken = null;
+      state.currentState = STATES.NORMAL;
+      state.codeStart = index + 1;
+      state.stringDelimiter = '';
+    }
+    return;
+  }
+
+  // Check for the end of the string (non-template literals)
   if (char === state.stringDelimiter) {
     currentToken.value += char;
     currentToken.end = index + 1;
@@ -426,15 +463,36 @@ function processMultiLineComment(state) {
   // Add the character to the comment
   currentToken.value += char;
 
-  // Check for the end of the comment
-  if (char === '/' && prevChar === '*') {
-    currentToken.end = index + 1;
-    state.tokens.push(currentToken);
+  // Keep track of nested comment depth
+  if (!state.commentNestingLevel) {
+    state.commentNestingLevel = 1; // Initialize if not set
+  }
 
-    // Reset state
-    state.currentToken = null;
-    state.currentState = STATES.NORMAL;
-    state.codeStart = index + 1;
+  // Check for start of potential nested comment
+  if (char === '*' && prevChar === '/') {
+    state.potentialCommentStart = true;
+  } else if (state.potentialCommentStart && char === '/') {
+    state.commentNestingLevel++;
+    state.potentialCommentStart = false;
+  } else if (char !== '*') {
+    state.potentialCommentStart = false;
+  }
+
+  // Check for end of a comment level
+  if (char === '/' && prevChar === '*') {
+    state.commentNestingLevel--;
+
+    // Only end the comment if we've closed all nesting levels
+    if (state.commentNestingLevel === 0) {
+      currentToken.end = index + 1;
+      state.tokens.push(currentToken);
+
+      // Reset state
+      state.currentToken = null;
+      state.currentState = STATES.NORMAL;
+      state.codeStart = index + 1;
+      state.commentNestingLevel = undefined;
+    }
   }
 }
 
@@ -442,7 +500,7 @@ function processMultiLineComment(state) {
  * Finalize any open tokens at the end of the line
  */
 function finalizeEndOfLine(state) {
-  const { line, currentToken, currentState, codeStart } = state;
+  const { line, currentToken, currentState, codeStart, escaped } = state;
 
   // Handle unfinished tokens
   if (currentToken) {
@@ -466,6 +524,41 @@ function finalizeEndOfLine(state) {
       line.substring(codeStart, line.length)
     ));
   }
+
+  // String continuation handling
+  if (currentState === STATES.STRING) {
+    // Check if the last character(s) indicate continuation
+    const lastCharIndex = line.length - 1;
+    const lastChar = lastCharIndex >= 0 ? line.charAt(lastCharIndex) : '';
+
+    if (lastChar === '\\') {
+      // Count backslashes from the end
+      let backslashCount = 1;
+      let pos = lastCharIndex - 1;
+      while (pos >= 0 && line.charAt(pos) === '\\') {
+        backslashCount++;
+        pos--;
+      }
+
+      // Odd number of backslashes means the last one escapes something on the next line
+      if (backslashCount % 2 === 1) {
+        return {
+          tokens: state.tokens,
+          inMultiLineComment: false,
+          stringState: {
+            escaped: true,
+            delimiter: state.stringDelimiter
+          }
+        };
+      }
+    }
+  }
+
+  return {
+    tokens: state.tokens,
+    inMultiLineComment: state.currentState === STATES.MULTI_LINE_COMMENT,
+    stringState: null
+  };
 }
 
 /**
@@ -510,15 +603,16 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
   };
 
   // Handle continuation from previous line
-  if (stringState && stringState.escaped) {
-    // Continuing a string from previous line
+  if (stringState) {
+    // Continuing a string from previous line (could be due to escape or Unicode)
     state.currentState = STATES.STRING;
-    state.escaped = true;
+    state.escaped = stringState.escaped;
     state.stringDelimiter = stringState.delimiter;
 
     const subtype = stringState.delimiter === '\'' ? TOKEN_SUBTYPES.SINGLE_QUOTED :
       stringState.delimiter === '"' ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
         TOKEN_SUBTYPES.TEMPLATE;
+
     state.currentToken = createToken(TOKEN_TYPES.STRING, subtype, 0, '');
     state.codeStart = null;
   } else if (inMultiLineComment) {
