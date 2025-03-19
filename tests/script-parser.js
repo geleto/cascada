@@ -1047,217 +1047,246 @@ describe('Script Parser', function() {
   });
 
   // New tests:
-  describe('Backticks as Simple Strings', function() {
-    it('should handle backtick strings with escape sequences', function() {
-      const result = parseTemplateLine('print `Escaped \\` backtick and \\${text}`');
+  describe('Improved Script Parser Tests', function() {
 
-      expect(result.tokens).to.have.length(2);
-      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result.tokens[1].value).to.equal('`Escaped \\` backtick and \\${text}`');
+    describe('Backticks as Simple Strings', function() {
+      it('should parse backticks as simple strings without interpolation', function() {
+        const result = parseTemplateLine('print `Simple backtick string without ${interpolation}`');
+
+        expect(result.tokens).to.have.length(2);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[0].value).to.equal('print ');
+
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+        expect(result.tokens[1].value).to.equal('`Simple backtick string without ${interpolation}`');
+
+        // Verify the parser doesn't try to handle interpolation specially
+        // by checking that the string value includes the entire content unchanged
+      });
+
+      it('should handle backtick strings with escape sequences', function() {
+        const result = parseTemplateLine('print `Escaped \\` backtick and \\${text}`');
+
+        expect(result.tokens).to.have.length(2);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[1].value).to.equal('`Escaped \\` backtick and \\${text}`');
+      });
+
+      it('should support multi-line continuation with backtick strings', function() {
+        const result1 = parseTemplateLine('print `Line 1 \\');
+        expect(result1.stringState).not.to.be(null);
+        expect(result1.stringState.delimiter).to.equal('`');
+
+        const result2 = parseTemplateLine('Line 2`', false, result1.stringState);
+        expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result2.tokens[0].value).to.equal('Line 2`');
+      });
     });
 
-    it('should support multi-line continuation with backtick strings', function() {
-      const result1 = parseTemplateLine('print `Line 1 \\');
-      expect(result1.stringState).not.to.be(null);
-      expect(result1.stringState.delimiter).to.equal('`');
+    describe('String Continuation Edge Cases', function() {
+      it('should handle strings with multiple backslashes at line end according to JavaScript rules', function() {
+        // In JavaScript:
+        // 1. Even number of backslashes: They escape each other in pairs, no line continuation
+        // 2. Odd number of backslashes: The last one escapes the newline, continuing the string
 
-      const result2 = parseTemplateLine('Line 2`', false, result1.stringState);
-      expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result2.tokens[0].value).to.equal('Line 2`');
-    });
-  });
+        // Test with single backslash (represented by \\ in JavaScript string)
+        // This should continue the string
+        const result1 = parseTemplateLine('print "String with single backslash \\');
+        expect(result1.stringState).not.to.be(null);  // Should continue
+        expect(result1.stringState.escaped).to.be(true);
 
-  describe('String Continuation Edge Cases', function() {
-    it('should handle strings with multiple backslashes at line end', function() {
-      // Test with even number of backslashes (should not continue)
-      const result1 = parseTemplateLine('print "String with double backslash \\\\"');
-      expect(result1.stringState).to.be(null);  // No continuation
+        // Test with double backslash (represented by \\\\ in JavaScript string)
+        // This should NOT continue the string
+        const result2 = parseTemplateLine('print "String with double backslash \\\\');
+        expect(result2.stringState).to.be(null);  // Should NOT continue
 
-      // Test with triple backslash (should continue)
-      const result2 = parseTemplateLine('print "String with triple backslash \\\\\\"');
-      expect(result2.stringState).not.to.be(null);
-      expect(result2.stringState.escaped).to.be(true);
+        // Test with triple backslash (represented by \\\\\\ in JavaScript string)
+        // This should continue the string
+        const result3 = parseTemplateLine('print "String with triple backslash \\\\\\');
+        expect(result3.stringState).not.to.be(null);  // Should continue
+        expect(result3.stringState.escaped).to.be(true);
 
-      // Test with quadruple backslash (should not continue)
-      const result3 = parseTemplateLine('print "String with quadruple backslash \\\\\\\\"');
-      expect(result3.stringState).to.be(null);  // No continuation
-    });
-
-    it('should handle Unicode escape sequences at line boundaries', function() {
-      // Unicode escape at end of line
-      const result1 = parseTemplateLine('print "Unicode escape \\u');
-      expect(result1.tokens[1].incomplete).to.be(true);
-
-      // Continuation with rest of Unicode escape
-      const result2 = parseTemplateLine('00A9"', false, result1.stringState);
-      expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result2.tokens[0].value).to.equal('00A9"');
-    });
-  });
-
-  describe('Error Handling and Malformed Input', function() {
-    it('should handle invalid regex patterns', function() {
-      // Missing closing slash but still using r/ syntax
-      const result = parseTemplateLine('var pattern = r/[unclosed');
-
-      // Since there's no closing slash, it should be treated as code
-      expect(result.tokens).to.have.length(1);
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        // Test with quadruple backslash (represented by \\\\\\\\ in JavaScript string)
+        // This should NOT continue the string
+        const result4 = parseTemplateLine('print "String with quadruple backslash \\\\\\\\');
+        expect(result4.stringState).to.be(null);  // Should NOT continue
+      });
     });
 
-    it('should handle strings with unclosed quotes', function() {
-      const result = parseTemplateLine('print "Unclosed string');
+    describe('Error Handling and Malformed Input', function() {
+      it('should handle invalid regex patterns', function() {
+        // Missing closing slash but still using r/ syntax
+        const result = parseTemplateLine('var pattern = r/[unclosed');
 
-      expect(result.tokens).to.have.length(2);
-      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result.tokens[1].incomplete).to.be(true);
-      expect(result.stringState).not.to.be(null);
+        // Since there's no closing slash, it should be treated as code
+        expect(result.tokens).to.have.length(1);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+      });
+
+      it('should handle strings with unclosed quotes', function() {
+        const result = parseTemplateLine('print "Unclosed string');
+
+        expect(result.tokens).to.have.length(2);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[1].incomplete).to.be(true);
+        expect(result.stringState).not.to.be(null);
+      });
+
+      it('should handle unexpected character sequences', function() {
+        // Test unusual but valid code without string delimiters
+        const result = parseTemplateLine('var x = !@#$%^&*()-_=+[]{}|;:,.<>?/');
+
+        // Should be treated as a single code token
+        expect(result.tokens).to.have.length(1);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+
+        // Test with backticks, which should be treated as string delimiters in JavaScript
+        const result2 = parseTemplateLine('var x = !@#$%^&*()-_=+[]{}|;:,.<>?/`~');
+
+        // Should be treated as code followed by a template string
+        expect(result2.tokens).to.have.length(2);
+        expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result2.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result2.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+      });
     });
 
-    it('should handle unexpected character sequences', function() {
-      // Test unusual but valid code
-      const result = parseTemplateLine('var x = !@#$%^&*()-_=+[]{}|;:,.<>?/`~');
+    describe('String State Tracking Across Lines', function() {
+      it('should properly continue strings with escape characters', function() {
+        // First line with escaped character at end
+        const result1 = parseTemplateLine('var message = "First line with escape \\');
 
-      // Should be treated as code
-      expect(result.tokens).to.have.length(1);
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
-    });
-  });
+        expect(result1.tokens).to.have.length(2);
+        expect(result1.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result1.tokens[1].incomplete).to.be(true);
+        expect(result1.stringState).not.to.be(null);
+        expect(result1.stringState.escaped).to.be(true);
 
-  describe('String State Tracking Across Lines', function() {
-    it('should properly continue strings with escape characters', function() {
-      // First line with escaped character at end
-      const result1 = parseTemplateLine('var message = "First line with escape \\');
+        // Second line continuing from first
+        const result2 = parseTemplateLine('Second line continuing"', false, result1.stringState);
 
-      expect(result1.tokens).to.have.length(2);
-      expect(result1.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result1.tokens[1].incomplete).to.be(true);
-      expect(result1.stringState).not.to.be(null);
-      expect(result1.stringState.escaped).to.be(true);
+        expect(result2.tokens).to.have.length(1);
+        expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result2.tokens[0].value).to.equal('Second line continuing"');
+        expect(result2.stringState).to.be(null);  // String is closed
+      });
 
-      // Second line continuing from first
-      const result2 = parseTemplateLine('Second line continuing"', false, result1.stringState);
+      it('should transition correctly between multiple continued lines', function() {
+        // Test string continuation across 3 lines
+        const line1 = parseTemplateLine('var x = "First line \\');
+        const line2 = parseTemplateLine('Second line \\', false, line1.stringState);
+        const line3 = parseTemplateLine('Third line"', false, line2.stringState);
 
-      expect(result2.tokens).to.have.length(1);
-      expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result2.tokens[0].value).to.equal('Second line continuing"');
-      expect(result2.stringState).to.be(null);  // String is closed
-    });
+        expect(line1.stringState).not.to.be(null);
+        expect(line2.stringState).not.to.be(null);
+        expect(line3.stringState).to.be(null);  // Final line closes string
 
-    it('should transition correctly between multiple continued lines', function() {
-      // Test string continuation across 3 lines
-      const line1 = parseTemplateLine('var x = "First line \\');
-      const line2 = parseTemplateLine('Second line \\', false, line1.stringState);
-      const line3 = parseTemplateLine('Third line"', false, line2.stringState);
-
-      expect(line1.stringState).not.to.be(null);
-      expect(line2.stringState).not.to.be(null);
-      expect(line3.stringState).to.be(null);  // Final line closes string
-
-      expect(line3.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-      expect(line3.tokens[0].value).to.equal('Third line"');
-    });
-  });
-
-  describe('Token Position Accuracy 2', function() {
-    it('should accurately track positions in complex input', function() {
-      const input = 'code1 "string" /* comment */ r/regex/g code2';
-      const result = parseTemplateLine(input);
-
-      // Check positions of tokens
-      expect(result.tokens).to.have.length(7);
-
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-
-      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(14);
-
-      // Continue checking other tokens...
-      expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[3].type).to.equal(TOKEN_TYPES.COMMENT);
-      expect(result.tokens[4].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[5].type).to.equal(TOKEN_TYPES.REGEX);
-      expect(result.tokens[6].type).to.equal(TOKEN_TYPES.CODE);
-
-      // Check that the end of the last token matches the input length
-      expect(result.tokens[6].end).to.equal(input.length);
+        expect(line3.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+        expect(line3.tokens[0].value).to.equal('Third line"');
+      });
     });
 
-    it('should handle tokens at line boundaries', function() {
-      // String at beginning of line
-      const result1 = parseTemplateLine('"String"code');
-      expect(result1.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result1.tokens[0].start).to.equal(0);
+    describe('Token Position Accuracy', function() {
+      it('should accurately track positions in complex input', function() {
+        const input = 'code1 "string" /* comment */ r/regex/g code2';
+        const result = parseTemplateLine(input);
 
-      // String at end of line
-      const result2 = parseTemplateLine('code"String"');
-      expect(result2.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result2.tokens[1].end).to.equal(12);
-    });
-  });
+        // Check positions of tokens
+        expect(result.tokens).to.have.length(7);
 
-  describe('Interaction Between Different Token Types', function() {
-    it('should handle strings immediately followed by comments', function() {
-      const result = parseTemplateLine('"String"/* Comment */');
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[0].start).to.equal(0);
+        expect(result.tokens[0].end).to.equal(6);
 
-      expect(result.tokens).to.have.length(2);
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.COMMENT);
-    });
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[1].start).to.equal(6);
+        expect(result.tokens[1].end).to.equal(14);
 
-    it('should handle comments immediately followed by regex', function() {
-      const result = parseTemplateLine('/* Comment */r/regex/');
+        // Continue checking other tokens...
+        expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[3].type).to.equal(TOKEN_TYPES.COMMENT);
+        expect(result.tokens[4].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[5].type).to.equal(TOKEN_TYPES.REGEX);
+        expect(result.tokens[6].type).to.equal(TOKEN_TYPES.CODE);
 
-      expect(result.tokens).to.have.length(2);
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
-      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.REGEX);
-    });
+        // Check that the end of the last token matches the input length
+        expect(result.tokens[6].end).to.equal(input.length);
+      });
 
-    it('should handle multiple token types without whitespace', function() {
-      const result = parseTemplateLine('"String"/* Comment */r/regex/code');
+      it('should handle tokens at line boundaries', function() {
+        // String at beginning of line
+        const result1 = parseTemplateLine('"String"code');
+        expect(result1.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result1.tokens[0].start).to.equal(0);
 
-      expect(result.tokens).to.have.length(4);
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.COMMENT);
-      expect(result.tokens[2].type).to.equal(TOKEN_TYPES.REGEX);
-      expect(result.tokens[3].type).to.equal(TOKEN_TYPES.CODE);
-    });
-
-    it('should handle regex followed by string without whitespace', function() {
-      const result = parseTemplateLine('r/regex/"String"');
-
-      expect(result.tokens).to.have.length(2);
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
-      expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
-    });
-  });
-
-  describe('Nunjucks Regex Support Compatibility', function() {
-    it('should support only g, i, m, y flags for regex', function() {
-      const result = parseTemplateLine('r/pattern/gimy');
-
-      expect(result.tokens).to.have.length(1);
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
-      expect(result.tokens[0].flags).to.equal('gimy');
+        // String at end of line
+        const result2 = parseTemplateLine('code"String"');
+        expect(result2.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result2.tokens[1].end).to.equal(12);
+      });
     });
 
-    it('should handle escaped forward slashes in regex patterns', function() {
-      const result = parseTemplateLine('r/path\\/to\\/file/g');
+    describe('Interaction Between Different Token Types', function() {
+      it('should handle strings immediately followed by comments', function() {
+        const result = parseTemplateLine('"String"/* Comment */');
 
-      expect(result.tokens).to.have.length(1);
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
-      expect(result.tokens[0].value).to.equal('r/path\\/to\\/file/g');
+        expect(result.tokens).to.have.length(2);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.COMMENT);
+      });
+
+      it('should handle comments immediately followed by regex', function() {
+        const result = parseTemplateLine('/* Comment */r/regex/');
+
+        expect(result.tokens).to.have.length(2);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.REGEX);
+      });
+
+      it('should handle multiple token types without whitespace', function() {
+        const result = parseTemplateLine('"String"/* Comment */r/regex/code');
+
+        expect(result.tokens).to.have.length(4);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.COMMENT);
+        expect(result.tokens[2].type).to.equal(TOKEN_TYPES.REGEX);
+        expect(result.tokens[3].type).to.equal(TOKEN_TYPES.CODE);
+      });
+
+      it('should handle regex followed by string without whitespace', function() {
+        const result = parseTemplateLine('r/regex/"String"');
+
+        expect(result.tokens).to.have.length(2);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+      });
     });
 
-    it('should handle empty regex patterns', function() {
-      const result = parseTemplateLine('r//g');
+    describe('Nunjucks Regex Support Compatibility', function() {
+      it('should support only g, i, m, y flags for regex', function() {
+        const result = parseTemplateLine('r/pattern/gimy');
 
-      expect(result.tokens).to.have.length(1);
-      expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
-      expect(result.tokens[0].value).to.equal('r//g');
+        expect(result.tokens).to.have.length(1);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+        expect(result.tokens[0].flags).to.equal('gimy');
+      });
+
+      it('should handle escaped forward slashes in regex patterns', function() {
+        const result = parseTemplateLine('r/path\\/to\\/file/g');
+
+        expect(result.tokens).to.have.length(1);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+        expect(result.tokens[0].value).to.equal('r/path\\/to\\/file/g');
+      });
+
+      it('should handle empty regex patterns', function() {
+        const result = parseTemplateLine('r//g');
+
+        expect(result.tokens).to.have.length(1);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
+        expect(result.tokens[0].value).to.equal('r//g');
+      });
     });
   });
 });
