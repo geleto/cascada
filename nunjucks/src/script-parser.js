@@ -28,7 +28,7 @@
  * - start: The start index within the line (inclusive)
  * - end: The end index within the line (exclusive)
  * - value: The actual content of the token
- * - subtype: Optional additional information (e.g., 'SINGLE_QUOTED', 'MULTI_LINE', etc.)
+ * - subtype: Optional additional information (e.g., 'SINGLE_QUOTED', 'DOUBLE_QUOTED', etc.)
  *
  * ### States
  * 1. NORMAL: Processing regular code
@@ -59,60 +59,7 @@
  * 7. **Multi-line comment continuation**: If a multi-line comment doesn't close within the line,
  *    the next line should be informed
  * 8. **Ignoring divisions**: Distinguish between the division operator (/) and regex delimiters
- *
- * ### Edge Cases
- * 1. Handle escaped backslashes (e.g., \\ in strings)
- * 2. Handle empty strings ('', "", ``)
- * 3. Handle empty regex patterns (r//)
- * 4. Properly detect regex vs. division operations
- * 5. Handle template literals with expressions (though expressions inside template literals are not fully parsed)
- * 6. Handle line breaks within strings (via the stringState tracking)
- *
- * ### Data Structures
- * - **Token object**:
- *   {
- *     type: 'STRING' | 'COMMENT' | 'REGEX' | 'CODE',
- *     subtype: 'SINGLE_QUOTED' | 'DOUBLE_QUOTED' | 'TEMPLATE' | 'SINGLE_LINE' | 'MULTI_LINE' | 'REGEX',
- *     start: number,
- *     end: number,
- *     value: string,
- *     flags?: string, // Only for regex tokens
- *     incomplete?: boolean, // For incomplete tokens at end of line
- *     isMalformed?: boolean // For malformed regex patterns
- *   }
- *
- * - **Parser state**:
- *   {
- *     line: string,
- *     index: number,
- *     currentState: 'NORMAL' | 'STRING' | 'REGEX' | 'SINGLE_LINE_COMMENT' | 'MULTI_LINE_COMMENT',
- *     currentToken: Token | null,
- *     tokens: Token[],
- *     codeStart: number | null,
- *     escaped: boolean, // For tracking escaped characters
- *     stringDelimiter: string, // For tracking the string type (', ", or `)
- *   }
- *
- * - **String state**:
- *   {
- *     escaped: boolean, // Was the last character an escape character
- *     delimiter: string // The string delimiter (', ", or `)
- *   }
- *
- * ### Return Value
- * The function returns:
- * 1. An array of token objects
- * 2. A boolean indicating if the next line will start inside a multi-line comment
- * 3. A stringState object, if the line ends inside a string with an escape character
- *
- * {
- *   tokens: Token[],
- *   inMultiLineComment: boolean,
- *   stringState: { escaped: boolean, delimiter: string } | null
- * }
- *
- * This design gives you all the necessary components to build a robust single-line token parser
- * that can be integrated with your existing multi-line expression processing system.
+ * 9. **Indentation handling**: Extract and track indentation (spaces and tabs) at the start of each line
  */
 
 // Token-related constants
@@ -141,6 +88,14 @@ const TOKEN_SUBTYPES = {
 };
 
 const VALID_REGEX_FLAGS = new Set(['g', 'i', 'm', 'y', 's', 'u', 'd']);
+
+/**
+ * Extract indentation (whitespace) at the beginning of a line
+ */
+function extractIndentation(line) {
+  const match = line.match(/^[ \t]*/);
+  return match ? match[0] : '';
+}
 
 /**
  * Creates a token object
@@ -264,6 +219,7 @@ function processNormalState(state) {
       state.bracketBalance = 0;
     }
 
+    // Create token with the correct position
     state.currentToken = createToken(TOKEN_TYPES.STRING, subtype, index, char);
     return;
   }
@@ -321,7 +277,6 @@ function processStringState(state) {
   const { currentToken, line, index } = state;
   const char = line[index];
   const prevChar = index > 0 ? line[index - 1] : '';
-  const nextChar = index < line.length - 1 ? line[index + 1] : '';
 
   // Handle escaped characters
   if (state.escaped) {
@@ -517,6 +472,14 @@ function processMultiLineComment(state) {
 function finalizeEndOfLine(state) {
   const { line, currentToken, currentState, codeStart } = state;
 
+  // Initialize result object
+  const result = {
+    tokens: state.tokens,
+    inMultiLineComment: state.currentState === STATES.MULTI_LINE_COMMENT,
+    stringState: null,
+    indentation: state.indentation
+  };
+
   // Handle unfinished tokens
   if (currentToken) {
     currentToken.end = line.length;
@@ -528,8 +491,55 @@ function finalizeEndOfLine(state) {
       if (currentState === STATES.REGEX) {
         currentToken.isMalformed = true;
       }
+
+      // Special handling for strings that might continue to next line
+      if (currentState === STATES.STRING) {
+        // Check if the line ends with an escape character that should cause continuation
+        const lastCharIndex = line.length - 1;
+        const lastChar = lastCharIndex >= 0 ? line.charAt(lastCharIndex) : '';
+
+        // Handle Unicode escapes (needs continuation)
+        const endsWithUnicodeEscape = line.match(/\\u[\da-fA-F]{0,3}$/);
+        if (endsWithUnicodeEscape) {
+          result.stringState = {
+            escaped: false,
+            delimiter: state.stringDelimiter
+          };
+        }
+        // Handle regular backslash escapes
+        else if (lastChar === '\\') {
+          // Count backslashes from the end to handle double escapes
+          let backslashCount = 1;
+          let pos = lastCharIndex - 1;
+
+          while (pos >= 0 && line.charAt(pos) === '\\') {
+            backslashCount++;
+            pos--;
+          }
+
+          // Odd number of backslashes means the last one escapes something on the next line
+          if (backslashCount % 2 === 1) {
+            result.stringState = {
+              escaped: true,
+              delimiter: state.stringDelimiter
+            };
+          }
+          // Even number means they escape each other, not the line break
+          // stringState remains null, which means no continuation
+        }
+        // For regular unterminated strings without escape characters at the end,
+        // we set stringState to continue the string
+        else if (currentToken.value.charAt(0) === state.stringDelimiter &&
+                !currentToken.value.endsWith(state.stringDelimiter)) {
+          result.stringState = {
+            escaped: false,
+            delimiter: state.stringDelimiter
+          };
+        }
+      }
     }
 
+    // Add the token to the result
     state.tokens.push(currentToken);
   } else if (codeStart !== null && codeStart < line.length) {
     // Handle any trailing code
@@ -540,42 +550,17 @@ function finalizeEndOfLine(state) {
     ));
   }
 
-  // String continuation handling
-  if (currentState === STATES.STRING) {
-    // Check if the last character(s) indicate continuation
-    const lastCharIndex = line.length - 1;
-    const lastChar = lastCharIndex >= 0 ? line.charAt(lastCharIndex) : '';
-
-    if (lastChar === '\\') {
-      // Count backslashes from the end
-      let backslashCount = 1;
-      let pos = lastCharIndex - 1;
-      while (pos >= 0 && line.charAt(pos) === '\\') {
-        backslashCount++;
-        pos--;
-      }
-
-      // Odd number of backslashes means the last one escapes something on the next line
-      // Even number means the backslashes escape each other, and the string is closed
-      if (backslashCount % 2 === 1) {
-        return {
-          tokens: state.tokens,
-          inMultiLineComment: currentState === STATES.MULTI_LINE_COMMENT,
-          stringState: {
-            escaped: true,
-            delimiter: state.stringDelimiter
-          }
-        };
-      }
-      // For even number of backslashes, fall through to the normal return
-    }
+  // Handle the case of a line with only indentation (no tokens)
+  if (state.tokens.length === 0 && state.indentation.length > 0) {
+    // For a line with only indentation, add an empty code token
+    state.tokens.push(createCodeToken(
+      state.indentation.length,
+      state.indentation.length,
+      ''
+    ));
   }
 
-  return {
-    tokens: state.tokens,
-    inMultiLineComment: currentState === STATES.MULTI_LINE_COMMENT,
-    stringState: null
-  };
+  return result;
 }
 
 /**
@@ -603,10 +588,10 @@ function processCharacter(state) {
   }
 }
 
-/**
- * Parse a line of template language code
- */
 function parseTemplateLine(line, inMultiLineComment = false, stringState = null) {
+  // Extract indentation from the line
+  const indentation = extractIndentation(line);
+
   // Initialize parser state
   const state = {
     line,
@@ -614,9 +599,10 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
     tokens: [],
     currentState: inMultiLineComment ? STATES.MULTI_LINE_COMMENT : STATES.NORMAL,
     currentToken: null,
-    codeStart: inMultiLineComment ? null : 0,
+    codeStart: inMultiLineComment ? null : indentation.length,
     escaped: false,
-    stringDelimiter: ''
+    stringDelimiter: '',
+    indentation // Store indentation in state
   };
 
   // Handle continuation from previous line
@@ -630,11 +616,11 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
       stringState.delimiter === '"' ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
         TOKEN_SUBTYPES.TEMPLATE;
 
-    state.currentToken = createToken(TOKEN_TYPES.STRING, subtype, 0, '');
+    state.currentToken = createToken(TOKEN_TYPES.STRING, subtype, indentation.length, '');
     state.codeStart = null;
   } else if (inMultiLineComment) {
     // Continuing a multi-line comment
-    state.currentToken = createToken(TOKEN_TYPES.COMMENT, TOKEN_SUBTYPES.MULTI_LINE, 0, '');
+    state.currentToken = createToken(TOKEN_TYPES.COMMENT, TOKEN_SUBTYPES.MULTI_LINE, indentation.length, '');
   }
 
   // Process the line character by character
@@ -644,46 +630,15 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
   }
 
   // Handle any unfinished business
-  finalizeEndOfLine(state);
+  const result = finalizeEndOfLine(state);
 
-  // Check for double backslash case which should not continue the string
-  let finalStringState = null;
-  if (state.currentState === STATES.STRING) {
-    // Check if the last character(s) indicate continuation
-    const lastCharIndex = line.length - 1;
-    const lastChar = lastCharIndex >= 0 ? line.charAt(lastCharIndex) : '';
-
-    if (lastChar === '\\') {
-      // Count backslashes from the end
-      let backslashCount = 1;
-      let pos = lastCharIndex - 1;
-      while (pos >= 0 && line.charAt(pos) === '\\') {
-        backslashCount++;
-        pos--;
-      }
-
-      // Only set string state for continuation if we have an odd number of backslashes
-      // (even means they escape each other and don't cause continuation)
-      if (backslashCount % 2 === 1) {
-        finalStringState = {
-          escaped: true,
-          delimiter: state.stringDelimiter
-        };
-      }
-    } else {
-      finalStringState = {
-        escaped: state.escaped,
-        delimiter: state.stringDelimiter
-      };
-    }
+  // Ensure indentation is included in the result
+  // Only replace if indentation is undefined or null, not if it's an empty string
+  if (result.indentation === undefined || result.indentation === null) {
+    result.indentation = state.indentation;
   }
 
-  // Return the result with continuation state
-  return {
-    tokens: state.tokens,
-    inMultiLineComment: state.currentState === STATES.MULTI_LINE_COMMENT,
-    stringState: finalStringState
-  };
+  return result;
 }
 
 // Export
@@ -693,5 +648,6 @@ module.exports = {
   TOKEN_SUBTYPES,
   parseTemplateLine,
   isValidRegexContext,
-  hasCompleteRegexPattern
+  hasCompleteRegexPattern,
+  extractIndentation
 };
