@@ -759,4 +759,7 @@ function scriptToTemplate(scriptStr) {
   return { template, error: null };
 }
 
-module.exports = { scriptToTemplate };
+module.exports = { scriptToTemplate, getFirstWord, isCompleteWord, getBlockType,
+  extractComments, filterOutComments, tokensToCode, willContinueToNextLine,
+  isContinuationFromPrevious, processComments, generateOutput,
+  processLine, validateBlockStructure };
