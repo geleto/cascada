@@ -749,7 +749,7 @@ function scriptToTemplate(scriptStr) {
   // Generate the final template
   const template = processedLines
     .map(line => line.outputLine)
-    .join('\n') + '\n';
+    .join('\n');// + '\n';
 
   return { template, error: null };
 }
