@@ -264,7 +264,7 @@ function filterOutComments(tokens) {
  * @return {string} Combined code string
  */
 function tokensToCode(tokens) {
-  return tokens.map(token => token.value).join('').trim();
+  return tokens.map(token => token.value).join('');//.trim();
 }
 
 /**
@@ -286,6 +286,8 @@ function willContinueToNextLine(tokens, codeContent, firstWord) {
 
   // No content means no continuation
   if (!codeContent) return false;
+
+  codeContent = codeContent.trim();
 
   // Check for continuation characters at end of line
   const lastChar = codeContent.slice(-1);
@@ -325,6 +327,7 @@ function willContinueToNextLine(tokens, codeContent, firstWord) {
  */
 function isContinuationFromPrevious(codeContent, prevContinues) {
   if (!codeContent) return prevContinues;
+  codeContent = codeContent.trim();
   const firstWord = getFirstWord(codeContent);
   if (RESERVED_KEYWORDS.has(firstWord)) {
     return false; // New tags start fresh, regardless of previous continuation
