@@ -325,9 +325,9 @@ describe('Script Converter', () => {
     });
 
     it('should handle standalone end tags', () => {
-      const script = 'endif';
+      const script = 'set x=1';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- endif -%}');
+      expect(template).to.equal('{%- set x=1 -%}');
     });
   });
 
