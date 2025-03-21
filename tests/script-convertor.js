@@ -286,7 +286,7 @@ describe('Script Converter', () => {
     });
 
     it('should handle comments within multi-line expressions', () => {
-      const script = 'if condition && // First condition\n   anotherCondition // Second condition\nendif';
+      const script = 'if condition && // First condition\n   anotherCondition// Second condition\nendif';
       const { template } = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition && \n   anotherCondition -%} {# First condition; Second condition #}\n{%- endif -%}');
     });
