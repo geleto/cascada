@@ -632,7 +632,8 @@ function processLine(line, state) {
     indentation: indent,
     outputLine,
     blockType,
-    willContinue
+    willContinue,
+    isContinuation
   };
 }
 
@@ -647,7 +648,7 @@ function validateBlockStructure(processedLines) {
   for (let i = 0; i < processedLines.length; i++) {
     const line = processedLines[i];
 
-    if (!line.blockType) continue;
+    if (!line.blockType || line.isContinuation) continue;
 
     if (line.blockType === BLOCK_TYPE.START) {
       const tag = getFirstWord(line.content);
@@ -713,7 +714,7 @@ function validateBlockStructure(processedLines) {
 function scriptToTemplate(scriptStr) {
   // Handle special case of standalone end tag
   const trimmed = scriptStr.trim();
-  const firstWord = getFirstWord(trimmed);
+  const firstWord = getFirstWord(trimmed);//@todo why is this special case???
 
   if (Object.values(SYNTAX.blockPairs).includes(firstWord) && trimmed === firstWord) {
     const indent = scriptStr.indexOf(trimmed);
