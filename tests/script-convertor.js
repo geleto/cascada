@@ -149,7 +149,7 @@ describe('Script Converter', () => {
     it('should convert tag statements', () => {
       const script = 'if condition\nendif';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- if condition -%}\n{% endif %}\n');
+      expect(template).to.equal('{%- if condition -%}\n{%- endif -%}\n');
     });
 
     it('should convert code statements', () => {
@@ -161,13 +161,13 @@ describe('Script Converter', () => {
     it('should handle empty lines', () => {
       const script = 'if condition\n\nendif';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- if condition -%}\n\n{% endif %}\n');
+      expect(template).to.equal('{%- if condition -%}\n\n{%- endif -%}\n');
     });
 
     it('should preserve indentation', () => {
       const script = 'if condition\n  print "Indented"\nendif';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- if condition -%}\n  {{- "Indented" -}}\n{% endif %}\n');
+      expect(template).to.equal('{%- if condition -%}\n  {{- "Indented" -}}\n{%- endif -%}\n');
     });
   });
 
@@ -212,7 +212,7 @@ describe('Script Converter', () => {
     it('should handle regular expressions', () => {
       const script = 'if r/pattern/.it(value)\nendif';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- if r/pattern/.it(value) -%}\n{% endif %}\n');
+      expect(template).to.equal('{%- if r/pattern/.it(value) -%}\n{%- endif -%}\n');
     });
   });
 
@@ -241,7 +241,7 @@ describe('Script Converter', () => {
       const script = 'if condition1\n  if condition2\n    print "Nested"\n  endif\nendif';
       const { template, error } = scriptToTemplate(script);
       expect(error).to.equal(null);
-      expect(template).to.equal('{%- if condition1 -%}\n  {%- if condition2 -%}\n    {{- "Nested" -}}\n  {% endif %}\n{% endif %}\n');
+      expect(template).to.equal('{%- if condition1 -%}\n  {%- if condition2 -%}\n    {{- "Nested" -}}\n  {%- endif -%}\n{%- endif -%}\n');
     });
 
     it('should validate middle tags', () => {
@@ -276,25 +276,25 @@ describe('Script Converter', () => {
     it('should detect continuation at end of line', () => {
       const script = 'if condition &&\n   anotherCondition\nendif';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- if condition &&\n   anotherCondition -%}\n{% endif %}\n');
+      expect(template).to.equal('{%- if condition &&\n   anotherCondition -%}\n{%- endif -%}\n');
     });
 
     it('should detect continuation at start of line', () => {
       const script = 'if condition\n   && anotherCondition\nendif';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- if condition\n   && anotherCondition -%}\n{% endif %}\n');
+      expect(template).to.equal('{%- if condition\n   && anotherCondition -%}\n{%- endif -%}\n');
     });
 
     it('should handle comments within multi-line expressions', () => {
       const script = 'if condition && // First condition\n   anotherCondition // Second condition\nendif';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- if condition && \n   anotherCondition -%} {# First condition; Second condition #}\n{% endif %}\n');
+      expect(template).to.equal('{%- if condition && \n   anotherCondition -%} {# First condition; Second condition #}\n{%- endif -%}\n');
     });
 
     it('should handle empty lines within multi-line expressions', () => {
       const script = 'if condition &&\n\n   anotherCondition\nendif';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- if condition &&\n\n   anotherCondition -%}\n{% endif %}\n');
+      expect(template).to.equal('{%- if condition &&\n\n   anotherCondition -%}\n{%- endif -%}\n');
     });
   });
 
@@ -327,7 +327,7 @@ describe('Script Converter', () => {
     it('should handle standalone end tags', () => {
       const script = 'endif';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{% endif %}\n');
+      expect(template).to.equal('{%- endif -%}\n');
     });
   });
 
@@ -371,12 +371,12 @@ describe('Script Converter', () => {
 		{{- "Special: " + item.name -}}
 	  {% else %}
 		{{- "Regular: " + item.name -}}
-	  {% endif %}
+	  {%- endif -%}
 	{% endfor %}
   {% else %}
 	{# Show login prompt #}
 	{{- "Please log in" -}}
-  {% endif %}
+  {%- endif -%}
   `;
 
       expect(template).to.equal(expected);
@@ -397,8 +397,7 @@ describe('Script Converter', () => {
 		  (1 + taxRate) *
 		  (1 - discount) -%}
 
-  {{- "Total: $" + total.toFixed(2) -}}
-  `;
+  {{- "Total: $" + total.toFixed(2) -}}`;
 
       expect(template).to.equal(expected);
     });

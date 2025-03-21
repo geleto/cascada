@@ -549,13 +549,13 @@ function processLine(line, state) {
   // Get indentation from parser
   const indent = parseResult.indentation;
 
-  // Handle empty lines
+  // Handle empty lines - but preserve the actual line content
   if (line.trim() === '') {
     return {
       type: 'EMPTY',
       content: '',
       indentation: indent,
-      outputLine: '',
+      outputLine: line, // Preserve the original line including whitespace
       blockType: null,
       willContinue: state.willContinue // Preserve continuation state for empty lines
     };
@@ -724,7 +724,7 @@ function scriptToTemplate(scriptStr) {
   if (Object.values(SYNTAX.blockPairs).includes(firstWord) && trimmed === firstWord) {
     const indent = scriptStr.indexOf(trimmed);
     return {
-      template: `${' '.repeat(indent)}{% ${firstWord} %}\n`,
+      template: `${' '.repeat(indent)}{%- ${firstWord} -%}\n`,
       error: null
     };
   }
