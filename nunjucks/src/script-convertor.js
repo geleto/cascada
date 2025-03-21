@@ -324,37 +324,31 @@ function willContinueToNextLine(tokens, codeContent, firstWord) {
  * @return {boolean} True if continuing from previous line
  */
 function isContinuationFromPrevious(codeContent, prevContinues) {
-  // Empty content should preserve existing continuation state
   if (!codeContent) return prevContinues;
-
-  // If previous line indicated continuation, treat as continuation
+  const firstWord = getFirstWord(codeContent);
+  if (RESERVED_KEYWORDS.has(firstWord)) {
+    return false; // New tags start fresh, regardless of previous continuation
+  }
   if (prevContinues) return true;
-
   // Check for continuation characters at start of line
   const firstChar = codeContent.trim()[0];
   if (SYNTAX.continuation.startChars.includes(firstChar)) return true;
-
   // Check for continuation operators at start of line
   for (const op of SYNTAX.continuation.startOperators) {
     if (codeContent.trim().startsWith(op)) {
-      // Check that it's not part of an identifier
       const afterOp = codeContent.trim().substring(op.length);
       if (afterOp.length === 0 || afterOp[0] === ' ' || SYNTAX.continuation.startChars.includes(afterOp[0])) {
         return true;
       }
     }
   }
-
   // Check for continuation keywords at start of line
-  const firstWord = getFirstWord(codeContent);
   if (SYNTAX.continuation.startKeywords.includes(firstWord)) {
-    // Check if it's a complete word
     const keywordIndex = codeContent.indexOf(firstWord);
     if (isCompleteWord(codeContent, keywordIndex, firstWord.length)) {
       return true;
     }
   }
-
   return false;
 }
 
