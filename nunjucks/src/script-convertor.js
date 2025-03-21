@@ -712,18 +712,6 @@ function validateBlockStructure(processedLines) {
  * @return {Object} Object with template string and possible error
  */
 function scriptToTemplate(scriptStr) {
-  // Handle special case of standalone end tag
-  const trimmed = scriptStr.trim();
-  const firstWord = getFirstWord(trimmed);//@todo why is this special case???
-
-  if (Object.values(SYNTAX.blockPairs).includes(firstWord) && trimmed === firstWord) {
-    const indent = scriptStr.indexOf(trimmed);
-    return {
-      template: `${' '.repeat(indent)}{%- ${firstWord} -%}\n`,
-      error: null
-    };
-  }
-
   // Split into lines
   const lines = scriptStr.split('\n');
 
