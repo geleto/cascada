@@ -296,6 +296,24 @@ describe('Script Converter', () => {
       const { template } = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition &&\n\n   anotherCondition -%}\n{%- endif -%}');
     });
+
+    it('should handle comment between condition and continuation', () => {
+      const script = `if condition
+    // Comment
+        && anotherCondition
+    endif`;
+
+      const { template, error } = scriptToTemplate(script);
+      expect(error).to.equal(null);
+
+      // The expected output should correctly skip the comment and maintain the continuation
+      const expected = `{%- if condition
+    {# Comment #}
+        && anotherCondition -%}
+    {%- endif -%}`;
+
+      expect(template).to.equal(expected);
+    });
   });
 
   // Edge cases
