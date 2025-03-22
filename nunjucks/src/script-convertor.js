@@ -275,6 +275,11 @@ function tokensToCode(tokens) {
  * @return {boolean} True if line continues
  */
 function willContinueToNextLine(tokens, codeContent, firstWord) {
+  // Check if it's a tag that never continues
+  if (SYNTAX.neverContinued.includes(firstWord)) {
+    return false;
+  }
+
   // Check if any tokens are incomplete (parser tells us this)
   const hasIncompleteToken = tokens.some(token => token.incomplete);
   if (hasIncompleteToken) return true;
@@ -447,7 +452,7 @@ function generateOutput(lineType, content, indent, isContinuation, willContinue,
   let output;
 
   if (isContinuation) {
-    // Continuation line - just the content
+    // Continuation line - just the content with its indentation
     output = `${indent}${content}`;
 
     // Check if this is the end of a continuation
@@ -472,7 +477,7 @@ function generateOutput(lineType, content, indent, isContinuation, willContinue,
   } else {
     // New line - add appropriate opening tag
     switch (lineType) {
-      case 'PRINT':{
+      case 'PRINT': {
         // Strip 'print' and get the content
         const printContent = content.substring(5).trim();
         output = `${indent}{{- ${printContent}`;
@@ -522,16 +527,17 @@ function generateOutput(lineType, content, indent, isContinuation, willContinue,
     }
   }
 
-  return output;
+  return output;  // Make sure to return the output
 }
 
 /**
  * Process a single line
  * @param {string} line - The input line
  * @param {Object} state - Line processing state
+ * @param {string|null} nextLine - The next line for lookahead (if available)
  * @return {Object} Processed line info
  */
-function processLine(line, state) {
+function processLine(line, state, allLines, currentIndex) {
   // Parse line with script parser
   const parseResult = parseTemplateLine(
     line,
@@ -614,8 +620,34 @@ function processLine(line, state) {
     state.currentBlockType = blockType;
   }
 
-  // Determine if line will continue to next line
-  const willContinue = willContinueToNextLine(codeTokens, codeContent, firstWord);
+  // Determine if current line will continue to next line
+  let willContinue = willContinueToNextLine(codeTokens, codeContent, firstWord);
+
+  let nextIdx = currentIndex + 1;
+  let nextLineContent = null;
+
+  // Find next non-comment, non-empty line
+  // @todo - use parser
+  while (nextIdx < allLines.length) {
+    const nextLine = allLines[nextIdx].trim();
+    if (nextLine === '' || nextLine.startsWith('//') || nextLine.startsWith('/*')) {
+      nextIdx++;
+      continue;
+    }
+    nextLineContent = nextLine;
+    break;
+  }
+
+  if (nextLineContent && !willContinue) {
+    willContinue = isContinuationFromPrevious(nextLineContent, willContinue);
+  }
+
+  // Also check if the next line is a continuation of this line
+  /*if (nextLine && !willContinue) {
+    const nextLineContent = nextLine.trim();
+    willContinue = isContinuationFromPrevious(nextLineContent, willContinue);
+  }*/
+
   state.willContinue = willContinue;
 
   // Generate output for this line
@@ -728,8 +760,12 @@ function scriptToTemplate(scriptStr) {
     currentBlockType: null
   };
 
-  // Process each line
-  const processedLines = lines.map(line => processLine(line, state));
+  // Process each line with lookahead for continuation detection
+  const processedLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    processedLines.push(processLine(line, state, lines, i));
+  }
 
   // Validate block structure
   const validationResult = validateBlockStructure(processedLines);
@@ -740,7 +776,7 @@ function scriptToTemplate(scriptStr) {
   // Generate the final template
   const template = processedLines
     .map(line => line.outputLine)
-    .join('\n');// + '\n';
+    .join('\n');
 
   return { template, error: null };
 }
