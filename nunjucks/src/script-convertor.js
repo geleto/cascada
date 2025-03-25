@@ -437,6 +437,15 @@ function processContinuationsAndComments(parseResults) {
 function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLineType) {
   let output = processedLine.indentation;
 
+  if (processedLine.isEmpty) {
+    return output;
+  }
+
+  if (processedLine.isCommentOnly) {
+    output += `{#- ${processedLine.comments.join('; ')} -#}`;
+    return output;
+  }
+
   if (!processedLine.isContinuation) {
     switch (processedLine.lineType) {
       case 'TAG':
