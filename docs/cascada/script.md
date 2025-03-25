@@ -205,16 +205,26 @@ With context including:
 
 ### Async Operations
 
-All commands work seamlessly with async data:
+Cascada Script's data assembly commands (put, push, merge) maintain consistent ordering regardless of when they actually execute:
 
 ```
-// These all work naturally with async functions and promises
-put profile await getUserProfile(userId)
-merge stats dataService.fetchMetrics()
-push activities activityService.getLatestActivity()
+// These commands produce consistent results even with parallel execution
+put user.name "Alice"
+push user.roles "Admin"
+push user.roles "Editor"
+merge user.settings { theme: "dark" }
 ```
 
-Cascada automatically handles promise resolution and ensures operations execute in the correct order when dependencies exist.
+Even though these operations may execute in parallel behind the scenes, the final data structure will always reflect the logical sequence in your code. `user.roles` will always be `["Admin", "Editor"]` in that order, not reversed, regardless of which push operation completes first.
+
+This consistency applies especially to the array targeting with `[]`. When you write:
+
+```
+push users { name: "Alice" }
+push users[].roles "Admin"  // Always affects Alice, never another user
+```
+
+The empty bracket `[]` always references the "Alice" object, preserving the logical relationship between operations even if they execute concurrently. This gives you the mental simplicity of sequential programming while benefiting from Cascada's parallelization.
 
 ### Best Practices
 
