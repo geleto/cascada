@@ -190,20 +190,18 @@ Templating mode uses traditional template syntax with delimiters:
 - Supports template composition: inheritance (extend), content embedding (include), and importing (import)
 - You can reference [Nunjucks Templating Documentation](https://mozilla.github.io/nunjucks/templating.html) for complete details on syntax
 
-### Scripting Mode
-
-## Cascada Script
+### Scripting Mode / Cascada Script
 
 Cascada Script is a lightweight scripting language built on top of Cascada that simplifies asynchronous workflows and data processing. It offers a cleaner syntax for orchestrating complex operations while maintaining all of Cascada's powerful parallelization capabilities.
 
-### Key Features:
+#### Key Features:
 
 - **Clean, delimiter-free syntax** - No `{% %}` or `{{ }}` required
 - **Automatic parallelization** of independent operations
 - **Seamless async handling** with promises and async functions
 - **Data assembly commands** to build structured results
 
-### Quick Example:
+#### Quick Example:
 
 ```
 // Fetch and process user data asynchronously
