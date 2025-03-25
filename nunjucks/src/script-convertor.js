@@ -220,7 +220,7 @@ function isCompleteWord(text, position, length) {
  * @return {string|null} The block type (START, MIDDLE, END) or null
  */
 function getBlockType(tag) {
-  if (SYNTAX.blockTags.includes(tag) || tag == 'print') return BLOCK_TYPE.START;
+  if (SYNTAX.blockTags.includes(tag)) return BLOCK_TYPE.START;
   if (Object.keys(SYNTAX.middleTags).includes(tag)) return BLOCK_TYPE.MIDDLE;
   if (Object.values(SYNTAX.blockPairs).includes(tag)) return BLOCK_TYPE.END;
   return null;
@@ -393,35 +393,44 @@ function processLine(line, state) {
   parseResult.continuesToNext = willContinueToNextLine(codeTokens, parseResult.codeContent, firstWord);
   parseResult.continuesFromPrev = continuesFromPrevious(parseResult.codeContent);
 
+  //update the state used by the parser (it works only with state + current line)
+  state.inMultiLineComment = parseResult.inMultiLineComment;
+  state.stringState = parseResult.stringState;
   return parseResult;
 }
 
 function processContinuationsAndComments(parseResults) {
-  let continueFromIndex = -1;
+  let prevLineIndex = -1;//skips empty or comment-only lines, -1 for the initial empty/comment-only lines
+  let tagLineParseResult;
   for (let i = 0; i < parseResults.length; i++) {
     const presult = parseResults[i];
     if (presult.lineType === 'TAG' || presult.lineType === 'PRINT') {
-      continueFromIndex = i;
+      //start of a new tag or print, save it for continuation
+      tagLineParseResult = presult;
     } else {
       //p.lineType == 'CODE'
       if (presult.isEmpty || presult.isCommentOnly) {
-        //skip for now
+        //skip for now, we may add isContinuation = true later
         continue;
-      } else if (continueFromIndex != -1) {
-        //determine if continuation
-        if (parseResults[continueFromIndex].continuesToNext || presult.continuesFromPrev) {
-          //mark everything between tagIndex+1 and i as continuation
-          for (let j = continueFromIndex + 1; j <= i; j++) {
-            parseResults[j].isContinuation = true;
-            //merge the comments, the same for all continuation lines
-            presult.comments = presult.comments.concat(parseResults[j].comments);
-            parseResults[j].comments = presult.comments;
-            parseResults[j].tagName =  presult.tagName;
-          }
-        } // else this is do tag (code not part of continuation)
-        continueFromIndex = i;
+      }
+      if (prevLineIndex != -1 && (parseResults[prevLineIndex].continuesToNext || presult.continuesFromPrev)) {
+        //this is continuation
+        //mark everything between prevLineIndex+1 and i as continuation
+        for (let j = prevLineIndex + 1; j <= i; j++) {
+          parseResults[j].isContinuation = true;
+          //merge the comments, the same for all continuation lines
+          tagLineParseResult.comments = tagLineParseResult.comments.concat(parseResults[j].comments);
+          //if (presult.lineType === 'TAG') {
+          //  parseResults[j].tagName =  presult.tagName;
+          //}
+        }
+        presult.comments = tagLineParseResult.comments;//we need the comments in the last line of continuation
+      } else {
+        // this is do tag, code not part of continuation but it can be start of continuation
+        tagLineParseResult = presult;//all comments from continuations are added here
       }
     }
+    prevLineIndex = i;//only empty or comment-only lines are skipped by continueFromIndex, for other cases it is i-1
   }
 }
 
@@ -437,9 +446,7 @@ function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLi
         output += '{{- ';
         break;
       case 'CODE':
-        if (!processedLine.isContinuation) {
-          output += '{%- do ';
-        }
+        output += '{%- do ';
         break;
     }
   }
@@ -450,16 +457,12 @@ function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLi
   if (!nextIsContinuation) {
     //close the tag
     switch (lastNonContinuationLineType) {
+      case 'CODE':
       case 'TAG':
-        output += ' -%}';
+        output += ' -%}';//close tag or do
         break;
       case 'PRINT':
         output += ' -}}';
-        break;
-      case 'CODE':
-        if (!processedLine.isContinuation) {
-          output += ' -%}';//close do
-        }
         break;
     }
 
