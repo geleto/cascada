@@ -166,6 +166,7 @@ const SYNTAX = {
 
 // Build set of all reserved keywords for quick lookups
 const RESERVED_KEYWORDS = new Set([
+  'print',
   ...SYNTAX.blockTags,
   ...SYNTAX.lineTags,
   ...Object.keys(SYNTAX.middleTags),
@@ -219,7 +220,7 @@ function isCompleteWord(text, position, length) {
  * @return {string|null} The block type (START, MIDDLE, END) or null
  */
 function getBlockType(tag) {
-  if (SYNTAX.blockTags.includes(tag)) return BLOCK_TYPE.START;
+  if (SYNTAX.blockTags.includes(tag) || tag == 'print') return BLOCK_TYPE.START;
   if (Object.keys(SYNTAX.middleTags).includes(tag)) return BLOCK_TYPE.MIDDLE;
   if (Object.values(SYNTAX.blockPairs).includes(tag)) return BLOCK_TYPE.END;
   return null;
@@ -274,6 +275,7 @@ function tokensToCode(tokens) {
  * @param {string} firstWord - The first word of the code
  * @return {boolean} True if line continues
  */
+//@todo - use the parseResult only?
 function willContinueToNextLine(tokens, codeContent, firstWord) {
   // Check if it's a tag that never continues
   if (SYNTAX.neverContinued.includes(firstWord)) {
@@ -283,11 +285,6 @@ function willContinueToNextLine(tokens, codeContent, firstWord) {
   // Check if any tokens are incomplete (parser tells us this)
   const hasIncompleteToken = tokens.some(token => token.incomplete);
   if (hasIncompleteToken) return true;
-
-  // Check if it's a tag that never continues
-  if (SYNTAX.neverContinued.includes(firstWord)) {
-    return false;
-  }
 
   // No content means no continuation
   if (!codeContent) return false;
@@ -327,17 +324,14 @@ function willContinueToNextLine(tokens, codeContent, firstWord) {
 /**
  * Checks if line continues from the previous line
  * @param {string} codeContent - The code content
- * @param {boolean} prevContinues - Whether the previous line indicated it continues
  * @return {boolean} True if continuing from previous line
  */
-function isContinuationFromPrevious(codeContent, prevContinues) {
-  if (!codeContent) return prevContinues;
+function continuesFromPrevious(codeContent) {
   codeContent = codeContent.trim();
   const firstWord = getFirstWord(codeContent);
   if (RESERVED_KEYWORDS.has(firstWord)) {
     return false; // New tags start fresh, regardless of previous continuation
   }
-  if (prevContinues) return true;
   // Check for continuation characters at start of line
   const firstChar = codeContent.trim()[0];
   if (SYNTAX.continuation.startChars.includes(firstChar)) return true;
@@ -360,316 +354,122 @@ function isContinuationFromPrevious(codeContent, prevContinues) {
   return false;
 }
 
-/**
- * Processes comments in a line
- * @param {Array} comments - Array of comment objects
- * @param {string} indent - Line indentation
- * @param {boolean} isCommentOnly - Whether line only has comments
- * @param {boolean} inMultiLineComment - Whether we're in a multi-line comment
- * @param {boolean} endOfMultiLine - Whether this is end of multi-line comment
- * @param {Object} state - Line processing state
- * @return {Object|null} Line info if handled as comment-only, null otherwise
- */
-function processComments(comments, indent, isCommentOnly, inMultiLineComment, endOfMultiLine, state) {
-  // If no comments, nothing to process
-  if (comments.length === 0) return null;
-
-  // Handle comment-only lines
-  if (isCommentOnly) {
-    // Handle comment-only line during continuation
-    if (state.willContinue) {
-      // Comment-only line during continuation - add to buffer
-      state.commentBuffer = state.commentBuffer || [];
-      comments.forEach(comment => {
-        state.commentBuffer.push(comment.content);
-      });
-
-      // Output as a plain comment for readability
-      return {
-        type: 'COMMENT',
-        content: comments.map(c => c.content).join('; '),
-        indentation: indent,
-        outputLine: `${indent}{# ${comments.map(c => c.content).join('; ')} #}`,
-        blockType: null,
-        willContinue: state.willContinue // Preserve continuation state
-      };
-    }
-
-    // Regular comment-only line
-    if (comments[0].type === COMMENT_TYPE.SINGLE ||
-        (comments[0].type === COMMENT_TYPE.MULTI && !inMultiLineComment)) {
-      // Start of comment (single or multi)
-      return {
-        type: 'COMMENT',
-        content: comments.map(c => c.content).join('; '),
-        indentation: indent,
-        outputLine: `${indent}{# ${comments.map(c => c.content).join('; ')} #}`,
-        blockType: null,
-        willContinue: false
-      };
-    } else {
-      // Middle or end of multi-line comment
-      let output;
-      if (inMultiLineComment && endOfMultiLine) {
-        // End of multi-line comment
-        output = `${indent}   ${comments[0].content} #}`;
-      } else {
-        // Middle of multi-line comment
-        output = `${indent}   ${comments[0].content}`;
-      }
-
-      return {
-        type: 'COMMENT',
-        content: comments[0].content,
-        indentation: indent,
-        outputLine: output,
-        blockType: null,
-        willContinue: false
-      };
-    }
-  }
-
-  // For code lines with comments, add all comments to buffer
-  state.commentBuffer = state.commentBuffer || [];
-  comments.forEach(comment => {
-    state.commentBuffer.push(comment.content);
-  });
-
-  return null;
-}
-
-/**
- * Generates output for a code line
- * @param {string} lineType - Type of line (PRINT, TAG, CODE)
- * @param {string} content - Code content
- * @param {string} indent - Line indentation
- * @param {boolean} isContinuation - Whether line is continuation
- * @param {boolean} willContinue - Whether line will continue
- * @param {Object} state - Line processing state
- * @return {string} Output line
- */
-function generateOutput(lineType, content, indent, isContinuation, willContinue, state) {
-  let output;
-
-  if (isContinuation) {
-    // Continuation line - just the content with its indentation
-    output = `${indent}${content}`;
-
-    // Check if this is the end of a continuation
-    if (!willContinue) {
-      // Add appropriate closing tag
-      switch (lineType) {
-        case 'PRINT':
-          output += ' -}}';
-          break;
-        case 'TAG':
-        case 'CODE':
-          output += ' -%}';
-          break;
-      }
-
-      // Add comment buffer if there are any comments
-      if (state.commentBuffer && state.commentBuffer.length > 0) {
-        output += ` {# ${state.commentBuffer.join('; ')} #}`;
-        state.commentBuffer = [];
-      }
-    }
-  } else {
-    // New line - add appropriate opening tag
-    switch (lineType) {
-      case 'PRINT': {
-        // Strip 'print' and get the content
-        const printContent = content.substring(5).trim();
-        output = `${indent}{{- ${printContent}`;
-
-        // Add closing tag if the line doesn't continue
-        if (!willContinue) {
-          output += ' -}}';
-
-          // Add comment buffer if there are any comments
-          if (state.commentBuffer && state.commentBuffer.length > 0) {
-            output += ` {# ${state.commentBuffer.join('; ')} #}`;
-            state.commentBuffer = [];
-          }
-        }
-        break;
-      }
-
-      case 'TAG':
-        output = `${indent}{%- ${content}`;
-
-        // Add closing tag if the line doesn't continue
-        if (!willContinue) {
-          output += ' -%}';
-
-          // Add comment buffer if there are any comments
-          if (state.commentBuffer && state.commentBuffer.length > 0) {
-            output += ` {# ${state.commentBuffer.join('; ')} #}`;
-            state.commentBuffer = [];
-          }
-        }
-        break;
-
-      case 'CODE':
-        output = `${indent}{%- do ${content}`;
-
-        // Add closing tag if the line doesn't continue
-        if (!willContinue) {
-          output += ' -%}';
-
-          // Add comment buffer if there are any comments
-          if (state.commentBuffer && state.commentBuffer.length > 0) {
-            output += ` {# ${state.commentBuffer.join('; ')} #}`;
-            state.commentBuffer = [];
-          }
-        }
-        break;
-    }
-  }
-
-  return output;  // Make sure to return the output
-}
-
-/**
- * Process a single line
- * @param {string} line - The input line
- * @param {Object} state - Line processing state
- * @param {string|null} nextLine - The next line for lookahead (if available)
- * @return {Object} Processed line info
- */
-function processLine(line, state, allLines, currentIndex) {
+function processLine(line, state) {
   // Parse line with script parser
   const parseResult = parseTemplateLine(
     line,
     state.inMultiLineComment,
     state.stringState
   );
-
-  // Update parser state for next line
-  state.inMultiLineComment = parseResult.inMultiLineComment;
-  state.stringState = parseResult.stringState;
-
-  // Get indentation from parser
-  const indent = parseResult.indentation;
-
-  // Handle empty lines - but preserve the actual line content
-  if (line.trim() === '') {
-    return {
-      type: 'EMPTY',
-      content: '',
-      indentation: indent,
-      outputLine: line, // Preserve the original line including whitespace
-      blockType: null,
-      willContinue: state.willContinue // Preserve continuation state for empty lines
-    };
-  }
-
   // Extract comments and handle them first
   const comments = extractComments(parseResult.tokens);
-
-  // Check if this is a comment-only line
   const codeTokens = filterOutComments(parseResult.tokens);
-  const isCommentOnly = codeTokens.length === 0 && comments.length > 0;
 
-  // Process comments first
-  const commentResult = processComments(
-    comments,
-    indent,
-    isCommentOnly,
-    state.inMultiLineComment,
-    !parseResult.inMultiLineComment,
-    state
-  );
+  parseResult.isCommentOnly = codeTokens.length === 0 && comments.length > 0;
+  parseResult.isEmpty = line.trim() === '';
+  parseResult.codeContent = tokensToCode(codeTokens);
 
-  // If comment processing returned a result, we're done with this line
-  if (commentResult) {
-    return commentResult;
+  parseResult.comments = [];
+  for (let i = 0; i < comments.length; i++) {
+    parseResult.comments.push(comments[i].content);
   }
 
-  // Process code line
-  const codeContent = tokensToCode(codeTokens);
+  const firstWord = getFirstWord(parseResult.codeContent);
 
-  // Check if this line is a continuation from previous
-  const isContinuation = isContinuationFromPrevious(codeContent, state.willContinue);
-
-  // Get first word for tag detection
-  const firstWord = getFirstWord(codeContent);
-
-  // Determine line type and block type
-  let lineType, blockType;
-
-  if (isContinuation) {
-    // This line continues from previous
-    lineType = state.currentLineType;
-    blockType = state.currentBlockType;
-  } else {
-    // New line - determine its type
+  if (RESERVED_KEYWORDS.has(firstWord)) {
     if (firstWord === 'print') {
-      lineType = 'PRINT';
-      blockType = null;
-    } else if (RESERVED_KEYWORDS.has(firstWord)) {
-      lineType = 'TAG';
-      blockType = getBlockType(firstWord);
+      parseResult.lineType = 'PRINT';
+      parseResult.blockType = null;
     } else {
-      lineType = 'CODE';
-      blockType = null;
+      parseResult.lineType = 'TAG';
+      parseResult.blockType = getBlockType(firstWord);
+      parseResult.tagName = firstWord;
+    }
+  } else {
+    parseResult.lineType = 'CODE';
+    parseResult.blockType = null;
+  }
+
+  parseResult.continuesToNext = willContinueToNextLine(codeTokens, parseResult.codeContent, firstWord);
+  parseResult.continuesFromPrev = continuesFromPrevious(parseResult.codeContent);
+
+  return parseResult;
+}
+
+function processContinuationsAndComments(parseResults) {
+  let continueFromIndex = -1;
+  for (let i = 0; i < parseResults.length; i++) {
+    const presult = parseResults[i];
+    if (presult.lineType === 'TAG' || presult.lineType === 'PRINT') {
+      continueFromIndex = i;
+    } else {
+      //p.lineType == 'CODE'
+      if (presult.isEmpty || presult.isCommentOnly) {
+        //skip for now
+        continue;
+      } else if (continueFromIndex != -1) {
+        //determine if continuation
+        if (parseResults[continueFromIndex].continuesToNext || presult.continuesFromPrev) {
+          //mark everything between tagIndex+1 and i as continuation
+          for (let j = continueFromIndex + 1; j <= i; j++) {
+            parseResults[j].isContinuation = true;
+            //merge the comments, the same for all continuation lines
+            presult.comments = presult.comments.concat(parseResults[j].comments);
+            parseResults[j].comments = presult.comments;
+            parseResults[j].tagName =  presult.tagName;
+          }
+        } // else this is do tag (code not part of continuation)
+        continueFromIndex = i;
+      }
+    }
+  }
+}
+
+function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLineType) {
+  let output = processedLine.indentation;
+
+  if (!processedLine.isContinuation) {
+    switch (processedLine.lineType) {
+      case 'TAG':
+        output += '{%- ';
+        break;
+      case 'PRINT':
+        output += '{{- ';
+        break;
+      case 'CODE':
+        if (!processedLine.isContinuation) {
+          output += '{%- do ';
+        }
+        break;
+    }
+  }
+
+  output += processedLine.codeContent;
+
+  //@todo - find the continuationLineType
+  if (!nextIsContinuation) {
+    //close the tag
+    switch (lastNonContinuationLineType) {
+      case 'TAG':
+        output += ' -%}';
+        break;
+      case 'PRINT':
+        output += ' -}}';
+        break;
+      case 'CODE':
+        if (!processedLine.isContinuation) {
+          output += ' -%}';//close do
+        }
+        break;
     }
 
-    // Store current line type and block type for continuations
-    state.currentLineType = lineType;
-    state.currentBlockType = blockType;
-  }
-
-  // Determine if current line will continue to next line
-  let willContinue = willContinueToNextLine(codeTokens, codeContent, firstWord);
-
-  let nextIdx = currentIndex + 1;
-  let nextLineContent = null;
-
-  // Find next non-comment, non-empty line
-  // @todo - use parser
-  while (nextIdx < allLines.length) {
-    const nextLine = allLines[nextIdx].trim();
-    if (nextLine === '' || nextLine.startsWith('//') || nextLine.startsWith('/*')) {
-      nextIdx++;
-      continue;
+    //add the comments
+    if (processedLine.comments.length) {
+      output += `{#- ${processedLine.comments.join('; ')} -#}`;
     }
-    nextLineContent = nextLine;
-    break;
   }
 
-  if (nextLineContent && !willContinue) {
-    willContinue = isContinuationFromPrevious(nextLineContent, willContinue);
-  }
-
-  // Also check if the next line is a continuation of this line
-  /*if (nextLine && !willContinue) {
-    const nextLineContent = nextLine.trim();
-    willContinue = isContinuationFromPrevious(nextLineContent, willContinue);
-  }*/
-
-  state.willContinue = willContinue;
-
-  // Generate output for this line
-  const outputLine = generateOutput(
-    lineType,
-    codeContent,
-    indent,
-    isContinuation,
-    willContinue,
-    state
-  );
-
-  // Return processed line info
-  return {
-    type: lineType,
-    content: codeContent,
-    indentation: indent,
-    outputLine,
-    blockType,
-    willContinue,
-    isContinuation
-  };
+  return output;
 }
 
 /**
@@ -685,17 +485,15 @@ function validateBlockStructure(processedLines) {
 
     if (!line.blockType || line.isContinuation) continue;
 
+    const tag = getFirstWord(line.codeContent);
     if (line.blockType === BLOCK_TYPE.START) {
-      const tag = getFirstWord(line.content);
       stack.push({ tag, line: i + 1 });
     }
     else if (line.blockType === BLOCK_TYPE.MIDDLE) {
-      const tag = getFirstWord(line.content);
-
       if (!stack.length) {
         return {
           valid: false,
-          error: `Line ${i + 1}: '${tag}' outside of any block (content: "${line.content}")`
+          error: `Line ${i + 1}: '${tag}' outside of any block (content: "${line.codeContent}")`
         };
       }
 
@@ -705,17 +503,15 @@ function validateBlockStructure(processedLines) {
       if (!validParents.includes(topTag)) {
         return {
           valid: false,
-          error: `Line ${i + 1}: '${tag}' not valid in '${topTag}' block (content: "${line.content}")`
+          error: `Line ${i + 1}: '${tag}' not valid in '${topTag}' block (content: "${line.codeContent}")`
         };
       }
     }
     else if (line.blockType === BLOCK_TYPE.END) {
-      const tag = getFirstWord(line.content);
-
       if (!stack.length) {
         return {
           valid: false,
-          error: `Line ${i + 1}: Unexpected '${tag}' (content: "${line.content}")`
+          error: `Line ${i + 1}: Unexpected '${tag}' (content: "${line.codeContent}")`
         };
       }
 
@@ -725,7 +521,7 @@ function validateBlockStructure(processedLines) {
       if (expectedEndTag !== tag) {
         return {
           valid: false,
-          error: `Line ${i + 1}: Unexpected '${tag}', was expecting '${expectedEndTag}' (content: "${line.content}")`
+          error: `Line ${i + 1}: Unexpected '${tag}', was expecting '${expectedEndTag}' (content: "${line.codeContent}")`
         };
       }
 
@@ -754,17 +550,30 @@ function scriptToTemplate(scriptStr) {
   const state = {
     inMultiLineComment: false,
     stringState: null,
-    commentBuffer: [],
-    willContinue: false,
-    currentLineType: null,
-    currentBlockType: null
   };
 
   // Process each line with lookahead for continuation detection
   const processedLines = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    processedLines.push(processLine(line, state, lines, i));
+    const processedLine = processLine(line, state);
+
+    // Store processed line for potential reuse in lookahead
+    processedLines.push(processedLine);
+  }
+
+  processContinuationsAndComments(processedLines);
+
+  let output = '';
+  let lastNonContinuationLineType = null;
+  for (let i = 0; i < processedLines.length; i++) {
+    if (!processedLines[i].isContinuation) {
+      lastNonContinuationLineType = processedLines[i].lineType;
+    }
+    output += generateOutput(processedLines[i], processedLines[i + 1]?.isContinuation, lastNonContinuationLineType);
+    if (i != processedLines.length - 1) {
+      output += '\n';
+    }
   }
 
   // Validate block structure
@@ -773,15 +582,9 @@ function scriptToTemplate(scriptStr) {
     return { template: null, error: validationResult.error };
   }
 
-  // Generate the final template
-  const template = processedLines
-    .map(line => line.outputLine)
-    .join('\n');
-
-  return { template, error: null };
+  return { template: output, error: null };
 }
 
 module.exports = { scriptToTemplate, getFirstWord, isCompleteWord, getBlockType,
   extractComments, filterOutComments, tokensToCode, willContinueToNextLine,
-  isContinuationFromPrevious, processComments, generateOutput,
-  processLine, validateBlockStructure };
+  continuesFromPrevious, generateOutput, processedLine: processLine, validateBlockStructure };
