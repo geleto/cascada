@@ -297,6 +297,7 @@ describe('Script Converter', () => {
       expect(template).to.equal('{%- if condition &&\n\n   anotherCondition -%}\n{%- endif -%}');
     });
 
+    //@todo - test multiple coments and empty lines before continuation code line
     it('should handle comment between condition and continuation', () => {
       const script = `if condition
     // Comment
@@ -308,8 +309,7 @@ describe('Script Converter', () => {
 
       // The expected output should correctly skip the comment and maintain the continuation
       const expected = `{%- if condition
-    {# Comment #}
-        && anotherCondition -%}
+        && anotherCondition -%}{# Comment #}
     {%- endif -%}`;
 
       expect(template).to.equal(expected);
