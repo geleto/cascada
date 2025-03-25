@@ -1,8 +1,8 @@
-# Cascada - async-enabled templating with automatic parallelization
+# Cascada - async-enabled templating and scripting engine with automatic parallelization
 
-## Write templates that look synchronous but execute concurrently under the hood.
+## Write templates and scripts that look synchronous but execute concurrently under the hood.
 
-Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It automatically parallelizes independent components during rendering while managing data dependencies, all without requiring special syntax or explicit async handling.
+Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It provides both templating and scripting capabilities with automatic parallelization of independent components during execution while managing data dependencies, all without requiring special syntax or explicit async handling.
 
 It provides seamless support for implicit concurrency across its entire feature set - programming constructs (variables, loops, conditionals), first-class functions and macros, complex expressions, filters, extensions, and composition through inheritance, includes, and imports.
 
@@ -15,7 +15,7 @@ It provides seamless support for implicit concurrency across its entire feature 
 - [Getting Started](#getting-started)
 - [Core Async Features](#core-async-features)
 - [Parallelization Examples](#parallelization-examples)
-- [Templating Features](#templating-features)
+- [Templating and Scripting Features](#templating-and-scripting-features)
 - [Technical Constraints](#technical-constraints)
 - [API](#api)
 - [Best Practices](#best-practices)
@@ -24,7 +24,7 @@ It provides seamless support for implicit concurrency across its entire feature 
 ## Motivation
 Traditional template engines face significant limitations when handling asynchronous operations, typically requiring either pre-resolution of all async data before rendering begins or special syntax for async operations. These engines lack built-in support for automatic concurrency - they process operations sequentially by default, and any parallel processing requires manual orchestration through limited specialized constructs. Even when parallel processing is explicitly configured, it is impractical to effectively parallelize complex templates with interdependent operations, especially where complex nested templates often need to integrate data from multiple asynchronous sources like APIs, databases, and external services.
 
-Cascada was developed with AI agent workflows in mind, where template rendering often involves multiple long-running operations like LLM calls, reasoning steps, or external API requests. If you want to see an example of this approach in action, check out [Cascador-AI](https://github.com/geleto/cascador-ai), an agent framework that leverages Cascada's automatic parallelization to orchestrate multiple LLM operations and external services through simple templates.
+Cascada was developed with AI agent workflows and complex data processing in mind. Both template rendering and script execution often involve multiple long-running operations like LLM calls, reasoning steps, or external API requests that benefit from Cascada's automatic parallelization capabilities. If you want to see an example of this approach in action, check out [Cascador-AI](https://github.com/geleto/cascador-ai), an agent framework that leverages Cascada's automatic parallelization to orchestrate multiple LLM operations and external services through simple templates.
 
 ## Why Cascada?
 
@@ -171,6 +171,72 @@ Cascada fully supports the Nunjucks template syntax and features. You can refere
 - **First-class functions**: macros with support for default values and keyword arguments
 - **Expression system**: complex expressions including inline conditionals and mathematical operations
 - **Template composition**: inheritance (extend), content embedding (include), and importing (import)
+
+## Templating and Scripting Features
+
+Cascada provides a rich set of features available in both templating and scripting modes:
+
+- **Full programming constructs**: variables, loops, conditionals, functions, and scoping rules
+- **First-class functions**: macros with support for default values and keyword arguments
+- **Expression system**: complex expressions including inline conditionals and mathematical operations
+- **Automatic parallelization**: independent operations execute concurrently
+- **Seamless async support**: work naturally with promises and async functions
+
+### Templating Mode
+
+Templating mode uses traditional template syntax with delimiters:
+
+- Uses standard Nunjucks delimiters (`{% %}`, `{{ }}`)
+- Supports template composition: inheritance (extend), content embedding (include), and importing (import)
+- You can reference [Nunjucks Templating Documentation](https://mozilla.github.io/nunjucks/templating.html) for complete details on syntax
+
+### Scripting Mode
+
+## Cascada Script
+
+Cascada Script is a lightweight scripting language built on top of Cascada that simplifies asynchronous workflows and data processing. It offers a cleaner syntax for orchestrating complex operations while maintaining all of Cascada's powerful parallelization capabilities.
+
+### Key Features:
+
+- **Clean, delimiter-free syntax** - No `{% %}` or `{{ }}` required
+- **Automatic parallelization** of independent operations
+- **Seamless async handling** with promises and async functions
+- **Data assembly commands** to build structured results
+
+### Quick Example:
+
+```
+// Fetch and process user data asynchronously
+set user = fetchUser(123)
+
+if user.isActive
+  print "Processing data for: " + user.name
+
+  // Build result data while processing
+  put result.user {
+    id: user.id,
+    name: user.name
+  }
+
+  // Process orders in parallel
+  for order in fetchOrders(user.id)
+    push result.orders {
+      id: order.id,
+      total: order.total
+    }
+  endfor
+endif
+```
+
+Cascada Script can be executed with:
+
+```javascript
+const { text, data } = await env.renderScript(script, context);
+```
+
+The script produces both text output (from `print` statements) and structured data from data assembly commands (`put`, `merge`, `push`).
+
+For full documentation on Cascada Script, see [docs/cascada/script.md](docs/cascada/script.md).
 
 ## Additional Tags
 
