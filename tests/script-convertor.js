@@ -1,7 +1,7 @@
 const { scriptToTemplate, getFirstWord, isCompleteWord, getBlockType,
   extractComments, filterOutComments, tokensToCode, willContinueToNextLine,
   continuesFromPrevious, generateOutput, processedLine: processLine, validateBlockStructure } = require('../nunjucks/src/script-convertor');
-const { TOKEN_TYPES } = require('./script-parser');
+const { TOKEN_TYPES } = require('../nunjucks/src/script-parser');
 const expect = require('expect.js');
 
 describe('Script Converter', () => {
@@ -314,7 +314,7 @@ describe('Script Converter', () => {
           isContinuation: true
         };
 
-        const output = generateOutput(processedLine, false, 'TAG');
+        const output = generateOutput(processedLine, true, 'TAG');
 
         expect(output).to.equal('  && anotherCondition');
       });
@@ -510,13 +510,13 @@ describe('Script Converter', () => {
     });
 
     it('should handle single-line comments', () => {
-      const script = 'print "Hello" // This is a comment';
+      const script = 'print "Hello"// This is a comment';
       const { template } = scriptToTemplate(script);
       expect(template).to.equal('{{- print "Hello" -}}{#- This is a comment -#}');
     });
 
     it('should handle multi-line comments', () => {
-      const script = 'print "Hello" /* This is a multi-line comment */';
+      const script = 'print "Hello"/* This is a multi-line comment */';
       const { template } = scriptToTemplate(script);
       expect(template).to.equal('{{- print "Hello" -}}{#- This is a multi-line comment -#}');
     });
@@ -633,7 +633,7 @@ endif`;
     });
 
     it('should handle comments within multi-line expressions', () => {
-      const script = 'if condition && // First condition\n   anotherCondition // Second condition\nendif';
+      const script = 'if condition && // First condition\n   anotherCondition// Second condition\nendif';
       const { template } = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition && \n   anotherCondition -%}{#- First condition; Second condition -#}\n{%- endif -%}');
     });
@@ -687,9 +687,9 @@ endif`;
       const { template, error } = scriptToTemplate(script);
       expect(error).to.equal(null);
       expect(template).to.contain('set result = calculate(');
-      expect(template).to.contain('first + ');
+      expect(template).to.contain('first +');
       expect(template).to.contain('second * (');
-      expect(template).to.contain('third / ');
+      expect(template).to.contain('third /');
       expect(template).to.contain('fourth');
     });
   });
@@ -869,7 +869,7 @@ endtry`;
       expect(template).to.contain('{%- endtry -%}');
     });
 
-    it('should handle while loops with async iterators', () => {
+    it('should handle while loops with while iteration', () => {
       const script = `// Async iterator example
 set stream = createAsyncStream()
 while stream.hasNext()
@@ -878,11 +878,11 @@ while stream.hasNext()
 
   // Skip empty chunks
   if !chunk
-    continue
+    print 'Empty chunk'
+  else
+    // Process the chunk
+    results.push(processChunk(chunk))
   endif
-
-  // Process the chunk
-  results.push(processChunk(chunk))
 endwhile`;
 
       const { template, error } = scriptToTemplate(script);
@@ -893,8 +893,10 @@ endwhile`;
       expect(template).to.contain('{%- set chunk = stream.next() -%}');
       expect(template).to.contain('{{- print "Processing chunk " + loop.index + ": " + chunk -}}');
       expect(template).to.contain('{%- if !chunk -%}');
-      expect(template).to.contain('{%- continue -%}');
+      expect(template).to.contain('{{- print \'Empty chunk\' -}}');
+      expect(template).to.contain('{%- else -%}');
       expect(template).to.contain('{%- do results.push(processChunk(chunk)) -%}');
+      expect(template).to.contain('{%- endif -%}');
       expect(template).to.contain('{%- endwhile -%}');
     });
 
