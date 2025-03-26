@@ -12,6 +12,7 @@ const { Obj, EmitterObj } = require('./object');
 const globalRuntime = require('./runtime');
 const { handleError, Frame, AsyncFrame } = globalRuntime;
 const expressApp = require('./express-app');
+const { scriptToTemplate } = require('./script-convertor');
 
 // If the user is using the async API, *always* call it
 // asynchronously even if the template was synchronous.
@@ -354,6 +355,12 @@ class Environment extends EmitterObj {
     return syncResult;
   }
 
+  //avoid ambiguity between renderString and renderScript
+  //later will deprecate renderString
+  async renderTemplate(src, ctx, opts, cb) {
+    return this.renderString(src, ctx, opts, cb);
+  }
+
   renderString(src, ctx, opts, cb) {
     if (lib.isFunction(opts)) {
       cb = opts;
@@ -363,6 +370,27 @@ class Environment extends EmitterObj {
 
     const tmpl = new Template(src, this, opts.path);
     return tmpl.render(ctx, cb);
+  }
+
+  renderScript(scriptStr, ctx, cb) {
+    if (lib.isFunction(ctx)) {
+      cb = ctx;
+      ctx = {};
+    }
+
+    // Convert script to template
+    const { template, error } = scriptToTemplate(scriptStr);
+
+    if (error) {
+      if (cb) {
+        callbackAsap(cb, error);
+        return undefined;
+      }
+      throw error;
+    }
+
+    // Use the template renderer
+    return this.renderString(template, ctx, cb);
   }
 
   waterfall(tasks, callback, forceAsync) {
@@ -377,6 +405,12 @@ class AsyncEnvironment extends Environment {
 
   async renderAsync(templateName, ctx, parentFrame) {
     return this._asyncRender(templateName, ctx, true, parentFrame);
+  }
+
+  //avoid ambiguity between renderString and renderScript
+  //later will deprecate renderString
+  async renderTemplate(src, ctx, opts, cb) {
+    return this.renderString(src, ctx, opts, cb);
   }
 
   async renderString(src, ctx, opts, cb) {
@@ -395,6 +429,39 @@ class AsyncEnvironment extends Environment {
     }
     catch (err) {
       if (cb) cb(err);
+      throw err;
+    }
+  }
+
+  async renderScript(scriptStr, ctx, cb) {
+    if (lib.isFunction(ctx)) {
+      cb = ctx;
+      ctx = {};
+    }
+
+    try {
+      // Convert script to template
+      const { template, error } = scriptToTemplate(scriptStr);
+
+      if (error) {
+        if (cb) {
+          callbackAsap(cb, error);
+          return undefined;
+        }
+        throw error;
+      }
+
+      // Use the async template renderer
+      const result = await this.renderString(template, ctx);
+      if (cb) {
+        callbackAsap(cb, null, result);
+      }
+      return result;
+    } catch (err) {
+      if (cb) {
+        callbackAsap(cb, err);
+        return undefined;
+      }
       throw err;
     }
   }
@@ -909,9 +976,48 @@ class AsyncTemplate extends Template {
   }
 }
 
+
+/**
+ * Script class - represents a compiled Cascada script
+ */
+class Script extends Template {
+  init(src, env, path, eagerCompile) {
+    // Convert script to template if it's a string
+    if (lib.isString(src)) {
+      const { template, error } = scriptToTemplate(src);
+      if (error) {
+        throw error;
+      }
+      src = template;
+    }
+
+    super.init(src, env, path, eagerCompile);
+  }
+}
+
+/**
+ * AsyncScript class - represents a compiled async Cascada script
+ */
+class AsyncScript extends AsyncTemplate {
+  init(src, env, path, eagerCompile) {
+    // Convert script to template if it's a string
+    if (lib.isString(src)) {
+      const { template, error } = scriptToTemplate(src);
+      if (error) {
+        throw error;
+      }
+      src = template;
+    }
+
+    super.init(src, env, path, eagerCompile);
+  }
+}
+
 module.exports = {
-  Environment: Environment,
-  AsyncEnvironment: AsyncEnvironment,
-  Template: Template,
-  AsyncTemplate: AsyncTemplate
+  Environment,
+  AsyncEnvironment,
+  Template,
+  AsyncTemplate,
+  Script,
+  AsyncScript
 };
