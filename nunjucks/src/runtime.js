@@ -816,8 +816,9 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
         values.push(result.value);
       }
 
-      const len = values.length;
-      for (let i = 0; i < len; i++) {
+      const len = isAsync ? Promise.resolve(values.length) : values.length;
+
+      for (let i = 0; i < values.length; i++) {
         didIterate = true;
         const value = values[i];
 
@@ -834,34 +835,44 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
       arr = fromIterator(arr);
 
       if (Array.isArray(arr)) {
-        const len = arr.length;
+        const len = isAsync ? Promise.resolve(arr.length) : arr.length;
 
-        for (let i = 0; i < len; i++) {
+        for (let i = 0; i < arr.length; i++) {
           didIterate = true;
           const value = arr[i];
 
-
           if (loopVars.length === 1) {
-            loopBody(value, i, len);
+            if (isAsync) {
+              await loopBody(value, i, len);
+            } else {
+              loopBody(value, i, len);
+            }
           } else {
             if (!Array.isArray(value)) {
               throw new Error('Expected an array for destructuring');
             }
-            loopBody(...value.slice(0, loopVars.length), i, len);
+            if (isAsync) {
+              await loopBody(...value.slice(0, loopVars.length), i, len);
+            } else {
+              loopBody(...value.slice(0, loopVars.length), i, len);
+            }
           }
         }
       } else {
         const keys = Object.keys(arr);
-        const len = keys.length;
+        const len = isAsync ? Promise.resolve(keys.length) : keys.length;
 
-        for (let i = 0; i < len; i++) {
+        for (let i = 0; i < keys.length; i++) {
           didIterate = true;
           const key = keys[i];
           const value = arr[key];
 
-
           if (loopVars.length === 2) {
-            loopBody(key, value, i, len);
+            if (isAsync) {
+              await loopBody(key, value, i, len);
+            } else {
+              loopBody(key, value, i, len);
+            }
           } else {
             throw new Error('Expected two variables for key/value iteration');
           }
