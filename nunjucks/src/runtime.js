@@ -783,6 +783,16 @@ function fromIterator(arr) {
   }
 }
 
+function setLoopBindings(frame, index, len) {
+  frame.set('loop.index', index + 1);
+  frame.set('loop.index0', index);
+  frame.set('loop.revindex', len - index);
+  frame.set('loop.revindex0', len - index - 1);
+  frame.set('loop.first', index === 0);
+  frame.set('loop.last', index === len - 1);
+  frame.set('loop.length', len);
+}
+
 async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = false) {
   let didIterate = false;
   if (arr) {
@@ -821,13 +831,7 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
 
           // Set loop bindings in the frame for non-async cases
           if (!isAsync) {
-            frame.set('loop.index', i + 1);
-            frame.set('loop.index0', i);
-            frame.set('loop.revindex', len - i);
-            frame.set('loop.revindex0', len - i - 1);
-            frame.set('loop.first', i === 0);
-            frame.set('loop.last', i === len - 1);
-            frame.set('loop.length', len);
+            setLoopBindings(frame, i, len);
           }
 
           if (loopVars.length === 1) {
@@ -850,13 +854,7 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
 
           // Set loop bindings in the frame for non-async cases
           if (!isAsync) {
-            frame.set('loop.index', i + 1);
-            frame.set('loop.index0', i);
-            frame.set('loop.revindex', len - i);
-            frame.set('loop.revindex0', len - i - 1);
-            frame.set('loop.first', i === 0);
-            frame.set('loop.last', i === len - 1);
-            frame.set('loop.length', len);
+            setLoopBindings(frame, i, len);
           }
 
           if (loopVars.length === 2) {
