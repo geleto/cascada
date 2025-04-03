@@ -784,13 +784,24 @@ function fromIterator(arr) {
 }
 
 function setLoopBindings(frame, index, len) {
-  frame.set('loop.index', index + 1);
-  frame.set('loop.index0', index);
-  frame.set('loop.revindex', len - index);
-  frame.set('loop.revindex0', len - index - 1);
-  frame.set('loop.first', index === 0);
-  frame.set('loop.last', index === len - 1);
-  frame.set('loop.length', len);
+  // If len is a promise, we need to set the loop variables as promises that resolve when len is known
+  if (len && typeof len.then === 'function') {
+    frame.set('loop.index', len.then(l => index + 1));
+    frame.set('loop.index0', len.then(l => index));
+    frame.set('loop.revindex', len.then(l => l - index));
+    frame.set('loop.revindex0', len.then(l => l - index - 1));
+    frame.set('loop.first', len.then(l => index === 0));
+    frame.set('loop.last', len.then(l => index === l - 1));
+    frame.set('loop.length', len);
+  } else {
+    frame.set('loop.index', index + 1);
+    frame.set('loop.index0', index);
+    frame.set('loop.revindex', len - index);
+    frame.set('loop.revindex0', len - index - 1);
+    frame.set('loop.first', index === 0);
+    frame.set('loop.last', index === len - 1);
+    frame.set('loop.length', len);
+  }
 }
 
 async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = false) {
