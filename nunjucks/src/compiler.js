@@ -1446,8 +1446,7 @@ class Compiler extends Obj {
 
     // Set loop bindings for async case
     if (node.isAsync) {
-      //@todo - loop body calls the emitLoopBindings in the runtime, with the frame
-      this._emitLoopBindings(loopIndex, loopLength);
+      this._emitLine(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength});`);
     }
 
     // Handle array unpacking within the loop body
@@ -1469,7 +1468,6 @@ class Compiler extends Obj {
       const varName = node.name.value;
       this._emitLine(`frame.set("${varName}", ${varName});`);
     }
-
 
     // Compile the loop body with the updated frame
     this._withScopedSyntax(() => {
@@ -1517,22 +1515,6 @@ class Compiler extends Obj {
   }
 
   _emitAsyncLoopBindings(node, arr, i, len) {
-    const bindings = [
-      { name: 'index', val: `${i} + 1` },
-      { name: 'index0', val: i },
-      { name: 'revindex', val: `${len} - ${i}` },
-      { name: 'revindex0', val: `${len} - ${i} - 1` },
-      { name: 'first', val: `${i} === 0` },
-      { name: 'last', val: `${i} === ${len} - 1` },
-      { name: 'length', val: len },
-    ];
-
-    bindings.forEach((b) => {
-      this._emitLine(`frame.set("loop.${b.name}", ${b.val});`);
-    });
-  }
-
-  _emitLoopBindings(i, len) {
     const bindings = [
       { name: 'index', val: `${i} + 1` },
       { name: 'index0', val: i },

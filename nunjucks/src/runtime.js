@@ -905,5 +905,6 @@ module.exports = {
   asyncAll: asyncAll,
   inOperator: lib.inOperator,
   fromIterator: fromIterator,
-  iterate: iterate
+  iterate: iterate,
+  setLoopBindings
 };
