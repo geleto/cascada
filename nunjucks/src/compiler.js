@@ -1444,10 +1444,7 @@ class Compiler extends Obj {
     // Begin buffer block for the loop body
     frame = this._emitAsyncBlockBufferNodeBegin(node, frame);
 
-    // Set loop bindings for async case
-    if (node.isAsync) {
-      this._emitLine(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength});`);
-    }
+    this._emitLine(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength});`);
 
     // Handle array unpacking within the loop body
     if (loopVars.length === 2 && !Array.isArray(arr)) {

@@ -829,10 +829,6 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
           didIterate = true;
           const value = arr[i];
 
-          // Set loop bindings in the frame for non-async cases
-          if (!isAsync) {
-            setLoopBindings(frame, i, len);
-          }
 
           if (loopVars.length === 1) {
             loopBody(value, i, len);
@@ -852,10 +848,6 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
           const key = keys[i];
           const value = arr[key];
 
-          // Set loop bindings in the frame for non-async cases
-          if (!isAsync) {
-            setLoopBindings(frame, i, len);
-          }
 
           if (loopVars.length === 2) {
             loopBody(key, value, i, len);
