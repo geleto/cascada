@@ -1464,8 +1464,10 @@ class Compiler extends Obj {
       this._emitLine(`frame.set("${varName}", ${varName});`);
     }
 
-    // Set loop bindings
-    this._emitLoopBindings(loopIndex, loopLength);
+    // Set loop bindings for async case
+    if (node.isAsync) {
+      this._emitLoopBindings(loopIndex, loopLength);
+    }
 
     // Compile the loop body with the updated frame
     this._withScopedSyntax(() => {

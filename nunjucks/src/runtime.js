@@ -791,9 +791,6 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
       let result;
       const values = [];
 
-      //@todo - dynamically run the loops, not in advance, len becomes a promise
-      //iaAsync with regular iterator
-
       while ((result = await iterator.next()), !result.done) {
         values.push(result.value);
       }
@@ -822,6 +819,17 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
           didIterate = true;
           const value = arr[i];
 
+          // Set loop bindings in the frame for non-async cases
+          if (!isAsync) {
+            frame.set('loop.index', i + 1);
+            frame.set('loop.index0', i);
+            frame.set('loop.revindex', len - i);
+            frame.set('loop.revindex0', len - i - 1);
+            frame.set('loop.first', i === 0);
+            frame.set('loop.last', i === len - 1);
+            frame.set('loop.length', len);
+          }
+
           if (loopVars.length === 1) {
             loopBody(value, i, len);
           } else {
@@ -839,6 +847,17 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
           didIterate = true;
           const key = keys[i];
           const value = arr[key];
+
+          // Set loop bindings in the frame for non-async cases
+          if (!isAsync) {
+            frame.set('loop.index', i + 1);
+            frame.set('loop.index0', i);
+            frame.set('loop.revindex', len - i);
+            frame.set('loop.revindex0', len - i - 1);
+            frame.set('loop.first', i === 0);
+            frame.set('loop.last', i === len - 1);
+            frame.set('loop.length', len);
+          }
 
           if (loopVars.length === 2) {
             loopBody(key, value, i, len);
