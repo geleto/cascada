@@ -810,7 +810,6 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
       let result;
       let i = 0;
 
-      // Create a single lastPromise outside the loop
       let lastPromiseResolve;
       let lastPromise = new Promise(resolve => {
         lastPromiseResolve = resolve;
@@ -835,12 +834,12 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
               }
 
               if (loopVars.length === 1) {
-                await loopBody(value, i, lenPromise, lastPromise);
+                loopBody(value, i, lenPromise, lastPromise);
               } else {
                 if (!Array.isArray(value)) {
                   throw new Error('Expected an array for destructuring');
                 }
-                await loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
+                loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
               }
               i++;
             }
@@ -875,20 +874,12 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
           const isLast = i === arr.length - 1;
 
           if (loopVars.length === 1) {
-            if (isAsync) {
-              await loopBody(value, i, len, isLast);
-            } else {
-              loopBody(value, i, len, isLast);
-            }
+            loopBody(value, i, len, isLast);
           } else {
             if (!Array.isArray(value)) {
               throw new Error('Expected an array for destructuring');
             }
-            if (isAsync) {
-              await loopBody(...value.slice(0, loopVars.length), i, len, isLast);
-            } else {
-              loopBody(...value.slice(0, loopVars.length), i, len, isLast);
-            }
+            loopBody(...value.slice(0, loopVars.length), i, len, isLast);
           }
         }
       } else {
@@ -902,11 +893,7 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
           const isLast = i === keys.length - 1;
 
           if (loopVars.length === 2) {
-            if (isAsync) {
-              await loopBody(key, value, i, len, isLast);
-            } else {
-              loopBody(key, value, i, len, isLast);
-            }
+            loopBody(key, value, i, len, isLast);
           } else {
             throw new Error('Expected two variables for key/value iteration');
           }
