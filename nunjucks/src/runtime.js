@@ -784,24 +784,21 @@ function fromIterator(arr) {
 }
 
 function setLoopBindings(frame, index, len) {
-  // If len is a promise, we need to set the loop variables that depend on len as promises
-  if (len && typeof len.then === 'function') {
-    // These variables depend on index only, so they can be set directly
-    frame.set('loop.index', index + 1);
-    frame.set('loop.index0', index);
-    frame.set('loop.first', index === 0);
+  // Set the loop variables that depend only on index directly
+  frame.set('loop.index', index + 1);
+  frame.set('loop.index0', index);
+  frame.set('loop.first', index === 0);
 
-    // These variables depend on len, so they need to be promises
+  if (len && typeof len.then === 'function') {
+    // Set the loop variables that depend on len as promises
     frame.set('loop.revindex', len.then(l => l - index));
     frame.set('loop.revindex0', len.then(l => l - index - 1));
     frame.set('loop.last', len.then(l => index === l - 1));
     frame.set('loop.length', len);
   } else {
-    frame.set('loop.index', index + 1);
-    frame.set('loop.index0', index);
+    // Set the loop variables that depend on len directly
     frame.set('loop.revindex', len - index);
     frame.set('loop.revindex0', len - index - 1);
-    frame.set('loop.first', index === 0);
     frame.set('loop.last', index === len - 1);
     frame.set('loop.length', len);
   }
