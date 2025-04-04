@@ -861,7 +861,7 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
       });
 
       // Wait for all iterations to complete
-      await lenPromise;
+      await lenPromise;//why is this needed, some tests fail without it?
     } else {
       arr = fromIterator(arr);
 
@@ -903,7 +903,7 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
   }
 
   if (!didIterate && loopElse) {
-    await loopElse();
+    await loopElse();//just in case
   }
 }
 

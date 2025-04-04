@@ -1398,8 +1398,7 @@ class Compiler extends Obj {
     // as fast as possible. ForAsync also shares some of this, but
     // not much.
 
-    //@todo - if node.arr is not async - we can create the buffer block without async block in it and just push the frame
-    //each iteration will creates it's own pushAsyncBlock anyway
+    //create an async block for the node - it will snapshot the vars rather than doing it for each iteration
     frame = this._emitAsyncBlockBufferNodeBegin(node, frame, true);
 
     // Evaluate the array expression
@@ -1485,7 +1484,7 @@ class Compiler extends Obj {
       this._emit(`let ${elseFuncId} = `);
 
       if (node.isAsync) {
-        this._emit('async function() {');//@todo - think this over, does it need async block?
+        this._emit('async function() {');
       } else {
         this._emit('function() {');
       }
@@ -1498,7 +1497,7 @@ class Compiler extends Obj {
       this._emitLine('};');
     }
 
-    // Call the runtime loop function
+    // Call the runtime iterate loop function
     this._emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, [`);
     loopVars.forEach((varName, index) => {
       if (index > 0) {
