@@ -784,13 +784,16 @@ function fromIterator(arr) {
 }
 
 function setLoopBindings(frame, index, len) {
-  // If len is a promise, we need to set the loop variables as promises that resolve when len is known
+  // If len is a promise, we need to set the loop variables that depend on len as promises
   if (len && typeof len.then === 'function') {
-    frame.set('loop.index', len.then(l => index + 1));
-    frame.set('loop.index0', len.then(l => index));
+    // These variables depend on index only, so they can be set directly
+    frame.set('loop.index', index + 1);
+    frame.set('loop.index0', index);
+    frame.set('loop.first', index === 0);
+
+    // These variables depend on len, so they need to be promises
     frame.set('loop.revindex', len.then(l => l - index));
     frame.set('loop.revindex0', len.then(l => l - index - 1));
-    frame.set('loop.first', len.then(l => index === 0));
     frame.set('loop.last', len.then(l => index === l - 1));
     frame.set('loop.length', len);
   } else {
@@ -810,32 +813,36 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
     if (isAsync && typeof arr[Symbol.asyncIterator] === 'function') {
       const iterator = arr[Symbol.asyncIterator]();
       let result;
-      const values = [];
+      let i = 0;
+      let lenPromise = new Promise(resolve => {
+        const values = [];
+        (async () => {
+          while ((result = await iterator.next()), !result.done) {
+            values.push(result.value);
+            didIterate = true;
+            const value = result.value;
 
-      while ((result = await iterator.next()), !result.done) {
-        values.push(result.value);
-      }
-
-      const len = isAsync ? Promise.resolve(values.length) : values.length;
-
-      for (let i = 0; i < values.length; i++) {
-        didIterate = true;
-        const value = values[i];
-
-        if (loopVars.length === 1) {
-          await loopBody(value, i, len);
-        } else {
-          if (!Array.isArray(value)) {
-            throw new Error('Expected an array for destructuring');
+            if (loopVars.length === 1) {
+              await loopBody(value, i, lenPromise);
+            } else {
+              if (!Array.isArray(value)) {
+                throw new Error('Expected an array for destructuring');
+              }
+              await loopBody(...value.slice(0, loopVars.length), i, lenPromise);
+            }
+            i++;
           }
-          await loopBody(...value.slice(0, loopVars.length), i, len);
-        }
-      }
+          resolve(values.length);
+        })();
+      });
+
+      // Wait for all iterations to complete
+      await lenPromise;
     } else {
       arr = fromIterator(arr);
 
       if (Array.isArray(arr)) {
-        const len = isAsync ? Promise.resolve(arr.length) : arr.length;
+        const len = arr.length;
 
         for (let i = 0; i < arr.length; i++) {
           didIterate = true;
@@ -860,7 +867,7 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
         }
       } else {
         const keys = Object.keys(arr);
-        const len = isAsync ? Promise.resolve(keys.length) : keys.length;
+        const len = keys.length;
 
         for (let i = 0; i < keys.length; i++) {
           didIterate = true;
