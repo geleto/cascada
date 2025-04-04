@@ -1439,12 +1439,13 @@ class Compiler extends Obj {
     });
     const loopIndex = this._tmpid();
     const loopLength = this._tmpid();
-    this._emit(`, ${loopIndex}, ${loopLength}) {`);
+    const isLast = this._tmpid();
+    this._emit(`, ${loopIndex}, ${loopLength}, ${isLast}) {`);
 
     // Begin buffer block for the loop body
     frame = this._emitAsyncBlockBufferNodeBegin(node, frame);
 
-    this._emitLine(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength});`);
+    this._emitLine(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
 
     // Handle array unpacking within the loop body
     if (loopVars.length === 2 && !Array.isArray(arr)) {

@@ -783,24 +783,22 @@ function fromIterator(arr) {
   }
 }
 
-function setLoopBindings(frame, index, len) {
+function setLoopBindings(frame, index, len, last) {
   // Set the loop variables that depend only on index directly
   frame.set('loop.index', index + 1);
   frame.set('loop.index0', index);
   frame.set('loop.first', index === 0);
+  frame.set('loop.length', len);
+  frame.set('loop.last', last);
 
   if (len && typeof len.then === 'function') {
-    // Set the loop variables that depend on len as promises
+    // Set the remaining loop variables that depend on len as promises
     frame.set('loop.revindex', len.then(l => l - index));
     frame.set('loop.revindex0', len.then(l => l - index - 1));
-    frame.set('loop.last', len.then(l => index === l - 1));
-    frame.set('loop.length', len);
   } else {
-    // Set the loop variables that depend on len directly
+    // Set the remaining loop variables that depend on len directly
     frame.set('loop.revindex', len - index);
     frame.set('loop.revindex0', len - index - 1);
-    frame.set('loop.last', index === len - 1);
-    frame.set('loop.length', len);
   }
 }
 
@@ -811,25 +809,55 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
       const iterator = arr[Symbol.asyncIterator]();
       let result;
       let i = 0;
+
+      // Create a single lastPromise outside the loop
+      let lastPromiseResolve;
+      let lastPromise = new Promise(resolve => {
+        lastPromiseResolve = resolve;
+      });
+
       let lenPromise = new Promise(resolve => {
         const values = [];
         (async () => {
-          while ((result = await iterator.next()), !result.done) {
-            values.push(result.value);
-            didIterate = true;
-            const value = result.value;
+          try {
+            while ((result = await iterator.next()), !result.done) {
+              values.push(result.value);
+              didIterate = true;
+              const value = result.value;
 
-            if (loopVars.length === 1) {
-              await loopBody(value, i, lenPromise);
-            } else {
-              if (!Array.isArray(value)) {
-                throw new Error('Expected an array for destructuring');
+              // If a new iteration starts, the previous one wasn't the last
+              if (lastPromiseResolve) {
+                lastPromiseResolve(false);
+                // Create a new lastPromise for this iteration
+                lastPromise = new Promise(resolveNew => {
+                  lastPromiseResolve = resolveNew;
+                });
               }
-              await loopBody(...value.slice(0, loopVars.length), i, lenPromise);
+
+              if (loopVars.length === 1) {
+                await loopBody(value, i, lenPromise, lastPromise);
+              } else {
+                if (!Array.isArray(value)) {
+                  throw new Error('Expected an array for destructuring');
+                }
+                await loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
+              }
+              i++;
             }
-            i++;
+
+            // When loop ends, resolve the lastPromise to true if it exists
+            if (lastPromiseResolve) {
+              lastPromiseResolve(true);
+            }
+
+            resolve(values.length);
+          } catch (error) {
+            // Make sure to resolve the lastPromise in case of error
+            if (lastPromiseResolve) {
+              lastPromiseResolve(true);
+            }
+            throw error;
           }
-          resolve(values.length);
         })();
       });
 
@@ -844,21 +872,22 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
         for (let i = 0; i < arr.length; i++) {
           didIterate = true;
           const value = arr[i];
+          const isLast = i === arr.length - 1;
 
           if (loopVars.length === 1) {
             if (isAsync) {
-              await loopBody(value, i, len);
+              await loopBody(value, i, len, isLast);
             } else {
-              loopBody(value, i, len);
+              loopBody(value, i, len, isLast);
             }
           } else {
             if (!Array.isArray(value)) {
               throw new Error('Expected an array for destructuring');
             }
             if (isAsync) {
-              await loopBody(...value.slice(0, loopVars.length), i, len);
+              await loopBody(...value.slice(0, loopVars.length), i, len, isLast);
             } else {
-              loopBody(...value.slice(0, loopVars.length), i, len);
+              loopBody(...value.slice(0, loopVars.length), i, len, isLast);
             }
           }
         }
@@ -870,12 +899,13 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], isAsync = 
           didIterate = true;
           const key = keys[i];
           const value = arr[key];
+          const isLast = i === keys.length - 1;
 
           if (loopVars.length === 2) {
             if (isAsync) {
-              await loopBody(key, value, i, len);
+              await loopBody(key, value, i, len, isLast);
             } else {
-              loopBody(key, value, i, len);
+              loopBody(key, value, i, len, isLast);
             }
           } else {
             throw new Error('Expected two variables for key/value iteration');
