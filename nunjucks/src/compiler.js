@@ -1393,7 +1393,7 @@ class Compiler extends Obj {
   }
 
   //@todo - in asyncMode each loop body is in separate context even if !node.isAsync
-  compileFor(node, frame) {
+  compileFor(node, frame, sequential = false) {
     // Some of this code is ugly, but it keeps the generated code
     // as fast as possible. ForAsync also shares some of this, but
     // not much.
@@ -1505,7 +1505,7 @@ class Compiler extends Obj {
       }
       this._emit(`"${varName}"`);
     });
-    this._emit(`], ${node.isAsync});`);
+    this._emit(`], ${sequential}, ${node.isAsync});`);
 
     // End buffer block for the node
     frame = this._emitAsyncBlockBufferNodeEnd(node, frame, true);
