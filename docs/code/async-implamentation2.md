@@ -97,9 +97,9 @@ Async blocks execute potentially *after* the surrounding code has moved on. A bl
 
 ### 4b. Variable Synchronization (Promisification & Counting)
 
-Snapshots handle reads, but concurrent *writes* to the same outer-scope variable require synchronization. Cascada uses a promise-based reference counting system.
+While snapshots handle reading the correct initial state, ensuring consistency when multiple concurrent async blocks might *write* to the same outer-scope variable requires a more sophisticated synchronization mechanism. Cascada addresses this using a promise-based reference counting system.
 
-**Purpose:** Prevent reads of stale data. If an async block might write to variable `x`, replace `x` in the outer scope with a Promise. This Promise only resolves to the final correct value *after* all potential concurrent writes (from this block and others) to `x` are guaranteed to be finished.
+**Purpose:** To prevent reads of potentially incorrect or intermediate values during concurrent execution. When an async block *might* modify a shared variable `x`, this mechanism replaces `x` in the outer scope with a Promise. This Promise acts as a lock, delaying any reads until it resolves. Crucially, it only resolves to the final, correct value *after all potential concurrent writes* to `x` are guaranteed to be finished or accounted for. To achieve this, the compiler calculates the maximum potential writes across *all conditional branches* (e.g., both the `if` and `else` paths and all `switch` paths), and the runtime meticulously decrements this count for both executed writes *and* writes skipped in branches not taken. This ensures the Promise resolves only when the variable's state is stable according to sequential logic, regardless of the actual runtime execution path and concurrency.
 
 1.  **Compile-Time Analysis (Predicting Writes):**
     *   **Tracking Usage:** Compiler tracks declarations (`declaredVars`), reads (`readVars`), and potential writes across scopes.
