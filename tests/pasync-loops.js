@@ -733,4 +733,231 @@
     });
 
   });
+
+  describe('Loops Modifying Outer Scope Variables (Sequential Behavior)', () => {
+
+    let env;
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    it('should correctly accumulate value using async operation (Sequential)', async () => {
+      const context = {
+        items: [1, 2, 3],
+        async getValue(id) {
+          await delay(5);
+          return id * 10; // Async calculation
+        }
+      };
+      const template = `
+        {% set total = 0 %}
+        {%- for item in items -%}
+          {% set total = total + getValue(item) %}
+        {%- endfor -%}
+        Final Total: {{ total }}
+        `;
+      // Expected: 0 + getValue(1) -> 10
+      //           10 + getValue(2) -> 30
+      //           30 + getValue(3) -> 60
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Final Total: 60');
+    });
+
+    it('should correctly modify outer object property using async operation (Sequential)', async () => {
+      const context = {
+        config: { enabled: false, count: 0 },
+        async updateConfig(cfg, index) {
+          await delay(5);
+          // Return a *new* object to avoid mutation issues if config was passed around
+          return { enabled: index % 2 !== 0, count: cfg.count + index };
+        }
+      };
+      const template = `
+        {% set currentConfig = config %}
+        {%- for i in [1, 2, 3] -%}
+          {% set currentConfig = updateConfig(currentConfig, i) %}
+        {%- endfor -%}
+        Final Config: Enabled={{ currentConfig.enabled }}, Count={{ currentConfig.count }}
+        `;
+      // Iter 1: update({e:f,c:0}, 1) -> {e:t, c:1}
+      // Iter 2: update({e:t,c:1}, 2) -> {e:f, c:3}
+      // Iter 3: update({e:f,c:3}, 3) -> {e:t, c:6}
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Final Config: Enabled=true, Count=6');
+    });
+
+    it('should handle nested loops modifying the same outer variable (Sequential)', async () => {
+      const context = {
+        outer: [1, 2],
+        inner: ['a', 'b'],
+        async getIncrement(o, i) {
+          await delay(3);
+          return o * (i === 'a' ? 1 : 10);
+        }
+      };
+      const template = `
+        {% set counter = 100 %}
+        {%- for o in outer -%}
+          {%- for i in inner -%}
+            {% set counter = counter + getIncrement(o, i) %}
+          {%- endfor -%}
+        {%- endfor -%}
+        Final Counter: {{ counter }}
+        `;
+      // Start: 100
+      // o=1, i='a': 100 + get(1,'a') = 100 + 1 = 101
+      // o=1, i='b': 101 + get(1,'b') = 101 + 10 = 111
+      // o=2, i='a': 111 + get(2,'a') = 111 + 2 = 113
+      // o=2, i='b': 113 + get(2,'b') = 113 + 20 = 133
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Final Counter: 133');
+    });
+
+    it('should handle modification within conditional inside loop (Sequential)', async () => {
+      const context = {
+        items: [10, 5, 20],
+        async processValue(val) {
+          await delay(5);
+          return val * 2;
+        }
+      };
+      const template = `
+         {% set score = 0 %}
+         {%- for item in items -%}
+           {% if item > 7 %}
+             {% set score = score + processValue(item) %}
+           {% endif %}
+           {# Add a small delay to ensure sequencing if processValue was very fast #}
+           {% set _ = delay(1) %}
+         {%- endfor -%}
+         Final Score: {{ score }}
+         `;
+      // Start: 0
+      // item=10 (>7): 0 + process(10) = 0 + 20 = 20
+      // item=5 (<=7): score remains 20
+      // item=20 (>7): 20 + process(20) = 20 + 40 = 60
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Final Score: 60');
+    });
+
+    it('should correctly modify using async iterator (Sequential)', async () => {
+      const context = {
+        async *numberGenerator() {
+          yield 1; await delay(5);
+          yield 2; await delay(5);
+          yield 3; await delay(5);
+        },
+        async doubler(n) {
+          await delay(3);
+          return n * 2;
+        }
+      };
+      const template = `
+            {% set sum = 0 %}
+            {%- for num in numberGenerator() -%}
+                {% set sum = sum + doubler(num) %}
+            {%- endfor -%}
+            Sum: {{ sum }}
+            `;
+      // Start: 0
+      // num=1: 0 + double(1) = 0 + 2 = 2
+      // num=2: 2 + double(2) = 2 + 4 = 6
+      // num=3: 6 + double(3) = 6 + 6 = 12
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Sum: 12');
+    });
+
+    it('should handle else block correctly when outer var modification exists but loop is empty (Sequential)', async () => {
+      const context = {
+        items: [], // Empty list
+        async getDefault() {
+          await delay(5);
+          return -1;
+        },
+        async process(v) { // This won't be called, but shows modification intent
+          await delay(1); return v * 2;
+        }
+      };
+      const template = `
+        {% set finalValue = 100 %}
+        {% for item in items %}
+          {% set finalValue = process(item) %} {# This part won't run #}
+        {% else %}
+          {% set finalValue = getDefault() %}
+        {% endfor %}
+        Value: {{ finalValue }}
+        `;
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Value: -1');
+    });
+
+    it('should handle read-modify-write on outer var correctly (Sequential)', async () => {
+      const context = {
+        items: [2, 3, 4],
+        async transform(current, item) {
+          await delay(5);
+          return current * item;
+        }
+      };
+      const template = `
+          {% set product = 1 %}
+          {%- for item in items -%}
+              {# Read outer 'product', use async 'transform', write back #}
+              {% set product = transform(product, item) %}
+          {%- endfor -%}
+          Product: {{ product }}
+      `;
+      // Start: 1
+      // item=2: transform(1, 2) -> 2
+      // item=3: transform(2, 3) -> 6
+      // item=4: transform(6, 4) -> 24
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Product: 24');
+    });
+
+
+    it('should allow independent async calls alongside sequential modification (Sequential loop)', async () => {
+      const context = {
+        items: ['a', 'b'],
+        logs: [], // Use a mutable object passed by reference
+        async logIndependent(item) {
+          await delay(10); // Longer delay
+          context.logs.push(`Logged ${item}`); // Side effect
+          return true;
+        },
+        async getIncrement(_sumsofar, item) {
+          await delay(3); // Shorter delay
+          return item === 'a' ? 1 : 10;
+        }
+      };
+      const template = `
+          {% set sum = 0 %}
+          {%- for item in items -%}
+              {% set logged = logIndependent(item) %} {# Runs async, but loop waits #}
+              {% set sum = sum + getIncrement(sum, item) %} {# Depends on previous sum #}
+          {%- endfor -%}
+          Sum: {{ sum }}
+      `;
+      // Expected Execution (Sequential Loop):
+      // Iteration 'a':
+      //   Start logIndependent('a') -> Promise<logA>
+      //   Wait for logIndependent('a') to finish because loop is sequential.
+      //   Start getIncrement(0, 'a') -> Promise<incA>
+      //   Wait for getIncrement(0, 'a') -> 1
+      //   sum = 0 + 1 = 1
+      // Iteration 'b':
+      //   Start logIndependent('b') -> Promise<logB>
+      //   Wait for logIndependent('b') to finish.
+      //   Start getIncrement(1, 'b') -> Promise<incB>
+      //   Wait for getIncrement(1, 'b') -> 10
+      //   sum = 1 + 10 = 11
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Sum: 11');
+      // Verify side effect order confirms sequential execution
+      expect(context.logs).to.eql(['Logged a', 'Logged b']);
+    });
+
+
+  }); // End Loops Modifying Outer Scope
+
 })();

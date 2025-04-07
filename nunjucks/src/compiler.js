@@ -151,7 +151,7 @@ class Compiler extends Obj {
     return frame;
   }
 
-  _emitAsyncBlockEnd(node, frame, createScope) {
+  _emitAsyncBlockEnd(node, frame, createScope, isLoopBody) {
     if (node.isAsync) {
       this.asyncClosureDepth--;
       this._emitLine(`} catch (e) {`);
@@ -160,7 +160,7 @@ class Compiler extends Obj {
       this._emitLine('  astate.leaveAsyncBlock();');
 
       this._emitLine(`}`);
-      this._emitLine(`})(astate.enterAsyncBlock(), frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)}));`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame, isLoopBody)});`);
     }
     if (createScope && !node.isAsync) {
       this._emitLine('frame = frame.pop();');
@@ -193,8 +193,8 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)}))`);
-      //this._emitLine(`})(astate.enterAsyncBlock(frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)})))`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)})`);
+      //this._emitLine(`})(astate.enterAsyncBlock(${this._getPushAsyncBlockCode(frame)}))`);
       this.asyncClosureDepth--;
       frame = frame.pop();
     } else {
@@ -248,7 +248,7 @@ class Compiler extends Obj {
     this._emitLine('} finally {');
     this._emitLine('  astate.leaveAsyncBlock();');
     this._emitLine('}');
-    this._emitLine(`})(astate.enterAsyncBlock(), frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)}))`);
+    this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)})`);
 
     frame = frame.pop();
     //in the non-callback case, using the rendered buffer will throw the error
@@ -287,7 +287,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)}));`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)});`);
 
       frame = frame.pop();
 
@@ -328,7 +328,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), frame.pushAsyncBlock(${this._getAsyncBlockArguments(frame)}))`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)})`);
       return frame.pop();
     }
     return frame;
@@ -364,10 +364,10 @@ class Compiler extends Obj {
     return frame;
   }
 
-  _emitAsyncBlockBufferNodeEnd(node, frame, createScope) {
+  _emitAsyncBlockBufferNodeEnd(node, frame, createScope, isLoopBody) {
     if (node.isAsync) {
       // End the async closure
-      frame = this._emitAsyncBlockEnd(node, frame, createScope);
+      frame = this._emitAsyncBlockEnd(node, frame, createScope, isLoopBody);
 
       // Restore the previous buffer from the stack
       this.buffer = this.bufferStack.pop();
@@ -1188,11 +1188,10 @@ class Compiler extends Obj {
     }
   }
 
-  //returns the arguments as string
-  _getAsyncBlockArguments(frame) {
+  _getPushAsyncBlockCode(frame, isLoopBody = false) {
     let reads = [];
-    if (!frame.readVars && !frame.writeCounts) {
-      return '';
+    if (!frame.writeCounts) {
+      isLoopBody = false;
     }
     if (frame.readVars) {
       //add each read var to a list of vars to be snapshotted, with a few exceptions
@@ -1208,7 +1207,11 @@ class Compiler extends Obj {
         reads.push(name);
       });
     }
-    return (reads.length ? JSON.stringify(reads) : 'null') + ',' + (frame.writeCounts ? JSON.stringify(frame.writeCounts) : '');
+    const readArgs = reads.length ? JSON.stringify(reads) : 'null';
+    const writeArgs = frame.writeCounts ? ', ' + JSON.stringify(frame.writeCounts) : '';
+    return isLoopBody ?
+      `await frame.pushLoopAsyncBlock(${readArgs}${writeArgs})` :
+      `frame.pushAsyncBlock(${readArgs}${writeArgs})`;
   }
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
@@ -1443,6 +1446,7 @@ class Compiler extends Obj {
 
     // Begin buffer block for the loop body
     frame = this._emitAsyncBlockBufferNodeBegin(node, frame);
+    frame.isLoopBody = true;
 
     this._emitLine(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
 
@@ -1471,8 +1475,10 @@ class Compiler extends Obj {
       this.compile(node.body, frame);
     });
 
+    const bodyWriteCounts = frame.writeCounts;
+
     // End buffer block for the loop body
-    frame = this._emitAsyncBlockBufferNodeEnd(node, frame);
+    frame = this._emitAsyncBlockBufferNodeEnd(node, frame, false, true);
 
     // Close the loop body function
     this._emitLine('};');
@@ -1498,7 +1504,7 @@ class Compiler extends Obj {
     }
 
     // Call the runtime iterate loop function
-    this._emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, [`);
+    this._emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, ${JSON.stringify(bodyWriteCounts)}, [`);
     loopVars.forEach((varName, index) => {
       if (index > 0) {
         this._emit(', ');

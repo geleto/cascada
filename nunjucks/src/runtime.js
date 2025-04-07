@@ -166,6 +166,7 @@ class AsyncFrame extends Frame {
 
       let willResolve = false;
       let frame = this;
+
       let countdownPropagate = true;
       while (frame != scopeFrame) {
         if (frame.asyncVars[name] !== undefined) {
@@ -173,6 +174,7 @@ class AsyncFrame extends Frame {
           frame.asyncVars[name] = val;
           willResolve = true;
         }
+        countdownPropagate = countdownPropagate && !frame.isLoopBody;//do not propagate writes above the loop body, they will be propagated in finalizeLoopWrites
         if (countdownPropagate && !frame._countdownAsyncWrites(name, 1)) {
           countdownPropagate = false;
           break;//has not reached zero yet, do not countdown up the chain
@@ -288,6 +290,43 @@ class AsyncFrame extends Frame {
 
   push(isolateWrites) {
     return new AsyncFrame(this, isolateWrites);
+  }
+
+  /**
+   * The async block for loops awaits all promise variables that it modifies
+   * to avoid race conditions and long promise chains
+   */
+  async pushLoopAsyncBlock(reads, writeCounters) {
+    //await all promise variables
+    this.isLoopBody = true;//needed to skip countdown propagation in set()
+    let parent = this.parent;
+    for (let varName in writeCounters) {
+      let value = parent.lookup(varName);
+      while (value && typeof value.then === 'function') {
+        value = await value;
+      }
+    }
+    return this.pushAsyncBlock(reads, writeCounters);
+  }
+
+  /**
+   * Called after a loop finishes to decrement parent counters
+   * Called on the parent frame of the loop body
+   * During the loop (this.isLoopBody = true), writes are not propagated upwards, so we need to do it after the loop.
+   */
+  finalizeLoopWrites(finalWriteCounts) {
+    if (!finalWriteCounts) {
+      return; // No parent or nothing to finalize
+    }
+    for (const varName in finalWriteCounts) {
+      if (this.writeCounters && varName in this.writeCounters) {
+        // Use the standard countdown on the parent.
+        // This will trigger promise resolution if it hits zero there.
+        this._countdownAsyncWrites(varName, 1);
+      } else {
+        throw new Error(`Loop finalized write for ${varName}, but parent has no counter.`);
+      }
+    }
   }
 
   pushAsyncBlock(reads, writeCounters) {
@@ -802,7 +841,7 @@ function setLoopBindings(frame, index, len, last) {
   }
 }
 
-async function iterate(arr, loopBody, loopElse, frame, loopVars = [], sequential = false, isAsync = false) {
+async function iterate(arr, loopBody, loopElse, parentFrame, bodyWriteCounts, loopVars = [], sequential = false, isAsync = false) {
   let didIterate = false;
   if (arr) {
     if (isAsync && typeof arr[Symbol.asyncIterator] === 'function') {
@@ -912,6 +951,10 @@ async function iterate(arr, loopBody, loopElse, frame, loopVars = [], sequential
         }
       }
     }
+  }
+
+  if (bodyWriteCounts) {
+    parentFrame.finalizeLoopWrites(bodyWriteCounts);
   }
 
   if (!didIterate && loopElse) {
