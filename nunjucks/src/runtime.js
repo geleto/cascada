@@ -293,23 +293,6 @@ class AsyncFrame extends Frame {
   }
 
   /**
-   * The async block for loops awaits all promise variables that it modifies
-   * to avoid race conditions and long promise chains
-   */
-  async pushLoopAsyncBlock(reads, writeCounters) {
-    //await all promise variables
-    this.isLoopBody = true;//needed to skip countdown propagation in set()
-    let parent = this.parent;
-    for (let varName in writeCounters) {
-      let value = parent.lookup(varName);
-      while (value && typeof value.then === 'function') {
-        value = await value;
-      }
-    }
-    return this.pushAsyncBlock(reads, writeCounters);
-  }
-
-  /**
    * Called after a loop finishes to decrement parent counters
    * Called on the parent frame of the loop body
    * During the loop (this.isLoopBody = true), writes are not propagated upwards, so we need to do it after the loop.

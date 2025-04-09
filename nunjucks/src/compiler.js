@@ -153,6 +153,11 @@ class Compiler extends Obj {
 
   _emitAsyncBlockEnd(node, frame, createScope, isLoopBody) {
     if (node.isAsync) {
+      if (isLoopBody) {
+        // Wait for child async blocks spawned within this iteration
+        // before proceeding to finally/catch.
+        this._emitLine('await astate.waitAllClosures(1);');
+      }
       this.asyncClosureDepth--;
       this._emitLine(`} catch (e) {`);
       this._emitLine(`  cb(runtime.handleError(e, lineno, colno));`);
@@ -160,7 +165,7 @@ class Compiler extends Obj {
       this._emitLine('  astate.leaveAsyncBlock();');
 
       this._emitLine(`}`);
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame, isLoopBody)});`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)});`);
     }
     if (createScope && !node.isAsync) {
       this._emitLine('frame = frame.pop();');
@@ -1188,11 +1193,8 @@ class Compiler extends Obj {
     }
   }
 
-  _getPushAsyncBlockCode(frame, isLoopBody = false) {
+  _getPushAsyncBlockCode(frame) {
     let reads = [];
-    if (!frame.writeCounts) {
-      isLoopBody = false;
-    }
     if (frame.readVars) {
       //add each read var to a list of vars to be snapshotted, with a few exceptions
       frame.readVars.forEach((name) => {
@@ -1209,9 +1211,7 @@ class Compiler extends Obj {
     }
     const readArgs = reads.length ? JSON.stringify(reads) : 'null';
     const writeArgs = frame.writeCounts ? ', ' + JSON.stringify(frame.writeCounts) : '';
-    return isLoopBody ?
-      `await frame.pushLoopAsyncBlock(${readArgs}${writeArgs})` :
-      `frame.pushAsyncBlock(${readArgs}${writeArgs})`;
+    return `frame.pushAsyncBlock(${readArgs}${writeArgs})`;
   }
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
@@ -1395,7 +1395,6 @@ class Compiler extends Obj {
     }
   }
 
-  //@todo - in asyncMode each loop body is in separate context even if !node.isAsync
   compileFor(node, frame, sequential = false) {
     // Some of this code is ugly, but it keeps the generated code
     // as fast as possible. ForAsync also shares some of this, but
@@ -1446,8 +1445,9 @@ class Compiler extends Obj {
 
     // Begin buffer block for the loop body
     frame = this._emitAsyncBlockBufferNodeBegin(node, frame);
-    frame.isLoopBody = true;
+    //frame.isLoopBody = true;
 
+    this._emitLine('frame.isLoopBody = true;');
     this._emitLine(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
 
     // Handle array unpacking within the loop body
@@ -1476,6 +1476,9 @@ class Compiler extends Obj {
     });
 
     const bodyWriteCounts = frame.writeCounts;
+    if (bodyWriteCounts) {
+      sequential = true;//should be sequential to avoid write race conditions and long promise chains
+    }
 
     // End buffer block for the loop body
     frame = this._emitAsyncBlockBufferNodeEnd(node, frame, false, true);
