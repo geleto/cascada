@@ -229,10 +229,10 @@ endif
 Cascada Script can be executed with:
 
 ```javascript
-const { text, data } = await env.renderScript(script, context);
+const result = await env.renderScript(script, context);
 ```
 
-The script produces both text output (from `print` statements) and structured data from data assembly commands (`put`, `merge`, `push`).
+The script produces either text output (from `print` statements with no target) or structured data if an assembly command (`put`, `merge`, `push`) or `print` with target attribute is used.
 
 For full documentation on Cascada Script, see [docs/cascada/script.md](docs/cascada/script.md).
 
@@ -573,8 +573,7 @@ Cascada is still under active development. The following tasks remain to be comp
 
 ### Core Functionality
 - **Dependency declarations**: Finalize and integrate explicit dependency declaration features ([see Technical Constraints: Cross-Template Variable Access](#cross-template-variable-access))
-- **Variable scoping and dependency management for loops**: Ensure proper variable handling and dependency management within loop contexts
-- **Async iterators**: Complete implementation of async iterators to enable real-time processing instead of waiting for all elements before processing begins
+- **Variable scoping and dependency management for loops**: Ensure proper variable handling and dependency management within loop iterations that modify and access an outer-scope variable
 
 ### Performance and Testing
 - **Address parallelism inefficiencies**: Resolve some known inefficiencies in parallel execution, such as the current behavior where all elements in template-declared arrays must be resolved together before individual elements can be accessed
