@@ -95,49 +95,63 @@ Async blocks execute potentially *after* the surrounding code has moved on. A bl
 *   **`_snapshotVariables`:** For variables only *read* within the block (or read before being written), their current values are copied from the parent frame into the new async block frame's `asyncVars` dictionary. This captures the state at launch time.
 *   **Isolation:** Code inside the async block primarily interacts with its own `AsyncFrame` and its `asyncVars` snapshot, protecting it from later modifications in parent scopes that might occur *while* the async block is running.
 
-### 4b. Variable Synchronization (Promisification & Counting)
+### 4b. Variable Synchronization: Ensuring Order with a Two-Level Tracking System
 
-While snapshots handle reading the correct initial state, ensuring consistency when multiple concurrent async blocks might *write* to the same outer-scope variable requires a more sophisticated synchronization mechanism. Cascada addresses this using a promise-based reference counting system.
+While snapshots handle reading the correct initial state, ensuring consistency when multiple concurrent async blocks might *write* to the same outer-scope variable requires a more sophisticated synchronization mechanism. Cascada addresses this using a **two-level tracking system** based on **Promises as locks** and meticulous **reference counting**.
 
-**Purpose:** To prevent reads of potentially incorrect or intermediate values during concurrent execution. When an async block *might* modify a shared variable `x`, this mechanism replaces `x` in the outer scope with a Promise. This Promise acts as a lock, delaying any reads until it resolves. Crucially, it only resolves to the final, correct value *after all potential concurrent writes* to `x` are guaranteed to be finished or accounted for. To achieve this, the compiler calculates the maximum potential writes across *all conditional branches* (e.g., both the `if` and `else` paths and all `switch` paths), and the runtime meticulously decrements this count for both executed writes *and* writes skipped in branches not taken. This ensures the Promise resolves only when the variable's state is stable according to sequential logic, regardless of the actual runtime execution path and concurrency.
+**Purpose:** To prevent reads of potentially incorrect or intermediate values during concurrent execution and guarantee that the final state of variables matches sequential execution logic. When an async block *might* modify a shared variable `x`, this mechanism temporarily replaces `x` in the outer scope with a Promise. This Promise acts as a lock, delaying any reads until it resolves. Crucially, it only resolves to the final, correct value *after all potential concurrent writes* to `x` are guaranteed to be finished or accounted for across all relevant async blocks.
+
+**Core Strategy:**
+
+1.  **Locking with Promises:** Variables potentially modified concurrently are "locked" in their outer scope by replacing their value with a Promise. Reads must wait for this Promise to resolve.
+2.  **Two-Level Counting:**
+    *   **Child Block Internal Tracking:** Each async block independently tracks its *own* progress towards completing writes to a specific outer variable.
+    *   **Parent Block Aggregate Tracking:** The parent block tracks the overall completion status for a variable based on signals received from its children and its own direct writes.
+3.  **Signaling Completion:** When a child block finishes all its potential modifications to a variable, it resolves the parent's Promise (unlocking reads) and sends a single "I'm done" signal upwards.
+
+**Mechanism Details:**
 
 1.  **Compile-Time Analysis (Predicting Writes):**
-    *   **Tracking Usage:** Compiler tracks declarations (`declaredVars`), reads (`readVars`), and potential writes across scopes.
-    *   **Calculating `writeCounts`:** For each async scope, determines which outer variables might be modified within it or its children. Calculates a `writeCounts` map `{ varName: count }`, estimating the *maximum potential number* of writes. **Critically, includes writes in all conditional branches (e.g., `if` AND `else`)**, anticipating paths not taken at runtime.
-    *   **Embedding Information:** `writeCounts` map (and `readVars`) passed to `frame.pushAsyncBlock(reads, writeCounters)`.
+    *   **Tracking Usage:** The compiler analyzes the Abstract Syntax Tree (AST) to track variable declarations (`declaredVars`), reads (`readVars`), and potential writes across scopes.
+    *   **Calculating `writeCounts`:** For each scope that could become an async block, the compiler determines which outer-scope variables might be modified within it or any of its descendant blocks. It calculates a `writeCounts` map `{ varName: count }`. **Critically, this `count` represents the *maximum potential number* of writes, summing counts across *all* conditional branches (e.g., both `if` AND `else`, all `switch` cases)**. This anticipates paths not taken at runtime, ensuring correctness regardless of the execution flow.
+    *   **Embedding Information:** The calculated `readVars` set and `writeCounts` map are embedded in the compiled code and passed to the runtime frame setup function (`frame.pushAsyncBlock(reads, writeCounters)`).
 
-2.  **Runtime: Entering an Async Block (`pushAsyncBlock`):**
-    *   **Frame Creation:** New `AsyncFrame`.
-    *   **Snapshotting Reads (`_snapshotVariables`):** As above.
-    *   **Promisification (`_promisifyParentVariables`):** For variables listed in `writeCounters`:
-        *   Store `writeCounters` on the new frame.
-        *   Snapshot current value into `asyncVars` (for use *within* this block).
-        *   Create a **new Promise** for the variable. Store its `resolve` function in `promiseResolves`.
-        *   **Crucially:** Replace the variable's entry in the *parent frame* (`variables` or `asyncVars`) **with this new Promise**.
-        *   **Effect:** Outer scope reads now get the Promise, blocking access to the value until resolved.
+2.  **Runtime: Entering an Async Block (`pushAsyncBlock(reads, writeCounters)`):**
+    *   **Frame Creation:** A new `AsyncFrame` is created for the block.
+    *   **Snapshotting Reads (`_snapshotVariables`):** Variables listed in `reads` (and those in `writeCounters`) have their current values snapshotted from the parent frame into the new frame's `asyncVars` dictionary. This provides the correct initial state for reads *within* the block.
+    *   **Promisification (`_promisifyParentVariables`):** For each variable listed in the incoming `writeCounters`:
+        *   The `writeCounters` map is stored on the new `AsyncFrame` to track internal progress.
+        *   A **new Promise** is created for the variable. Its `resolve` function is stored in the new frame's `promiseResolves` map.
+        *   **Crucially:** The variable's entry in the *parent frame's* storage (`variables` or `asyncVars`) is **replaced with this new Promise**. This acts as the lock.
+        *   **Effect:** Any attempt to read this variable from the outer scope (or sibling scopes) now receives the Promise, forcing them to wait until it resolves.
 
-3.  **Runtime: Performing a Write (`frame.set(name, val, true)`):**
-    *   **Scope Identification:** Find declaring frame (`scopeFrame`).
-    *   **Local Update:** Store `val` in the *current* async block's `asyncVars[name]`. Does *not* update parent Promise yet.
-    *   **Decrementing the Count (`_countdownAsyncWrites`):**
-        *   Decrement `writeCounters[name]` on the *current* frame.
-        *   **Propagate Upwards:** Decrement propagates up the `AsyncFrame` chain towards `scopeFrame`.
-        *   **Completion Check:** If a frame's counter for `name` hits zero:
-            *   Call `_resolveAsyncVar(name)` (resolve the promise with the final value from *this frame's* `asyncVars`).
-            *   Propagate a single "completed write" count upwards.
-        *   **Stopping:** Propagation stops if an ancestor's counter > 0 (other pending writes exist).
+3.  **Runtime: Tracking Work Within the Child Block:**
+    *   The async block's internal `writeCounters` (initialized in the previous step) holds the maximum potential writes calculated by the compiler.
+    *   Every time the block actually performs a write (`frame.set(name, val, true)`) or skips a branch containing potential writes (`skipBranchWrites`), it triggers a countdown mechanism (`_countdownAsyncWrites`).
 
-4.  **Runtime: Handling Skipped Branches (`skipBranchWrites`):**
-    *   Called when `if`/`switch` skips a branch, passing the pre-calculated `writeCounts` of the **skipped branch**.
-    *   Calls `_countdownAsyncWrites` for these "missed" writes. Ensures counters decrement correctly even for writes that didn't happen, preventing indefinite waiting.
+4.  **Runtime: Performing a Write (`frame.set(name, val, true)`):**
+    *   **Local Update:** The new value (`val`) is stored in the *current* async block's `asyncVars[name]`. It does *not* immediately update the parent's Promise.
+    *   **Trigger Countdown:** Calls `_countdownAsyncWrites(name, 1)` on the current frame to decrement its internal counter for `name`.
 
-5.  **Runtime: Resolving the Variable (`_resolveAsyncVar`):**
-    *   **Trigger:** Called by `_countdownAsyncWrites` when a frame's counter for a variable hits zero.
-    *   **Get Final Value:** Retrieves final value from the *current frame's* `asyncVars`.
-    *   **Resolve Promise:** Uses stored `resolve` function to fulfill the Promise in the parent scope with the final value (chaining if value is also a promise).
-    *   **Unlocking Reads:** Promise fulfillment makes the correct value available to waiting reads in other blocks or subsequent code.
+5.  **Runtime: Handling Skipped Branches (`skipBranchWrites(skippedCounts)`):**
+    *   When an `if`/`switch` branch containing potential writes is *not* taken, this function is called with the pre-calculated `writeCounts` of the **skipped branch**.
+    *   It calls `_countdownAsyncWrites` for each variable in `skippedCounts`, decrementing the internal counters by the corresponding count. This ensures the counters correctly reflect that these "missed" writes will never occur, preventing indefinite waiting.
 
-**Outcome:** This guarantees variables modified concurrently resolve only after *all* contributing async blocks (including skipped branches) finish potential writes, ensuring sequential consistency.
+6.  **Runtime: Signaling Completion & Unlocking (Child to Parent via `_countdownAsyncWrites` and `_resolveAsyncVar`):**
+    *   When `_countdownAsyncWrites` causes a variable's counter *on the current frame* to hit **zero**, it signifies *this specific block* has finished all its potential influence on that variable. Two things happen:
+        *   **Resolve Parent Promise (`_resolveAsyncVar`):** The function retrieves the final value from the *current frame's* `asyncVars[name]` and uses the stored `resolve` function (from `promiseResolves`) to fulfill the Promise held by the *parent frame*. This **unlocks** reads for others waiting on that Promise.
+        *   **Send Signal Upwards:** **Unless** the parent frame is where the variable was originally declared, `_countdownAsyncWrites` propagates a **single "completed write" signal** (conceptually, a count of 1) up to the parent frame by calling `_countdownAsyncWrites` on the parent.
+
+7.  **Runtime: Tracking Overall Completion in the Parent (and propagating the signal):**
+    *   The parent block's `writeCounters` for a variable is initialized (by the compiler via `pushAsyncBlock`) to reflect the total expected influences: **its own direct writes** *plus* **one count for each child async block** known to potentially modify that variable.
+    *   When the parent receives the "I'm done" signal from a child (via the propagated `_countdownAsyncWrites` call) or completes one of its own direct writes, it decrements *its own* counter for that variable.
+    *   If the parent's counter hits zero:
+        *   If *its* variable was locked by *its* parent, it resolves its own Promise via `_resolveAsyncVar`.
+        *   Crucially, it **propagates the "I'm done" signal further up** to *its* parent (by calling `_countdownAsyncWrites` again), **unless** this parent is the frame where the variable was declared.
+
+8.  **Propagation Stop:** The upward propagation of the completion signal stops just below the frame where the variable was originally declared. Once all influences originating from below that point are accounted for, the variable's state is stable and correct relative to the sequential logic.
+
+**Outcome:** This intricate system ensures that despite concurrent execution, variables modified by async blocks only become readable in their final state after *all* contributing blocks (including accounting for skipped branches) have completed their potential modifications. This rigorously guarantees sequential consistency, freeing the template author from manual synchronization. Key runtime components involved are `AsyncFrame`, `pushAsyncBlock`, `_snapshotVariables`, `_promisifyParentVariables`, `set`, `_countdownAsyncWrites`, `skipBranchWrites`, and `_resolveAsyncVar`.
 
 ## The Compiler's Role
 
