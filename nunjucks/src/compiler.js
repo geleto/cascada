@@ -151,9 +151,9 @@ class Compiler extends Obj {
     return frame;
   }
 
-  _emitAsyncBlockEnd(node, frame, createScope, isLoopBody) {
+  _emitAsyncBlockEnd(node, frame, createScope, sequentialLoopBody) {
     if (node.isAsync) {
-      if (isLoopBody) {
+      if (sequentialLoopBody) {
         // Wait for child async blocks spawned within this iteration
         // before proceeding to finally/catch.
         this._emitLine('await astate.waitAllClosures(1);');
@@ -369,10 +369,10 @@ class Compiler extends Obj {
     return frame;
   }
 
-  _emitAsyncBlockBufferNodeEnd(node, frame, createScope, isLoopBody) {
+  _emitAsyncBlockBufferNodeEnd(node, frame, createScope, sequentialLoopBody) {
     if (node.isAsync) {
       // End the async closure
-      frame = this._emitAsyncBlockEnd(node, frame, createScope, isLoopBody);
+      frame = this._emitAsyncBlockEnd(node, frame, createScope, sequentialLoopBody);
 
       // Restore the previous buffer from the stack
       this.buffer = this.bufferStack.pop();
@@ -1445,9 +1445,8 @@ class Compiler extends Obj {
 
     // Begin buffer block for the loop body
     frame = this._emitAsyncBlockBufferNodeBegin(node, frame);
-    //frame.isLoopBody = true;
 
-    this._emitLine('frame.isLoopBody = true;');
+    const makeSequentialPos = this.codebuf.length;
     this._emitLine(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
 
     // Handle array unpacking within the loop body
@@ -1478,6 +1477,9 @@ class Compiler extends Obj {
     const bodyWriteCounts = frame.writeCounts;
     if (bodyWriteCounts) {
       sequential = true;//should be sequential to avoid write race conditions and long promise chains
+    }
+    if (sequential) {
+      this._emitInsertLine(makeSequentialPos, 'frame.sequentialLoopBody = true;');
     }
 
     // End buffer block for the loop body

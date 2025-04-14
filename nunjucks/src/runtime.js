@@ -114,14 +114,13 @@ class AsyncFrame extends Frame {
       this.promiseResolves = undefined;
 
       //holds the write counters for each variable that is modified in an async block or its children
-      //The decreminting is propagated upwards before the frame that has declared the variable
       //the variable name is the key and the value is the number of remaining writes (including missed writes due to branches)
-      //once the counter reaches 0, the promise for the variable is resolved
+      //once the counter reaches 0, the promise for the variable is resolved and the parent write counter is decremented by 1
       this.writeCounters = undefined;
 
       //holds the variables that are modified in an async block frame while it is active
       //once the block is done modifying a variable, the promise for the variable is resolved with this value
-      //asyncVars[varName] is only used if the variable is not stored in the frame
+      //asyncVars[varName] is only used if the variable is not stored in the frame scope
       this.asyncVars = undefined;
     }
 
@@ -138,7 +137,7 @@ class AsyncFrame extends Frame {
     return new AsyncFrame();//undefined, this.isolateWrites);
   }
 
-  //@todo - handle reentrant frames, count the writes even if the frame is the scope frame,
+  //@todo?. - handle reentrant frames, count the writes even if the frame is the scope frame,
   //second parameter to pushAsyncBlock only for recursive frames
   //or maybe reentrant frames should keep vars in the parent scope, at least for loops
   set(name, val, resolveUp) {
@@ -146,14 +145,15 @@ class AsyncFrame extends Frame {
       //only set tags use resolveUp
       //set tags do not have variables with dots, so the name is the whole variable name
       if (name.indexOf('.') !== -1) {
-        throw new Error('resolveUp should not be used with variables with dots');
+        throw new Error('resolveUp should not be used for variables with dots');
       }
-      let scopeFrame = this.resolve(name, true);
 
+      //find or create the variable scope:
+      let scopeFrame = this.resolve(name, true);
       if (!scopeFrame) {
-        //add the variable here unless !createScope in which case try the root
+        //add the variable here unless !createScope in which case try adding in a parent frame that can createScope
         if (!this.createScope) {
-          this.parent.set(name, val);
+          this.parent.set(name, val);//set recursively ti
           scopeFrame = this.resolve(name, true);
           if (!scopeFrame) {
             throw new Error('Variable should have been added in a parent frame');
@@ -164,27 +164,22 @@ class AsyncFrame extends Frame {
         }
       }
 
-      let willResolve = false;
+      //go up the chain until we reach the scope frame or an asyncVar with the same name
+      //and store the value there
       let frame = this;
-
-      let countdownPropagate = true;
-      while (frame != scopeFrame) {
-        if (frame.asyncVars[name] !== undefined) {
-          //set the value in asyncVars, when the async block is done, the value will be resolved in the parent
+      while (true) {
+        if (frame.asyncVars && name in frame.asyncVars) {
           frame.asyncVars[name] = val;
-          willResolve = true;
+          break;
         }
-        countdownPropagate = countdownPropagate && !frame.isLoopBody;//do not propagate writes above the loop body, they will be propagated in finalizeLoopWrites
-        if (countdownPropagate && !frame._countdownAsyncWrites(name, 1)) {
-          countdownPropagate = false;
-          break;//has not reached zero yet, do not countdown up the chain
+        if (frame === scopeFrame) {
+          scopeFrame.variables[name] = val;
+          break;
         }
         frame = frame.parent;
       }
-      if (!willResolve) {
-        //just assign the value in the scope frame with no async trickery
-        scopeFrame.variables[name] = val;
-      }
+
+      this._countdownAndResolveAsyncWrites(name, 1, scopeFrame);
     } else {
       //not for set tags
       super.set(name, val);
@@ -210,43 +205,52 @@ class AsyncFrame extends Frame {
   }
 
   //when all assignments to a variable are done, resolve the promise for that variable
-  _countdownAsyncWrites(varName, decrementVal = 1) {
-    if (!this.writeCounters) {
-      return true;//try up the chain
-    }
-    if (!this.writeCounters) {
-      throw new Error('Can not count vars: no vars counts in this frame');
+  _countdownAndResolveAsyncWrites(varName, decrementVal = 1, scopeFrame = null) {
+    if (!this.writeCounters || !(varName in this.writeCounters)) {
+      return false;
     }
     let count = this.writeCounters[varName];
     if (count < decrementVal) {
       throw new Error(`Variable ${varName} write counter ${count === undefined ? 'is undefined' : 'turned negative'} in _trackAsyncWrites`);
     }
-    if (count === decrementVal) {//zero
+
+    let reachedZero = (count === decrementVal);
+    if (reachedZero) {
       //this variable will no longer be modified, time to resolve it
       this._resolveAsyncVar(varName);
-      return true;//propagate up the chain as a single write
+
+      //optional cleanup:
+      delete this.writeCounters[varName];
+      if (Object.keys(this.writeCounters).length === 0) this.writeCounters = undefined;
+
+      if (!this.sequentialLoopBody && this.parent) {
+        // propagate upwards because this frame's work is fully done (counter hit zero)
+        // but only if this frame is NOT itself a loop body
+        // in which case the writes will be propagated in finalizeLoopWrites once the loop is done
+
+        // Find the declaring frame to ensure we stop propagation there.
+        if (!scopeFrame) {
+          scopeFrame = this.resolve(varName, true);
+        }
+        // Only propagate if the parent is not the scope frame (or null)
+        if (this.parent !== scopeFrame) {
+          // Propagate a single count upwards
+          this.parent._countdownAndResolveAsyncWrites(varName, 1, scopeFrame);
+        }
+      }
+      return true;
     } else {
-      this.writeCounters[varName] = count - decrementVal;//decrement
-      return false;//more left to write, do not propagate up
+      this.writeCounters[varName] = count - decrementVal;//just decrement, not yet done
+      return false;
     }
   }
 
   skipBranchWrites(varCounts) {
     for (let varName in varCounts) {
-      let scopeFrame = this.resolve(varName, true);
-      let frame = this;
-      let count = varCounts[varName];
-      while (frame != scopeFrame) {
-        if (!frame._countdownAsyncWrites(varName, count))
-          break;//has not reached zero yet, do not propagate up
-        //reached zero, propagate up as a single write
-        count = 1;
-        frame = frame.parent;
-      }
+      this._countdownAndResolveAsyncWrites(varName, varCounts[varName]);
     }
   }
 
-  /*
   _resolveAsyncVar(varName) {
     let value = this.asyncVars[varName];
     let resolveFunc = this.promiseResolves[varName];
@@ -258,9 +262,8 @@ class AsyncFrame extends Frame {
       this.promiseResolves = undefined;
     }
   }
-  */
 
-  _resolveAsyncVar(varName) {
+  /*_resolveAsyncVar(varName) {
     let value = this.asyncVars[varName];
     let resolveFunc = this.promiseResolves[varName];
 
@@ -282,11 +285,15 @@ class AsyncFrame extends Frame {
     //@todo - if the var is the same promise - set it to the value
     //this cleanup may not be needed:
     // Cleanup
+    //delete this.asyncVars[varName];
+    //if (Object.keys(this.asyncVars).length === 0) {
+    //  this.asyncVars = undefined;
+    //}
     delete this.promiseResolves[varName];
     if (Object.keys(this.promiseResolves).length === 0) {
       this.promiseResolves = undefined;
     }
-  }
+  }*/
 
   push(isolateWrites) {
     return new AsyncFrame(this, isolateWrites);
@@ -294,8 +301,7 @@ class AsyncFrame extends Frame {
 
   /**
    * Called after a loop finishes to decrement parent counters
-   * Called on the parent frame of the loop body
-   * During the loop (this.isLoopBody = true), writes are not propagated upwards, so we need to do it after the loop.
+   * During the loop (this.sequentialLoopBody = true), writes are not propagated upwards, so we need to do it here after the loop.
    */
   finalizeLoopWrites(finalWriteCounts) {
     if (!finalWriteCounts) {
@@ -305,7 +311,7 @@ class AsyncFrame extends Frame {
       if (this.writeCounters && varName in this.writeCounters) {
         // Use the standard countdown on the parent.
         // This will trigger promise resolution if it hits zero there.
-        this._countdownAsyncWrites(varName, 1);
+        this._countdownAndResolveAsyncWrites(varName, 1);
       } else {
         throw new Error(`Loop finalized write for ${varName}, but parent has no counter.`);
       }
@@ -824,7 +830,7 @@ function setLoopBindings(frame, index, len, last) {
   }
 }
 
-async function iterate(arr, loopBody, loopElse, parentFrame, bodyWriteCounts, loopVars = [], sequential = false, isAsync = false) {
+async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loopVars = [], sequential = false, isAsync = false) {
   let didIterate = false;
   if (arr) {
     if (isAsync && typeof arr[Symbol.asyncIterator] === 'function') {
@@ -936,8 +942,9 @@ async function iterate(arr, loopBody, loopElse, parentFrame, bodyWriteCounts, lo
     }
   }
 
-  if (bodyWriteCounts) {
-    parentFrame.finalizeLoopWrites(bodyWriteCounts);
+  if (bodyWriteCounts && sequential) {
+    // for nested loops, only the outer loop should finalize the writes
+    loopFrame.finalizeLoopWrites(bodyWriteCounts);
   }
 
   if (!didIterate && loopElse) {
