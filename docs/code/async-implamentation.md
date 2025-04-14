@@ -31,7 +31,15 @@ The foundation of Cascada's async support is its ability to treat Promises and o
 
 *   **Input Flexibility:** Context variables passed to the template, functions called from the template, filters, and extensions can all return Promises or be `async` functions. Loops can operate directly on async iterators (`Symbol.asyncIterator`).
 *   **Internal Operations:** All internal engine operations, from variable lookups (`runtime.memberLookupAsync`) and function calls (`runtime.callWrap` with async targets) to comparisons and arithmetic operations, are designed to implicitly handle potential Promise inputs. They use runtime helpers like `runtime.resolveAll`, `runtime.resolveDuo`, `runtime.resolveSingle` to wait for values only when strictly necessary *for the specific operation itself*.
-*   **Deferred Resolution:** The engine aims to avoid resolving Promises prematurely. A Promise might be assigned to a variable or passed through several operations before its actual value is required (e.g., for outputting to the template or as a resolved operand in a calculation). This lazy resolution is key to allowing other operations to proceed concurrently. (See Limitations section regarding current array/object literal handling).
+*   **Deferred Resolution:** Cascada delays resolving Promise-based variables until their concrete value is absolutely essential. This "just-in-time" resolution occurs immediately before an operation requires the actual value, such as:
+    1.  **Passing arguments to a function/macro/filter:** All arguments must be resolved before the function logic can execute.
+    2.  **Evaluating operands in an expression:** Both sides of `a + b` or `x > y` need concrete values before the operation can be performed.
+    3.  **Outputting a value:** The value must be resolved to a primitive (or `SafeString`) before it can be added to the output buffer.
+    4.  **Accessing properties/indices:** The target object/array (`obj` in `obj.prop`) must be resolved before lookup.
+
+Runtime helpers like `runtime.resolveAll`, `runtime.resolveDuo`, `runtime.resolveSingle`, and `runtime.memberLookupAsync` orchestrate this resolution, often concurrently fetching multiple needed values.
+
+Crucially, even after resolving its *inputs*, the operation itself (like a function call, expression evaluation, or member lookup) might still return a *new Promise*, allowing the asynchronous flow to continue seamlessly without premature blocking. The system avoids `await`ing values until the precise moment they are needed for the next step. (See Limitations section regarding current array/object literal handling).
 
 ```javascript
 {% set userPromise = fetchUser(1) %} // userPromise holds a Promise
@@ -72,6 +80,12 @@ Cascada enables concurrency by compiling potentially asynchronous sections of th
     *   **Literals (Current Limitation):** *Currently*, elements within Array literals (`[...]`) and values within Object literals (`{...}`) are resolved concurrently using `runtime.resolveAll` or `runtime.resolveObjectProperties` *before* the structure is finalized. (See Limitations).
     *   **Template Composition:** Includes (`include`), Imports (`import`), and Parent Templates (`extends`) involve asynchronously loading the template definition (`env.getTemplate` is async). The rendering of the loaded template then typically occurs within its own async block, allowing it to run concurrently with other independent logic in the caller.
 
+**Async Iterator Loop Body Parallelism:**
+When iterating over asynchronous iterators (`Symbol.asyncIterator`) or standard collections within an async context, Cascada fundamentally attempts to process **each loop iteration concurrently**. As soon as the next value becomes available from the iterator (or the collection element is accessed), the engine initiates the processing for that iteration's body, potentially overlapping with previous iterations that haven't finished yet. This allows iterations to run in parallel, maximizing throughput for independent iteration bodies. However, as detailed under *Loop Variable Synchronization*, if the loop body modifies variables outside its immediate scope, the engine may enforce sequential execution for that specific loop to guarantee data consistency.
+
+**Granularity of Async Blocks:**
+Cascada achieves non-blocking execution by wrapping potentially asynchronous *operations* within async IIFEs in the compiled code. This wrapping isn't necessarily done per-tag, but rather around the specific function calls, filter applications, expression evaluations, or rendering tasks (like includes) that might be asynchronous. The fundamental effect is that initiating such an operation returns a Promise quickly, allowing subsequent independent operations in the template to begin execution without waiting for the first one to complete. The compiler determines the necessary boundaries for these blocks based on the template structure and the potential async nature of the operations involved.
+
 ## Mechanism 3: Ensuring Sequential Equivalence - Output Order
 
 Executing operations concurrently requires a mechanism to ensure the final output matches the order defined in the template, not the random order of completion.
@@ -82,6 +96,20 @@ Executing operations concurrently requires a mechanism to ensure the final outpu
     *   **Preserving Order:** The *position* where a sub-buffer array is inserted into its parent array is determined by the *start* time of the async block in the template's logical flow. This preserves the correct sequential order relative to sibling blocks and surrounding static content.
     *   **Final Flattening:** After `astate.waitAllClosures()` resolves (all blocks done), the entire buffer tree is recursively flattened (`runtime.flattentBuffer`) into the final output string, respecting the structure established during parallel execution.
 *   **(Future/Scripting) Data Assembly Ordering:** This same principle of ordered insertion into a structure based on initiation sequence (not completion) is planned for Cascada Script's Data Assembly Commands (`put`, `merge`, `push`). They will operate on a parallel data structure (instead of the text buffer) to ensure data modifications appear in the final result object in the same order they were specified in the script, providing predictable data construction despite concurrency. (This is not yet implemented in the core engine).
+
+### SafeString Interaction in Async Contexts
+
+Cascada ensures that Nunjucks' `SafeString` mechanism for controlling auto-escaping works correctly even when the underlying value is generated asynchronously, while still preserving the correct output order. It achieves this by **deferring the final processing**, including `SafeString` wrapping, until the very last stage of output generation.
+
+Here's the fundamental approach:
+
+1.  **Placeholders in the Buffer:** When an operation results in a value that needs special handling like being marked safe (or suppressed/escaped), especially if that value is asynchronous (a Promise), Cascada doesn't immediately resolve the Promise or wrap the value. Instead, it often places a **placeholder** into the hierarchical output buffer. This placeholder is frequently a **function**.
+2.  **Deferred Processing Function:** This function encapsulates the logic for the final processing step (e.g., wrapping the resolved value in `SafeString`). Runtime helpers like `runtime.newSafeStringAsync` (when operating on array-like buffers), `runtime.suppressValueAsync`, and `runtime.ensureDefinedAsync` utilize this pattern by adding such processing functions to the buffer array.
+3.  **Final Assembly by `flattentBuffer`:** During the final output generation phase, `runtime.flattentBuffer` traverses the hierarchical buffer. When it encounters:
+    *   **Promises:** It awaits their resolution to get the concrete string value.
+    *   **Processing Functions:** *After* processing the preceding items in its current buffer segment (which might involve resolving Promises and concatenating strings), it calls the processing function, passing the accumulated string segment (`acc`) to it. The function then performs its designated action (like wrapping `acc` in `SafeString`) and returns the final, processed string (or the `SafeString` object whose value is then used).
+
+**Outcome:** This strategy cleverly delays the final wrapping/processing until the underlying asynchronous value has been resolved *and* its position relative to other output fragments is finalized within the buffer structure. It allows the engine to maintain deferred resolution for performance while guaranteeing that `SafeString` semantics are correctly applied in the final, sequentially assembled output string. The buffer acts not just as a storage for strings and Promises, but also as a queue for deferred final processing steps.
 
 ## Mechanism 4: Ensuring Sequential Equivalence - Variable State
 
@@ -153,6 +181,9 @@ While snapshots handle reading the correct initial state, ensuring consistency w
 
 **Outcome:** This intricate system ensures that despite concurrent execution, variables modified by async blocks only become readable in their final state after *all* contributing blocks (including accounting for skipped branches) have completed their potential modifications. This rigorously guarantees sequential consistency, freeing the template author from manual synchronization. Key runtime components involved are `AsyncFrame`, `pushAsyncBlock`, `_snapshotVariables`, `_promisifyParentVariables`, `set`, `_countdownAndResolveAsyncWrites`, `skipBranchWrites`, and `_resolveAsyncVar`.
 
+**Loop Variable Synchronization:**
+Synchronizing variables modified *within* loop iterations presents a specific challenge for parallel execution. If the compiler detects that loop iterations might write to variables declared in an outer scope (`bodyWriteCounts`), Cascada prioritizes correctness. Often, it will force these loop iterations to execute **sequentially** (`sequential = true` flag passed to `runtime.iterate`) to prevent race conditions and ensure predictable variable states, even if the loop is iterating over an async source. During the loop's execution, write tracking is typically contained within the loop's scope (managed by `sequentialLoopBody = true` behavior, preventing immediate upward propagation). Once the *entire* loop finishes, a dedicated mechanism (`finalizeLoopWrites`) communicates the *net result* of these modifications upwards to the parent scope's synchronization system. This signals the loop's total impact on each affected variable using the standard `_countdownAndResolveAsyncWrites` process, integrating the loop's aggregate effect back into the overall async state management.
+
 ## The Compiler's Role
 
 The compiler performs crucial static analysis to enable the runtime mechanisms.
@@ -170,7 +201,7 @@ The compiler performs crucial static analysis to enable the runtime mechanisms.
 
 The runtime (`runtime.js`) provides the classes and helpers that execute the compiled code and manage the async flow.
 
-*   **`AsyncFrame`:** Extends `Frame` for async ops. Key properties: `asyncVars` (snapshots/intermediate values), `writeCounters`, `promiseResolves`. Key methods: `pushAsyncBlock`, `_snapshotVariables`, `_promisifyParentVariables`, `_countdownAndResolveAsyncWrites`, `skipBranchWrites`, `_resolveAsyncVar`.
+*   **`AsyncFrame`:** Extends `Frame` for async ops. Key properties: `asyncVars` (snapshots/intermediate values), `writeCounters`, `promiseResolves`. Key methods: `pushAsyncBlock`, `_snapshotVariables`, `_promisifyParentVariables`, `_countdownAndResolveAsyncWrites`, `skipBranchWrites`, `_resolveAsyncVar`, `finalizeLoopWrites`.
 *   **`AsyncState` (Conceptual):** Manages overall async state: active block count (`enter/leaveAsyncBlock`), completion waiting (`waitAllClosures`).
 *   **Buffer Management (`flattentBuffer`):** Recursively flattens the nested buffer array into the final output string.
 *   **Async Helpers:** Functions (`resolveAll`, `resolveDuo`, `resolveSingle`, `memberLookupAsync`, `iterate`, `promisify`, etc.) provide building blocks for implicit Promise handling.
@@ -179,7 +210,7 @@ The runtime (`runtime.js`) provides the classes and helpers that execute the com
 
 The core mechanisms are applied consistently:
 
-*   **Control Flow (`if`, `for`, `switch`):** Branches are wrapped in async blocks if needed. Compiler generates `writeCounts` for *all* branches; runtime uses `skipBranchWrites` for untaken paths. `for` uses `runtime.iterate` for async iterators, potentially wrapping iterations in async contexts.
+*   **Control Flow (`if`, `for`, `switch`):** Branches are wrapped in async blocks if needed. Compiler generates `writeCounts` for *all* branches; runtime uses `skipBranchWrites` for untaken paths. `for` uses `runtime.iterate` for async iterators, potentially wrapping iterations in async contexts and potentially forcing sequential execution for state consistency.
 *   **Template Composition (`include`, `extends`, `import`, `block`):** Use `_compileGetTemplate` (async) for loading. Rendering/integration logic wrapped in async blocks. State synchronization works across boundaries (with planned `depends` tag for dynamic cases).
 *   **Macros, Functions, Filters, Extensions:** Use `resolveAll`/`resolveDuo` etc. for concurrent argument resolution. Async functions/filters/extensions are handled seamlessly. Macros manage their internal async state.
 
@@ -189,8 +220,8 @@ Error handling is built into the async block structure:
 
 *   **`try...catch...finally`:** Generated code wraps async block logic.
 *   **`runtime.handleError`:** Catches add context (line/col).
-*   **Propagation:** Errors typically reject Promises or use the callback chain, ultimately causing `astate.waitAllClosures()` to reject.
-*   **Cleanup (`finally`):** Ensures `astate.leaveAsyncBlock()` runs even on error, preventing deadlocks.
+*   **Propagation:** Errors occurring within an async block are caught by the `try...catch` structure wrapped around it by the compiler. The `catch` block typically uses `runtime.handleError` to add template context (like line/column numbers) and then causes the Promise associated with that specific async block (the one returned by its IIFE) to be **rejected**. This rejection propagates naturally through the Promise chain. Since runtime operations involving async blocks often await these Promises (e.g., waiting for arguments, waiting for included template rendering), the rejection will bubble up. The main rendering process waits for all top-level async blocks to complete via `astate.waitAllClosures()`. This waiting mechanism detects the rejection (likely stopping on the first encountered fatal error) and ultimately rejects the final Promise returned by the top-level `renderAsync` call, signaling failure to the caller.
+*   **Cleanup (`finally`):** Importantly, the `finally` block associated with each async IIFE ensures that `astate.leaveAsyncBlock()` is always called, decrementing the active block counter. This cleanup prevents the system from hanging indefinitely if an error occurs partway through execution.
 
 ## Performance Considerations
 
