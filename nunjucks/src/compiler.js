@@ -703,7 +703,7 @@ class Compiler extends Obj {
   //todo - do not resolve, instead resolve it at the point of use: output or argument to functions, filters. Add tests
   //do not return a promise for the whole thing so that resolved elements can be used as soon as possible
   compileArray(node, frame) {
-    this._compileAggregate(node, frame, '[', ']', true, true);
+    this._compileAggregate(node, frame, '[', ']', false, true);
   }
 
   //todo - Add other usage tests - function argument, filter argument, output

@@ -612,12 +612,69 @@ function promisify(fn) {
 // Thus using sequential await in a loop does not introduce significant delays compared to Promise.all.
 // not so if the promise is cteated right before the await, e.g. await fetch(url)
 async function resolveAll(args) {
+  const resolvedArgs = [];
   for (let i = 0; i < args.length; i++) {
-    if (args[i] && typeof args[i].then === 'function') {
-      args[i] = await args[i];
+    let arg = args[i];
+    if (arg && typeof arg.then === 'function') {
+      arg = await arg; // Resolve top-level promise
+    }
+    // <<< NEW Deep Resolution Part >>>
+    if (Array.isArray(arg)) {
+      // Recursively resolve elements or use a helper
+      arg = await deepResolveArray(arg);
+    } else if (isPlainObject(arg)) { // Need a robust isPlainObject check
+      // Recursively resolve properties or use a helper
+      arg = await deepResolveObject(arg);
+    }
+    // <<< End NEW Part >>>
+    resolvedArgs.push(arg);
+  }
+  return resolvedArgs;
+}
+
+async function deepResolveArray(arr) {
+  const result = [];
+  for (const item of arr) {
+    let resolvedItem = item;
+    if (resolvedItem && typeof resolvedItem.then === 'function') {
+      resolvedItem = await resolvedItem;
+    }
+    if (Array.isArray(resolvedItem)) {
+      resolvedItem = await deepResolveArray(resolvedItem);
+    } else if (isPlainObject(resolvedItem)) {
+      resolvedItem = await deepResolveObject(resolvedItem);
+    }
+    result.push(resolvedItem);
+  }
+  return result;
+}
+
+async function deepResolveObject(obj) {
+  const result = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      let value = obj[key];
+      if (value && typeof value.then === 'function') {
+        value = await value;
+      }
+      if (Array.isArray(value)) {
+        value = await deepResolveArray(value);
+      } else if (isPlainObject(value)) {
+        value = await deepResolveObject(value);
+      }
+      result[key] = value;
     }
   }
-  return args;
+  return result;
+}
+
+function isPlainObject(value) {
+  if (typeof value !== 'object' || value === null || value === undefined) {
+    return false;
+  }
+  // Add checks to exclude class instances, etc., if necessary
+  // A simple check might be:
+  return Object.prototype.toString.call(value) === '[object Object]' && Object.getPrototypeOf(value) === Object.prototype;
 }
 
 async function resolveObjectProperties(obj) {
