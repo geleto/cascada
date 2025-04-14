@@ -22,7 +22,7 @@ To achieve implicit concurrency with correctness, Cascada relies on these fundam
 1.  **Transparent Asynchronicity:** Treat Promises and other async constructs as first-class values throughout the engine without special syntax.
 2.  **Non-Blocking Execution:** Wrap potentially asynchronous operations in structures (`async` IIFEs) that allow them to start without blocking the main execution thread.
 3.  **Deferred Resolution:** Avoid resolving Promises until their concrete value is absolutely necessary for an operation or output, maximizing the window for other tasks to run concurrently.
-4.  **State Synchronization:** Implement mechanisms (variable snapshots and a promise-based counting system) to ensure that variable reads and writes behave as if they occurred sequentially, even when executed concurrently.
+4.  **State Synchronization:** Implement mechanisms (variable snapshots and a promise-based two-level counting system) to ensure that variable reads and writes behave as if they occurred sequentially, even when executed concurrently.
 5.  **Ordered Output Buffering:** Use a hierarchical buffer to ensure final output (text, and planned for data) reflects the template's logical structure, not the unpredictable completion order of async tasks.
 
 ## Mechanism 1: Universal & Deferred Asynchronicity
@@ -70,10 +70,16 @@ Cascada enables concurrency by compiling potentially asynchronous sections of th
     })(astate.enterAsyncBlock(), frame.pushAsyncBlock(...));
     ```
 *   **Non-Blocking Execution:** The `async` IIFE is *called* immediately. Because it's `async`, the call *returns* a Promise almost instantly, *before* the asynchronous operations *within* the IIFE have completed. This allows the main template execution flow to continue processing subsequent code that doesn't depend on this block's result, effectively enabling concurrency whenever multiple such blocks are initiated without intermediate `await`s.
-*   **Runtime State Tracking (`astate`):** A runtime state object (conceptually `astate`) tracks the overall progress.
+*   **Runtime State Tracking (`astate`):** A runtime state object (conceptually `astate`) tracks the overall progress of concurrent operations.
     *   `enterAsyncBlock()`: Increments a counter of active async blocks when an IIFE starts.
     *   `leaveAsyncBlock()`: Decrements the counter when an IIFE finishes (in the `finally` block, ensuring it runs even on error).
-    *   `waitAllClosures()`: Returns a Promise that resolves only when the active block counter reaches zero. The main rendering process awaits this promise before finalizing the output, ensuring all concurrent work is done.
+    *   `waitAllClosures()`: Returns a Promise that resolves only when the active block counter reaches zero (or a specified target count). The main rendering process awaits this promise before finalizing the output, ensuring all concurrent work is done.
+*   **Internal Synchronization with `waitAllClosures`:** Beyond the final wait at the root level, `astate.waitAllClosures()` is also crucial *within* the execution flow for local synchronization.
+    *   **Mechanism:** When an async block needs to wait for its own spawned children (other async blocks it directly initiated), it typically uses `await astate.waitAllClosures(1)`. The `1` signifies waiting until the active closure count drops back to one, meaning only the waiting block itself remains active in its branch of execution.
+    *   **Purpose:** This internal waiting ensures sequential correctness and proper data handling in scenarios like:
+        *   **Data Aggregation:** `{% capture %}` or `{% macro %}` must wait for their async bodies to complete before finalizing their result.
+        *   **Sequential Loops:** `{% for %}` loops modifying shared variables might run iterations sequentially, using an internal wait to ensure one iteration's async work finishes before the next starts.
+        *   **Dependent Content:** Custom tags receiving async content may need to wait for that content to render fully before processing it.
 *   **Concurrent Resolution Points:** Parallelism emerges naturally when multiple `async` IIFEs are initiated without awaiting each other. Explicit concurrent resolution occurs when multiple potentially async inputs are needed for a single operation, using runtime helpers:
     *   **Function/Macro/Filter/Tag Arguments:** Arguments are often evaluated concurrently using `runtime.resolveAll`. The operation itself waits for all arguments to resolve.
     *   **Expression Operands:** Operands in expressions (e.g., `a + b`, `x > y`) can resolve concurrently using `runtime.resolveDuo` or `runtime.resolveAll`. The operation using them waits for resolution.
@@ -212,7 +218,8 @@ The core mechanisms are applied consistently:
 
 *   **Control Flow (`if`, `for`, `switch`):** Branches are wrapped in async blocks if needed. Compiler generates `writeCounts` for *all* branches; runtime uses `skipBranchWrites` for untaken paths. `for` uses `runtime.iterate` for async iterators, potentially wrapping iterations in async contexts and potentially forcing sequential execution for state consistency.
 *   **Template Composition (`include`, `extends`, `import`, `block`):** Use `_compileGetTemplate` (async) for loading. Rendering/integration logic wrapped in async blocks. State synchronization works across boundaries (with planned `depends` tag for dynamic cases).
-*   **Macros, Functions, Filters, Extensions:** Use `resolveAll`/`resolveDuo` etc. for concurrent argument resolution. Async functions/filters/extensions are handled seamlessly. Macros manage their internal async state.
+*   **Macros, Functions, Filters, Extensions:** Use `resolveAll`/`resolveDuo` etc. for concurrent argument resolution. Async functions/filters/extensions are handled seamlessly. Macros manage their internal async state and use internal `waitAllClosures` before returning.
+*   **Capture (`capture`):** Uses `_emitAsyncBlockValue` and waits for internal closures (`waitAllClosures(1)`) before finalizing the captured string.
 
 ## Error Handling
 
@@ -221,7 +228,7 @@ Error handling is built into the async block structure:
 *   **`try...catch...finally`:** Generated code wraps async block logic.
 *   **`runtime.handleError`:** Catches add context (line/col).
 *   **Propagation:** Errors occurring within an async block are caught by the `try...catch` structure wrapped around it by the compiler. The `catch` block typically uses `runtime.handleError` to add template context (like line/column numbers) and then causes the Promise associated with that specific async block (the one returned by its IIFE) to be **rejected**. This rejection propagates naturally through the Promise chain. Since runtime operations involving async blocks often await these Promises (e.g., waiting for arguments, waiting for included template rendering), the rejection will bubble up. The main rendering process waits for all top-level async blocks to complete via `astate.waitAllClosures()`. This waiting mechanism detects the rejection (likely stopping on the first encountered fatal error) and ultimately rejects the final Promise returned by the top-level `renderAsync` call, signaling failure to the caller.
-*   **Cleanup (`finally`):** Importantly, the `finally` block associated with each async IIFE ensures that `astate.leaveAsyncBlock()` is always called, decrementing the active block counter. This cleanup prevents the system from hanging indefinitely if an error occurs partway through execution.
+**Cleanup (`finally`):** Importantly, the `finally` block associated with each async IIFE ensures that `astate.leaveAsyncBlock()` is always called (even on error), decrementing the active block counter. This cleanup prevents the system from hanging indefinitely if an error occurs partway through execution.
 
 ## Performance Considerations
 
@@ -242,4 +249,4 @@ Cascada's approach involves trade-offs:
 
 ## Conclusion
 
-Cascada's implicit concurrency model tackles the challenge of async operations in templates through a sophisticated blend of compile-time analysis and runtime orchestration. By using non-blocking async blocks, a hierarchical output buffer, state snapshotting, and a robust promise-based variable synchronization system, it enables potential parallelism while rigorously maintaining the determinism of sequential execution. This frees template authors from manual async management, resulting in cleaner code and unlocking performance benefits for asynchronous workflows, underpinning both Cascada's templating and scripting capabilities.
+Cascada's implicit concurrency model tackles the challenge of async operations in templates through a sophisticated blend of compile-time analysis and runtime orchestration. By using non-blocking async blocks, a hierarchical output buffer, state snapshotting, and a robust promise-based two-level variable synchronization system, it enables potential parallelism while rigorously maintaining the determinism of sequential execution. This frees template authors from manual async management, resulting in cleaner code and unlocking performance benefits for asynchronous workflows, underpinning both Cascada's templating and scripting capabilities.
