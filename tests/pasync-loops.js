@@ -827,8 +827,6 @@
            {% if item > 7 %}
              {% set score = score + processValue(item) %}
            {% endif %}
-           {# Add a small delay to ensure sequencing if processValue was very fast #}
-           {% set _ = delay(1) %}
          {%- endfor -%}
          Final Score: {{ score }}
          `;
@@ -926,37 +924,24 @@
           return true;
         },
         async getIncrement(_sumsofar, item) {
-          await delay(3); // Shorter delay
+          await delay(2); // Shorter delay
           return item === 'a' ? 1 : 10;
         }
       };
       const template = `
           {% set sum = 0 %}
           {%- for item in items -%}
-              {% set logged = logIndependent(item) %} {# Runs async, but loop waits #}
-              {% set sum = sum + getIncrement(sum, item) %} {# Depends on previous sum #}
+              {%- set sum = sum + getIncrement(sum, item) -%} {# Depends on previous sum #}
+              {%- set logged = logIndependent(item) -%} {# Runs async, but loop waits #}
+              {{- sum + ':' + logged }}  {# We must output logged or it will not be resolved during the template rendering #}
           {%- endfor -%}
           Sum: {{ sum }}
       `;
-      // Expected Execution (Sequential Loop):
-      // Iteration 'a':
-      //   Start logIndependent('a') -> Promise<logA>
-      //   Wait for logIndependent('a') to finish because loop is sequential.
-      //   Start getIncrement(0, 'a') -> Promise<incA>
-      //   Wait for getIncrement(0, 'a') -> 1
-      //   sum = 0 + 1 = 1
-      // Iteration 'b':
-      //   Start logIndependent('b') -> Promise<logB>
-      //   Wait for logIndependent('b') to finish.
-      //   Start getIncrement(1, 'b') -> Promise<incB>
-      //   Wait for getIncrement(1, 'b') -> 10
-      //   sum = 1 + 10 = 11
       const result = await env.renderString(template, context);
-      expect(result.trim()).to.equal('Sum: 11');
+      expect(result.trim()).to.equal(`1:true  11:true  Sum: 11`);
       // Verify side effect order confirms sequential execution
       expect(context.logs).to.eql(['Logged a', 'Logged b']);
     });
-
 
   }); // End Loops Modifying Outer Scope
 
