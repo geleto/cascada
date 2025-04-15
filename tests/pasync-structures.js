@@ -161,32 +161,6 @@
         expect(result).to.equal('foo:1bar:2');
       });
 
-      it('should handle quoted string keys with async values', async () => {
-        const context = {
-          async getAmount1() {
-            await delay(5);
-            return '5 tbsp';
-          },
-          async getAmount2() {
-            await delay(3);
-            return '1 tbsp';
-          }
-        };
-
-        const template = `
-			{%- set recipe = {
-			  "ketchup": getAmount1(),
-			  'mustard': getAmount2(),
-			  pickle: '0 tbsp'
-			} -%}
-			{%- for ingredient, amount in recipe -%}
-			  {{ amount }} of {{ ingredient }}
-			{%- endfor -%}
-		  `;
-        const result = await env.renderString(template, context);
-        expect(result).to.equal('5 tbsp of ketchup1 tbsp of mustard0 tbsp of pickle');
-      });
-
     });
 
     describe('Basic Array/Dict Creation and Access', () => {
@@ -233,7 +207,7 @@
           } -%}
           {%- for ingredient, amount in recipe -%}
             {{ amount }} of {{ ingredient }}
-          {%- endfor -%}
+          {% endfor -%}
         `;
         const result = await env.renderString(template, context);
         expect(normalizeWhitespace(result)).to.equal('5 tbsp of ketchup 1 tbsp of mustard 0 tbsp of pickle');
@@ -329,11 +303,11 @@
             pickle: '0 tbsp'
           } -%}
           {%- for ingredient, amount in recipe -%}
-            {{ amount }} of {{ ingredient }}
+            {{ amount }} of {{ ingredient }}.
           {%- endfor -%}
           `;
         const result = await env.renderString(template, context);
-        expect(normalizeWhitespace(result)).to.equal('5 tbsp of ketchup 1 tbsp of mustard 0 tbsp of pickle');
+        expect(normalizeWhitespace(result)).to.equal('5 tbsp of ketchup.1 tbsp of mustard.0 tbsp of pickle.');
       });
 
       it('should handle iteration over array of dictionaries with async values', async () => {
@@ -347,11 +321,11 @@
             { title: getTitle2(), id: 2 }
           ] -%}
           {%- for item in items -%}
-            {{ item.title }}:{{ item.id }}
+            {{ item.title }}:{{ item.id }}.
           {%- endfor -%}
           `;
         const result = await env.renderString(template, context);
-        expect(normalizeWhitespace(result)).to.equal('foo:1 bar:2');
+        expect(normalizeWhitespace(result)).to.equal('foo:1.bar:2.');
       });
     });
 
