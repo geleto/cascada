@@ -1963,7 +1963,6 @@ class Compiler extends Obj {
 
     //isAsync: set the global parent template, compileRoot will use it after waitAllClosures
     this._emitLine(`parentTemplate = ${node.isAsync ? 'await ' : ''}${parentTemplateId};`);
-
     this._emitLine(`for(let ${k} in parentTemplate.blocks) {`);
     this._emitLine(`context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
     this._emitLine('}');
@@ -2302,3 +2301,4 @@ module.exports = {
 
   Compiler: Compiler
 };
+

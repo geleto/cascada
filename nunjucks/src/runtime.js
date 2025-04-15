@@ -545,14 +545,34 @@ function suppressValueAsync(val, autoescape) {
     });
   }
   if (Array.isArray(val)) {
-    if (autoescape) {
-      // append the function to the array, so it will be
-      // called after the elements before it are joined
-      val.push((value) => {
-        return suppressValue(value, true);
-      });
+    // Check if the array contains any promises
+    const hasPromises = val.some(item => item && typeof item.then === 'function');
+
+    if (hasPromises) {
+      // If the array contains promises, use deepResolveArray to resolve them
+      return (async () => {
+        const resolvedArray = await deepResolveArray(val);
+
+        if (autoescape) {
+          // append the function to the array, so it will be
+          // called after the elements before it are joined
+          resolvedArray.push((value) => {
+            return suppressValue(value, true);
+          });
+        }
+        return resolvedArray;
+      })();
+    } else {
+      // No promises in the array, handle as before
+      if (autoescape) {
+        // append the function to the array, so it will be
+        // called after the elements before it are joined
+        val.push((value) => {
+          return suppressValue(value, true);
+        });
+      }
+      return val;
     }
-    return val;
   }
   if (val && typeof val.then === 'function') {
     // it's a promise, return a promise that suppresses the value when resolved
@@ -615,10 +635,10 @@ async function resolveAll(args) {
   const resolvedArgs = [];
   for (let i = 0; i < args.length; i++) {
     let arg = args[i];
-    if (arg && typeof arg.then === 'function') {
-      arg = await arg; // Resolve top-level promise
+    while (arg && typeof arg.then === 'function') {
+      arg = await arg; // Resolve promise chain
     }
-    // <<< NEW Deep Resolution Part >>>
+    // Deep resolve if it's an array or object
     if (Array.isArray(arg)) {
       // Recursively resolve elements or use a helper
       arg = await deepResolveArray(arg);
@@ -626,7 +646,6 @@ async function resolveAll(args) {
       // Recursively resolve properties or use a helper
       arg = await deepResolveObject(arg);
     }
-    // <<< End NEW Part >>>
     resolvedArgs.push(arg);
   }
   return resolvedArgs;
@@ -686,26 +705,56 @@ async function resolveObjectProperties(obj) {
   return obj;
 }
 
-async function resolveDuo(arg1, arg2) {
-  return [
-    (arg1 && typeof arg1.then === 'function') ? await arg1 : arg1,
-    (arg2 && typeof arg2.then === 'function') ? await arg2 : arg2
-  ];
+async function resolveDuo(...args) {
+  return resolveAll(args);
 }
 
-//@todo - no need for condition and false branch, if something breaks - check why, amybe it wants the then to not return a promise
-function resolveSingle(value) {
-  return value && typeof value.then === 'function' ? value : {
-    then(onFulfilled) {
-      return onFulfilled ? onFulfilled(value) : value;
-    }
-  };
+async function resolveSingle(value) {
+  // Sortcut for non-promise values, return a fake promise
+  if (!value || typeof value.then !== 'function') {
+    return {
+      then(onFulfilled) {
+        return onFulfilled ? onFulfilled(value) : value;
+      }
+    };
+  }
+
+  // For promises, resolve them like resolveAll does
+  let resolvedValue = value;
+  while (resolvedValue && typeof resolvedValue.then === 'function') {
+    resolvedValue = await resolvedValue; // Resolve promise chain
+  }
+
+  // Deep resolve if it's an array or object
+  if (Array.isArray(resolvedValue)) {
+    resolvedValue = await deepResolveArray(resolvedValue);
+  } else if (isPlainObject(resolvedValue)) {
+    resolvedValue = await deepResolveObject(resolvedValue);
+  }
+
+  return resolvedValue;
 }
 
 async function resolveSingleArr(value) {
-  return [
-    (value && typeof value.then === 'function') ? await value : value
-  ];
+  // Shortcut for non-promise values
+  if (!value || typeof value.then !== 'function') {
+    return [value];
+  }
+
+  // For promises, resolve them like resolveAll does
+  let resolvedValue = value;
+  while (resolvedValue && typeof resolvedValue.then === 'function') {
+    resolvedValue = await resolvedValue; // Resolve promise chain
+  }
+
+  // Deep resolve if it's an array or object
+  if (Array.isArray(resolvedValue)) {
+    resolvedValue = await deepResolveArray(resolvedValue);
+  } else if (isPlainObject(resolvedValue)) {
+    resolvedValue = await deepResolveObject(resolvedValue);
+  }
+
+  return [resolvedValue];
 }
 
 function resolveArguments(fn, skipArguments = 0) {
@@ -726,6 +775,13 @@ function flattentBuffer(arr) {
     }
     if (typeof item === 'function') {
       return (item(acc) || '');
+    }
+    if (item && typeof item.then === 'function') {
+      // Handle promises in the buffer by awaiting them
+      return (async () => {
+        const resolvedItem = await item;
+        return acc + (resolvedItem || '');
+      })();
     }
     return acc + (item || '');
   }, '');
