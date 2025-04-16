@@ -25,6 +25,11 @@
     let env;
     beforeEach(() => {
       env = new AsyncEnvironment();
+
+      // Add inspectArray function to the environment
+      env.addGlobal('inspectArray', (arr) => {
+        return `First: ${arr[0]}, Length: ${arr.length}`;
+      });
     });
 
     describe('Arrays, Dictionaries, Lookup keys and Nested Structures', () => {
@@ -272,7 +277,10 @@
       it('should pass array with async elements to function (expecting deep resolution)', async () => {
         const context = {
           async getItem1() { await delay(2); return 'One'; },
-          async getItem2() { await delay(1); return 2; }
+          async getItem2() { await delay(1); return 2; },
+          inspectArray(arr) {
+            return `First: ${arr[0]}, Length: ${arr.length}`;
+          }
         };
         const template = '{% set myArray = [getItem1(), getItem2(), 3] %}{{ inspectArray(myArray) }}';
         const result = await env.renderString(template, context);
@@ -282,7 +290,10 @@
       it('should pass dictionary with async values to function (expecting deep resolution)', async () => {
         const context = {
           async getValA() { await delay(2); return 'A'; },
-          async getValB() { await delay(1); return 'B'; }
+          async getValB() { await delay(1); return 'B'; },
+          inspectDict(dict) {
+            return `KeyA: ${dict.keyA}, KeyB: ${dict.keyB}`;
+          }
         };
         const template = '{% set myDict = {keyA: getValA(), keyB: getValB(), keyC: 3} %}{{ inspectDict(myDict) }}';
         const result = await env.renderString(template, context);
