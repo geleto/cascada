@@ -1716,7 +1716,7 @@ class Compiler extends Obj {
     //this._emitLine(`return ${node.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
     this._emitLine('return ' + (
       node.isAsync ?
-        `astate.waitAllClosures().then(() => {if (${err}) throw ${err}; return runtime.newSafeStringAsync(${bufferId});}).catch(error => Promise.reject(error));` :
+        `astate.waitAllClosures().then(() => {if (${err}) throw ${err}; return runtime.newSafeStringAsync(runtime.flattentBuffer(${bufferId}));}).catch(error => Promise.reject(error));` :
         `new runtime.SafeString(${bufferId})`
     )
     );
