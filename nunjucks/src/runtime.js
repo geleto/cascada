@@ -552,7 +552,9 @@ function suppressValueAsync(val, autoescape) {
       // If the array contains promises, use deepResolveArray to resolve them
       return (async () => {
         let resolvedArray = await deepResolveArray(val);
-        resolvedArray = [resolvedArray.join(',')];
+        if (resolvedArray.length > 0) {
+          resolvedArray = [resolvedArray.join(',')];
+        }
         if (autoescape) {
           // append the function to the array, so it will be
           // called after the elements before it are joined
@@ -564,7 +566,9 @@ function suppressValueAsync(val, autoescape) {
       })();
     } else {
       // No promises in the array, handle as before
-      val = [val.join(',')];
+      if (val.length > 0) {
+        val = [val.join(',')];
+      }
       if (autoescape) {
         // append the function to the array, so it will be
         // called after the elements before it are joined
