@@ -360,21 +360,29 @@ class AsyncFrame extends Frame {
     }
   }
 
-  _promisifyParentVar(parentFrame, parent, containerName, varName) {
+  async _promisifyParentVar(parentFrame, parent, containerName, varName) {
     //use this value while the async block is active, then resolve it:
     this.asyncVars[varName] = parent[containerName][varName];
     let resolve;
     let promise = new Promise((res) => { resolve = res; });
     this.promiseResolves[varName] = resolve;
     parent[containerName][varName] = promise;
-    promise.then((val) => {
-      if (parent[containerName][varName] == promise) {
+
+    let currentValue = promise;
+    do {
+      currentValue = await currentValue;
+      //While it may look like a race condition may overwrite parent[containerName][varName]
+      //after it resolves `promise` and it will be a different value (not `promise`),
+      //the promisification mechanism makes it so that eventually the value will be resolved to `promise`
+      if (parent[containerName][varName] === promise) {
         // the parent variable has not been modified since we promisified it
+        // or has been modified but resolved back to our promise
         // so we can just set it to the resolved value
-        // there's no need for the promise as it resolves to the value
-        parent[containerName][varName] = val;
+        parent[containerName][varName] = currentValue;
+        break;
       }
-    });
+      currentValue = parent[containerName][varName];
+    } while (currentValue && typeof currentValue.then === 'function');
   }
 }
 
