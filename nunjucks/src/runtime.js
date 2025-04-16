@@ -350,9 +350,9 @@ class AsyncFrame extends Frame {
       //promisify the variable in the frame (parent of the new async frame)
       //these will be resolved when the async block is done with the variable
       if (parent.asyncVars && parent.asyncVars[varName] !== undefined) {
-        this._promisifyParentVar(parent, parent.asyncVars, varName);
+        this._promisifyParentVar(parent, parent, 'asyncVars', varName);
       } else if (parent.variables[varName] !== undefined) {
-        this._promisifyParentVar(parent, parent.variables, varName);
+        this._promisifyParentVar(parent, parent, 'variables', varName);
       }
       else {
         throw new Error('Variable not found in parent frame');
@@ -360,17 +360,21 @@ class AsyncFrame extends Frame {
     }
   }
 
-  _promisifyParentVar(parentFrame, parentVars, varName) {
+  _promisifyParentVar(parentFrame, parent, containerName, varName) {
     //use this value while the async block is active, then resolve it:
-    this.asyncVars[varName] = parentVars[varName];
+    this.asyncVars[varName] = parent[containerName][varName];
     let resolve;
     let promise = new Promise((res) => { resolve = res; });
     this.promiseResolves[varName] = resolve;
-    parentVars[varName] = promise;
-    if (parentFrame.topLevel) {
-      //todo: modify the variable in the context
-      //context.setVariable(varName, promise);
-    }
+    parent[containerName][varName] = promise;
+    promise.then((val) => {
+      if (parent[containerName][varName] == promise) {
+        // the parent variable has not been modified since we promisified it
+        // so we can just set it to the resolved value
+        // there's no need for the promise as it resolves to the value
+        parent[containerName][varName] = val;
+      }
+    });
   }
 }
 
