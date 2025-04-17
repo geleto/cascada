@@ -361,28 +361,48 @@ class AsyncFrame extends Frame {
   }
 
   async _promisifyParentVar(parentFrame, parent, containerName, varName) {
-    //use this value while the async block is active, then resolve it:
+    // Snapshot the current value from the parent frame for local use by this block.
     this.asyncVars[varName] = parent[containerName][varName];
     let resolve;
-    let promise = new Promise((res) => { resolve = res; });
+    // Create the initial lock Promise, referenced by the 'promise' variable.
+    let currentPromiseToAwait = new Promise((res) => { resolve = res; });
+    // Store the resolver function in this frame, tied to the variable name.
     this.promiseResolves[varName] = resolve;
-    parent[containerName][varName] = promise;
+    // Place the lock Promise into the parent frame's variable slot.
+    parent[containerName][varName] = currentPromiseToAwait;
 
-    let currentValue = promise;
-    do {
-      currentValue = await currentValue;
-      //While it may look like a race condition may overwrite parent[containerName][varName]
-      //after it resolves `promise` and it will be a different value (not `promise`),
-      //the promisification mechanism makes it so that eventually the value will be resolved to `promise`
-      if (parent[containerName][varName] === promise) {
-        // the parent variable has not been modified since we promisified it
-        // or has been modified but resolved back to our promise
-        // so we can just set it to the resolved value
-        parent[containerName][varName] = currentValue;
-        break;
+    while (true) {
+      let awaitedValue = await currentPromiseToAwait; // Await the tracked promise
+
+      // Now, check the parent slot state *after* the await
+      const valueInParentSlot = parent[containerName][varName];
+
+      if (valueInParentSlot === currentPromiseToAwait) {
+        // The promise we awaited is still in the slot.
+        // Update the slot with the resolved value.
+        parent[containerName][varName] = awaitedValue;
+
+        // Is the value we just placed ALSO a promise?
+        if (awaitedValue && typeof awaitedValue.then === 'function') {
+          // Yes, track this new promise and loop again
+          currentPromiseToAwait = awaitedValue;
+          continue;
+        } else {
+          // Not a promise, we are done
+          break;
+        }
+      } else {
+        // The slot was overwritten while we awaited.
+        // Read the new occupant.
+        currentPromiseToAwait = valueInParentSlot;
+        if (!(currentPromiseToAwait && typeof currentPromiseToAwait.then === 'function')) {
+          // The new occupant isn't a promise. Final value is set. We are DONE.
+          break;
+        }
+        // The new occupant is another promise. Loop again to await it.
+        continue;
       }
-      currentValue = parent[containerName][varName];
-    } while (currentValue && typeof currentValue.then === 'function');
+    }
   }
 }
 
