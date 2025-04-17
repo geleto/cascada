@@ -375,9 +375,7 @@ class AsyncFrame extends Frame {
       let awaitedValue = await currentPromiseToAwait; // Await the tracked promise
 
       // Now, check the parent slot state *after* the await
-      const valueInParentSlot = parent[containerName][varName];
-
-      if (valueInParentSlot === currentPromiseToAwait) {
+      if (parent[containerName][varName] === currentPromiseToAwait) {
         // The promise we awaited is still in the slot.
         // Update the slot with the resolved value.
         parent[containerName][varName] = awaitedValue;
@@ -393,14 +391,8 @@ class AsyncFrame extends Frame {
         }
       } else {
         // The slot was overwritten while we awaited.
-        // Read the new occupant.
-        currentPromiseToAwait = valueInParentSlot;
-        if (!(currentPromiseToAwait && typeof currentPromiseToAwait.then === 'function')) {
-          // The new occupant isn't a promise. Final value is set. We are DONE.
-          break;
-        }
-        // The new occupant is another promise. Loop again to await it.
-        continue;
+        // Give up responsibility. The block that overwrote it is now in charge.
+        break;
       }
     }
   }
