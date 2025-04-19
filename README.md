@@ -110,6 +110,43 @@ env.addGlobal('crawlPages', async function* (url) {
 {% endfor %}
 ```
 
+#### Explicit Sequencing with `!`
+
+**Note**: This feature is not yet implemented.
+
+While Cascada automatically parallelizes independent operations, this can be problematic for operations with side effects that rely on a specific execution order (e.g., logging steps sequentially, modifying a list in a defined order).
+
+For instance, without explicit control:
+
+```njk
+{% set log = [] %}
+{% do log.push('Start') %} {# Might finish after the next line in parallel execution #}
+{% do log.push('Finish') %}
+{# log might end up as ['Finish', 'Start'] #}
+```
+
+To enforce sequential execution for side effects targeting a specific object, you can append `!` to the static object path in any expression:
+
+```njk
+object.path!.method(...)
+{{ object.path!.propertyAccess }}
+{% set result = object.path!.someFunction() %}
+```
+
+Marking an operation with `!` on an object path (e.g., `log!`, `user.profile!`) instructs Cascada to create a sequence dependency: this operation will only execute after all preceding operations marked with `!` on the *exact same static path* have completed, and before any subsequent marked operations on that path begin.
+
+```njk
+{% set log = [] %}
+{% do log!.push('Start') %} {# Guaranteed to execute before the next marked operation on log #}
+{% do someIndependentTask() %} {# Still runs in parallel #}
+{% do log!.push('Finish') %} {# Guaranteed to execute after the first marked operation on log #}
+{# log will reliably be ['Start', 'Finish'] #}
+```
+
+Operations marked with `!` only sequence relative to *other operations marked on the same path*. They can still run in parallel with unmarked operations or operations marked on different paths (e.g., `log!` operations run independently of `auditLog!` operations).
+
+**Limitation:** This mechanism requires the object path (`object.path`) to be **static** (known at compile time). Dynamic paths using variables, array indices, or function calls (e.g., `items[i]!.update()`, `getConfig('key')!.setValue()`) cannot be used with `!`, as the engine must identify the exact sequence lock target beforehand. For dynamic paths requiring sequential operations, you would need to implement manual dependency chaining (e.g., passing results between operations even if unused) to enforce order.
+
 ## Parallelization Examples
 Cascada automatically parallelizes operations that can safely run concurrently:
 
@@ -329,16 +366,25 @@ Example with async iterator:
 
 **Note**: This feature is not yet implemented.
 
-The `{% do %}` Cascada tag executes expressions without rendering their return values, making it useful for side-effect operations:
+The `{% do %}` Cascada tag executes one or more expressions without rendering their return values, making it useful for side-effect operations like modifying data structures or calling functions where the output isn't needed directly in the template.
 
 ```njk
 {% set prices = [] %}
-{% for store in ['storeA', 'storeB', 'storeC'] %}
+{% set stores = ['storeA', 'storeB', 'storeC'] %}
+{% for store in stores %}
   {% do prices.push(fetchPrice(store)) %}
 {% endfor %}
 ```
 
-This tag performs the same function as `{{ expression | reject() }}` or a `set` tag with a dummy variable, but with cleaner syntax. Important: it provides no special async handling, so the same cautions about unpredictable execution order in parallel environments still apply. See [Handling functions with side effects](#handling-functions-with-side-effects) for more details on managing side effects in Cascada's concurrent environment.
+Multiple expressions can be included in a single `do` tag, separated by commas:
+
+```njk
+{% do logActivity('Starting process'), incrementCounter('processes') %}
+```
+
+This tag performs the same function as alternatives like `{{ expression | reject() }}` or a `set` tag with a dummy variable (`{% set _ = expression %}`), but offers a cleaner syntax.
+
+**Important**: The `do` tag provides no special async handling or execution order guarantees. Expressions within it (and across multiple `do` tags) are subject to Cascada's standard parallel execution rules by default. If you need to ensure a specific execution order for side effects on a particular object, see the [Explicit Sequencing with `!`](#explicit-sequencing-with-) section for how to enforce order using the `!` marker on static paths.
 
 ## Technical Constraints
 
