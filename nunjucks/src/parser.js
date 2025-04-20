@@ -597,10 +597,13 @@ class Parser extends Obj {
     if (!this.skipSymbol('do')) {
       this.fail('expected do', doTok.lineno, doTok.colno);
     }
-    const exprs = [];
-    exprs.push(this.parseExpression());
-    while (this.skip(this.tokens.constructor.TOKEN_COMMA)) {
-      exprs.push(this.parseExpression());
+    // Parse a single expression, which may be an array (for multiple expressions)
+    const expr = this.parseExpression();
+    let exprs;
+    if (expr instanceof nodes.Array) {
+      exprs = expr.children;
+    } else {
+      exprs = [expr];
     }
     this.advanceAfterBlockEnd(doTok.value);
     return new nodes.Do(doTok.lineno, doTok.colno, exprs);

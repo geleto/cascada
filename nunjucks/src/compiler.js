@@ -2276,18 +2276,30 @@ class Compiler extends Obj {
   }
 
   compileDo(node, frame) {
-    node.children.forEach(child => {
-      if (child.isAsync) {
-        this._emitAsyncBlock(child, frame, false, (f) => {
+    if (node.isAsync) {
+      // Use a single _emitAsyncBlock for all children
+      this._emitAsyncBlock(node, frame, false, (f) => {
+        const promisesVar = this._tmpid();
+        this._emitLine(`let ${promisesVar} = [];`);
+        node.children.forEach((child) => {
+          const resultVar = this._tmpid();
+          this._emitLine(`let ${resultVar} = `);
           this._compileExpression(child, f);
           this._emitLine(';');
+          this._emitLine(`if (${resultVar} && typeof ${resultVar}.then === 'function') ${promisesVar}.push(${resultVar});`);
         });
-      } else {
-        this._emitLine('// do tag: evaluate for side effects');
+        this._emitLine(`if (${promisesVar}.length === 1) {`);
+        this._emitLine(`  await ${promisesVar}[0];`);
+        this._emitLine('} else if (' + promisesVar + '.length > 1) {');
+        this._emitLine('  await Promise.all(' + promisesVar + ');');
+        this._emitLine('}');
+      });
+    } else {
+      node.children.forEach(child => {
         this._compileExpression(child, frame);
         this._emitLine(';');
-      }
-    });
+      });
+    }
   }
 }
 

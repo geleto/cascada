@@ -47,10 +47,10 @@
       it('should evaluate multiple comma-separated expressions for side effects', async () => {
         let a = 0, b = 0;
         const context = {
-          incA: () => { a++; },
-          incB: () => { b += 2; }
+          incA: async () => { await delay(10); a++; },
+          incB: async () => { await delay(10); b += 2; }
         };
-        const template = `{% do incA(), incB() %}`;
+        const template = `{% do [incA(), incB()] %}`;
         const result = await env.renderString(template, context);
         expect(result).to.equal('');
         expect(a).to.equal(1);
@@ -59,7 +59,7 @@
 
       it('should not output the result of the expression', async () => {
         const context = {
-          return42: () => 42
+          return42: async () => { await delay(10); return 42; }
         };
         const template = `{% do return42() %}`;
         const result = await env.renderString(template, context);
