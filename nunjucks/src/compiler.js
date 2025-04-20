@@ -27,7 +27,7 @@ const compareOps = {
   '<': '<',
   '>': '>',
   '<=': '<=',
-  '>=': '>=',
+  '>=': '>='
 };
 
 class Compiler extends Obj {
@@ -2273,6 +2273,21 @@ class Compiler extends Obj {
 
   getCode() {
     return this.codebuf.join('');
+  }
+
+  compileDo(node, frame) {
+    node.children.forEach(child => {
+      if (child.isAsync) {
+        this._emitAsyncBlock(child, frame, false, (f) => {
+          this._compileExpression(child, f);
+          this._emitLine(';');
+        });
+      } else {
+        this._emitLine('// do tag: evaluate for side effects');
+        this._compileExpression(child, frame);
+        this._emitLine(';');
+      }
+    });
   }
 }
 

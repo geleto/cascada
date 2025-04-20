@@ -166,6 +166,7 @@ const CallExtensionAsync = CallExtension.extend('CallExtensionAsync', {
   }
 });
 
+const Do = NodeList.extend('Do');
 
 // This is hacky, but this is just a debugging function anyway
 function print(str, indent, inline) {
@@ -286,6 +287,7 @@ module.exports = {
 
   CallExtension: CallExtension,
   CallExtensionAsync: CallExtensionAsync,
+  Do: Do,
 
   printNodes: printNodes
 };

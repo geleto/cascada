@@ -592,6 +592,20 @@ class Parser extends Obj {
     return new nodes.Switch(tag.lineno, tag.colno, expr, cases, defaultCase);
   }
 
+  parseDo() {
+    const doTok = this.peekToken();
+    if (!this.skipSymbol('do')) {
+      this.fail('expected do', doTok.lineno, doTok.colno);
+    }
+    const exprs = [];
+    exprs.push(this.parseExpression());
+    while (this.skip(this.tokens.constructor.TOKEN_COMMA)) {
+      exprs.push(this.parseExpression());
+    }
+    this.advanceAfterBlockEnd(doTok.value);
+    return new nodes.Do(doTok.lineno, doTok.colno, exprs);
+  }
+
   parseStatement() {
     var tok = this.peekToken();
     var node;
@@ -637,6 +651,8 @@ class Parser extends Obj {
         return this.parseFilterStatement();
       case 'switch':
         return this.parseSwitch();
+      case 'do':
+        return this.parseDo();
       default:
         if (this.extensions.length) {
           for (let i = 0; i < this.extensions.length; i++) {
