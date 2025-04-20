@@ -2288,11 +2288,9 @@ class Compiler extends Obj {
           this._emitLine(';');
           this._emitLine(`if (${resultVar} && typeof ${resultVar}.then === 'function') ${promisesVar}.push(${resultVar});`);
         });
-        this._emitLine(`if (${promisesVar}.length === 1) {`);
-        this._emitLine(`  await ${promisesVar}[0];`);
-        this._emitLine('} else if (' + promisesVar + '.length > 1) {');
-        this._emitLine('  await Promise.all(' + promisesVar + ');');
-        this._emitLine('}');
+        this._emitLine(`if (${promisesVar}.length > 0) {`);
+        this._emitLine(`  await Promise.all(${promisesVar});`);
+        this._emitLine(`}`);;
       });
     } else {
       node.children.forEach(child => {
