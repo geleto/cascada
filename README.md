@@ -110,42 +110,50 @@ env.addGlobal('crawlPages', async function* (url) {
 {% endfor %}
 ```
 
-#### Explicit Sequencing with `!`
+#### Controlling Sequential Execution with `!`
 
 **Note**: This feature is not yet implemented.
 
-While Cascada automatically parallelizes independent operations, this can be problematic for operations with side effects that rely on a specific execution order (e.g., logging steps sequentially, modifying a list in a defined order).
+By default, Cascada runs independent operations in parallel. However, when you have methods with side effects that need to execute in a specific order, you can use the `!` marker to enforce sequential execution.
 
-For instance, without explicit control:
+### Two Ways to Use Sequential Execution Control
 
-```njk
-{% set log = [] %}
-{% do log.push('Start') %} {# Might finish after the next line in parallel execution #}
-{% do log.push('Finish') %}
-{# log might end up as ['Finish', 'Start'] #}
-```
+#### 1. Object-Path Sequencing: `object.path!.method()`
 
-To enforce sequential execution for side effects targeting a specific object, you can append `!` to the static object path in any expression:
+Use this when multiple method calls on the same object must run in a specific order:
 
 ```njk
-object.path!.method(...)
-{{ object.path!.propertyAccess }}
-{% set result = object.path!.someFunction() %}
+{% set account = getAccount() %}
+{% do account!.deposit(100) %}      <!-- Runs first -->
+{% do account!.updateStats() %}     <!-- Runs second, after deposit completes -->
+{% do account.settings!.update() %}  <!-- Different sequence (settings! path) -->
+{% do account!.withdraw(50) %}      <!-- Runs third, after updateStats completes -->
 ```
 
-Marking an operation with `!` on an object path (e.g., `log!`, `user.profile!`) instructs Cascada to create a sequence dependency: this operation will only execute after all preceding operations marked with `!` on the *exact same static path* have completed, and before any subsequent marked operations on that path begin.
+Each method call on `account!` waits for all previous operations on that path to complete before executing. The `!` marks the specific path segment (e.g., `account!`, `account.settings!`) whose operations will be sequenced.
+
+#### 2. Method-Specific Sequencing: `object.path.method!()`
+
+Use this when only calls to a specific method need to run in sequence:
 
 ```njk
-{% set log = [] %}
-{% do log!.push('Start') %} {# Guaranteed to execute before the next marked operation on log #}
-{% do someIndependentTask() %} {# Still runs in parallel #}
-{% do log!.push('Finish') %} {# Guaranteed to execute after the first marked operation on log #}
-{# log will reliably be ['Start', 'Finish'] #}
+{% set worker = getAsyncTaskWorker() %}
+{% do worker.processTask!('Task X') %}  <!-- First in the processTask sequence -->
+{% do worker.getStatus() %}            <!-- Runs independently (no !) -->
+{% do worker.processTask!('Task Y') %}  <!-- Second in sequence, waits for previous processTask! -->
+{% do worker.resetCounter!() %}        <!-- First in resetCounter sequence (independent) -->
+{% do worker.processTask!('Task Z') %}  <!-- Third in sequence, waits for previous processTask! -->
 ```
 
-Operations marked with `!` only sequence relative to *other operations marked on the same path*. They can still run in parallel with unmarked operations or operations marked on different paths (e.g., `log!` operations run independently of `auditLog!` operations).
+Here, `processTask!` calls form their own sequence, while other methods run independently.
 
-**Limitation:** This mechanism requires the object path (`object.path`) to be **static** (known at compile time). Dynamic paths using variables, array indices, or function calls (e.g., `items[i]!.update()`, `getConfig('key')!.setValue()`) cannot be used with `!`, as the engine must identify the exact sequence lock target beforehand. For dynamic paths requiring sequential operations, you would need to implement manual dependency chaining (e.g., passing results between operations even if unused) to enforce order.
+### Important Details
+
+- The `!` marker is exclusively for method calls that have side effects
+- It should not be used with property access or functions without side effects, as Cascada's dependency system already handles those dependencies automatically
+- The path segment before `!` must be static (known at compile time)
+- Dynamic paths (e.g., `items[i]!.update()`, `getObject()!.process()`) are not supported
+- Using two `!` markers in the same path (e.g., `path!.method!()`) is unnecessary and not supported
 
 ## Parallelization Examples
 Cascada automatically parallelizes operations that can safely run concurrently:
@@ -364,8 +372,6 @@ Example with async iterator:
 
 ### The `{% do %}` Tag
 
-**Note**: This feature is not yet implemented.
-
 The `{% do %}` Cascada tag executes one or more expressions without rendering their return values, making it useful for side-effect operations like modifying data structures or calling functions where the output isn't needed directly in the template.
 
 ```njk
@@ -384,7 +390,7 @@ Multiple expressions can be included in a single `do` tag, separated by commas:
 
 This tag performs the same function as alternatives like `{{ expression | reject() }}` or a `set` tag with a dummy variable (`{% set _ = expression %}`), but offers a cleaner syntax.
 
-**Important**: The `do` tag provides no special async handling or execution order guarantees. Expressions within it (and across multiple `do` tags) are subject to Cascada's standard parallel execution rules by default. If you need to ensure a specific execution order for side effects on a particular object, see the [Explicit Sequencing with `!`](#explicit-sequencing-with-) section for how to enforce order using the `!` marker on static paths.
+**Important**: The `do` tag provides no special async handling or execution order guarantees. Expressions within it (and across multiple `do` tags) are subject to Cascada's standard parallel execution rules by default. If you need to ensure a specific execution order for side effects on a particular object, see the [Controlling sequential execution with `!`](#explicit-sequencing-with-) section for how to enforce order using the `!` marker on static paths.
 
 ## Technical Constraints
 
