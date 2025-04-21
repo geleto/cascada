@@ -759,6 +759,11 @@ class Parser extends Obj {
           tok.colno,
           node,
           lookup);
+      } else if (tok.type === lexer.TOKEN_OPERATOR && tok.value === '!') {
+        // Handle the ! marker for sequencing
+        this.nextToken();
+        node.sequenced = true;
+        // Continue to allow further postfixes (e.g., .method() after !)
       } else {
         break;
       }
