@@ -923,37 +923,6 @@
         loader = new StringLoader();
         env = new AsyncEnvironment(loader);
       });
-      it.skip('should handle extends with async super() and set', async () => {
-        const template = `
-          {%- extends "base_for_super.njk" -%}
-          {%- block content -%}
-            {%- set val = getPreSuperVal() -%}
-            {{ super()}}
-            {%- set val = getPostSuperVal() -%}
-            {{ val }}
-          {%- endblock -%}
-        `;
-
-        loader.addTemplate('base_for_super.njk', `
-          Base Content:
-          {%- block content -%}
-          Base Block: {{ val }}
-          {%- endblock -%}
-          `);
-
-        const context = {
-          async getPreSuperVal() {
-            await delay(5);
-            return 'PreSuperVal';
-          },
-          async getPostSuperVal() {
-            await delay(10);
-            return 'PostSuperVal';
-          }
-        };
-
-        expect((await env.renderString(template, context)).trim()).to.equal('Base Content:Base Block: PreSuperVal PostSuperVal');
-      });
 
       it('should handle macro with async caller block', async () => {
         const template = `
@@ -987,35 +956,858 @@
         expect((await env.renderString(template, context)).trim()).to.equal('Macro Start: OuterVal Inner: InnerVal Macro End Final val: OuterVal');
       });
 
-      it.skip('should handle async extends with delayed parent template and block overrides', async () => {
-        const template = `
-          {% extends "parent_delayed.njk" %}
-          {% block content %}
-            {% set val = getVal() %}
-            {{ super() }}
-            Child sees value: {{ val }}
-          {% endblock %}
-        `;
-
-        loader.addTemplate('parent_delayed.njk', `
-          Parent Start
-          {% block content %}
-          Parent sees value: {{ val }}
-          {% endblock %}
-          Parent End
-          `);
-
-        const context = {
-          async getVal() {
-            await delay(8);
-            return 'ChildVal';
-          }
-        };
-
-        expect((await env.renderString(template, context)).replace(/\s+/g, ' ')).to.equal('Parent Start Parent sees value: ChildVal Child sees value: ChildVal Parent End');
-      });
-
     });
 
+  });
+
+  describe('Promise Chaining Tests', function() {
+    let env;
+
+    beforeEach(function() {
+      env = new AsyncEnvironment();
+    });
+
+    // Test Case 1: Simple promise resolution
+    it('should properly handle simple promises', async function() {
+      const template = `{{ asyncValue }}`;
+      const context = {
+        asyncValue: Promise.resolve(42)
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('42');
+    });
+
+    // Test Case 2: Chained promise operations
+    it('should properly handle chained promise operations', async function() {
+      const template = `{% set x = firstPromise %}
+  {% set y = secondPromise %}
+  First: {{ x }}, Second: {{ y }}`;
+
+      const context = {
+        firstPromise: Promise.resolve('Value 1'),
+        secondPromise: Promise.resolve('Value 2')
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('First: Value 1');
+      expect(result).to.contain('Second: Value 2');
+    });
+
+    // Test Case 3: Async blocks that don't modify variables
+    it('should properly resolve when async blocks don\'t modify variables', async function() {
+      const template = `{% set x = initialPromise %}
+  {% if condition %}
+    {% set y = "not changing x" %}
+  {% endif %}
+  Result: {{ x }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Original Value'),
+        condition: true
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Original Value');
+    });
+
+    // Test Case 4: Nested async blocks with promise values
+    it('should properly handle nested async blocks with promise values', async function() {
+      const template = `{% set x = initialPromise %}
+  {% if outerCondition %}
+    {% if innerCondition %}
+      {% set x = newPromise %}
+    {% endif %}
+  {% endif %}
+  Final Value: {{ x }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Original Value'),
+        newPromise: Promise.resolve('New Value'),
+        outerCondition: true,
+        innerCondition: true
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Final Value: New Value');
+    });
+
+    // Test Case 5: Multiple blocks modifying the same variable
+    it('should correctly handle multiple blocks modifying the same variable', async function() {
+      const template = `{% set x = "initial" %}
+  {% if condition1 %}
+    {% set x = firstPromise %}
+  {% endif %}
+  {% if condition2 %}
+    {% set x = secondPromise %}
+  {% endif %}
+  {% if condition3 %}
+    {% set x = x + " (modified)" %}
+  {% endif %}
+  Result: {{ x }}`;
+
+      const context = {
+        firstPromise: Promise.resolve('Value 1'),
+        secondPromise: Promise.resolve('Value 2'),
+        condition1: true,
+        condition2: true,
+        condition3: true
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Value 2 (modified)');
+    });
+
+    // Test Case 6: Async function returning a promise
+    it('should handle async functions returning promises', async function() {
+      const template = `{% set x = asyncFunction() %}
+  Result: {{ x }}`;
+
+      const context = {
+        asyncFunction: () => Promise.resolve('Function Result')
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Function Result');
+    });
+
+    // Test Case 7: Conditional branches with different variable handling
+    it('should correctly handle conditional branches with different promise operations', async function() {
+      const template = `{% set x = initial %}
+  {% if condition %}
+    {% set x = promiseA %}
+  {% else %}
+    {% set x = promiseB %}
+  {% endif %}
+  Result: {{ x }}`;
+
+      // Test with condition = true
+      let context = {
+        initial: 'Initial Value',
+        promiseA: Promise.resolve('Value A'),
+        promiseB: Promise.resolve('Value B'),
+        condition: true
+      };
+
+      let result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Value A');
+
+      // Test with condition = false
+      context.condition = false;
+      result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Value B');
+    });
+
+    // Test Case 9: Async loops with promise values
+    it('should correctly handle async loops with promise values', async function() {
+      const template = `{% set items = asyncItems %}
+  {% for item in items %}
+  - {{ item }}
+  {% endfor %}`;
+
+      const context = {
+        asyncItems: Promise.resolve(['Item 1', 'Item 2', 'Item 3'])
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('- Item 1');
+      expect(result).to.contain('- Item 2');
+      expect(result).to.contain('- Item 3');
+    });
+
+    // Test Case 10: Complex promise dependency chains
+    it('should handle complex promise dependency chains', async function() {
+      const template = `{% set x = firstPromise %}
+  {% set y = makeSecondPromise(x) %}
+  First: {{ x }}, Second: {{ y }}`;
+
+      const makeSecondPromise = async (value) => {
+        return `Based on ${await value}`;
+      };
+
+      const context = {
+        firstPromise: Promise.resolve('First Value'),
+        makeSecondPromise
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('First: First Value');
+      expect(result).to.contain('Second: Based on First Value');
+    });
+
+    it('should correctly unwrap promises in nested async contexts', async function() {
+      // Add an async filter to force async block creation
+      env.addFilter('async_identity', (val) => Promise.resolve(val));
+
+      const template = `
+      {% set x = initialPromise %}
+      {% if asyncCondition %}
+        {# Force this block to be async and just read x #}
+        {{ x | async_identity }}
+      {% endif %}
+      {% set y = dependentFunction(x) %}
+      Result: {{ y }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Initial Value'),
+        asyncCondition: Promise.resolve(true),
+        dependentFunction: async (val) => {
+          // With original code, val would be a promise-of-a-promise
+          const resolved = await val;
+          return `Based on ${resolved}`;
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Based on Initial Value');
+    });
+  });
+
+  describe('Cascada Promise Nesting Bug Tests', function () {
+    let env;
+
+    beforeEach(function () {
+      env = new AsyncEnvironment();
+      // Add async filters to force async block creation
+      env.addFilter('async_identity', (val) => Promise.resolve(val));
+      env.addFilter('async_transform', (val, suffix) => Promise.resolve(`${val}${suffix}`));
+    });
+
+    // Test 1: The timing out test - basic promise nesting bug
+    it('should correctly unwrap promises in nested async contexts', async function () {
+      const template = `
+    {% set x = initialPromise %}
+    {% if asyncCondition %}
+      {# Force this block to be async and just read x #}
+      {{ x | async_identity }}
+    {% endif %}
+    {% set y = dependentFunction(x) %}
+    Result: {{ y }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Initial Value'),
+        asyncCondition: Promise.resolve(true),
+        dependentFunction: async (val) => {
+          // With original code, val would be a promise-of-a-promise
+          const resolved = await val;
+          return `Based on ${resolved}`;
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Based on Initial Value');
+    }); // Increase timeout to demonstrate the issue
+
+    // Test 2: Error propagation through promise chains
+    it('should properly propagate errors in promise chains', async function () {
+      const template = `
+    {% set x = errorPromise %}
+    {% if asyncCondition %}
+      {# Force this block to be async and just read x #}
+      {{ "Reading: " + x | async_identity }}
+    {% endif %}
+    Value: {{ x }}`;
+
+      const context = {
+        errorPromise: Promise.reject(new Error('Test Error')),
+        asyncCondition: Promise.resolve(true)
+      };
+
+      try {
+        await env.renderString(template, context);
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.contain('Test Error');
+      }
+    });
+
+    // Test 3: Observable promise nesting with console debugging
+    it('should not create nested promises that require multiple awaits', async function () {
+      const template = `
+    {% set x = initialPromise %}
+    {% if asyncCondition %}
+      {# Force this block to be async and just read x #}
+      {{ x | async_identity }}
+    {% endif %}
+    {% set debugInfo = debugPromise(x) %}
+    Debug: {{ debugInfo }}`;
+
+      const promiseDepth = (p) => {
+        //let depth = 0;
+        let current = p;
+
+        // Check if it's a promise
+        while (current && typeof current.then === 'function') {
+          //depth++;
+          // This is just for testing - we manually unwrap one level
+          // to check if there's another promise inside
+          current = current.then(v => {
+            // Store the value for inspection
+            return { value: v, isPromise: v && typeof v.then === 'function' };
+          });
+          break; // We only need to go one level to detect nesting
+        }
+
+        return current;
+      };
+
+      const context = {
+        initialPromise: Promise.resolve('Initial Value'),
+        asyncCondition: Promise.resolve(true),
+        debugPromise: (p) => {
+          return promiseDepth(p);
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      // The debug info should show only one level of promise
+      // and the value shouldn't be a promise itself
+      const debugValue = result.match(/Debug: (.+)/)[1].trim();
+      expect(debugValue).to.equal('Initial Value');
+    });
+
+    // Test 4: Multiple async blocks reading the same promise
+    it('should handle multiple async blocks reading the same promise', async function () {
+      const template = `
+    {% set x = initialPromise %}
+
+    {# First block reads but doesn't modify x #}
+    {% if condition1 %}
+      {{ x | async_identity }}
+    {% endif %}
+
+    {# Second block reads but doesn't modify x #}
+    {% if condition2 %}
+      {{ x | async_transform(" - read again") }}
+    {% endif %}
+
+    {# Final verification that x is still a simple promise #}
+    {% set promiseType = checkPromiseType(x) %}
+    Promise type: {{ promiseType }}
+    Final value: {{ x }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Promise Value'),
+        condition1: Promise.resolve(true),
+        condition2: Promise.resolve(true),
+        checkPromiseType: async (val) => {
+          // This function helps us see if we have nested promises
+          if (val && typeof val.then === 'function') {
+            try {
+              const resolved = await val;
+              if (resolved && typeof resolved.then === 'function') {
+                return 'nested-promise';
+              } else {
+                return 'simple-promise';
+              }
+            } catch (e) {
+              return 'rejected-promise';
+            }
+          }
+          return 'not-a-promise';
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Promise type: not-a-promise');
+      expect(result).to.contain('Final value: Promise Value');
+    });
+
+    // Test 5: Async function returning a promise after async block
+    it('should handle async functions after async blocks with promise arguments', async function () {
+      const template = `
+    {% set x = initialPromise %}
+
+    {# Read x in an async block #}
+    {% if condition %}
+      {{ x | async_identity }}
+    {% endif %}
+
+    {# Now call an async function with x #}
+    {% set result = asyncFunction(x) %}
+    Result: {{ result }}`;
+
+      const context = {
+        initialPromise: Promise.resolve({ id: 123, name: 'Test Item' }),
+        condition: Promise.resolve(true),
+        asyncFunction: async (item) => {
+          // With nested promises, we'd get a Promise<{id,name}> instead of {id,name}
+          try {
+            const resolved = await item;
+            return `Item ${resolved.id}: ${resolved.name}`;
+          } catch (e) {
+            return `Error: ${e.message}`;
+          }
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Item 123: Test Item');
+    });
+
+    // Test 6: Nested async blocks with promise dependencies
+    it('should correctly handle nested async blocks with promise dependencies', async function () {
+      const template = `
+    {% set x = outerPromise %}
+
+    {% if outerCondition %}
+      {# Outer async block reads x #}
+      {{ x | async_identity }}
+
+      {% if innerCondition %}
+        {# Inner async block also reads x #}
+        {{ x | async_transform(" - inner block") }}
+      {% endif %}
+    {% endif %}
+
+    {# Now use x with another async operation #}
+    Final: {{ finalProcessor(x) }}`;
+
+      const context = {
+        outerPromise: Promise.resolve('Outer Promise Value'),
+        outerCondition: Promise.resolve(true),
+        innerCondition: Promise.resolve(true),
+        finalProcessor: async (val) => {
+          // With nested promises, this would either timeout or fail
+          const resolved = await val;
+          return `Processed: ${resolved}`;
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Final: Processed: Outer Promise Value');
+    });
+  });
+
+  describe('Cascada Promise Nesting Tests Without Async Filters', function () {
+    let env;
+    let loader;
+
+    beforeEach(() => {
+      loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+    });
+
+    // Test 1: Using async functions to create async blocks
+    it('should correctly handle promise variables with async functions', async function () {
+      const template = `
+    {% set x = initialPromise %}
+
+    {# Use async function to force async block #}
+    {% if asyncCondition %}
+      {{ asyncEcho(x) }}
+    {% endif %}
+
+    {# Now use the variable in a dependent function #}
+    {% set result = dependentFunction(x) %}
+    Result: {{ result }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Initial Value'),
+        asyncCondition: Promise.resolve(true),
+        asyncEcho: async (val) => {
+          // Force this to be async
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return val;
+        },
+        dependentFunction: async (val) => {
+          // With the bug, val would be a promise-of-a-promise
+          const resolved = await val;
+          return `Based on ${resolved}`;
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Based on Initial Value');
+    });
+
+    // Test 2: Using promise-based operations in set tags
+    it('should correctly handle promise variables with promise-based set operations', async function () {
+      const template = `
+    {% set x = initialPromise %}
+
+    {# Create an async block with a set operation #}
+    {% set y = asyncOperation(123) %}
+
+    {# This outputs x without modifying it, in an async block #}
+    {{ x }}
+
+    {# Now use x in another async function #}
+    {% set result = processValue(x) %}
+    Result: {{ result }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Value from promise'),
+        asyncOperation: async (num) => {
+          // Force async behavior
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return `Async result ${num}`;
+        },
+        processValue: async (val) => {
+          // With the bug, val would be a nested promise
+          const resolved = await val;
+          return `Processed: ${resolved}`;
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Processed: Value from promise');
+    });
+
+    // Test 3: Using async control structures
+    it('should correctly handle promise variables with async control structures', async function () {
+      const template = `
+    {% set x = initialPromise %}
+
+    {# Create an async block with async condition #}
+    {% if getAsyncCondition() %}
+      {# Just read x without modifying it #}
+      Value is: {{ x }}
+    {% endif %}
+
+    {# Now try to use x #}
+    {% set result = processPromise(x) %}
+    Result: {{ result }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Promise Content'),
+        getAsyncCondition: async () => {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return true;
+        },
+        processPromise: async (val) => {
+          // With the bug, val would be a nested promise
+          try {
+            const resolved = await val;
+            return `Successfully processed: ${resolved}`;
+          } catch (e) {
+            return `Error: ${e.message}`;
+          }
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Successfully processed: Promise Content');
+    });
+
+    // Test 4: Using async collections in for loops
+    it('should correctly handle promise variables in async for loops', async function () {
+      const template = `
+    {% set x = initialPromise %}
+
+    {# Create an async block with async collection #}
+    {% for item in getAsyncItems() %}
+      Item: {{ item }}
+      {# Just read x without modifying it #}
+      Current x: {{ x }}
+    {% endfor %}
+
+    {# Now try to use x #}
+    Final value: {{ finalTransform(x) }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Initial X Value'),
+        getAsyncItems: async () => {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return ['Item 1', 'Item 2', 'Item 3'];
+        },
+        finalTransform: async (val) => {
+          // With the bug, val would be a nested promise
+          const resolved = await val;
+          return `Transformed: ${resolved}`;
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Final value: Transformed: Initial X Value');
+    });
+
+    // Test 5: Using async includes
+    it('should correctly handle promise variables with async includes', async function () {
+      // Add an included template
+      loader.addTemplate('included.html', 'Included template with access to x: {{ x }}');
+
+      const template = `
+    {% set x = initialPromise %}
+
+    {# Create an async block with async include operation #}
+    {% include asyncTemplateSelector() %}
+
+    {# Now try to use x #}
+    {% set result = processFinal(x) %}
+    Result: {{ result }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('X Promise Value'),
+        asyncTemplateSelector: async () => {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return 'included.html';
+        },
+        processFinal: async (val) => {
+          // With the bug, val would be a nested promise
+          const resolved = await val;
+          return `Final: ${resolved}`;
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Result: Final: X Promise Value');
+    });
+
+    // Test 6: Direct promise nesting detection
+    it('should not create nested promises in async blocks', async function () {
+      const template = `
+    {% set x = initialPromise %}
+
+    {# Create async block with async operation #}
+    {% if asyncCondition %}
+      {{ asyncEcho(x) }}
+    {% endif %}
+
+    {# Check if x has become a nested promise #}
+    Promise type: {{ checkPromiseType(x) }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Test Value'),
+        asyncCondition: Promise.resolve(true),
+        asyncEcho: async (val) => {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return val;
+        },
+        checkPromiseType: async (val) => {
+          if (val && typeof val.then === 'function') {
+            const resolved = await val;
+            if (resolved && typeof resolved.then === 'function') {
+              return 'NESTED PROMISE - BUG DETECTED';
+            } else {
+              return 'CORRECT - Single-level promise';
+            }
+          }
+          return 'Not a promise';
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Promise type: Not a promise');
+      expect(result).not.to.contain('NESTED PROMISE - BUG DETECTED');
+    });
+
+    // Test 7: Using async iterator
+    it('should correctly handle promise variables with async iterators', async function () {
+      // Create an async iterator
+      function createAsyncIterator() {
+        let i = 0;
+        return {
+          [Symbol.asyncIterator]: () => ({
+            async next() {
+              await new Promise(resolve => setTimeout(resolve, 10));
+              return i < 3 ? { value: `Item ${++i}`, done: false } : { done: true };
+            }
+          })
+        };
+      }
+
+      const template = `
+    {% set x = initialPromise %}
+
+    {# Use async iterator to force async block #}
+    {% for item in asyncItems %}
+      {{ item }}
+      Current x: {{ x }}
+    {% endfor %}
+
+    {# Now check x after the loop #}
+    After loop: {{ finalCheck(x) }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Promise Value'),
+        asyncItems: createAsyncIterator(),
+        finalCheck: async (val) => {
+          try {
+            const resolved = await val;
+            return `Success: ${resolved}`;
+          } catch (e) {
+            return `Error: ${e}`;
+          }
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('After loop: Success: Promise Value');
+    });
+
+    // Test 8: Multiple async blocks reading the same promise
+    it('should handle multiple sequential async blocks reading the same promise', async function () {
+      const template = `
+    {% set x = initialPromise %}
+
+    {# First async block #}
+    {% if firstCondition() %}
+      First: {{ x }}
+    {% endif %}
+
+    {# Second async block #}
+    {% for item in secondCollection() %}
+      Item: {{ item }}, X: {{ x }}
+    {% endfor %}
+
+    {# Third async block #}
+    {% set z = thirdOperation() %}
+    X again: {{ x }}
+
+    {# Final check #}
+    Final: {{ finalProcess(x) }}`;
+
+      const context = {
+        initialPromise: Promise.resolve('Original X'),
+        firstCondition: async () => {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return true;
+        },
+        secondCollection: async () => {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return [1, 2];
+        },
+        thirdOperation: async () => {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return 'Third op result';
+        },
+        finalProcess: async (val) => {
+          // With the bug, this would be a deeply nested promise
+          try {
+            const resolved = await val;
+            return `Final value: ${resolved}`;
+          } catch (e) {
+            return `Error: ${e}`;
+          }
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Final: Final value: Original X');
+    });
+  });
+
+  describe('Practical Promise Nesting Tests for Cascada', function () {
+    let env;
+    let loader;
+
+    beforeEach(() => {
+      loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
+    });
+
+    // Conditional processing dependent on promise values
+    it('2should correctly handle conditional logic dependent on promise values', async function () {
+      const template = `
+    {% set config = fetchConfig() %}
+
+    {# First async block reads config #}
+    {% if shouldShowDebugInfo() %}
+      Debug info: {{ config.apiEndpoint }} ({{ config.apiVersion }})
+    {% endif %}
+
+    {# Second block uses config in different ways #}
+    {% if config.features.advanced %}
+      {# Here we use config in conditional logic #}
+      {% set advancedData = fetchAdvancedData(config.apiEndpoint) %}
+      Advanced data: {{ advancedData | truncate(100) }}
+    {% else %}
+      Basic mode active
+    {% endif %}`;
+
+      const context = {
+        fetchConfig: () => Promise.resolve({
+          apiEndpoint: 'https://api.example.com/v2',
+          apiVersion: 'v2',
+          features: { advanced: true }
+        }),
+        shouldShowDebugInfo: () => Promise.resolve(true),
+        fetchAdvancedData: async (endpoint) => {
+          // With nested promises, this would fail because endpoint would be a Promise<string>
+          // not a string
+          try {
+            // Simulate API call with the endpoint
+            if (typeof endpoint === 'string' && endpoint.includes('api.example.com')) {
+              return 'Detailed data from the API that would be truncated in the template';
+            } else {
+              return `Invalid endpoint: ${endpoint}`;
+            }
+          } catch (e) {
+            return `Error: ${e.toString()}`;
+          }
+        },
+        truncate: (str, length) => {
+          if (typeof str !== 'string') return `Not a string: ${typeof str}`;
+          return str.length > length ? str.substring(0, length) + '...' : str;
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('Debug info: https://api.example.com/v2 (v2)');
+      expect(result).to.contain('Advanced data: Detailed data from the API that would be truncated in the template');
+      expect(result).not.to.contain('Invalid endpoint');
+      expect(result).not.to.contain('Not a string');
+    });
+
+    // Complicated async data chain with error potential
+    it('should correctly resolve multi-step async data chains', async function () {
+      const template = `
+    {% set initialData = fetchInitialData() %}
+
+    {# Use initialData in a function that returns another promise #}
+    {% set user = getUser(initialData.userId) %}
+
+    {# Read user in an async operation without modifying it #}
+    {% for permission in getUserPermissions(user.role) %}
+      - {{ permission }}
+    {% endfor %}
+
+    {# Now use user in a dependent async operation #}
+    {% set userContent = getUserContent(user) %}
+
+    User {{ user.name }} has {{ userContent.items.length }} items:
+    {% for item in userContent.items %}
+      * {{ item.title }}
+    {% endfor %}`;
+
+      const context = {
+        fetchInitialData: () => Promise.resolve({ userId: 42, timestamp: Date.now() }),
+        getUser: (userId) => Promise.resolve({
+          id: userId,
+          name: 'Alice',
+          role: 'editor'
+        }),
+        getUserPermissions: (role) => Promise.resolve([
+          'read:content',
+          'edit:own-content',
+          role === 'editor' ? 'publish:content' : null
+        ].filter(Boolean)),
+        getUserContent: async (user) => {
+          // With nested promises, this would fail because user would be a Promise<{id,name,role}>
+          // not {id,name,role}
+          try {
+            const resolvedUser = await user;
+            return {
+              owner: resolvedUser.name,
+              items: [
+                { id: 1, title: 'First article by ' + resolvedUser.name },
+                { id: 2, title: 'Second article by ' + resolvedUser.name }
+              ]
+            };
+          } catch (e) {
+            return { owner: 'ERROR', items: [] };
+          }
+        }
+      };
+
+      const result = await env.renderString(template, context);
+      expect(result).to.contain('- read:content');
+      expect(result).to.contain('- edit:own-content');
+      expect(result).to.contain('- publish:content');
+      expect(result).to.contain('User Alice has 2 items:');
+      expect(result).to.contain('* First article by Alice');
+      expect(result).to.contain('* Second article by Alice');
+    });
   });
 })();
