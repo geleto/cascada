@@ -44,7 +44,7 @@
         expect(called).to.equal(true);
       });
 
-      it('should evaluate multiple comma-separated expressions for side effects', async () => {
+      it('should evaluate multiple expressions for side effects', async () => {
         let a = 0, b = 0;
         const context = {
           incA: async () => { await delay(10); a++; },
