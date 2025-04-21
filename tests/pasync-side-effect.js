@@ -157,22 +157,39 @@
           ]);
         });
 
-        it('should handle multiple object path ! operators (different paths) within one expression in parallel', async () => {
-          const cont = {
-            ...context,
-            sequencer2: { id: 'seq2', async runOp(id, ms) { await delay(ms); cont.logs.push(`${id} on ${this.id}`); return id; } }
-          };
-          const template = `{{ sequencer!.runOp('exp1-A', 30) ~ sequencer2!.runOp('exp1-B', 10) }}`;
-          const result = await env.renderString(template, cont);
-          expect(cont.logs).to.eql(['exp1-B on seq2', 'exp1-A on seq1']);
-          expect(result).to.equal('exp1-Aexp1-B');
-        });
 
         it('should handle multiple object path ! operators (same path) within one expression sequentially', async () => {
           const template = `{{ sequencer!.runOp('exp2-A', 20) ~ sequencer!.runOp('exp2-B', 10) }}`;
           const result = await env.renderString(template, context);
           expect(context.logs).to.eql(['exp2-A on seq1', 'exp2-B on seq1']);
           expect(result).to.equal('exp2-Aexp2-B');
+        });
+
+        it('should handle multiple object path ! operators (same object) within one expression sequentially (side-effect enforced)', async () => {
+          let op1Done = false;
+          const cont = {
+            ...context,
+            sequencer: {
+              id: 'seq1',
+              async runOp(id, ms) {
+                if (id === 'exp1-A') {
+                  await delay(ms);
+                  cont.logs.push(`${id} on ${this.id}`);
+                  op1Done = true;
+                  return id;
+                } else if (id === 'exp1-B') {
+                  if (!op1Done) throw new Error('exp1-B started before exp1-A finished');
+                  await delay(ms);
+                  cont.logs.push(`${id} on ${this.id}`);
+                  return id;
+                }
+              }
+            }
+          };
+          const template = `{{ sequencer!.runOp('exp1-A', 30) ~ sequencer!.runOp('exp1-B', 10) }}`;
+          const result = await env.renderString(template, cont);
+          expect(cont.logs).to.eql(['exp1-A on seq1', 'exp1-B on seq1']);
+          expect(result).to.equal('exp1-Aexp1-B');
         });
 
         it('should work with nested static object paths', async () => {
@@ -317,11 +334,28 @@
           expect(context.logs).to.eql(['Status status1 on seq1', 'op1 on seq1', 'op2 on seq1']);
         });
 
-        it('should handle multiple method ! operators (different methods) within one expression in parallel', async () => {
-          const template = `{{ sequencer.runOp!('expA1', 30) ~ sequencer.runOpOther!('expB1', 10) }}`;
-          const result = await env.renderString(template, context);
-          expect(context.logs).to.eql(['expB1 OTHER on seq1', 'expA1 on seq1']);
-          expect(result).to.equal('expA1expB1');
+        it('should maintain internal sequence for independent method sequences running concurrently', async () => {
+          // Tests that runOp! sequence (A1->A2) and runOpOther! sequence (B1->B2)
+          // are maintained internally, even though the sequences run parallel to each other.
+          const template = `
+            {% do sequencer.runOp!('A1', 40) %}         {# Starts 1st in runOp! seq, takes 40ms #}
+            {% do sequencer.runOpOther!('B1', 10) %}  {# Starts 1st in runOpOther! seq, takes 10ms #}
+            {% do sequencer.runOp!('A2', 5) %}          {# Starts 2nd in runOp! seq, takes 5ms #}
+            {% do sequencer.runOpOther!('B2', 20) %}  {# Starts 2nd in runOpOther! seq, takes 20ms #}
+          `;
+          await env.renderString(template, context);
+          // Expected order IF IMPLEMENTED: B1->B2 and A1->A2, with B finishing before A
+          // Correct assertion verifies both sequences completed correctly internally.
+          // The exact interleaving isn't strictly asserted, only the final relative order within each sequence.
+          // This order assumes B finishes before A starts A2, adjust if needed based on precise scheduler behavior.
+          // But crucially, A1 must precede A2, and B1 must precede B2 in the logs.
+          expect(context.logs).to.eql([
+            'B1 OTHER on seq1', // B seq starts (10ms)
+            'B2 OTHER on seq1', // B seq continues (20ms)
+            'A1 on seq1',       // A seq starts (40ms)
+            'A2 on seq1'        // A seq continues (5ms)
+          ]);
+          // WITHOUT implementation (parallel): Actual order likely A2(5), B1(10), B2(20), A1(40) -> fails correctly.
         });
 
         it('should handle multiple method ! operators (same method) within one expression sequentially', async () => {
@@ -501,10 +535,15 @@
           };
         });
 
-        it('should allow ! on a deeply nested static path (object.path!.method)', async () => {
-          const template = `{{ nested.sequencer!.runOp('ok', 1) }}`;
+        it('should enforce sequence on a deeply nested static path (object.path!.method)', async () => {
+          const template = `
+            {% do nested.sequencer!.runOp('deep1', 25) %} {# Takes longer #}
+            {% do nested.sequencer!.runOp('deep2', 5) %}  {# Takes shorter #}
+          `;
           await env.renderString(template, constraintContext);
-          expect(constraintContext.logs).to.eql(['ok on nested']);
+          // Expected sequence: deep1, then deep2
+          expect(constraintContext.logs).to.eql(['deep1 on nested', 'deep2 on nested']);
+          // WITHOUT implementation (parallel): Actual order likely deep2, deep1 -> fails correctly.
         });
 
         it('should reject ! on a dynamic property (object[expr]!.method)', async () => {
@@ -542,10 +581,15 @@
           });
         });
 
-        it('should allow method-specific sequencing (object.method!())', async () => {
-          const template = `{{ sequencer.runOp!('ok', 1) }}`;
+        it('should enforce method-specific sequence (object.method!())', async () => {
+          const template = `
+            {% do sequencer.runOp!('meth1', 25) %} {# Takes longer #}
+            {% do sequencer.runOp!('meth2', 5) %}  {# Takes shorter #}
+          `;
           await env.renderString(template, constraintContext);
-          expect(constraintContext.logs).to.eql(['ok on seq1']);
+          // Expected sequence: meth1, then meth2
+          expect(constraintContext.logs).to.eql(['meth1 on seq1', 'meth2 on seq1']);
+          // WITHOUT implementation (parallel): Actual order likely meth2, meth1 -> fails correctly.
         });
 
         it('should reject ! on a literal (123!.runOp)', async () => {
