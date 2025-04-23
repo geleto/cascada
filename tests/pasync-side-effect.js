@@ -600,6 +600,110 @@
         });
       });
 
+      // --- Tests specifically targeting Path Analysis ---
+      describe('5. Path Analysis Constraints', () => {
+        let analysisContext;
+
+        beforeEach(() => {
+          analysisContext = {
+            logs: [],
+            // A standard context object for valid paths
+            ctxSequencer: {
+              id: 'ctxSeq',
+              async runOp(id, ms) { await delay(ms); analysisContext.logs.push(`${id} on ${this.id}`); return id; }
+            },
+            // Another context object for shadowing tests
+            shadowVar: {
+              id: 'ctxShadow',
+              async runOp(id, ms) { await delay(ms); analysisContext.logs.push(`${id} on ${this.id}`); return id; }
+            }
+          };
+        });
+
+        it('should ALLOW sequencing for valid static path starting from context', async () => {
+          // This test primarily ensures _getSequencedPath doesn't return null incorrectly.
+          // It relies on subsequent steps (2-7) for actual sequencing execution.
+          const template = `
+                  {% do ctxSequencer!.runOp('ctxA', 20) %}
+                  {% do ctxSequencer!.runOp('ctxB', 5) %}
+                `;
+          await env.renderString(template, analysisContext);
+          // If Step 1 worked, Step 2+ should enforce this order:
+          expect(analysisContext.logs).to.eql(['ctxA on ctxSeq', 'ctxB on ctxSeq']);
+        });
+
+        it('should REJECT sequencing (run in parallel) for path starting with a template variable {% set %}', async () => {
+          // _getSequencedPath should return null because 'tplSequencer' is a scope variable.
+          // Therefore, no sequencing lock should be applied, and operations run in parallel.
+          const template = `
+                  {% set tplSequencer = ctxSequencer %}
+                  {% do tplSequencer!.runOp('tplA', 20) %} {# ! should be ignored #}
+                  {% do tplSequencer!.runOp('tplB', 5) %}  {# ! should be ignored #}
+                `;
+          await env.renderString(template, analysisContext);
+          // Expect parallel execution order (shorter delay finishes first)
+          expect(analysisContext.logs).to.eql(['tplB on ctxSeq', 'tplA on ctxSeq']);
+        });
+
+        it('should REJECT sequencing (run in parallel) for path starting with a macro parameter', async () => {
+          // Similar to {% set %}, macro parameters are scope variables.
+          const template = `
+                  {% macro testMacro(mcSequencer) %}
+                    {% do mcSequencer!.runOp('mcA', 20) %} {# ! should be ignored #}
+                    {% do mcSequencer!.runOp('mcB', 5) %} {# ! should be ignored #}
+                  {% endmacro %}
+                  {{ testMacro(ctxSequencer) }}
+                `;
+          await env.renderString(template, analysisContext);
+          // Expect parallel execution order
+          expect(analysisContext.logs).to.eql(['mcB on ctxSeq', 'mcA on ctxSeq']);
+        });
+
+        it('should REJECT sequencing (run in parallel) when template var shadows context var', async () => {
+          // Context has 'shadowVar'. Template sets 'shadowVar'. _isScopeVariable should detect the template one.
+          const template = `
+                  {% set shadowVar = ctxSequencer %} {# Shadowing context.shadowVar #}
+                  {% do shadowVar!.runOp('shA', 20) %} {# ! applies to template var, should be ignored #}
+                  {% do shadowVar!.runOp('shB', 5) %} {# ! should be ignored #}
+                `;
+          await env.renderString(template, analysisContext);
+          // Expect parallel execution order on the object assigned to the template var ('ctxSeq')
+          expect(analysisContext.logs).to.eql(['shB on ctxSeq', 'shA on ctxSeq']);
+        });
+
+        // Tests for Method Specific `method!()` analysis (These might fail until parser/transformer support exists)
+        // Add these as placeholders to clarify intent. The behavior without parser support is undefined.
+        it('[Placeholder] should treat object.method!() as needing a method-specific lock key', async () => {
+          // Assumes _getSequencedPath is modified to return a different key for method!()
+          const template = `
+                   {% do ctxSequencer.runOp!('mA', 20) %}
+                   {% do ctxSequencer.runOp!('mB', 5) %}
+                 `;
+          await env.renderString(template, analysisContext);
+          // This would test if the correct, method-specific key was derived and used.
+          expect(analysisContext.logs).to.eql(['mA on ctxSeq', 'mB on ctxSeq']); // Expect sequence
+        });
+
+        it('[Placeholder] should treat path!.method() and path.method!() differently', async () => {
+          // Assumes _getSequencedPath returns different keys, leading to potentially different lock scopes.
+          const template = `
+                   {% do ctxSequencer!.runOp('pathOp1', 30) %} {# Path lock #}
+                   {% do ctxSequencer.runOp!('methodOp1', 10) %} {# Method lock #}
+                   {% do ctxSequencer!.runOp('pathOp2', 5) %}  {# Path lock #}
+                   {% do ctxSequencer.runOp!('methodOp2', 15) %} {# Method lock #}
+                 `;
+          await env.renderString(template, analysisContext);
+          // Expected: methodOp1 -> methodOp2 happen independently of pathOp1 -> pathOp2
+          expect(analysisContext.logs).to.eql([
+            'methodOp1 on ctxSeq', // Method sequence starts (10ms)
+            'methodOp2 on ctxSeq', // Method sequence ends (15ms) -> ~25ms total
+            'pathOp1 on ctxSeq',   // Path sequence starts (30ms)
+            'pathOp2 on ctxSeq'    // Path sequence ends (5ms) -> ~35ms total
+          ]);
+        });
+
+      }); // End Path Analysis Constraint tests
+
     }); // End Side effects - ! feature
 
   }); // End Side effects

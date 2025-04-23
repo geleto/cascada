@@ -89,8 +89,9 @@ class Frame {
 class AsyncFrame extends Frame {
   constructor(parent, isolateWrites, createScope = true) {
     super(parent, isolateWrites);
-
     this.createScope = createScope;
+
+    this.rootFrame = (parent && parent.rootFrame) ? parent.rootFrame : this;
 
     if (AsyncFrame.inCompilerContext) {
       //holds the names of the variables declared at the frame

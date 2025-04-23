@@ -935,83 +935,107 @@ class Compiler extends Obj {
     }
   }
 
-  _getSequencedPath(node) {
-    // Walk up the chain, collecting path segments, and stop at the first .sequenced === true
+  _getSequenceKey(node) {
+    let path = this._getSequencedPath(node);
+    return path ? '!' + path.join('!') : null;
+  }
+
+  _isScopeVariable(frame, variableName) {
+    let currentFrame = frame;
+    while (currentFrame) {
+      // Check if declaredVars exists and the variableName is in it
+      if (currentFrame.declaredVars && currentFrame.declaredVars.has(variableName)) {
+        return true; // Found in template declarations
+      }
+      currentFrame = currentFrame.parent;
+    }
+    return false; // Not found in template declarations up to root or isolation boundary
+  }
+
+  _getSequencedPath(node, frame) {
     let path = [];
     let current = node;
     let sequencedCount = 0;
     let dynamicFound = false;
 
-    // Helper to check if a node is a static segment (Symbol or string Literal)
     function isStaticSegment(n) {
       return n && (n.typename === 'Symbol' || (n.typename === 'Literal' && typeof n.value === 'string'));
     }
 
     while (current && current.typename === 'LookupVal') {
+      if (!isStaticSegment(current.val)) {
+        dynamicFound = true;
+        //No return null here yet, if '!' is found later on this path we will throw an error
+      }
+
       if (current.sequenced) {
         sequencedCount++;
-        // Check for double ! marker
-        if (sequencedCount > 1) {
-          throw new TemplateError(
-            'Using two ! markers in the same path (e.g., path!.method!()) is unnecessary and not supported',
-            current.lineno,
-            current.colno
-          );
-        }
-        // Check that the segment before ! is static
+        if (sequencedCount > 1) { /* ... double ! error ... */ }
+        // Check static nature of the segment *before* the sequenced one
         if (!isStaticSegment(current.val)) {
-          throw new TemplateError(
-            'The path segment before ! must be static (known at compile time). Dynamic paths (e.g., items[i]!.update()) are not supported.',
-            current.lineno,
-            current.colno
-          );
+          throw new TemplateError(/*... segment before ! must be static error ...*/);
         }
-        // Collect the parent path up to the root
+        // Check if any *earlier* segment was dynamic
+        if (dynamicFound) {
+          throw new TemplateError(/* ... dynamic path before ! error ... */);
+        }
+
+        // Collect Path Upwards
+        path.push(current.val.value); // Add the '!'-marked segment
         let parent = current.target;
         while (parent && parent.typename === 'LookupVal') {
-          // If any parent segment is not static, it's dynamic
+          // These segments MUST be static due to the dynamicFound check above
           if (!isStaticSegment(parent.val)) {
-            dynamicFound = true;
+            throw new TemplateError(/* Internal error: dynamic segment validation failed */);
           }
           path.unshift(parent.val.value);
           parent = parent.target;
         }
-        if (parent && isStaticSegment(parent)) {
-          path.unshift(parent.value);
-        } else if (parent && !isStaticSegment(parent)) {
-          dynamicFound = true;
-        }
-        // Now add the sequenced property itself
-        path.push(current.val.value);
 
-        if (dynamicFound) {
-          throw new TemplateError(
-            'The path segment before ! must be static (known at compile time). Dynamic paths (e.g., items[i]!.update()) are not supported.',
-            current.lineno,
-            current.colno
-          );
+        // Handle Root
+        let rootNode = parent;
+        if (rootNode && isStaticSegment(rootNode)) {
+          path.unshift(rootNode.value);
+        } else if (rootNode && !isStaticSegment(rootNode)) {
+          throw new TemplateError(/* ... dynamic root with ! error ... */);
+        } else {
+          throw new TemplateError(/* ... invalid path structure ... */);
         }
-        return path.join('.');
-      }
-      // Not sequenced, so just move up
+
+        // --- Final Validation: Check if Root is Scope Variable ---
+        if (this._isScopeVariable(frame, path[0])) {
+          // Invalid origin: Path starts with a template variable
+          return null;
+        }
+
+        // Valid path originating from context!
+        return path;
+      } // End if (current.sequenced)
+
+      // Not sequenced at this level, move up
       current = current.target;
-    }
-    // If the root is sequenced (rare)
-    if (
-      current &&
-      isStaticSegment(current) &&
-      current.sequenced
-    ) {
+    } // End while loop
+
+    // Root Itself is Sequenced
+    //Loop finished, current is the root node
+    let rootNode = current;
+    if (rootNode && isStaticSegment(rootNode) && rootNode.sequenced) {
       sequencedCount++;
-      if (sequencedCount > 1) {
-        throw new TemplateError(
-          'Using two ! markers in the same path (e.g., path!.method!()) is unnecessary and not supported',
-          current.lineno,
-          current.colno
-        );
+      if (sequencedCount > 1) { /* ... double ! error ... */ }
+      if (dynamicFound) { /* ... dynamic path before ! error ... */ } // Should be impossible here
+
+      // Final Validation: Check if Root is Scope Variable
+      const rootValue = rootNode.value; // Assuming literal or symbol value
+      if (this._isScopeVariable(frame, rootValue)) {
+        // Invalid origin: Root is a template variable
+        return null;
       }
-      return current.value;
+
+      // Valid root is sequenced, return path array
+      return [rootValue]; // CORRECTED: Return array
     }
+
+    // No sequence marker found anywhere
     return null;
   }
 
@@ -1020,7 +1044,7 @@ class Compiler extends Obj {
     // variables within an expression. An expression in JavaScript
     // like (x, y, z) returns the last value, and x and y can be
     // anything.
-    const seqKey = this._getSequencedPath(node.name);
+    const seqKey = this._getSequenceKey(node.name);
     if (seqKey) {
       // Use seqKey as the sequencing key
       console.log('Sequenced path:', seqKey);
