@@ -34,105 +34,71 @@ We will leverage Cascada's existing complex asynchronous variable synchronizatio
 
 **4. Provided Files:**
 
-You will use the following files (previously attached):
+You will use the following files:
 
 *   `README.md`: Describes the feature from a user perspective (including syntax and constraints).
 *   `async-implamentation.md`: Explains Cascada's internal async/sync mechanisms and variable synchronization (crucial background reading).
 *   `runtime.js`: Contains the `AsyncFrame` class and runtime helpers (you will modify/add to this).
 *   `compiler.js`: Contains the `Compiler` class (you will modify/add to this).
 
-**5. Detailed Implementation Steps (Revised):**
+**5. Detailed Implementation Steps:**
 
 Please implement these steps sequentially, verifying each one thoroughly.
 
-**Step 1: Implement Helper `_extractStaticPathParts`**
+**Step 1: Implement Compiler Path and Sequence Key Analysis - Implemented**
 
-*   **Goal:** Create a helper function to extract static path segments from an AST node representing a potential path.
-*   **Explanation:** This helper is needed by both lookups and function calls to understand the static structure of the path they operate on, primarily for determining potential parent locks to wait for later. It does not handle `!` or context validation itself.
-*   **Implementation:**
-    *   Add the helper function `_extractStaticPathParts(node)` to `Compiler.prototype`.
-    *   It traverses upwards from `node` (`LookupVal`, `Symbol`).
-    *   It collects `Symbol` values or string `Literal` values into an array.
-    *   If any segment is dynamic (not `Symbol` or string `Literal`), it returns `null`.
-    *   Returns the `string[]` path array or `null`.
+*   **Title:** Analyze Path for Static Origin, Sequence Marker, and Extract Path Array.
+*   **Summary:**
+    *   Implemented helper `_isScopeVariable(frame, variableName)` to check if a variable is defined within template scope (using `frame.declaredVars`).
+    *   Implemented `_getSequencedPath(node, frame)` which:
+        *   Traverses the AST (`LookupVal` chain) from `node`.
+        *   Checks for the `.sequenced` flag (representing `!`).
+        *   Validates that path segments up to and including the `!` are static (`Symbol` or string `Literal`).
+        *   Validates that the path root is *not* a scope variable using `_isScopeVariable`.
+        *   Handles errors for double `!` and dynamic paths combined with `!`.
+        *   Returns the array of static path segments (e.g., `['a', 'b', 'c']`) if a valid sequence marker `!` is found on a path originating from context, otherwise returns `null`.
+    *   Key Derivation (`sequenceLockKey`, `potentialParentLockKeys`) moved to Step 3.
 *   **Verification:**
-    *   Unit tests for `_extractStaticPathParts` with various static, dynamic, and mixed paths.
+    *   Breakpoint Debugging: Verify `_getSequencedPath` returns correct path arrays for various cases.
 
-**Step 2: Implement Helper `_getSequencedPath` - *Validation Focused*)**
+**Step 2: Implement `fullPathNode` Context and Static Path Extraction Helper**
 
-*   **Goal:** Create a helper function specifically for validating the use of the `!` sequence marker and extracting the path *only* when `!` is used correctly.
-*   **Explanation:** This helper centralizes all validation logic related to the `!` marker itself. It will be used exclusively by `compileFunCall` to determine if a call *initiates* a sequence step.
+*   **Title:** Add `fullPathNode` Compilation Context and Path Extraction Helper.
+*   **Goal:** Modify the compiler's core `compile` function and relevant compiler methods (`compileLookupVal`, `compileFunCall`, `compileSymbol`) to pass down a `fullPathNode` argument. Implement the `_extractStaticPathParts` helper to retrieve the static path segments. Add calls to this helper within `compileLookupVal` and `compileFunCall`.
+*   **Explanation:** This step establishes the infrastructure needed for later sequence handling. The `fullPathNode` argument provides context about the overall expression being compiled. The `_extractStaticPathParts` helper gathers structural path information, which will be used in subsequent steps for both validation and determining necessary waits. This step focuses only on adding the argument passing mechanism and the basic path extraction, without implementing sequence logic itself.
 *   **Implementation:**
-    *   Add the helper function `_getSequencedPath(node, frame)` to `Compiler.prototype`.
-    *   It traverses the AST upwards from `node` (`LookupVal`, `Symbol`).
-    *   It looks for `node.sequenced === true` flags.
-    *   It performs **all** `!`-related validation:
-        *   Checks that `!` is present.
-        *   Checks that path segments up to and including the `!` are static.
-        *   Checks that the path root originates from a context variable (using `_isScopeVariable`).
-        *   Checks that there are no double `!` markers.
-    *   If all validations pass, it returns the static path array ending just *before* the segment with `!`. (e.g., for `a.b!.c()`, where `node` represents `a.b`, it returns `['a', 'b']`).
-    *   If no `!` is found or any validation fails, it returns `null` and **must throw a `TemplateError`** explaining the specific validation failure (e.g., "Sequence marker '!' cannot be used on dynamic paths", "Sequence marker '!' must originate from a context variable", "Double sequence marker '!' is not allowed").
+    *   Modify `Compiler.prototype.compile` signature to accept `fullPathNode = null` and pass it down.
+    *   Modify `compileLookupVal`, `compileFunCall`, and `compileSymbol` to accept `fullPathNode`.
+    *   Update recursive `this.compile` calls within `compileLookupVal` (for `node.target`) and `compileFunCall` (for `node.name`) to correctly determine and pass the `fullPathNode` value down the chain.
+    *   Implement `_extractStaticPathParts` helper function to traverse upwards from a `LookupVal` or `Symbol` and return an array of static path parts, or `null` if the path is dynamic/invalid.
+    *   Add calls to `this._extractStaticPathParts` at the beginning of `compileLookupVal` (using `node`) and `compileFunCall` (using `node.name`) to calculate the static path.
 *   **Verification:**
-    *   Unit tests for `_getSequencedPath` covering all success and failure cases (dynamic paths, scope variables, no `!`, double `!`, valid paths). Ensure appropriate `TemplateError`s are thrown.
+    *   Use `console.log` or debugger to verify `fullPathNode` is passed correctly during recursive compilation.
+    *   Verify `_extractStaticPathParts` returns correct path arrays or `null` for various test cases (static paths, dynamic paths) when called from `compileLookupVal` and `compileFunCall`.
 
-**Step 3: Modify `Compiler.prototype.compile` Signature and Callers - *New Step*)**
+**Step 3: Register Specific Lock Key & Identify Declared Parent Keys (Compiler Actions)**
 
-*   **Goal:** Introduce the `parentPathNode` argument to the main compile function to pass context down during recursive compilation.
-*   **Explanation:** This argument allows `compileLookupVal` to know the immediate context in which it was called (specifically, whether it was called directly by another `LookupVal` or a `FunCall`), enabling `!` placement validation.
+*   **Title:** Register Sequence Lock and Filter Parent Keys in Compilation Context.
+*   **Explanation:** Use the result from `_getSequencedPath` (from Step 1). If a valid path array is returned, derive the specific lock key and potential parent keys. Register the specific key in the `rootFrame`'s `declaredVars` (via `_updateFrameWrites`). Filter the potential parent keys against the *currently* declared locks in `rootFrame` to determine which ones need runtime checks.
 *   **Implementation:**
-    *   Modify the signature: `compile(node, frame, parentPathNode = null)`.
-    *   In `compileLookupVal(node, frame, parentPathNode)`: Update the recursive call for the target: `this.compile(node.target, frame, node)`.
-    *   In `compileFunCall(node, frame, parentPathNode)`: Update the call for the function name: `this.compile(node.name, frame, node)`.
-    *   Verify that no other callers of `this.compile` within the compiler need to pass this argument; they should use the `null` default.
+    *   In `compileLookupVal` (for `node.target`) and `compileFunCall` (for the object part of `node.name`):
+        1.  Call `let pathArray = this._getSequencedPath(node_representing_path_base, frame);`.
+        2.  **Check for Valid Sequenced Path:** If `pathArray === null`, proceed with normal, non-sequenced compilation for this node and skip the rest of these sequence-specific steps.
+        3.  If `pathArray` is not null:
+            *   **Derive Keys:**
+                *   `let sequenceLockKey = '!' + pathArray.join('!');`
+                *   Derive `potentialParentLockKeys` list (e.g., `['!a', '!a!b', '!a!b!c']` from `['a', 'b', 'c']`).
+            *   **Register Specific Key:** `this._updateFrameWrites(frame.rootFrame, sequenceLockKey);` (This ensures `rootFrame.declaredVars` includes the specific key).
+            *   **Filter Parent Keys:** Iterate through `potentialParentLockKeys`. Check each against `frame.rootFrame.declaredVars` *after* potentially adding the `sequenceLockKey`. Collect the keys that exist into a list named `lockKeys`.
+            *   **Store/pass `lockKeys` and `sequenceLockKey`** for use in subsequent steps (Steps 5-8) and runtime calls.
+*   **Reliance Note:** This step relies on the compiler's traversal order ensuring `_updateFrameWrites` for any relevant `sequenceLockKey` has updated `rootFrame.declaredVars` *before* the parent key filtering logic runs for subsequent operations on the same or child paths.
 *   **Verification:**
-    *   Review all usages of `this.compile` within `compiler.js` to ensure the argument is passed correctly where needed and omitted elsewhere.
-    *   Use breakpoint debugging during compilation of simple templates to confirm `parentPathNode` has the expected value (or `null`) inside `compileLookupVal` and `compileFunCall`.
+    *   Breakpoint Debugging: Verify `_updateFrameWrites` is called correctly with the `sequenceLockKey`.
+    *   Debugging/logging: Verify `lockKeys` contains only parent keys previously registered (including potentially the just-registered `sequenceLockKey` if it's a parent of another operation).
 
-**Step 4: Integrate Helpers and Validation into `compileLookupVal`**
+**Step 4: Implement Runtime Waiting Logic (`awaitSequenceLocks`, `lookup`/`resolve` modification)**
 
-*   **Goal:** Use `_extractStaticPathParts` to get path info and use the new `parentPathNode` argument to validate `!` placement within `compileLookupVal`.
-*   **Explanation:** `compileLookupVal` needs the static path for later wait determination. It also enforces the rule that `!` cannot appear on a lookup unless that lookup is the direct `name` child of a `FunCall`.
-*   **Implementation:**
-    *   Modify `Compiler.compileLookupVal(node, frame, parentPathNode)`:
-        1.  Call `const staticPathParts = this._extractStaticPathParts(node);`. Store this locally (e.g., `node._staticPathParts = staticPathParts;` if attaching to node, or just keep in a local variable) for use in Step 7.
-        2.  **Validation:** If `node.sequenced === true`:
-            *   Check the received `parentPathNode`. If `!(parentPathNode instanceof nodes.FunCall)`, **throw a `TemplateError`** stating that `!` can only be used immediately before a function/method call.
-    3.  Proceed with generating the standard `runtime.memberLookup` or `runtime.memberLookupAsync` code. This step does *not* yet introduce waiting logic.
-*   **Verification:**
-    *   Compile templates with invalid `!` usage like `{{ a.b! }}` or `{% set x = a.b! %}` or `{{ a.b! + 1 }}`. Verify the `TemplateError` is thrown correctly from `compileLookupVal`.
-    *   Compile templates with valid `!` usage like `{{ a.b!.c() }}`. Verify *no* error is thrown at this stage.
-    *   Use debugging/logging to confirm `staticPathParts` is calculated.
-
-**Step 5: Integrate Helpers into `compileFunCall` for Sequence Logic**
-
-*   **Goal:** Use both helpers in `compileFunCall` to detect if the call is sequenced, perform `!` validation, register the specific lock, and determine all necessary locks to wait for.
-*   **Explanation:** `compileFunCall` is the control center for sequenced calls. It uses `_getSequencedPath` for `!`-specific logic and `_extractStaticPathParts` for general path structure needed for determining waits.
-*   **Implementation:**
-    *   Modify `Compiler.compileFunCall(node, frame, parentPathNode)`:
-        1.  Call `const staticPathParts = this._extractStaticPathParts(node.name);`. Store this locally. (Needed for Step 8 to determine general parent waits).
-        2.  Call `const sequencedPathArray = this._getSequencedPath(node.name, frame);`. (This performs all `!` validation via errors and returns path *only* if `node.name` represents a valid sequence initiator like `a.b!`).
-        3.  Set `const isSequencedCall = (sequencedPathArray !== null);`.
-        4.  Declare `let sequenceLockKey = null;` and `let parentLockKeysForSequence = [];`.
-        5.  **If `isSequencedCall`:**
-            *   Derive `sequenceLockKey = '!' + sequencedPathArray.join('!');`.
-            *   Register the lock: `this._updateFrameWrites(frame.rootFrame, sequenceLockKey);`.
-            *   Define a helper `filter_parents(pathArray, declaredVars)` (or inline logic) to generate lock keys for parent paths (e.g., `!a` from `['a','b']`) and return only those present in `declaredVars`.
-            *   Calculate `parentLockKeysForSequence = filter_parents(sequencedPathArray, frame.rootFrame.declaredVars)`.
-        6.  **(Potentially needed later for Step 8):** Calculate `parentLockKeysToWait = filter_parents(staticPathParts, frame.rootFrame.declaredVars);`. (This finds locks set by *other* operations).
-        7.  **(Potentially needed later for Step 8):** Construct `totalLocksToWait = [...new Set([...parentLockKeysToWait, ...(isSequencedCall ? [sequenceLockKey, ...parentLockKeysForSequence] : [])])];`. Using a Set ensures uniqueness.
-        8.  Store `isSequencedCall`, `sequenceLockKey`, and `totalLocksToWait` locally (or attach to `node`) for use in Steps 8, 9, 10.
-    *   Proceed with generating the initial part of the function call code (e.g., `(lineno = ..., colno = ..., `). The actual call (`callWrap` vs `sequencedCallWrap`) is generated in Step 8.
-*   **Verification:**
-    *   Debug `compileFunCall` for sequenced (`a.b!.c()`) and non-sequenced (`a.b.c()`, `a.b.c() where a! exists`) calls.
-    *   Verify `isSequencedCall` is correct.
-    *   Verify `_updateFrameWrites` is called only for `isSequencedCall === true` with the correct `sequenceLockKey`.
-    *   Verify `parentLockKeysForSequence` and `parentLockKeysToWait` (and thus `totalLocksToWait`) are calculated correctly based on `frame.rootFrame.declaredVars` (which should reflect prior registrations).
-    *   Ensure `_getSequencedPath` throws errors for invalid `!` usage before this step proceeds too far.
-
-**Step 6: Implement Runtime Waiting Logic (`awaitSequenceLocks`, `lookup`/`resolve` modification) - *Unchanged from original plan*)**
-
-*   **Goal:** Create runtime mechanism to wait for active locks and ensure `lookup`/`resolve` target `rootFrame` for `!` keys.
+*   **Goal:** Create runtime mechanism to wait for active locks (identified in Step 3 and Step 6) and ensure `lookup`/`resolve` target `rootFrame` for `!` keys.
 *   **Explanation:** Centralizes waiting. `awaitSequenceLocks` waits for promise-based locks looked up via modified `lookup`. Modifying `lookup`/`resolve` ensures correct lock state access within `rootFrame`.
 *   **Implementation:**
     *   Implement `runtime.awaitSequenceLocks(frame, lockKeysToAwait)`: Takes the list of lock keys. Uses modified `frame.lookup`, collects promises, `await Promise.all`. Must gracefully handle `lookup` returning `null` or non-promises for keys passed.
@@ -142,83 +108,67 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Unit Tests for `awaitSequenceLocks`, `lookup`, `resolve`.
     *   Breakpoint Debugging runtime.
 
-**Step 7: Implement Sequenced Lookup with Implicit Waiting (Runtime & Compiler)**
+**Step 5: Implement Sequenced Lookup with Implicit Waiting (Runtime & Compiler)**
 
-*   **Goal:** Create `sequencedMemberLookup` helper and modify `compileLookupVal` to use it when necessary to wait for parent locks.
-*   **Explanation:** Adds waiting *before* property access if the static path overlaps with known sequences. Uses the `staticPathParts` gathered in Step 4.
+*   **Goal:** Create `sequencedMemberLookup` that waits on relevant *parent* locks (`lockKeys` from Step 3) before lookup. Modify `compileLookupVal` to use it.
+*   **Explanation:** Transparently adds waiting before property access on static context paths, using the `lockKeys` list (declared parent locks only).
 *   **Implementation:**
-    *   Implement `runtime.sequencedMemberLookup(frame, obj, val, locksToWait)`: Resolves `obj`/`val` (using `resolveDuo`), calls `await awaitSequenceLocks(frame, locksToWait)`, then performs `memberLookup(resolvedObj, resolvedVal)`.
+    *   Implement `runtime.sequencedMemberLookup(frame, obj, val, lockKeys)`: Resolves `obj`/`val`, calls `await awaitSequenceLocks(frame, lockKeys)`, performs `memberLookup`.
     *   Modify `Compiler.compileLookupVal`:
-        1.  Retrieve `staticPathParts` (calculated in Step 4).
-        2.  If `staticPathParts` is not null:
-            *   Define `filter_parents` helper or inline logic as in Step 5.
-            *   Calculate `parentLockKeysToWait = filter_parents(staticPathParts, frame.rootFrame.declaredVars);`.
-            *   If `parentLockKeysToWait.length > 0`:
-                *   Emit code calling `runtime.sequencedMemberLookup`, passing `parentLockKeysToWait` as the last argument. Ensure the target and value compilation happens correctly as arguments *to* `sequencedMemberLookup`, potentially using `_compileAggregate` or similar if target/val are complex/async.
-            *   Else (`parentLockKeysToWait` is empty): Emit the standard `runtime.memberLookup` / `memberLookupAsync` call as before.
-        3.  Else (`staticPathParts` is null): Emit the standard `runtime.memberLookup` / `memberLookupAsync` call.
+        1.  Perform analysis and actions described in **Step 3**.
+        2.  If `pathArray` was not null (i.e., path is valid for sequencing):
+            *   Emit call to `runtime.sequencedMemberLookup`, passing the filtered `lockKeys` determined in Step 3. (Note: `sequenceLockKey` is not relevant here as lookups don't acquire/release specific locks).
 *   **Verification:**
-    *   Integration tests: Create template where `a!` is set, then access `a.b`. Verify `a.b` lookup waits. Access `x.y` (unrelated) and verify it does *not* wait.
-    *   Check generated code: Verify `sequencedMemberLookup` is used only when overlapping static paths and declared locks exist.
+    *   Integration tests (verify waiting works).
+    *   Check Keys: Verify via debugging/logging that only *declared parent* keys (`lockKeys`) are passed to `sequencedMemberLookup`.
 
-**Step 8: Implement Sequenced Call with Implicit Waiting (Runtime & Compiler)**
+**Step 6: Implement Sequenced Call with Implicit Waiting (Runtime & Compiler)**
 
-*   **Goal:** Create `sequencedCallWrap` helper and modify `compileFunCall` to use it, passing the combined list of locks to wait for.
-*   **Explanation:** Handles waiting for the full lock hierarchy (specific and parent locks) before executing a function call. Uses `totalLocksToWait` determined in Step 5.
+*   **Goal:** Create `sequencedCallWrap` helper that waits on relevant parent *and* specific locks before execution. Modify `compileFunCall` to use it.
+*   **Explanation:** Handles waiting for the full lock hierarchy before calls on static context paths, using `lockKeys` (parent locks) and `sequenceLockKey` (specific lock).
 *   **Implementation:**
-    *   Implement `runtime.sequencedCallWrap(frame, funcOrMethod, funcName, context, args, locksToWait)`: Resolves `funcOrMethod` and `args` (using `resolveAll`), calls `await awaitSequenceLocks(frame, locksToWait)`, then performs `funcOrMethod.apply(context, resolvedArgs)`.
+    *   Implement `runtime.sequencedCallWrap(frame, funcOrMethod, funcName, context, args, lockKeysToAwait)`: Resolves inputs, calls `await awaitSequenceLocks(frame, lockKeysToAwait)`, performs `apply`.
     *   Modify `Compiler.compileFunCall`:
-        1.  Retrieve `totalLocksToWait` (calculated in Step 5).
-        2.  Retrieve the compilation results for the function (`node.name`) and arguments (`node.args`).
-        3.  If `totalLocksToWait.length > 0`:
-            *   Emit code calling `await runtime.sequencedCallWrap(...)`, passing the compiled function, name, context, compiled args, and `totalLocksToWait`. Use appropriate helpers (`_compileAggregate`) for compiling function/args if they are async.
-        4.  Else (`totalLocksToWait` is empty):
-            *   Emit code calling standard `runtime.callWrap(...)`, passing the compiled function, name, context, compiled args. Handle async resolution of function/args as usual.
-    *   **Important:** This step generates the core `await ...Wrap(...)` call but does *not* yet wrap it in the `try...finally` for lock release.
+        1.  Perform analysis and actions described in **Step 3** for the object part of the call.
+        2.  If `pathArray` was not null:
+            *   Retrieve `lockKeys` and `sequenceLockKey` determined in Step 3.
+            *   **Construct `lockKeysToAwait`:** `let lockKeysToAwait = [...lockKeys, sequenceLockKey].filter(Boolean);` (Filter ensures `null`/`undefined` `sequenceLockKey` is handled if `!` wasn't on the call itself, although Step 3 logic should guarantee `sequenceLockKey` exists if `pathArray` is not null).
+            *   Emit **`await runtime.sequencedCallWrap(...)`**, passing the combined `lockKeysToAwait`. (Do NOT wrap in IIFE/try/finally yet).
 *   **Verification:**
-    *   Integration tests: Test parallel calls (`a.foo()`, `b.bar()`), sequential calls (`a!.foo()`, `a!.bar()`), mixed calls (`a!.foo()`, `a.b()`, `a!.bar()`). Verify execution order and waiting.
-    *   Check generated code: Verify `sequencedCallWrap` vs `callWrap` usage and the `totalLocksToWait` array passed.
+    *   Integration tests (parallel, sequential, mixed).
+    *   Check Keys: Verify via debugging/logging correct combined keys (`lockKeysToAwait`) are passed.
 
-**Step 9: Implement Lock Release/Signaling for `!` Calls (Compiler & Runtime Setup)**
+**Step 7: Implement Lock Release/Signaling for `!` Calls (Compiler & Runtime Setup)**
 
-*   **Goal:** Ensure the specific lock (`sequenceLockKey`) acquired by a `!` call is released *after* the call completes, using the modified `frame.set`.
-*   **Explanation:** Connects successful completion (or failure handled by `finally`) back to the variable system to resolve the lock promise, allowing subsequent operations in the same sequence to proceed. Relies on `set` targeting `rootFrame`.
+*   **Goal:** Ensure the specific lock (`sequenceLockKey`) acquired by a `!` call is released *after* the call completes successfully, using `frame.set`.
+*   **Explanation:** Connects successful completion back to the variable system to resolve the lock promise. Requires `frame.set` to correctly target `rootFrame`.
 *   **Implementation:**
-    *   **Compiler `compileFunCall`:** For cases where `isSequencedCall` is true (determined in Step 5): Emit `frame.set(${JSON.stringify(sequenceLockKey)}, true, true);` *immediately after* the `await runtime.sequencedCallWrap(...)` call generated in Step 8.
-    *   **Runtime `AsyncFrame.set` Modification (Crucial):** Modify `AsyncFrame.set` as planned:
-        *   Check if `name.startsWith('!')`.
-        *   If yes:
-            *   Find the `scopeFrame` which should be `this.rootFrame`. (`resolve(name, true)` should return `rootFrame`).
-            *   Perform the set (`variables` or `asyncVars`) directly on `scopeFrame` (`rootFrame`).
-            *   Trigger `_countdownAndResolveAsyncWrites(name, 1, scopeFrame)` starting from the *current* frame but ensuring propagation stops correctly relative to the `scopeFrame` (`rootFrame`).
-        *   If no: Proceed with existing `set` logic.
+    *   **Compiler `compileFunCall`:** For cases where `pathArray` was not null in Step 3 (meaning a `sequenceLockKey` was derived): Emit `frame.set(${JSON.stringify(sequenceLockKey)}, true, true);` *immediately after* the `await runtime.sequencedCallWrap(...)` call.
+    *   **Runtime `AsyncFrame.set` Modification (Crucial):** Modify `AsyncFrame.set` to handle targeting `rootFrame` for `!` keys, ensuring the value is set correctly in `rootFrame`'s `variables` or `asyncVars` and `_countdownAndResolveAsyncWrites` is triggered appropriately relative to the current frame's context, passing the `rootFrame` as the `scopeFrame` hint.
+    *   **Runtime Setup:** Verify `_promisifyParentVariables`, `_countdown...`, `_resolve...` handle the modified `set` targeting `rootFrame` correctly.
 *   **Verification:**
-    *   Unit tests for the modified `AsyncFrame.set` focusing on `!` keys and `rootFrame` interaction.
-    *   Debug `compileFunCall` output: Verify the `frame.set` call is generated *only* when `isSequencedCall` is true.
-    *   Runtime debugging: Trace `frame.set` for a `!` key, verify it updates `rootFrame` and triggers `_countdownAndResolveAsyncWrites` correctly, leading to promise resolution in `rootFrame`.
-    *   Integration test: `a!.foo(); a!.bar();` – verify `bar` executes after `foo` completes.
+    *   Debugging `frame.set` and promise resolution in `rootFrame`.
+    *   Sequential tests (for both `path!.method` and `method!()`).
 
-**Step 10: Implement Robust Error Handling & Signaling for `!` Calls (Compiler)**
+**Step 8: Implement Robust Error Handling & Signaling for `!` Calls (Compiler)**
 
-*   **Title:** Ensure Lock Release via `finally` for Sequenced Calls.
-*   **Explanation:** Wrap the `await sequencedCallWrap(...)` and the subsequent `frame.set(...)` logic *specifically for sequenced calls (`isSequencedCall === true`)* within an async IIFE (`try...catch...finally`). The `finally` block guarantees the `frame.set(sequenceLockKey, true, true)` executes, releasing the lock even if the `sequencedCallWrap` throws an error.
+*   **Title:** Ensure Lock Release via `finally` for `!` Calls.
+*   **Explanation:** Wrap `await sequencedCallWrap(...)` and subsequent logic *specifically for operations with a `sequenceLockKey`* within an async IIFE (`try...catch...finally`). The `finally` block guarantees `frame.set(sequenceLockKey, true, true)` executes, releasing the lock even on error.
 *   **Implementation:**
-    *   **Compiler `compileFunCall`:** Locate the block where `isSequencedCall` is true (Step 5).
-    *   Wrap the code generated in Step 8 (the `await sequencedCallWrap`) and Step 9 (the immediate `frame.set` call) inside the `(async (astate, frame) => { ... })(astate.enterAsyncBlock(), ...)` structure.
+    *   **Compiler `compileFunCall`:** Locate the block where `pathArray` was not null (Step 3). Wrap the code generated in Step 6 and Step 7 for this case inside the `(async (astate, frame) => { ... })(astate.enterAsyncBlock(), ...)` structure.
         *   `try` block should contain:
             *   `let callResult = await runtime.sequencedCallWrap(...)`
-            *   `frame.set(${JSON.stringify(sequenceLockKey)}, true, true);` // Signal completion on success *before* finally
-            *   `return callResult;` // Or handle result appropriately if needed
-        *   `catch` block should likely re-throw or call `cb(runtime.handleError(e, ...))`.
+            *   `return callResult;` // Return the result if needed by the template context
+        *   `catch` block should call `cb(runtime.handleError(e, ...))`.
         *   `finally` block *must* contain:
-            *   `frame.set(${JSON.stringify(sequenceLockKey)}, true, true);` // Ensure release using correct sequenceLockKey
+            *   `frame.set(${JSON.stringify(sequenceLockKey)}, true, true);` // Release lock using correct sequenceLockKey
             *   `astate.leaveAsyncBlock();` // Decrement counter
-    *   Modify Step 9: Remove the *immediate* `frame.set` call after `sequencedCallWrap`, as it's now handled within the `try` block of this step. The `finally` block provides the guarantee.
 *   **Verification:**
-    *   Error Test: Create a template like `{{ a!.throwsError() }}; {{ a!.nextOp() }}`. Verify `nextOp` still runs (or the template completes without deadlock) and the error from `throwsError` is reported correctly.
-    *   Inspect Generated Code: Verify the `try...catch...finally` structure wraps *only* the sequenced calls and that `frame.set` is correctly placed in `try` (optional, for quicker signaling on success) *and* `finally` (mandatory for guarantee).
+    *   Error Test (verify no deadlock, error logged for both `path!.m` and `m!()`).
+    *   Inspect Generated Code (verify structure only wraps `!` calls, `finally` content is correct).
 
-**Step 11: Add Documentation**
+**Step 9: Add Documentation**
 
-*   **Title:** Add Documentation.
-*   **Summary:** Document feature, syntax (`!`), usage examples, the **critical static context variable path limitation**, error handling, performance implications.
+*   **Goal:** Document feature, syntax, usage, **static context variable path limitation**, errors, performance.
+*   **Details:** Explain `!`, `method!()`. Provide clear correct/incorrect examples.
+*   **Verification:** Peer review.
