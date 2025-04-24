@@ -674,9 +674,19 @@ class Compiler extends Obj {
     }
   }
 
-  compileSymbol(node, frame) {
+  compileSymbol(node, frame, fullPathNode = null) {
     var name = node.value;
     var v = frame.lookup(name);
+
+    if (node.isAsync) {
+      fullPathNode = (node.isAsync && fullPathNode === null) ? node : fullPathNode;
+      this._validateFullPathNode(node, fullPathNode);
+      const staticPathParts = this._extractStaticPathParts(node);
+      if (staticPathParts) {
+        //@todo implement awaiting any sequence paths
+
+      }
+    }
 
     if (v) {
       //for now the only places that set async symbol are the async filter and super()
@@ -911,9 +921,62 @@ class Compiler extends Obj {
     }
   }
 
-  compileLookupVal(node, frame) {
+  _validateFullPathNode(node, fullPathNode) {
+    if (node.sequenced) {
+      if (!(fullPathNode instanceof nodes.FunCall)) {
+        // If the full expression isn't a FunCall, '!' on the base Symbol is invalid.
+        this.fail(
+          `Syntax Error: The sequence marker '!' applied directly to a variable requires it to be part of a function or method call.`,
+          node.lineno,
+          node.colno
+        );
+      }
+    }
+  }
+
+  extractStaticPathParts(node) {
+    // Check if the input node itself is valid to start a path extraction
+    if (!node || (node.typename !== 'LookupVal' && node.typename !== 'Symbol')) {
+      return null;
+    }
+
+    const parts = [];
+    let current = node;
+
+    while (current) {
+      if (current.typename === 'LookupVal') {
+        const valNode = current.val;
+        if (valNode.typename === 'Symbol') {
+          parts.unshift(valNode.value);
+        } else if (valNode.typename === 'Literal' && typeof valNode.value === 'string') {
+          parts.unshift(valNode.value);
+        } else {
+          return null; // Dynamic segment
+        }
+        current = current.target;
+      } else if (current.typename === 'Symbol') {
+        parts.unshift(current.value);
+        current = null; // Stop traversal
+      } else {
+        return null; // Unexpected node type in path
+      }
+    }
+    return parts;
+  }
+
+  compileLookupVal(node, frame, fullPathNode = null) {
+    if (node.isAsync) {
+      fullPathNode = (node.isAsync && fullPathNode === null) ? node : fullPathNode;
+      this._validateFullPathNode(node, fullPathNode);
+      const staticPathParts = this._extractStaticPathParts(node);
+      if (staticPathParts) {
+        //@todo implement awaiting any sequence paths
+
+      }
+    }
+
     this._emit(`runtime.memberLookup${node.isAsync ? 'Async' : ''}((`);
-    this.compile(node.target, frame);
+    this.compile(node.target, frame, fullPathNode);
     this._emit('),');
     this.compile(node.val, frame);
     this._emit(')');
@@ -1124,22 +1187,32 @@ class Compiler extends Obj {
     return null;
   }
 
-  compileFunCall(node, frame) {
+  compileFunCall(node, frame, fullPathNode = null) {
     // Keep track of line/col info at runtime by setting
     // variables within an expression. An expression in JavaScript
     // like (x, y, z) returns the last value, and x and y can be
     // anything.
-    const seqKey = this._getSequenceKey(node.name);
-    if (seqKey) {
-      // Use seqKey as the sequencing key
-      console.log('Sequenced path:', seqKey);
-    }
 
     this._emit('(lineno = ' + node.lineno + ', colno = ' + node.colno + ', ');
 
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
     if (node.isAsync) {
+
+      const seqKey = this._getSequenceKey(node.name);
+      if (seqKey) {
+        // Use seqKey as the sequencing key
+        //console.log('Sequenced path:', seqKey);
+      }
+
+      fullPathNode = fullPathNode === null ? node : fullPathNode;
+
+      const staticPathParts = this._extractStaticPathParts(node.name);
+      if (staticPathParts) {
+        //@todo implement awaiting any sequence paths
+
+      }
+
       let asyncName = node.name.isAsync;
       if (node.name.typename === 'Symbol' && !frame.lookup(node.name.value)) {
         asyncName = false;
@@ -2395,10 +2468,10 @@ class Compiler extends Obj {
     this._emitLine('root: root\n};');
   }
 
-  compile(node, frame) {
+  compile(node, frame, fullPathNode = null) {
     var _compile = this['compile' + node.typename];
     if (_compile) {
-      _compile.call(this, node, frame);
+      _compile.call(this, node, frame, fullPathNode);
     } else {
       this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno);
     }
