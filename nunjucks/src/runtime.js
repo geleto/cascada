@@ -198,11 +198,15 @@ class AsyncFrame extends Frame {
   }
 
   lookup(name) {
-    var val = (this.asyncVars && name in this.asyncVars) ? this.asyncVars[name] : this.variables[name];
+    let val = (this.asyncVars && name in this.asyncVars) ? this.asyncVars[name] : this.variables[name];
     if (val !== undefined) {
       return val;
     }
     return this.parent && this.parent.lookup(name);
+  }
+
+  resolve(name, forWrite) {
+    return super.resolve(name, forWrite);
   }
 
   //when all assignments to a variable are done, resolve the promise for that variable
@@ -1171,6 +1175,19 @@ class AsyncState {
   }
 }
 
+function awaitSequenceLock(frame, lockKeyToAwait, returnValue) {
+  /*if (!lockKeyToAwait) {
+    return; // Nothing to wait for
+  }*/
+  // Use frame.lookup (modified to check rootFrame for '!' keys)
+  const lockState = frame.lookup(lockKeyToAwait);
+  // Await *only* if the lockState is a promise.
+  if (lockState && typeof lockState.then === 'function') {
+    return lockState.then(() => returnValue);
+  }
+  return returnValue;
+}
+
 module.exports = {
   Frame: Frame,
   AsyncFrame: AsyncFrame,
@@ -1206,5 +1223,6 @@ module.exports = {
   inOperator: lib.inOperator,
   fromIterator: fromIterator,
   iterate: iterate,
-  setLoopBindings
+  setLoopBindings,
+  awaitSequenceLock: awaitSequenceLock
 };

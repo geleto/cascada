@@ -678,14 +678,10 @@ class Compiler extends Obj {
     var name = node.value;
     var v = frame.lookup(name);
 
+    let lockToAwait = null;
     if (node.isAsync) {
-      fullPathNode = (node.isAsync && fullPathNode === null) ? node : fullPathNode;
-      this._validateFullPathNode(node, fullPathNode);
-      const staticPathParts = this._extractStaticPathParts(node);
-      if (staticPathParts) {
-        //@todo implement awaiting any sequence paths
-
-      }
+      // eslint-disable-next-line no-unused-vars
+      lockToAwait = this._getSequentialLock(node, frame, fullPathNode);
     }
 
     if (v) {
@@ -934,7 +930,8 @@ class Compiler extends Obj {
     }
   }
 
-  extractStaticPathParts(node) {
+  //@todo - directly to string
+  _extractStaticPathKey(node) {
     // Check if the input node itself is valid to start a path extraction
     if (!node || (node.typename !== 'LookupVal' && node.typename !== 'Symbol')) {
       return null;
@@ -961,18 +958,26 @@ class Compiler extends Obj {
         return null; // Unexpected node type in path
       }
     }
-    return parts;
+    return '!' + parts.join('!');
+  }
+
+  _getSequentialLock(node, frame, fullPathNode) {
+    fullPathNode = (node.isAsync && fullPathNode === null) ? node : fullPathNode;
+    this._validateFullPathNode(node, fullPathNode);
+    if (frame.rootFrame && frame.rootFrame.declaredVars) {
+      const staticPathKey = this._extractStaticPathKey(node);
+      if (staticPathKey && frame.rootFrame.declaredVars.has(staticPathKey)) {
+        return staticPathKey;
+      }
+    }
+    return null;
   }
 
   compileLookupVal(node, frame, fullPathNode = null) {
+    let lockToAwait = null;
     if (node.isAsync) {
-      fullPathNode = (node.isAsync && fullPathNode === null) ? node : fullPathNode;
-      this._validateFullPathNode(node, fullPathNode);
-      const staticPathParts = this._extractStaticPathParts(node);
-      if (staticPathParts) {
-        //@todo implement awaiting any sequence paths
-
-      }
+      // eslint-disable-next-line no-unused-vars
+      lockToAwait = this._getSequentialLock(node, frame, fullPathNode);
     }
 
     this._emit(`runtime.memberLookup${node.isAsync ? 'Async' : ''}((`);
@@ -1016,6 +1021,7 @@ class Compiler extends Obj {
   }
 
   // Final refined version of _getSequencedPath in the Compiler class
+  // @todo - inline in _getSequenceKey
   _getSequencedPath(node, frame) {
     let path = [];
     let current = node;
@@ -1207,8 +1213,8 @@ class Compiler extends Obj {
 
       fullPathNode = fullPathNode === null ? node : fullPathNode;
 
-      const staticPathParts = this._extractStaticPathParts(node.name);
-      if (staticPathParts) {
+      const staticPathKey = this._extractStaticPathKey(node.name);
+      if (staticPathKey) {
         //@todo implement awaiting any sequence paths
 
       }

@@ -57,70 +57,64 @@ Please implement these steps sequentially, verifying each one thoroughly.
         *   Validates that the path root is *not* a scope variable using `_isScopeVariable`.
         *   Handles errors for double `!` and dynamic paths combined with `!`.
         *   Returns the array of static path segments (e.g., `['a', 'b', 'c']`) if a valid sequence marker `!` is found on a path originating from context, otherwise returns `null`.
-    *   Key Derivation (`sequenceLockKey`, `potentialParentLockKeys`) moved to Step 3.
 *   **Verification:**
     *   Breakpoint Debugging: Verify `_getSequencedPath` returns correct path arrays for various cases.
 
 **Step 2: Implement `fullPathNode` Context and Static Path Extraction Helper**
 
 *   **Title:** Add `fullPathNode` Compilation Context and Path Extraction Helper.
-*   **Goal:** Modify the compiler's core `compile` function and relevant compiler methods (`compileLookupVal`, `compileFunCall`, `compileSymbol`) to pass down a `fullPathNode` argument. Implement the `_extractStaticPathParts` helper to retrieve the static path segments. Add calls to this helper within `compileLookupVal` and `compileFunCall`.
-*   **Explanation:** This step establishes the infrastructure needed for later sequence handling. The `fullPathNode` argument provides context about the overall expression being compiled. The `_extractStaticPathParts` helper gathers structural path information, which will be used in subsequent steps for both validation and determining necessary waits. This step focuses only on adding the argument passing mechanism and the basic path extraction, without implementing sequence logic itself.
+*   **Goal:** Modify the compiler's core `compile` function and relevant compiler methods (`compileLookupVal`, `compileFunCall`, `compileSymbol`) to pass down a `fullPathNode` argument. Implement the `_extractStaticPathKey` helper to retrieve the static path. Add calls to this helper within `compileLookupVal` and `compileFunCall`.
+*   **Explanation:** This step establishes the infrastructure needed for later sequence handling. The `fullPathNode` argument provides context about the overall expression being compiled. The `_extractStaticPathKey` helper gathers structural path information, which will be used in subsequent steps for both validation and determining necessary waits. This step focuses only on adding the argument passing mechanism and the basic path extraction, without implementing sequence logic itself.
 *   **Implementation:**
     *   Modify `Compiler.prototype.compile` signature to accept `fullPathNode = null` and pass it down.
     *   Modify `compileLookupVal`, `compileFunCall`, and `compileSymbol` to accept `fullPathNode`.
     *   Update recursive `this.compile` calls within `compileLookupVal` (for `node.target`) and `compileFunCall` (for `node.name`) to correctly determine and pass the `fullPathNode` value down the chain.
-    *   Implement `_extractStaticPathParts` helper function to traverse upwards from a `LookupVal` or `Symbol` and return an array of static path parts, or `null` if the path is dynamic/invalid.
-    *   Add calls to `this._extractStaticPathParts` at the beginning of `compileLookupVal` (using `node`) and `compileFunCall` (using `node.name`) to calculate the static path.
+    *   Implement `_extractStaticPathKey` helper function to traverse upwards from a `LookupVal` or `Symbol` and return the static path, or `null` if the path is dynamic/invalid.
+    *   Add calls to `this._extractStaticPathKey` at the beginning of `compileLookupVal` (using `node`) and `compileFunCall` (using `node.name`) to calculate the static path.
 *   **Verification:**
     *   Use `console.log` or debugger to verify `fullPathNode` is passed correctly during recursive compilation.
-    *   Verify `_extractStaticPathParts` returns correct path arrays or `null` for various test cases (static paths, dynamic paths) when called from `compileLookupVal` and `compileFunCall`.
+    *   Verify `_extractStaticPathKey` returns correct path or `null` for various test cases (static paths, dynamic paths) when called from `compileLookupVal` and `compileFunCall`.
 
-**Step 3: Register Specific Lock Key & Identify Declared Parent Keys (Compiler Actions)**
+**Step 3: Compiler Sequence Analysis and Key Preparation**
 
-*   **Title:** Register Sequence Lock and Filter Parent Keys in Compilation Context.
-*   **Explanation:** Use the result from `_getSequencedPath` (from Step 1). If a valid path array is returned, derive the specific lock key and potential parent keys. Register the specific key in the `rootFrame`'s `declaredVars` (via `_updateFrameWrites`). Filter the potential parent keys against the *currently* declared locks in `rootFrame` to determine which ones need runtime checks.
+*   **Title:** Analyze Paths for Sequential Waiting and Prepare Keys.
+*   **Goal:** Perform compile-time analysis within `compiler.js` (`compileSymbol`, `compileLookupVal`) to identify if the current static path access requires waiting for a specific sequence lock, and prepare the relevant lock key for code generation.
 *   **Implementation:**
-    *   In `compileLookupVal` (for `node.target`) and `compileFunCall` (for the object part of `node.name`):
-        1.  Call `let pathArray = this._getSequencedPath(node_representing_path_base, frame);`.
-        2.  **Check for Valid Sequenced Path:** If `pathArray === null`, proceed with normal, non-sequenced compilation for this node and skip the rest of these sequence-specific steps.
-        3.  If `pathArray` is not null:
-            *   **Derive Keys:**
-                *   `let sequenceLockKey = '!' + pathArray.join('!');`
-                *   Derive `potentialParentLockKeys` list (e.g., `['!a', '!a!b', '!a!b!c']` from `['a', 'b', 'c']`).
-            *   **Register Specific Key:** `this._updateFrameWrites(frame.rootFrame, sequenceLockKey);` (This ensures `rootFrame.declaredVars` includes the specific key).
-            *   **Filter Parent Keys:** Iterate through `potentialParentLockKeys`. Check each against `frame.rootFrame.declaredVars` *after* potentially adding the `sequenceLockKey`. Collect the keys that exist into a list named `lockKeys`.
-            *   **Store/pass `lockKeys` and `sequenceLockKey`** for use in subsequent steps (Steps 5-8) and runtime calls.
-*   **Reliance Note:** This step relies on the compiler's traversal order ensuring `_updateFrameWrites` for any relevant `sequenceLockKey` has updated `rootFrame.declaredVars` *before* the parent key filtering logic runs for subsequent operations on the same or child paths.
-*   **Verification:**
-    *   Breakpoint Debugging: Verify `_updateFrameWrites` is called correctly with the `sequenceLockKey`.
-    *   Debugging/logging: Verify `lockKeys` contains only parent keys previously registered (including potentially the just-registered `sequenceLockKey` if it's a parent of another operation).
+    1. **Identify Static Path and Derive Level-Specific Lock Key:**
+        *   **Action:** Inside `compileSymbol` and `compileLookupVal`:
+            *   Call `_extractStaticPathKey(node, frame)` to get the `staticPathKey` (this also implicitly checks for static context origin).
+            *   If `staticPathKey` is null, no sequence waiting applies to this node; skip the next sub-step.
+        *   **Location:** `compiler.js` (`compileSymbol`, `compileLookupVal`).
 
-**Step 4: Implement Runtime Waiting Logic (`awaitSequenceLocks`, `lookup`/`resolve` modification)**
+    2. **Check if Specific Lock is Declared:**
+        *   **Action:** If `staticPathKey` was derived in the previous sub-step:
+            *   Check if `staticPathKey` exists in `frame.rootFrame.declaredVars` and if so - store the `staticPathKey` string in a local variable within the compiler method's scope (e.g., `let lockToAwait = staticPathKey;`).
+        *   **Location:** `compiler.js` (`compileSymbol`, `compileLookupVal`).
 
-*   **Goal:** Create runtime mechanism to wait for active locks (identified in Step 3 and Step 6) and ensure `lookup`/`resolve` target `rootFrame` for `!` keys.
-*   **Explanation:** Centralizes waiting. `awaitSequenceLocks` waits for promise-based locks looked up via modified `lookup`. Modifying `lookup`/`resolve` ensures correct lock state access within `rootFrame`.
+**Step 4: Implement Runtime Waiting Logic (`awaitSequenceLock`, `lookup`/`resolve` modification)**
+
+*   **Goal:** Create runtime mechanism to wait the lock (identified in Step 3) and ensure `lookup`/`resolve` target `rootFrame` for `!` keys.
+*   **Explanation:** Centralizes waiting. Await promise-based locks looked up via modified `lookup`. Modifying `lookup`/`resolve` ensures correct lock state access within `rootFrame`.
 *   **Implementation:**
-    *   Implement `runtime.awaitSequenceLocks(frame, lockKeysToAwait)`: Takes the list of lock keys. Uses modified `frame.lookup`, collects promises, `await Promise.all`. Must gracefully handle `lookup` returning `null` or non-promises for keys passed.
+    *   Implement `runtime.awaitSequenceLock(frame, lockKeyToAwait)`: Takes the lock key. Uses modified `frame.lookup` to get the promise, if any. Must gracefully handle `lookup` returning `null` or non-promises for keys passed.
     *   Modify `AsyncFrame.lookup`: Add `if (name.startsWith('!'))` check to look in `this.rootFrame`.
     *   Modify `AsyncFrame.resolve`: Add `if (name.startsWith('!'))` check to return `this.rootFrame`.
 *   **Verification:**
-    *   Unit Tests for `awaitSequenceLocks`, `lookup`, `resolve`.
     *   Breakpoint Debugging runtime.
 
 **Step 5: Implement Sequenced Lookup with Implicit Waiting (Runtime & Compiler)**
 
-*   **Goal:** Create `sequencedMemberLookup` that waits on relevant *parent* locks (`lockKeys` from Step 3) before lookup. Modify `compileLookupVal` to use it.
-*   **Explanation:** Transparently adds waiting before property access on static context paths, using the `lockKeys` list (declared parent locks only).
+**   **Goal:** Create `sequencedMemberLookup` that waits on relevant lock (`lockKey` from Step 3) before lookup. Modify `compileLookupVal` to use it.
+*   **Explanation:** Transparently adds waiting before property access on static context paths, using the `lockKey`.
 *   **Implementation:**
-    *   Implement `runtime.sequencedMemberLookup(frame, obj, val, lockKeys)`: Resolves `obj`/`val`, calls `await awaitSequenceLocks(frame, lockKeys)`, performs `memberLookup`.
+    *   Implement `runtime.sequencedMemberLookup(frame, obj, val, lockKey)`: Resolves `obj`/`val`, calls `await awaitSequenceLock(frame, lockKey)`, performs `memberLookup`.
     *   Modify `Compiler.compileLookupVal`:
         1.  Perform analysis and actions described in **Step 3**.
         2.  If `pathArray` was not null (i.e., path is valid for sequencing):
-            *   Emit call to `runtime.sequencedMemberLookup`, passing the filtered `lockKeys` determined in Step 3. (Note: `sequenceLockKey` is not relevant here as lookups don't acquire/release specific locks).
+            *   Emit call to `runtime.sequencedMemberLookup`, passing the `lockKey` determined in Step 3. (Note: `sequenceLockKey` is not relevant here as lookups don't acquire/release specific locks).
 *   **Verification:**
     *   Integration tests (verify waiting works).
-    *   Check Keys: Verify via debugging/logging that only *declared parent* keys (`lockKeys`) are passed to `sequencedMemberLookup`.
+    *   Check Key: Verify via debugging/logging that only the *declared* key (`lockKey`) is passed to `sequencedMemberLookup`.
 
 **Step 6: Implement Sequenced Call with Implicit Waiting (Runtime & Compiler)**
 
