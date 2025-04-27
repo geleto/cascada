@@ -101,16 +101,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Implement runtime helpers `sequencedContextLookup` and `sequencedMemberLookup` which internally call `awaitSequenceLock` before performing standard lookup logic.
     *   Modify `compileSymbol` and `compileLookupVal` to use `_isDeclared` and conditionally emit calls to either the standard lookup functions or the new `sequenced...Lookup` helpers.
 
-**Step 6: Implement Sequenced Call with Lock Key Declaration Check (Runtime & Compiler)**
-
-*   **Title:** Conditionally Apply Sequence Locks to Function Calls.
-*   **Goal:** Ensure that function/method calls only wait for sequence locks if a lock for their specific static path key has been declared (due to `!` on the call or path).
-*   **Explanation:** Similar to Step 5, the compiler checks (`_isDeclared`) if the static path key associated with the function/method being called corresponds to a declared lock. If yes, it emits code calling a new runtime helper (`sequencedCallWrap`) which uses `awaitSequenceLock` before executing the call logic. Otherwise, standard call logic is emitted.
-*   **Implementation:**
-    *   Implement runtime helper `sequencedCallWrap` which internally calls `awaitSequenceLock` before resolving/calling the function.
-    *   Modify `compileFunCall` to use `_isDeclared` and conditionally emit calls to either `runtime.callWrap` or the new `runtime.sequencedCallWrap`.
-
-**Step 7: Implement Lock Release/Signaling for `!` Calls (Compiler & Runtime Setup)**
+**Step 6: Implement Lock Release/Signaling for `!` Calls (Compiler & Runtime Setup)**
 
 *   **Title:** Signal Sequence Completion on Successful Calls.
 *   **Goal:** After a *sequenced* function call completes successfully, signal the runtime to resolve the corresponding lock promise, allowing subsequent operations in that sequence to proceed.
@@ -119,7 +110,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Modify `compileFunCall` to emit the `frame.set` call after `await sequencedCallWrap` *only when* the lock was declared (determined in Step 6).
     *   Verify the standard runtime `set` mechanism correctly triggers lock promise resolution.
 
-**Step 8: Implement Robust Error Handling & Signaling for `!` Calls (Compiler)**
+**Step 7: Implement Robust Error Handling & Signaling for `!` Calls (Compiler)**
 
 *   **Title:** Ensure Lock Release on Sequenced Call Errors.
 *   **Goal:** Guarantee that sequence locks are released even if a sequenced function call fails, preventing deadlocks.
@@ -129,7 +120,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Ensure the `finally` block contains the lock-releasing `frame.set` call and `astate.leaveAsyncBlock`.
     *   Ensure the `astate.enterAsyncBlock` call for the IIFE uses `_getPushAsyncBlockCode` correctly, accounting for the lock key write.
 
-**Step 9: Add Documentation**
+**Step 8: Add Documentation**
 
 *   **Goal:** Document feature, syntax, usage, **static context variable path limitation**, errors, performance.
 *   **Details:** Explain `!`, `method!()`. Provide clear correct/incorrect examples.
