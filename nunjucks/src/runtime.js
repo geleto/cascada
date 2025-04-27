@@ -1175,17 +1175,41 @@ class AsyncState {
   }
 }
 
-function awaitSequenceLock(frame, lockKeyToAwait, returnValue) {
-  /*if (!lockKeyToAwait) {
-    return; // Nothing to wait for
-  }*/
-  // Use frame.lookup (modified to check rootFrame for '!' keys)
-  const lockState = frame.lookup(lockKeyToAwait);
-  // Await *only* if the lockState is a promise.
-  if (lockState && typeof lockState.then === 'function') {
-    return lockState.then(() => returnValue);
+function awaitSequenceLock(frame, lockKeyToAwait) {
+  if (!lockKeyToAwait) {
+    // No key, no lock, no waiting needed.
+    return undefined; // Returning undefined is fine for `await` in the caller.
   }
-  return returnValue;
+
+  // Use frame.lookup (modified in Step 4 to check rootFrame for '!' keys)
+  const lockState = frame.lookup(lockKeyToAwait);
+
+  // Check if the lock state is a promise
+  if (lockState && typeof lockState.then === 'function') {
+    return (function resolveChain(currentPromise) {
+      return currentPromise.then(value => {
+        if (value && typeof value.then === 'function') {
+          //Recursively wait for this next promise in the chain.
+          return resolveChain(value);
+        }
+        return undefined;
+      });
+    })(lockState); // Start the resolution chain with the initial promise
+  } else {
+    return undefined;
+  }
+}
+
+async function sequencedContextLookup(frame, name, nodeLockKey) {
+  await awaitSequenceLock(frame, nodeLockKey);
+  return contextOrFrameLookup(context, frame, name);
+}
+
+async function sequencedMemberLookup(frame, target, key, nodeLockKey) {
+  // Wait for the specific node's lock *before* resolving target/key
+  await awaitSequenceLock(frame, nodeLockKey);
+  let [resolvedTarget, resolvedKey] = await resolveDuo(target, key);
+  return memberLookup(resolvedTarget, resolvedKey);
 }
 
 module.exports = {
@@ -1224,5 +1248,7 @@ module.exports = {
   fromIterator: fromIterator,
   iterate: iterate,
   setLoopBindings,
-  awaitSequenceLock: awaitSequenceLock
+  awaitSequenceLock,
+  sequencedContextLookup,
+  sequencedMemberLookup
 };

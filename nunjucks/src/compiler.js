@@ -674,15 +674,19 @@ class Compiler extends Obj {
     }
   }
 
+  _isDeclared(frame, name) {
+    while (frame) {
+      if (frame.declaredVars && frame.declaredVars.has(name)) {
+        return true;
+      }
+      frame = frame.parent;
+    }
+    return false;
+  }
+
   compileSymbol(node, frame, fullPathNode = null) {
     var name = node.value;
     var v = frame.lookup(name);
-
-    let lockToAwait = null;
-    if (node.isAsync) {
-      // eslint-disable-next-line no-unused-vars
-      lockToAwait = this._getSequentialLock(node, frame, fullPathNode);
-    }
 
     if (v) {
       //for now the only places that set async symbol are the async filter and super()
@@ -691,11 +695,21 @@ class Compiler extends Obj {
     } else {
       // @todo - omit this for function calls?
       // (parent instanceof nodes.FunCall && parent.name === node)
+
+      // Not in template scope, check context/frame with potential sequence lock
       if (this.asyncMode) {
         this._updateFrameReads(frame, name);
+
+        let nodeStaticPathKey = this._extractStaticPathKey(node);
+        if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
+          // Use sequenced lookup if a lock for this node exists
+          this._emit(`runtime.sequencedContextLookup(frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
+          return;
+        }
       }
-      this._emit('runtime.contextOrFrameLookup(' +
-        'context, frame, "' + name + '")');
+
+      // Use standard context/frame lookup if not async mode or no lock
+      this._emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
     }
   }
 
@@ -973,11 +987,48 @@ class Compiler extends Obj {
     return null;
   }
 
+  compileSymbolX(node, frame, fullPathNode = null) {
+    var name = node.value;
+    var v = frame.lookup(name);
+
+    if (v) {
+      //for now the only places that set async symbol are the async filter and super()
+      //this should work for set vars but it's disabled now (nunjucks bug or on purpose?)
+      this._emit(v);
+    } else {
+      // @todo - omit this for function calls?
+      // (parent instanceof nodes.FunCall && parent.name === node)
+
+      // Not in template scope, check context/frame with potential sequence lock
+      if (this.asyncMode) {
+        this._updateFrameReads(frame, name);
+
+        let nodeStaticPathKey = this._extractStaticPathKey(node);
+        if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
+          // Use sequenced lookup if a lock for this node exists
+          this._emit(`runtime.sequencedContextLookup(frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
+          return;
+        }
+      }
+
+      // Use standard context/frame lookup if not async mode or no lock
+      this._emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
+    }
+  }
+
   compileLookupVal(node, frame, fullPathNode = null) {
-    let lockToAwait = null;
+
     if (node.isAsync) {
-      // eslint-disable-next-line no-unused-vars
-      lockToAwait = this._getSequentialLock(node, frame, fullPathNode);
+      let nodeStaticPathKey = this._extractStaticPathKey(node);
+      if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
+        // Use sequenced lookup if a lock for this node exists
+        this._emit(`runtime.sequencedMemberLookup(frame, (`);
+        this.compile(node.target, frame, fullPathNode); // Compile target expression
+        this._emit('),');
+        this.compile(node.val, frame); // Compile key expression
+        this._emit(`, ${JSON.stringify(nodeStaticPathKey)})`); // Pass the key
+        return;
+      }
     }
 
     this._emit(`runtime.memberLookup${node.isAsync ? 'Async' : ''}((`);
