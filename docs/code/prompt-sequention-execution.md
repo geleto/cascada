@@ -75,91 +75,59 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Use `console.log` or debugger to verify `fullPathNode` is passed correctly during recursive compilation.
     *   Verify `_extractStaticPathKey` returns correct path or `null` for various test cases (static paths, dynamic paths) when called from `compileLookupVal` and `compileFunCall`.
 
-**Step 3: Compiler Sequence Analysis and Key Preparation**
+**Step 3: Compiler Sequence Analysis - Identify Potential Keys**
 
-*   **Title:** Analyze Paths for Sequential Waiting and Prepare Keys.
-*   **Goal:** Perform compile-time analysis within `compiler.js` (`compileSymbol`, `compileLookupVal`) to identify if the current static path access requires waiting for a specific sequence lock, and prepare the relevant lock key for code generation.
+*   **Title:** Identify Potential Static Path Keys for Sequencing.
+*   **Goal:** Within the compiler, determine the specific static path key (e.g., `!a!b!c`) associated with any symbol or property lookup being compiled.
+*   **Explanation:** This preparatory step uses the `_extractStaticPathKey` helper to derive the key string representing the full static path being accessed. This key is essential for later checks and runtime operations related to sequencing, but this step *doesn't* yet decide if sequencing applies.
 *   **Implementation:**
-    1. **Identify Static Path and Derive Level-Specific Lock Key:**
-        *   **Action:** Inside `compileSymbol` and `compileLookupVal`:
-            *   Call `_extractStaticPathKey(node, frame)` to get the `staticPathKey` (this also implicitly checks for static context origin).
-            *   If `staticPathKey` is null, no sequence waiting applies to this node; skip the next sub-step.
-        *   **Location:** `compiler.js` (`compileSymbol`, `compileLookupVal`).
+    *   Utilize `_extractStaticPathKey` within `compileSymbol` and `compileLookupVal` to extract the relevant `nodeStaticPathKey`.
 
-    2. **Check if Specific Lock is Declared:**
-        *   **Action:** If `staticPathKey` was derived in the previous sub-step:
-            *   Check if `staticPathKey` exists in `frame.rootFrame.declaredVars` and if so - store the `staticPathKey` string in a local variable within the compiler method's scope (e.g., `let lockToAwait = staticPathKey;`).
-        *   **Location:** `compiler.js` (`compileSymbol`, `compileLookupVal`).
+**Step 4: Implement Runtime Waiting Logic (`awaitSequenceLock`)**
 
-**Step 4: Implement Runtime Waiting Logic (`awaitSequenceLock`, `lookup`/`resolve` modification)**
-
-*   **Goal:** Create runtime mechanism to wait the lock (identified in Step 3) and ensure `lookup`/`resolve` target `rootFrame` for `!` keys.
-*   **Explanation:** Centralizes waiting. Await promise-based locks looked up via modified `lookup`. Modifying `lookup`/`resolve` ensures correct lock state access within `rootFrame`.
+*   **Title:** Create Runtime Sequence Lock Waiting Mechanism.
+*   **Goal:** Implement the core runtime function (`awaitSequenceLock`) responsible for pausing execution if a sequence lock (represented by a promise) is active for a given key.
+*   **Explanation:** This function centralizes the waiting logic. It uses the standard `frame.lookup` to check the state of the lock key. If it finds a promise, it handles waiting for the entire promise chain to resolve before allowing execution to continue. It avoids `async` overhead when no waiting is needed.
 *   **Implementation:**
-    *   Implement `runtime.awaitSequenceLock(frame, lockKeyToAwait)`: Takes the lock key. Uses modified `frame.lookup` to get the promise, if any. Must gracefully handle `lookup` returning `null` or non-promises for keys passed.
-    *   Modify `AsyncFrame.lookup`: Add `if (name.startsWith('!'))` check to look in `this.rootFrame`.
-    *   Modify `AsyncFrame.resolve`: Add `if (name.startsWith('!'))` check to return `this.rootFrame`.
-*   **Verification:**
-    *   Breakpoint Debugging runtime.
+    *   Implement `runtime.awaitSequenceLock` to check the lock key state via `frame.lookup` and manage promise chain resolution if a lock promise is found.
 
-**Step 5: Implement Sequenced Lookup with Implicit Waiting (Runtime & Compiler)**
+**Step 5: Implement Sequenced Lookup with Lock Key Declaration Check (Runtime & Compiler)**
 
-**   **Goal:** Create `sequencedMemberLookup` that waits on relevant lock (`lockKey` from Step 3) before lookup. Modify `compileLookupVal` to use it.
-*   **Explanation:** Transparently adds waiting before property access on static context paths, using the `lockKey`.
+*   **Title:** Conditionally Apply Sequence Locks to Lookups.
+*   **Goal:** Ensure that symbol and property lookups only wait for sequence locks if a lock for their specific static path key has actually been declared (via a `!` marker elsewhere).
+*   **Explanation:** This involves both compiler and runtime changes. The compiler adds a check (`_isDeclared`) to see if the `nodeStaticPathKey` identified in Step 3 corresponds to a declared lock. If so, it emits code calling new runtime helpers (`sequencedContextLookup`, `sequencedMemberLookup`). These runtime helpers use `awaitSequenceLock` (from Step 4) before performing the actual lookup. If no lock was declared for the path, the compiler emits standard lookup code.
 *   **Implementation:**
-    *   Implement `runtime.sequencedMemberLookup(frame, obj, val, lockKey)`: Resolves `obj`/`val`, calls `await awaitSequenceLock(frame, lockKey)`, performs `memberLookup`.
-    *   Modify `Compiler.compileLookupVal`:
-        1.  Perform analysis and actions described in **Step 3**.
-        2.  If `pathArray` was not null (i.e., path is valid for sequencing):
-            *   Emit call to `runtime.sequencedMemberLookup`, passing the `lockKey` determined in Step 3. (Note: `sequenceLockKey` is not relevant here as lookups don't acquire/release specific locks).
-*   **Verification:**
-    *   Integration tests (verify waiting works).
-    *   Check Key: Verify via debugging/logging that only the *declared* key (`lockKey`) is passed to `sequencedMemberLookup`.
+    *   Add compiler helper `_isDeclared` for checking lock key declaration status during compilation.
+    *   Implement runtime helpers `sequencedContextLookup` and `sequencedMemberLookup` which internally call `awaitSequenceLock` before performing standard lookup logic.
+    *   Modify `compileSymbol` and `compileLookupVal` to use `_isDeclared` and conditionally emit calls to either the standard lookup functions or the new `sequenced...Lookup` helpers.
 
-**Step 6: Implement Sequenced Call with Implicit Waiting (Runtime & Compiler)**
+**Step 6: Implement Sequenced Call with Lock Key Declaration Check (Runtime & Compiler)**
 
-*   **Goal:** Create `sequencedCallWrap` helper that waits on relevant parent *and* specific locks before execution. Modify `compileFunCall` to use it.
-*   **Explanation:** Handles waiting for the full lock hierarchy before calls on static context paths, using `lockKeys` (parent locks) and `sequenceLockKey` (specific lock).
+*   **Title:** Conditionally Apply Sequence Locks to Function Calls.
+*   **Goal:** Ensure that function/method calls only wait for sequence locks if a lock for their specific static path key has been declared (due to `!` on the call or path).
+*   **Explanation:** Similar to Step 5, the compiler checks (`_isDeclared`) if the static path key associated with the function/method being called corresponds to a declared lock. If yes, it emits code calling a new runtime helper (`sequencedCallWrap`) which uses `awaitSequenceLock` before executing the call logic. Otherwise, standard call logic is emitted.
 *   **Implementation:**
-    *   Implement `runtime.sequencedCallWrap(frame, funcOrMethod, funcName, context, args, lockKeysToAwait)`: Resolves inputs, calls `await awaitSequenceLocks(frame, lockKeysToAwait)`, performs `apply`.
-    *   Modify `Compiler.compileFunCall`:
-        1.  Perform analysis and actions described in **Step 3** for the object part of the call.
-        2.  If `pathArray` was not null:
-            *   Retrieve `lockKeys` and `sequenceLockKey` determined in Step 3.
-            *   **Construct `lockKeysToAwait`:** `let lockKeysToAwait = [...lockKeys, sequenceLockKey].filter(Boolean);` (Filter ensures `null`/`undefined` `sequenceLockKey` is handled if `!` wasn't on the call itself, although Step 3 logic should guarantee `sequenceLockKey` exists if `pathArray` is not null).
-            *   Emit **`await runtime.sequencedCallWrap(...)`**, passing the combined `lockKeysToAwait`. (Do NOT wrap in IIFE/try/finally yet).
-*   **Verification:**
-    *   Integration tests (parallel, sequential, mixed).
-    *   Check Keys: Verify via debugging/logging correct combined keys (`lockKeysToAwait`) are passed.
+    *   Implement runtime helper `sequencedCallWrap` which internally calls `awaitSequenceLock` before resolving/calling the function.
+    *   Modify `compileFunCall` to use `_isDeclared` and conditionally emit calls to either `runtime.callWrap` or the new `runtime.sequencedCallWrap`.
 
 **Step 7: Implement Lock Release/Signaling for `!` Calls (Compiler & Runtime Setup)**
 
-*   **Goal:** Ensure the specific lock (`sequenceLockKey`) acquired by a `!` call is released *after* the call completes successfully, using `frame.set`.
-*   **Explanation:** Connects successful completion back to the variable system to resolve the lock promise. Requires `frame.set` to correctly target `rootFrame`.
+*   **Title:** Signal Sequence Completion on Successful Calls.
+*   **Goal:** After a *sequenced* function call completes successfully, signal the runtime to resolve the corresponding lock promise, allowing subsequent operations in that sequence to proceed.
+*   **Explanation:** The compiler emits code (`frame.set(lockKey, true, true)`) immediately following a successful `await sequencedCallWrap(...)`. The existing runtime variable synchronization system (`AsyncFrame.set`, `_countdownAndResolveAsyncWrites`) handles this signal to resolve the lock promise without needing new runtime mechanisms.
 *   **Implementation:**
-    *   **Compiler `compileFunCall`:** For cases where `pathArray` was not null in Step 3 (meaning a `sequenceLockKey` was derived): Emit `frame.set(${JSON.stringify(sequenceLockKey)}, true, true);` *immediately after* the `await runtime.sequencedCallWrap(...)` call.
-    *   **Runtime `AsyncFrame.set` Modification (Crucial):** Modify `AsyncFrame.set` to handle targeting `rootFrame` for `!` keys, ensuring the value is set correctly in `rootFrame`'s `variables` or `asyncVars` and `_countdownAndResolveAsyncWrites` is triggered appropriately relative to the current frame's context, passing the `rootFrame` as the `scopeFrame` hint.
-    *   **Runtime Setup:** Verify `_promisifyParentVariables`, `_countdown...`, `_resolve...` handle the modified `set` targeting `rootFrame` correctly.
-*   **Verification:**
-    *   Debugging `frame.set` and promise resolution in `rootFrame`.
-    *   Sequential tests (for both `path!.method` and `method!()`).
+    *   Modify `compileFunCall` to emit the `frame.set` call after `await sequencedCallWrap` *only when* the lock was declared (determined in Step 6).
+    *   Verify the standard runtime `set` mechanism correctly triggers lock promise resolution.
 
 **Step 8: Implement Robust Error Handling & Signaling for `!` Calls (Compiler)**
 
-*   **Title:** Ensure Lock Release via `finally` for `!` Calls.
-*   **Explanation:** Wrap `await sequencedCallWrap(...)` and subsequent logic *specifically for operations with a `sequenceLockKey`* within an async IIFE (`try...catch...finally`). The `finally` block guarantees `frame.set(sequenceLockKey, true, true)` executes, releasing the lock even on error.
+*   **Title:** Ensure Lock Release on Sequenced Call Errors.
+*   **Goal:** Guarantee that sequence locks are released even if a sequenced function call fails, preventing deadlocks.
+*   **Explanation:** For calls where a lock *was* declared (Step 6), the compiler wraps the `await sequencedCallWrap` and the success-signaling `frame.set` (Step 7) within an `async` IIFE containing a `try...catch...finally` block. The crucial `frame.set` call to release the lock is placed within the `finally` block, ensuring it executes regardless of success or failure. Proper async state (`astate`) management for this IIFE is also required.
 *   **Implementation:**
-    *   **Compiler `compileFunCall`:** Locate the block where `pathArray` was not null (Step 3). Wrap the code generated in Step 6 and Step 7 for this case inside the `(async (astate, frame) => { ... })(astate.enterAsyncBlock(), ...)` structure.
-        *   `try` block should contain:
-            *   `let callResult = await runtime.sequencedCallWrap(...)`
-            *   `return callResult;` // Return the result if needed by the template context
-        *   `catch` block should call `cb(runtime.handleError(e, ...))`.
-        *   `finally` block *must* contain:
-            *   `frame.set(${JSON.stringify(sequenceLockKey)}, true, true);` // Release lock using correct sequenceLockKey
-            *   `astate.leaveAsyncBlock();` // Decrement counter
-*   **Verification:**
-    *   Error Test (verify no deadlock, error logged for both `path!.m` and `m!()`).
-    *   Inspect Generated Code (verify structure only wraps `!` calls, `finally` content is correct).
+    *   Modify `compileFunCall` to wrap the sequenced call and release logic in an `async` IIFE with `try/catch/finally` *only when* the lock was declared.
+    *   Ensure the `finally` block contains the lock-releasing `frame.set` call and `astate.leaveAsyncBlock`.
+    *   Ensure the `astate.enterAsyncBlock` call for the IIFE uses `_getPushAsyncBlockCode` correctly, accounting for the lock key write.
 
 **Step 9: Add Documentation**
 
