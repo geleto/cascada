@@ -101,16 +101,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Implement runtime helpers `sequencedContextLookup` and `sequencedMemberLookup` which internally call `awaitSequenceLock` before performing standard lookup logic.
     *   Modify `compileSymbol` and `compileLookupVal` to check if the `nodeStaticPathKey` is declared using `_isDeclared` and conditionally emit calls to either the standard lookup functions or the new `sequenced...Lookup` helpers.
 
-**Step 6: Implement Lock Release/Signaling for `!` Calls (Compiler & Runtime Setup)**
-
-*   **Title:** Signal Sequence Completion on Successful Calls.
-*   **Goal:** After a *sequenced* function call completes successfully, signal the runtime to resolve the corresponding lock promise, allowing subsequent operations in that sequence to proceed.
-*   **Explanation:** The compiler emits code (`frame.set(lockKey, true, true)`) immediately following a successful `await sequencedCallWrap(...)`. The existing runtime variable synchronization system (`AsyncFrame.set`, `_countdownAndResolveAsyncWrites`) handles this signal to resolve the lock promise without needing new runtime mechanisms.
-*   **Implementation:**
-    *   Modify `compileFunCall` to emit the `frame.set` call after `await sequencedCallWrap` *only when* the lock was declared (determined in Step 6).
-    *   Verify the standard runtime `set` mechanism correctly triggers lock promise resolution.
-
-**Step 7: Ensure Lock Release via Runtime Helper**
+**Step 6: Implement Lock Release/Signaling for `!` Calls**
 
 *   **Title:** Ensure Lock Release via Runtime Helper
 *   **Goal:** Guarantee sequence locks are released after a sequenced function call attempt, preventing deadlocks.
@@ -120,7 +111,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Modify the compiler's `compileFunCall` logic to detect sequenced calls using `_getSequenceKey`.
     *   Generate code within `compileFunCall` to invoke `runtime.sequencedCallWrap` for sequenced calls (passing the `sequenceLockKey`), and `runtime.callWrap` otherwise.
 
-**Step 8: Add Documentation**
+**Step 7: Add Documentation**
 
 *   **Goal:** Document feature, syntax, usage, **static context variable path limitation**, errors, performance.
 *   **Details:** Explain `!`, `method!()`. Provide clear correct/incorrect examples.
