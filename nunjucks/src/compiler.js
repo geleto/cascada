@@ -1246,6 +1246,7 @@ class Compiler extends Obj {
           children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
         };
 
+        node.name.isCallPath = true;
         this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
           if (!sequenceLockKey) {
             this._emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
@@ -1253,6 +1254,7 @@ class Compiler extends Obj {
             this._emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}");`);
           }
         });
+        delete node.name.isCallPath;
       }
       this._emitLine(')');//(lineno, ...
     } else {
@@ -2483,7 +2485,7 @@ class Compiler extends Obj {
   compile(node, frame, isCallPath = false) {
     var _compile = this['compile' + node.typename];
     if (_compile) {
-      _compile.call(this, node, frame, isCallPath);
+      _compile.call(this, node, frame, isCallPath || node.isCallPath);
     } else {
       this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno);
     }
