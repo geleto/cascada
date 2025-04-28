@@ -1209,7 +1209,7 @@ function awaitSequenceLock(frame, lockKeyToAwait) {
   }
 }
 
-async function sequencedContextLookup(frame, name, nodeLockKey) {
+async function sequencedContextLookup(context, frame, name, nodeLockKey) {
   await awaitSequenceLock(frame, nodeLockKey);
   return contextOrFrameLookup(context, frame, name);
 }

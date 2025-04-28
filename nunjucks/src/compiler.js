@@ -697,7 +697,7 @@ class Compiler extends Obj {
         let nodeStaticPathKey = this._extractStaticPathKey(node);
         if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
           // Use sequenced lookup if a lock for this node exists
-          this._emit(`runtime.sequencedContextLookup(frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
+          this._emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
           return;
         }
       }
