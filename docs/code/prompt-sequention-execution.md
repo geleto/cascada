@@ -57,11 +57,32 @@ Please implement these steps sequentially, verifying each one thoroughly.
         *   Handles errors for double `!` and dynamic paths combined with `!`.
         *   Returns the key for for that path, prepending `!` and using `!` to separate the path segments, e.g. !a!b!c or `null` if no `.sequenced` flag was found
      *   Register Sequence Synchronization Intent: Update compileFunCall to analyze the function call's path using _getSequenceKey. If it identifies that the call is part of a sequence (returning a valid sequenceLockKey), then register this key using _updateFrameWrites. This compile-time registration flags the sequence key for runtime write-counting, ensuring the runtime creates a lock promise for it. 
-     This lock will only be released in Step 7 at runtime after the sequenced function call finishes execution - fram.set will be called for the key variable, which will release the lock (any unfinished writes keep a variable locked for further reading and modification).
+     This lock will only be released in Step 8 at runtime after the sequenced function call finishes execution - fram.set will be called for the key variable, which will release the lock (any unfinished writes keep a variable locked for further reading and modification).
 *   **Verification:**
     *   Breakpoint Debugging: Verify `_getSequenceKey` returns correct path/key for various cases.
 
-**Step 2: Implement `isCallPath` Context and Static Path Extraction Helper**
+**Step 2: Correct Sequence Key Propagation and Runtime Frame Handling**
+
+*   **Title:** Correct Sequence Key Propagation and Runtime Frame Handling.
+*   **Goal:** Fix the bug where `writeCounters` for sequence keys (`!key`) are not correctly propagated during compilation, preventing runtime lock creation. Ensure related runtime frame methods handle these keys appropriately.
+*   **Explanation:** The standard variable scoping logic incorrectly treats sequence keys as locally declared, stopping `writeCounts` propagation prematurely. This fix ensures propagation reaches the necessary frames by conceptually declaring `!` keys at the root and adjusts runtime methods (`resolve`, `_promisifyParentVariables`) for compatibility.
+*   **Implementation:**
+    1.  **Modify `compiler.js -> Compiler.prototype._updateFrameWrites`:**
+        *   Add a check at the start of the scope-finding logic: If `name.startsWith('!')`, bypass the upward search and set the scope frame `vf = frame.rootFrame`.
+    2.  **Modify `runtime.js -> AsyncFrame.prototype.resolve`:**
+        *   Add a check at the start: If `name.startsWith('!')`, return `this.rootFrame`. Otherwise, continue standard logic.
+    3.  **Modify `runtime.js -> AsyncFrame.prototype._promisifyParentVariables`:**
+        *   Inside the loop processing `writeCounters`:
+            *   Snapshot value using `this.parent.lookup(varName)` (unchanged).
+            *   Determine target container in parent (`variables` or `asyncVars`).
+            *   Assign the new lock promise directly to `parent[targetContainer][varName]`, creating the property if it doesn't exist.
+            *   Keep the existing logic for handling promise chain resolution (`await currentPromiseToAwait...`).
+*   **Verification:**
+    *   Confirm the previously failing test case (`it.only('should enforce sequence based on object path...')`) now passes.
+    *   Inspect compiled code for `{% do object!.method() %}` to verify `pushAsyncBlock` arguments now include the correct `writeCounters` (e.g., `{"!object": 1}`).
+    *   Run other sequence-related tests to check for regressions.
+
+**Step 3: Implement `isCallPath` Context and Static Path Extraction Helper**
 
 *   **Title:** Add `isCallPath` Compilation Context and Path Extraction Helper.
 *   **Goal:** Modify the compiler's core `compile` function and relevant compiler methods (`compileLookupVal`, `compileFunCall`) to pass down a `isCallPath` argument. It is passed as `true` from compileFunCall for it's node.name. Implement the `_extractStaticPathKey` helper to retrieve the static path. Add calls to this helper within `compileLookupVal` and `compileFunCall`.
@@ -76,7 +97,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Use `console.log` or debugger to verify `isCallPath` is passed correctly during recursive compilation.
     *   Verify `_extractStaticPathKey` returns correct path or `null` for various test cases (static paths, dynamic paths) when called from `compileLookupVal` and `compileFunCall`.
 
-**Step 3: Compiler Sequence Analysis - Identify Potential Keys**
+**Step 4: Compiler Sequence Analysis - Identify Potential Keys**
 
 *   **Title:** Identify Static Path Keys for Sequencing.
 *   **Goal:** Within the compiler, determine the specific static path key (e.g., `!a!b!c`) associated with any symbol or property lookup being compiled.
@@ -84,7 +105,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
 *   **Implementation:**
     *   Utilize `_extractStaticPathKey` within `compileSymbol` and `compileLookupVal` to extract the relevant `nodeStaticPathKey`.
 
-**Step 4: Implement Runtime Waiting Logic (`awaitSequenceLock`)**
+**Step 5: Implement Runtime Waiting Logic (`awaitSequenceLock`)**
 
 *   **Title:** Create Runtime Sequence Lock Waiting Mechanism.
 *   **Goal:** Implement the core runtime function (`awaitSequenceLock`) responsible for pausing execution if a sequence lock (represented by a promise) is active for a given key.
@@ -92,16 +113,16 @@ Please implement these steps sequentially, verifying each one thoroughly.
 *   **Implementation:**
     *   Implement `runtime.awaitSequenceLock` to check the lock key state via `frame.lookup` and manage promise chain resolution if a lock promise is found.
 
-**Step 5: Implement Sequenced Lookup with Lock Key Declaration Check (Runtime & Compiler)**
+**Step 6: Implement Sequenced Lookup with Lock Key Declaration Check (Runtime & Compiler)**
 
 *   **Title:** Conditionally Apply Sequence Locks to Lookups.
 *   **Goal:** Ensure that symbol and property lookups only wait for sequence locks if a lock for their specific static path key has actually been declared (via a `!` marker elsewhere).
-*   **Explanation:** This involves both compiler and runtime changes. The compiler adds a check (`_isDeclared`) to see if the `nodeStaticPathKey` identified in Step 3 corresponds to a declared lock. If so, it emits code calling new runtime helpers (`sequencedContextLookup`, `sequencedMemberLookup`). These runtime helpers use `awaitSequenceLock` (from Step 4) before performing the actual lookup. If no lock was declared for the path, the compiler emits standard lookup code.
+*   **Explanation:** This involves both compiler and runtime changes. The compiler adds a check (`_isDeclared`) to see if the `nodeStaticPathKey` identified in Step 4 corresponds to a declared lock. If so, it emits code calling new runtime helpers (`sequencedContextLookup`, `sequencedMemberLookup`). These runtime helpers use `awaitSequenceLock` (from Step 5) before performing the actual lookup. If no lock was declared for the path, the compiler emits standard lookup code.
 *   **Implementation:**
     *   Implement runtime helpers `sequencedContextLookup` and `sequencedMemberLookup` which internally call `awaitSequenceLock` before performing standard lookup logic.
     *   Modify `compileSymbol` and `compileLookupVal` to check if the `nodeStaticPathKey` is declared using `_isDeclared` and conditionally emit calls to either the standard lookup functions or the new `sequenced...Lookup` helpers.
 
-**Step 6: Implement Lock Release/Signaling for `!` Calls**
+**Step 7: Implement Lock Release/Signaling for `!` Calls**
 
 *   **Title:** Ensure Lock Release via Runtime Helper
 *   **Goal:** Guarantee sequence locks are released after a sequenced function call attempt, preventing deadlocks.
@@ -111,7 +132,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Modify the compiler's `compileFunCall` logic to detect sequenced calls using `_getSequenceKey`.
     *   Generate code within `compileFunCall` to invoke `runtime.sequencedCallWrap` for sequenced calls (passing the `sequenceLockKey`), and `runtime.callWrap` otherwise.
 
-**Step 7: Add Documentation**
+**Step 8: Add Documentation**
 
 *   **Goal:** Document feature, syntax, usage, **static context variable path limitation**, errors, performance.
 *   **Details:** Explain `!`, `method!()`. Provide clear correct/incorrect examples.
