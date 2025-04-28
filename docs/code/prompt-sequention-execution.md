@@ -12,25 +12,24 @@ Your goal is to modify the Cascada compiler (`compiler.js`) and runtime (`runtim
 *   **The Side Effect Problem:** Default parallelism can break logic when operations modify shared state and depend on order. For example, `account.deposit(100)` *must* complete before `account.withdraw(50)` can safely execute. Cascada's standard data-flow dependency tracking doesn't handle this state-based ordering.
 *   **The `!` Solution:** The `!` marker provides explicit control.
     *   `object.path!.method()`: Sequences all calls marked with `!` on the specific `object.path`.
-    *   `object.path.method!()`: Sequences only calls to `method` marked with `!` on that path. (Note: Requires parser/transformer support to set `.sequenced` flag on the `FunCall` node).
-*   **Key Constraint:** This feature relies heavily on **static path analysis** during compilation. Therefore, the `!` marker will **only work reliably on paths starting directly from a context variable** (passed into the template render function) **and consisting of static segments** (e.g., `contextVar.prop1.prop2!.method()`). It **cannot** be reliably used with intermediate template variables (`{% set x = contextVar %}{{ x.prop1!.method() %}}`) or dynamic lookups (`data[index]!.action()`). The compiler must enforce this constraint. This limitation must be clearly documented.
+    *   `object.path.method!()`: Sequences only calls to `method` marked with `!` on that path. (Note: Requires parser support to set `.sequenced` flag on the `FunCall` node).
+*   **Key Constraint:** This feature relies heavily on **static path analysis** during compilation. Therefore, the `!` marker will **only work on paths starting directly from a context variable** (passed into the template render function) **and consisting of static segments** (e.g., `contextVar.prop1.prop2!.method()`). It **cannot** be used with intermediate template variables (`{% set x = contextVar %}{{ x.prop1!.method() %}}`) or dynamic lookups (`data[index]!.action()`). The compiler must enforce this constraint. This limitation must be clearly documented.
 
 **3. Core Implementation Strategy:**
 
 We will leverage Cascada's existing complex asynchronous variable synchronization system (`writeCounters`, `reads`, `_promisifyParentVariables`, `frame.set`, `_countdownAndResolveAsyncWrites`) to manage sequence locks with minimal new infrastructure.
 
 *   **Sequence Keys as Lock Variables:** Each unique static path marked for sequencing (e.g., `!contextVar!prop1`, `!contextVar!prop2!method`) will be treated as an implicit "lock variable".
-*   **Global Coordination (`rootFrame`):** All sequence lock variables are managed globally within the template execution's top-level frame (`rootFrame`). Runtime functions (`lookup`, `resolve`, `set`) will be modified to target `rootFrame` for these keys.
 *   **Compiler Analysis & Registration:**
-    *   The compiler uses `_getSequencedPath` to identify valid static context paths marked with `!`.
-    *   For `!` operations, it derives the *specific* lock key (`sequenceLockKey`) and *potential* parent keys (`potentialParentLockKeys`) from the path returned by `_getSequencedPath`. It registers "write intent" (`_updateFrameWrites(frame.rootFrame, sequenceLockKey)`) for the specific key *during compilation*, signaling the runtime to create a lock promise via `_promisifyParentVariables`.
-    *   For *any* operation (lookup or call) on a static context path, it derives potential parent lock keys and checks them against declared locks (`rootFrame.declaredVars`). It passes only the relevant, declared parent keys (`lockKeys`) to the runtime.
+    *   The compiler uses `_getSequenceKey` to identify valid static context keys derrived from paths marked with `!`.
+    *   For `!` operations, it derives the *specific* lock key (`sequenceLockKey`) derrived from the path to that `!` using `_getSequenceKey`. It registers "write intent" (`_updateFrameWrites(frame, sequenceLockKey)`) for the specific key *during compilation*, signaling the runtime to create a lock promise via `_promisifyParentVariables`.
+    *   For *any* operation (lookup or call) on a static context path, it derives potential parent lock keys and checks them against declared locks (`declaredVars`). It passes only the relevant, declared parent keys (`lockKeys`) to the runtime.
 *   **Runtime Waiting (Implicit via Helpers):**
-    *   New runtime helpers (`awaitSequenceLocks`, `sequencedMemberLookup`, `sequencedCallWrap`) are introduced.
-    *   These helpers use `awaitSequenceLocks` to check the relevant lock keys (passed by the compiler) via the modified `lookup`. They `await` any active lock promises found before proceeding with the actual lookup or call.
+    *   New runtime helpers (`awaitSequenceLocks`, `sequencedMemberLookup`) are introduced.
+    *   These helpers use `awaitSequenceLocks` to check the relevant lock keys (passed by the compiler) via `lookup`. They `await` any active lock promises found before proceeding with the actual lookup or call.
 *   **Runtime Signaling & Error Handling:**
     *   When a `!` call completes (successfully or with an error), the compiler emits code that calls `frame.set("sequenceLockKey", true, true)` within a `finally` block of an async IIFE.
-    *   This `frame.set` (modified to target `rootFrame`) triggers the existing variable resolution mechanism (`_countdownAndResolveAsyncWrites`), which resolves the lock promise in `rootFrame`, allowing the next operation in that sequence to proceed. The `finally` block guarantees lock release, preventing deadlocks.
+    *   This `frame.set` triggers the existing variable resolution mechanism (`_countdownAndResolveAsyncWrites`), which resolves the lock promise, allowing the next operation in that sequence to proceed. The `finally` block guarantees lock release, preventing deadlocks.
 
 **4. Provided Files:**
 
@@ -49,16 +48,18 @@ Please implement these steps sequentially, verifying each one thoroughly.
 
 *   **Title:** Analyze Path for Static Origin, Sequence Marker, and Extract Path Array.
 *   **Summary:**
-    *   Implemented helper `_isScopeVariable(frame, variableName)` to check if a variable is defined within template scope (using `frame.declaredVars`).
-    *   Implemented `_getSequencedPath(node, frame)` which:
+    *   Implemented helper `_isDeclared(frame, variableName)` to check if a variable is defined within template scope (using `frame.declaredVars`).
+    *   Implemented `_getSequenceKey(node, frame)` which:
         *   Traverses the AST (`LookupVal` chain) from `node`.
         *   Checks for the `.sequenced` flag (representing `!`).
         *   Validates that path segments up to and including the `!` are static (`Symbol` or string `Literal`).
-        *   Validates that the path root is *not* a scope variable using `_isScopeVariable`.
+        *   Validates that the path root is *not* a scope variable using `_isDeclared`.
         *   Handles errors for double `!` and dynamic paths combined with `!`.
-        *   Returns the array of static path segments (e.g., `['a', 'b', 'c']`) if a valid sequence marker `!` is found on a path originating from context, otherwise returns `null`.
+        *   Returns the key for for that path, prepending `!` and using `!` to separate the path segments, e.g. !a!b!c or `null` if no `.sequenced` flag was found
+     *   Register Sequence Synchronization Intent: Update compileFunCall to analyze the function call's path using _getSequenceKey. If it identifies that the call is part of a sequence (returning a valid sequenceLockKey), then register this key using _updateFrameWrites. This compile-time registration flags the sequence key for runtime write-counting, ensuring the runtime creates a lock promise for it. 
+     This lock will only be released in Step 7 at runtime after the sequenced function call finishes execution - fram.set will be called for the key variable, which will release the lock (any unfinished writes keep a variable locked for further reading and modification).
 *   **Verification:**
-    *   Breakpoint Debugging: Verify `_getSequencedPath` returns correct path arrays for various cases.
+    *   Breakpoint Debugging: Verify `_getSequenceKey` returns correct path/key for various cases.
 
 **Step 2: Implement `fullPathNode` Context and Static Path Extraction Helper**
 
@@ -77,7 +78,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
 
 **Step 3: Compiler Sequence Analysis - Identify Potential Keys**
 
-*   **Title:** Identify Potential Static Path Keys for Sequencing.
+*   **Title:** Identify Static Path Keys for Sequencing.
 *   **Goal:** Within the compiler, determine the specific static path key (e.g., `!a!b!c`) associated with any symbol or property lookup being compiled.
 *   **Explanation:** This preparatory step uses the `_extractStaticPathKey` helper to derive the key string representing the full static path being accessed. This key is essential for later checks and runtime operations related to sequencing, but this step *doesn't* yet decide if sequencing applies.
 *   **Implementation:**
@@ -97,9 +98,8 @@ Please implement these steps sequentially, verifying each one thoroughly.
 *   **Goal:** Ensure that symbol and property lookups only wait for sequence locks if a lock for their specific static path key has actually been declared (via a `!` marker elsewhere).
 *   **Explanation:** This involves both compiler and runtime changes. The compiler adds a check (`_isDeclared`) to see if the `nodeStaticPathKey` identified in Step 3 corresponds to a declared lock. If so, it emits code calling new runtime helpers (`sequencedContextLookup`, `sequencedMemberLookup`). These runtime helpers use `awaitSequenceLock` (from Step 4) before performing the actual lookup. If no lock was declared for the path, the compiler emits standard lookup code.
 *   **Implementation:**
-    *   Add compiler helper `_isDeclared` for checking lock key declaration status during compilation.
     *   Implement runtime helpers `sequencedContextLookup` and `sequencedMemberLookup` which internally call `awaitSequenceLock` before performing standard lookup logic.
-    *   Modify `compileSymbol` and `compileLookupVal` to use `_isDeclared` and conditionally emit calls to either the standard lookup functions or the new `sequenced...Lookup` helpers.
+    *   Modify `compileSymbol` and `compileLookupVal` to check if the `nodeStaticPathKey` is declared using `_isDeclared` and conditionally emit calls to either the standard lookup functions or the new `sequenced...Lookup` helpers.
 
 **Step 6: Implement Lock Release/Signaling for `!` Calls (Compiler & Runtime Setup)**
 
@@ -114,7 +114,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
 
 *   **Title:** Ensure Lock Release on Sequenced Call Errors.
 *   **Goal:** Guarantee that sequence locks are released even if a sequenced function call fails, preventing deadlocks.
-*   **Explanation:** For calls where a lock *was* declared (Step 6), the compiler wraps the `await sequencedCallWrap` and the success-signaling `frame.set` (Step 7) within an `async` IIFE containing a `try...catch...finally` block. The crucial `frame.set` call to release the lock is placed within the `finally` block, ensuring it executes regardless of success or failure. Proper async state (`astate`) management for this IIFE is also required.
+*   **Explanation:** For calls where a lock *was* declared (Step 1), the compiler wraps the `await sequencedCallWrap` and the success-signaling `frame.set` (Step 7) within an `async` IIFE containing a `try...catch...finally` block. The crucial `frame.set` call to release the lock is placed within the `finally` block, ensuring it executes regardless of success or failure. Proper async state (`astate`) management for this IIFE is also required.
 *   **Implementation:**
     *   Modify `compileFunCall` to wrap the sequenced call and release logic in an `async` IIFE with `try/catch/finally` *only when* the lock was declared.
     *   Ensure the `finally` block contains the lock-releasing `frame.set` call and `astate.leaveAsyncBlock`.
