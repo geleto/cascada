@@ -4,7 +4,7 @@ const parser = require('./parser');
 const transformer = require('./transformer');
 const nodes = require('./nodes');
 const { TemplateError } = require('./lib');
-const { Frame, AsyncFrame } = require('./runtime');
+const { Frame, AsyncFrame, sequencedCallWrap } = require('./runtime');
 const { Obj } = require('./object');
 
 const OPTIMIZE_ASYNC = true;//optimize async operations
@@ -1248,13 +1248,8 @@ class Compiler extends Obj {
         this._updateFrameWrites(frame, sequenceLockKey);
       }
 
+      //@todo - node.name? or only in compileLookup and compileSymbol?
       fullPathNode = fullPathNode === null ? node : fullPathNode;
-
-      const staticPathKey = this._extractStaticPathKey(node.name);
-      if (staticPathKey) {
-        //@todo implement awaiting any sequence paths
-
-      }
 
       //@todo - finish async name handling
       let asyncName = node.name.isAsync;
@@ -1263,15 +1258,20 @@ class Compiler extends Obj {
       }
       asyncName = true;
       if (!asyncName) {
-        //this probably never happens because the name of the function can come from a variable
-        //which is set to async value and it's very hard to know if this is the case at compile time
+        //We probably need some static analysis to know for sure a name is not async
         // {% set asyncFunc = getAsyncFunction() %}
         // {{ asyncFunc(arg1, arg2) }}
         // Function name is not async, so resolve only the arguments.
         this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
-          this._emit(`return runtime.callWrap(`);
-          this.compile(node.name, frame);
-          this._emitLine(`, "${funcName}", context, ${result});`);
+          if (!sequenceLockKey) {
+            this._emit(`return runtime.callWrap(`);
+            this.compile(node.name, frame);
+            this._emitLine(`, "${funcName}", context, ${result});`);
+          } else {
+            this._emit(`return runtime.sequencedCallWrap(`);
+            this.compile(node.name, frame);
+            this._emitLine(`, "${funcName}", context, ${result}, frame, "${sequenceLockKey}");`);
+          }
         }); // Resolve arguments using _compileAggregate.
       } else {
         // Function name is dynamic, so resolve both function and arguments.
@@ -1283,7 +1283,11 @@ class Compiler extends Obj {
         };
 
         this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
-          this._emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
+          if (!sequenceLockKey) {
+            this._emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
+          } else {
+            this._emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}");`);
+          }
         });
       }
       this._emitLine(')');//(lineno, ...

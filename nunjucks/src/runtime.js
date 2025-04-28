@@ -850,6 +850,15 @@ function callWrap(obj, name, context, args) {
   return obj.apply(context, args);
 }
 
+async function sequencedCallWrap(func, funcName, context, args, frame, sequenceLockKey) {
+  try {
+    return await callWrap(func, funcName, context, args);
+  } finally {
+    //release the lock associated with this specific sequence key
+    frame.set(sequenceLockKey, true, true); // This will set the lock writeCount to 0 and release the lock
+  }
+}
+
 function contextOrFrameLookup(context, frame, name) {
   var val = frame.lookup(name);
   return (val !== undefined) ?
@@ -1213,40 +1222,41 @@ async function sequencedMemberLookup(frame, target, key, nodeLockKey) {
 }
 
 module.exports = {
-  Frame: Frame,
-  AsyncFrame: AsyncFrame,
-  AsyncState: AsyncState,
-  makeMacro: makeMacro,
-  makeKeywordArgs: makeKeywordArgs,
-  numArgs: numArgs,
-  suppressValue: suppressValue,
-  suppressValueAsync: suppressValueAsync,
-  ensureDefined: ensureDefined,
-  ensureDefinedAsync: ensureDefinedAsync,
-  promisify: promisify,
-  resolveAll: resolveAll,
-  resolveDuo: resolveDuo,
-  resolveSingle: resolveSingle,
-  resolveSingleArr: resolveSingleArr,
-  resolveObjectProperties: resolveObjectProperties,
-  resolveArguments: resolveArguments,
-  flattentBuffer: flattentBuffer,
-  memberLookup: memberLookup,
-  memberLookupAsync: memberLookupAsync,
-  contextOrFrameLookup: contextOrFrameLookup,
-  callWrap: callWrap,
-  handleError: handleError,
+  Frame,
+  AsyncFrame,
+  AsyncState,
+  makeMacro,
+  makeKeywordArgs,
+  numArgs,
+  suppressValue,
+  suppressValueAsync,
+  ensureDefined,
+  ensureDefinedAsync,
+  promisify,
+  resolveAll,
+  resolveDuo,
+  resolveSingle,
+  resolveSingleArr,
+  resolveObjectProperties,
+  resolveArguments,
+  flattentBuffer,
+  memberLookup,
+  memberLookupAsync,
+  contextOrFrameLookup,
+  callWrap,
+  sequencedCallWrap,
+  handleError,
   isArray: lib.isArray,
   keys: lib.keys,
-  SafeString: SafeString,
-  newSafeStringAsync: newSafeStringAsync,
-  copySafeness: copySafeness,
-  markSafe: markSafe,
-  asyncEach: asyncEach,
-  asyncAll: asyncAll,
+  SafeString,
+  newSafeStringAsync,
+  copySafeness,
+  markSafe,
+  asyncEach,
+  asyncAll,
   inOperator: lib.inOperator,
-  fromIterator: fromIterator,
-  iterate: iterate,
+  fromIterator,
+  iterate,
   setLoopBindings,
   awaitSequenceLock,
   sequencedContextLookup,
