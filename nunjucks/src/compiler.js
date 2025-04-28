@@ -674,7 +674,7 @@ class Compiler extends Obj {
     }
   }
 
-  compileSymbol(node, frame, fullPathNode = null) {
+  compileSymbol(node, frame, isCallPath = false) {
     var name = node.value;
     var v = frame.lookup(name);
 
@@ -688,6 +688,10 @@ class Compiler extends Obj {
 
       // Not in template scope, check context/frame with potential sequence lock
       if (this.asyncMode) {
+
+        if (node.sequenced && !isCallPath) {
+          throw new Error('Sequence marker (!) is not allowed in non-call paths');
+        }
         this._updateFrameReads(frame, name);
 
         let nodeStaticPathKey = this._extractStaticPathKey(node);
@@ -921,19 +925,6 @@ class Compiler extends Obj {
     }
   }
 
-  _validateFullPathNode(node, fullPathNode) {
-    if (node.sequenced) {
-      if (!(fullPathNode instanceof nodes.FunCall)) {
-        // If the full expression isn't a FunCall, '!' on the base Symbol is invalid.
-        this.fail(
-          `Syntax Error: The sequence marker '!' applied directly to a variable requires it to be part of a function or method call.`,
-          node.lineno,
-          node.colno
-        );
-      }
-    }
-  }
-
   //@todo - directly to string
   _extractStaticPathKey(node) {
     // Check if the input node itself is valid to start a path extraction
@@ -965,55 +956,29 @@ class Compiler extends Obj {
     return '!' + parts.join('!');
   }
 
-  _getSequentialLock(node, frame, fullPathNode) {
-    fullPathNode = (node.isAsync && fullPathNode === null) ? node : fullPathNode;
-    this._validateFullPathNode(node, fullPathNode);
-    if (frame.rootFrame && frame.rootFrame.declaredVars) {
+  /*_getSequentialLock(node, frame, isCallPath) {
+    isCallPath = (node.isAsync && isCallPath === null) ? node : isCallPath;
+    this._validateFullPathNode(node, isCallPath);
+    if (frame.declaredVars) {
       const staticPathKey = this._extractStaticPathKey(node);
-      if (staticPathKey && frame.rootFrame.declaredVars.has(staticPathKey)) {
+      if (staticPathKey && frame.declaredVars.has(staticPathKey)) {
         return staticPathKey;
       }
     }
     return null;
-  }
+  }*/
 
-  compileSymbolX(node, frame, fullPathNode = null) {
-    var name = node.value;
-    var v = frame.lookup(name);
-
-    if (v) {
-      //for now the only places that set async symbol are the async filter and super()
-      //this should work for set vars but it's disabled now (nunjucks bug or on purpose?)
-      this._emit(v);
-    } else {
-      // @todo - omit this for function calls?
-      // (parent instanceof nodes.FunCall && parent.name === node)
-
-      // Not in template scope, check context/frame with potential sequence lock
-      if (this.asyncMode) {
-        this._updateFrameReads(frame, name);
-
-        let nodeStaticPathKey = this._extractStaticPathKey(node);
-        if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
-          // Use sequenced lookup if a lock for this node exists
-          this._emit(`runtime.sequencedContextLookup(frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
-          return;
-        }
-      }
-
-      // Use standard context/frame lookup if not async mode or no lock
-      this._emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
-    }
-  }
-
-  compileLookupVal(node, frame, fullPathNode = null) {
+  compileLookupVal(node, frame, isCallPath = false) {
 
     if (node.isAsync) {
+      if (node.sequenced && !isCallPath) {
+        throw new Error('Sequence marker (!) is not allowed in non-call paths');
+      }
       let nodeStaticPathKey = this._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
         // Use sequenced lookup if a lock for this node exists
         this._emit(`runtime.sequencedMemberLookup(frame, (`);
-        this.compile(node.target, frame, fullPathNode); // Compile target expression
+        this.compile(node.target, frame, isCallPath); // Compile target expression
         this._emit('),');
         this.compile(node.val, frame); // Compile key expression
         this._emit(`, ${JSON.stringify(nodeStaticPathKey)})`); // Pass the key
@@ -1022,7 +987,7 @@ class Compiler extends Obj {
     }
 
     this._emit(`runtime.memberLookup${node.isAsync ? 'Async' : ''}((`);
-    this.compile(node.target, frame, fullPathNode);
+    this.compile(node.target, frame, isCallPath);
     this._emit('),');
     this.compile(node.val, frame);
     this._emit(')');
@@ -1231,7 +1196,7 @@ class Compiler extends Obj {
     return null;
   }
 
-  compileFunCall(node, frame, fullPathNode = null) {
+  compileFunCall(node, frame) {
     // Keep track of line/col info at runtime by setting
     // variables within an expression. An expression in JavaScript
     // like (x, y, z) returns the last value, and x and y can be
@@ -1249,7 +1214,6 @@ class Compiler extends Obj {
       }
 
       //@todo - node.name? or only in compileLookup and compileSymbol?
-      fullPathNode = fullPathNode === null ? node : fullPathNode;
 
       //@todo - finish async name handling
       let asyncName = node.name.isAsync;
@@ -1265,7 +1229,7 @@ class Compiler extends Obj {
         this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
           if (!sequenceLockKey) {
             this._emit(`return runtime.callWrap(`);
-            this.compile(node.name, frame);
+            this.compile(node.name, frame, true);
             this._emitLine(`, "${funcName}", context, ${result});`);
           } else {
             this._emit(`return runtime.sequencedCallWrap(`);
@@ -2516,10 +2480,10 @@ class Compiler extends Obj {
     this._emitLine('root: root\n};');
   }
 
-  compile(node, frame, fullPathNode = null) {
+  compile(node, frame, isCallPath = false) {
     var _compile = this['compile' + node.typename];
     if (_compile) {
-      _compile.call(this, node, frame, fullPathNode);
+      _compile.call(this, node, frame, isCallPath);
     } else {
       this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno);
     }

@@ -61,19 +61,19 @@ Please implement these steps sequentially, verifying each one thoroughly.
 *   **Verification:**
     *   Breakpoint Debugging: Verify `_getSequenceKey` returns correct path/key for various cases.
 
-**Step 2: Implement `fullPathNode` Context and Static Path Extraction Helper**
+**Step 2: Implement `isCallPath` Context and Static Path Extraction Helper**
 
-*   **Title:** Add `fullPathNode` Compilation Context and Path Extraction Helper.
-*   **Goal:** Modify the compiler's core `compile` function and relevant compiler methods (`compileLookupVal`, `compileFunCall`, `compileSymbol`) to pass down a `fullPathNode` argument. Implement the `_extractStaticPathKey` helper to retrieve the static path. Add calls to this helper within `compileLookupVal` and `compileFunCall`.
-*   **Explanation:** This step establishes the infrastructure needed for later sequence handling. The `fullPathNode` argument provides context about the overall expression being compiled. The `_extractStaticPathKey` helper gathers structural path information, which will be used in subsequent steps for both validation and determining necessary waits. This step focuses only on adding the argument passing mechanism and the basic path extraction, without implementing sequence logic itself.
+*   **Title:** Add `isCallPath` Compilation Context and Path Extraction Helper.
+*   **Goal:** Modify the compiler's core `compile` function and relevant compiler methods (`compileLookupVal`, `compileFunCall`) to pass down a `isCallPath` argument. It is passed as `true` from compileFunCall for it's node.name. Implement the `_extractStaticPathKey` helper to retrieve the static path. Add calls to this helper within `compileLookupVal` and `compileFunCall`.
+*   **Explanation:** This step establishes the infrastructure needed for later sequence handling. The `isCallPath` argument provides context about the overall expression being compiled. The `_extractStaticPathKey` helper gathers structural path information, which will be used in subsequent steps for both validation and determining necessary waits. This step focuses only on adding the argument passing mechanism and the basic path extraction, without implementing sequence logic itself.
 *   **Implementation:**
-    *   Modify `Compiler.prototype.compile` signature to accept `fullPathNode = null` and pass it down.
-    *   Modify `compileLookupVal`, `compileFunCall`, and `compileSymbol` to accept `fullPathNode`.
-    *   Update recursive `this.compile` calls within `compileLookupVal` (for `node.target`) and `compileFunCall` (for `node.name`) to correctly determine and pass the `fullPathNode` value down the chain.
+    *   Modify `Compiler.prototype.compile` signature to accept `isCallPath = false` and pass it down.
+    *   Modify `compileLookupVal` and `compileSymbol` to accept `isCallPath`.
+    *   Update recursive `this.compile` calls within `compileLookupVal` (for `node.target`) to correctly determine and pass the `isCallPath` value down the chain.
     *   Implement `_extractStaticPathKey` helper function to traverse upwards from a `LookupVal` or `Symbol` and return the static path, or `null` if the path is dynamic/invalid.
     *   Add calls to `this._extractStaticPathKey` at the beginning of `compileLookupVal` (using `node`) and `compileFunCall` (using `node.name`) to calculate the static path.
 *   **Verification:**
-    *   Use `console.log` or debugger to verify `fullPathNode` is passed correctly during recursive compilation.
+    *   Use `console.log` or debugger to verify `isCallPath` is passed correctly during recursive compilation.
     *   Verify `_extractStaticPathKey` returns correct path or `null` for various test cases (static paths, dynamic paths) when called from `compileLookupVal` and `compileFunCall`.
 
 **Step 3: Compiler Sequence Analysis - Identify Potential Keys**
