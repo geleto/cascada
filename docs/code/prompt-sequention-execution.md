@@ -110,15 +110,15 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Modify `compileFunCall` to emit the `frame.set` call after `await sequencedCallWrap` *only when* the lock was declared (determined in Step 6).
     *   Verify the standard runtime `set` mechanism correctly triggers lock promise resolution.
 
-**Step 7: Implement Robust Error Handling & Signaling for `!` Calls (Compiler)**
+**Step 7: Ensure Lock Release via Runtime Helper**
 
-*   **Title:** Ensure Lock Release on Sequenced Call Errors.
-*   **Goal:** Guarantee that sequence locks are released even if a sequenced function call fails, preventing deadlocks.
-*   **Explanation:** For calls where a lock *was* declared (Step 1), the compiler wraps the `await sequencedCallWrap` and the success-signaling `frame.set` (Step 7) within an `async` IIFE containing a `try...catch...finally` block. The crucial `frame.set` call to release the lock is placed within the `finally` block, ensuring it executes regardless of success or failure. Proper async state (`astate`) management for this IIFE is also required.
+*   **Title:** Ensure Lock Release via Runtime Helper
+*   **Goal:** Guarantee sequence locks are released after a sequenced function call attempt, preventing deadlocks.
+*   **Explanation:** The dedicated runtime helper `runtime.sequencedCallWrap` handles sequenced function calls. This helper executes the call using `runtime.callWrap` internally and ensures the corresponding sequence lock is reliably released afterwards by signaling completion through the frame's variable system via `frame.set`, even if the call fails. The compiler (`compileFunCall`) identifies sequenced calls using `_getSequenceKey` and directs them to use this specialized helper.
 *   **Implementation:**
-    *   Modify `compileFunCall` to wrap the sequenced call and release logic in an `async` IIFE with `try/catch/finally` *only when* the lock was declared.
-    *   Ensure the `finally` block contains the lock-releasing `frame.set` call and `astate.leaveAsyncBlock`.
-    *   Ensure the `astate.enterAsyncBlock` call for the IIFE uses `_getPushAsyncBlockCode` correctly, accounting for the lock key write.
+    *   Implement the `runtime.sequencedCallWrap` helper function, which internally calls `runtime.callWrap` and then reliably signals lock completion using `frame.set(sequenceLockKey, true, true)`.
+    *   Modify the compiler's `compileFunCall` logic to detect sequenced calls using `_getSequenceKey`.
+    *   Generate code within `compileFunCall` to invoke `runtime.sequencedCallWrap` for sequenced calls (passing the `sequenceLockKey`), and `runtime.callWrap` otherwise.
 
 **Step 8: Add Documentation**
 
