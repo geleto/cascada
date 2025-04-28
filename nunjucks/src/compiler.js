@@ -674,16 +674,6 @@ class Compiler extends Obj {
     }
   }
 
-  _isDeclared(frame, name) {
-    while (frame) {
-      if (frame.declaredVars && frame.declaredVars.has(name)) {
-        return true;
-      }
-      frame = frame.parent;
-    }
-    return false;
-  }
-
   compileSymbol(node, frame, fullPathNode = null) {
     var name = node.value;
     var v = frame.lookup(name);
@@ -1054,24 +1044,21 @@ class Compiler extends Obj {
     }
   }
 
-  _getSequenceKey(node) {
-    let path = this._getSequencedPath(node);
+  _getSequenceKey(node, frame) {
+    let path = this._getSequencedPath(node, frame);
     return path ? '!' + path.join('!') : null;
   }
 
-  // Add this helper function to the Compiler class (if not already present)
-  _isScopeVariable(frame, variableName) {
-    let currentFrame = frame;
-    while (currentFrame) {
-      if (currentFrame.declaredVars && currentFrame.declaredVars.has(variableName)) {
-        return true; // Found in template scope declarations
+  _isDeclared(frame, name) {
+    while (frame) {
+      if (frame.declaredVars && frame.declaredVars.has(name)) {
+        return true;
       }
-      currentFrame = currentFrame.parent;
+      frame = frame.parent;
     }
-    return false; // Not found in any template scope declaration up to the root
+    return false;
   }
 
-  // Final refined version of _getSequencedPath in the Compiler class
   // @todo - inline in _getSequenceKey
   _getSequencedPath(node, frame) {
     let path = [];
@@ -1181,7 +1168,7 @@ class Compiler extends Obj {
         }
 
         // --- Final Validation: Check Root Origin (Context vs. Scope) ---
-        if (this._isScopeVariable(frame, path[0])) {
+        if (this._isDeclared(frame, path[0])) {
           // Path starts with a template variable, invalid for sequencing
           return null;
         }
@@ -1215,7 +1202,7 @@ class Compiler extends Obj {
         );
       }
       // Validate root origin
-      if (this._isScopeVariable(frame, path[0])) { return null; }
+      if (this._isDeclared(frame, path[0])) { return null; }
       // Return the fully assembled path
       return path;
     }
@@ -1233,7 +1220,7 @@ class Compiler extends Obj {
 
       // Validate root origin
       const rootValue = rootNode.value;
-      if (this._isScopeVariable(frame, rootValue)) {
+      if (this._isDeclared(frame, rootValue)) {
         return null;
       }
       // Valid root is sequenced, path is just the root element
@@ -1256,10 +1243,9 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
 
-      const seqKey = this._getSequenceKey(node.name);
-      if (seqKey) {
-        // Use seqKey as the sequencing key
-        //console.log('Sequenced path:', seqKey);
+      const sequenceLockKey = this._getSequenceKey(node.name, frame);
+      if (sequenceLockKey) {
+        this._updateFrameWrites(frame, sequenceLockKey);
       }
 
       fullPathNode = fullPathNode === null ? node : fullPathNode;
@@ -1270,6 +1256,7 @@ class Compiler extends Obj {
 
       }
 
+      //@todo - finish async name handling
       let asyncName = node.name.isAsync;
       if (node.name.typename === 'Symbol' && !frame.lookup(node.name.value)) {
         asyncName = false;
