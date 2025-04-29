@@ -25,7 +25,7 @@ We will leverage Cascada's existing complex asynchronous variable synchronizatio
     *   For `!` operations, it derives the *specific* lock key (`sequenceLockKey`) derrived from the path to that `!` using `_getSequenceKey`. It registers "write intent" (`_updateFrameWrites(frame, sequenceLockKey)`) for the specific key *during compilation*, signaling the runtime to create a lock promise via `_promisifyParentVariables`.
     *   For *any* operation (lookup or call) on a static context path, it derives potential parent lock keys and checks them against declared locks (`declaredVars`). It passes only the relevant, declared parent keys (`lockKeys`) to the runtime.
 *   **Runtime Waiting (Implicit via Helpers):**
-    *   New runtime helpers (`awaitSequenceLocks`, `sequencedMemberLookup`) are introduced.
+    *   New runtime helpers (`awaitSequenceLocks`, `sequencedMemberLookupAsync`) are introduced.
     *   These helpers use `awaitSequenceLocks` to check the relevant lock keys (passed by the compiler) via `lookup`. They `await` any active lock promises found before proceeding with the actual lookup or call.
 *   **Runtime Signaling & Error Handling:**
     *   When a `!` call completes (successfully or with an error), the compiler emits code that calls `frame.set("sequenceLockKey", true, true)` within a `finally` block of an async IIFE.
@@ -119,9 +119,9 @@ Please implement these steps sequentially, verifying each one thoroughly.
 
 *   **Title:** Conditionally Apply Sequence Locks to Lookups.
 *   **Goal:** Ensure that symbol and property lookups only wait for sequence locks if a lock for their specific static path key has actually been declared (via a `!` marker elsewhere).
-*   **Explanation:** This involves both compiler and runtime changes. The compiler adds a check (`_isDeclared`) to see if the `nodeStaticPathKey` identified in Step 4 corresponds to a declared lock. If so, it emits code calling new runtime helpers (`sequencedContextLookup`, `sequencedMemberLookup`). These runtime helpers use `awaitSequenceLock` (from Step 5) before performing the actual lookup. If no lock was declared for the path, the compiler emits standard lookup code.
+*   **Explanation:** This involves both compiler and runtime changes. The compiler adds a check (`_isDeclared`) to see if the `nodeStaticPathKey` identified in Step 4 corresponds to a declared lock. If so, it emits code calling new runtime helpers (`sequencedContextLookup`, `sequencedMemberLookupAsync`). These runtime helpers use `awaitSequenceLock` (from Step 5) before performing the actual lookup. If no lock was declared for the path, the compiler emits standard lookup code.
 *   **Implementation:**
-    *   Implement runtime helpers `sequencedContextLookup` and `sequencedMemberLookup` which internally call `awaitSequenceLock` before performing standard lookup logic.
+    *   Implement runtime helpers `sequencedContextLookup` and `sequencedMemberLookupAsync` which internally call `awaitSequenceLock` before performing standard lookup logic.
     *   Modify `compileSymbol` and `compileLookupVal` to check if the `nodeStaticPathKey` is declared using `_isDeclared` and conditionally emit calls to either the standard lookup functions or the new `sequenced...Lookup` helpers.
 
 **Step 7: Implement Lock Release/Signaling for `!` Calls**

@@ -692,7 +692,7 @@ class Compiler extends Obj {
         if (node.sequenced && !isCallPath) {
           throw new Error('Sequence marker (!) is not allowed in non-call paths');
         }
-        this._updateFrameReads(frame, name);
+        this._updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
 
         let nodeStaticPathKey = this._extractStaticPathKey(node);
         if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
@@ -977,7 +977,7 @@ class Compiler extends Obj {
       let nodeStaticPathKey = this._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
         // Use sequenced lookup if a lock for this node exists
-        this._emit(`runtime.sequencedMemberLookup(frame, (`);
+        this._emit(`runtime.sequencedMemberLookupAsync(frame, (`);
         this.compile(node.target, frame, isCallPath); // Compile target expression
         this._emit('),');
         this.compile(node.val, frame); // Compile key expression
@@ -1408,6 +1408,10 @@ class Compiler extends Obj {
     if (name.startsWith('!')) {
       // Sequence keys are conceptually declared at the root for propagation purposes.
       vf = frame.rootFrame;
+      if (!vf.declaredVars) {
+        vf.declaredVars = new Set();
+      }
+      vf.declaredVars.add(name);
     } else {
       do {
         if (vf.declaredVars && vf.declaredVars.has(name)) {
@@ -1422,6 +1426,7 @@ class Compiler extends Obj {
       while (vf);
 
       if (!vf) {
+        //the variable did not exist
         //declare a new variable in the current frame (or a parent if !createScope)
         vf = frame;
         while (!vf.createScope) {
