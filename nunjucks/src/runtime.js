@@ -55,6 +55,7 @@ class Frame {
     return null;
   }
 
+  // @todo - fix when this.variables[name] exists but is undefined
   lookup(name) {
     var p = this.parent;
     var val = this.variables[name];
@@ -197,15 +198,46 @@ class AsyncFrame extends Frame {
     return super.get(name);
   }
 
-  lookup(name) {
+  //@todo - fix when this.variables[name] exists but is undefined
+  /*lookup(name) {
     let val = (this.asyncVars && name in this.asyncVars) ? this.asyncVars[name] : this.variables[name];
     if (val !== undefined) {
       return val;
     }
     return this.parent && this.parent.lookup(name);
+  }*/
+
+  lookup(name) {
+    if (this.asyncVars && name in this.asyncVars) {
+      return this.asyncVars[name];
+    }
+    if (this.variables && name in this.variables) {
+      return this.variables[name];
+    }
+    return this.parent && this.parent.lookup(name);
+  }
+
+  lookupAndLocate(name) {
+    if (this.asyncVars && name in this.asyncVars) {
+      return { value: this.asyncVars[name], frame: this };
+    }
+
+    if (name in this.variables) {
+      return { value: this.variables[name], frame: this };
+    }
+
+    if (this.parent) {
+      return this.parent.lookupAndLocate(name);
+    }
+
+    return { value: undefined, frame: null };
   }
 
   resolve(name, forWrite) {
+    if (name.startsWith('!')) {
+      // Sequence keys conceptually resolve to the root frame
+      return this.rootFrame;
+    }
     return super.resolve(name, forWrite);
   }
 
@@ -351,13 +383,24 @@ class AsyncFrame extends Frame {
     let parent = this.parent;
     for (let varName in writeCounters) {
       //snapshot the value
-      this.asyncVars[varName] = this.lookup(varName);
+      let {value, frame} = parent.lookupAndLocate(varName);
+      if (!frame) {
+        if (!varName.startsWith('!')) {
+          throw new Error(`Promisified variable ${varName} not found`);
+        }
+        //for sequential keys, create a default value in root if none found
+        frame = this.rootFrame;
+        value = undefined;//not yet locked
+        this.rootFrame.variables = this.rootFrame.variables || {};
+        this.rootFrame.variables[varName] = value;
+      }
+      this.asyncVars[varName] = value;//local snapshot of the value
       //promisify the variable in the frame (parent of the new async frame)
       //these will be resolved when the async block is done with the variable
-      if (parent.asyncVars && parent.asyncVars[varName] !== undefined) {
-        this._promisifyParentVar(parent, parent, 'asyncVars', varName);
-      } else if (parent.variables[varName] !== undefined) {
-        this._promisifyParentVar(parent, parent, 'variables', varName);
+      if (frame.asyncVars && varName in frame.asyncVars) {
+        this._promisifyParentVar(frame, 'asyncVars', varName);
+      } else if (frame.variables && varName in frame.variables) {
+        this._promisifyParentVar(frame, 'variables', varName);
       }
       else {
         throw new Error('Variable not found in parent frame');
@@ -365,7 +408,7 @@ class AsyncFrame extends Frame {
     }
   }
 
-  async _promisifyParentVar(parentFrame, parent, containerName, varName) {
+  async _promisifyParentVar(parent, containerName, varName) {
     // Snapshot the current value from the parent frame for local use by this block.
     this.asyncVars[varName] = parent[containerName][varName];
     let resolve;

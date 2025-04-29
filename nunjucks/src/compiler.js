@@ -4,7 +4,7 @@ const parser = require('./parser');
 const transformer = require('./transformer');
 const nodes = require('./nodes');
 const { TemplateError } = require('./lib');
-const { Frame, AsyncFrame, sequencedCallWrap } = require('./runtime');
+const { Frame, AsyncFrame } = require('./runtime');
 const { Obj } = require('./object');
 
 const OPTIMIZE_ASYNC = true;//optimize async operations
@@ -1405,28 +1405,33 @@ class Compiler extends Obj {
     //store the writes and variable declarations down the scope chain
     //search for the var in the scope chain
     let vf = frame;
-    do {
-      if (vf.declaredVars && vf.declaredVars.has(name)) {
-        break;//found the var in vf
+    if (name.startsWith('!')) {
+      // Sequence keys are conceptually declared at the root for propagation purposes.
+      vf = frame.rootFrame;
+    } else {
+      do {
+        if (vf.declaredVars && vf.declaredVars.has(name)) {
+          break;//found the var in vf
+        }
+        if (vf.isolateWrites) {
+          vf = null;
+          break;
+        }
+        vf = vf.parent;
       }
-      if (vf.isolateWrites) {
-        vf = null;
-        break;
-      }
-      vf = vf.parent;
-    }
-    while (vf);
+      while (vf);
 
-    if (!vf) {
-      //declare a new variable in the current frame (or a parent if !createScope)
-      vf = frame;
-      while (!vf.createScope) {
-        vf = vf.parent;//skip the frames that can not create a new scope
+      if (!vf) {
+        //declare a new variable in the current frame (or a parent if !createScope)
+        vf = frame;
+        while (!vf.createScope) {
+          vf = vf.parent;//skip the frames that can not create a new scope
+        }
+        if (!vf.declaredVars) {
+          vf.declaredVars = new Set();
+        }
+        vf.declaredVars.add(name);
       }
-      if (!vf.declaredVars) {
-        vf.declaredVars = new Set();
-      }
-      vf.declaredVars.add(name);
     }
 
     //count the sets in the current frame/async block, propagate the first write down the chain
