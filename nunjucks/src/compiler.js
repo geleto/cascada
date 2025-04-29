@@ -1029,170 +1029,153 @@ class Compiler extends Obj {
     let path = [];
     let current = node;
     let sequencedCount = 0;
-    let dynamicFound = false;
-    let initialNodeIsSequencedFunCall = false; // Flag for method!() case
+    // Flag to track if any dynamic segment (non-static key) was found
+    // in the path *before* the segment marked with '!'.
+    let dynamicFoundInPrefix = false;
+    // Stores the node where '!' was actually found (either LookupVal or Symbol).
+    let sequenceMarkerNode = null;
+    // Stores the static string value of the segment marked with '!'
+    let sequenceSegmentValue = null;
 
-    // Helper for checking static segments (Symbols or string Literals)
-    function isStaticSegment(n) {
-      return n && (n.typename === 'Symbol' || (n.typename === 'Literal' && typeof n.value === 'string'));
+    // Helper: Checks if a key node represents a static string key.
+    // This is the crucial check for sequencing requirements.
+    // We ONLY allow Literal strings for bracket access sequencing.
+    // Dot access (`a.b`) is assumed to be handled elsewhere or not subject
+    // to this specific sequencing mechanism if it doesn't use LookupVal
+    // with Literal keys.
+    function isStaticStringKey(keyNode) {
+      return keyNode && keyNode.typename === 'Literal' && typeof keyNode.value === 'string';
     }
 
     // --- Step 1: Handle FunCall with ! FIRST (e.g., a.method!()) ---
-    if (current.typename === 'FunCall' && current.sequenced) {
-      initialNodeIsSequencedFunCall = true; // Mark that ! was on the call
-      sequencedCount++;
-
-      // Validate the method being called is accessed statically
-      if (!current.name || current.name.typename !== 'LookupVal' || !isStaticSegment(current.name.val)) {
-        throw new TemplateError(
-          'Sequence Error: The sequence marker \'!\' on a method call requires a static method name accessed via dot (.) or static string literal ([]). Dynamic method names are not supported.',
-          current.lineno,
-          current.colno
-        );
-      }
-
-      // Add the static method name to the path
-      path.push(current.name.val.value);
-      // Move 'current' to the object part of the call (e.g., 'a.b' in 'a.b.method!()')
-      current = current.name.target;
+    // This path analysis focuses on object paths (LookupVal chains and root Symbols).
+    // FunCall sequencing (`method!()`) needs separate validation logic *before*
+    // this path traversal if it's intended to work differently.
+    // Assuming the current logic focuses on `path!.segment` or `root!`.
+    if (current.typename === 'FunCall' /* && current.sequenced */) {
+      // If FunCall sequencing is desired, its validation (static method name, etc.)
+      // should happen *before* or integrated carefully here.
+      // For now, let's assume '!' on FunCall itself isn't processed by *this* path logic.
+      // If the *target* of the FunCall has '!', that will be caught below.
+      // e.g., in obj.path!.method(), the path logic runs on 'obj.path!'
+      // If you need obj.method!(), it requires different handling.
+      // current = current.name.target; // Need to adjust 'current' if handling FunCall!
     }
 
-    // --- Step 2: Traverse the Object Path (LookupVal chain) ---
-    while (current && current.typename === 'LookupVal') {
-      // Check if the current path segment is dynamic BEFORE checking for '!'
-      if (!isStaticSegment(current.val)) {
-        // If we already found '!' on the initial FunCall, any dynamic segment in the object path is an error
-        if (initialNodeIsSequencedFunCall) {
-          throw new TemplateError(
-            'Sequence Error: The sequence marker \'!\' on a method call requires the entire object path preceding it to be static.',
-            current.lineno, // Error location is the dynamic segment node
-            current.colno
-          );
-        }
-        // Otherwise, just mark that a dynamic segment was found, in case '!' appears later on the path
-        dynamicFound = true;
-      }
 
-      // Check if '!' is on this path segment (e.g., a.b!.c)
-      if (current.sequenced) {
+    // --- Step 2: Traverse the Object Path upwards, searching for '!' ---
+    // We iterate from the end of the potential path backwards (up towards the root).
+    let nodeToAnalyze = current;
+    while (nodeToAnalyze && nodeToAnalyze.typename === 'LookupVal') {
+      const isCurrentKeyStatic = isStaticStringKey(nodeToAnalyze.val);
+
+      if (nodeToAnalyze.sequenced) {
         sequencedCount++;
-        // Catch double '!' (e.g., a.b!!.c or path!.method!())
         if (sequencedCount > 1) {
           throw new TemplateError(
             'Syntax Error: Using two sequence markers \'!\' in the same path is not supported.',
-            current.lineno,
-            current.colno
+            nodeToAnalyze.lineno, nodeToAnalyze.colno
           );
         }
-        // Validate that the segment *with* the '!' is static
-        if (!isStaticSegment(current.val)) {
+        // CRITICAL CHECK: The segment with '!' MUST use a static string key.
+        if (!isCurrentKeyStatic) {
           throw new TemplateError(
-            'Sequence Error: The sequence marker \'!\' cannot be applied directly to a dynamic path segment (like array index or function call result). Apply \'!\' only after static segments.',
-            current.lineno,
-            current.colno
+            'Sequence Error: The sequence marker \'!\' can only be applied after a static string literal key (e.g., obj["key"]!). It cannot be used with dynamic keys like variable indices (obj[i]!), numeric indices (obj[1]!), or other expression results.',
+            nodeToAnalyze.lineno, nodeToAnalyze.colno
           );
         }
-        // Validate that no *earlier* (higher up) segment was dynamic
-        if (dynamicFound) {
-          throw new TemplateError(
-            'Sequence Error: The sequence marker \'!\' requires the entire path preceding it to consist of static segments (identifiers or string literals). A dynamic segment was found earlier in the path.',
-            current.lineno,
-            current.colno
-          );
-        }
-
-        // --- Collect the Full Path Upwards ---
-        path.push(current.val.value); // Add the segment with '!'
-        let parent = current.target;
-        while (parent && parent.typename === 'LookupVal') {
-          // Segments here MUST be static due to the 'dynamicFound' check above
-          if (!isStaticSegment(parent.val)) {
-            throw new TemplateError(
-              `Internal Compiler Error: Dynamic segment validation failed unexpectedly during path collection.`,
-              parent.lineno, parent.colno
-            );
-          }
-          path.unshift(parent.val.value);
-          parent = parent.target;
-        }
-
-        // --- Handle and Validate the Root Node ---
-        let rootNode = parent;
-        if (rootNode && isStaticSegment(rootNode)) {
-          path.unshift(rootNode.value); // Add the static root
-        } else if (rootNode && !isStaticSegment(rootNode)) {
-          throw new TemplateError(
-            'Sequence Error: Paths marked with \'!\' must originate from a static root (context variable identifier). The path starts with a dynamic element.',
-            rootNode.lineno, rootNode.colno
-          );
-        } else {
-          throw new TemplateError(
-            `Internal Compiler Error: Invalid path structure. Root node is unexpected type or missing.`,
-            node.lineno, node.colno // Use original node for context
-          );
-        }
-
-        // --- Final Validation: Check Root Origin (Context vs. Scope) ---
-        if (this._isDeclared(frame, path[0])) {
-          // Path starts with a template variable, invalid for sequencing
-          return null;
-        }
-
-        // Path is valid for sequencing!
-        return path; // Return the full path array
-      } // End if (current.sequenced on path segment)
-
-      // Not sequenced at this level, move up the chain
-      current = current.target;
-    } // End while loop
-
-    // --- Step 3: Handle Root Node (after loop finishes) ---
-    let rootNode = current;
-
-    // Case A: We started with method!() and finished traversing the object path
-    if (initialNodeIsSequencedFunCall) {
-      if (rootNode && isStaticSegment(rootNode)) {
-        path.unshift(rootNode.value); // Add the static root to the path (method name was added first)
-      } else if (rootNode && !isStaticSegment(rootNode)) {
-        // e.g., getObj()!.method!()
-        throw new TemplateError(
-          'Sequence Error: Paths marked with \'!\' on a method call must originate from a static root (context variable identifier).',
-          rootNode.lineno, rootNode.colno
-        );
-      } else {
-        // e.g. a literal was the base: "string"!.method!() - doesn't make sense
-        throw new TemplateError(
-          `Internal Compiler Error: Invalid path structure for method call sequence. Root node is unexpected type or missing.`,
-          node.lineno, node.colno
-        );
+        sequenceMarkerNode = nodeToAnalyze;
+        sequenceSegmentValue = nodeToAnalyze.val.value; // Store the static key
+        current = nodeToAnalyze.target; // 'current' now points to the node *before* the '!' segment
+        break; // Found '!', stop searching
       }
-      // Validate root origin
-      if (this._isDeclared(frame, path[0])) { return null; }
-      // Return the fully assembled path
-      return path;
+
+      // If this segment doesn't have '!', check if it's dynamic.
+      // This contributes to the 'dynamicFoundInPrefix' check later.
+      if (!isCurrentKeyStatic) {
+        dynamicFoundInPrefix = true;
+      }
+      nodeToAnalyze = nodeToAnalyze.target; // Move up the chain
+    } // End while loop searching for '!' in LookupVal chain
+
+    // --- Step 3: Handle Root Node (if '!' wasn't found in the chain) ---
+    // Check if the root node itself has '!' (e.g., contextVar!)
+    let rootNode = nodeToAnalyze; // Whatever node we stopped at
+    if (!sequenceMarkerNode && rootNode && rootNode.typename === 'Symbol' && rootNode.sequenced) {
+      sequencedCount++;
+      if (sequencedCount > 1) { /* Should be caught above if chain existed */
+        throw new TemplateError('Syntax Error: Using two sequence markers \'!\' in the same path is not supported.', rootNode.lineno, rootNode.colno);
+      }
+      // Root node itself is sequenced.
+      sequenceMarkerNode = rootNode;
+      sequenceSegmentValue = rootNode.value; // The symbol's value is the key
+      current = null; // No 'current' before the root
+      // `dynamicFoundInPrefix` should be false here, as there was no preceding path.
     }
 
-    // Case B: No method!(), check if root itself has ! (e.g., contextVar!)
-    if (rootNode && isStaticSegment(rootNode) && rootNode.sequenced) {
-      sequencedCount++;
-      if (sequencedCount > 1) {
+    // --- Step 4: Validate Prefix and Collect Full Path if '!' was found ---
+    if (sequenceMarkerNode) {
+      // We found '!' (either on a LookupVal or the root Symbol).
+      // We already validated that the key *at* the '!' was a static string (or it was the root Symbol).
+      // Now, validate that no segment *before* the '!' was dynamic.
+      if (dynamicFoundInPrefix) {
         throw new TemplateError(
-          'Syntax Error: Using two sequence markers \'!\' in the same path is not supported.',
-          rootNode.lineno, rootNode.colno
+          'Sequence Error: The sequence marker \'!\' requires the entire path preceding it to consist of static string literal segments (e.g., root["a"]["b"]!). A dynamic segment (like a variable index) was found earlier in the path.',
+          sequenceMarkerNode.lineno, // Error reported at the node with '!'
+          sequenceMarkerNode.colno
         );
       }
-      // dynamicFound should be false here, as there were no parent segments
 
-      // Validate root origin
-      const rootValue = rootNode.value;
-      if (this._isDeclared(frame, rootValue)) {
+      // --- Prefix is valid, collect the full path string ---
+      // Start with the segment that had '!'
+      path.push(sequenceSegmentValue);
+
+      // Traverse upwards from 'current' (the part before '!')
+      while (current && current.typename === 'LookupVal') {
+        // All segments here MUST be static string keys due to the dynamicFoundInPrefix check.
+        if (!isStaticStringKey(current.val)) {
+          // This should theoretically not happen if dynamicFoundInPrefix logic is correct.
+          throw new TemplateError(
+            `Internal Compiler Error: Dynamic segment found in sequence path prefix after validation. Path segment key type: ${current.val.typename}`,
+            current.lineno, current.colno
+          );
+        }
+        path.unshift(current.val.value); // Add static key to the front
+        current = current.target;
+      }
+
+      // --- Handle and Validate the final Root Node of the collected path ---
+      rootNode = current; // Update rootNode to the final node after traversal
+      if (rootNode && rootNode.typename === 'Symbol') {
+        path.unshift(rootNode.value); // Add the root symbol identifier
+      } else if (rootNode) {
+        // Path doesn't start with a simple variable (e.g., started with func() or literal)
+        throw new TemplateError(
+          'Sequence Error: Sequenced paths marked with \'!\' must originate from a context variable (e.g., contextVar["key"]!). The path starts with a dynamic or non-variable element.',
+          rootNode.lineno, rootNode.colno // Report error at the problematic root
+        );
+      } else if (path.length === 0) {
+        // This should not happen if sequenceSegmentValue was set.
+        throw new TemplateError(`Internal Compiler Error: Sequence path collection resulted in empty path.`, node.lineno, node.colno);
+      }
+      // If !rootNode but path has elements, it means the sequence started mid-expression,
+      // which is invalid for context variable sequencing. This is caught by the rootNode type check above.
+
+
+      // --- Final Validation: Check Root Origin (Context vs. Scope) ---
+      // Ensure the path doesn't start with a variable declared in the template scope.
+      if (path.length > 0 && this._isDeclared(frame, path[0])) {
+        // Path starts with a template variable (e.g., {% set myVar = {} %}{{ myVar!['key'].call() }})
+        // Sequencing is only for context variables.
         return null;
       }
-      // Valid root is sequenced, path is just the root element
-      return [rootValue];
-    }
 
-    // No sequence marker found anywhere relevant, or path was invalid (e.g., started with scope var)
+      // Path is fully validated for sequencing!
+      return path; // Return the array of static string segments.
+
+    } // End if (sequenceMarkerNode)
+
+    // No valid sequence marker ('!') found according to the rules.
     return null;
   }
 
