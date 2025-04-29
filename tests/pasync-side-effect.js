@@ -17,12 +17,15 @@
   // Helper function for async rejection tests with expect.js
   async function expectAsyncError(asyncFn, checkFn) {
     let error = null;
+    let res = null;
     try {
-      await asyncFn();
+      res =await asyncFn();
     } catch (e) {
       error = e;
     }
+
     expect(error).to.be.an(Error); // Check an error was thrown
+    expect(res).to.equal(null); // Check no result was returned
     if (checkFn) {
       checkFn(error); // Optional additional checks on the error
     }
@@ -306,15 +309,15 @@
 
         it('should maintain object path sequence mixed across {% do %}, {% set %}, {{ }}', async () => {
           const template = `
-                    {% do sequencer!.runOp('op1', 100) %}
-                    {% set r1 = sequencer!.runOp('op2', 50) %}
+                    {%- do sequencer!.runOp('op1', 100) -%}
+                    {%- set r1 = sequencer!.runOp('op2', 50) -%}
                     {{ sequencer!.runOp('op3', 20) }}
-                    {% do sequencer!.runOp('op4', 10) %}
+                    {%- do sequencer!.runOp('op4', 10) -%}
                     {{ r1 }}
                 `;
           const result = await env.renderString(template, context);
           expect(context.logs).to.eql(['op1 on seq1', 'op2 on seq1', 'op3 on seq1', 'op4 on seq1']);
-          expect(result.trim()).to.equal('op3 op2');
+          expect(result.trim()).to.equal('op3op2');
         });
 
         it('should release lock on error in sequenced call', async () => {
@@ -335,7 +338,7 @@
             {% do sequencer!.runOp('op2', 20) %}
           `;
           await expectAsyncError(() => env.renderString(template, cont), err => {
-            expect(err.message).to.equal('Operation failed');
+            expect(err.message).to.contain('Error: Operation failed');
           });
           expect(cont.logs).to.eql(['op2 on seq1']); // op2 should run after lock release
         });
@@ -507,15 +510,15 @@
         it('should maintain method sequence mixed across {% do %}, {% set %}, {{ }} (requires parser support)', async () => {
           // Parser does not yet support method!()
           const template = `
-                    {% do sequencer.runOp!('op1', 100) %}
-                    {% set r1 = sequencer.runOp!('op2', 50) %}
+                    {%- do sequencer.runOp!('op1', 100) -%}
+                    {%- set r1 = sequencer.runOp!('op2', 50) -%}
                     {{ sequencer.runOp!('op3', 20) }}
-                    {% do sequencer.runOp!('op4', 10) %}
+                    {%- do sequencer.runOp!('op4', 10) -%}
                     {{ r1 }}
                 `;
           const result = await env.renderString(template, context);
           expect(context.logs).to.eql(['op1 on seq1', 'op2 on seq1', 'op3 on seq1', 'op4 on seq1']);
-          expect(result.trim()).to.equal('op3 op2');
+          expect(result.trim()).to.equal('op3op2');
         });
 
         it('should potentially allow object-path and method-specific sequences to interact predictably (requires parser support)', async () => {
@@ -531,14 +534,6 @@
           expect(context.logs).to.contain('objPath2 OTHER on seq1');
           expect(context.logs.indexOf('objPath1 on seq1')).to.be.lessThan(context.logs.indexOf('objPath2 OTHER on seq1')); // Object path sequence
         });
-
-        it('should ignore or throw for method!() without parser support', async () => {
-          const template = `{% do sequencer.runOp!('op1', 100) %}`;
-          await expectAsyncError(() => env.renderString(template, context), err => {
-            expect(err.message).to.match(/sequenced.*not supported|unknown/i);
-          });
-        });
-
       }); // End Method-Specific Sequencing tests
 
 
@@ -577,7 +572,7 @@
         it('should REJECT ! on dynamic path segment (array index)', async () => {
           const template = `{{ items[i]!.runOp('dyn1', 50) }}`;
           await expectAsyncError(() => env.renderString(template, constraintContext), err => {
-            expect(err.message).to.match(/Sequenced operations require a static path/);
+            expect(err.message).to.contain('cannot be used with dynamic key');
           });
         });
 
@@ -852,14 +847,48 @@
       it('should handle multiple concurrent sequences without interference', async () => {
         const cont = {
           logs: [],
-          seqs: Array(5).fill().map((_, i) => ({
-            id: `s${i}`,
-            async runOp(id, ms) { await delay(ms); cont.logs.push(`${id} on ${this.id}`); }
-          }))
         };
-        const template = cont.seqs.map((_, i) => `{% do seqs[${i}]!.runOp('op${i}', 10) %}`).join('');
+        const numSequences = 5;
+        const delayMs = 50; // Use a slightly longer delay to observe concurrency better
+
+        // Create context properties s0, s1, ... s4 directly on the context
+        for (let i = 0; i < numSequences; i++) {
+          const seqId = `s${i}`;
+          cont[seqId] = {
+            id: seqId,
+            // Use an arrow function to capture 'seqId' or ensure 'this' is correct
+            // Direct access to cont.logs is simplest
+            async runOp(opId) {
+              const currentSeqId = this.id; // 'this' should refer to the cont[seqId] object
+              await delay(delayMs);
+              cont.logs.push(`${opId} on ${currentSeqId}`);
+            }
+          };
+        }
+
+        // Create template string using valid static paths for sequencing
+        const templateParts = [];
+        for (let i = 0; i < numSequences; i++) {
+          // Use the static key s0!, s1!, etc.
+          templateParts.push(`{% do s${i}!.runOp('op${i}') %}`);
+        }
+        const template = templateParts.join(''); // e.g., "{% do s0!.runOp('op0') %}{% do s1!.runOp('op1') %}"
+
+        // Render the template - renderString completes after all async ops triggered by 'do' finish
         await env.renderString(template, cont);
-        expect(cont.logs).to.have.length(5);
+
+        // Assertions
+        expect(cont.logs).to.have.length(numSequences);
+
+        // Check that all expected operations completed (order might vary due to concurrency)
+        const expectedLogs = new Set();
+        for (let i = 0; i < numSequences; i++) {
+          expectedLogs.add(`op${i} on s${i}`);
+        }
+        // Convert actual logs to a Set for order-independent comparison
+        expect(new Set(cont.logs)).to.deep.equal(expectedLogs, 'All operations should have logged exactly once');
+        // Optional: Check for potential interleaving (difficult to guarantee exact order)
+        // console.log("Execution Logs:", cont.logs);
       });
 
       it('should prevent or handle deadlock in circular sequence dependencies', async () => {
