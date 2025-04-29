@@ -675,8 +675,12 @@ class Compiler extends Obj {
   }
 
   compileSymbol(node, frame, isCallPath = false) {
-    var name = node.value;
-    var v = frame.lookup(name);
+    if (node.sequenced && !isCallPath) {
+      throw new Error('Sequence marker (!) is not allowed in non-call paths');
+    }
+
+    let name = node.value;
+    let v = frame.lookup(name);
 
     if (v) {
       //for now the only places that set async symbol are the async filter and super()
@@ -2476,6 +2480,10 @@ class Compiler extends Obj {
     this._emitLine('root: root\n};');
   }
 
+  //@todo - use a different way to propagate isCallPath
+  // as other compile methods also use the third argument
+  // alternatively - these methods may not be compileXXX but
+  // e.g. compileFor with 3 arguments becomes _compileFor and the compileFor calls it
   compile(node, frame, isCallPath = false) {
     var _compile = this['compile' + node.typename];
     if (_compile) {
@@ -2544,7 +2552,7 @@ class Compiler extends Obj {
       //this will change in the future - only if a child node need the frame
       throw new Error('All expressions must be wrapped in an async IIFE');
     }
-    this.compile(node, frame, true);
+    this.compile(node, frame);
   }
 
   getCode() {
