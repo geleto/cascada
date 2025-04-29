@@ -333,7 +333,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)})`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)});`);
       return frame.pop();
     }
     return frame;
@@ -1365,20 +1365,21 @@ class Compiler extends Obj {
         this._emitAsyncBlockValue(node.value, frame, (f) => {
           //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
           this.compile(node.value, f);
-          this._emitLine(';');
+          //this._emitLine(';');//? test removing this
         });
       } else {
         this._compileExpression(node.value, frame);
-        this._emitLine(';');
+        //this._emitLine(';');
       }
     } else {
       // set block
       this._emit(ids.join(' = ') + ' = ');
       this._emitAsyncBlockValue(node.body, frame, (f) => {
         this.compile(node.body, f);
-        this._emitLine(';');
+        //this._emitLine(';');
       });
     }
+    this._emitLine(';');
 
     node.targets.forEach((target, i) => {
       var id = ids[i];
@@ -2582,8 +2583,9 @@ class Compiler extends Obj {
         });
         this._emitLine(`if (${promisesVar}.length > 0) {`);
         this._emitLine(`  await Promise.all(${promisesVar});`);
-        this._emitLine(`}`);;
+        this._emitLine(`}`);
       });
+      //this._emitLine(';');
     } else {
       node.children.forEach(child => {
         this._compileExpression(child, frame);
