@@ -538,12 +538,16 @@ class Compiler extends Obj {
     }
   }
 
+  compileCallExtension(node, frame) {
+    this._compileCallExtension(node, frame, false);
+  }
+
   /**
    * CallExtension - no callback, can return either value or promise
    * CallExtensionAsync - uses callback, async = true. This was the way to handle the old nunjucks async
    * @todo - rewrite with _emitAggregate
    */
-  compileCallExtension(node, frame, async) {
+  _compileCallExtension(node, frame, async) {
     var args = node.args;
     var contentArgs = node.contentArgs;
     var autoescape = typeof node.autoescape === 'boolean' ? node.autoescape : true;
@@ -651,7 +655,7 @@ class Compiler extends Obj {
   }
 
   compileCallExtensionAsync(node, frame) {
-    this.compileCallExtension(node, frame, true);
+    this._compileCallExtension(node, frame, true);
   }
 
   compileNodeList(node, frame) {
@@ -1675,7 +1679,11 @@ class Compiler extends Obj {
     }
   }
 
-  compileFor(node, frame, sequential = false) {
+  compileFor(node, frame) {
+    this._compileFor(node, frame, false);
+  }
+
+  _compileFor(node, frame, sequential = false) {
     // Some of this code is ugly, but it keeps the generated code
     // as fast as possible. ForAsync also shares some of this, but
     // not much.
@@ -1820,7 +1828,7 @@ class Compiler extends Obj {
 
   _compileAsyncLoop(node, frame, parallel) {
     if (node.isAsync) {
-      this.compileFor(node, frame, true);
+      this._compileFor(node, frame, true);
       return;
     }
     // This shares some code with the For tag, but not enough to
