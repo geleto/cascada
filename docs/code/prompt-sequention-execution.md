@@ -1,10 +1,10 @@
-**Implement Sequential Execution Feature (`!`) in Cascada Templating Engine**
+**Sequential Execution using `!` marker in Cascada Templating Engine**
 
 **1. Introduction & Goal:**
 
-This task involves implementing a new feature in the Cascada templating engine: **sequential execution control using the `!` marker**. Cascada (a Nunjucks fork) provides automatic parallelization for async operations, but sometimes operations with side effects need guaranteed sequential execution. The `!` marker allows developers to enforce this order explicitly for specific method calls or property lookups on objects.
+Cascada (a Nunjucks fork) provides automatic parallelization for async operations, but sometimes operations with side effects need guaranteed sequential execution. The `!` marker allows developers to enforce this order explicitly for specific method calls and context property access.
 
-Your goal is to modify the Cascada compiler (`compiler.js`) and runtime (`runtime.js`) to correctly implement the `!` feature according to the detailed plan below, ensuring it integrates seamlessly with the existing asynchronous execution and variable synchronization mechanisms.
+These are the modifications performed to the Cascada compiler (`compiler.js`) and runtime (`runtime.js`) to correctly implement the `!` feature according to the detailed plan below, ensuring it integrates seamlessly with the existing asynchronous execution and variable synchronization mechanisms.
 
 **2. Background & Motivation:**
 
@@ -41,8 +41,6 @@ You will use the following files:
 *   `compiler.js`: Contains the `Compiler` class (you will modify/add to this).
 
 **5. Detailed Implementation Steps:**
-
-Please implement these steps sequentially, verifying each one thoroughly.
 
 **Step 1: Implement Compiler Path and Sequence Key Analysis and Write Intent**
 
@@ -122,7 +120,7 @@ Please implement these steps sequentially, verifying each one thoroughly.
 *   **Explanation:** This involves both compiler and runtime changes. The compiler adds a check (`_isDeclared`) to see if the `nodeStaticPathKey` identified in Step 4 corresponds to a declared lock. If so, it emits code calling new runtime helpers (`sequencedContextLookup`, `sequencedMemberLookupAsync`). These runtime helpers use `awaitSequenceLock` (from Step 5) before performing the actual lookup. If no lock was declared for the path, the compiler emits standard lookup code.
 *   **Implementation:**
     *   Implement runtime helpers `sequencedContextLookup` and `sequencedMemberLookupAsync` which internally call `awaitSequenceLock` before performing standard lookup logic.
-    *   Modify `compileSymbol` and `compileLookupVal` to check if the `nodeStaticPathKey` is declared using `_isDeclared` and conditionally emit calls to either the standard lookup functions or the new `sequenced...Lookup` helpers.
+    *  Modify `compileSymbol` and `compileLookupVal`: check if the `nodeStaticPathKey` is declared using `_isDeclared`. If it is, register read intent using _updateFrameReads(frame, nodeStaticPathKey) and conditionally emit calls to the new sequenced...Lookup helpers instead of the standard lookup functions.
 
 **Step 7: Implement Lock Release/Signaling for `!` Calls**
 
@@ -133,9 +131,3 @@ Please implement these steps sequentially, verifying each one thoroughly.
     *   Implement the `runtime.sequencedCallWrap` helper function, which internally calls `runtime.callWrap` and then reliably signals lock completion using `frame.set(sequenceLockKey, true, true)`.
     *   Modify the compiler's `compileFunCall` logic to detect sequenced calls using `_getSequenceKey`.
     *   Generate code within `compileFunCall` to invoke `runtime.sequencedCallWrap` for sequenced calls (passing the `sequenceLockKey`), and `runtime.callWrap` otherwise.
-
-**Step 8: Add Documentation**
-
-*   **Goal:** Document feature, syntax, usage, **static context variable path limitation**, errors, performance.
-*   **Details:** Explain `!`, `method!()`. Provide clear correct/incorrect examples.
-*   **Verification:** Peer review.
