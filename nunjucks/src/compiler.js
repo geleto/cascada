@@ -711,6 +711,8 @@ class Compiler extends Obj {
           }
         }
 
+        this._updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
+
         let nodeStaticPathKey = this._extractStaticPathKey(node);
         if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
 
