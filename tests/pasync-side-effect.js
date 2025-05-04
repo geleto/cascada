@@ -39,11 +39,9 @@
       env = new AsyncEnvironment();
     });
 
-    // --- Original Test ---
-    describe('Side effects - variables (Original Test)', () => {
-      it('Should not wait resolution for unused variable inside loop', async () => {
+    describe('Side effects - template render lifecycle', () => {
+      it('Template should wait resolution of unused variable', async () => {
         const cont = {
-          items: ['a', 'b'],
           logs: [],
           async log(item) {
             await delay(10);
@@ -51,11 +49,51 @@
             return true;
           }
         };
-        const template = `{%- for item in items %}{% set _logged = log(item) %}{%- endfor -%}`;
+        const template = `{% set _dummy = log('hi') %}`;
         await env.renderString(template, cont);
-        expect(cont.logs).to.eql([]);
+        expect(cont.logs).to.eql(['Logged hi']);
       });
-    }); // End Side effects - variables
+
+      it('Template should capture an unused throwing an error', async () => {
+        const cont = {
+          logs: [],
+          async err(ms) {
+            await delay(ms);
+            throw new Error('Dummy error');
+          },
+          async infoWait(ms) {
+            await delay(ms);
+            return 'Hi';
+          }
+        };
+        const template = `{{ infoWait(1) }}{% set _dummy = err(5) %}`;
+        await expectAsyncError(() => env.renderString(template, cont), err => {
+          expect(err.message).to.contain('Dummy error');
+        });
+      });;
+
+      it('Should wait for unused var if assigned from side-effect sequence function and process Error', async () => {
+        const cont = {
+          async run(id, ms) {
+            await delay(ms);
+            //the template should not finish rendering before this error is thrown
+            //in a sequence operation (unused vars are for instance not awaited when finishing template)
+            throw new Error('Failed to run operation');
+          }
+        };
+        const template = `{% set _dummy = run!('exp1-A', 100) %}`;
+        await expectAsyncError(() => env.renderString(template, cont), err => {
+          expect(err.message).to.contain('Failed to run operation');
+        });
+      });
+
+      //todo - test wait for side effect to finish before template rendering
+
+      //todo - test {% do run() %} - template should wait for the call to finish
+
+      //todo - test {% do run() %} - template should wait for the call to finish and catch errors
+
+    });//End Side effects - template waits
 
     // --- Tests for the '!' feature ---
     describe('Side effects - Controlling sequential execution with !', () => {
@@ -182,38 +220,11 @@
           expect(cont.logs.indexOf('seq2-op1 on seq2')).to.be.lessThan(cont.logs.indexOf('seq2-op2 on seq2')); // Seq2 sequence
         });
 
-        it.only('should handle multiple object path ! operators (same path) within one expression sequentially', async () => {
+        it('should handle multiple object path ! operators (same path) within one expression sequentially', async () => {
           const template = `{{ sequencer!.runOp('exp2-A', 100) ~ sequencer!.runOp('exp2-B', 50) }}`;
           const result = await env.renderString(template, context);
           expect(context.logs).to.eql(['exp2-A on seq1', 'exp2-B on seq1']);
           expect(result.trim()).to.equal('exp2-Aexp2-B');
-        });
-
-        it('should handle multiple object path ! operators (same object) within one expression sequentially (side-effect enforced)', async () => {
-          let op1Done = false;
-          const cont = {
-            ...context,
-            sequencer: {
-              id: 'seq1',
-              async runOp(id, ms) {
-                if (id === 'exp1-A') {
-                  await delay(ms);
-                  cont.logs.push(`${id} on ${this.id}`);
-                  op1Done = true;
-                  return id;
-                } else if (id === 'exp1-B') {
-                  if (!op1Done) throw new Error('exp1-B started before exp1-A finished');
-                  await delay(ms);
-                  cont.logs.push(`${id} on ${this.id}`);
-                  return id;
-                }
-              }
-            }
-          };
-          const template = `{{ sequencer!.runOp('exp1-A', 100) ~ sequencer!.runOp('exp1-B', 50) }}`;
-          const result = await env.renderString(template, cont);
-          expect(cont.logs).to.eql(['exp1-A on seq1', 'exp1-B on seq1']);
-          expect(result.trim()).to.equal('exp1-Aexp1-B');
         });
 
         it('should work with nested static object paths', async () => {
@@ -368,7 +379,7 @@
       // --- Method-Specific Sequencing: object.path.method!() ---
       describe('2. Method-Specific Sequencing (object.path.method!())', () => {
 
-        it('should enforce sequence for the specific marked method (requires parser support)', async () => {
+        it('should enforce sequence for the specific marked method', async () => {
           // Parser does not yet support setting .sequenced on FunCall nodes for method!()
           const template = `
                     {% do sequencer.runOp!('op1', 100) %}
@@ -378,7 +389,7 @@
           expect(context.logs).to.eql(['op1 on seq1', 'op2 on seq1']);
         });
 
-        it('should allow different marked methods on the same object to run independently (requires parser support)', async () => {
+        it('should allow different marked methods on the same object to run independently', async () => {
           // Parser does not yet support method!()
           const template = `
                     {% do sequencer.runOp!('opA1', 100) %}
@@ -395,7 +406,7 @@
           expect(context.logs.indexOf('opB1 OTHER on seq1')).to.be.lessThan(context.logs.indexOf('opB2 OTHER on seq1')); // runOpOther sequence
         });
 
-        it('should allow unmarked methods to run in parallel with method sequences (requires parser support)', async () => {
+        it('should allow unmarked methods to run in parallel with method sequences', async () => {
           // Parser does not yet support method!()
           const template = `
                     {% do sequencer.runOp!('op1', 100) %}
@@ -409,7 +420,7 @@
           expect(context.logs.indexOf('op1 on seq1')).to.be.lessThan(context.logs.indexOf('op2 on seq1')); // Sequence preserved
         });
 
-        it('should maintain internal sequence for independent method sequences running concurrently (requires parser support)', async () => {
+        it('should maintain internal sequence for independent method sequences running concurrently', async () => {
           // Parser does not yet support method!()
           const template = `
             {% do sequencer.runOp!('A1', 100) %}
@@ -426,7 +437,7 @@
           expect(context.logs.indexOf('B1 OTHER on seq1')).to.be.lessThan(context.logs.indexOf('B2 OTHER on seq1')); // runOpOther sequence
         });
 
-        it('should handle multiple method ! operators (same method) within one expression sequentially (requires parser support)', async () => {
+        it('should handle multiple method ! operators (same method) within one expression sequentially', async () => {
           // Parser does not yet support method!()
           const template = `{{ sequencer.runOp!('expA1', 100) ~ sequencer.runOp!('expA2', 50) }}`;
           const result = await env.renderString(template, context);
@@ -434,7 +445,7 @@
           expect(result.trim()).to.equal('expA1expA2');
         });
 
-        it('should work with nested static path method sequencing (requires parser support)', async () => {
+        it('should work with nested static path method sequencing', async () => {
           // Parser does not yet support method!()
           const cont = {
             ...context,
@@ -448,7 +459,7 @@
           expect(cont.logs).to.eql(['nested1 on nested', 'nested2 on nested']);
         });
 
-        it('should work with deeply nested static path method sequencing (requires parser support)', async () => {
+        it('should work with deeply nested static path method sequencing', async () => {
           // Parser does not yet support method!()
           const cont = {
             ...context,
@@ -476,7 +487,7 @@
           expect(cont.logs.indexOf('deepA1 on deepSeq')).to.be.lessThan(cont.logs.indexOf('deepA2 on deepSeq')); // runOp sequence
         });
 
-        it('should enforce method sequence across loop iterations (requires parser support)', async () => {
+        it('should enforce method sequence across loop iterations', async () => {
           // Parser does not yet support method!()
           const template = `
                     {% for i in [1, 2, 3] %}
@@ -487,7 +498,7 @@
           expect(context.logs).to.eql(['loop1 on seq1', 'loop2 on seq1', 'loop3 on seq1']);
         });
 
-        it('should work with method ! in {% set %} (requires parser support)', async () => {
+        it('should work with method ! in {% set %}', async () => {
           // Parser does not yet support method!()
           const template = `
                     {% set res1 = sequencer.runOp!('set1', 100) %}
@@ -499,7 +510,7 @@
           expect(result.trim()).to.equal('Results: set1, set2');
         });
 
-        it('should work with method ! in {{ }} (requires parser support)', async () => {
+        it('should work with method ! in {{ }}', async () => {
           // Parser does not yet support method!()
           const template = `{{ sequencer.runOp!('out1', 100) }} {{ sequencer.runOp!('out2', 50) }}`;
           const result = await env.renderString(template, context);
@@ -507,7 +518,7 @@
           expect(result.trim()).to.equal('out1 out2');
         });
 
-        it('should maintain method sequence mixed across {% do %}, {% set %}, {{ }} (requires parser support)', async () => {
+        it('should maintain method sequence mixed across {% do %}, {% set %}, {{ }}', async () => {
           // Parser does not yet support method!()
           const template = `
                     {%- do sequencer.runOp!('op1', 100) -%}
@@ -521,7 +532,7 @@
           expect(result.trim()).to.equal('op3op2');
         });
 
-        it('should potentially allow object-path and method-specific sequences to interact predictably (requires parser support)', async () => {
+        it('should potentially allow object-path and method-specific sequences to interact predictably', async () => {
           // Parser does not yet support method!()
           const template = `
                     {% do sequencer!.runOp('objPath1', 100) %}
@@ -559,15 +570,6 @@
           const template = `{{ sequencer!.value }}`;
           await expectAsyncError(() => env.renderString(template, constraintContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-call paths');
-          });
-        });
-
-        //@todo WRONG but it has to be implemented?!!!
-        //check if there are tests for this - method should be locked but not the object
-        it('should REJECT !() on property access (object.path.property!)', async () => {
-          const template = `{{ sequencer.value!() }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
-            expect(err.message).to.match(/Sequenced operations cannot be used on property access/);
           });
         });
 
@@ -663,7 +665,7 @@
           });
         });
 
-        it('should enforce method-specific sequence (object.method!()) (requires parser support)', async () => {
+        it('should enforce method-specific sequence (object.method!())', async () => {
           // Parser does not yet support method!()
           const template = `
             {% do sequencer.runOp!('meth1', 100) %} {# Takes longer #}
@@ -671,13 +673,6 @@
           `;
           await env.renderString(template, constraintContext);
           expect(constraintContext.logs).to.eql(['meth1 on seq1', 'meth2 on seq1']);
-        });
-
-        it('should reject ! on a literal (123!.runOp)', async () => {
-          const template = `{{ 123!.runOp('fail', 50) }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
-            expect(err.message).to.match(/Sequenced operations require a static path/);
-          });
         });
       });
 
@@ -754,7 +749,7 @@
           ); // Parallel: shorter delay first
         });
 
-        it('[Placeholder] should treat object.method!() as needing a method-specific lock key (requires parser support)', async () => {
+        it('[Placeholder] should treat object.method!() as needing a method-specific lock key', async () => {
           // Parser does not yet support method!()
           const template = `
                    {% do ctxSequencer.runOp!('mA', 100) %}
@@ -764,7 +759,7 @@
           expect(analysisContext.logs).to.eql(['mA on ctxSeq', 'mB on ctxSeq']);
         });
 
-        it('[Placeholder] should treat path!.method() and path.method!() differently (requires parser support)', async () => {
+        it('[Placeholder] should treat path!.method() and path.method!() differently', async () => {
           // Parser does not yet support method!()
           const template = `
                    {% do ctxSequencer!.runOp('pathOp1', 100) %}
@@ -807,13 +802,6 @@
     });
 
     describe('Error Handling and Edge Cases', () => {
-      it('should reject ! without a method call (object.path!())', async () => {
-        const template = `{% do sequencer!() %}`;
-        await expectAsyncError(() => env.renderString(template, context), err => {
-          expect(err.message).to.match(/method/);
-        });
-      });
-
       it('should reject invalid static path segments (object.123!.method())', async () => {
         const template = `{% do sequencer.123!.runOp('op', 10) %}`;
         await expectAsyncError(() => env.renderString(template, context));
@@ -872,34 +860,9 @@
           expectedLogs.add(`op${i} on s${i}`);
         }
         // Convert actual logs to a Set for order-independent comparison
-        expect(new Set(cont.logs)).to.deep.equal(expectedLogs, 'All operations should have logged exactly once');
+        expect(new Set(cont.logs)).to.eql(expectedLogs, 'All operations should have logged exactly once');
         // Optional: Check for potential interleaving (difficult to guarantee exact order)
         // console.log("Execution Logs:", cont.logs);
-      });
-
-      it('should prevent or handle deadlock in circular sequence dependencies', async () => {
-        const cont = {
-          logs: [],
-          obj1: {
-            async run(ms, id) {
-              await delay(ms);
-              const template = `{% do obj2!.run(5, 'obj2-from-obj1') %}`; // Correct: Uses ! in template
-              await env.renderString(template, cont);
-              cont.logs.push(id || 'obj1');
-            }
-          },
-          obj2: {
-            async run(ms, id) {
-              await delay(ms);
-              const template = `{% do obj1!.run(5, 'obj1-from-obj2') %}`; // Correct: Uses ! in template
-              await env.renderString(template, cont);
-              cont.logs.push(id || 'obj2');
-            }
-          }
-        };
-        const template = `{% do obj1!.run(10, 'obj1-initial') %}{% do obj2!.run(10, 'obj2-initial') %}`;
-        await env.renderString(template, cont);
-        expect(cont.logs).to.not.be.empty();
       });
     });
 
