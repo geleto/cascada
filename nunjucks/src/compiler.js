@@ -138,13 +138,13 @@ class Compiler extends Obj {
   // - there is only one active child (e.g. if/else) that has output
   //in all other cases, use _emitAsyncBlockBufferNode
   //to make sure there are no race conditions for the buffer position
-  _emitAsyncBlock(node, frame, createScope, emitFunc) {
-    const aframe = this._emitAsyncBlockBegin(node, frame, createScope);
+  _emitAsyncBlock(node, frame, createScope, emitFunc, positionNode = node) {
+    const aframe = this._emitAsyncBlockBegin(node, frame, createScope, positionNode);
     emitFunc(aframe);
-    this._emitAsyncBlockEnd(node, aframe, createScope);
+    this._emitAsyncBlockEnd(node, aframe, createScope, false, positionNode); // Pass sequentialLoopBody=false by default
   }
 
-  _emitAsyncBlockBegin(node, frame, createScope) {
+  _emitAsyncBlockBegin(node, frame, createScope, positionNode = node) {
     if (node.isAsync) {
       this._emitLine(`runtime.handlePromise((async (astate, frame) => {`);
       this._emitLine('try {');
@@ -160,7 +160,7 @@ class Compiler extends Obj {
     return frame;
   }
 
-  _emitAsyncBlockEnd(node, frame, createScope, sequentialLoopBody) {
+  _emitAsyncBlockEnd(node, frame, createScope, sequentialLoopBody = false, positionNode = node) {
     if (node.isAsync) {
       if (sequentialLoopBody) {
         // Wait for child async blocks spawned within this iteration
@@ -171,7 +171,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${node.lineno}, ${node.colno});`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno});`);
     }
     if (createScope && !node.isAsync) {
       this._emitLine('frame = frame.pop();');
@@ -182,7 +182,7 @@ class Compiler extends Obj {
     return frame;
   }
 
-  _emitAsyncBlockValue(node, frame, emitFunc, res) {
+  _emitAsyncBlockValue(node, frame, emitFunc, res, positionNode = node) {
     if (node.isAsync) {
 
       this._emitLine(`runtime.handlePromise((async (astate, frame) => {`);
@@ -206,7 +206,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}'); // Close inner finally
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${node.lineno}, ${node.colno})`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno})`);
 
       this.asyncClosureDepth--;
       frame = frame.pop();
@@ -216,7 +216,7 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAsyncBlockRender(node, frame, innerBodyFunction, callbackName = null) {
+  _emitAsyncBlockRender(node, frame, innerBodyFunction, callbackName = null, positionNode = node) {
     if (!node.isAsync) {
       const id = this._pushBuffer();
       innerBodyFunction.call(this, frame);
@@ -257,16 +257,16 @@ class Compiler extends Obj {
     this._emitLine('  astate.leaveAsyncBlock();');
     this._emitLine('}');
     if (callbackName) {
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), ${callbackName}, ${node.lineno}, ${node.colno})`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), ${callbackName}, ${positionNode.lineno}, ${positionNode.colno})`);
     } else {
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${node.lineno}, ${node.colno})`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno})`);
     }
 
     frame = frame.pop();
     //in the non-callback case, using the rendered buffer will throw the error
   }
 
-  _emitAddToBuffer(node, frame, renderFunction) {
+  _emitAddToBuffer(node, frame, renderFunction, positionNode = node) {
     if (this.asyncMode) {
       this._emitLine(`${this.buffer}[${this.buffer}_index++] = `);
     } else {
@@ -277,7 +277,7 @@ class Compiler extends Obj {
   }
 
   //@todo - use the Begin/End
-  _emitAsyncBlockAddToBuffer(node, frame, renderFunction) {
+  _emitAsyncBlockAddToBuffer(node, frame, renderFunction, positionNode = node) {
     const returnId = this._tmpid();
     if (node.isAsync) {
       this.asyncClosureDepth++;
@@ -297,7 +297,7 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${node.lineno}, ${node.colno});`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno});`);
 
       frame = frame.pop();
 
@@ -312,7 +312,7 @@ class Compiler extends Obj {
     }
   }
 
-  _emitAsyncBlockAddToBufferBegin(node, frame) {
+  _emitAsyncBlockAddToBufferBegin(node, frame, positionNode = node) {
     if (node.isAsync) {
       this._emitLine(`runtime.handlePromise((async (astate, frame) => {`);
       this._emitLine('try {');
@@ -329,23 +329,23 @@ class Compiler extends Obj {
     return frame;
   }
 
-  _emitAsyncBlockAddToBufferEnd(node, frame) {
+  _emitAsyncBlockAddToBufferEnd(node, frame, positionNode = node) {
     this._emitLine(';');
     if (node.isAsync) {
       this.asyncClosureDepth--;
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${node.lineno}, ${node.colno});`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno});`);
       return frame.pop();
     }
     return frame;
   }
 
-  _emitAsyncBlockBufferNodeBegin(node, frame, createScope) {
+  _emitAsyncBlockBufferNodeBegin(node, frame, createScope = false, positionNode = node) {
     if (node.isAsync) {
       // Start the async closure
-      frame = this._emitAsyncBlockBegin(node, frame, createScope);
+      frame = this._emitAsyncBlockBegin(node, frame, createScope, positionNode);
 
       // Push the current buffer onto the stack
       this.bufferStack.push(this.buffer);
@@ -372,10 +372,10 @@ class Compiler extends Obj {
     return frame;
   }
 
-  _emitAsyncBlockBufferNodeEnd(node, frame, createScope, sequentialLoopBody) {
+  _emitAsyncBlockBufferNodeEnd(node, frame, createScope = false, sequentialLoopBody = false, positionNode = node) {
     if (node.isAsync) {
       // End the async closure
-      frame = this._emitAsyncBlockEnd(node, frame, createScope, sequentialLoopBody);
+      frame = this._emitAsyncBlockEnd(node, frame, createScope, sequentialLoopBody, positionNode);
 
       // Restore the previous buffer from the stack
       this.buffer = this.bufferStack.pop();
@@ -556,12 +556,13 @@ class Compiler extends Obj {
     var autoescape = typeof node.autoescape === 'boolean' ? node.autoescape : true;
     var noExtensionCallback = !async;//assign the return value directly, no callback
     var resolveArgs = node.resolveArgs && node.isAsync;
+    const positionNode = args || node; // Prefer args position if available
 
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
       this._emitLine(`let ${ext} = env.getExtension("${node.extName}");`);
 
-      frame = this._emitAsyncBlockAddToBufferBegin(node, frame);
+      frame = this._emitAsyncBlockAddToBufferBegin(node, frame, positionNode);
       this._emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
       if (noExtensionCallback) {
         //the extension returns a value directly
@@ -620,7 +621,7 @@ class Compiler extends Obj {
             //when args are not resolved, the contentArgs are promises
             this._emitAsyncBlockRender(node, frame, function (f) {
               this.compile(arg, f);
-            });
+            }, null, arg); // Use content arg node for position
           }
           else {
             //when not resolve args, the contentArgs are callback functions
@@ -630,7 +631,7 @@ class Compiler extends Obj {
             this._withScopedSyntax(() => {
               this._emitAsyncBlockRender(node, frame, function (f) {
                 this.compile(arg, f);
-              }, 'cb');
+              }, 'cb', arg); // Use content arg node for position
               this._emitLine(';');
             });
 
@@ -645,13 +646,13 @@ class Compiler extends Obj {
     if (noExtensionCallback || node.isAsync) {
       this._emit(`)`);//close the extension call
       this._emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
-      frame = this._emitAsyncBlockAddToBufferEnd(node, frame);
+      frame = this._emitAsyncBlockAddToBufferEnd(node, frame, positionNode);
     } else {
       const res = this._tmpid();
       this._emitLine(', ' + this._makeCallback(res));
-      frame = this._emitAsyncBlockAddToBufferBegin(node, frame);
+      frame = this._emitAsyncBlockAddToBufferBegin(node, frame, positionNode);
       this._emit(`${node.isAsync ? 'await runtime.suppressValueAsync' : 'runtime.suppressValue'}(${res}, ${autoescape} && env.opts.autoescape);`);
-      frame = this._emitAsyncBlockAddToBufferEnd(node, frame);
+      frame = this._emitAsyncBlockAddToBufferEnd(node, frame, positionNode);
 
       this._addScopeLevel();
     }
@@ -722,7 +723,7 @@ class Compiler extends Obj {
             //wrap it in async block if now wrapped elsewhere
             //the sequence locks will be counted/released at this block
             //the separate block is needed because for instance an expression can have many paths in a single async block
-            this._emitAsyncBlockValue(node, frame, emitSequencedLookup);
+            this._emitAsyncBlockValue(node, frame, emitSequencedLookup, undefined, node); // Use node for position
           } else {
             emitSequencedLookup(frame);//emit without async block
           }
@@ -803,6 +804,8 @@ class Compiler extends Obj {
     if (node.isAsync) {
       const mergedNode = {
         isAsync: node.left.isAsync || node.right.isAsync,
+        // Use node.right for position if args exist, else node.left
+        positionNode: (node.right.args && node.right.args.children.length > 0) ? node.right : node.left,
         children: (node.right.args && node.right.args.children.length > 0) ? [node.left, ...node.right.args.children] : [node.left]
       };
       // Resolve the left-hand side and arguments (if any)
@@ -836,6 +839,7 @@ class Compiler extends Obj {
       this._emit(',');
       this.compile(node.right, frame);
       this._emit(')');
+      // Position node is tricky here, could be left or right. Use the main node.
       this._emit(`.then(function([left,right]){return ${funcName}(left${separator}right);}))`);
     } else {
       this._emit(`${funcName}(`);
@@ -853,6 +857,7 @@ class Compiler extends Obj {
       this._emit(',');
       this.compile(node.right, frame);
       this._emit(')');
+       // Position node is tricky here, could be left or right. Use the main node.
       this._emit('.then(function([left,right]){return left ' + str + ' right;})');
     } else {
       this.compile(node.left, frame);
@@ -865,6 +870,7 @@ class Compiler extends Obj {
     if (node.isAsync) {
       this._emit('runtime.resolveSingle(');
       this.compile(node.target, frame);
+      // Position node should be the target
       this._emit(`).then(function(target){return ${operator}target;})`);
     } else {
       this._emit(operator);
@@ -934,6 +940,7 @@ class Compiler extends Obj {
       this.compile(node.expr, frame);
       this._emit(',');
       this.compile(node.ops[0].expr, frame);
+      // Position node should be the first operation where the comparison happens
       this._emit(').then(async function([expr, ref1]){');
       this._emit(`return expr ${compareOps[node.ops[0].type]} ref1`);
       node.ops.forEach((op, index) => {
@@ -1019,7 +1026,7 @@ class Compiler extends Obj {
           //if we await for at least one sequence lock - wrap it in async block but only once
           //the sequence locks will be counted/released at this block
           //the separate block is needed because for instance an expression can have many paths in a single async block
-          this._emitAsyncBlockValue(node, frame, emitSequencedLookup);
+          this._emitAsyncBlockValue(node, frame, emitSequencedLookup, undefined, node.val); // Use node.val for position
         } else {
           emitSequencedLookup(frame);//emit without async block
         }
@@ -1270,7 +1277,8 @@ class Compiler extends Obj {
             };
             this._emit('return ');
             if (wrapInAsyncBlock) {
-              this._emitAsyncBlockValue(node, frame, emitCallback);
+              // Position node is the function call itself
+              this._emitAsyncBlockValue(node, frame, emitCallback, undefined, node);
             } else {
               emitCallback(frame);
             }
@@ -1286,6 +1294,7 @@ class Compiler extends Obj {
         };
 
         node.name.pathFlags = PathFlags.CALL;
+        // Position node for aggregate is the function call itself (node)
         this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
           if (!sequenceLockKey) {
             this._emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
@@ -1296,7 +1305,8 @@ class Compiler extends Obj {
             };
             this._emit('return ');
             if (wrapInAsyncBlock) {
-              this._emitAsyncBlockValue(node, frame, emitCallback);
+              // Position node is the function call itself
+              this._emitAsyncBlockValue(node, frame, emitCallback, undefined, node);
             } else {
               emitCallback(frame);
             }
@@ -1356,13 +1366,14 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
       this._emitLine(`let ${symbol} = `);
+      // Position node should be node.args as that's what's being evaluated async
       this._emitAsyncBlockValue(node.args, frame, (f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         //@todo - this should be done with _compileExpression in the future
         this._compileAggregate(node.args, f, '[', ']', true, false, function (result) {
           this._emit(`return runtime.promisify(env.getFilter("${name.value}").bind(env))(...${result});`);
         });
-      });
+      }, undefined, node.args);
       this._emit(';');
     } else {
       this._emit('env.getFilter("' + name.value + '").call(context, ');
@@ -1410,18 +1421,20 @@ class Compiler extends Obj {
     if (node.value) {
       this._emit(ids.join(' = ') + ' = ');
       if (node.isAsync) {
+        // Use node.value as the position node since it's the expression being evaluated
         this._emitAsyncBlockValue(node.value, frame, (f) => {
           this.compile(node.value, f);
-        });
+        }, undefined, node.value);
       } else {
         this._compileExpression(node.value, frame);
       }
     } else {
       // set block
       this._emit(ids.join(' = ') + ' = ');
+      // Use node.body as the position node since it's the block being evaluated
       this._emitAsyncBlockValue(node.body, frame, (f) => {
         this.compile(node.body, f);
-      });
+      }, undefined, node.body);
     }
     this._emitLine(';');
 
@@ -1553,7 +1566,8 @@ class Compiler extends Obj {
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
-    frame = this._emitAsyncBlockBufferNodeBegin(node, frame);
+    // Use node.expr as the primary position node for the overall switch block
+    frame = this._emitAsyncBlockBufferNodeBegin(node, frame, false, node.expr);
 
     const branchPositions = [];
     const branchWriteCounts = [];
@@ -1601,10 +1615,11 @@ class Compiler extends Obj {
       this._emit('');
 
       if (c.body.children.length) {
+        // Use case body 'c.body' as position node for this block
         this._emitAsyncBlock(c.body, frame, false, (f) => {
           this.compile(c.body, f);
           branchWriteCounts.push(this.countsTo1(f.writeCounts) || {});
-        });
+        }, c.body);
         this._emitLine('break;');
       }
     });
@@ -1616,10 +1631,11 @@ class Compiler extends Obj {
       branchPositions.push(this.codebuf.length);
       this._emit('');
 
+      // Use default body 'node.default' as position node for this block
       this._emitAsyncBlock(node.default, frame, false, (f) => {
         this.compile(node.default, f);
         branchWriteCounts.push(this.countsTo1(f.writeCounts) || {});
-      });
+      }, node.default);
     }
 
     this._emit('}');
@@ -1635,7 +1651,8 @@ class Compiler extends Obj {
       }
     });
 
-    frame = this._emitAsyncBlockBufferNodeEnd(node, frame);
+    // Use node.expr (passed earlier) for the end block
+    frame = this._emitAsyncBlockBufferNodeEnd(node, frame, false, false, node.expr);
   }
 
   //within an async block, each set is counted, but when propagating the writes to the parent async block
@@ -1657,7 +1674,8 @@ class Compiler extends Obj {
       async = false;//old type of async
     }
 
-    frame = this._emitAsyncBlockBufferNodeBegin(node, frame);
+    // Use node.cond as the position node for the overarching If block
+    frame = this._emitAsyncBlockBufferNodeBegin(node, frame, false, node.cond);
 
     let trueBranchWriteCounts, falseBranchWriteCounts;
     let trueBranchCodePos;
@@ -1669,10 +1687,11 @@ class Compiler extends Obj {
     if (this.asyncMode) {
       trueBranchCodePos = this.codebuf.length;
       this._emit('');
+      // Use node.body as the position node for the true branch block
       this._emitAsyncBlock(node.body, frame, false, (f) => {
         this.compile(node.body, f);
         trueBranchWriteCounts = this.countsTo1(f.writeCounts);
-      });
+      }, node.body);
     }
     else {
       this._withScopedSyntax(() => {
@@ -1692,10 +1711,11 @@ class Compiler extends Obj {
 
     if (node.else_) {
       if (this.asyncMode) {
+        // Use node.else_ as the position node for the false branch block
         this._emitAsyncBlock(node.else_, frame, false, (f) => {
           this.compile(node.else_, f);
           falseBranchWriteCounts = this.countsTo1(f.writeCounts);
-        });
+        }, node.else_);
       }
       else {
         this._withScopedSyntax(() => {
@@ -1718,7 +1738,8 @@ class Compiler extends Obj {
       this._emitInsertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
     }
 
-    frame = this._emitAsyncBlockBufferNodeEnd(node, frame);
+    // Use node.cond (passed earlier) for the end block
+    frame = this._emitAsyncBlockBufferNodeEnd(node, frame, false, false, node.cond);
   }
 
   compileIfAsync(node, frame) {
@@ -1741,8 +1762,8 @@ class Compiler extends Obj {
     // as fast as possible. ForAsync also shares some of this, but
     // not much.
 
-    //create an async block for the node - it will snapshot the vars rather than doing it for each iteration
-    frame = this._emitAsyncBlockBufferNodeBegin(node, frame, true);
+    // Use node.arr as the position for the outer async block (evaluating the array)
+    frame = this._emitAsyncBlockBufferNodeBegin(node, frame, true, node.arr);
 
     // Evaluate the array expression
     const arr = this._tmpid();
@@ -1784,8 +1805,8 @@ class Compiler extends Obj {
     const isLast = this._tmpid();
     this._emit(`, ${loopIndex}, ${loopLength}, ${isLast}) {`);
 
-    // Begin buffer block for the loop body
-    frame = this._emitAsyncBlockBufferNodeBegin(node, frame);
+    // Use node.body as the position for the inner buffer block (loop body execution)
+    frame = this._emitAsyncBlockBufferNodeBegin(node, frame, false, node.body);
 
     const makeSequentialPos = this.codebuf.length;
     this._emitLine(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
@@ -1823,8 +1844,8 @@ class Compiler extends Obj {
       this._emitInsertLine(makeSequentialPos, 'frame.sequentialLoopBody = true;');
     }
 
-    // End buffer block for the loop body
-    frame = this._emitAsyncBlockBufferNodeEnd(node, frame, false, true);
+    // End buffer block for the loop body (using node.body position)
+    frame = this._emitAsyncBlockBufferNodeEnd(node, frame, false, true, node.body);
 
     // Close the loop body function
     this._emitLine('};');
@@ -1841,10 +1862,10 @@ class Compiler extends Obj {
         this._emit('function() {');
       }
 
-      // Begin buffer block for the else block
-      frame = this._emitAsyncBlockBufferNodeBegin(node, frame);
+      // Use node.else_ as position for the else block buffer
+      frame = this._emitAsyncBlockBufferNodeBegin(node, frame, false, node.else_);
       this.compile(node.else_, frame);
-      frame = this._emitAsyncBlockBufferNodeEnd(node, frame);
+      frame = this._emitAsyncBlockBufferNodeEnd(node, frame, false, false, node.else_);
 
       this._emitLine('};');
     }
@@ -1859,8 +1880,8 @@ class Compiler extends Obj {
     });
     this._emit(`], ${sequential}, ${node.isAsync});`);
 
-    // End buffer block for the node
-    frame = this._emitAsyncBlockBufferNodeEnd(node, frame, true);
+    // End buffer block for the node (using node.arr position)
+    frame = this._emitAsyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
   }
 
   _emitAsyncLoopBindings(node, arr, i, len) {
@@ -1945,6 +1966,7 @@ class Compiler extends Obj {
 
     if (parallel) {
       if (this.asyncMode) {
+        //non-async node but in async mode -> use the proper buffer implementation
         this._emit(`${this.buffer}[index++] = ${output};`);
       } else {
         this._emitLine(`${this.buffer} += ${output};`);
@@ -2102,14 +2124,18 @@ class Compiler extends Obj {
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
     const ignoreMissingArg = (ignoreMissing) ? 'true' : 'false';
 
+    // The relevant position is the template expression node
+    const positionNode = node.template || node; // node.template exists for Import, Extends, Include, FromImport
+
     if (node.isAsync) {
       const getTemplateFunc = this._tmpid();
       this._emitLine(`const ${getTemplateFunc} = runtime.promisify(env.getTemplate.bind(env));`);
       this._emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
       if (asyncWrap) {
+        // Wrap the expression evaluation in an async block if needed, use template node position
         this._emitAsyncBlockValue(node.template, frame, (f) => {
           this._compileExpression(node.template, f);
-        });
+        }, undefined, positionNode);
       } else {
         this._compileExpression(node.template, frame);
       }
@@ -2126,18 +2152,20 @@ class Compiler extends Obj {
 
   compileImport(node, frame) {
     const target = node.target.value;
+    // Pass node.template for position in _compileGetTemplate
     const id = this._compileGetTemplate(node, frame, false, false, true);
 
     if (node.isAsync) {
       const res = this._tmpid();
       this._emit(`${id} = `);
+      // Use node as position node for the getExported part
       this._emitAsyncBlockValue(node, frame, (f) => {
         this._emitLine(`let ${res} = await ${id};`);
         this._emitLine(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${node.withContext
           ? `context.getVariables(), frame, astate`
           : `null, null, astate`
         });`);
-      }, res);
+      }, res, node); // Position is the Import node itself for the getExported call
     } else {
       this._addScopeLevel();
       this._emitLine(id + '.getExported(' +
@@ -2160,18 +2188,20 @@ class Compiler extends Obj {
   }
 
   compileFromImport(node, frame) {
+    // Pass node.template for position in _compileGetTemplate
     const importedId = this._compileGetTemplate(node, frame, false, false, true);
 
     if (node.isAsync) {
       const res = this._tmpid();
       this._emit(`${importedId} = `);
+      // Use node as position node for the getExported part
       this._emitAsyncBlockValue(node, frame, (f) => {
         this._emitLine(`let ${res} = await ${importedId};`);
         this._emitLine(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${node.withContext
           ? `context.getVariables(), frame, astate`
           : `null, null, astate`
         });`);
-      }, res);
+      }, res, node); // Position is the FromImport node itself for the getExported call
     } else {
       this._addScopeLevel();//after _compileGetTemplate
       this._emitLine(importedId + '.getExported(' +
@@ -2196,19 +2226,21 @@ class Compiler extends Obj {
 
       if (node.isAsync) {
         //@todo - error handling in the async() function
+        // The async IIFE here doesn't use our helpers, error pos comes from JS runtime
         this._emitLine(`${id} = (async () => {`);
         this._emitLine(`  let exported = await ${importedId};`);
         this._emitLine(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
         this._emitLine(`    return exported["${name}"];`);
         this._emitLine(`  } else {`);
-        this._emitLine(`    throw new Error("cannot import '${name}'");`);
+        this._emitLine(`    throw new TemplateError("cannot import '${name}'", ${nameNode.lineno}, ${nameNode.colno});`);
         this._emitLine(`  }`);
         this._emitLine(`})();`);
       } else {
         this._emitLine(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
         this._emitLine(`${id} = ${importedId}.${name};`);
         this._emitLine('} else {');
-        this._emitLine(`cb(new Error("cannot import '${name}'")); return;`);
+        // Use nameNode position for the specific "cannot import" error
+        this._emitLine(`cb(new TemplateError("cannot import '${name}'", ${nameNode.lineno}, ${nameNode.colno})); return;`);
         this._emitLine('}');
       }
 
@@ -2237,6 +2269,7 @@ class Compiler extends Obj {
     // blocks twice
 
     if (node.isAsync) {
+      // Use the block node itself for position
       this._emitAsyncBlockAddToBuffer(node, frame, (id, f) => {
         if (!this.inBlock) {
           this._emit(`if(parentTemplate) ${id}=""; else {`);
@@ -2248,7 +2281,7 @@ class Compiler extends Obj {
         if (!this.inBlock) {
           this._emitLine('}');
         }
-      });
+      }, node);
     }
     else {
       let id = this._tmpid();
@@ -2262,6 +2295,7 @@ class Compiler extends Obj {
       this._emitLine('(env, context, frame, runtime, ' + this._makeCallback(id));
 
       if (this.asyncMode) {
+        //non-async node but in async mode -> use the proper buffer implementation
         this._emit(`${this.buffer}[index++] = ${id};`);
       } else {
         this._emitLine(`${this.buffer} += ${id};`);
@@ -2296,6 +2330,7 @@ class Compiler extends Obj {
       this._emitLine('context.prepareForAsyncBlocks();');
     }
 
+    // Pass node.template for position in _compileGetTemplate
     const parentTemplateId = this._compileGetTemplate(node, frame, true, false, true);
 
     // extends is a dynamic tag and can occur within a block like
@@ -2303,7 +2338,8 @@ class Compiler extends Obj {
     // template in the top-level scope
 
     if (node.isAsync) {
-      frame = this._emitAsyncBlockBegin(node, frame);
+      // Use node.template as position for the block resolving the parent template
+      frame = this._emitAsyncBlockBegin(node, frame, false, node.template);
     }
 
     //isAsync: set the global parent template, compileRoot will use it after waitAllClosures
@@ -2317,7 +2353,8 @@ class Compiler extends Obj {
     }
     else {
       this._emitLine('context.finsihsAsyncBlocks()');
-      frame = this._emitAsyncBlockEnd(node, frame);
+      // Use node.template for the end block position
+      frame = this._emitAsyncBlockEnd(node, frame, false, false, node.template);
     }
   }
 
@@ -2326,6 +2363,7 @@ class Compiler extends Obj {
       this.compileIncludeSync(node, frame);
       return;
     }
+    // Use node.template for position of getTemplate, node for render
     this._emitAsyncBlockAddToBuffer(node, frame, (resultVar, f) => {
       // Get the template
       const templateVar = this._tmpid();
@@ -2365,10 +2403,14 @@ class Compiler extends Obj {
 
     this._emitLine('tasks.push(');
     this._emitLine('function(result, callback){');
-    //this._emitAsyncBlockAddToBufferBegin(node, frame, false);
-    this._emitLine(`${this.buffer} += result;`);
-    //this._emitLine(`result;`);
-    //this._emitAsyncBlockAddToBufferEnd(node, frame, false);
+
+    // Adding to buffer is synchronous here
+    if (this.asyncMode) {
+      //non-async node but in async mode -> use the proper buffer implementation
+      this._emitLine(`${this.buffer}[index++] = result;`);
+    } else {
+      this._emitLine(`${this.buffer} += result;`);
+    }
     this._emitLine('callback(null);');
     this._emitLine('});');
     this._emitLine('env.waterfall(tasks, function(){');
@@ -2386,6 +2428,7 @@ class Compiler extends Obj {
     this.buffer = 'output';
     if (node.isAsync) {
       const res = this._tmpid();
+      // Use node.body as position node for the capture block evaluation
       this._emitAsyncBlockValue(node.body, frame, (f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this._emitLine('let output = [];');
@@ -2395,7 +2438,7 @@ class Compiler extends Obj {
         this._emitLine('await astate.waitAllClosures(1)');
         this._emitLine(`let ${res} = runtime.flattentBuffer(output);`);
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
-      }, res);
+      }, res, node.body);
     }
     else {
       this._emitLine('(function() {');
@@ -2418,13 +2461,14 @@ class Compiler extends Obj {
       // autoescaped, so simply output it for optimization
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
-
+          // Position node is the TemplateData node itself
           this._emitAddToBuffer(node, frame, function () {
             this.compileLiteral(child, frame);
-          });
+          }, child);
         }
       } else {
-        frame = this._emitAsyncBlockAddToBufferBegin(node, frame);
+        // Use the specific child expression node for position
+        frame = this._emitAsyncBlockAddToBufferBegin(node, frame, child);
         this._emit(`${node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
 
         if (this.throwOnUndefined) {
@@ -2432,10 +2476,12 @@ class Compiler extends Obj {
         }
         this._compileExpression(child, frame);
         if (this.throwOnUndefined) {
-          this._emit(`,${node.lineno},${node.colno})`);
+          // Use child position for ensureDefined error
+          this._emit(`,${child.lineno},${child.colno})`);
         }
+        // Use child position for suppressValue error
         this._emit(', env.opts.autoescape);\n');
-        frame = this._emitAsyncBlockAddToBufferEnd(node, frame);
+        frame = this._emitAsyncBlockAddToBufferEnd(node, frame, child);
       }
     });
   }
@@ -2623,22 +2669,27 @@ class Compiler extends Obj {
 
   compileDo(node, frame) {
     if (node.isAsync) {
-      // Use a single _emitAsyncBlock for all children
+      // Use the Do node itself for the outer async block position
       this._emitAsyncBlock(node, frame, false, (f) => {
         const promisesVar = this._tmpid();
         this._emitLine(`let ${promisesVar} = [];`);
         node.children.forEach((child) => {
+          // Position node for individual expressions is the child itself
           const resultVar = this._tmpid();
           this._emitLine(`let ${resultVar} = `);
+          // Expressions inside DO shouldn't be wrapped in another IIFE,
+          // but if they were async, their results (promises) need handling.
+          // We compile them directly here.
           this._compileExpression(child, f);
           this._emitLine(';');
+          // We only push actual promises to the wait list
           this._emitLine(`if (${resultVar} && typeof ${resultVar}.then === 'function') ${promisesVar}.push(${resultVar});`);
         });
         this._emitLine(`if (${promisesVar}.length > 0) {`);
         this._emitLine(`  await Promise.all(${promisesVar});`);
         this._emitLine(`}`);
-      });
-      //this._emitLine(';');
+      }, node); // Pass Do node as positionNode for the overall block
+      //this._emitLine(';'); // Removed semicolon after block
     } else {
       node.children.forEach(child => {
         this._compileExpression(child, frame);
