@@ -713,16 +713,31 @@ class Template extends Obj {
     }
     frame.topLevel = true;
     let syncResult = null;
+    let callbackCalled = false;
+
+    const isAsync = this.env instanceof AsyncEnvironment;
+
     let didError = false;
 
     const callback = (err, res) => {
-      // TODO: this is actually a bug in the compiled template (because waterfall
-      // tasks are both not passing errors up the chain of callbacks AND are not
-      // causing a return from the top-most render function). But fixing that
-      // will require a more substantial change to the compiler.
-      if (didError && cb && typeof res !== 'undefined') {
-        // prevent multiple calls to cb
-        return;
+      if (!isAsync) {
+        // TODO: this is actually a bug in the compiled template (because waterfall
+        // tasks are both not passing errors up the chain of callbacks AND are not
+        // causing a return from the top-most render function). But fixing that
+        // will require a more substantial change to the compiler.
+        if (didError && cb && typeof res !== 'undefined') {
+          // the old non-async nunjucks behaviour
+          // prevent multiple calls to cb
+          return;
+        }
+      } else {
+        if (callbackCalled) {
+          //already had success or error
+          //ignore all errors after sucess (happens with unused vars throwing an error after template is rendered)
+          //see the 'Side effects - template render lifecycle' tests
+          return;
+        }
+        callbackCalled = true;//only allow one callback
       }
 
       if (err) {
@@ -741,7 +756,25 @@ class Template extends Obj {
           throw err;
         }
         syncResult = res;
-      }
+
+        if (err) {
+          err = lib._prettifyError(this.path, this.env.opts.dev, err);
+          didError = true;
+        }
+
+        if (cb) {
+          if (forceAsync) {
+            callbackAsap(cb, err, res);
+          } else {
+            cb(err, res);
+          }
+        } else {
+          if (err) {
+            throw err;
+          }
+          syncResult = res;
+        }
+      };
     };
 
     if (this.asyncMode) {

@@ -126,6 +126,7 @@ class Compiler extends Obj {
     this._closeScopeLevels();
     this._emitLine('} catch (e) {');
     this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+    //this._emitLine('  throw e;');//the returned promise should not resolve
     this._emitLine('}');
     this._emitLine('}');
     this.buffer = null;
@@ -169,6 +170,7 @@ class Compiler extends Obj {
       this.asyncClosureDepth--;
       this._emitLine(`} catch (e) {`);
       this._emitLine(`  cb(runtime.handleError(e, lineno, colno));`);
+      //this._emitLine(`  throw e;`);//the returned promise should not resolve
       this._emitLine(`} finally {`);
       this._emitLine('  astate.leaveAsyncBlock();');
 
@@ -188,7 +190,7 @@ class Compiler extends Obj {
   _emitAsyncBlockValue(node, frame, emitFunc, res) {
     if (node.isAsync) {
 
-      this._emitLine(`(async (astate, frame) => {`);
+      this._emitLine(`runtime.handlePromise((async (astate, frame) => {`);
       this._emitLine('try {');
       this.asyncClosureDepth++;
       frame = frame.push(false, false);
@@ -199,15 +201,18 @@ class Compiler extends Obj {
       }
       emitFunc.call(this, frame);
       this._emitLine(';');
-      this._emitLine('  return ' + res + ';');
-
-      this._emitLine(`} catch (e) {`);
-      this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+      //we await `res` only to make sure leaveAsyncBlock is called after the promise resolves
+      //and we need this only because the returned value may be a rejected promise and if the
+      //this value is never awaited, this will cause uncaught exception
+      this._emitLine(`return ${res};`);
+      //this._emitLine(`} catch (e) {`);
+      //this._emitLine('cb(runtime.handleError(e, lineno, colno));');
+      //this._emitLine('return runtime.lazyReject(e);');//this will throw an error only when awaited to avoid uncaught exception
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)})`);
-      //this._emitLine(`})(astate.enterAsyncBlock(${this._getPushAsyncBlockCode(frame)}))`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${node.lineno}, ${node.colno});`);
+
       this.asyncClosureDepth--;
       frame = frame.pop();
     } else {
@@ -257,6 +262,7 @@ class Compiler extends Obj {
       this._emitLine(`  ${callbackName}(runtime.handleError(e, lineno, colno));`);
     } else {
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+      //this._emitLine('  throw e;');//the returned promise should not resolve
     }
     this._emitLine('} finally {');
     this._emitLine('  astate.leaveAsyncBlock();');
@@ -297,6 +303,7 @@ class Compiler extends Obj {
       this.asyncClosureDepth--;
       this._emitLine('} catch (e) {');
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+      //this._emitLine('  throw e;');//the returned promise should not resolve
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
@@ -338,6 +345,7 @@ class Compiler extends Obj {
       this.asyncClosureDepth--;
       this._emitLine('} catch (e) {');
       this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+      //this._emitLine('  throw e;');//the returned promise should not resolve
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
@@ -1416,20 +1424,16 @@ class Compiler extends Obj {
       this._emit(ids.join(' = ') + ' = ');
       if (node.isAsync) {
         this._emitAsyncBlockValue(node.value, frame, (f) => {
-          //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
           this.compile(node.value, f);
-          //this._emitLine(';');//? test removing this
         });
       } else {
         this._compileExpression(node.value, frame);
-        //this._emitLine(';');
       }
     } else {
       // set block
       this._emit(ids.join(' = ') + ' = ');
       this._emitAsyncBlockValue(node.body, frame, (f) => {
         this.compile(node.body, f);
-        //this._emitLine(';');
       });
     }
     this._emitLine(';');

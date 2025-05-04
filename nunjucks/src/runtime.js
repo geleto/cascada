@@ -917,6 +917,25 @@ function handleError(error, lineno, colno) {
   }
 }
 
+// Make sure the promise is caught and handled (so we don't get unhandled exception)
+// The error is properly reported to the callback
+function handlePromise(promise, cb, lineno, colno) {
+  // Attach a catch handler that performs the error handling and callback
+  promise.catch(err => {
+    // Use the provided arguments to handle and report the error
+    try {
+      const handledError = handleError(err, lineno, colno);
+      cb(handledError);
+    } catch (cbError) {
+      // Uh oh, the callback or error handler itself failed.
+      console.error('FATAL: Error during Nunjucks error handling or callback:', cbError);
+      console.error('Original error was:', err);
+      throw cbError;
+    }
+  });
+  return promise;//the original promise
+}
+
 function asyncEach(arr, dimen, iter, cb) {
   if (lib.isArray(arr)) {
     const len = arr.length;
@@ -1291,6 +1310,7 @@ module.exports = {
   callWrap,
   sequencedCallWrap,
   handleError,
+  handlePromise,
   isArray: lib.isArray,
   keys: lib.keys,
   SafeString,
