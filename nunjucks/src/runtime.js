@@ -909,22 +909,22 @@ function contextOrFrameLookup(context, frame, name) {
     context.lookup(name);
 }
 
-function handleError(error, lineno, colno) {
+function handleError(error, lineno, colno, errorContextString = null) {
   if (error.lineno) {
     return error;
   } else {
-    return new lib.TemplateError(error, lineno, colno);
+    return new lib.TemplateError(error, lineno, colno, errorContextString);
   }
 }
 
 // Make sure the promise is caught and handled (so we don't get unhandled exception)
 // The error is properly reported to the callback
-function handlePromise(promise, cb, lineno, colno) {
+function handlePromise(promise, cb, lineno, colno, errorContextString = null) {
   // Attach a catch handler that performs the error handling and callback
   promise.catch(err => {
     // Use the provided arguments to handle and report the error
     try {
-      const handledError = handleError(err, lineno, colno);
+      const handledError = handleError(err, lineno, colno, errorContextString);
       cb(handledError);
     } catch (cbError) {
       // Uh oh, the callback or error handler itself failed.

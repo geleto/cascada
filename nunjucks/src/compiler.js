@@ -52,7 +52,17 @@ class Compiler extends Obj {
     this.asyncClosureDepth = 0;
   }
 
-  fail(msg, lineno, colno) {
+  _generateErrorContext(node, positionNode) {
+    if (!node || !positionNode) return 'UnknownContext'; // Basic fallback
+    const nodeType = node.typename || 'Node';
+    const posType = positionNode.typename || 'PosNode';
+    if (node === positionNode || nodeType === posType) {
+      return nodeType;
+    }
+    return `${nodeType}(${posType})`;
+  }
+
+  fail(msg, lineno, colno, node, positionNode) { // Added node and positionNode
     if (lineno !== undefined) {
       lineno += 1;
     }
@@ -60,7 +70,10 @@ class Compiler extends Obj {
       colno += 1;
     }
 
-    throw new TemplateError(msg, lineno, colno);
+    const errorContext = node ? this._generateErrorContext(node, positionNode || node) : undefined;
+
+    // Pass context to TemplateError constructor
+    throw new TemplateError(msg, lineno, colno, errorContext);
   }
 
   _pushBuffer() {
@@ -129,10 +142,9 @@ class Compiler extends Obj {
     if (this.asyncMode) {
       // In async mode, use the static position from the node and handlePromise for internal errors
       // The top-level catch uses the function's start position as a fallback.
-      this._emitLine(`  cb(runtime.handleError(e, ${node.lineno}, ${node.colno}));`);
+      this._emitLine(`  cb(runtime.handleError(e, ${node.lineno}, ${node.colno}${node ? `, "${this._generateErrorContext(node)}"` : ''}));`);
     } else {
-      // In sync mode, use the potentially updated lineno/colno variables
-      this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+      this._emitLine(`  cb(runtime.handleError(e, lineno, colno${node ? `, "${this._generateErrorContext(node)}"` : ''}));`);
     }
     //this._emitLine('  throw e;');//the returned promise should not resolve
     this._emitLine('}');
@@ -179,7 +191,8 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno});`);
+      const errorContext = this._generateErrorContext(node, positionNode);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}");`);
     }
     if (createScope && !node.isAsync) {
       this._emitLine('frame = frame.pop();');
@@ -214,7 +227,8 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}'); // Close inner finally
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno})`);
+      const errorContext = this._generateErrorContext(node, positionNode);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}")`);
 
       this.asyncClosureDepth--;
       frame = frame.pop();
@@ -264,10 +278,11 @@ class Compiler extends Obj {
     this._emitLine('} finally {');
     this._emitLine('  astate.leaveAsyncBlock();');
     this._emitLine('}');
+    const errorContext = this._generateErrorContext(node, positionNode);
     if (callbackName) {
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), ${callbackName}, ${positionNode.lineno}, ${positionNode.colno})`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}")`);
     } else {
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno})`);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}")`);
     }
 
     frame = frame.pop();
@@ -305,7 +320,8 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno});`);
+      const errorContext = this._generateErrorContext(node, positionNode);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}");`);
 
       frame = frame.pop();
 
@@ -344,7 +360,8 @@ class Compiler extends Obj {
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}');
-      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno});`);
+      const errorContext = this._generateErrorContext(node, positionNode);
+      this._emitLine(`})(astate.enterAsyncBlock(), ${this._getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}");`);
       return frame.pop();
     }
     return frame;
@@ -524,7 +541,7 @@ class Compiler extends Obj {
 
   assertType(node, ...types) {
     if (!types.some(t => node instanceof t)) {
-      this.fail(`assertType: invalid type: ${node.typename}`, node.lineno, node.colno);
+      this.fail(`assertType: invalid type: ${node.typename}`, node.lineno, node.colno, node);
     }
   }
 
@@ -581,8 +598,7 @@ class Compiler extends Obj {
 
     if (args) {
       if (!(args instanceof nodes.NodeList)) {
-        this.fail('compileCallExtension: arguments must be a NodeList, ' +
-          'use `parser.parseSignature`');
+        this.fail('compileCallExtension: arguments must be a NodeList, use `parser.parseSignature`', node.lineno, node.colno, node);
       }
 
       args.children.forEach((arg, i) => {
@@ -687,10 +703,10 @@ class Compiler extends Obj {
 
         if (node.sequenced) {
           if (!(pathFlags & PathFlags.CALL)) {
-            throw new Error('Sequence marker (!) is not allowed in non-call paths');
+            this.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
           }
           if (pathFlags & PathFlags.CREATES_SEQUENCE_LOCK) {
-            throw new Error('Can not use more than one sequence marker (!) in a path');
+            this.fail('Can not use more than one sequence marker (!) in a path', node.lineno, node.colno, node);
           }
         }
 
@@ -710,7 +726,7 @@ class Compiler extends Obj {
             //wrap it in async block if now wrapped elsewhere
             //the sequence locks will be counted/released at this block
             //the separate block is needed because for instance an expression can have many paths in a single async block
-            this._emitAsyncBlockValue(node, frame, emitSequencedLookup, undefined, node); // Use node for position
+            this._emitAsyncBlockValue(node, frame, emitSequencedLookup, undefined, node);
           } else {
             emitSequencedLookup(frame);//emit without async block
           }
@@ -752,7 +768,9 @@ class Compiler extends Obj {
       typeof key.value === 'string')) {
       this.fail('compilePair: Dict keys must be strings or names',
         key.lineno,
-        key.colno);
+        key.colno,
+        node,
+        key);
     }
 
     this.compile(key, frame);
@@ -787,6 +805,10 @@ class Compiler extends Obj {
   compileIs(node, frame) {
     const testName = node.right.name ? node.right.name.value : node.right.value;
     const testFunc = `env.getTest("${testName}")`;
+    const failMsg = `test not found: ${testName}`.replace(/"/g, '\\"');
+    // Generate error context within the compiler
+    const errorContext = this._generateErrorContext(node, node.right);
+    // Ensure failMsg is properly escaped for embedding in the generated string
 
     if (node.isAsync) {
       const mergedNode = {
@@ -798,7 +820,7 @@ class Compiler extends Obj {
       // Resolve the left-hand side and arguments (if any)
       this._compileAggregate(mergedNode, frame, '[', ']', true, true, function (args) {
         this._emitLine(`  const testFunc = ${testFunc};`);
-        this._emitLine(`  if (!testFunc) { throw new Error("test not found: ${testName}"); }`);
+        this._emitLine(`  if (!testFunc) { throw runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}"); }`);
         this._emitLine(`  const result = await testFunc.call(context, ${args}[0]`);
         if (node.right.args && node.right.args.children.length > 0) {
           this._emitLine(`, ...${args}.slice(1)`);
@@ -813,7 +835,7 @@ class Compiler extends Obj {
         this._emit(', ');
         this.compile(node.right.args, frame);
       }
-      this._emit(`) : (function() { throw new Error("test not found: ${testName}"); })())`);
+      this._emit(`) : (() => { throw runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}"); })())`);
       this._emit(' === true');
     }
   }
@@ -983,10 +1005,10 @@ class Compiler extends Obj {
       // Check if sequenced flag is used inappropriately
       if (node.sequenced) {
         if (!(pathFlags & PathFlags.CALL)) {
-          throw new Error('Sequence marker (!) is not allowed in non-call paths');
+          this.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
         }
         if (pathFlags & PathFlags.CREATES_SEQUENCE_LOCK) {
-          throw new Error('Can not use more than one sequence marker (!) in a path');
+          this.fail('Can not use more than one sequence marker (!) in a path', node.lineno, node.colno, node);
         }
       }
 
@@ -1013,7 +1035,7 @@ class Compiler extends Obj {
           //if we await for at least one sequence lock - wrap it in async block but only once
           //the sequence locks will be counted/released at this block
           //the separate block is needed because for instance an expression can have many paths in a single async block
-          this._emitAsyncBlockValue(node, frame, emitSequencedLookup, undefined, node.val); // Use node.val for position
+          this._emitAsyncBlockValue(node, frame, emitSequencedLookup, undefined, node.val);
         } else {
           emitSequencedLookup(frame);//emit without async block
         }
@@ -1108,16 +1130,16 @@ class Compiler extends Obj {
       if (nodeToAnalyze.sequenced) {
         sequencedCount++;
         if (sequencedCount > 1) {
-          throw new TemplateError(
+          this.fail(
             'Syntax Error: Using two sequence markers \'!\' in the same path is not supported.',
-            nodeToAnalyze.lineno, nodeToAnalyze.colno
+            nodeToAnalyze.lineno, nodeToAnalyze.colno, nodeToAnalyze
           );
         }
         // CRITICAL CHECK: The segment with '!' MUST use a static string key.
         if (!isCurrentKeyStatic) {
-          throw new TemplateError(
+          this.fail(
             'Sequence Error: The sequence marker \'!\' can only be applied after a static string literal key (e.g., obj["key"]!). It cannot be used with dynamic keys like variable indices (obj[i]!), numeric indices (obj[1]!), or other expression results.',
-            nodeToAnalyze.lineno, nodeToAnalyze.colno
+            nodeToAnalyze.lineno, nodeToAnalyze.colno, nodeToAnalyze
           );
         }
         sequenceMarkerNode = nodeToAnalyze;
@@ -1140,7 +1162,7 @@ class Compiler extends Obj {
     if (!sequenceMarkerNode && rootNode && rootNode.typename === 'Symbol' && rootNode.sequenced) {
       sequencedCount++;
       if (sequencedCount > 1) { /* Should be caught above if chain existed */
-        throw new TemplateError('Syntax Error: Using two sequence markers \'!\' in the same path is not supported.', rootNode.lineno, rootNode.colno);
+        this.fail('Syntax Error: Using two sequence markers \'!\' in the same path is not supported.', rootNode.lineno, rootNode.colno, rootNode);
       }
       // Root node itself is sequenced.
       sequenceMarkerNode = rootNode;
@@ -1155,10 +1177,11 @@ class Compiler extends Obj {
       // We already validated that the key *at* the '!' was a static string (or it was the root Symbol).
       // Now, validate that no segment *before* the '!' was dynamic.
       if (dynamicFoundInPrefix) {
-        throw new TemplateError(
+        this.fail(
           'Sequence Error: The sequence marker \'!\' requires the entire path preceding it to consist of static string literal segments (e.g., root["a"]["b"]!). A dynamic segment (like a variable index) was found earlier in the path.',
           sequenceMarkerNode.lineno, // Error reported at the node with '!'
-          sequenceMarkerNode.colno
+          sequenceMarkerNode.colno,
+          sequenceMarkerNode // Pass the node with '!'
         );
       }
 
@@ -1171,9 +1194,9 @@ class Compiler extends Obj {
         // All segments here MUST be static string keys due to the dynamicFoundInPrefix check.
         if (!isStaticStringKey(current.val)) {
           // This should theoretically not happen if dynamicFoundInPrefix logic is correct.
-          throw new TemplateError(
+          this.fail(
             `Internal Compiler Error: Dynamic segment found in sequence path prefix after validation. Path segment key type: ${current.val.typename}`,
-            current.lineno, current.colno
+            current.lineno, current.colno, current // Pass the problematic node
           );
         }
         path.unshift(current.val.value); // Add static key to the front
@@ -1186,13 +1209,13 @@ class Compiler extends Obj {
         path.unshift(rootNode.value); // Add the root symbol identifier
       } else if (rootNode) {
         // Path doesn't start with a simple variable (e.g., started with func() or literal)
-        throw new TemplateError(
+        this.fail(
           'Sequence Error: Sequenced paths marked with \'!\' must originate from a context variable (e.g., contextVar["key"]!). The path starts with a dynamic or non-variable element.',
-          rootNode.lineno, rootNode.colno // Report error at the problematic root
+          rootNode.lineno, rootNode.colno, rootNode // Report error at the problematic root
         );
       } else if (path.length === 0) {
         // This should not happen if sequenceSegmentValue was set.
-        throw new TemplateError(`Internal Compiler Error: Sequence path collection resulted in empty path.`, node.lineno, node.colno);
+        this.fail(`Internal Compiler Error: Sequence path collection resulted in empty path.`, node.lineno, node.colno, node);
       }
       // If !rootNode but path has elements, it means the sequence started mid-expression,
       // which is invalid for context variable sequencing. This is caught by the rootNode type check above.
@@ -1352,8 +1375,8 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
       this._emitLine(`let ${symbol} = `);
-      // Position node should be node.args as that's what's being evaluated async
-      this._emitAsyncBlockValue(node.args, frame, (f) => {
+      // Use node.args as the position node since it's what's being evaluated async
+      this._emitAsyncBlockValue(node, frame, (f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         //@todo - this should be done with _compileExpression in the future
         this._compileAggregate(node.args, f, '[', ']', true, false, function (result) {
@@ -1408,9 +1431,9 @@ class Compiler extends Obj {
       this._emit(ids.join(' = ') + ' = ');
       if (node.isAsync) {
         // Use node.value as the position node since it's the expression being evaluated
-        this._emitAsyncBlockValue(node.value, frame, (f) => {
+        this._emitAsyncBlockValue(node, frame, (f) => {
           this.compile(node.value, f);
-        }, undefined, node.value);
+        }, undefined, node.value); // Pass value as code position
       } else {
         this._compileExpression(node.value, frame);
       }
@@ -1418,9 +1441,9 @@ class Compiler extends Obj {
       // set block
       this._emit(ids.join(' = ') + ' = ');
       // Use node.body as the position node since it's the block being evaluated
-      this._emitAsyncBlockValue(node.body, frame, (f) => {
+      this._emitAsyncBlockValue(node, frame, (f) => {
         this.compile(node.body, f);
-      }, undefined, node.body);
+      }, undefined, node.body); // Pass body as code position
     }
     this._emitLine(';');
 
@@ -1602,10 +1625,10 @@ class Compiler extends Obj {
 
       if (c.body.children.length) {
         // Use case body 'c.body' as position node for this block
-        this._emitAsyncBlock(c.body, frame, false, (f) => {
+        this._emitAsyncBlock(c, frame, false, (f) => {
           this.compile(c.body, f);
           branchWriteCounts.push(this.countsTo1(f.writeCounts) || {});
-        }, c.body);
+        }, c.body); // Pass body as code position
         this._emitLine('break;');
       }
     });
@@ -1618,10 +1641,10 @@ class Compiler extends Obj {
       this._emit('');
 
       // Use default body 'node.default' as position node for this block
-      this._emitAsyncBlock(node.default, frame, false, (f) => {
+      this._emitAsyncBlock(node, frame, false, (f) => {
         this.compile(node.default, f);
         branchWriteCounts.push(this.countsTo1(f.writeCounts) || {});
-      }, node.default);
+      }, node.default); // Pass default as code position
     }
 
     this._emit('}');
@@ -1674,10 +1697,10 @@ class Compiler extends Obj {
       trueBranchCodePos = this.codebuf.length;
       this._emit('');
       // Use node.body as the position node for the true branch block
-      this._emitAsyncBlock(node.body, frame, false, (f) => {
+      this._emitAsyncBlock(node, frame, false, (f) => {
         this.compile(node.body, f);
         trueBranchWriteCounts = this.countsTo1(f.writeCounts);
-      }, node.body);
+      }, node.body); // Pass body as code position
     }
     else {
       this._withScopedSyntax(() => {
@@ -1698,10 +1721,10 @@ class Compiler extends Obj {
     if (node.else_) {
       if (this.asyncMode) {
         // Use node.else_ as the position node for the false branch block
-        this._emitAsyncBlock(node.else_, frame, false, (f) => {
+        this._emitAsyncBlock(node, frame, false, (f) => {
           this.compile(node.else_, f);
           falseBranchWriteCounts = this.countsTo1(f.writeCounts);
-        }, node.else_);
+        }, node.else_); // Pass else as code position
       }
       else {
         this._withScopedSyntax(() => {
@@ -2151,7 +2174,7 @@ class Compiler extends Obj {
           ? `context.getVariables(), frame, astate`
           : `null, null, astate`
         });`);
-      }, res, node); // Position is the Import node itself for the getExported call
+      }, res, node);
     } else {
       this._addScopeLevel();
       this._emitLine(id + '.getExported(' +
@@ -2187,7 +2210,7 @@ class Compiler extends Obj {
           ? `context.getVariables(), frame, astate`
           : `null, null, astate`
         });`);
-      }, res, node); // Position is the FromImport node itself for the getExported call
+      }, res, node);
     } else {
       this._addScopeLevel();//after _compileGetTemplate
       this._emitLine(importedId + '.getExported(' +
@@ -2213,20 +2236,27 @@ class Compiler extends Obj {
       if (node.isAsync) {
         //@todo - error handling in the async() function
         // The async IIFE here doesn't use our helpers, error pos comes from JS runtime
-        this._emitLine(`${id} = (async () => {`);
+        // @todo This needs refactoring to use handlePromise for proper context reporting
+        this._emitLine(`${id} = (async () => { try { `); // Add try
         this._emitLine(`  let exported = await ${importedId};`);
         this._emitLine(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
         this._emitLine(`    return exported["${name}"];`);
         this._emitLine(`  } else {`);
-        this._emitLine(`    throw new TemplateError("cannot import '${name}'", ${nameNode.lineno}, ${nameNode.colno});`);
+        // Use fail inside the generated code - needs careful quoting/scoping
+        // A better approach might be needed here, maybe a dedicated runtime helper
+        // For now, generate the throw, but acknowledge it bypasses our context system.
+        const failMsg = `cannot import '${name}'`;
+        this._emitLine(`    throw new TemplateError("${failMsg}", ${nameNode.lineno}, ${nameNode.colno}, "${this._generateErrorContext(node, nameNode)}");`);
         this._emitLine(`  }`);
-        this._emitLine(`})();`);
+        this._emitLine(`} catch(e) { throw runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${this._generateErrorContext(node, nameNode)}"); } })();`);
       } else {
         this._emitLine(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
         this._emitLine(`${id} = ${importedId}.${name};`);
         this._emitLine('} else {');
         // Use nameNode position for the specific "cannot import" error
-        this._emitLine(`cb(new TemplateError("cannot import '${name}'", ${nameNode.lineno}, ${nameNode.colno})); return;`);
+        // Use fail (indirectly via cb)
+        const failMsg = `cannot import '${name}'`;
+        this._emitLine(`cb(new TemplateError("${failMsg}", ${nameNode.lineno}, ${nameNode.colno}, "${this._generateErrorContext(node, nameNode)}")); return;`);
         this._emitLine('}');
       }
 
@@ -2365,7 +2395,7 @@ class Compiler extends Obj {
 
       // render
       this._emitLine(`${resultVar} = await runtime.promisify(${templateVar}.render.bind(${templateVar}))(context.getVariables(), frame${node.isAsync ? ', astate' : ''});`);
-    });
+    }, node);
   }
 
   compileIncludeSync(node, frame) {
@@ -2415,7 +2445,7 @@ class Compiler extends Obj {
     if (node.isAsync) {
       const res = this._tmpid();
       // Use node.body as position node for the capture block evaluation
-      this._emitAsyncBlockValue(node.body, frame, (f) => {
+      this._emitAsyncBlockValue(node, frame, (f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this._emitLine('let output = [];');
 
@@ -2450,7 +2480,7 @@ class Compiler extends Obj {
           // Position node is the TemplateData node itself
           this._emitAddToBuffer(node, frame, function () {
             this.compileLiteral(child, frame);
-          }, child);
+          }, child); // Pass TemplateData as position
         }
       } else {
         // Use the specific child expression node for position
@@ -2467,7 +2497,7 @@ class Compiler extends Obj {
         }
         // Use child position for suppressValue error
         this._emit(', env.opts.autoescape);\n');
-        frame = this._emitAsyncBlockAddToBufferEnd(node, frame, child);
+        frame = this._emitAsyncBlockAddToBufferEnd(node, frame, child); // Pass Output node as op, child as pos
       }
     });
   }
@@ -2504,7 +2534,7 @@ class Compiler extends Obj {
     }
 
     if (frame) {
-      this.fail('compileRoot: root node can\'t have frame');
+      this.fail('compileRoot: root node can\'t have frame', node.lineno, node.colno, node);
     }
 
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
@@ -2523,6 +2553,7 @@ class Compiler extends Obj {
       this._emitLine('  }');
       this._emitLine('}).catch(e => {');
       // Use static node position for root catch in async mode
+      // Do NOT pass errorContext here
       this._emitLine(`cb(runtime.handleError(e, ${node.lineno}, ${node.colno}))`);
       this._emitLine('});');
       this._emitLine('} else {');
@@ -2547,7 +2578,7 @@ class Compiler extends Obj {
       this._emitLine('}');
     }
 
-    // Pass the node to _emitFuncEnd for error position info
+    // Pass the node to _emitFuncEnd for error position info (used in sync catch)
     this._emitFuncEnd(node, true);
 
     this.inBlock = true;
@@ -2560,7 +2591,7 @@ class Compiler extends Obj {
       const name = block.name.value;
 
       if (blockNames.indexOf(name) !== -1) {
-        throw new Error(`Block "${name}" defined more than once.`);
+        this.fail(`Block "${name}" defined more than once.`, block.lineno, block.colno, block);
       }
       blockNames.push(name);
 
@@ -2588,7 +2619,7 @@ class Compiler extends Obj {
     if (_compile) {
       _compile.call(this, node, frame, pathFlags | node.pathFlags);
     } else {
-      this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno);
+      this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno, node);
     }
   }
 
@@ -2649,7 +2680,7 @@ class Compiler extends Obj {
     );
     if (node.isAsync && this.asyncClosureDepth === 0) {
       //this will change in the future - only if a child node need the frame
-      throw new Error('All expressions must be wrapped in an async IIFE');
+      this.fail('All expressions must be wrapped in an async IIFE', node.lineno, node.colno, node);
     }
     this.compile(node, frame);
   }

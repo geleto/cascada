@@ -45,7 +45,7 @@ function _prettifyError(path, withInternals, err) {
 
 exports._prettifyError = _prettifyError;
 
-function TemplateError(message, lineno, colno) {
+function TemplateError(message, lineno, colno, errorContextString = null) {
   var err;
   var cause;
 
@@ -97,6 +97,7 @@ function TemplateError(message, lineno, colno) {
 
   err.lineno = lineno;
   err.colno = colno;
+  err.contextString = errorContextString;
   err.firstUpdate = true;
 
   err.Update = function Update(path) {
@@ -105,6 +106,9 @@ function TemplateError(message, lineno, colno) {
     // only show lineno + colno next to path of template
     // where error occurred
     if (this.firstUpdate) {
+      if (this.errorContext) {
+        msg += ` ${this.errorContext}`;
+      }
       if (this.lineno && this.colno) {
         msg += ` [Line ${this.lineno}, Column ${this.colno}]`;
       } else if (this.lineno) {
