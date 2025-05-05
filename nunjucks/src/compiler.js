@@ -106,9 +106,10 @@ class Compiler extends Obj {
       this._emitLine(`function ${name}(env, context, frame, runtime, astate, cb) {`);
     } else {
       this._emitLine(`function ${name}(env, context, frame, runtime, cb) {`);
+      // Declare lineno/colno vars only in sync mode
+      this._emitLine(`let lineno = ${node.lineno};`);
+      this._emitLine(`let colno = ${node.colno};`);
     }
-    this._emitLine(`let lineno = ${node.lineno};`);
-    this._emitLine(`let colno = ${node.colno};`);
     // this._emitLine(`let ${this.buffer} = "";`);
     if (this.asyncMode) {
       this._emit(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
@@ -118,14 +119,21 @@ class Compiler extends Obj {
     this._emitLine('try {');
   }
 
-  _emitFuncEnd(noReturn) {
+  _emitFuncEnd(node, noReturn) { // Added node parameter
     if (!noReturn) {
       this._emitLine('cb(null, ' + this.buffer + ');');
     }
 
     this._closeScopeLevels();
     this._emitLine('} catch (e) {');
-    this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+    if (this.asyncMode) {
+      // In async mode, use the static position from the node and handlePromise for internal errors
+      // The top-level catch uses the function's start position as a fallback.
+      this._emitLine(`  cb(runtime.handleError(e, ${node.lineno}, ${node.colno}));`);
+    } else {
+      // In sync mode, use the potentially updated lineno/colno variables
+      this._emitLine('  cb(runtime.handleError(e, lineno, colno));');
+    }
     //this._emitLine('  throw e;');//the returned promise should not resolve
     this._emitLine('}');
     this._emitLine('}');
@@ -387,27 +395,6 @@ class Compiler extends Obj {
     }
     return frame;
   }
-
-  //awaiting a non-promise value is slow and should be avoided
-  /*_emitAwaitIfPromiseVar(varName) {
-    if(OPTIMIZE_ASYNC) {
-      this._emitLine(`\n((${varName} && typeof ${varName}.then === 'function') ? await ${varName} : ${varName})`);
-    } else {
-      this._emitLine(`\nawait ${varName}`);
-    }
-  }
-
-  _emitAwaitIfPromiseVoid(code) {
-    if (OPTIMIZE_ASYNC) {
-        const tempVar = this._tmpid();  // Generate a unique temporary variable
-        // Start a block to handle the conditional await logic
-        this._emitLine(`{ let ${tempVar} = ${code};`);
-        this._emitLine(`if (${tempVar} && typeof ${tempVar}.then === 'function') { await ${tempVar}; }`);
-    } else {
-        // In case of regular await, emit the standard await directly
-        this._emitLine(`await ${code}`);
-    }
-  }*/
 
   _addScopeLevel() {
     this._scopeClosers += '})';
@@ -857,7 +844,7 @@ class Compiler extends Obj {
       this._emit(',');
       this.compile(node.right, frame);
       this._emit(')');
-       // Position node is tricky here, could be left or right. Use the main node.
+      // Position node is tricky here, could be left or right. Use the main node.
       this._emit('.then(function([left,right]){return left ' + str + ' right;})');
     } else {
       this.compile(node.left, frame);
@@ -1230,11 +1217,10 @@ class Compiler extends Obj {
 
   compileFunCall(node, frame, pathFlags) {
     // Keep track of line/col info at runtime by setting
-    // variables within an expression. An expression in JavaScript
-    // like (x, y, z) returns the last value, and x and y can be
-    // anything.
-
-    this._emit('(lineno = ' + node.lineno + ', colno = ' + node.colno + ', ');
+    // variables within an expression (SYNC MODE ONLY).
+    if (!this.asyncMode) {
+      this._emit('(lineno = ' + node.lineno + ', colno = ' + node.colno + ', ');
+    }
 
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
@@ -1314,7 +1300,7 @@ class Compiler extends Obj {
         });
         delete node.name.pathFlags;
       }
-      this._emitLine(')');//(lineno, ...
+      // //(lineno, ... No closing parenthesis needed here for async mode
     } else {
       // In sync mode, compile as usual.
       this._emit('runtime.callWrap(');
@@ -2536,7 +2522,8 @@ class Compiler extends Obj {
       this._emitLine(`    cb(null, runtime.flattentBuffer(${this.buffer}));`);
       this._emitLine('  }');
       this._emitLine('}).catch(e => {');
-      this._emitLine('cb(runtime.handleError(e, lineno, colno))');
+      // Use static node position for root catch in async mode
+      this._emitLine(`cb(runtime.handleError(e, ${node.lineno}, ${node.colno}))`);
       this._emitLine('});');
       this._emitLine('} else {');
       this._emitLine('if(parentTemplate) {');
@@ -2551,6 +2538,8 @@ class Compiler extends Obj {
       this._emitLine(`parentTemplate.rootRenderFunc(env, context, frame, runtime, ${this.asyncMode ? 'astate, ' : ''}cb);`);
       this._emitLine('} else {');
       if (this.asyncMode) {
+        // This case (sync root in asyncMode) might be unlikely/problematic,
+        // but keep flatten for consistency if it somehow occurs.
         this._emitLine(`cb(null, runtime.flattentBuffer(${this.buffer}));`);
       } else {
         this._emitLine(`cb(null, ${this.buffer});`);
@@ -2558,7 +2547,8 @@ class Compiler extends Obj {
       this._emitLine('}');
     }
 
-    this._emitFuncEnd(true);
+    // Pass the node to _emitFuncEnd for error position info
+    this._emitFuncEnd(node, true);
 
     this.inBlock = true;
 
@@ -2579,7 +2569,8 @@ class Compiler extends Obj {
       let tmpFrame = frame.new();//new Frame();
       this._emitLine('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       this.compile(block.body, tmpFrame);
-      this._emitFuncEnd();
+      // Pass the block node to _emitFuncEnd
+      this._emitFuncEnd(block);
     });
 
     this._emitLine('return {');
