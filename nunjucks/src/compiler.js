@@ -2686,8 +2686,62 @@ class Compiler extends Obj {
       //this will change in the future - only if a child node need the frame
       this.fail('All expressions must be wrapped in an async IIFE', node.lineno, node.colno, node);
     }
+    if (node.isAsync) {
+      this._processExpressionSequenceKeysAndPaths(node, frame);
+    }
     this.compile(node, frame);
   }
+
+  _processExpressionSequenceKeysAndPaths = function(currentNode, frame) {
+    let accumulatedPathCounts = new Map();
+    let accumulatedLockCounts = new Map();
+
+    const mergeCounts = (parentCounts, childCounts) => {
+      if (childCounts instanceof Map) { // Ensure childCounts is a Map
+        for (const [key, count] of childCounts) {
+          parentCounts.set(key, (parentCounts.get(key) || 0) + count);
+        }
+      }
+    };
+
+    // 1. Determine if currentNode has a sequence locked static path
+    if (currentNode instanceof nodes.Symbol || currentNode instanceof nodes.LookupVal) {
+      let pathKey = this._extractStaticPathKey(currentNode);
+      if (pathKey) {
+        const rootVarName = pathKey.substring(1).split('!')[0];
+        if (!this._isDeclared(frame, rootVarName)) {
+          currentNode.sequencePathKey = pathKey;
+          accumulatedPathCounts.set(pathKey, (accumulatedPathCounts.get(pathKey) || 0) + 1);
+        }
+      }
+    } else if (currentNode instanceof nodes.FunCall) {
+      let lockKey = this._getSequenceKey(currentNode.name, frame);
+      if (lockKey) {
+        currentNode.sequenceLockKey = lockKey;
+        accumulatedLockCounts.set(lockKey, (accumulatedLockCounts.get(lockKey) || 0) + 1);
+      }
+    }
+
+    const children = this._getImmediateChildren(currentNode);
+    for (const child of children) {
+      // Recursivelty process child:
+      this._processExpressionSequenceKeysAndPaths(child, frame);
+
+      if (child.sequencePathCounts) {
+        mergeCounts(accumulatedPathCounts, child.sequencePathCounts);
+      }
+      if (child.sequenceLockKeyCounts) {
+        mergeCounts(accumulatedLockCounts, child.sequenceLockKeyCounts);
+      }
+    }
+
+    if (accumulatedPathCounts.size > 0) {
+      currentNode.sequencePathCounts = accumulatedPathCounts;
+    }
+    if (accumulatedLockCounts.size > 0) {
+      currentNode.sequenceLockKeyCounts = accumulatedLockCounts;
+    }
+  };
 
   getCode() {
     return this.codebuf.join('');

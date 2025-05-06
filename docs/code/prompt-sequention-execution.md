@@ -131,3 +131,21 @@ You will use the following files:
     *   Implement the `runtime.sequencedCallWrap` helper function, which internally calls `runtime.callWrap` and then reliably signals lock completion using `frame.set(sequenceLockKey, true, true)`.
     *   Modify the compiler's `compileFunCall` logic to detect sequenced calls using `_getSequenceKey`.
     *   Generate code within `compileFunCall` to invoke `runtime.sequencedCallWrap` for sequenced calls (passing the `sequenceLockKey`), and `runtime.callWrap` otherwise.
+
+**Step 8: Implement Expression-Level Key Analysis and Count Aggregation**
+
+*   **Title:** Analyze Expression Subtrees for Sequence Keys and Aggregate Usage Counts.
+*   **Goal:** Before compiling an expression(using compileExpression), recursively analyze its entire structure to identify all potential sequence path keys (from Symbol and LookupVal nodes) and sequence lock keys (from FunCall nodes). Decorate these individual nodes with their identified key. Aggregate the total count of each unique key found within the entire expression's subtree and store these counts on the expression's root node.
+*   **Why this step is necessary:** 
+    *   A single expression can contain multiple operations that might contend for the same sequence lock (e.g., data.item!.update() + data.item!.anotherUpdate()).
+    *   To ensure correct sequential execution, we must identify these contentions. This step gathers the foundational data: which sequence keys are used by which parts of the expression, and how many times each key appears within the overall expression.
+    *   This information is crucial for a subsequent step (Step 9) which will decide exactly which specific parts of the expression (individual lookups or function calls) need to be wrapped in their own async IIFE to manage their sequence lock, preventing race conditions with other parts of the same expression. Without this analysis, the compiler cannot make informed decisions about where to insert these protective async blocks.
+*   **Explanation:**
+    *   A new recursive compiler method, `_processExpressionSequenceKeysAndPaths`, analyzes an expression before its compilation.
+    *   **Key Identification:** It inspects `Symbol`, `LookupVal`, and `FunCall` nodes within the expression. Using existing helpers (`_extractStaticPathKey`, `_getSequenceKey`), it determines if a node represents a valid sequence path or a call to a sequenced method. Validity includes ensuring paths are static and originate from context variables (not template-scoped ones).
+    *   **Node Decoration:** If a valid key is found, it's stored as a property (e.g., `node.sequencePathKey` or `node.sequenceLockKey`) on that specific AST node.
+    *   **Usage Counting & Aggregation:** The method counts every occurrence of each unique key throughout the entire expression. These counts are aggregated upwards, so that any expression node will store the total counts of keys found within its own subtree (as `node.sequencePathCounts` and `node.sequenceLockKeyCounts`), if any keys are present.
+*   **Verification:**
+    *   Debug to confirm that relevant AST nodes within an expression are decorated with their `sequencePathKey` or `sequenceLockKey`.
+    *   Verify that expression nodes correctly store `sequencePathCounts` and `sequenceLockKeyCounts` reflecting total key usage in their subtrees.
+    *   Ensure paths from template-scoped variables are correctly ignored.
