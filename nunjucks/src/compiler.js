@@ -2499,35 +2499,42 @@ class Compiler extends Obj {
     });
   }
 
-  //in async mode: store node.isAsync=true if the node or a child node performs async operations
-  //when !OPTIMIZE_ASYNC - all nodes are treated as async
-  propagateIsAsync(node) {
-    let hasAsync = this.asyncMode ? !OPTIMIZE_ASYNC || asyncOperationNodes.has(node.typename) : false;
-
+  _getImmediateChildren(node) {
+    //return the immediate children similar to propagateIsAsync
+    const children = [];
     for (const key in node) {
       if (Array.isArray(node[key])) {
         node[key].forEach(item => {
           if (item && typeof item === 'object') {
-            const childHasAsync = this.propagateIsAsync(item);
-            hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
+            children.push(item);
           }
         });
       }
-      else if (typeof node[key] === 'object' && node[key] !== null) {
-        const childHasAsync = this.propagateIsAsync(node[key]);
-        hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
+      else if (node[key] instanceof nodes.Node && node[key] !== null) {
+        children.push(node[key]);
       }
     }
+    return children;
+  }
 
-    if (node.typename) {
-      node.isAsync = hasAsync;
-    }
+  //in async mode: store node.isAsync=true if the node or a child node performs async operations
+  //when !OPTIMIZE_ASYNC - all nodes are treated as async
+  _propagateIsAsync(node) {
+    let hasAsync = this.asyncMode ? !OPTIMIZE_ASYNC || asyncOperationNodes.has(node.typename) : false;
+
+    const children = this._getImmediateChildren(node);
+    children.forEach(child => {
+      const childHasAsync = this._propagateIsAsync(child);
+      hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
+    });
+
+    node.isAsync = hasAsync;
     return hasAsync;
   }
 
   compileRoot(node, frame) {
     if (this.asyncMode) {
-      this.propagateIsAsync(node);
+      this._propagateIsAsync(node);
     }
 
     if (frame) {
