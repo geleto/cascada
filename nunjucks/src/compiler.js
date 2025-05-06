@@ -2233,30 +2233,27 @@ class Compiler extends Obj {
         alias = name;
       }
 
+      // Generate context within the compiler scope
+      const errorContext = this._generateErrorContext(node, nameNode);
+      const failMsg = `cannot import '${name}'`.replace(/"/g, '\\"');
+
       if (node.isAsync) {
-        //@todo - error handling in the async() function
+        //@todo - error handling in the async() function - This manual IIFE still bypasses handlePromise wrapper.
         // The async IIFE here doesn't use our helpers, error pos comes from JS runtime
-        // @todo This needs refactoring to use handlePromise for proper context reporting
+        // @todo This needs refactoring to use handlePromise for proper context reporting via catch handler
         this._emitLine(`${id} = (async () => { try { `); // Add try
         this._emitLine(`  let exported = await ${importedId};`);
         this._emitLine(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
         this._emitLine(`    return exported["${name}"];`);
         this._emitLine(`  } else {`);
-        // Use fail inside the generated code - needs careful quoting/scoping
-        // A better approach might be needed here, maybe a dedicated runtime helper
-        // For now, generate the throw, but acknowledge it bypasses our context system.
-        const failMsg = `cannot import '${name}'`;
-        this._emitLine(`    throw new TemplateError("${failMsg}", ${nameNode.lineno}, ${nameNode.colno}, "${this._generateErrorContext(node, nameNode)}");`);
+        this._emitLine(`    throw runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}");`);
         this._emitLine(`  }`);
-        this._emitLine(`} catch(e) { throw runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${this._generateErrorContext(node, nameNode)}"); } })();`);
+        this._emitLine(`} catch(e) { throw runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}"); } })();`);
       } else {
         this._emitLine(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
         this._emitLine(`${id} = ${importedId}.${name};`);
         this._emitLine('} else {');
-        // Use nameNode position for the specific "cannot import" error
-        // Use fail (indirectly via cb)
-        const failMsg = `cannot import '${name}'`;
-        this._emitLine(`cb(new TemplateError("${failMsg}", ${nameNode.lineno}, ${nameNode.colno}, "${this._generateErrorContext(node, nameNode)}")); return;`);
+        this._emitLine(`cb(runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}")); return;`);
         this._emitLine('}');
       }
 
