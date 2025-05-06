@@ -142,10 +142,23 @@ You will use the following files:
     *   This information is crucial for a subsequent step (Step 9) which will decide exactly which specific parts of the expression (individual lookups or function calls) need to be wrapped in their own async IIFE to manage their sequence lock, preventing race conditions with other parts of the same expression. Without this analysis, the compiler cannot make informed decisions about where to insert these protective async blocks.
 *   **Explanation:**
     *   A new recursive compiler method, `_processExpressionSequenceKeysAndPaths`, analyzes an expression before its compilation.
-    *   **Key Identification:** It inspects `Symbol`, `LookupVal`, and `FunCall` nodes within the expression. Using existing helpers (`_extractStaticPathKey`, `_getSequenceKey`), it determines if a node represents a valid sequence path or a call to a sequenced method. Validity includes ensuring paths are static and originate from context variables (not template-scoped ones).
+    *   **Key Identification:** It inspects `Symbol`, `LookupVal`, and `FunCall` nodes within the expression. Using existing helpers (`_extractStaticPathKey`, `_getSequenceKey`), it determines if a node represents a locked sequence path or a call to a sequenced method. Validity includes ensuring paths are static and originate from context variables (not template-scoped ones).
     *   **Node Decoration:** If a valid key is found, it's stored as a property (e.g., `node.sequencePathKey` or `node.sequenceLockKey`) on that specific AST node.
     *   **Usage Counting & Aggregation:** The method counts every occurrence of each unique key throughout the entire expression. These counts are aggregated upwards, so that any expression node will store the total counts of keys found within its own subtree (as `node.sequencePathCounts` and `node.sequenceLockKeyCounts`), if any keys are present.
-*   **Verification:**
-    *   Debug to confirm that relevant AST nodes within an expression are decorated with their `sequencePathKey` or `sequenceLockKey`.
-    *   Verify that expression nodes correctly store `sequencePathCounts` and `sequenceLockKeyCounts` reflecting total key usage in their subtrees.
-    *   Ensure paths from template-scoped variables are correctly ignored.
+
+**Step 9: Determine and Mark Expression Nodes Requiring Async Block Wrappers**
+
+*   **Title:** Identify and Flag Expression Components for Sequential Async Execution.
+*   **Goal:** Using the key usage counts gathered in Step 8, determine which specific parts of an expression (individual lookups or function calls) are involved in a sequence key contention and must be wrapped in their own asynchronous IIFE. This is achieved by setting a `wrapInAsyncBlock = true` flag on the highest-level AST node within a contended branch that is directly responsible for the contended sequence key.
+*   **Why this step is necessary:**
+    *   Step 8 identified *which* keys are used and *how often* within an expression. Step 9 uses this to pinpoint *where* contention for a specific key actually occurs among different parts (operands) of an expression operator (like `+`, `*`, etc.).
+    *   When multiple parts of an expression try to use the same sequence lock concurrently, they would create a race condition. By flagging the responsible nodes, the compiler (in a later phase) will know to generate an async IIFE around them. This IIFE will manage the sequence lock, ensuring that these specific operations execute one at a time for that lock, even if they are part of a larger parallel expression.
+*   **Explanation:**
+    *   A new recursive compiler method, `_determineExpressionAsyncBlocks`, is called after Step 8 has decorated the expression's AST nodes with keys and usage counts.
+    *   **Processing Contended Keys:** For any given expression node (e.g., an addition operation), this method first looks at the sequence key counts stored on it by Step 8. It identifies keys that are used more than once within this node's entire subtree, indicating potential contention. These contended keys are sorted, prioritizing shorter keys (which often represent more general paths like `!object`) before longer, more specific ones (like `!object!property!method`).
+    *   **Identifying Contention Among Siblings:** For each contended key (processed shortest first), the method checks if at least two of the current expression node's *direct children* (e.g., the left and right operands of an addition) are involved with this key. A child is "involved" if it either uses the key directly or contains usage of the key within its own deeper structure.
+    *   **Marking for Wrapping:** If such sibling contention for a key is found, the method then initiates a targeted search (`_asyncWrapKey`) downwards into *each involved child's branch*. This search aims to find the highest-level node within that branch that is directly responsible for the contended key. Once found, that node is marked with `wrapInAsyncBlock = true`.
+    *   **Termination of Marking:** The downward search (`_asyncWrapKey`) for a specific key will stop and not mark a node if that node (or an AST ancestor within that search path) has *already* been marked `wrapInAsyncBlock = true`. This prevents redundant marking, assuming an earlier decision (e.g., for a shorter, covering key) has already designated a wrapper that will handle the sequence.
+    *   **Recursive Application:** The entire `_determineExpressionAsyncBlocks` process is then applied recursively to each child of the current expression node. This ensures that contention is analyzed and resolved at all levels of a complex, nested expression.
+
+    

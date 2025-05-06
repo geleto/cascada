@@ -2688,6 +2688,7 @@ class Compiler extends Obj {
     }
     if (node.isAsync) {
       this._processExpressionSequenceKeysAndPaths(node, frame);
+      this._determineExpressionAsyncBlocks(node, frame);
     }
     this.compile(node, frame);
   }
@@ -2697,14 +2698,12 @@ class Compiler extends Obj {
     let accumulatedLockCounts = new Map();
 
     const mergeCounts = (parentCounts, childCounts) => {
-      if (childCounts instanceof Map) { // Ensure childCounts is a Map
-        for (const [key, count] of childCounts) {
-          parentCounts.set(key, (parentCounts.get(key) || 0) + count);
-        }
+      for (const [key, count] of childCounts) {
+        parentCounts.set(key, (parentCounts.get(key) || 0) + count);
       }
     };
 
-    // 1. Determine if currentNode has a sequence locked static path
+    // Determine if currentNode has a sequence locked static path
     if (currentNode instanceof nodes.Symbol || currentNode instanceof nodes.LookupVal) {
       let pathKey = this._extractStaticPathKey(currentNode);
       if (pathKey) {
@@ -2724,7 +2723,6 @@ class Compiler extends Obj {
 
     const children = this._getImmediateChildren(currentNode);
     for (const child of children) {
-      // Recursivelty process child:
       this._processExpressionSequenceKeysAndPaths(child, frame);
 
       if (child.sequencePathCounts) {
@@ -2740,6 +2738,116 @@ class Compiler extends Obj {
     }
     if (accumulatedLockCounts.size > 0) {
       currentNode.sequenceLockKeyCounts = accumulatedLockCounts;
+    }
+  };
+
+  _asyncWrapKey(currentNode, keyToWrap, frame, isPathKey) {
+    if (!currentNode || currentNode.wrapInAsyncBlock === true) {
+      // The assumption is that if it's already wrapped, that wrapper handles
+      // any necessary sequencing for this node and it's children because it's simple a static path
+      return;
+    }
+
+    let nodeOwnsKey = false;
+    if (isPathKey) {
+      if (currentNode.sequencePathKey === keyToWrap) {
+        nodeOwnsKey = true;
+      }
+    } else { // isLockKey
+      if (currentNode.sequenceLockKey === keyToWrap) {
+        nodeOwnsKey = true;
+      }
+    }
+
+    if (nodeOwnsKey) {
+      currentNode.wrapInAsyncBlock = true;
+      return;
+    }
+
+    // If currentNode itself doesn't own the key, recurse to its children.
+    // The keyToWrap must be found deeper in the AST.
+    const children = this._getImmediateChildren(currentNode);
+    for (const child of children) {
+      this._asyncWrapKey(child, keyToWrap, frame, isPathKey);
+    }
+  };
+
+
+  // Determines which nodes within an expression subtree need to be wrapped in an
+  // async block due to sequence key contention.
+  _determineExpressionAsyncBlocks(node, frame) {
+    if (!node) {
+      return;
+    }
+
+    // Collect all sequence keys (path and lock) from currentNode's counts
+    // and sort them by length (shortest first).
+    const allContendedKeysInfo = []; // Array of { key: string, isPathKey: boolean }
+
+    if (node.sequencePathCounts instanceof Map) {
+      for (const [key, count] of node.sequencePathCounts) {
+        if (count > 1) {
+          allContendedKeysInfo.push({ key: key, isPathKey: true, count: count });
+        }
+      }
+    }
+    if (node.sequenceLockKeyCounts instanceof Map) {
+      for (const [key, count] of node.sequenceLockKeyCounts) {
+        if (count > 1) {
+          allContendedKeysInfo.push({ key: key, isPathKey: false, count: count });
+        }
+      }
+    }
+
+    // Sort by key string length, shortest first.
+    allContendedKeysInfo.sort((a, b) => a.key.length - b.key.length);
+
+    const immediateChildren = this._getImmediateChildren(node);
+
+    // Iterate over sorted contended keys.
+    for (const keyInfo of allContendedKeysInfo) {
+      const keyToWrap = keyInfo.key;
+      const isPathKey = keyInfo.isPathKey;
+
+      // Check for contention among immediate children for this keyToWrap.
+      let childrenInvolvedWithKey = 0;
+      const implicatedChildren = []; // Store children involved with this key
+
+      for (const child of immediateChildren) {
+        if (!(child instanceof nodes.Node)) continue;
+
+        let childIsImplicated = false;
+        if (isPathKey) {
+          if (child.sequencePathKey === keyToWrap ||
+              (child.sequencePathCounts instanceof Map && child.sequencePathCounts.has(keyToWrap))) {
+            childIsImplicated = true;
+          }
+        } else { // isLockKey
+          if (child.sequenceLockKey === keyToWrap ||
+              (child.sequenceLockKeyCounts instanceof Map && child.sequenceLockKeyCounts.has(keyToWrap))) {
+            childIsImplicated = true;
+          }
+        }
+
+        if (childIsImplicated) {
+          childrenInvolvedWithKey++;
+          implicatedChildren.push(child);
+        }
+      }
+
+      // If contention exists (at least 2 children subtrees are involved with this key)
+      if (childrenInvolvedWithKey >= 2) {
+        // Call _asyncWrapKey for each implicated child.
+        // This will search downwards from the child to find and mark the
+        // actual node responsible for keyToWrap.
+        for (const implicatedChild of implicatedChildren) {
+          this._asyncWrapKey(implicatedChild, keyToWrap, frame, isPathKey);
+        }
+      }
+    }
+
+    for (const child of immediateChildren) {
+      this._determineExpressionAsyncBlocks(child, frame);
     }
   };
 
