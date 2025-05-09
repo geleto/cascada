@@ -2499,19 +2499,24 @@ class Compiler extends Obj {
     });
   }
 
+  // Retrieves the direct child AST nodes of a given node in their
+  // semantically significant order, as defined by the node's `fields` property
+  // which is also the order they are rendered
   _getImmediateChildren(node) {
-    //return the immediate children similar to propagateIsAsync
     const children = [];
-    for (const key in node) {
-      if (Array.isArray(node[key])) {
-        node[key].forEach(item => {
-          if (item && typeof item === 'object') {
+    for (const fieldName of node.fields) { // For NodeList, fieldName will be 'children'
+      const fieldValue = node[fieldName];  // fieldValue will be the actual array of child nodes
+
+      if (fieldValue instanceof nodes.Node) {
+        children.push(fieldValue);
+      } else if (Array.isArray(fieldValue)) {
+        // If the field is an array, iterate through it and add any Node instances.
+        // This handles cases like NodeList.children or Compare.ops
+        for (const item of fieldValue) {
+          if (item instanceof nodes.Node) {
             children.push(item);
           }
-        });
-      }
-      else if (node[key] instanceof nodes.Node && node[key] !== null) {
-        children.push(node[key]);
+        }
       }
     }
     return children;
@@ -2687,13 +2692,24 @@ class Compiler extends Obj {
       this.fail('All expressions must be wrapped in an async IIFE', node.lineno, node.colno, node);
     }
     if (node.isAsync) {
-      this._processExpressionSequenceKeysAndPaths(node, frame);
-      this._determineExpressionAsyncBlocks(node, frame);
+      const f = new AsyncFrame();
+      // copy declaredVars from frame to f, but only properties that start with `!`
+      // these are the keys of the active sequence locks
+      // copy because we don't want any added sequence lock keys to be used in the compilation
+      f.declaredVars = new Set();
+      for (const item of frame.declaredVars) {
+        if (item.startsWith('!')) {
+          f.declaredVars.add(item);
+        }
+      }
+      this._processExpressionSequenceKeysAndPaths(node, f);
+      this._determineExpressionAsyncBlocks(node, f);
     }
     this.compile(node, frame);
   }
 
   _processExpressionSequenceKeysAndPaths = function(currentNode, frame) {
+    //a Set could also work, counts are not strictly necessary
     let accumulatedPathCounts = new Map();
     let accumulatedLockCounts = new Map();
 
@@ -2705,8 +2721,10 @@ class Compiler extends Obj {
 
     // Determine if currentNode has a sequence locked static path
     if (currentNode instanceof nodes.Symbol || currentNode instanceof nodes.LookupVal) {
+      //path
       let pathKey = this._extractStaticPathKey(currentNode);
       if (pathKey) {
+        //static path
         const rootVarName = pathKey.substring(1).split('!')[0];
         if (!this._isDeclared(frame, rootVarName)) {
           currentNode.sequencePathKey = pathKey;
@@ -2714,8 +2732,10 @@ class Compiler extends Obj {
         }
       }
     } else if (currentNode instanceof nodes.FunCall) {
+      //call
       let lockKey = this._getSequenceKey(currentNode.name, frame);
       if (lockKey) {
+        //call with sequence lock
         currentNode.sequenceLockKey = lockKey;
         accumulatedLockCounts.set(lockKey, (accumulatedLockCounts.get(lockKey) || 0) + 1);
       }
@@ -2738,37 +2758,6 @@ class Compiler extends Obj {
     }
     if (accumulatedLockCounts.size > 0) {
       currentNode.sequenceLockKeyCounts = accumulatedLockCounts;
-    }
-  };
-
-  _asyncWrapKey(currentNode, keyToWrap, frame, isPathKey) {
-    if (!currentNode || currentNode.wrapInAsyncBlock === true) {
-      // The assumption is that if it's already wrapped, that wrapper handles
-      // any necessary sequencing for this node and it's children because it's simple a static path
-      return;
-    }
-
-    let nodeOwnsKey = false;
-    if (isPathKey) {
-      if (currentNode.sequencePathKey === keyToWrap) {
-        nodeOwnsKey = true;
-      }
-    } else { // isLockKey
-      if (currentNode.sequenceLockKey === keyToWrap) {
-        nodeOwnsKey = true;
-      }
-    }
-
-    if (nodeOwnsKey) {
-      currentNode.wrapInAsyncBlock = true;
-      return;
-    }
-
-    // If currentNode itself doesn't own the key, recurse to its children.
-    // The keyToWrap must be found deeper in the AST.
-    const children = this._getImmediateChildren(currentNode);
-    for (const child of children) {
-      this._asyncWrapKey(child, keyToWrap, frame, isPathKey);
     }
   };
 
@@ -2848,6 +2837,37 @@ class Compiler extends Obj {
 
     for (const child of immediateChildren) {
       this._determineExpressionAsyncBlocks(child, frame);
+    }
+  };
+
+  _asyncWrapKey(currentNode, keyToWrap, frame, isPathKey) {
+    if (!currentNode || currentNode.wrapInAsyncBlock === true) {
+      // The assumption is that if it's already wrapped, that wrapper handles
+      // any necessary sequencing for this node and it's children because it's simple a static path
+      return;
+    }
+
+    let nodeOwnsKey = false;
+    if (isPathKey) {
+      if (currentNode.sequencePathKey === keyToWrap) {
+        nodeOwnsKey = true;
+      }
+    } else { // isLockKey
+      if (currentNode.sequenceLockKey === keyToWrap) {
+        nodeOwnsKey = true;
+      }
+    }
+
+    if (nodeOwnsKey) {
+      currentNode.wrapInAsyncBlock = true;
+      return;
+    }
+
+    // If currentNode itself doesn't own the key, recurse to its children.
+    // The keyToWrap must be found deeper in the AST.
+    const children = this._getImmediateChildren(currentNode);
+    for (const child of children) {
+      this._asyncWrapKey(child, keyToWrap, frame, isPathKey);
     }
   };
 
