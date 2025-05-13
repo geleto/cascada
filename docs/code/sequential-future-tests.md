@@ -120,7 +120,7 @@ These more nuanced tests will be crucial for validating the sophisticated intera
 The core strategy relies on:
 1.  **Step 1 (Original):** Compiler registers "write intent" for `!` marked static context paths (`_updateFrameWrites`), leading to runtime lock promise creation.
 2.  **Steps 2-7 (Original):** Runtime awaits these lock promises (`awaitSequenceLock`, `sequencedMemberLookupAsync`, etc.) before proceeding with operations on those paths. `frame.set` on the lock key releases the lock. This handles individual `!` operations.
-3.  **Step 8 (New):** `_processExpressionSequenceKeysAndPaths` analyzes expressions, decorates AST nodes with their specific sequence keys, and aggregates key usage counts onto expression nodes.
+3.  **Step 8 (New):** `_assignAsyncBlockWrappers` analyzes expressions, decorates AST nodes with their specific sequence keys, and aggregates key usage counts onto expression nodes.
 4.  **Step 9 (New):** `_determineExpressionAsyncBlocks` uses counts from Step 8. If a key `K` is contended among an operator's children, it calls `_asyncWrapKey` for each implicated child. `_asyncWrapKey` (respecting "shortest key first" via sorted processing in its caller, and terminating if an AST ancestor in its search path is already `wrapInAsyncBlock=true`) sets `N.wrapInAsyncBlock=true` on the highest node `N` within the child's subtree responsible for key `K`.
 5.  **Compilation (Future - Step 3 of original plan):** `compileSymbol/LookupVal/FunCall` will see `node.wrapInAsyncBlock`. If true, they generate an IIFE that acquires/releases the node's specific sequence key. They *also* need to respect `pathFlagsInfo` from their caller (e.g., `_compileExpression`) to avoid emitting this IIFE if an even higher-level compiler function (like `compileOutput`) already created a wrapper for that key.
 
@@ -131,7 +131,7 @@ The core strategy relies on:
 1.  **Double Wrapping Prevention:**
     *   **Scenario:** `{{ data.item!.op() }}`.
         *   Original plan: `compileOutput` calls `compileFunCall`. `compileFunCall` sees `data.item!.op()`, gets `sequenceLockKey`, and wraps it in an IIFE (let's call this `IIFE_Outer`).
-        *   New plan: `_compileExpression` calls `_processExpressionSequenceKeysAndPaths` and `_determineExpressionAsyncBlocks`. For `data.item!.op()`, `sequenceLockKeyCounts` would be `{ "!data!item!op": 1 }`. Step 9 *as currently designed* (acting on `count > 1`) would *not* set `wrapInAsyncBlock`. This is GOOD. The original plan handles it.
+        *   New plan: `_compileExpression` calls `_assignAsyncBlockWrappers` and `_determineExpressionAsyncBlocks`. For `data.item!.op()`, `sequenceLockKeyCounts` would be `{ "!data!item!op": 1 }`. Step 9 *as currently designed* (acting on `count > 1`) would *not* set `wrapInAsyncBlock`. This is GOOD. The original plan handles it.
     *   **Scenario:** `{{ data.item!.op() + data.item!.op2() }}`.
         *   Original plan: `compileOutput` calls `_compileExpression`.
         *   New plan (Step 8): `Add` node gets `sequenceLockKeyCounts = { K1:1, K2:1 }` if `K1=!data!item!op`, `K2=!data!item!op2`. Or, if `!` is on `item`, then `sequencePathCounts = {"!data!item": 2}`.
@@ -179,7 +179,7 @@ The core strategy relies on:
 **F. Scope Variable Paths:**
 
 1.  **Test 12 Confirmation:** `{% set x = data.item %}{{ x!.op1() + x!.op2() }}`.
-    *   Step 8 (`_processExpressionSequenceKeysAndPaths`): When `_extractStaticPathKey` or `_getSequenceKey` is called for `x!...`, they should correctly identify `x` as a scope variable (via `_isDeclared(frame, "x")`). Thus, no `sequencePathKey` or `sequenceLockKey` should be stored on these nodes, and no counts generated for them.
+    *   Step 8 (`_assignAsyncBlockWrappers`): When `_extractStaticPathKey` or `_getSequenceKey` is called for `x!...`, they should correctly identify `x` as a scope variable (via `_isDeclared(frame, "x")`). Thus, no `sequencePathKey` or `sequenceLockKey` should be stored on these nodes, and no counts generated for them.
     *   Step 9 will therefore see no relevant keys/counts and do nothing.
     *   The compiler (e.g., `compileFunCall`) will also see no sequence keys and compile normally.
     *   **This seems robust.** The check `!this._isDeclared(frame, rootVarName)` in Step 8 is vital.
