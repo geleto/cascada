@@ -223,13 +223,10 @@ class Compiler extends Obj {
       }
       emitFunc.call(this, frame);
       this._emitLine(';');
-      //we await `res` only to make sure leaveAsyncBlock is called after the promise resolves
-      //and we need this only because the returned value may be a rejected promise and if the
-      //this value is never awaited, this will cause uncaught exception
-      this._emitLine(`return ${res};`);
-      //this._emitLine(`} catch (e) {`);
-      //this._emitLine('cb(runtime.handleError(e, lineno, colno));');
-      //this._emitLine('  throw e;');//the returned promise should not resolve
+      //await ${res} to avoid unused vars throwing unhandled exceptions
+      //and to make sure leaveAsyncBlock is called after the promise resolves
+      this._emitLine(`return await ${res};`);
+
       this._emitLine('} finally {');
       this._emitLine('  astate.leaveAsyncBlock();');
       this._emitLine('}'); // Close inner finally
