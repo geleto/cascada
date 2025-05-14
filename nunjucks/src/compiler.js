@@ -2507,7 +2507,7 @@ class Compiler extends Obj {
   // Retrieves the direct child AST nodes of a given node in their
   // semantically significant order, as defined by the node's `fields` property
   // which is also the order they are rendered
-  _getImmediateChildren(node) {
+  /*_getImmediateChildren(node) {
     const children = [];
     for (const fieldName of node.fields) { // For NodeList, fieldName will be 'children'
       const fieldValue = node[fieldName];  // fieldValue will be the actual array of child nodes
@@ -2525,18 +2525,69 @@ class Compiler extends Obj {
       }
     }
     return children;
+  }*/
+
+  // Retrieves the direct child AST nodes of a given nodebby iterating over all properties
+  // and checking if they are instances of nodes.Node or arrays of nodes.Node
+  _getImmediateChildren(node) {
+    const children = [];
+
+    for (const key in node) {
+      if (Array.isArray(node[key])) {
+        // If the field is an array, iterate through it and add any Node instances
+        node[key].forEach(item => {
+          if (item instanceof nodes.Node) {
+            children.push(item);
+          }
+        });
+      }
+      else if (node[key] instanceof nodes.Node) {
+        // If the field is a Node instance, add it
+        children.push(node[key]);
+      }
+    }
+
+    return children;
   }
 
   //in async mode: store node.isAsync=true if the node or a child node performs async operations
   //when !OPTIMIZE_ASYNC - all nodes are treated as async
+  /*_propagateIsAsync(node) {
+    let hasAsync = this.asyncMode ? !OPTIMIZE_ASYNC || asyncOperationNodes.has(node.typename) : false;
+
+    for (const key in node) {
+      if (Array.isArray(node[key])) {
+        node[key].forEach(item => {
+          if (item && typeof item === 'object') {
+            const childHasAsync = this.propagateIsAsync(item);
+            hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
+          }
+        });
+      }
+      else if (typeof node[key] === 'object' && node[key] !== null) {
+        const childHasAsync = this.propagateIsAsync(node[key]);
+        hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
+      }
+    }
+
+    if (node.typename) {
+      node.isAsync = hasAsync;
+    }
+    return hasAsync;
+  }*/
+
+  //when !OPTIMIZE_ASYNC - all nodes are treated as async
   _propagateIsAsync(node) {
     let hasAsync = this.asyncMode ? !OPTIMIZE_ASYNC || asyncOperationNodes.has(node.typename) : false;
 
+    // Get immediate children using the _getImmediateChildren method
     const children = this._getImmediateChildren(node);
-    children.forEach(child => {
+
+    // Process each child node
+    for (const child of children) {
       const childHasAsync = this._propagateIsAsync(child);
       hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
-    });
+    }
 
     node.isAsync = hasAsync;
     return hasAsync;
