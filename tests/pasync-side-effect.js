@@ -583,7 +583,14 @@
         it('should REJECT ! on dynamic path segment (function call)', async () => {
           const template = `{{ getObj()!.runOp('dyn2', 50) }}`;
           await expectAsyncError(() => env.renderString(template, constraintContext), err => {
-            expect(err.message).to.match(/Sequenced operations require a static path/);
+            expect(err.message).to.contain(`The sequence marker '!' cannot be applied directly to a`);
+          });
+        });
+
+        it('should REJECT ! on dynamic path segment (function call followed by lookup)', async () => {
+          const template = `{{ getObj().dynamicKey!.runOp('dyn2', 50) }}`;
+          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
+            expect(err.message).to.contain('Sequence Error');
           });
         });
 
