@@ -647,7 +647,7 @@
         it('should reject ! on a function call in the path (getObj()!.runOp)', async () => {
           const template = `{{ getObj()!.runOp('fail', 50) }}`;
           await expectAsyncError(() => env.renderString(template, constraintContext), err => {
-            expect(err.message).to.match(/Sequenced operations require a static path/);
+            expect(err.message).to.contain(`The sequence marker '!' cannot be applied directly`);
           });
         });
 
@@ -906,15 +906,50 @@
         expect(cont.logs).to.eql(['l2', 'l1']);
       });
 
-      it('should maintain sequence based on original context path despite overwrites', async () => {
-        const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
+      it('should REJECT sequence marker ! on a template variable that shadows an eligible context variable', async () => {
+        const cont = {
+          logs: [],
+          seq: {
+            id: 's1',
+            async runOp(id, ms) { await delay(ms); cont.logs.push(`ctx.seq-${id}`); }
+          }
+        };
         const template = `
-          {% do seq!.runOp('o1', 20) %}
-          {% set seq = { id: 's2', runOp: async (id, ms) => { await delay(ms); cont.logs.push('new-' + id); } } %}
-          {% do seq!.runOp('o2', 5) %}
+          {% set seq = { id: 's2', someData: 'newValue' } %}
+          {% do seq!.runOp('o2', 5) %} {# ! on template var 'seq' should error #}
         `;
-        await env.renderString(template, cont);
-        expect(cont.logs).to.eql(['o1', 'new-o2']);
+
+        await expectAsyncError(
+          () => env.renderString(template, cont),
+          err => {
+            expect(err.message).to.contain('not allowed in non-context variable paths');
+          }
+        );
+      });
+
+      it('should REJECT sequence marker ! in the path of a template variable that shadows an eligible context variable', async () => {
+        const cont = {
+          logs: [],
+          seq: {
+            id: 's1',
+            async runOp(id, ms) { await delay(ms); cont.logs.push(`ctx.seq-${id}`); }
+          }
+        };
+        //          {% do seq!.runOp('o1', 20) %}
+        const template = `
+
+          {% set seq = { id: 's2', someData: 'newValue' } %}
+          {% do seq.someData!.runOp('o2', 5) %} {# ! on path from template var 'seq' should error #}
+        `;
+
+        await expectAsyncError(
+          () => env.renderString(template, cont),
+          err => {
+            expect(err.message).to.match(
+              /Sequence marker '!' can only be used on paths starting directly from a context variable.*not a template variable/i
+            );
+          }
+        );
       });
 
       it('should handle spaced syntax for !', async () => {

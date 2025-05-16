@@ -717,6 +717,9 @@ class Compiler extends Obj {
 
         let nodeStaticPathKey = this._extractStaticPathKey(node);
         if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
+          if (this._isDeclared(frame, node.value)) {
+            this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
+          }
           // This node accesses a declared sequence lock path.
           const emitSequencedLookup = (f) => {
             //register the static path key as variable read, inside the async block
@@ -1457,9 +1460,14 @@ class Compiler extends Obj {
       // uncommon to assign to multiple vars anyway
       this._emitLine(`frame.set("${name}", ${id}, true);`);
 
+      //if (!this.asyncMode) {
+      //in async mode writing to the context is not possible
+      //will use a separate input/output tags and attributes to
+      //declare variable exports/imports
       this._emitLine('if(frame.topLevel) {');
       this._emitLine(`context.setVariable("${name}", ${id});`);
       this._emitLine('}');
+      //}
 
       if (name.charAt(0) !== '_') {
         this._emitLine('if(frame.topLevel) {');
