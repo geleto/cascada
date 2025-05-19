@@ -722,8 +722,9 @@ class Compiler extends Obj {
           }
           // This node accesses a declared sequence lock path.
           const emitSequencedLookup = (f) => {
-            //register the static path key as variable read, inside the async block
-            this._updateFrameReads(f, nodeStaticPathKey);
+            //register the static path key as variable write so the next lock would wait for it
+            //multiple static path keys can be in the same block
+            this._updateFrameWrites(f, nodeStaticPathKey);
             //use the sequenced lookup
             this._emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
           };
@@ -1028,8 +1029,9 @@ class Compiler extends Obj {
         //const wrapInAsyncBlock = !(pathFlags & (PathFlags.WAITS_FOR_SEQUENCE_LOCK | PathFlags.CALL));
         pathFlags |= PathFlags.WAITS_FOR_SEQUENCE_LOCK;//do not wrap anymore
         const emitSequencedLookup = (f) => {
-          //register the static path key as variable read, inside the async block
-          this._updateFrameReads(f, nodeStaticPathKey);
+          //register the static path key as variable write so the next lock would wait for it
+          //multiple static path keys can be in the same block
+          this._updateFrameWrites(f, nodeStaticPathKey);
           // Use sequenced lookup as a lock for this node exists
           this._emit(`runtime.sequencedMemberLookupAsync(frame, (`);
           this.compile(node.target, f, pathFlags); // Mark target as part of a call path

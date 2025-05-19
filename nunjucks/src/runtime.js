@@ -1274,15 +1274,21 @@ function awaitSequenceLock(frame, lockKeyToAwait) {
 // Called in place of contextOrFrameLookup when the path has a sequence lock on it
 async function sequencedContextLookup(context, frame, name, nodeLockKey) {
   await awaitSequenceLock(frame, nodeLockKey);
-  return contextOrFrameLookup(context, frame, name);
+  try {
+    return contextOrFrameLookup(context, frame, name);
+  } finally {
+    frame.set(nodeLockKey, true, true);
+  }
 }
 
 // Called in place of memberLookupAsync when the path has a sequence lock on it
-async function sequencedMemberLookupAsyncAsync(frame, target, key, nodeLockKey) {
-  // Wait for the specific node's lock *before* resolving target/key
+async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
   await awaitSequenceLock(frame, nodeLockKey);
-  let [resolvedTarget, resolvedKey] = await resolveDuo(target, key);
-  return memberLookupAsync(resolvedTarget, resolvedKey);
+  try {
+    return await memberLookupAsync(target, key);
+  } finally {
+    frame.set(nodeLockKey, true, true);
+  }
 }
 
 module.exports = {
@@ -1325,5 +1331,5 @@ module.exports = {
   setLoopBindings,
   awaitSequenceLock,
   sequencedContextLookup,
-  sequencedMemberLookupAsync: sequencedMemberLookupAsyncAsync
+  sequencedMemberLookupAsync: sequencedMemberLookupAsync
 };
