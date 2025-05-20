@@ -1285,7 +1285,11 @@ async function sequencedContextLookup(context, frame, name, nodeLockKey) {
 async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
   await awaitSequenceLock(frame, nodeLockKey);
   try {
-    return await memberLookupAsync(target, key);
+    let resolvedTarget = target;
+    if (target && typeof target.then === 'function') {
+      resolvedTarget = await target;
+    }
+    return memberLookup(resolvedTarget, key);
   } finally {
     frame.set(nodeLockKey, true, true);
   }
