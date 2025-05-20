@@ -716,7 +716,7 @@ class Compiler extends Obj {
         this._updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
 
         let nodeStaticPathKey = this._extractStaticPathKey(node);
-        if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
+        if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
           if (this._isDeclared(frame, node.value)) {
             this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
           }
@@ -724,6 +724,10 @@ class Compiler extends Obj {
           const emitSequencedLookup = (f) => {
             //register the static path key as variable write so the next lock would wait for it
             //multiple static path keys can be in the same block
+            //@todo - optimization: if there are no further funCalls with lock on the path
+            //we can use _updateFrameReads. The last funCall can record false in the lock value
+            //to indicate all further paths locked by it that they don't need to make a lock for further funCalls
+            //hence we can use _updateFrameReads for all of them
             this._updateFrameWrites(f, nodeStaticPathKey);
             //use the sequenced lookup
             this._emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
@@ -1024,7 +1028,7 @@ class Compiler extends Obj {
         pathFlags |= PathFlags.CREATES_SEQUENCE_LOCK;
       }
       let nodeStaticPathKey = this._extractStaticPathKey(node);
-      if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
+      if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
 
         //const wrapInAsyncBlock = !(pathFlags & (PathFlags.WAITS_FOR_SEQUENCE_LOCK | PathFlags.CALL));
         pathFlags |= PathFlags.WAITS_FOR_SEQUENCE_LOCK;//do not wrap anymore
@@ -1486,11 +1490,12 @@ class Compiler extends Obj {
     let vf = frame;
     if (name.startsWith('!')) {
       // Sequence keys are conceptually declared at the root for propagation purposes.
-      vf = frame.rootFrame;
+      // We add them in a separate pass with _propagateIsAsyncAndDeclareSequentialLocks
+      /*vf = frame.sequenceLockFrame;
       if (!vf.declaredVars) {
         vf.declaredVars = new Set();
       }
-      vf.declaredVars.add(name);
+      vf.declaredVars.add(name);*/
     } else {
       do {
         if (vf.declaredVars && vf.declaredVars.has(name)) {
@@ -2600,16 +2605,38 @@ class Compiler extends Obj {
     return hasAsync;
   }
 
-  compileRoot(node, frame) {
-    if (this.asyncMode) {
-      this._propagateIsAsync(node);
+  _declareSequentialLocks(node, sequenceLockFrame) {
+    // Get immediate children using the _getImmediateChildren method
+    const children = this._getImmediateChildren(node);
+
+    // Process each child node
+    for (const child of children) {
+      this._declareSequentialLocks(child, sequenceLockFrame);
     }
+
+    if (node.typename === 'FunCall') {
+      const key = this._getSequenceKey(node.name, sequenceLockFrame);
+      if (key) {
+        if (!sequenceLockFrame.declaredVars) {
+          sequenceLockFrame.declaredVars = new Set();
+        }
+        sequenceLockFrame.declaredVars.add(key);
+      }
+    }
+  }
+
+  compileRoot(node, frame) {
 
     if (frame) {
       this.fail('compileRoot: root node can\'t have frame', node.lineno, node.colno, node);
     }
 
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
+
+    if (this.asyncMode) {
+      this._propagateIsAsync(node);
+      this._declareSequentialLocks(node, frame.sequenceLockFrame);
+    }
 
     this._emitFuncBegin(node, 'root');
     this._emitLine('let parentTemplate = null;');
@@ -2759,6 +2786,7 @@ class Compiler extends Obj {
       // copy declaredVars from frame to f, but only properties that start with `!`
       // these are the keys of the active sequence locks
       // copy because we don't want any added sequence lock keys to be used in the compilation
+      //@todo - do we still add sequence lock keys? Don't think so but we need to check @todo
       if (frame.declaredVars) {
         f.declaredVars = new Set();
         for (const item of frame.declaredVars) {

@@ -66,16 +66,16 @@ You will use the following files:
 *   **Explanation:** The standard variable scoping logic incorrectly treats sequence keys as locally declared, stopping `writeCounts` propagation prematurely. This fix ensures propagation reaches the necessary frames by conceptually declaring `!` keys at the root and adjusts runtime methods (`resolve`, `_promisifyParentVariables`) for compatibility.
 *   **Implementation:**
     1.  **Modify `compiler.js -> Compiler._updateFrameWrites`:**
-        *   Add a check at the start of the scope-finding logic: If `name.startsWith('!')`, bypass the upward search and set the scope frame `vf = frame.rootFrame`.
+        *   Add a check at the start of the scope-finding logic: If `name.startsWith('!')`, bypass the upward search and set the scope frame `vf = frame.sequenceLockFrame`.
     2.  **Modify `runtime.js -> AsyncFrame.resolve`:**
-        *   Add a check at the start: If `name.startsWith('!')`, return `this.rootFrame`. Otherwise, continue standard logic.
+        *   Add a check at the start: If `name.startsWith('!')`, return `this.sequenceLockFrame`. Otherwise, continue standard logic.
     3.  **Implement `runtime.js -> AsyncFrame.lookupAndLocate`:**
         *   Create a new method `lookupAndLocate(name)` which traverses the frame hierarchy (starting from `this`) to find the specified `name`.
         *   It should correctly handle keys that exist but have an `undefined` value (fixing a bug in the original `lookup`).
         *   It returns both the `value` found and the specific `frame` object where it was located (or indicates if not found).
     4.  **Modify `runtime.js -> AsyncFrame.prototype._promisifyParentVariables`:**
         *   Utilize the new `lookupAndLocate` method to find the correct `scopeFrame` for the variable or sequence key (`!key`).
-        *   Handle cases where `!key` is not initially found by establishing its state at the `rootFrame`.
+        *   Handle cases where `!key` is not initially found by establishing its state at the `.sequenceLockFrame`.
         *   Use the `lookupAndLocate` result to promisify the variable.
 *   **Verification:**
     *   Confirm the previously failing test case (`it.only('should enforce sequence based on object path...')`) now passes.

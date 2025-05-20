@@ -92,7 +92,7 @@ class AsyncFrame extends Frame {
     super(parent, isolateWrites);
     this.createScope = createScope;
 
-    this.rootFrame = (parent && parent.rootFrame) ? parent.rootFrame : this;
+    this.sequenceLockFrame = (parent && parent.sequenceLockFrame) ? parent.sequenceLockFrame : this;
 
     if (AsyncFrame.inCompilerContext) {
       //holds the names of the variables declared at the frame
@@ -136,7 +136,10 @@ class AsyncFrame extends Frame {
   static inCompilerContext = false;
 
   new() {
-    return new AsyncFrame();//undefined, this.isolateWrites);
+    //no parent but keep track of sequenceLockFrame
+    const nf = new AsyncFrame();//undefined, this.isolateWrites);
+    nf.sequenceLockFrame = this.sequenceLockFrame;
+    return nf;
   }
 
   //@todo?. - handle reentrant frames, count the writes even if the frame is the scope frame,
@@ -236,7 +239,7 @@ class AsyncFrame extends Frame {
   resolve(name, forWrite) {
     if (name.startsWith('!')) {
       // Sequence keys conceptually resolve to the root frame
-      return this.rootFrame;
+      return this.sequenceLockFrame;
     }
     return super.resolve(name, forWrite);
   }
@@ -389,10 +392,10 @@ class AsyncFrame extends Frame {
           throw new Error(`Promisified variable ${varName} not found`);
         }
         //for sequential keys, create a default value in root if none found
-        frame = this.rootFrame;
+        frame = this.sequenceLockFrame;
         value = undefined;//not yet locked
-        this.rootFrame.variables = this.rootFrame.variables || {};
-        this.rootFrame.variables[varName] = value;
+        this.sequenceLockFrame.variables = this.sequenceLockFrame.variables || {};
+        this.sequenceLockFrame.variables[varName] = value;
       }
       this.asyncVars[varName] = value;//local snapshot of the value
       //promisify the variable in the frame (parent of the new async frame)
@@ -1253,7 +1256,7 @@ function awaitSequenceLock(frame, lockKeyToAwait) {
     return undefined; // Returning undefined is fine for `await` in the caller.
   }
 
-  // Use frame.lookup (modified in Step 4 to check rootFrame for '!' keys)
+  // Use frame.lookup (modified in Step 4 to check .sequenceLockFrame for '!' keys)
   const lockState = frame.lookup(lockKeyToAwait);
 
   // Check if the lock state is a promise
