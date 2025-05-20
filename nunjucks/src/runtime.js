@@ -712,8 +712,8 @@ async function resolveAll(args) {
   const resolvedArgs = [];
   for (let i = 0; i < args.length; i++) {
     let arg = args[i];
-    while (arg && typeof arg.then === 'function') {
-      arg = await arg; // Resolve promise chain
+    if (arg && typeof arg.then === 'function') {
+      arg = await arg;
     }
     // Deep resolve if it's an array or object
     if (Array.isArray(arg)) {
@@ -782,6 +782,7 @@ async function resolveObjectProperties(obj) {
   return obj;
 }
 
+// todo - optimize
 async function resolveDuo(...args) {
   return resolveAll(args);
 }
@@ -798,7 +799,7 @@ async function resolveSingle(value) {
 
   // For promises, resolve them like resolveAll does
   let resolvedValue = value;
-  while (resolvedValue && typeof resolvedValue.then === 'function') {
+  if (resolvedValue && typeof resolvedValue.then === 'function') {
     resolvedValue = await resolvedValue; // Resolve promise chain
   }
 
@@ -820,8 +821,8 @@ async function resolveSingleArr(value) {
 
   // For promises, resolve them like resolveAll does
   let resolvedValue = value;
-  while (resolvedValue && typeof resolvedValue.then === 'function') {
-    resolvedValue = await resolvedValue; // Resolve promise chain
+  if (resolvedValue && typeof resolvedValue.then === 'function') {
+    resolvedValue = await resolvedValue;
   }
 
   // Deep resolve if it's an array or object
