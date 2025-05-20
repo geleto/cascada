@@ -548,11 +548,10 @@
           }, 5);
         }, true); // true flag indicates this is an async filter
 
-        env.addFilter('asyncReverse', (str, callback) => {
-          setTimeout(() => {
-            callback(null, str.split('').reverse().join(''));
-          }, 3);
-        }, true);
+        env.addFilterAsync('asyncReverse', async (str) => {
+          await delay(3);
+          return str.split('').reverse().join('');
+        });
       });
 
       it('should handle standard async filter', async () => {
