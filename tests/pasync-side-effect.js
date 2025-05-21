@@ -712,48 +712,39 @@
           expect(analysisContext.logs).to.eql(['ctxA on ctxSeq', 'ctxB on ctxSeq']);
         });
 
-        it('should REJECT sequencing (run in parallel) for path starting with a template variable {% set %}', async () => {
+        it('should REJECT sequencing for path starting with a template variable {% set %}', async () => {
           const template = `
                   {% set tplSequencer = ctxSequencer %}
-                  {% do tplSequencer!.runOp('tplA', 100) %} {# ! should be ignored #}
-                  {% do tplSequencer!.runOp('tplB', 50) %}  {# ! should be ignored #}
+                  {% do tplSequencer!.runOp('tplA', 100) %}
+                  {% do tplSequencer!.runOp('tplB', 50) %}
                 `;
-          await env.renderString(template, analysisContext);
-          expect(analysisContext.logs).to.contain('tplA on ctxSeq');
-          expect(analysisContext.logs).to.contain('tplB on ctxSeq');
-          expect(analysisContext.logs.indexOf('tplB on ctxSeq')).to.be.lessThan(
-            analysisContext.logs.indexOf('tplA on ctxSeq')
-          ); // Parallel: shorter delay first
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+          });
         });
 
-        it('should REJECT sequencing (run in parallel) for path starting with a macro parameter', async () => {
+        it('should REJECT sequencing for path starting with a macro parameter', async () => {
           const template = `
                   {% macro testMacro(mcSequencer) %}
-                    {% do mcSequencer!.runOp('mcA', 100) %} {# ! should be ignored #}
-                    {% do mcSequencer!.runOp('mcB', 50) %} {# ! should be ignored #}
+                    {% do mcSequencer!.runOp('mcA', 100) %}
+                    {% do mcSequencer!.runOp('mcB', 50) %}
                   {% endmacro %}
                   {{ testMacro(ctxSequencer) }}
                 `;
-          await env.renderString(template, analysisContext);
-          expect(analysisContext.logs).to.contain('mcA on ctxSeq');
-          expect(analysisContext.logs).to.contain('mcB on ctxSeq');
-          expect(analysisContext.logs.indexOf('mcB on ctxSeq')).to.be.lessThan(
-            analysisContext.logs.indexOf('mcA on ctxSeq')
-          ); // Parallel: shorter delay first
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain('asequence marker');
+          });
         });
 
-        it('should REJECT sequencing (run in parallel) when template var shadows context var', async () => {
+        it('should REJECT sequencing when template var shadows context var', async () => {
           const template = `
                   {% set shadowVar = ctxSequencer %} {# Shadowing context.shadowVar #}
-                  {% do shadowVar!.runOp('shA', 100) %} {# ! applies to template var, should be ignored #}
-                  {% do shadowVar!.runOp('shB', 50) %} {# ! should be ignored #}
+                  {% do shadowVar!.runOp('shA', 100) %}
+                  {% do shadowVar!.runOp('shB', 50) %}
                 `;
-          await env.renderString(template, analysisContext);
-          expect(analysisContext.logs).to.contain('shA on ctxSeq');
-          expect(analysisContext.logs).to.contain('shB on ctxSeq');
-          expect(analysisContext.logs.indexOf('shB on ctxSeq')).to.be.lessThan(
-            analysisContext.logs.indexOf('shA on ctxSeq')
-          ); // Parallel: shorter delay first
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain(`Sequence marker (!) is not allowed in non-context variable paths`);
+          });
         });
 
         it('[Placeholder] should treat object.method!() as needing a method-specific lock key', async () => {
@@ -882,6 +873,24 @@
         `;
         await env.renderString(template, cont);
         expect(cont.logs).to.eql(['m1', 'm2']);
+      });
+
+      it('should work with async filters temp no delat', async () => {
+        env.addFilter('delayLog', async (val, ms) => { await delay(ms); return `${val}-delayed`; }, true);
+        const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
+        const template = `{% do seq!.runOp('f1', 20) %}{{ seq!.runOp('f2', 10) }}`;
+        const result = await env.renderString(template, cont);
+        expect(cont.logs).to.eql(['f1', 'f2']);
+        expect(result).to.equal('f2-delayed');
+      });
+
+      it('should work with async filters - hang on delay', async () => {
+        env.addFilterAsync('delayLog', async (val, ms) => { await delay(ms); return `${val}-delayed`; }, true);
+        const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
+        const template = `{{ seq!.runOp('f2', 10)|delayLog(5) }}`;
+        const result = await env.renderString(template, cont);
+        expect(cont.logs).to.eql(['f1', 'f2']);
+        expect(result).to.equal('f2-delayed');
       });
 
       it('should work with async filters', async () => {
