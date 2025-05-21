@@ -1029,7 +1029,10 @@ class Compiler extends Obj {
       }
       let nodeStaticPathKey = this._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
-
+        const keyRoot = nodeStaticPathKey.substring(1, nodeStaticPathKey.indexOf('!', 1));
+        if (this._isDeclared(frame, keyRoot)) {
+          this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
+        }
         //const wrapInAsyncBlock = !(pathFlags & (PathFlags.WAITS_FOR_SEQUENCE_LOCK | PathFlags.CALL));
         pathFlags |= PathFlags.WAITS_FOR_SEQUENCE_LOCK;//do not wrap anymore
         const emitSequencedLookup = (f) => {

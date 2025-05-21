@@ -954,9 +954,7 @@
         await expectAsyncError(
           () => env.renderString(template, cont),
           err => {
-            expect(err.message).to.match(
-              /Sequence marker '!' can only be used on paths starting directly from a context variable.*not a template variable/i
-            );
+            expect(err.message).to.contain(`Sequence marker (!) is not allowed in non-context variable paths`);
           }
         );
       });
