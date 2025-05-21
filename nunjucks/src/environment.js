@@ -171,12 +171,10 @@ class Environment extends EmitterObj {
   //@todo
   //add option to send unresolved values to the filter
   addFilter(name, func, async) {
-    var wrapped = func;
-
     if (async) {
       this.asyncFilters.push(name);
     }
-    this.filters[name] = wrapped;
+    this.filters[name] = func;
     return this;
   }
 
@@ -515,14 +513,29 @@ class AsyncEnvironment extends Environment {
     });
   }
 
+  addFilter(name, func, async) {
+    if (async) {
+      this.asyncFilters.push(name);
+    }
+    if (async) {
+      //func is a callback runction, convert to a function that returns a promise
+      this.filters[name] = (val) => {
+        return new Promise((resolve, reject) => {
+          func(val, (err, res) => {
+            if (err) reject(err);
+            else resolve(res);
+          });
+        });
+      };
+    } else {
+      this.filters[name] = func;
+    }
+    return this;
+  }
+
   addFilterAsync(name, func) {
-    var wrapped = function(val, cb) {
-      func(val)
-        .then(function(result) { cb(null, result); })
-        .catch(function(err) { cb(err); });
-    };
     this.asyncFilters.push(name);
-    this.filters[name] = wrapped;
+    this.filters[name] = func;
     return this;
   }
 }

@@ -1391,7 +1391,7 @@ class Compiler extends Obj {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         //@todo - this should be done with _compileExpression in the future
         this._compileAggregate(node.args, f, '[', ']', true, false, function (result) {
-          this._emit(`return runtime.promisify(env.getFilter("${name.value}").bind(env))(...${result});`);
+          this._emit(`return env.getFilter("${name.value}").bind(env)(...${result});`);
         });
       }, undefined, node.args);
       this._emit(';');
