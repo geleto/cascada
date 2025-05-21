@@ -1496,6 +1496,9 @@ class Compiler extends Obj {
         vf.declaredVars = new Set();
       }
       vf.declaredVars.add(name);*/
+      while (vf.parent) {
+        vf = vf.parent;
+      }
     } else {
       do {
         if (vf.declaredVars && vf.declaredVars.has(name)) {
