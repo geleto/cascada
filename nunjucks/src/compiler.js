@@ -1096,6 +1096,13 @@ class Compiler extends Obj {
     return false;
   }
 
+  _addDeclaredVar(frame, varName) {
+    if (!frame.declaredVars) {
+      frame.declaredVars = new Set();
+    }
+    frame.declaredVars.add(varName);
+  }
+
   // @todo - inline in _getSequenceKey
   _getSequencedPath(node, frame) {
     let path = [];
@@ -1522,10 +1529,7 @@ class Compiler extends Obj {
         while (!vf.createScope) {
           vf = vf.parent;//skip the frames that can not create a new scope
         }
-        if (!vf.declaredVars) {
-          vf.declaredVars = new Set();
-        }
-        vf.declaredVars.add(name);
+        this._addDeclaredVar(vf, name);
       }
     }
 
@@ -2623,10 +2627,7 @@ class Compiler extends Obj {
     if (node.typename === 'FunCall') {
       const key = this._getSequenceKey(node.name, sequenceLockFrame);
       if (key) {
-        if (!sequenceLockFrame.declaredVars) {
-          sequenceLockFrame.declaredVars = new Set();
-        }
-        sequenceLockFrame.declaredVars.add(key);
+        this._addDeclaredVar(sequenceLockFrame, key);
       }
     }
   }
