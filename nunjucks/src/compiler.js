@@ -1605,6 +1605,12 @@ class Compiler extends Obj {
         if (frame.parent.readVars && frame.parent.readVars.has(name) && !(frame.parent.writeCounts && !frame.parent.writeCounts[name])) {
           return;
         }
+        // If the variable 'name' is declared in the *current* 'frame'
+        // it should NOT be snapshotted from the parent frame into this.asyncVars
+        if (frame.declaredVars && frame.declaredVars.has(name)) {
+          //@todo - check if this can happen
+          return;
+        }
         reads.push(name);
       });
     }
@@ -1868,18 +1874,27 @@ class Compiler extends Obj {
       const [keyVar, valueVar] = loopVars;
       this._emitLine(`frame.set("${keyVar}", ${keyVar});`);
       this._emitLine(`frame.set("${valueVar}", ${valueVar});`);
+
+      frame.set(keyVar, keyVar);
+      frame.set(valueVar, valueVar);
+      this._addDeclaredVar(frame, keyVar);
+      this._addDeclaredVar(frame, valueVar);
     } else if (node.name instanceof nodes.Array) {
       // Array destructuring
       node.name.children.forEach((child, index) => {
         const varName = child.value;
         const tid = this._tmpid();
         this._emitLine(`let ${tid} = Array.isArray(${varName}) ? ${varName}[${index}] : undefined;`);
-        this._emitLine(`frame.set("${child.value}", ${tid});`);
+        this._emitLine(`frame.set("${varName}", ${tid});`);
+        frame.set(varName, tid);
+        this._addDeclaredVar(frame, varName);
       });
     } else {
       // Single variable loop
       const varName = node.name.value;
       this._emitLine(`frame.set("${varName}", ${varName});`);
+      frame.set(varName, varName);
+      this._addDeclaredVar(frame, varName);
     }
 
     // Compile the loop body with the updated frame

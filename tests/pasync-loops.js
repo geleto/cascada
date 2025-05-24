@@ -475,6 +475,42 @@
 			bread: 5`);
       });
 
+      it('should correctly resolve loop variable inside its own async iteration block', async () => {
+        const context = {
+          getAsyncFruits: async function* () {
+            await delay(1);
+            yield 'Apple';
+            await delay(1);
+            yield 'Banana';
+          }
+        };
+
+        const template = `{% for fruit in getAsyncFruits() %}{{ fruit }};{% endfor %}`;
+
+        const result = await env.renderString(template, context);
+
+        expect(result.trim()).to.equal('Apple;Banana;');
+      });
+
+      it('should correctly resolve loop variable when its value is a promise inside its own async iteration block', async () => {
+        const context = {
+          // getAsyncFruits returns an async iterator that yields Promises
+          getAsyncFruits: async function* () {
+            await delay(1);
+            yield Promise.resolve('Apple'); // Yield a Promise
+            await delay(1);
+            yield Promise.resolve('Banana'); // Yield another Promise
+          }
+        };
+
+        const template = `{% for fruit in getAsyncFruits() %}{{ fruit }};{% endfor %}`;
+        // Expected output: "Apple;Banana;"
+
+        const result = await env.renderString(template, context);
+
+        expect(result.trim()).to.equal('Apple;Banana;');
+      });
+
     });
 
     describe('For Loop with Else Tests', () => {
