@@ -3,13 +3,16 @@
 
   var expect;
   var AsyncEnvironment;
+  var StringLoader;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
+    StringLoader = require('./pasync-loader');
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
+    StringLoader = window.StringLoader;
   }
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -770,8 +773,7 @@
           expect(analysisContext.logs).to.eql(['mA on ctxSeq', 'mB on ctxSeq']);
         });
 
-        it('[Placeholder] should treat path!.method() and path.method!() differently', async () => {
-          // Parser does not yet support method!()
+        it('Should treat path!.method() and path.method!() differently', async () => {
           const template = `
                    {% do ctxSequencer!.runOp('pathOp1', 100) %}
                    {% do ctxSequencer.runOp!('methodOp1', 50) %}
@@ -785,6 +787,120 @@
           expect(analysisContext.logs).to.contain('methodOp2 on ctxSeq');
           expect(analysisContext.logs.indexOf('pathOp1 on ctxSeq')).to.be.lessThan(analysisContext.logs.indexOf('pathOp2 on ctxSeq')); // Path sequence
           expect(analysisContext.logs.indexOf('methodOp1 on ctxSeq')).to.be.lessThan(analysisContext.logs.indexOf('methodOp2 on ctxSeq')); // Method sequence
+        });
+
+        it('should REJECT sequencing for path starting with a template variable set by {% set %}', async () => {
+          const template = `
+                  {% set tplSequencer = ctxSequencer %}
+                  {% do tplSequencer!.runOp('tplA', 100) %}
+                  {% do tplSequencer!.runOp('tplB', 50) %}
+                `;
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+          });
+        });
+
+        it('should REJECT sequencing for path starting with a macro parameter', async () => {
+          const template = `
+                  {% macro testMacro(mcSequencer) %}
+                    {% do mcSequencer!.runOp('mcA', 100) %}
+                    {% do mcSequencer!.runOp('mcB', 50) %}
+                  {% endmacro %}
+                  {{ testMacro(ctxSequencer) }}
+                `;
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+          });
+        });
+
+        it('should REJECT sequencing for path starting with a for-loop variable', async () => {
+          const template = `
+                  {% for loopSequencer in [ctxSequencer] %}
+                    {% do loopSequencer!.runOp('loopA', 100) %}
+                    {% do loopSequencer!.runOp('loopB', 50) %}
+                  {% endfor %}
+                `;
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+          });
+        });
+
+        it('should REJECT sequencing for path starting with an imported namespace as the path root', async () => {
+          // lib_for_import_as.njk will export 'actualSequencerExport' which is assigned ctxSequencer
+          // from the importing template's context.
+          const loader = new StringLoader();
+          loader.addTemplate('lib_for_import_as.njk', `
+                  {# 'ctxSequencer' here comes from the context of the template that imports this file #}
+                  {% set actualSequencerExport = ctxSequencer %}
+                `);
+          const template = `
+                  {# 'analysisContext' (containing 'ctxSequencer') is provided to this renderString call #}
+                  {% import "lib_for_import_as.njk" as myImportedLib %}
+                  {# The path is 'myImportedLib.actualSequencerExport'.
+                     The compiler should identify 'myImportedLib' as the root of this path.
+                     'myImportedLib' is a template-scoped variable. #}
+                  {% do myImportedLib.actualSequencerExport!.runOp('importAsA', 100) %}
+                `;
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+          });
+        });
+
+        it('should REJECT sequencing for path starting with a specifically imported variable alias', async () => {
+          const loader = new StringLoader();
+          loader.addTemplate('lib_for_from_import.njk', `
+                  {# 'ctxSequencer' here comes from the context of the template that imports this file #}
+                  {% set exportedSequencer = ctxSequencer %}
+                `);
+          const template = `
+                  {% from "lib_for_from_import.njk" import exportedSequencer as aliasedSequencer %}
+                  {# 'aliasedSequencer' is the template-scoped variable. #}
+                  {% do aliasedSequencer!.runOp('fromImportA', 100) %}
+                `;
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+          });
+        });
+
+        it('should REJECT sequencing for path starting with a variable assigned the result of super()', async () => {
+          const loader = new StringLoader();
+          loader.addTemplate('parent_for_super.njk', `
+                  {% block content_block %}
+                    {# This content will be captured by super() in the child.
+                       For the test, what's rendered here doesn't strictly matter as much as
+                       the fact that super() is assigned to a variable. #}
+                    Parent Content
+                  {% endblock %}
+                `);
+          const template = `
+                  {% extends "parent_for_super.njk" %}
+                  {% block content_block %}
+                    {% set resultFromSuper = super() %}
+                    {# 'resultFromSuper' is a template-scoped variable.
+                       Even if it's a string, the attempt to use !.runOp implies
+                       the user treats it as an object. The sequence check should occur
+                       based on 'resultFromSuper' being a template variable. #}
+                    {% do resultFromSuper!.runOp('superA', 100) %}
+                  {% endblock %}
+                `;
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+          });
+        });
+
+        it('should REJECT sequencing for path starting with a variable assigned an async (expression) filter result', async () => {
+          env.addFilter('getAsSequencerFilter', async (input) => {
+            // This filter returns the actual sequencer object from the context
+            return analysisContext.ctxSequencer;
+          });
+          const template = `
+                  {% set resultOfFilter = "dummy_value" | getAsSequencerFilter %}
+                  {# 'resultOfFilter' is the template-scoped variable. #}
+                  {% do resultOfFilter!.runOp('filterExpA', 100) %}
+                `;
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+          });
         });
 
       }); // End Path Analysis Constraint tests
