@@ -1605,11 +1605,9 @@ class Compiler extends Obj {
         if (frame.parent.readVars && frame.parent.readVars.has(name) && !(frame.parent.writeCounts && !frame.parent.writeCounts[name])) {
           return;
         }
-        // If the variable 'name' is declared in the *current* 'frame'
-        // it should NOT be snapshotted from the parent frame into this.asyncVars
         if (frame.declaredVars && frame.declaredVars.has(name)) {
-          //@todo - check if this can happen
-          return;
+          // If the variable 'name' is declared in the *current* 'frame'
+          throw new Error(`ReadVar ${name} in declaration scope, this indicates mismatch between compiler and runtime frame`);
         }
         reads.push(name);
       });
