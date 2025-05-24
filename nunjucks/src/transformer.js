@@ -85,6 +85,8 @@ function _liftFilters(node, asyncFilters, prop) {
         descNode.colno,
         gensym());
 
+      symbol.isCompilerInternal = true;
+
       children.push(new nodes.FilterAsync(descNode.lineno,
         descNode.colno,
         descNode.name,
@@ -143,13 +145,17 @@ function liftSuper(ast) {
     blockNode.body = walk(blockNode.body, (node) => {
       if (node instanceof nodes.FunCall && node.name.value === 'super') {
         hasSuper = true;
-        return new nodes.Symbol(node.lineno, node.colno, symbol);
+        const tempSymbolNode = new nodes.Symbol(node.lineno, node.colno, symbol);
+        tempSymbolNode.isCompilerInternal = true;
+        return tempSymbolNode;
       }
     });
 
     if (hasSuper) {
+      const superNodeInternalSymbol = new nodes.Symbol(0, 0, symbol);
+      superNodeInternalSymbol.isCompilerInternal = true;
       blockNode.body.children.unshift(new nodes.Super(
-        0, 0, blockNode.name, new nodes.Symbol(0, 0, symbol)
+        0, 0, blockNode.name, superNodeInternalSymbol
       ));
     }
   });

@@ -692,62 +692,75 @@ class Compiler extends Obj {
 
     let name = node.value;
     let v = frame.lookup(name);
+    // @todo - omit this for function calls?
+    // (parent instanceof nodes.FunCall && parent.name === node)
 
-    if (v) {
-      //for now the only places that set async symbol are the async filter and super()
-      //this should work for set vars but it's disabled now (nunjucks bug or on purpose?)
+    /*if (v) {
+      //we are using a local variable, this is currently used only for:
+      //the async filter, super(), set var
       this._emit(v);
-    } else {
-      // @todo - omit this for function calls?
-      // (parent instanceof nodes.FunCall && parent.name === node)
+      return;
+    }*/
 
-      // Not in template scope, check context/frame with potential sequence lock
-      if (this.asyncMode) {
+    // Not in template scope, check context/frame with potential sequence lock
+    if (this.asyncMode) {
+      if (node.isCompilerInternal) {
+        // This is a compiler-generated internal symbol (e.g., "hole_0").
+        // Its `name` is the actual JavaScript variable name.
+        // This variable might hold a Promise, which consuming code (like Output) will handle.
+        this._emit(name);
+        return;
+      }
 
-        if (node.sequenced) {
-          if (!(pathFlags & PathFlags.CALL)) {
-            this.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
-          }
-          if (pathFlags & PathFlags.CREATES_SEQUENCE_LOCK) {
-            this.fail('Can not use more than one sequence marker (!) in a path', node.lineno, node.colno, node);
-          }
+      if (node.sequenced) {
+        if (!(pathFlags & PathFlags.CALL)) {
+          this.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
         }
-
-        this._updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
-
-        let nodeStaticPathKey = this._extractStaticPathKey(node);
-        if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
-          if (this._isDeclared(frame, node.value)) {
-            this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
-          }
-          // This node accesses a declared sequence lock path.
-          const emitSequencedLookup = (f) => {
-            //register the static path key as variable write so the next lock would wait for it
-            //multiple static path keys can be in the same block
-            //@todo - optimization: if there are no further funCalls with lock on the path
-            //we can use _updateFrameReads. The last funCall can record false in the lock value
-            //to indicate all further paths locked by it that they don't need to make a lock for further funCalls
-            //hence we can use _updateFrameReads for all of them
-            this._updateFrameWrites(f, nodeStaticPathKey);
-            //use the sequenced lookup
-            this._emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
-          };
-
-          //if (!(pathFlags & (PathFlags.WAITS_FOR_SEQUENCE_LOCK | PathFlags.CALL))) {
-          if (node.wrapInAsyncBlock) {
-            // Wrap in an async block if pre-analysis determined it's necessary for contention.
-            this._emitAsyncBlockValue(node, frame, emitSequencedLookup, undefined, node);
-          } else {
-            // Emit without an additional async block wrapper.
-            emitSequencedLookup(frame);
-          }
-          return;
+        if (pathFlags & PathFlags.CREATES_SEQUENCE_LOCK) {
+          this.fail('Can not use more than one sequence marker (!) in a path', node.lineno, node.colno, node);
         }
       }
 
-      // Standard context/frame lookup if not async mode or no declared sequence lock for this path.
-      this._emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
+      this._updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
+
+      let nodeStaticPathKey = this._extractStaticPathKey(node);
+      if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
+        if (this._isDeclared(frame, node.value)) {
+          this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
+        }
+        // This node accesses a declared sequence lock path.
+        const emitSequencedLookup = (f) => {
+          //register the static path key as variable write so the next lock would wait for it
+          //multiple static path keys can be in the same block
+          //@todo - optimization: if there are no further funCalls with lock on the path
+          //we can use _updateFrameReads. The last funCall can record false in the lock value
+          //to indicate all further paths locked by it that they don't need to make a lock for further funCalls
+          //hence we can use _updateFrameReads for all of them
+          this._updateFrameWrites(f, nodeStaticPathKey);
+          //use the sequenced lookup
+          this._emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
+        };
+
+        //if (!(pathFlags & (PathFlags.WAITS_FOR_SEQUENCE_LOCK | PathFlags.CALL))) {
+        if (node.wrapInAsyncBlock) {
+          // Wrap in an async block if pre-analysis determined it's necessary for contention.
+          this._emitAsyncBlockValue(node, frame, emitSequencedLookup, undefined, node);
+        } else {
+          // Emit without an additional async block wrapper.
+          emitSequencedLookup(frame);
+        }
+        return;
+      }
     }
+    else {//not async mode
+      if (v) {
+        //we are using a local variable, this is currently used only for:
+        //the async filter, super(), set var
+        this._emit(v);
+        return;
+      }
+    }
+    this._emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
   }
 
   //todo - do not resolve, instead resolve it at the point of use: output or argument to functions, filters. Add tests
@@ -1813,10 +1826,12 @@ class Compiler extends Obj {
       node.name.children.forEach((child) => {
         loopVars.push(child.value);
         frame.set(child.value, child.value);
+        this._addDeclaredVar(frame, child.value);
       });
     } else {
       loopVars.push(node.name.value);
       frame.set(node.name.value, node.name.value);
+      this._addDeclaredVar(frame, node.name.value);
     }
 
     // Define the loop body function
@@ -1971,11 +1986,13 @@ class Compiler extends Obj {
       node.name.children.forEach((name) => {
         const id = name.value;
         frame.set(id, id);
+        this._addDeclaredVar(frame, id);
         this._emitLine(`frame.set("${id}", ${id});`);
       });
     } else {
       const id = node.name.value;
       this._emitLine(`runtime.${asyncMethod}(${arr}, 1, function(${id}, ${i}, ${len},next) {`);
+      this._addDeclaredVar(frame, id);
       this._emitLine('frame.set("' + id + '", ' + id + ');');
       frame.set(id, id);
     }
@@ -2090,12 +2107,14 @@ class Compiler extends Obj {
     args.forEach((arg) => {
       this._emitLine(`frame.set("${arg.value}", l_${arg.value});`);
       currFrame.set(arg.value, `l_${arg.value}`);
+      this._addDeclaredVar(currFrame, arg.value);
     });
 
     // Expose the keyword arguments
     if (kwargs) {
       kwargs.children.forEach((pair) => {
         const name = pair.key.value;
+        this._addDeclaredVar(currFrame, name);
         this._emit(`frame.set("${name}", `);
         this._emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
         this._emit(` ? kwargs["${name}"] : `);
@@ -2104,6 +2123,7 @@ class Compiler extends Obj {
       });
     }
 
+    this._addDeclaredVar(currFrame, 'caller');
     const bufferId = this._pushBuffer();
 
     this._withScopedSyntax(() => {
@@ -2211,6 +2231,7 @@ class Compiler extends Obj {
     }
 
     frame.set(target, id);
+    this._addDeclaredVar(frame, target);
 
     if (frame.parent) {
       this._emitLine(`frame.set("${target}", ${id});`);
@@ -2285,6 +2306,7 @@ class Compiler extends Obj {
       }
 
       frame.set(alias, id);
+      this._addDeclaredVar(frame, alias);
 
       if (frame.parent) {
         this._emitLine(`frame.set("${alias}", ${id});`);
@@ -2361,6 +2383,7 @@ class Compiler extends Obj {
       this._addScopeLevel();
     }
     frame.set(id, id);
+    this._addDeclaredVar(frame, id);
   }
 
   compileExtends(node, frame) {
