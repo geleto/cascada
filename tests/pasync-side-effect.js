@@ -723,7 +723,7 @@
           });
         });
 
-        it('should REJECT sequencing for path starting with a macro parameter', async () => {
+        it('should REJECT sequencing(at root) for path starting with a macro parameter (compileSymbol)', async () => {
           const template = `
                   {% macro testMacro(mcSequencer) %}
                     {% do mcSequencer!.runOp('mcA', 100) %}
@@ -732,7 +732,20 @@
                   {{ testMacro(ctxSequencer) }}
                 `;
           await expectAsyncError(() => env.renderString(template, analysisContext), err => {
-            expect(err.message).to.contain('asequence marker');
+            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+          });
+        });
+
+        it('should REJECT sequencing for path starting with a macro parameter (compileLookupVal)', async () => {
+          const template = `
+                  {% macro testMacro(mcSequencer) %}
+                    {% do mcSequencer.runOp!('mcA', 100) %}
+                    {% do mcSequencer.runOp!('mcB', 50) %}
+                  {% endmacro %}
+                  {{ testMacro(ctxSequencer) }}
+                `;
+          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
           });
         });
 
