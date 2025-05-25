@@ -735,7 +735,7 @@
                   {{ testMacro(ctxSequencer) }}
                 `;
           await expectAsyncError(() => env.renderString(template, analysisContext), err => {
-            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+            expect(err.message).to.contain('not allowed inside macros');
           });
         });
 
@@ -748,7 +748,7 @@
                   {{ testMacro(ctxSequencer) }}
                 `;
           await expectAsyncError(() => env.renderString(template, analysisContext), err => {
-            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+            expect(err.message).to.contain('not allowed inside macros');
           });
         });
 
@@ -809,7 +809,7 @@
                   {{ testMacro(ctxSequencer) }}
                 `;
           await expectAsyncError(() => env.renderString(template, analysisContext), err => {
-            expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+            expect(err.message).to.contain('not allowed inside macros');
           });
         });
 
@@ -994,16 +994,6 @@
     });
 
     describe('Integration and Scope', () => {
-      it('should enforce sequence across macro calls', async () => {
-        const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
-        const template = `
-          {% macro runSeq(id, ms) %}{% do seq!.runOp(id, ms) %}{% endmacro %}
-          {{ runSeq('m1', 20) }}{{ runSeq('m2', 10) }}
-        `;
-        await env.renderString(template, cont);
-        expect(cont.logs).to.eql(['m1', 'm2']);
-      });
-
       it('should work with async filters temp no delat', async () => {
         env.addFilter('delayLog', async (val, ms) => { await delay(ms); return `${val}-delayed`; }, true);
         const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
@@ -1040,8 +1030,9 @@
             {% do seq!.runOp('l2', 5) %}
           {% endfor %}
         `;
-        await env.renderString(template, cont);
-        expect(cont.logs).to.eql(['l2', 'l1']);
+        await expectAsyncError(() => env.renderString(template, cont), err => {
+          expect(err.message).to.contain('not allowed in non-context variable paths');
+        });
       });
 
       it('should REJECT sequence marker ! on a template variable that shadows an eligible context variable', async () => {

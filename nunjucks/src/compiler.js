@@ -725,9 +725,9 @@ class Compiler extends Obj {
 
       let nodeStaticPathKey = this._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
-        if (this._isDeclared(frame, node.value)) {
+        /*if (this._isDeclared(frame, node.value)) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
-        }
+        }*/
         // This node accesses a declared sequence lock path.
         const emitSequencedLookup = (f) => {
           //register the static path key as variable write so the next lock would wait for it
@@ -1042,10 +1042,10 @@ class Compiler extends Obj {
       }
       let nodeStaticPathKey = this._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
-        const keyRoot = nodeStaticPathKey.substring(1, nodeStaticPathKey.indexOf('!', 1));
+        /*const keyRoot = nodeStaticPathKey.substring(1, nodeStaticPathKey.indexOf('!', 1));
         if (this._isDeclared(frame, keyRoot)) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
-        }
+        }*/
         //const wrapInAsyncBlock = !(pathFlags & (PathFlags.WAITS_FOR_SEQUENCE_LOCK | PathFlags.CALL));
         pathFlags |= PathFlags.WAITS_FOR_SEQUENCE_LOCK;//do not wrap anymore
         const emitSequencedLookup = (f) => {
@@ -1117,6 +1117,7 @@ class Compiler extends Obj {
   }
 
   // @todo - inline in _getSequenceKey
+  // @todo - maybe this can be simplified
   _getSequencedPath(node, frame) {
     let path = [];
     let current = node;
@@ -1129,33 +1130,12 @@ class Compiler extends Obj {
     // Stores the static string value of the segment marked with '!'
     let sequenceSegmentValue = null;
 
-    // Helper: Checks if a key node represents a static string key.
-    // This is the crucial check for sequencing requirements.
-    // We ONLY allow Literal strings for bracket access sequencing.
-    // Dot access (`a.b`) is assumed to be handled elsewhere or not subject
-    // to this specific sequencing mechanism if it doesn't use LookupVal
-    // with Literal keys.
     function isStaticStringKey(keyNode) {
       return keyNode && keyNode.typename === 'Literal' && typeof keyNode.value === 'string';
     }
 
-    // --- Step 1: Handle FunCall with ! FIRST (e.g., a.method!()) ---
-    // This path analysis focuses on object paths (LookupVal chains and root Symbols).
-    // FunCall sequencing (`method!()`) needs separate validation logic *before*
-    // this path traversal if it's intended to work differently.
-    // Assuming the current logic focuses on `path!.segment` or `root!`.
-    if (current.typename === 'FunCall' /* && current.sequenced */) {
-      // If FunCall sequencing is desired, its validation (static method name, etc.)
-      // should happen *before* or integrated carefully here.
-      // For now, let's assume '!' on FunCall itself isn't processed by *this* path logic.
-      // If the *target* of the FunCall has '!', that will be caught below.
-      // e.g., in obj.path!.method(), the path logic runs on 'obj.path!'
-      // If you need obj.method!(), it requires different handling.
-      // current = current.name.target; // Need to adjust 'current' if handling FunCall!
-    }
 
-
-    // --- Step 2: Traverse the Object Path upwards, searching for '!' ---
+    // Traverse the Object Path upwards, searching for '!'
     // We iterate from the end of the potential path backwards (up towards the root).
     let nodeToAnalyze = current;
     while (nodeToAnalyze && nodeToAnalyze.typename === 'LookupVal') {
@@ -1190,7 +1170,6 @@ class Compiler extends Obj {
       nodeToAnalyze = nodeToAnalyze.target; // Move up the chain
     } // End while loop searching for '!' in LookupVal chain
 
-    // --- Step 3: Handle Root Node (if '!' wasn't found in the chain) ---
     // Check if the root node itself has '!' (e.g., contextVar!)
     let rootNode = nodeToAnalyze; // Whatever node we stopped at
     if (!sequenceMarkerNode && rootNode && rootNode.typename === 'Symbol' && rootNode.sequenced) {
@@ -1205,7 +1184,7 @@ class Compiler extends Obj {
       // `dynamicFoundInPrefix` should be false here, as there was no preceding path.
     }
 
-    // --- Step 4: Validate Prefix and Collect Full Path if '!' was found ---
+    // Validate Prefix and Collect Full Path if '!' was found
     if (sequenceMarkerNode) {
       // We found '!' (either on a LookupVal or the root Symbol).
       // We already validated that the key *at* the '!' was a static string (or it was the root Symbol).
@@ -1237,7 +1216,7 @@ class Compiler extends Obj {
         current = current.target;
       }
 
-      // --- Handle and Validate the final Root Node of the collected path ---
+      // Handle and Validate the final Root Node of the collected path
       rootNode = current; // Update rootNode to the final node after traversal
       if (rootNode && rootNode.typename === 'Symbol') {
         path.unshift(rootNode.value); // Add the root symbol identifier
@@ -1245,7 +1224,7 @@ class Compiler extends Obj {
         // Path doesn't start with a simple variable (e.g., started with func() or literal)
         this.fail(
           'Sequence Error: Sequenced paths marked with \'!\' must originate from a context variable (e.g., contextVar["key"]!). The path starts with a dynamic or non-variable element.',
-          rootNode.lineno, rootNode.colno, rootNode // Report error at the problematic root
+          rootNode.lineno, rootNode.colno, rootNode
         );
       } else if (path.length === 0) {
         // This should not happen if sequenceSegmentValue was set.
@@ -1254,13 +1233,30 @@ class Compiler extends Obj {
       // If !rootNode but path has elements, it means the sequence started mid-expression,
       // which is invalid for context variable sequencing. This is caught by the rootNode type check above.
 
+      //Testing if a sequence path starts with declared variable
+      //can not happen here because _declareSequentialLocks does not have access to declared variables 
 
-      // --- Final Validation: Check Root Origin (Context vs. Scope) ---
+      // Final Validation: Check Root Origin (Context vs. Scope)
       // Ensure the path doesn't start with a variable declared in the template scope.
-      if (path.length > 0 && this._isDeclared(frame, path[0])) {
+      /*if (path.length > 0 && this._isDeclared(frame, path[0])) {
         // Path starts with a template variable (e.g., {% set myVar = {} %}{{ myVar!['key'].call() }})
         // Sequencing is only for context variables.
+        if (this.isCompilingMacroBody) {
+          this.fail(
+            'Sequence Error: Sequenced paths marked with \'!\' are not allowed for paths starting with macro variable.',
+            node.lineno, node.colno, node
+          );
+        }
+        this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         return null;
+      }*/
+
+      //throw an error if we are inside a macro
+      if (this.isCompilingMacroBody) {
+        this.fail(
+          'Sequence Error: Sequenced paths marked with \'!\' are not allowed inside macros.',
+          node.lineno, node.colno, node
+        );
       }
 
       // Path is fully validated for sequencing!
@@ -1284,6 +1280,13 @@ class Compiler extends Obj {
     if (node.isAsync) {
 
       const sequenceLockKey = this._getSequenceKey(node.name, frame);
+      if (sequenceLockKey) {
+        let index = sequenceLockKey.indexOf('!', 1);
+        const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
+        if (this._isDeclared(frame, keyRoot)) {
+          this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
+        }
+      }
       /*if (sequenceLockKey) {
         this._updateFrameWrites(frame, sequenceLockKey);
       }*/
@@ -2087,8 +2090,12 @@ class Compiler extends Obj {
     if (keepFrame) {
       currFrame = frame.push(true);
     } else {
-      currFrame = frame.new();//node.isAsync ? new AsyncFrame() : new Frame();//
+      currFrame = frame.new();
     }
+
+    const oldIsCompilingMacroBody = this.isCompilingMacroBody; // Save previous state
+    this.isCompilingMacroBody = true;
+
     this._emitLines(
       `let ${funcId} = runtime.makeMacro(`,
       `[${argNames.join(', ')}], `,
@@ -2096,7 +2103,7 @@ class Compiler extends Obj {
       `function (${realNames.join(', ')}, astate) {`
     );
     if (!keepFrame) {
-      this._emitLine('let callerFrame = frame;');//@todo - only if !keepFrame
+      this._emitLine('let callerFrame = frame;');
     }
     this._emitLines(
       'frame = ' + ((keepFrame) ? 'frame.push(true);' : 'frame.new();'),
@@ -2159,6 +2166,8 @@ class Compiler extends Obj {
       this._emitLine('});');
     }
     this._popBuffer();
+
+    this.isCompilingMacroBody = oldIsCompilingMacroBody; // Restore state
 
     return funcId;
   }
