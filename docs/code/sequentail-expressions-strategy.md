@@ -1,51 +1,69 @@
-**Expression-Level Sequence Lock Handling Strategy**
+# Expression-Level Sequence Lock Handling in Cascada
 
-This strategy identifies parts of an expression needing "async block wrappers" for `!` sequence markers. It uses a recursive analysis to build a `sequenceOperations` map on each node, tracking its role in sequenced operations.
+Cascada manages sequence locks within expressions to ensure that operations marked with the `!` sequence marker execute in the correct order, even in complex, concurrent scenarios. We need to decide exactly which specific parts of the expression (individual lookups or function calls) have to be wrapped in their own async block/IIFE to manage their sequence lock, preventing race conditions with other parts of the same expression. 
+This process involves identifying sequence operations, analyzing potential conflicts, assigning async wrappers where necessary, optimizing their placement, and generating the appropriate code. The following sections detail each step, with examples and explanations to clarify the concepts.
 
-**1. Initial Node Decoration:**
-*   **AST Decoration:** Early in the analysis (`_assignAsyncBlockWrappers`):
-    *   `FunCall` nodes with a `!` path are noted as having a `sequenceLockKey`.
-    *   `Symbol`/`LookupVal` nodes on a declared `!` lock path are noted as having a `sequencePathKey`.
+---
 
-**2. Recursive Sequence Operation Analysis & Wrapper Assignment (`_assignAsyncBlockWrappers`, `_asyncWrapKey`, `_pushAsyncWrapDownTree`):**
+## 1. Initial Sequence Operation Identification
 
-This combined recursive process analyzes each expression node to:
-    1.  Aggregate sequence operation info from children.
-    2.  Decide if the node itself needs an "async block wrapper" due to sequence key contention.
-    3.  Optimize wrapper placement by pushing it to specific children if applicable.
+The process begins by examining each node within an expression's structure (Abstract Syntax Tree or AST) to identify operations that interact with sequence locks:
 
-*   **Core Recursive Function (`_assignAsyncBlockWrappers(node, frame)`):**
-    *   **Initialization:**
-        *   Creates `node.sequenceOperations` map.
-        *   Each key is classified as `PATH` or `LOCK`.
-        *   If `node` itself is a `Symbol`/`LookupVal` with `node.sequencePathKey`, adds `(key, PATH)` to its map.
-        *   If `node` itself is a `FunCall` with `node.sequenceLockKey`, adds `(key, LOCK)` to its map.
-    *   **Recursive Call & Aggregation:**
-        *   Calls `_assignAsyncBlockWrappers` for all children.
-        *   Merges children's `sequenceOperations` into `node.sequenceOperations`, removing duplicate keys:
-            *   If a contention occurs (e.g., LOCK + PATH, or multiple LOCKs for the same key), the `key` is marked as `CONTENDED` in the `node.sequenceOperations` map.
-            *   Otherwise, there is no contention and the key is added to the map with its type - PATH(can merge multiple PATHs) or LOCK(there can be only one LOCK for a key without contention).
-    *   **Contention-Driven Wrapper Assignment (`_asyncWrapKey`):**
-        *   If `node.sequenceOperations` contains a `(key, CONTENDED)` entry:
-            *   For each child involved with this `key`, call `_asyncWrapKey(child, key)`.
-            *   `_asyncWrapKey` descends recursively. If it reaches a node where the key is *not* `CONTENDED` - it sets `node.wrapInAsyncBlock = true`.
-            *   Do a cleanup deleting the `node.sequenceOperations` map as it is no longer needed.
-    *   **Continue the reursion of `_asyncWrapKey`** for each child node unless there are no contended keys in it
+- **FunCall Nodes:** Function calls that include a `!` marker in their path, such as `data.item!.update()`, are identified and associated with a unique `sequenceLockKey`. This key indicates that the operation actively manages a sequence lock for the specified path (e.g., `data.item`).
+- **Symbol and LookupVal Nodes:** Variable lookups that access a path declared as part of a `!` sequence are associated with a `sequencePathKey`. This marks them as operations that respect an existing sequence lock.
 
-*   **Wrapper Optimization (`_pushAsyncWrapDownTree(node)`):**
-    *   **Purpose:** `_assignAsyncBlockWrappers` assigned the wrappers as early as possible at the first uncontented node. This function moves the wrapper down for as long as there is only one child with [all the] keys.
-    *   **Process:**
-        *   This optimization is applied recursively, starting from the leaves of the expression tree and moving upwards.
-        *   If a `node` has been marked to `wrapInAsyncBlock` but isn't directly a sequenced symbol, lookup, or call itself:
-            *   The function checks if only one of its immediate children is responsible for all the sequence operations that caused the `node` to be considered for wrapping.
-            *   If such a single responsible child is found, the `wrapInAsyncBlock` status is removed from the `node` and transferred to that child. This effectively pushes the wrapper closer to the actual source of the sequenced action.
-                *   If that child was already marked to `wrapInAsyncBlock`, this effectively merges the wrappers.
+**Example:**
+In the expression `data.item!.update() + data.item.value`, the function call `data.item!.update()` is a `FunCall` node with a `sequenceLockKey`, while `data.item.value` is a `LookupVal` node with a `sequencePathKey` (assuming `data.item` is sequence-locked).
 
-**3. Code Generation (During Expression Compilation):**
+This initial identification sets the foundation for tracking sequenced operations throughout the expression.
 
-*   **`Compiler._compileExpression(node, frame)`:**
-    *   Before compiling `node`, calls `this._assignAsyncBlockWrappers(node, frame)` then `this._pushAsyncWrapDownTree(node)` to set `wrapInAsyncBlock` flags on the expression's AST.
-*   **`Compiler.compile(node, frame, pathFlags)` (and specific `compile<ExpressionNodeType>` methods):**
-    *   When compiling any part of an expression:
-        *   **Check `node.wrapInAsyncBlock`:** If `true`, this specific `node`'s compilation is enclosed in an `this._emitAsyncBlockValue(...)`, creating an async IIFE.
-        *   The node's content is compiled within this wrapper (or directly if not wrapped).
+---
+
+## 2. Recursive Sequence Operation Analysis & Contention Marking
+
+Next, a recursive analysis builds a `sequenceOperations` map for each node in the expression tree. This map tracks how the node and its children interact with different sequence keys and identifies potential conflicts (contention):
+
+- **Aggregation:** As the analysis moves up the tree, it merges `sequenceOperations` from child nodes into their parent.
+- **Contention Detection:** A sequence key is marked as `CONTENDED` on a node if its subtree involves conflicting operations for that key. Conflicts occur when:
+  - Multiple `LOCK` operations target the same key.
+  - A `LOCK` operation and a `PATH` operation target the same key.
+  - **Note:** Multiple `PATH` operations for the same key do not cause contention because they are read-only and do not modify the sequence lock. For example, reading `data.item.value` multiple times in an expression doesn’t require sequencing.
+
+This step ensures that any potential conflicts are flagged for resolution.
+
+---
+
+## 3. Assigning Async Wrappers Based on Contention
+
+When a `CONTENDED` key is identified on a node, Cascada determines where to place async wrappers to resolve the conflict:
+
+- **Recursive Descent:** For each contended key, the system drills down into the sub-branches of the expression involved with that key.
+- **Wrapper Placement:** The `wrapInAsyncBlock = true` flag is set on the first node in a branch where the key is no longer `CONTENDED`. This node represents one side of the conflict and requires its own async IIFE to manage its part of the sequence. The wrapper ensures that this operation executes in sequence with other operations on the same lock.
+- **Cleanup:** After assigning wrappers for a contended key, the key is removed from the node’s `sequenceOperations` map. If the map becomes empty, it is deleted entirely.
+
+This targeted placement ensures that only the necessary parts of the expression are wrapped, maintaining correctness without unnecessary overhead.
+
+---
+
+## 4. Optimizing Wrapper Placement
+
+An optimization pass refines the initial wrapper assignments to improve efficiency:
+
+- **Purpose:** This step moves `wrapInAsyncBlock` flags closer to the actual sequenced operation if a wrapper at a higher level isn’t necessary. This reduces the number of async IIFEs, improving performance by minimizing the overhead of creating and managing asynchronous contexts.
+- **Process:**
+  - The system examines nodes marked with `wrapInAsyncBlock`.
+  - If a node lacks a direct `sequenceLockKey` or `sequencePathKey`, it checks its children.
+  - If only one child is involved with the sequence keys that caused the parent to be wrapped, the `wrapInAsyncBlock` flag is moved to that child, ensuring wrappers are as specific as possible.
+
+This optimization keeps the generated code efficient while preserving the required sequencing.
+
+---
+
+## 5. Code Generation During Expression Compilation
+
+Finally, the compiler generates the JavaScript code for the expression, incorporating async wrappers where needed:
+
+- **Expression Compilation:** Before compiling a node, the analyses set the `wrapInAsyncBlock` flags throughout the AST.
+- **Wrapper Emission:** During the compilation of individual parts (e.g., a `LookupVal` or `FunCall`):
+  - If a node has `wrapInAsyncBlock = true`, its compiled code is enclosed in an async IIFE. This isolates its execution and manages its sequence lock independently.
+- **Integration:** This step ensures that the generated JavaScript code correctly manages sequence locks while allowing maximum parallelism in the template execution, integrating seamlessly with the overall compilation process.
