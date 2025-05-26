@@ -1,3 +1,4 @@
+
 **Sequential Execution using `!` marker in Cascada Templating Engine**
 
 **1. Introduction & Goal:**
@@ -21,15 +22,14 @@ We will leverage Cascada's existing complex asynchronous variable synchronizatio
 
 *   **Sequence Keys as Lock Variables:** Each unique static path marked for sequencing (e.g., `!contextVar!prop1`, `!contextVar!prop2!method`) will be treated as an implicit "lock variable".
 *   **Compiler Analysis & Registration:**
-    *   The compiler uses `_getSequenceKey` to identify valid static context keys derrived from paths marked with `!`.
-    *   For `!` operations, it derives the *specific* lock key (`sequenceLockKey`) derrived from the path to that `!` using `_getSequenceKey`. It registers "write intent" (`_updateFrameWrites(frame, sequenceLockKey)`) for the specific key *during compilation*, signaling the runtime to create a lock promise via `_promisifyParentVariables`.
-    *   For *any* operation (lookup or call) on a static context path, it derives potential parent lock keys and checks them against declared locks (`declaredVars`). It passes only the relevant, declared parent keys (`lockKeys`) to the runtime.
+    *   A dedicated compiler pass identifies `FunCall` nodes with `!` in their path and declares their corresponding `sequenceLockKey` at the root level for sequence management.
+    *   For operations involving a `!` (like sequenced function calls), the compiler registers a "write intent" for the specific key, signaling the runtime to create and manage a lock promise for it.
 *   **Runtime Waiting (Implicit via Helpers):**
-    *   New runtime helpers (`awaitSequenceLocks`, `sequencedMemberLookupAsync`) are introduced.
-    *   These helpers use `awaitSequenceLocks` to check the relevant lock keys (passed by the compiler) via `lookup`. They `await` any active lock promises found before proceeding with the actual lookup or call.
+    *   New runtime helpers are introduced to manage sequenced operations.
+    *   These helpers check for active lock promises associated with the relevant sequence keys and pause execution (`await`) until the lock is released before proceeding.
 *   **Runtime Signaling & Error Handling:**
-    *   When a `!` call completes (successfully or with an error), the compiler emits code that calls `frame.set("sequenceLockKey", true, true)` within a `finally` block of an async IIFE.
-    *   This `frame.set` triggers the existing variable resolution mechanism (`_countdownAndResolveAsyncWrites`), which resolves the lock promise, allowing the next operation in that sequence to proceed. The `finally` block guarantees lock release, preventing deadlocks.
+    *   When a sequenced call completes (successfully or with an error), the runtime signals the release of its lock by updating the lock variable's state.
+    *   This triggers the existing variable resolution mechanism, resolving the lock promise and allowing the next operation in that sequence to proceed. This release is guaranteed even in case of errors to prevent deadlocks.
 
 **4. Provided Files:**
 
@@ -46,18 +46,15 @@ You will use the following files:
 
 *   **Title:** Analyze Path for Static Origin, Sequence Marker, and Extract Path Array.
 *   **Summary:**
-    *   Implemented helper `_isDeclared(frame, variableName)` to check if a variable is defined within template scope (using `frame.declaredVars`).
-    *   Implemented `_getSequenceKey(node, frame)` which:
-        *   Traverses the AST (`LookupVal` chain) from `node`.
-        *   Checks for the `.sequenced` flag (representing `!`).
-        *   Validates that path segments up to and including the `!` are static (`Symbol` or string `Literal`).
-        *   Validates that the path root is *not* a scope variable using `_isDeclared`.
-        *   Handles errors for double `!` and dynamic paths combined with `!`.
-        *   Returns the key for for that path, prepending `!` and using `!` to separate the path segments, e.g. !a!b!c or `null` if no `.sequenced` flag was found
-     *   Register Sequence Synchronization Intent: Update compileFunCall to analyze the function call's path using _getSequenceKey. If it identifies that the call is part of a sequence (returning a valid sequenceLockKey), then register this key using _updateFrameWrites. This compile-time registration flags the sequence key for runtime write-counting, ensuring the runtime creates a lock promise for it. 
-     This lock will only be released in Step 8 at runtime after the sequenced function call finishes execution - fram.set will be called for the key variable, which will release the lock (any unfinished writes keep a variable locked for further reading and modification).
-*   **Verification:**
-    *   Breakpoint Debugging: Verify `_getSequenceKey` returns correct path/key for various cases.
+    *   Implemented a compiler helper to determine if a variable is defined within the template's scope.
+    *   Implemented a core compiler helper (`_getSequenceKey`) to:
+        *   Traverse the abstract syntax tree (AST) for property lookups.
+        *   Identify the `!` sequence marker.
+        *   Validate that the path segments leading up to and including the `!` are static (not dynamic expressions).
+        *   Ensure the path originates from a context variable, not a template-defined variable.
+        *   Handle and report errors for invalid `!` usage (e.g., multiple `!` in one path, `!` on dynamic segments).
+        *   Return a unique key representing the sequenced path (e.g., `!a!b!c`) or `null` if no valid sequence is found.
+     *   Register Sequence Synchronization Intent: The compiler, when processing function calls, uses the `_getSequenceKey` helper. If a call is identified as part of a sequence (a valid `sequenceLockKey` is returned), the compiler registers this key for write-counting. This compile-time action flags the `sequenceLockKey`, ensuring the runtime system creates and manages a lock promise for it. This lock is released only after the sequenced function call completes.
 
 **Step 2: Correct Sequence Key Propagation and Runtime Frame Handling**
 
@@ -65,100 +62,91 @@ You will use the following files:
 *   **Goal:** Fix the bug where `writeCounters` for sequence keys (`!key`) are not correctly propagated during compilation, preventing runtime lock creation. Ensure related runtime frame methods handle these keys appropriately.
 *   **Explanation:** The standard variable scoping logic incorrectly treats sequence keys as locally declared, stopping `writeCounts` propagation prematurely. This fix ensures propagation reaches the necessary frames by conceptually declaring `!` keys at the root and adjusts runtime methods (`resolve`, `_promisifyParentVariables`) for compatibility.
 *   **Implementation:**
-    1.  **Modify `compiler.js -> Compiler._updateFrameWrites`:**
-        *   Add a check at the start of the scope-finding logic: If `name.startsWith('!')`, bypass the upward search and set the scope frame `vf = frame.sequenceLockFrame`.
-    2.  **Modify `runtime.js -> AsyncFrame.resolve`:**
-        *   Add a check at the start: If `name.startsWith('!')`, return `this.sequenceLockFrame`. Otherwise, continue standard logic.
-    3.  **Implement `runtime.js -> AsyncFrame.lookupAndLocate`:**
-        *   Create a new method `lookupAndLocate(name)` which traverses the frame hierarchy (starting from `this`) to find the specified `name`.
-        *   It should correctly handle keys that exist but have an `undefined` value (fixing a bug in the original `lookup`).
-        *   It returns both the `value` found and the specific `frame` object where it was located (or indicates if not found).
-    4.  **Modify `runtime.js -> AsyncFrame.prototype._promisifyParentVariables`:**
-        *   Utilize the new `lookupAndLocate` method to find the correct `scopeFrame` for the variable or sequence key (`!key`).
-        *   Handle cases where `!key` is not initially found by establishing its state at the `.sequenceLockFrame`.
-        *   Use the `lookupAndLocate` result to promisify the variable.
-*   **Verification:**
-    *   Confirm the previously failing test case (`it.only('should enforce sequence based on object path...')`) now passes.
-    *   Inspect compiled code for `{% do object!.method() %}` to verify `pushAsyncBlock` arguments now include the correct `writeCounters` (e.g., `{"!object": 1}`).
-    *   Run other sequence-related tests to check for regressions.
+    1.  **Compiler `_updateFrameWrites`** For sequence keys (names starting with `!`), ensure write counts are associated with the root-level sequence management frame, bypassing standard upward scope search.
+    2.  **Runtime `AsyncFrame.resolve`** For sequence keys, ensure resolution always points to the root-level sequence management frame.
+    3.  **Runtime `AsyncFrame.lookupAndLocate` Implementation:** Created a new method to reliably find a variable's value and its defining frame, correctly handling cases of `undefined` values.
+    4.  **Runtime `AsyncFrame._promisifyParentVariables`** Adapted this method to use `lookupAndLocate` for correctly finding and creating promise-based locks for sequence keys, associating them with the root sequence management frame if they don't exist.
 
-**Step 3: Implement `isCallPath` Context and Static Path Extraction Helper**
+**Step 3: Implement `pathFlags` Context and Static Path Extraction Helper**
 
-*   **Title:** Add `isCallPath` Compilation Context and Path Extraction Helper.
-*   **Goal:** Modify the compiler's core `compile` function and relevant compiler methods (`compileLookupVal`, `compileFunCall`) to pass down a `isCallPath` argument. It is passed as `true` from compileFunCall for it's node.name. Implement the `_extractStaticPathKey` helper to retrieve the static path. Add calls to this helper within `compileLookupVal` and `compileFunCall`.
-*   **Explanation:** This step establishes the infrastructure needed for later sequence handling. The `isCallPath` argument provides context about the overall expression being compiled. The `_extractStaticPathKey` helper gathers structural path information, which will be used in subsequent steps for both validation and determining necessary waits. This step focuses only on adding the argument passing mechanism and the basic path extraction, without implementing sequence logic itself.
+*   **Title:** Add `pathFlags` Compilation Context and Path Extraction Helper.
+*   **Goal:** Enhance the compiler's core `compile` function and related methods to pass down a `pathFlags` argument (e.g., `PathFlags.CALL`). Implement the `_extractStaticPathKey` helper to retrieve the static path key.
+*   **Explanation:** This step establishes infrastructure for sequence handling. The `pathFlags` argument provides context about the nature of the path being compiled (e.g., if it's part of a function call). The `_extractStaticPathKey` helper gathers structural path information (the static key like `!a!b`).
 *   **Implementation:**
-    *   Modify `Compiler.prototype.compile` signature to accept `isCallPath = false` and pass it down.
-    *   Modify `compileLookupVal` and `compileSymbol` to accept `isCallPath`.
-    *   Update recursive `this.compile` calls within `compileLookupVal` (for `node.target`) to correctly determine and pass the `isCallPath` value down the chain.
-    *   Implement `_extractStaticPathKey` helper function to traverse upwards from a `LookupVal` or `Symbol` and return the static path, or `null` if the path is dynamic/invalid.
-    *   Add calls to `this._extractStaticPathKey` at the beginning of `compileLookupVal` (using `node`) and `compileFunCall` (using `node.name`) to calculate the static path.
-*   **Verification:**
-    *   Use `console.log` or debugger to verify `isCallPath` is passed correctly during recursive compilation.
-    *   Verify `_extractStaticPathKey` returns correct path or `null` for various test cases (static paths, dynamic paths) when called from `compileLookupVal` and `compileFunCall`.
+    *   The compiler's main `compile` function was modified to accept and propagate a `pathFlags` argument.
+    *   Compiler methods for lookups and function calls were updated to accept and utilize these `pathFlags`.
+    *   A helper function, `_extractStaticPathKey`, was implemented to traverse the AST upwards from a lookup or symbol node and construct its static path key.
+    *   This helper is now called during the compilation of lookups, symbols, and function call names.
 
-**Step 4: Compiler Sequence Analysis - Identify Potential Keys**
+**Step 4: Compiler Sequence Lock Declaration - `_declareSequentialLocks` Pass**
 
-*   **Title:** Identify Static Path Keys for Sequencing.
-*   **Goal:** Within the compiler, determine the specific static path key (e.g., `!a!b!c`) associated with any symbol or property lookup being compiled.
-*   **Explanation:** This preparatory step uses the `_extractStaticPathKey` helper to derive the key string representing the full static path being accessed. This key is essential for later checks and runtime operations related to sequencing, but this step *doesn't* yet decide if sequencing applies.
+*   **Title:** Declare All Sequence Lock Keys in a Dedicated Pass.
+*   **Goal:** Before main compilation, traverse the AST to identify all `FunCall` nodes whose paths (derived via `_getSequenceKey`) contain a `!` marker. For each such valid sequenced call, declare its corresponding `sequenceLockKey` at the root level of sequence management.
+*   **Explanation:** This new, explicit pass centralizes the *declaration* of all sequence lock keys. This ensures that later compilation steps know which static paths are subject to sequential locking.
 *   **Implementation:**
-    *   Utilize `_extractStaticPathKey` within `compileSymbol` and `compileLookupVal` to extract the relevant `nodeStaticPathKey`.
+    *   A new compiler method, `_declareSequentialLocks`, is called once before the main compilation of the root node.
+    *   This method recursively traverses the AST. When it encounters a function call, it uses `_getSequenceKey` on the function's name.
+    *   If a valid sequence key is returned, that key is registered (added to `declaredVars`) in the dedicated sequence lock frame.
 
 **Step 5: Implement Runtime Waiting Logic (`awaitSequenceLock`)**
 
 *   **Title:** Create Runtime Sequence Lock Waiting Mechanism.
 *   **Goal:** Implement the core runtime function (`awaitSequenceLock`) responsible for pausing execution if a sequence lock (represented by a promise) is active for a given key.
-*   **Explanation:** This function centralizes the waiting logic. It uses the standard `frame.lookup` to check the state of the lock key. If it finds a promise, it handles waiting for the entire promise chain to resolve before allowing execution to continue. It avoids `async` overhead when no waiting is needed.
+*   **Explanation:** This function centralizes the waiting logic. It uses the standard `frame.lookup` to check the state of the lock key. If it finds a promise, it handles waiting for the entire promise chain to resolve before allowing execution to continue.
 *   **Implementation:**
-    *   Implement `runtime.awaitSequenceLock` to check the lock key state via `frame.lookup` and manage promise chain resolution if a lock promise is found.
+    *   Implemented `runtime.awaitSequenceLock` to check the lock key state via `frame.lookup` and manage promise chain resolution if a lock promise is found.
 
 **Step 6: Implement Sequenced Lookup with Lock Key Declaration Check (Runtime & Compiler)**
 
 *   **Title:** Conditionally Apply Sequence Locks to Lookups.
-*   **Goal:** Ensure that symbol and property lookups only wait for sequence locks if a lock for their specific static path key has actually been declared (via a `!` marker elsewhere).
-*   **Explanation:** This involves both compiler and runtime changes. The compiler adds a check (`_isDeclared`) to see if the `nodeStaticPathKey` identified in Step 4 corresponds to a declared lock. If so, it emits code calling new runtime helpers (`sequencedContextLookup`, `sequencedMemberLookupAsync`). These runtime helpers use `awaitSequenceLock` (from Step 5) before performing the actual lookup. If no lock was declared for the path, the compiler emits standard lookup code.
+*   **Goal:** Ensure that symbol and property lookups only wait for sequence locks if a lock for their specific static path key has actually been declared (via a `!` marker elsewhere and registered in Step 4).
+*   **Explanation:** The compiler determines the static path key for any lookup. It then checks if this key corresponds to a declared sequence lock. If so, it generates code to use new runtime helpers (`sequencedContextLookup`, `sequencedMemberLookupAsync`) and registers a "write intent" for that key. These runtime helpers first wait for the lock (using `awaitSequenceLock`) and then, after performing the lookup, signal completion for that key to release it for the next operation in the sequence.
 *   **Implementation:**
-    *   Implement runtime helpers `sequencedContextLookup` and `sequencedMemberLookupAsync` which internally call `awaitSequenceLock` before performing standard lookup logic.
-    *  Modify `compileSymbol` and `compileLookupVal`: check if the `nodeStaticPathKey` is declared using `_isDeclared`. If it is, register read intent using _updateFrameReads(frame, nodeStaticPathKey) and conditionally emit calls to the new sequenced...Lookup helpers instead of the standard lookup functions.
+    *   New runtime helpers (`sequencedContextLookup`, `sequencedMemberLookupAsync`) were created. These internally use `awaitSequenceLock`, then perform the lookup, and finally release the lock by updating its state via `frame.set`.
+    *   The compiler (for `Symbol` and `LookupVal`) now:
+        *   Extracts the `nodeStaticPathKey`.
+        *   Checks if this key is a declared sequence lock (in `frame.sequenceLockFrame.declaredVars`).
+        *   If it is, it registers a "write intent" for this key and generates code to call the new sequenced lookup helpers.
+        *   Otherwise, it generates standard lookup code.
 
 **Step 7: Implement Lock Release/Signaling for `!` Calls**
 
-*   **Title:** Ensure Lock Release via Runtime Helper
+*   **Title:** Ensure Lock Release via Runtime Helper for Sequenced Calls.
 *   **Goal:** Guarantee sequence locks are released after a sequenced function call attempt, preventing deadlocks.
-*   **Explanation:** The dedicated runtime helper `runtime.sequencedCallWrap` handles sequenced function calls. This helper executes the call using `runtime.callWrap` internally and ensures the corresponding sequence lock is reliably released afterwards by signaling completion through the frame's variable system via `frame.set`, even if the call fails. The compiler (`compileFunCall`) identifies sequenced calls using `_getSequenceKey` and directs them to use this specialized helper.
+*   **Explanation:** A dedicated runtime helper, `runtime.sequencedCallWrap`, is used for sequenced function calls. This helper performs the actual call and then, in a `finally` block, ensures the corresponding sequence lock is released by signaling its completion. The compiler identifies sequenced calls (based on their path having a `!` and thus a `sequenceLockKey` being declared in Step 4) and directs them to use this specialized helper. It also registers a "write intent" for the call's `sequenceLockKey`.
 *   **Implementation:**
-    *   Implement the `runtime.sequencedCallWrap` helper function, which internally calls `runtime.callWrap` and then reliably signals lock completion using `frame.set(sequenceLockKey, true, true)`.
-    *   Modify the compiler's `compileFunCall` logic to detect sequenced calls using `_getSequenceKey`.
-    *   Generate code within `compileFunCall` to invoke `runtime.sequencedCallWrap` for sequenced calls (passing the `sequenceLockKey`), and `runtime.callWrap` otherwise.
+    *   The `runtime.sequencedCallWrap` helper was implemented to execute the function call and then reliably signal lock completion using `frame.set` within a `finally` clause.
+    *   The compiler's function call logic (`compileFunCall`) now:
+        *   Uses `_getSequenceKey` on the function's name to determine its `sequenceLockKey`.
+        *   If a `sequenceLockKey` exists (meaning it was declared as a lock), it registers "write intent" for this key and generates code to use `runtime.sequencedCallWrap`.
+        *   Otherwise, it uses the standard `runtime.callWrap`.
 
-**Step 8: Implement Expression-Level Key Analysis and Count Aggregation**
+**Step 8: Analyze Expression Subtrees for Sequence Operations and Contention**
 
-*   **Title:** Analyze Expression Subtrees for Sequence Keys and Aggregate Usage Counts.
-*   **Goal:** Before compiling an expression(using compileExpression), recursively analyze its entire structure to identify all potential sequence path keys (from Symbol and LookupVal nodes) and sequence lock keys (from FunCall nodes). Decorate these individual nodes with their identified key. Aggregate the total count of each unique key found within the entire expression's subtree and store these counts on the expression's root node.
+*   **Title:** Analyze Expression Subtrees for Sequence Operations and Contention.
+*   **Goal:** Before compiling an expression, recursively analyze its structure to identify all sequence path keys (from `Symbol` and `LookupVal` nodes) and sequence lock keys (from `FunCall` nodes). Decorate each AST node with a `sequenceOperations` map detailing the type of sequence operations (`PATH`, `LOCK`) it and its children are involved in, marking keys as `CONTENDED` if conflicting operations are found within its subtree.
+
 *   **Why this step is necessary:** 
     *   A single expression can contain multiple operations that might contend for the same sequence lock (e.g., data.item!.update() + data.item!.anotherUpdate()).
     *   To ensure correct sequential execution, we must identify these contentions. This step gathers the foundational data: which sequence keys are used by which parts of the expression, and how many times each key appears within the overall expression.
     *   This information is crucial for a subsequent step (Step 9) which will decide exactly which specific parts of the expression (individual lookups or function calls) need to be wrapped in their own async IIFE to manage their sequence lock, preventing race conditions with other parts of the same expression. Without this analysis, the compiler cannot make informed decisions about where to insert these protective async blocks.
 *   **Explanation:**
     *   A new recursive compiler method, `_assignAsyncBlockWrappers`, analyzes an expression before its compilation.
-    *   **Key Identification:** It inspects `Symbol`, `LookupVal`, and `FunCall` nodes within the expression. Using existing helpers (`_extractStaticPathKey`, `_getSequenceKey`), it determines if a node represents a locked sequence path or a call to a sequenced method. Validity includes ensuring paths are static and originate from context variables (not template-scoped ones).
-    *   **Node Decoration:** If a valid key is found, it's stored as a property (e.g., `node.sequencePathKey` or `node.sequenceLockKey`) on that specific AST node.
-    *   **Usage Counting & Aggregation:** The method counts every occurrence of each unique key throughout the entire expression. These counts are aggregated upwards, so that any expression node will store the total counts of keys found within its own subtree (as `node.sequencePathCounts` and `node.sequenceLockKeyCounts`), if any keys are present.
+    *   **Initial Decoration:** `FunCall` nodes with a `!` path are noted as having a `sequenceLockKey`. `Symbol`/`LookupVal` nodes on a declared `!` lock path are noted as having a `sequencePathKey`.
+    *   **Recursive Analysis:**
+        *   Each AST node gets a `node.sequenceOperations` map.
+        *   Initially, this map is populated if the node itself has a `sequencePathKey` (type `PATH`) or `sequenceLockKey` (type `LOCK`).
+        *   The method then recursively calls itself for all children.
+        *   Children's `sequenceOperations` are merged into the current node's map. If a key is used in conflicting ways (e.g., a `LOCK` and a `PATH` for the same key, or multiple `LOCK`s), that key is marked as `CONTENDED` in the current node's `sequenceOperations` map.
+    *   This step builds a detailed understanding of sequence key usage and potential conflicts throughout the expression.
 
-**Step 9: Determine and Mark Expression Nodes Requiring Async Block Wrappers**
+**Step 9: Resolve Sequence Contention and Mark Nodes for Async Wrapping**
 
-*   **Title:** Identify and Flag Expression Components for Sequential Async Execution.
-*   **Goal:** Using the key usage counts gathered in Step 8, determine which specific parts of an expression (individual lookups or function calls) are involved in a sequence key contention and must be wrapped in their own asynchronous IIFE. This is achieved by setting a `wrapInAsyncBlock = true` flag on the highest-level AST node within a contended branch that is directly responsible for the contended sequence key.
-*   **Why this step is necessary:**
-    *   Step 8 identified *which* keys are used and *how often* within an expression. Step 9 uses this to pinpoint *where* contention for a specific key actually occurs among different parts (operands) of an expression operator (like `+`, `*`, etc.).
-    *   When multiple parts of an expression try to use the same sequence lock concurrently, they would create a race condition. By flagging the responsible nodes, the compiler (in a later phase) will know to generate an async IIFE around them. This IIFE will manage the sequence lock, ensuring that these specific operations execute one at a time for that lock, even if they are part of a larger parallel expression.
+*   **Title:** Resolve Sequence Contention and Mark Nodes for Async Wrapping.
+*   **Goal:** Using the `sequenceOperations` map (with `CONTENDED` markers) from Step 8, determine which specific parts of an expression must be wrapped in their own asynchronous IIFE to manage sequence locks. This is done by setting `wrapInAsyncBlock = true` on the appropriate AST nodes.
 *   **Explanation:**
-    *   A new recursive compiler method, `_determineExpressionAsyncBlocks`, is called after Step 8 has decorated the expression's AST nodes with keys and usage counts.
-    *   **Processing Contended Keys:** For any given expression node (e.g., an addition operation), this method first looks at the sequence key counts stored on it by Step 8. It identifies keys that are used more than once within this node's entire subtree, indicating potential contention. These contended keys are sorted, prioritizing shorter keys (which often represent more general paths like `!object`) before longer, more specific ones (like `!object!property!method`).
-    *   **Identifying Contention Among Siblings:** For each contended key (processed shortest first), the method checks if at least two of the current expression node's *direct children* (e.g., the left and right operands of an addition) are involved with this key. A child is "involved" if it either uses the key directly or contains usage of the key within its own deeper structure.
-    *   **Marking for Wrapping:** If such sibling contention for a key is found, the method then initiates a targeted search (`_asyncWrapKey`) downwards into *each involved child's branch*. This search aims to find the highest-level node within that branch that is directly responsible for the contended key. Once found, that node is marked with `wrapInAsyncBlock = true`.
-    *   **Termination of Marking:** The downward search (`_asyncWrapKey`) for a specific key will stop and not mark a node if that node (or an AST ancestor within that search path) has *already* been marked `wrapInAsyncBlock = true`. This prevents redundant marking, assuming an earlier decision (e.g., for a shorter, covering key) has already designated a wrapper that will handle the sequence.
-    *   **Recursive Application:** The entire `_determineExpressionAsyncBlocks` process is then applied recursively to each child of the current expression node. This ensures that contention is analyzed and resolved at all levels of a complex, nested expression.
-
-    
+    *   This logic is also handled within the `_assignAsyncBlockWrappers` method, after information has been aggregated from children.
+    *   **Contention Resolution:** If a node's `sequenceOperations` map contains a key marked `CONTENDED`, it means different parts of its subtree are conflicting over that sequence key.
+    *   **Targeted Wrapping (`_asyncWrapKey`):** For each such contended key, a helper function `_asyncWrapKey` is called for each child involved with that key. `_asyncWrapKey` recursively descends into the child's branch. It sets `wrapInAsyncBlock = true` on the highest-level node within that branch where the key is *no longer* `CONTENDED` (i.e., the specific node representing one side of the original conflict). The `node.sequenceOperations` map is then typically cleared for the node where `_asyncWrapKey` was called from, as its purpose for that level is fulfilled.
+    *   **Optimization Pass:** After `_assignAsyncBlockWrappers` completes, an additional optimization pass, `_pushAsyncWrapDownTree`, is performed. This pass may further refine the placement of `wrapInAsyncBlock = true` flags by attempting to move them closer to the actual sequenced operation if a wrapper at a higher level is not strictly necessary. This optimization is detailed in separate documentation.
+    *   The `compileExpression` method in the compiler will call `_assignAsyncBlockWrappers` and then `_pushAsyncWrapDownTree` before proceeding to generate code. During code generation, if a node has `wrapInAsyncBlock = true`, its compilation will be enclosed in an async IIFE (`_emitAsyncBlockValue`).
