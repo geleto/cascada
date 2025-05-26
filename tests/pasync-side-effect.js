@@ -994,26 +994,8 @@
     });
 
     describe('Integration and Scope', () => {
-      it('should work with async filters temp no delat', async () => {
-        env.addFilter('delayLog', async (val, ms) => { await delay(ms); return `${val}-delayed`; }, true);
-        const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
-        const template = `{% do seq!.runOp('f1', 20) %}{{ seq!.runOp('f2', 10) }}`;
-        const result = await env.renderString(template, cont);
-        expect(cont.logs).to.eql(['f1', 'f2']);
-        expect(result).to.equal('f2-delayed');
-      });
-
-      it('should work with async filters - hang on delay', async () => {
-        env.addFilterAsync('delayLog', async (val, ms) => { await delay(ms); return `${val}-delayed`; }, true);
-        const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
-        const template = `{{ seq!.runOp('f2', 10)|delayLog(5) }}`;
-        const result = await env.renderString(template, cont);
-        expect(cont.logs).to.eql(['f1', 'f2']);
-        expect(result).to.equal('f2-delayed');
-      });
-
       it('should work with async filters', async () => {
-        env.addFilter('delayLog', async (val, ms) => { await delay(ms); return `${val}-delayed`; }, true);
+        env.addFilterAsync('delayLog', async (val, ms) => { await delay(ms); return `${val}-delayed`; }, true);
         const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
         const template = `{% do seq!.runOp('f1', 20) %}{{ seq!.runOp('f2', 10)|delayLog(5) }}`;
         const result = await env.renderString(template, cont);
