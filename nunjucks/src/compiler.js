@@ -2094,7 +2094,12 @@ class Compiler extends Obj {
     }
 
     const oldIsCompilingMacroBody = this.isCompilingMacroBody; // Save previous state
-    this.isCompilingMacroBody = true;
+
+    // If the macro being compiled is the anonymous 'caller' macro (generated for a {% call %} block),
+    // its body's sequence operations should be evaluated against the call site's context,
+    // not as if they are part of a regular macro definition's internal logic.
+    // The `Caller` node (for `{{ caller() }}`) is a distinct typename.
+    this.isCompilingMacroBody = node.typename !== 'Caller';
 
     this._emitLines(
       `let ${funcId} = runtime.makeMacro(`,

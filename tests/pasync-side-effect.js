@@ -1088,4 +1088,120 @@
     });
   });
   //End additional side effect tests
+
+  describe('Cascada Sequencing with Macro and Caller', function () {
+    let env;
+
+    beforeEach(function () {
+      env = new AsyncEnvironment(null, { autoescape: false });
+    });
+
+    it('should execute sequenced operations within caller() in order', async function () {
+      const callOrder = [];
+      const context = {
+        // This will be our context object with a method to sequence
+        sequencedService: {
+          name: 'ServiceA',
+          // A method with a side effect (pushing to callOrder) and a delay
+          async processItem(item) {
+            await delay(item === 'item1' ? 50 : 10); // item1 takes longer
+            callOrder.push(`${this.name}:${item}`);
+            return `Processed ${item}`;
+          }
+        }
+      };
+
+      const templateString = `
+        {% macro myBox(title) %}
+          <div class="box">
+            <h3>{{ title }}</h3>
+            <div class="content">
+              {{ caller() }}
+            </div>
+          </div>
+        {% endmacro %}
+  
+        {% call myBox("Task Box") %}
+          <p>Starting tasks...</p>
+          {# These two operations on the same object path should be sequenced #}
+          {% do sequencedService!.processItem("item1") %}
+          {% do sequencedService!.processItem("item2") %}
+          <p>Tasks initiated.</p>
+        {% endcall %}
+      `;
+
+      // Expected output isn't the primary focus here, but the order of side effects.
+      // We'll check callOrder.
+      const result = await env.renderString(templateString, context);
+
+      // console.log('Rendered Output:', result);
+      // console.log('Call Order:', callOrder);
+
+      // Verify the order of operations
+      expect(callOrder).to.eql([
+        'ServiceA:item1', // Should be first despite potentially finishing later if not sequenced
+        'ServiceA:item2'
+      ]);
+
+      // Optional: Check if the output contains expected parts
+      expect(result).to.contain('<h3>Task Box</h3>');
+      expect(result).to.contain('<p>Starting tasks...</p>');
+      expect(result).to.contain('<p>Tasks initiated.</p>');
+    });
+
+
+    it('should handle multiple sequenced calls on different path segments within caller()', async function () {
+      const eventLog = [];
+      const context = {
+        dataStore: {
+          async update(key, value) {
+            await delay(10);
+            eventLog.push(`update:${key}=${value}`);
+            return `updated ${key}`;
+          }
+        },
+        logger: {
+          async log(message) {
+            await delay(5);
+            eventLog.push(`log:${message}`);
+            return `logged ${message}`;
+          }
+        }
+      };
+
+      const templateString = `
+        {% macro section(name) %}
+          <section>
+            <h4>{{ name }}</h4>
+            {{ caller() }}
+          </section>
+        {% endmacro %}
+  
+        {% call section("Processing") %}
+          {% do dataStore!.update("alpha", 100) %} {# Sequence for dataStore! path #}
+          {% do logger!.log("Alpha updated") %}     {# Sequence for logger! path (independent of dataStore!) #}
+          {% do dataStore!.update("beta", 200) %}  {# Waits for previous dataStore! call #}
+          {% do logger!.log("Beta updated") %}      {# Waits for previous logger! call #}
+        {% endcall %}
+      `;
+
+      await env.renderString(templateString, context);
+      // console.log(eventLog);
+
+      // Check relative order for dataStore operations
+      expect(eventLog.indexOf('update:alpha=100')).to.be.lessThan(eventLog.indexOf('update:beta=200'));
+      // Check relative order for logger operations
+      expect(eventLog.indexOf('log:Alpha updated')).to.be.lessThan(eventLog.indexOf('log:Beta updated'));
+
+      // We can't guarantee absolute interleaving order between dataStore! and logger! paths
+      // as they are independent sequences. But we can check all events are present.
+      expect(eventLog).to.contain('update:alpha=100');
+      expect(eventLog).to.contain('update:beta=200');
+      expect(eventLog).to.contain('log:Alpha updated');
+      expect(eventLog).to.contain('log:Beta updated');
+      expect(eventLog.length).to.be(4);
+    });
+    //End additional macro/caller tests
+  });
+
 })();
