@@ -120,7 +120,7 @@ By default, Cascada runs independent operations in parallel. However, when you h
 
 #### 1. Object-Path Sequencing: `object.path!.method()`
 
-Use this when multiple method calls on the same object must run in a specific order:
+Use this when multiple method calls on the same object must run in a specific order, for example, `account.deposit(100)` *must* complete before `account.withdraw(50)` can safely execute:
 
 ```njk
 {% set account = getAccount() %}
