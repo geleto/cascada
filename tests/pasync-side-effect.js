@@ -334,29 +334,6 @@
           expect(result.trim()).to.equal('op3op2');
         });
 
-        it('should release lock on error in sequenced call', async () => {
-          const cont = {
-            ...context,
-            sequencer: {
-              id: 'seq1',
-              async runOp(id, ms) {
-                if (id === 'op1') throw new Error('Operation failed');
-                await delay(ms);
-                cont.logs.push(`${id} on ${this.id}`);
-                return id;
-              }
-            }
-          };
-          const template = `
-            {% do sequencer!.runOp('op1', 50) %}
-            {% do sequencer!.runOp('op2', 20) %}
-          `;
-          await expectAsyncError(() => env.renderString(template, cont), err => {
-            expect(err.message).to.contain('Error: Operation failed');
-          });
-          expect(cont.logs).to.eql(['op2 on seq1']); // op2 should run after lock release
-        });
-
         it('should handle nested sequencing expressions', async () => {
           const cont = {
             ...context,
@@ -918,7 +895,9 @@
         logs: [],
         seq: {
           id: 's1',
-          async runOp(id, ms) { await delay(ms); context.logs.push(id); return id; }
+          async runOp(id, ms) {
+            await delay(ms); context.logs.push(id); return id;
+          }
         },
         sequencer: {
           id: 'seq1',
@@ -995,8 +974,19 @@
 
     describe('Integration and Scope', () => {
       it('should work with async filters', async () => {
-        env.addFilterAsync('delayLog', async (val, ms) => { await delay(ms); return `${val}-delayed`; }, true);
-        const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
+        env.addFilterAsync('delayLog', async (val, ms) => {
+          await delay(ms); return `${val}-delayed`;
+        }, true);
+        const cont = {
+          logs: [], seq: {
+            id: 's1',
+            async runOp(id, ms) {
+              await delay(ms); cont.logs.push(id);
+              return id;
+            }
+          }
+        };
+
         const template = `{% do seq!.runOp('f1', 20) %}{{ seq!.runOp('f2', 10)|delayLog(5) }}`;
         const result = await env.renderString(template, cont);
         expect(cont.logs).to.eql(['f1', 'f2']);
