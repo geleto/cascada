@@ -10,6 +10,7 @@ const { Obj } = require('./object');
 const OPTIMIZE_ASYNC = true;//optimize async operations
 
 // PathFlags for path propagation
+//@todo - use a variable instead of argument
 const PathFlags = {
   NONE: 0,
   CALL: 1 << 0,
@@ -1234,7 +1235,7 @@ class Compiler extends Obj {
       // which is invalid for context variable sequencing. This is caught by the rootNode type check above.
 
       //Testing if a sequence path starts with declared variable
-      //can not happen here because _declareSequentialLocks does not have access to declared variables 
+      //can not happen here because _declareSequentialLocks does not have access to declared variables
 
       // Final Validation: Check Root Origin (Context vs. Scope)
       // Ensure the path doesn't start with a variable declared in the template scope.
@@ -1305,6 +1306,7 @@ class Compiler extends Obj {
       }
       asyncName = true;
       if (!asyncName) {
+        //@todo - not used for now
         //We probably need some static analysis to know for sure a name is not async
         // {% set asyncFunc = getAsyncFunction() %}
         // {{ asyncFunc(arg1, arg2) }}
@@ -1316,10 +1318,12 @@ class Compiler extends Obj {
             this._emitLine(`, "${funcName}", context, ${result});`);
           } else {
             const emitCallback = (f) => {
-              this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
-              this._emit(`runtime.sequencedCallWrap(`);
+              //we're not counting the writes here, this will be done from the key path lookupVal/symbol
+              //this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
+              //this._emit(`runtime.sequencedCallWrap(`);
+              this._emit(`runtime.callWrap(`);
               this.compile(node.name, f, PathFlags.CALL);
-              this._emitLine(`, "${funcName}", context, ${result}, frame, "${sequenceLockKey}");`);
+              this._emitLine(`, "${funcName}", context, ${result});`);//, frame, "${sequenceLockKey}");`);
             };
             this._emit('return ');
             if (node.wrapInAsyncBlock) {
@@ -1332,22 +1336,51 @@ class Compiler extends Obj {
         }); // Resolve arguments using _compileAggregate.
       } else {
         // Function name is dynamic, so resolve both function and arguments.
-        // In async mode, resolve the function and arguments in parallel.
-
-        const mergedNode = {
-          isAsync: node.name.isAsync || node.args.isAsync,
-          children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
-        };
-
         node.name.pathFlags = PathFlags.CALL;
+
+        if (!sequenceLockKey) {
+          const mergedNode = {
+            isAsync: node.name.isAsync || node.args.isAsync,
+            children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
+          };
+          this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
+            this._emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
+          });
+        } else {
+          // Create a merged node to resolve both function path and arguments
+          // concurrently in a single resolveAll
+          const mergedNode = {
+            isAsync: node.name.isAsync || node.args.isAsync,
+            children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
+          };
+          this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
+            const emitCallback = (f) => {
+              //we're not counting the writes here, this will be done from the key path lookupVal/symbol
+              //this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
+              this._emit(`runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);//, frame, "${sequenceLockKey}");`);
+            };
+            this._emit('return ');
+            if (node.wrapInAsyncBlock) {
+              // Position node is the function call itself
+              this._emitAsyncBlockValue(node, frame, emitCallback, undefined, node);
+            } else {
+              emitCallback(frame);
+            }
+          });
+        }
+
+        delete node.name.pathFlags;
+
+
         // Position node for aggregate is the function call itself (node)
-        this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
+        /*this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
           if (!sequenceLockKey) {
             this._emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
           } else {
             const emitCallback = (f) => {
-              this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
-              this._emit(`runtime.sequencedCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}");`);
+              //we're not counting the writes here, this will be done from the key path lookupVal/symbol
+              //this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
+              this._emit(`runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);//, frame, "${sequenceLockKey}");`);
             };
             this._emit('return ');
             if (node.wrapInAsyncBlock) {
@@ -1358,7 +1391,7 @@ class Compiler extends Obj {
             }
           }
         });
-        delete node.name.pathFlags;
+        delete node.name.pathFlags;*/
       }
       // //(lineno, ... No closing parenthesis needed here for async mode
     } else {
@@ -2860,6 +2893,7 @@ class Compiler extends Obj {
 
   _assignAsyncBlockWrappers(node, frame) {
     node.sequenceOperations = new Map();
+    let lockedFunCall = false;
     if (node instanceof nodes.Symbol || node instanceof nodes.LookupVal) {
       //path - Determine if currentNode has a sequence locked static path
       let pathKey = this._extractStaticPathKey(node);
@@ -2877,6 +2911,8 @@ class Compiler extends Obj {
         // This represents the *write* operation on that lock.
         node.sequenceLockKey = lockKey;
         node.sequenceOperations.set(lockKey, SequenceOperationType.LOCK);
+        lockedFunCall = true;
+        node.wrapInAsyncBlock = true;//always wrap LOCK funCalls
       }
     }
 
@@ -2887,11 +2923,22 @@ class Compiler extends Obj {
         continue;
       }
       for (const [key, childValue] of child.sequenceOperations) {
+        if (lockedFunCall && child === node.name && key === node.sequenceLockKey) {
+          //the FunCall node always has the same lock key as a path inside the node.name lookupVal
+          if (childValue !== SequenceOperationType.PATH) {
+            //that node should always be a PATH operation
+            throw new Error('Matching FunCall node lock key with node.name path key - operator must be PATH');
+          }
+          //ignore this matching key in operator merge as this would create a fake CONTENDED
+          continue;
+        }
         //if any operation has a lock (including 2 locks) - it is contended
         const parentValue = node.sequenceOperations.get(key);
         if (parentValue === undefined || (parentValue === childValue && parentValue !== SequenceOperationType.LOCK)) {
+          //no parent with that key or parent and child have same operation type
           node.sequenceOperations.set(key, childValue);
         } else {
+          //parent and child have different operation types or are both locks
           node.sequenceOperations.set(key, SequenceOperationType.CONTENDED);
         }
       }
@@ -2914,22 +2961,25 @@ class Compiler extends Obj {
     }
   };
 
-  //wrap the first child nodes where the key is not contended
+  //wrap the bottom child nodes(closest to the root) where the key is not contended
   _asyncWrapKey(node, key) {
+
     const type = node.sequenceOperations.get(key);
     if (type !== SequenceOperationType.CONTENDED) {
       node.wrapInAsyncBlock = true;
       return;
     }
+
     for (const child of this._getImmediateChildren(node)) {
       if (child.sequenceOperations && child.sequenceOperations.has(key)) {
         this._asyncWrapKey(child, key);
       }
     }
-    node.sequenceOperations.delete(key);
+
+    /*node.sequenceOperations.delete(key);
     if (node.sequenceOperations.size === 0) {
       delete node.sequenceOperations;
-    }
+    }*/
   }
 
   //if the node has no lock or path of it's own and only one child has all the same keys

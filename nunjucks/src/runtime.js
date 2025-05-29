@@ -897,6 +897,7 @@ function callWrap(obj, name, context, args) {
   return obj.apply(context, args);
 }
 
+//@todo - deprecate, the sequencedMemberLookupAsync of the FunCall path lookupVal/symbol should handle the frame lock release
 async function sequencedCallWrap(func, funcName, context, args, frame, sequenceLockKey) {
   try {
     return await callWrap(func, funcName, context, args);
