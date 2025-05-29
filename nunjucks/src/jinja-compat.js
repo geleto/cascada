@@ -78,13 +78,13 @@ function installCompat() {
       orig_Compiler_assertType.apply(this, arguments);
     };
     Compiler.prototype.compileSlice = function compileSlice(node, frame) {
-      this._emit('(');
+      this.emit('(');
       this._compileExpression(node.start, frame);
-      this._emit('),(');
+      this.emit('),(');
       this._compileExpression(node.stop, frame);
-      this._emit('),(');
+      this.emit('),(');
       this._compileExpression(node.step, frame);
-      this._emit(')');
+      this.emit(')');
     };
 
     Parser.prototype.parseAggregate = function parseAggregate() {
