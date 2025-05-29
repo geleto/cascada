@@ -1430,7 +1430,7 @@ class Compiler extends Obj {
     frame = this.emit.AsyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
   }
 
-  _emitAsyncLoopBindings(node, arr, i, len) {
+  _compileAsyncLoopBindings(node, arr, i, len) {
     const bindings = [
       { name: 'index', val: `${i} + 1` },
       { name: 'index0', val: i },
@@ -1492,7 +1492,7 @@ class Compiler extends Obj {
       frame.set(id, id);
     }
 
-    this.emit.AsyncLoopBindings(node, arr, i, len);
+    this._compileAsyncLoopBindings(node, arr, i, len);
 
     this.emit._withScopedSyntax(() => {
       let buf;
