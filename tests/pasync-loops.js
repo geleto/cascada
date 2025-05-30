@@ -117,6 +117,15 @@
 		  `);
       });
 
+      // @todo - the compileFor sets near _addDeclaredVar
+      it('should support destructured looping in async mode', async () => {
+        const context = { arr: [['x', 'y', 'z'], ['1', '2', '3']] };
+        const template = '{% for a, b, c in arr %}' +
+          '{{ a }},{{ b }},{{ c }}.{% endfor %}';
+        const result = await env.renderString(template, context);
+        expect(result).to.equal('x,y,z.1,2,3.');
+      });
+
       it('should handle async functions with loop.index', async () => {
         const context = {
           items: ['a', 'b', 'c'],

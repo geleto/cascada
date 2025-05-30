@@ -734,10 +734,12 @@ class Compiler extends Obj {
   }
 
   _addDeclaredVar(frame, varName) {
-    if (!frame.declaredVars) {
-      frame.declaredVars = new Set();
+    if (this.asyncMode) {
+      if (!frame.declaredVars) {
+        frame.declaredVars = new Set();
+      }
+      frame.declaredVars.add(varName);
     }
-    frame.declaredVars.add(varName);
   }
 
   compileFunCall(node, frame, pathFlags) {
@@ -1312,12 +1314,16 @@ class Compiler extends Obj {
       node.name.children.forEach((child) => {
         loopVars.push(child.value);
         frame.set(child.value, child.value);
-        this._addDeclaredVar(frame, child.value);
+        if (node.isAsync) {
+          this._addDeclaredVar(frame, child.value);
+        }
       });
     } else {
       loopVars.push(node.name.value);
       frame.set(node.name.value, node.name.value);
-      this._addDeclaredVar(frame, node.name.value);
+      if (node.isAsync) {
+        this._addDeclaredVar(frame, node.name.value);
+      }
     }
 
     // Define the loop body function
@@ -1355,10 +1361,12 @@ class Compiler extends Obj {
       this.emit.Line(`frame.set("${keyVar}", ${keyVar});`);
       this.emit.Line(`frame.set("${valueVar}", ${valueVar});`);
 
-      frame.set(keyVar, keyVar);
-      frame.set(valueVar, valueVar);
-      this._addDeclaredVar(frame, keyVar);
-      this._addDeclaredVar(frame, valueVar);
+      if (node.isAsync) {
+        frame.set(keyVar, keyVar);
+        frame.set(valueVar, valueVar);
+        this._addDeclaredVar(frame, keyVar);
+        this._addDeclaredVar(frame, valueVar);
+      }
     } else if (node.name instanceof nodes.Array) {
       // Array destructuring
       node.name.children.forEach((child, index) => {
@@ -1366,15 +1374,19 @@ class Compiler extends Obj {
         const tid = this._tmpid();
         this.emit.Line(`let ${tid} = Array.isArray(${varName}) ? ${varName}[${index}] : undefined;`);
         this.emit.Line(`frame.set("${varName}", ${tid});`);
-        frame.set(varName, tid);
-        this._addDeclaredVar(frame, varName);
+        if (node.isAsync) {
+          frame.set(varName, tid);
+          this._addDeclaredVar(frame, varName);
+        }
       });
     } else {
       // Single variable loop
       const varName = node.name.value;
       this.emit.Line(`frame.set("${varName}", ${varName});`);
-      frame.set(varName, varName);
-      this._addDeclaredVar(frame, varName);
+      if (node.isAsync) {
+        frame.set(varName, varName);
+        this._addDeclaredVar(frame, varName);
+      }
     }
 
     // Compile the loop body with the updated frame
@@ -1481,13 +1493,13 @@ class Compiler extends Obj {
       node.name.children.forEach((name) => {
         const id = name.value;
         frame.set(id, id);
-        this._addDeclaredVar(frame, id);
+        //this._addDeclaredVar(frame, id);
         this.emit.Line(`frame.set("${id}", ${id});`);
       });
     } else {
       const id = node.name.value;
       this.emit.Line(`runtime.${asyncMethod}(${arr}, 1, function(${id}, ${i}, ${len},next) {`);
-      this._addDeclaredVar(frame, id);
+      //this._addDeclaredVar(frame, id);
       this.emit.Line('frame.set("' + id + '", ' + id + ');');
       frame.set(id, id);
     }
@@ -1611,14 +1623,18 @@ class Compiler extends Obj {
     args.forEach((arg) => {
       this.emit.Line(`frame.set("${arg.value}", l_${arg.value});`);
       currFrame.set(arg.value, `l_${arg.value}`);
-      this._addDeclaredVar(currFrame, arg.value);
+      if (node.isAsync) {
+        this._addDeclaredVar(currFrame, arg.value);
+      }
     });
 
     // Expose the keyword arguments
     if (kwargs) {
       kwargs.children.forEach((pair) => {
         const name = pair.key.value;
-        this._addDeclaredVar(currFrame, name);
+        if (node.isAsync) {
+          this._addDeclaredVar(currFrame, name);
+        }
         this.emit(`frame.set("${name}", `);
         this.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
         this.emit(` ? kwargs["${name}"] : `);
@@ -1627,7 +1643,9 @@ class Compiler extends Obj {
       });
     }
 
-    this._addDeclaredVar(currFrame, 'caller');
+    if (node.isAsync) {
+      this._addDeclaredVar(currFrame, 'caller');
+    }
     const bufferId = this._pushBuffer();
 
     this.emit._withScopedSyntax(() => {
@@ -1737,7 +1755,9 @@ class Compiler extends Obj {
     }
 
     frame.set(target, id);
-    this._addDeclaredVar(frame, target);
+    if (node.isAsync) {
+      this._addDeclaredVar(frame, target);
+    }
 
     if (frame.parent) {
       this.emit.Line(`frame.set("${target}", ${id});`);
@@ -1812,7 +1832,9 @@ class Compiler extends Obj {
       }
 
       frame.set(alias, id);
-      this._addDeclaredVar(frame, alias);
+      if (node.isAsync) {
+        this._addDeclaredVar(frame, alias);
+      }
 
       if (frame.parent) {
         this.emit.Line(`frame.set("${alias}", ${id});`);
@@ -1889,7 +1911,9 @@ class Compiler extends Obj {
       this.emit._addScopeLevel();
     }
     frame.set(id, id);
-    this._addDeclaredVar(frame, id);
+    if (node.isAsync) {
+      this._addDeclaredVar(frame, id);
+    }
   }
 
   compileExtends(node, frame) {
