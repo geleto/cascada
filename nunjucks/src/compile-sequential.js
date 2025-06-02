@@ -26,10 +26,11 @@ module.exports = class CompileSequential {
         }
       }
     }
-    this._assignAsyncBlockWrappers(node, f);
+    this._assignAsyncWrappersAndReleases(node, f);
     this._pushAsyncWrapDownTree(node);
 
   }
+
   _extractStaticPathKey(node) {
     // Check if the input node itself is valid to start a path extraction
     if (!node || (node.typename !== 'LookupVal' && node.typename !== 'Symbol')) {
@@ -60,130 +61,179 @@ module.exports = class CompileSequential {
     return '!' + parts.join('!');
   }
 
-  _assignAsyncBlockWrappers(node, frame) {
+  // Traverses the AST to identify all LOCK and PATH operations and aggregates them up, marking CONTENDED states.
+  // It also handles the funCallLockKey propagation to avoid self-contention.
+  _collectSequenceKeysAndOperations(node, frame, funCallLockKey = null) {
     node.sequenceOperations = new Map();
-    let lockedFunCall = false;
-    if (node instanceof nodes.Symbol || node instanceof nodes.LookupVal) {
-      //path - Determine if currentNode has a sequence locked static path
-      let pathKey = this._extractStaticPathKey(node);
-      if (pathKey) {
-        // currentNode is a Symbol or LookupVal accessing a potentially locked path.
-        // This represents the *read* operation on that path.
-        node.sequencePathKey = pathKey;
+    node.isFunCallLocked = false;
+    node.lockKey = null;
+
+    // Identify PATH Waiters & Perform Sanity Checks for `node.sequenced`
+    if (node.sequenced) {
+      // node.sequenced is true if '!' is directly on this Symbol/LookupVal
+      const currentPathKey = this._extractStaticPathKey(node); // Key for this specific node
+      if (!funCallLockKey) {
+        this.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
+      } else if (funCallLockKey !== currentPathKey) {
+        this.fail('Cannot use more than one sequence marker (!) in a single effective path segment.', node.lineno, node.colno, node);
+      }
+      // No PATH operation is added here for this key because it's "covered" by the parent FunCall's LOCK.
+    } else if ((node instanceof nodes.Symbol || node instanceof nodes.LookupVal)) {
+      // Still need to identify PATH waiters for nodes that are *not* `node.sequenced` themselves
+      // but are on a path that *is* sequenced by a FunCall elsewhere.
+      const pathKey = this._extractStaticPathKey(node);
+      if (pathKey && pathKey !== funCallLockKey && this._isDeclared(frame.sequenceLockFrame, pathKey)) {
+        // this is a path that is static
+        // is declared as a sequence lock
+        // and is not the lock key being originated by an immediate FunCall parent (funCallLockKey)
+        // in the later case the key will be handled by the funCall, not the path to it
         node.sequenceOperations.set(pathKey, SequenceOperationType.PATH);
+        node.lockKey = pathKey;
       }
     } else if (node instanceof nodes.FunCall) {
-      //call - Determin if the call has a sequence lock (`!` in the path)
-      let lockKey = this._getSequenceKey(node.name, frame);
+      // Identify FunCall LOCK
+      const lockKey = this._getSequenceKey(node.name, frame.sequenceLockFrame);
       if (lockKey) {
-        // currentNode is a FunCall with '!'
-        // This represents the *write* operation on that lock.
-        node.sequenceLockKey = lockKey;
         node.sequenceOperations.set(lockKey, SequenceOperationType.LOCK);
-        lockedFunCall = true;
-        node.wrapInAsyncBlock = true;//always wrap LOCK funCalls
+        funCallLockKey = lockKey;//this wil stop the node.name path from registering as a PATH waiter for the same key
+        node.isFunCallLocked = true;
+        node.lockKey = lockKey;
       }
     }
 
-    const children = this.compiler._getImmediateChildren(node);
+    // Recursive Call & Aggregate sequenceOperations
+    const children = this._getImmediateChildren(node);
     for (const child of children) {
-      this._assignAsyncBlockWrappers(child, frame);
-      if (!child.sequenceOperations) {
+
+      // pass down the funCall lock key down the node.name FunCall child
+      // so that we won't register the path part as a separate PATH waiter for the same key as the FunCall LOCK
+      const lockKey = (node.isFunCallLocked && child === node.name) ? node.lockKey : funCallLockKey;
+      this._collectSequenceKeysAndOperations(child, frame, lockKey);
+
+      if (!child.sequenceOperations || child.sequenceOperations.size === 0) {
         continue;
       }
+
       for (const [key, childValue] of child.sequenceOperations) {
-        if (lockedFunCall && child === node.name && key === node.sequenceLockKey) {
-          //the FunCall node always has the same lock key as a path inside the node.name lookupVal
-          if (childValue !== SequenceOperationType.PATH) {
-            //that node should always be a PATH operation
-            throw new Error('Matching FunCall node lock key with node.name path key - operator must be PATH');
-          }
-          //ignore this matching key in operator merge as this would create a fake CONTENDED
-          continue;
-        }
-        //if any operation has a lock (including 2 locks) - it is contended
         const parentValue = node.sequenceOperations.get(key);
-        if (parentValue === undefined || (parentValue === childValue && parentValue !== SequenceOperationType.LOCK)) {
-          //no parent with that key or parent and child have same operation type
+        // Merge sequenceOperations if the child has the same key
+        if (parentValue === undefined || (parentValue === childValue && childValue !== SequenceOperationType.LOCK)) {
+          //no parent or same type(but not LOCK + LOCK)
           node.sequenceOperations.set(key, childValue);
         } else {
-          //parent and child have different operation types or are both locks
+          //different types or LOCK + LOCK => contention
           node.sequenceOperations.set(key, SequenceOperationType.CONTENDED);
         }
       }
     }
+  }
+
+  // The node is wrapped if there is no contention and there aren't more than one locks.
+  //   Except if there is only one child with sequence operations - then the wrap test is passed down to that child
+  //@todo - no early wrapping of FunCall
+  _assignAsyncWrappersAndReleases(node, frame) {
+    //the sequence keys that will be released when the async block value is resolved (e.g. the funcall return resolves):
+    node.sequenceKeysToRelease = null;
+    node.wrapInAsyncBlock = false;
 
     if (node.sequenceOperations.size === 0) {
       node.sequenceOperations = null;
       return;
     }
 
-    //wrap the contended keys in async blocks at child nodes that are not contended
-    for (const [key, value] of node.sequenceOperations) {
-      if (value === SequenceOperationType.CONTENDED) {
-        for (const child of children) {
-          if (child.sequenceOperations && child.sequenceOperations.has(key)) {
-            this._asyncWrapKey(child, key);
+    let children;
+    let singleChildWithOperations = null;
+    if (!node.isFunCallLocked) {
+      //check if there is a single child with sequence operations and move the wrap test down to that child
+      //but only if the current node is not a sequence locked FunCall
+      children = this._getImmediateChildren(node);
+      for (const child of children) {
+        if (child.sequenceOperations) {
+          if (singleChildWithOperations) {
+            //no single child with sequence operations
+            singleChildWithOperations = null;
+            break;
           }
+          singleChildWithOperations = child;
         }
       }
     }
-  };
 
-  //wrap the bottom child nodes(closest to the root) where the key is not contended
-  _asyncWrapKey(node, key) {
-
-    const type = node.sequenceOperations.get(key);
-    if (type !== SequenceOperationType.CONTENDED) {
-      node.wrapInAsyncBlock = true;
+    if (singleChildWithOperations) {
+      // there is a single child with sequence operations
+      // move the wrap test down to that child
+      this._assignAsyncWrappersAndReleases(singleChildWithOperations, frame);
       return;
     }
 
-    for (const child of this.compiler._getImmediateChildren(node)) {
-      if (child.sequenceOperations && child.sequenceOperations.has(key)) {
-        this._asyncWrapKey(child, key);
+    let haveContended = false;
+    let lockCount = 0;
+
+    // iterate node.sequenceOperations, update lockCount and haveContended
+    for (const value of node.sequenceOperations.values()) {
+      if (value === SequenceOperationType.LOCK) {
+        lockCount++;
+      }
+      if (value === SequenceOperationType.CONTENDED) {
+        haveContended = true;
       }
     }
 
-    /*node.sequenceOperations.delete(key);
-    if (node.sequenceOperations.size === 0) {
-      delete node.sequenceOperations;
-    }*/
-  }
+    if (node.isFunCallLocked) {
+      // We have unwrapped FunCall - always wrap
+      node.wrapInAsyncBlock = true;
+      node.sequenceKeysToRelease = node.lockKey;
 
-  //if the node has no lock or path of it's own and only one child has all the same keys
-  //move the async wrap to that child
-  _pushAsyncWrapDownTree(node) {
-    const children = this.compiler._getImmediateChildren(node);
-    if (node.sequenceOperations && node.wrapInAsyncBlock && !node.sequenceLockKey && !node.sequencePathKey) {
-      let childWithKeys = null;
-      let childWithKeysCount = 0;
-      for (const child of children) {
-        const sop = child.sequenceOperations;
-        if (!sop) {
-          continue;
-        }
-        for (const key of node.sequenceOperations.keys()) {
-          if (sop.has(key)) {
-            childWithKeys = child;
-            childWithKeysCount++;
-            break;
+      if (!haveContended && lockCount === 1) {
+        return;//no more wrapping needed for the children
+      }
+
+      //wrap only nodes (from the arguments) that have created a contention
+      //by having CONTENTION or having a LOCK
+      for (const child of children ?? this._getImmediateChildren(node)) {
+        if (child.sequenceOperations && child !== node.name) {
+          //search for lock or contention in child.sequenceOperations
+          for (const value of child.sequenceOperations.values()) {
+            if (value === SequenceOperationType.LOCK || value === SequenceOperationType.CONTENDED) {
+              this._assignAsyncWrappersAndReleases(child, frame);
+              break;
+            }
           }
         }
-        if (childWithKeysCount > 1) {
-          childWithKeys = null;
-          break;
-        }
       }
-      if (childWithKeys) {
-        //only one child has all the same keys
-        //move the async wrap to that child (it may already be wrapped)
-        node.wrapInAsyncBlock = false;
-        childWithKeys.wrapInAsyncBlock = true;
+      return;
+    }
+
+    if (!haveContended && lockCount === 0) {
+      // No contention and no locks
+      // The async wrap will make sure all PATHs await their LOCKs (if they were promisified before the block)
+      // The block also promisifies the PATH sequence keys making sure no further FunCall is called before the PATHs are resolved
+      // The block will also release the proper key when each PATH is resolved (not in the async block finally) by using frame.set(key, ...)
+      // unlike the FunCall case where the FunCall releases the key when the async block return is resolved
+      // but for this we need to store node.sequenceKeysToRelease at each PATH node:
+      this._assignPathReleaseKeys(node);
+      node.wrapInAsyncBlock = true;
+      return;//no more wrapping needed for the children
+    }
+
+    for (const child of children ?? this._getImmediateChildren(node)) {
+      if (child.sequenceOperations) {
+        this._assignAsyncWrappersAndReleases(child, frame);
       }
     }
+  }
+
+  // This may be unnecessary, every .sequenced path will use sequencedMemberLookupAsync or sequencedContextLookup
+  // Which handle the release of the lock key
+  _assignPathReleaseKeys(node) {
+    if (node.sequenceOperations && node.lockKey) {
+      node.sequenceKeysToRelease = node.lockKey;
+    }
+    const children = this._getImmediateChildren(node);
     for (const child of children) {
-      this._pushAsyncWrapDownTree(child);
+      if (child.sequenceOperations) {
+        this._assignPathReleaseKeys(child);
+      }
     }
   }
 
