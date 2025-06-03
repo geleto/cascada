@@ -11,15 +11,6 @@ const CompileEmit = require('./compile-emit');
 
 const OPTIMIZE_ASYNC = true;//optimize async operations
 
-// PathFlags for path propagation
-//@todo - use a variable instead of argument
-const PathFlags = {
-  NONE: 0,
-  CALL: 1 << 0,
-  CREATES_SEQUENCE_LOCK: 1 << 1,
-  WAITS_FOR_SEQUENCE_LOCK: 1 << 2,
-};
-
 // these are nodes that may perform async operations even if their children do not
 const asyncOperationNodes = new Set([
   //expression nodes
@@ -348,7 +339,7 @@ class Compiler extends Obj {
     }
   }
 
-  compileSymbol(node, frame, pathFlags = PathFlags.NONE) {
+  compileSymbol(node, frame) {
 
     let name = node.value;
     let v = frame.lookup(name);
@@ -372,15 +363,6 @@ class Compiler extends Obj {
         return;
       }
 
-      if (node.sequenced) {
-        if (!(pathFlags & PathFlags.CALL)) {
-          this.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
-        }
-        if (pathFlags & PathFlags.CREATES_SEQUENCE_LOCK) {
-          this.fail('Can not use more than one sequence marker (!) in a path', node.lineno, node.colno, node);
-        }
-      }
-
       this._updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
 
       let nodeStaticPathKey = this.sequential._extractStaticPathKey(node);
@@ -401,7 +383,6 @@ class Compiler extends Obj {
           this.emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
         };
 
-        //if (!(pathFlags & (PathFlags.WAITS_FOR_SEQUENCE_LOCK | PathFlags.CALL))) {
         if (node.wrapInAsyncBlock) {
           // Wrap in an async block if pre-analysis determined it's necessary for contention.
           this.emit.AsyncBlockValue(node, frame, emitSequencedLookup, undefined, node);
@@ -653,37 +634,22 @@ class Compiler extends Obj {
     }
   }
 
-  compileLookupVal(node, frame, pathFlags = PathFlags.NONE) {
+  compileLookupVal(node, frame) {
     if (node.isAsync) {
       // Check if sequenced flag is used inappropriately
-      if (node.sequenced) {
-        if (!(pathFlags & PathFlags.CALL)) {
-          this.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
-        }
-        if (pathFlags & PathFlags.CREATES_SEQUENCE_LOCK) {
-          this.fail('Can not use more than one sequence marker (!) in a path', node.lineno, node.colno, node);
-        }
-      }
-
-      // Add SEQUENCED flag if node is marked
-      if (node.sequenced) {
-        pathFlags |= PathFlags.CREATES_SEQUENCE_LOCK;
-      }
       let nodeStaticPathKey = this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
         /*const keyRoot = nodeStaticPathKey.substring(1, nodeStaticPathKey.indexOf('!', 1));
         if (this._isDeclared(frame, keyRoot)) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }*/
-        //const wrapInAsyncBlock = !(pathFlags & (PathFlags.WAITS_FOR_SEQUENCE_LOCK | PathFlags.CALL));
-        pathFlags |= PathFlags.WAITS_FOR_SEQUENCE_LOCK;//do not wrap anymore
         const emitSequencedLookup = (f) => {
           //register the static path key as variable write so the next lock would wait for it
           //multiple static path keys can be in the same block
           this._updateFrameWrites(f, nodeStaticPathKey);
           // Use sequenced lookup as a lock for this node exists
           this.emit(`runtime.sequencedMemberLookupAsync(frame, (`);
-          this.compile(node.target, f, pathFlags); // Mark target as part of a call path
+          this.compile(node.target, f); // Mark target as part of a call path
           this.emit('),');
           this.compile(node.val, f); // Compile key expression
           this.emit(`, ${JSON.stringify(nodeStaticPathKey)})`); // Pass the key
@@ -701,7 +667,7 @@ class Compiler extends Obj {
 
     // Standard member lookup (sync or async without sequence)
     this.emit(`runtime.memberLookup${node.isAsync ? 'Async' : ''}((`);
-    this.compile(node.target, frame, pathFlags); // Mark target as part of a call path
+    this.compile(node.target, frame); // Mark target as part of a call path
     this.emit('),');
     this.compile(node.val, frame);
     this.emit(')');
@@ -742,7 +708,7 @@ class Compiler extends Obj {
     }
   }
 
-  compileFunCall(node, frame, pathFlags) {
+  compileFunCall(node, frame) {
     // Keep track of line/col info at runtime by setting
     // variables within an expression (SYNC MODE ONLY).
     if (!this.asyncMode) {
@@ -787,7 +753,7 @@ class Compiler extends Obj {
         this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
           if (!sequenceLockKey) {
             this.emit(`return runtime.callWrap(`);
-            this.compile(node.name, frame, PathFlags.CALL);
+            this.compile(node.name, frame);
             this.emit.Line(`, "${funcName}", context, ${result});`);
           } else {
             const emitCallback = (f) => {
@@ -795,7 +761,7 @@ class Compiler extends Obj {
               //this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
               //this.emit(`runtime.sequencedCallWrap(`);
               this.emit(`runtime.callWrap(`);
-              this.compile(node.name, f, PathFlags.CALL);
+              this.compile(node.name, f);
               this.emit.Line(`, "${funcName}", context, ${result});`);//, frame, "${sequenceLockKey}");`);
             };
             this.emit('return ');
@@ -809,8 +775,6 @@ class Compiler extends Obj {
         }); // Resolve arguments using _compileAggregate.
       } else {
         // Function name is dynamic, so resolve both function and arguments.
-        node.name.pathFlags = PathFlags.CALL;
-
         /*if (!sequenceLockKey) {*/
         const mergedNode = {
           isAsync: node.name.isAsync || node.args.isAsync,
@@ -841,8 +805,6 @@ class Compiler extends Obj {
             }
           });
         }*/
-
-        delete node.name.pathFlags;
 
 
         // Position node for aggregate is the function call itself (node)
@@ -2257,10 +2219,10 @@ class Compiler extends Obj {
     this.emit.Line('root: root\n};');
   }
 
-  compile(node, frame, pathFlags = PathFlags.NONE) {
+  compile(node, frame) {
     var _compile = this['compile' + node.typename];
     if (_compile) {
-      _compile.call(this, node, frame, pathFlags | node.pathFlags);
+      _compile.call(this, node, frame);
     } else {
       this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno, node);
     }
