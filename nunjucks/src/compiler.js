@@ -366,30 +366,19 @@ class Compiler extends Obj {
 
       this._updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
 
-      let nodeStaticPathKey = this.sequential._extractStaticPathKey(node);
+      let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
-        /*if (this._isDeclared(frame, node.value)) {
-          this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
-        }*/
         // This node accesses a declared sequence lock path.
-        //register the static path key as variable write so the next lock would wait for it
-        //multiple static path keys can be in the same block
-        //@todo - optimization: if there are no further funCalls with lock on the path
-        //we can use _updateFrameReads. The last funCall can record false in the lock value
-        //to indicate all further paths locked by it that they don't need to make a lock for further funCalls
-        //hence we can use _updateFrameReads for all of them
+        // Register the static path key as variable write so the next lock would wait for it
+        // Multiple static path keys can be in the same block
+        // @todo - optimization: if there are no further funCalls with lock on the path
+        // we can use _updateFrameReads. The last funCall can record false in the lock value
+        // to indicate all further paths locked by it that they don't need to make a lock for further funCalls
+        // hence we can use _updateFrameReads for all of them
         this._updateFrameWrites(frame, nodeStaticPathKey);
-        //use the sequenced lookup
+        // Use sequenced lookup as a lock for this node exists
+        // sequencedContextLookup will `set` the path key, thus releasing it (by decrementing the lock writeCount)
         this.emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
-        //};
-
-        //if (node.wrapInAsyncBlock) {
-        // Wrap in an async block if pre-analysis determined it's necessary for contention.
-        //  this.emit.AsyncBlockValue(node, frame, emitSequencedLookup, undefined, node);
-        //} else {
-        // Emit without an additional async block wrapper.
-        //emitSequencedLookup(node, frame);
-        //}
         return;
       }
     }
@@ -637,30 +626,17 @@ class Compiler extends Obj {
   compileLookupVal(node, frame) {
     if (node.isAsync) {
       // Check if sequenced flag is used inappropriately
-      let nodeStaticPathKey = this.sequential._extractStaticPathKey(node);
+      let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
-        /*const keyRoot = nodeStaticPathKey.substring(1, nodeStaticPathKey.indexOf('!', 1));
-        if (this._isDeclared(frame, keyRoot)) {
-          this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
-        }*/
-        //const emitSequencedLookup = (n, f) => {
         //register the static path key as variable write so the next lock would wait for it
         //multiple static path keys can be in the same block
         this._updateFrameWrites(frame, nodeStaticPathKey);
-        // Use sequenced lookup as a lock for this node exists
+        // This will also release the lock by using `set` on the lock value decrementing writeCount:
         this.emit(`runtime.sequencedMemberLookupAsync(frame, (`);
         this.compile(node.target, frame); // Mark target as part of a call path
         this.emit('),');
         this.compile(node.val, frame); // Compile key expression
         this.emit(`, ${JSON.stringify(nodeStaticPathKey)})`); // Pass the key
-        /*};
-        if (node.wrapInAsyncBlock) {
-          // Wrap in an async block if pre-analysis determined it's necessary for contention.
-          // Use node.val as the positionNode for the async block value if it exists, else node.
-          this.emit.AsyncBlockValue(node, frame, emitSequencedLookup, undefined, node.val || node);
-        } else {
-          emitSequencedLookup(node, frame);//emit without async block
-        }*/
         return;
       }
     }
@@ -719,116 +695,46 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
 
-      const sequenceLockKey = this.sequential._getSequenceKey(node.name, frame);
+      const sequenceLockKey = node.lockKey;//this.sequential._getSequenceKey(node.name, frame);
       if (sequenceLockKey) {
         let index = sequenceLockKey.indexOf('!', 1);
         const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
         if (this._isDeclared(frame, keyRoot)) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }
-      }
-      /*if (sequenceLockKey) {
         this._updateFrameWrites(frame, sequenceLockKey);
-      }*/
-
-      //Wrap in async block if a sequence lock is declared
-      //because if the call is part of an expression, it will may be wrapped in the same async block
-      // with other calls that have their own sequence locks
-      //const wrapInAsyncBlock = sequenceLockKey && !(pathFlags & PathFlags.WAITS_FOR_SEQUENCE_LOCK);//if waiting for the lock, it will be already wrapped
-
-      //@todo - node.name? or only in compileLookup and compileSymbol?
-
-      //@todo - finish async name handling
+      }
       let asyncName = node.name.isAsync;
       if (node.name.typename === 'Symbol' && !frame.lookup(node.name.value)) {
         asyncName = false;
       }
       asyncName = true;
-      if (!asyncName) {
-        //@todo - not used for now
-        //We probably need some static analysis to know for sure a name is not async
-        // {% set asyncFunc = getAsyncFunction() %}
-        // {{ asyncFunc(arg1, arg2) }}
-        // Function name is not async, so resolve only the arguments.
-        this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
-          if (!sequenceLockKey) {
-            this.emit(`return runtime.callWrap(`);
-            this.compile(node.name, frame);
-            this.emit.Line(`, "${funcName}", context, ${result});`);
-          } else {
-            //const emitCallback = (n, f) => {
-            //we're not counting the writes here, this will be done from the key path lookupVal/symbol
-            //this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
-            //this.emit(`runtime.sequencedCallWrap(`);
-            this.emit(`runtime.callWrap(`);
-            this.compile(node.name, frame);
-            this.emit.Line(`, "${funcName}", context, ${result});`);//, frame, "${sequenceLockKey}");`);
-            /*};
-            this.emit('return ');
-            if (node.wrapInAsyncBlock) {
-              // Position node is the function call itself
-              this.emit.AsyncBlockValue(node, frame, emitCallback, undefined, node);
-            } else {
-              emitCallback(node, frame);
-            }*/
-          }
-        }); // Resolve arguments using _compileAggregate.
-      } else {
+      if (asyncName) {
         // Function name is dynamic, so resolve both function and arguments.
-        /*if (!sequenceLockKey) {*/
         const mergedNode = {
           isAsync: node.name.isAsync || node.args.isAsync,
           children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
         };
         this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
-          this.emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
-        });
-        /*} else {
-          // Create a merged node to resolve both function path and arguments
-          // concurrently in a single resolveAll
-          const mergedNode = {
-            isAsync: node.name.isAsync || node.args.isAsync,
-            children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
-          };
-          this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
-            const emitCallback = (f) => {
-              //we're not counting the writes here, this will be done from the key path lookupVal/symbol
-              //this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
-              this.emit(`runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);//, frame, "${sequenceLockKey}");`);
-            };
-            this.emit('return ');
-            if (node.wrapInAsyncBlock) {
-              // Position node is the function call itself
-              this.emit.AsyncBlockValue(node, frame, emitCallback, undefined, node);
-            } else {
-              emitCallback(node, frame);
-            }
-          });
-        }*/
-
-
-        // Position node for aggregate is the function call itself (node)
-        /*this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
           if (!sequenceLockKey) {
             this.emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
           } else {
-            const emitCallback = (f) => {
-              //we're not counting the writes here, this will be done from the key path lookupVal/symbol
-              //this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
-              this.emit(`runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);//, frame, "${sequenceLockKey}");`);
-            };
-            this.emit('return ');
-            if (node.wrapInAsyncBlock) {
-              // Position node is the function call itself
-              this.emit.AsyncBlockValue(node, frame, emitCallback, undefined, node);
-            } else {
-              emitCallback(node, frame);
-            }
+            this.emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}");`);
           }
         });
-        delete node.name.pathFlags;*/
+      } else {
+        // not used for now
+        // @todo - finish async name handling
+        // We probably need some static analysis to know for sure a name is not async
+        // {% set asyncFunc = getAsyncFunction() %}
+        // {{ asyncFunc(arg1, arg2) }}
+        // Function name is not async, so resolve only the arguments.
+        this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
+          this.emit(`return runtime.callWrap(`);
+          this.compile(node.name, frame);
+          this.emit.Line(`, "${funcName}", context, ${result});`);
+        }); // Resolve arguments using _compileAggregate.
       }
-      // //(lineno, ... No closing parenthesis needed here for async mode
     } else {
       // In sync mode, compile as usual.
       this.emit('runtime.callWrap(');
