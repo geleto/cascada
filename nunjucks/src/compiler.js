@@ -441,7 +441,7 @@ class Compiler extends Obj {
 
     this.compile(key, frame);
     this.emit(': ');
-    this._compileExpression(val, frame);
+    this._compileExpression(val, frame, false);
   }
 
   compileInlineIf(node, frame) {
@@ -866,12 +866,6 @@ class Compiler extends Obj {
   }
 
   compileFilterAsync(node, frame) {
-    /*if(!this.insideExpression){
-      //async filters set a frame var with the result and often precede the control node that uses them
-      this._compileExpression(node, frame);
-      return;
-    }*/
-
     let name = node.name;
     let symbol = node.symbol.value;
 
@@ -884,7 +878,6 @@ class Compiler extends Obj {
       // Use node.args as the position node since it's what's being evaluated async
       this.emit.AsyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
-        //@todo - this should be done with _compileExpression in the future
         this._compileAggregate(n.args, f, '[', ']', true, false, function (result) {
           this.emit(`return env.getFilter("${name.value}").bind(env)(...${result});`);
         });
@@ -935,14 +928,14 @@ class Compiler extends Obj {
 
     if (node.value) {
       this.emit(ids.join(' = ') + ' = ');
-      if (node.isAsync) {
+      /*if (node.isAsync) {
         // Use node.value as the position node since it's the expression being evaluated
         this.emit.AsyncBlockValue(node, frame, (n, f) => {
-          this.compile(n.value, f);
+          this._compileExpression(n.value, f, true, node.value);
         }, undefined, node.value); // Pass value as code position
-      } else {
-        this._compileExpression(node.value, frame);
-      }
+      } else {*/
+      this._compileExpression(node.value, frame, true, node.value);
+      /*}*/
     } else {
       // set block
       this.emit(ids.join(' = ') + ' = ');
@@ -1102,13 +1095,13 @@ class Compiler extends Obj {
 
     // Emit switch statement
     this.emit('switch (');
-    this._compileAwaitedExpression(node.expr, frame);
+    this._compileAwaitedExpression(node.expr, frame, false);
     this.emit(') {');
 
     // Compile cases
     node.cases.forEach((c, i) => {
       this.emit('case ');
-      this._compileAwaitedExpression(c.cond, frame);
+      this._compileAwaitedExpression(c.cond, frame, false);
       this.emit(': ');
 
       branchPositions.push(this.codebuf.length);
@@ -1181,7 +1174,7 @@ class Compiler extends Obj {
     let trueBranchCodePos;
 
     this.emit('if(');
-    this._compileAwaitedExpression(node.cond, frame);
+    this._compileAwaitedExpression(node.cond, frame, false);
     this.emit('){');
 
     if (this.asyncMode) {
@@ -1268,7 +1261,7 @@ class Compiler extends Obj {
     // Evaluate the array expression
     const arr = this._tmpid();
     this.emit(`let ${arr} = `);
-    this._compileAwaitedExpression(node.arr, frame);
+    this._compileAwaitedExpression(node.arr, frame, false);
     this.emit.Line(';');
 
     // Determine loop variable names
@@ -1440,7 +1433,7 @@ class Compiler extends Obj {
     this.emit.Line('frame = frame.push();');
 
     this.emit('let ' + arr + ' = runtime.fromIterator(');
-    this._compileExpression(node.arr, frame);
+    this._compileExpression(node.arr, frame, false);
     this.emit.Line(');');
 
     if (node.name instanceof nodes.Array) {
@@ -1601,7 +1594,7 @@ class Compiler extends Obj {
         this.emit(`frame.set("${name}", `);
         this.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
         this.emit(` ? kwargs["${name}"] : `);
-        this._compileExpression(pair.value, currFrame);
+        this._compileExpression(pair.value, currFrame, false);
         this.emit(');');
       });
     }
@@ -1674,19 +1667,19 @@ class Compiler extends Obj {
       const getTemplateFunc = this._tmpid();
       this.emit.Line(`const ${getTemplateFunc} = runtime.promisify(env.getTemplate.bind(env));`);
       this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
-      if (wrapInAsyncBlock) {
+      /*if (wrapInAsyncBlock) {
         // Wrap the expression evaluation in an async block if needed, use template node position
         this.emit.AsyncBlockValue(node.template, frame, (n, f) => {
-          this._compileExpression(n, f);
+          this._compileExpression(n, f, true, positionNode);
         }, undefined, positionNode);
-      } else {
-        this._compileExpression(node.template, frame);
-      }
+      } else {*/
+      this._compileExpression(node.template, frame, wrapInAsyncBlock, positionNode);
+      /*}*/
       this.emit.Line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     } else {
       const cb = this._makeCallback(parentTemplateId);
       this.emit('env.getTemplate(');
-      this._compileExpression(node.template, frame);
+      this._compileExpression(node.template, frame, false);
       this.emit.Line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
     }
 
@@ -1927,7 +1920,7 @@ class Compiler extends Obj {
 
       // Get the template name expression
       this.emit(`let ${templateNameVar} = `);
-      this._compileExpression(node.template, f);
+      this._compileExpression(node.template, f, false);
       this.emit.Line(';');
 
       // getTemplate
@@ -2030,7 +2023,7 @@ class Compiler extends Obj {
         if (this.throwOnUndefined) {
           this.emit(`${node.isAsync ? 'await runtime.ensureDefinedAsync(' : 'runtime.ensureDefined('}`);
         }
-        this._compileExpression(child, frame);
+        this._compileExpression(child, frame, false);
         if (this.throwOnUndefined) {
           // Use child position for ensureDefined error
           this.emit(`,${child.lineno},${child.colno})`);
@@ -2240,19 +2233,20 @@ class Compiler extends Obj {
   }
 
   //todo - optimize, check for much more than literal
-  _compileAwaitedExpression(node, frame) {
+  _compileAwaitedExpression(node, frame, forceWrap) {
     if (node.isAsync) {
       this.emit('(await ');
-      this._compileExpression(node, frame);
+      this._compileExpression(node, frame, forceWrap);
       this.emit(')');
     } else {
-      this._compileExpression(node, frame);
+      this._compileExpression(node, frame, false);
     }
   }
 
-  _compileExpression(node, frame) {
-    // TODO: I'm not really sure if this type check is worth it or
-    // not.
+  // @todo - audit compileExpression and wrapping
+  // @todo - _compileExpression should take care of it's own async block wrapping
+  _compileExpression(node, frame, forceWrap, positionNode) {
+    // I'm not really sure if this type check is worth it or not.
     this.assertType(
       node,
       nodes.Literal,
@@ -2284,15 +2278,23 @@ class Compiler extends Obj {
       nodes.Compare,
       nodes.NodeList
     );
-    if (node.isAsync && this.emit.asyncClosureDepth === 0) {
+    if (node.isAsync && this.emit.asyncClosureDepth === 0 && !forceWrap) {
       // @todo - this check is incomplete (works only at top level) and we may move wrapping in async block here
       //this will change in the future - only if a child node need the frame
       this.fail('All expressions must be wrapped in an async IIFE', node.lineno, node.colno, node);
     }
     if (node.isAsync) {
       this.sequential.processExpression(node, frame);
+      if (forceWrap) {//@todo node.wrapInAsyncBlock
+        this.emit.AsyncBlockValue(node, frame, (n, f) => {
+          this.compile(n, f);
+        }, undefined, positionNode ?? node);
+      } else {
+        this.compile(node, frame);
+      }
+    } else {
+      this.compile(node, frame);
     }
-    this.compile(node, frame);
   }
 
   getCode() {
@@ -2312,7 +2314,7 @@ class Compiler extends Obj {
           // Expressions inside DO shouldn't be wrapped in another IIFE,
           // but if they were async, their results (promises) need handling.
           // We compile them directly here.
-          this._compileExpression(child, f);
+          this._compileExpression(child, f, false);
           this.emit.Line(';');
           // We only push actual promises to the wait list
           this.emit.Line(`if (${resultVar} && typeof ${resultVar}.then === 'function') ${promisesVar}.push(${resultVar});`);
@@ -2324,7 +2326,7 @@ class Compiler extends Obj {
       //this.emit.Line(';'); // Removed semicolon after block
     } else {
       node.children.forEach(child => {
-        this._compileExpression(child, frame);
+        this._compileExpression(child, frame, false);
         this.emit.Line(';');
       });
     }
