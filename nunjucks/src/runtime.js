@@ -1278,25 +1278,25 @@ function awaitSequenceLock(frame, lockKeyToAwait) {
 
 // Called in place of contextOrFrameLookup when the path has a sequence lock on it
 async function sequencedContextLookup(context, frame, name, nodeLockKey) {
-  await awaitSequenceLock(frame, nodeLockKey);
+  await awaitSequenceLock(frame, nodeLockKey);// acquire lock
   try {
-    return contextOrFrameLookup(context, frame, name);
+    return contextOrFrameLookup(context, frame, name);// perform lookup
   } finally {
-    frame.set(nodeLockKey, true, true);
+    frame.set(nodeLockKey, true, true);// release lock
   }
 }
 
 // Called in place of memberLookupAsync when the path has a sequence lock on it
 async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
-  await awaitSequenceLock(frame, nodeLockKey);
+  await awaitSequenceLock(frame, nodeLockKey);// acquire lock
   try {
     let resolvedTarget = target;
     if (target && typeof target.then === 'function') {
       resolvedTarget = await target;
     }
-    return memberLookup(resolvedTarget, key);
+    return memberLookup(resolvedTarget, key);// perform lookup
   } finally {
-    frame.set(nodeLockKey, true, true);
+    frame.set(nodeLockKey, true, true);// release lock
   }
 }
 

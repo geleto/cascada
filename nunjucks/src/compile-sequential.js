@@ -8,10 +8,29 @@ const SequenceOperationType = {
 };
 
 module.exports = class CompileSequential {
+
   constructor(compiler) {
     this.compiler = compiler;
   }
-  //@todo - directly to string
+
+  //@todo - public
+  _declareSequentialLocks(node, sequenceLockFrame) {
+    // Get immediate children using the _getImmediateChildren method
+    const children = this.compiler._getImmediateChildren(node);
+
+    // Process each child node
+    for (const child of children) {
+      this._declareSequentialLocks(child, sequenceLockFrame);
+    }
+
+    if (node.typename === 'FunCall') {
+      const key = this._getSequenceKey(node.name, sequenceLockFrame);
+      if (key) {
+        this.compiler._addDeclaredVar(sequenceLockFrame, key);
+      }
+    }
+  }
+
   processExpression(node, frame) {
     const f = new AsyncFrame();
     // copy declaredVars from frame to f, but only properties that start with `!`
@@ -26,9 +45,8 @@ module.exports = class CompileSequential {
         }
       }
     }
+    this._collectSequenceKeysAndOperations(node, f);
     this._assignAsyncWrappersAndReleases(node, f);
-    this._pushAsyncWrapDownTree(node);
-
   }
 
   _extractStaticPathKey(node) {
@@ -73,16 +91,16 @@ module.exports = class CompileSequential {
       // node.sequenced is true if '!' is directly on this Symbol/LookupVal
       const currentPathKey = this._extractStaticPathKey(node); // Key for this specific node
       if (!funCallLockKey) {
-        this.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
+        this.compiler.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
       } else if (funCallLockKey !== currentPathKey) {
-        this.fail('Cannot use more than one sequence marker (!) in a single effective path segment.', node.lineno, node.colno, node);
+        this.compiler.fail('Cannot use more than one sequence marker (!) in a single effective path segment.', node.lineno, node.colno, node);
       }
       // No PATH operation is added here for this key because it's "covered" by the parent FunCall's LOCK.
     } else if ((node instanceof nodes.Symbol || node instanceof nodes.LookupVal)) {
       // Still need to identify PATH waiters for nodes that are *not* `node.sequenced` themselves
       // but are on a path that *is* sequenced by a FunCall elsewhere.
       const pathKey = this._extractStaticPathKey(node);
-      if (pathKey && pathKey !== funCallLockKey && this._isDeclared(frame.sequenceLockFrame, pathKey)) {
+      if (pathKey && pathKey !== funCallLockKey && this.compiler._isDeclared(frame.sequenceLockFrame, pathKey)) {
         // this is a path that is static
         // is declared as a sequence lock
         // and is not the lock key being originated by an immediate FunCall parent (funCallLockKey)
@@ -102,7 +120,7 @@ module.exports = class CompileSequential {
     }
 
     // Recursive Call & Aggregate sequenceOperations
-    const children = this._getImmediateChildren(node);
+    const children = this.compiler._getImmediateChildren(node);
     for (const child of children) {
 
       // pass down the funCall lock key down the node.name FunCall child
@@ -136,6 +154,10 @@ module.exports = class CompileSequential {
     node.sequenceKeysToRelease = null;
     node.wrapInAsyncBlock = false;
 
+    if (!node.sequenceOperations) {
+      return;
+    }
+
     if (node.sequenceOperations.size === 0) {
       node.sequenceOperations = null;
       return;
@@ -146,7 +168,7 @@ module.exports = class CompileSequential {
     if (!node.isFunCallLocked) {
       //check if there is a single child with sequence operations and move the wrap test down to that child
       //but only if the current node is not a sequence locked FunCall
-      children = this._getImmediateChildren(node);
+      children = this.compiler._getImmediateChildren(node);
       for (const child of children) {
         if (child.sequenceOperations) {
           if (singleChildWithOperations) {
@@ -190,7 +212,7 @@ module.exports = class CompileSequential {
 
       //wrap only nodes (from the arguments) that have created a contention
       //by having CONTENTION or having a LOCK
-      for (const child of children ?? this._getImmediateChildren(node)) {
+      for (const child of children ?? this.compiler._getImmediateChildren(node)) {
         if (child.sequenceOperations && child !== node.name) {
           //search for lock or contention in child.sequenceOperations
           for (const value of child.sequenceOperations.values()) {
@@ -216,7 +238,7 @@ module.exports = class CompileSequential {
       return;//no more wrapping needed for the children
     }
 
-    for (const child of children ?? this._getImmediateChildren(node)) {
+    for (const child of children ?? this.compiler._getImmediateChildren(node)) {
       if (child.sequenceOperations) {
         this._assignAsyncWrappersAndReleases(child, frame);
       }
@@ -229,7 +251,7 @@ module.exports = class CompileSequential {
     if (node.sequenceOperations && node.lockKey) {
       node.sequenceKeysToRelease = node.lockKey;
     }
-    const children = this._getImmediateChildren(node);
+    const children = this.compiler._getImmediateChildren(node);
     for (const child of children) {
       if (child.sequenceOperations) {
         this._assignPathReleaseKeys(child);
@@ -237,7 +259,7 @@ module.exports = class CompileSequential {
     }
   }
 
-  //public
+  //@todo - public
   _getSequenceKey(node, frame) {
     let path = this._getSequencedPath(node, frame);
     return path ? '!' + path.join('!') : null;
@@ -365,7 +387,7 @@ module.exports = class CompileSequential {
 
       // Final Validation: Check Root Origin (Context vs. Scope)
       // Ensure the path doesn't start with a variable declared in the template scope.
-      /*if (path.length > 0 && this._isDeclared(frame, path[0])) {
+      /*if (path.length > 0 && this.compiler._isDeclared(frame, path[0])) {
         // Path starts with a template variable (e.g., {% set myVar = {} %}{{ myVar!['key'].call() }})
         // Sequencing is only for context variables.
         if (this.isCompilingMacroBody) {

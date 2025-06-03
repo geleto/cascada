@@ -811,15 +811,15 @@ class Compiler extends Obj {
         // Function name is dynamic, so resolve both function and arguments.
         node.name.pathFlags = PathFlags.CALL;
 
-        if (!sequenceLockKey) {
-          const mergedNode = {
-            isAsync: node.name.isAsync || node.args.isAsync,
-            children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
-          };
-          this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
-            this.emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
-          });
-        } else {
+        /*if (!sequenceLockKey) {*/
+        const mergedNode = {
+          isAsync: node.name.isAsync || node.args.isAsync,
+          children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
+        };
+        this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
+          this.emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
+        });
+        /*} else {
           // Create a merged node to resolve both function path and arguments
           // concurrently in a single resolveAll
           const mergedNode = {
@@ -840,7 +840,7 @@ class Compiler extends Obj {
               emitCallback(frame);
             }
           });
-        }
+        }*/
 
         delete node.name.pathFlags;
 
@@ -2104,6 +2104,7 @@ class Compiler extends Obj {
 
   // Retrieves the direct child AST nodes of a given nodebby iterating over all properties
   // and checking if they are instances of nodes.Node or arrays of nodes.Node
+  // @todo public
   _getImmediateChildren(node) {
     const children = [];
 
@@ -2168,23 +2169,6 @@ class Compiler extends Obj {
     return hasAsync;
   }
 
-  _declareSequentialLocks(node, sequenceLockFrame) {
-    // Get immediate children using the _getImmediateChildren method
-    const children = this._getImmediateChildren(node);
-
-    // Process each child node
-    for (const child of children) {
-      this._declareSequentialLocks(child, sequenceLockFrame);
-    }
-
-    if (node.typename === 'FunCall') {
-      const key = this.sequential._getSequenceKey(node.name, sequenceLockFrame);
-      if (key) {
-        this._addDeclaredVar(sequenceLockFrame, key);
-      }
-    }
-  }
-
   compileRoot(node, frame) {
 
     if (frame) {
@@ -2195,7 +2179,7 @@ class Compiler extends Obj {
 
     if (this.asyncMode) {
       this._propagateIsAsync(node);
-      this._declareSequentialLocks(node, frame.sequenceLockFrame);
+      this.sequential._declareSequentialLocks(node, frame.sequenceLockFrame);
     }
 
     this.emit.FuncBegin(node, 'root');
@@ -2338,6 +2322,7 @@ class Compiler extends Obj {
       nodes.NodeList
     );
     if (node.isAsync && this.emit.asyncClosureDepth === 0) {
+      // @todo - this check is incomplete (works only at top level) and we may move wrapping in async block here
       //this will change in the future - only if a child node need the frame
       this.fail('All expressions must be wrapped in an async IIFE', node.lineno, node.colno, node);
     }
