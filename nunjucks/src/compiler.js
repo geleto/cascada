@@ -372,25 +372,24 @@ class Compiler extends Obj {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }*/
         // This node accesses a declared sequence lock path.
-        const emitSequencedLookup = (_node, f) => {
-          //register the static path key as variable write so the next lock would wait for it
-          //multiple static path keys can be in the same block
-          //@todo - optimization: if there are no further funCalls with lock on the path
-          //we can use _updateFrameReads. The last funCall can record false in the lock value
-          //to indicate all further paths locked by it that they don't need to make a lock for further funCalls
-          //hence we can use _updateFrameReads for all of them
-          this._updateFrameWrites(f, nodeStaticPathKey);
-          //use the sequenced lookup
-          this.emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
-        };
+        //register the static path key as variable write so the next lock would wait for it
+        //multiple static path keys can be in the same block
+        //@todo - optimization: if there are no further funCalls with lock on the path
+        //we can use _updateFrameReads. The last funCall can record false in the lock value
+        //to indicate all further paths locked by it that they don't need to make a lock for further funCalls
+        //hence we can use _updateFrameReads for all of them
+        this._updateFrameWrites(frame, nodeStaticPathKey);
+        //use the sequenced lookup
+        this.emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
+        //};
 
-        if (node.wrapInAsyncBlock) {
-          // Wrap in an async block if pre-analysis determined it's necessary for contention.
-          this.emit.AsyncBlockValue(node, frame, emitSequencedLookup, undefined, node);
-        } else {
-          // Emit without an additional async block wrapper.
-          emitSequencedLookup(node, frame);
-        }
+        //if (node.wrapInAsyncBlock) {
+        // Wrap in an async block if pre-analysis determined it's necessary for contention.
+        //  this.emit.AsyncBlockValue(node, frame, emitSequencedLookup, undefined, node);
+        //} else {
+        // Emit without an additional async block wrapper.
+        //emitSequencedLookup(node, frame);
+        //}
         return;
       }
     }
@@ -644,24 +643,24 @@ class Compiler extends Obj {
         if (this._isDeclared(frame, keyRoot)) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }*/
-        const emitSequencedLookup = (n, f) => {
-          //register the static path key as variable write so the next lock would wait for it
-          //multiple static path keys can be in the same block
-          this._updateFrameWrites(f, nodeStaticPathKey);
-          // Use sequenced lookup as a lock for this node exists
-          this.emit(`runtime.sequencedMemberLookupAsync(frame, (`);
-          this.compile(n.target, f); // Mark target as part of a call path
-          this.emit('),');
-          this.compile(n.val, f); // Compile key expression
-          this.emit(`, ${JSON.stringify(nodeStaticPathKey)})`); // Pass the key
-        };
+        //const emitSequencedLookup = (n, f) => {
+        //register the static path key as variable write so the next lock would wait for it
+        //multiple static path keys can be in the same block
+        this._updateFrameWrites(frame, nodeStaticPathKey);
+        // Use sequenced lookup as a lock for this node exists
+        this.emit(`runtime.sequencedMemberLookupAsync(frame, (`);
+        this.compile(node.target, frame); // Mark target as part of a call path
+        this.emit('),');
+        this.compile(node.val, frame); // Compile key expression
+        this.emit(`, ${JSON.stringify(nodeStaticPathKey)})`); // Pass the key
+        /*};
         if (node.wrapInAsyncBlock) {
           // Wrap in an async block if pre-analysis determined it's necessary for contention.
           // Use node.val as the positionNode for the async block value if it exists, else node.
           this.emit.AsyncBlockValue(node, frame, emitSequencedLookup, undefined, node.val || node);
         } else {
           emitSequencedLookup(node, frame);//emit without async block
-        }
+        }*/
         return;
       }
     }
@@ -757,21 +756,21 @@ class Compiler extends Obj {
             this.compile(node.name, frame);
             this.emit.Line(`, "${funcName}", context, ${result});`);
           } else {
-            const emitCallback = (n, f) => {
-              //we're not counting the writes here, this will be done from the key path lookupVal/symbol
-              //this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
-              //this.emit(`runtime.sequencedCallWrap(`);
-              this.emit(`runtime.callWrap(`);
-              this.compile(n.name, f);
-              this.emit.Line(`, "${funcName}", context, ${result});`);//, frame, "${sequenceLockKey}");`);
-            };
+            //const emitCallback = (n, f) => {
+            //we're not counting the writes here, this will be done from the key path lookupVal/symbol
+            //this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
+            //this.emit(`runtime.sequencedCallWrap(`);
+            this.emit(`runtime.callWrap(`);
+            this.compile(node.name, frame);
+            this.emit.Line(`, "${funcName}", context, ${result});`);//, frame, "${sequenceLockKey}");`);
+            /*};
             this.emit('return ');
             if (node.wrapInAsyncBlock) {
               // Position node is the function call itself
               this.emit.AsyncBlockValue(node, frame, emitCallback, undefined, node);
             } else {
               emitCallback(node, frame);
-            }
+            }*/
           }
         }); // Resolve arguments using _compileAggregate.
       } else {
@@ -2279,13 +2278,12 @@ class Compiler extends Obj {
       nodes.NodeList
     );
     if (node.isAsync && this.emit.asyncClosureDepth === 0 && !forceWrap) {
-      // @todo - this check is incomplete (works only at top level) and we may move wrapping in async block here
-      //this will change in the future - only if a child node need the frame
+      // some expressions compile await (@todo - check if so) so they need be in async context
       this.fail('All expressions must be wrapped in an async IIFE', node.lineno, node.colno, node);
     }
     if (node.isAsync) {
       this.sequential.processExpression(node, frame);
-      if (forceWrap) {//@todo node.wrapInAsyncBlock
+      if (forceWrap || node.wrapInAsyncBlock) {
         this.emit.AsyncBlockValue(node, frame, (n, f) => {
           this.compile(n, f);
         }, undefined, positionNode ?? node);
