@@ -2121,7 +2121,13 @@ class Compiler extends Obj {
   compile(node, frame) {
     var _compile = this['compile' + node.typename];
     if (_compile) {
-      _compile.call(this, node, frame);
+      if (node.wrapInAsyncBlock) {
+        this.emit.AsyncBlockValue(node, frame, (n, f) => {
+          _compile.call(this, n, f);
+        }, undefined, node);
+      } else {
+        _compile.call(this, node, frame);
+      }
     } else {
       this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno, node);
     }
@@ -2190,6 +2196,7 @@ class Compiler extends Obj {
     if (node.isAsync) {
       this.sequential.processExpression(node, frame);
       if (forceWrap || node.wrapInAsyncBlock) {
+        node.wrapInAsyncBlock = false;//so that compile won't wrap it and ignore positionNode
         this.emit.AsyncBlockValue(node, frame, (n, f) => {
           this.compile(n, f);
         }, undefined, positionNode ?? node);
