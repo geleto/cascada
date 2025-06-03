@@ -151,7 +151,7 @@ module.exports = class CompileEmit {
         res = this.compiler._tmpid();
         this.Line(`  let ${res} = `);
       }
-      emitFunc.call(this.compiler, frame);
+      emitFunc.call(this.compiler, node, frame);
       this.Line(';');
       //await ${res} to avoid unused vars throwing unhandled exceptions
       //and to make sure leaveAsyncBlock is called after the promise resolves
@@ -167,7 +167,7 @@ module.exports = class CompileEmit {
       frame = frame.pop();
 
     } else {
-      emitFunc(frame);
+      emitFunc(node, frame);
     }
   }
 

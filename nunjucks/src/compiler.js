@@ -371,7 +371,7 @@ class Compiler extends Obj {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }*/
         // This node accesses a declared sequence lock path.
-        const emitSequencedLookup = (f) => {
+        const emitSequencedLookup = (_node, f) => {
           //register the static path key as variable write so the next lock would wait for it
           //multiple static path keys can be in the same block
           //@todo - optimization: if there are no further funCalls with lock on the path
@@ -388,7 +388,7 @@ class Compiler extends Obj {
           this.emit.AsyncBlockValue(node, frame, emitSequencedLookup, undefined, node);
         } else {
           // Emit without an additional async block wrapper.
-          emitSequencedLookup(frame);
+          emitSequencedLookup(node, frame);
         }
         return;
       }
@@ -643,15 +643,15 @@ class Compiler extends Obj {
         if (this._isDeclared(frame, keyRoot)) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }*/
-        const emitSequencedLookup = (f) => {
+        const emitSequencedLookup = (n, f) => {
           //register the static path key as variable write so the next lock would wait for it
           //multiple static path keys can be in the same block
           this._updateFrameWrites(f, nodeStaticPathKey);
           // Use sequenced lookup as a lock for this node exists
           this.emit(`runtime.sequencedMemberLookupAsync(frame, (`);
-          this.compile(node.target, f); // Mark target as part of a call path
+          this.compile(n.target, f); // Mark target as part of a call path
           this.emit('),');
-          this.compile(node.val, f); // Compile key expression
+          this.compile(n.val, f); // Compile key expression
           this.emit(`, ${JSON.stringify(nodeStaticPathKey)})`); // Pass the key
         };
         if (node.wrapInAsyncBlock) {
@@ -659,7 +659,7 @@ class Compiler extends Obj {
           // Use node.val as the positionNode for the async block value if it exists, else node.
           this.emit.AsyncBlockValue(node, frame, emitSequencedLookup, undefined, node.val || node);
         } else {
-          emitSequencedLookup(frame);//emit without async block
+          emitSequencedLookup(node, frame);//emit without async block
         }
         return;
       }
@@ -756,12 +756,12 @@ class Compiler extends Obj {
             this.compile(node.name, frame);
             this.emit.Line(`, "${funcName}", context, ${result});`);
           } else {
-            const emitCallback = (f) => {
+            const emitCallback = (n, f) => {
               //we're not counting the writes here, this will be done from the key path lookupVal/symbol
               //this._updateFrameWrites(f, sequenceLockKey);//count the writes inside the async block
               //this.emit(`runtime.sequencedCallWrap(`);
               this.emit(`runtime.callWrap(`);
-              this.compile(node.name, f);
+              this.compile(n.name, f);
               this.emit.Line(`, "${funcName}", context, ${result});`);//, frame, "${sequenceLockKey}");`);
             };
             this.emit('return ');
@@ -769,7 +769,7 @@ class Compiler extends Obj {
               // Position node is the function call itself
               this.emit.AsyncBlockValue(node, frame, emitCallback, undefined, node);
             } else {
-              emitCallback(frame);
+              emitCallback(node, frame);
             }
           }
         }); // Resolve arguments using _compileAggregate.
@@ -801,7 +801,7 @@ class Compiler extends Obj {
               // Position node is the function call itself
               this.emit.AsyncBlockValue(node, frame, emitCallback, undefined, node);
             } else {
-              emitCallback(frame);
+              emitCallback(node, frame);
             }
           });
         }*/
@@ -822,7 +822,7 @@ class Compiler extends Obj {
               // Position node is the function call itself
               this.emit.AsyncBlockValue(node, frame, emitCallback, undefined, node);
             } else {
-              emitCallback(frame);
+              emitCallback(node, frame);
             }
           }
         });
@@ -881,10 +881,10 @@ class Compiler extends Obj {
     if (node.isAsync) {
       this.emit.Line(`let ${symbol} = `);
       // Use node.args as the position node since it's what's being evaluated async
-      this.emit.AsyncBlockValue(node, frame, (f) => {
+      this.emit.AsyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         //@todo - this should be done with _compileExpression in the future
-        this._compileAggregate(node.args, f, '[', ']', true, false, function (result) {
+        this._compileAggregate(n.args, f, '[', ']', true, false, function (result) {
           this.emit(`return env.getFilter("${name.value}").bind(env)(...${result});`);
         });
       }, undefined, node.args);
@@ -936,8 +936,8 @@ class Compiler extends Obj {
       this.emit(ids.join(' = ') + ' = ');
       if (node.isAsync) {
         // Use node.value as the position node since it's the expression being evaluated
-        this.emit.AsyncBlockValue(node, frame, (f) => {
-          this.compile(node.value, f);
+        this.emit.AsyncBlockValue(node, frame, (n, f) => {
+          this.compile(n.value, f);
         }, undefined, node.value); // Pass value as code position
       } else {
         this._compileExpression(node.value, frame);
@@ -946,8 +946,8 @@ class Compiler extends Obj {
       // set block
       this.emit(ids.join(' = ') + ' = ');
       // Use node.body as the position node since it's the block being evaluated
-      this.emit.AsyncBlockValue(node, frame, (f) => {
-        this.compile(node.body, f);
+      this.emit.AsyncBlockValue(node, frame, (n, f) => {
+        this.compile(n.body, f);
       }, undefined, node.body); // Pass body as code position
     }
     this.emit.Line(';');
@@ -1675,8 +1675,8 @@ class Compiler extends Obj {
       this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
       if (wrapInAsyncBlock) {
         // Wrap the expression evaluation in an async block if needed, use template node position
-        this.emit.AsyncBlockValue(node.template, frame, (f) => {
-          this._compileExpression(node.template, f);
+        this.emit.AsyncBlockValue(node.template, frame, (n, f) => {
+          this._compileExpression(n, f);
         }, undefined, positionNode);
       } else {
         this._compileExpression(node.template, frame);
@@ -1701,9 +1701,9 @@ class Compiler extends Obj {
       const res = this._tmpid();
       this.emit(`${id} = `);
       // Use node as position node for the getExported part
-      this.emit.AsyncBlockValue(node, frame, (f) => {
+      this.emit.AsyncBlockValue(node, frame, (n, f) => {
         this.emit.Line(`let ${res} = await ${id};`);
-        this.emit.Line(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${node.withContext
+        this.emit.Line(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${n.withContext
           ? `context.getVariables(), frame, astate`
           : `null, null, astate`
         });`);
@@ -1740,9 +1740,9 @@ class Compiler extends Obj {
       const res = this._tmpid();
       this.emit(`${importedId} = `);
       // Use node as position node for the getExported part
-      this.emit.AsyncBlockValue(node, frame, (f) => {
+      this.emit.AsyncBlockValue(node, frame, (n, f) => {
         this.emit.Line(`let ${res} = await ${importedId};`);
-        this.emit.Line(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${node.withContext
+        this.emit.Line(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${n.withContext
           ? `context.getVariables(), frame, astate`
           : `null, null, astate`
         });`);
@@ -1984,11 +1984,11 @@ class Compiler extends Obj {
     if (node.isAsync) {
       const res = this._tmpid();
       // Use node.body as position node for the capture block evaluation
-      this.emit.AsyncBlockValue(node, frame, (f) => {
+      this.emit.AsyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this.emit.Line('let output = [];');
 
-        this.compile(node.body, f);//write to output
+        this.compile(n.body, f);//write to output
 
         this.emit.Line('await astate.waitAllClosures(1)');
         this.emit.Line(`let ${res} = runtime.flattentBuffer(output);`);
