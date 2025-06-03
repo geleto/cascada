@@ -185,11 +185,12 @@ class Compiler extends Obj {
       if (i > 0) {
         this.emit(',');
       }
-      if (expressionRoot && startChar !== '{') {
+      /*if (expressionRoot && startChar !== '{') {
+        //arguments can only be in expression child nodes? So we should use regular compile?
         this._compileExpression(child, frame);
-      } else {
-        this.compile(child, frame);
-      }
+      } else {*/
+      this.compile(child, frame);
+      /*}*/
     });
   }
 
