@@ -577,7 +577,7 @@
         it('should REJECT double ! (path!.method!())', async () => {
           const template = `{{ sequencer!.runOp!('double', 50) }}`;
           await expectAsyncError(() => env.renderString(template, constraintContext), err => {
-            expect(err.message).to.contain('Can not use more than one sequence marker (!) in a path');
+            expect(err.message).to.contain('Cannot use more than one sequence marker (!)');
           });
         });
 
@@ -617,6 +617,7 @@
           expect(constraintContext.logs).to.eql(['deep1 on nested', 'deep2 on nested']);
         });
 
+        //@todo - fix some duplication with Constraint tests
         it('should reject ! on a dynamic property (object[expr]!.method)', async () => {
           const template = `{{ items[i]!.runOp('fail', 50) }}`;
           await expectAsyncError(() => env.renderString(template, constraintContext), err => {
@@ -642,13 +643,6 @@
           const template = `{{ sequencer![dynamicKey]('fail', 50) }}`;
           await expectAsyncError(() => env.renderString(template, constraintContext), err => {
             expect(err.message).to.contain('requires the entire path preceding it to consist of static string literal segments');
-          });
-        });
-
-        it('should reject double ! in the same path (object!.method!())', async () => {
-          const template = `{{ sequencer!.runOp!('fail', 50) }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
-            expect(err.message).to.contain('Can not use more than one sequence marker (!) in a path');
           });
         });
 
