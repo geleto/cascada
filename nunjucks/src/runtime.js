@@ -1254,24 +1254,13 @@ class AsyncState {
 
 function awaitSequenceLock(frame, lockKeyToAwait) {
   if (!lockKeyToAwait) {
-    // No key, no lock, no waiting needed.
-    return undefined; // Returning undefined is fine for `await` in the caller.
+    return undefined;
   }
 
-  // Use frame.lookup (modified in Step 4 to check .sequenceLockFrame for '!' keys)
   const lockState = frame.lookup(lockKeyToAwait);
 
-  // Check if the lock state is a promise
   if (lockState && typeof lockState.then === 'function') {
-    return (function resolveChain(currentPromise) {
-      return currentPromise.then(value => {
-        if (value && typeof value.then === 'function') {
-          //Recursively wait for this next promise in the chain.
-          return resolveChain(value);
-        }
-        return undefined;
-      });
-    })(lockState); // Start the resolution chain with the initial promise
+    return lockState; // JavaScript will automatically unwrap any nested promises
   } else {
     return undefined;
   }
