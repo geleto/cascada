@@ -49,36 +49,6 @@ module.exports = class CompileSequential {
     this._assignAsyncWrappersAndReleases(node, f);
   }
 
-  _extractStaticPathKey(node) {
-    // Check if the input node itself is valid to start a path extraction
-    if (!node || (node.typename !== 'LookupVal' && node.typename !== 'Symbol')) {
-      return null;
-    }
-
-    const parts = [];
-    let current = node;
-
-    while (current) {
-      if (current.typename === 'LookupVal') {
-        const valNode = current.val;
-        if (valNode.typename === 'Symbol') {
-          parts.unshift(valNode.value);
-        } else if (valNode.typename === 'Literal' && typeof valNode.value === 'string') {
-          parts.unshift(valNode.value);
-        } else {
-          return null; // Dynamic segment
-        }
-        current = current.target;
-      } else if (current.typename === 'Symbol') {
-        parts.unshift(current.value);
-        current = null; // Stop traversal
-      } else {
-        return null; // Unexpected node type in path
-      }
-    }
-    return '!' + parts.join('!');
-  }
-
   // Traverses the AST to identify all LOCK and PATH operations and aggregates them up, marking CONTENDED states.
   // It also handles the funCallLockKey propagation to avoid self-contention.
   _collectSequenceKeysAndOperations(node, frame, funCallLockKey = null) {
@@ -150,8 +120,6 @@ module.exports = class CompileSequential {
   //   Except if there is only one child with sequence operations - then the wrap test is passed down to that child
   //@todo - no early wrapping of FunCall
   _assignAsyncWrappersAndReleases(node, frame) {
-    //the sequence keys that will be released when the async block value is resolved (e.g. the funcall return resolves):
-    node.sequenceKeysToRelease = null;
     node.wrapInAsyncBlock = false;
 
     if (!node.sequenceOperations) {
@@ -204,7 +172,6 @@ module.exports = class CompileSequential {
     if (node.isFunCallLocked) {
       // We have unwrapped FunCall - always wrap
       node.wrapInAsyncBlock = true;
-      node.sequenceKeysToRelease = node.lockKey;
 
       if (!haveContended && lockCount === 1) {
         return;//no more wrapping needed for the children
@@ -232,8 +199,6 @@ module.exports = class CompileSequential {
       // The block also promisifies the PATH sequence keys making sure no further FunCall is called before the PATHs are resolved
       // The block will also release the proper key when each PATH is resolved (not in the async block finally) by using frame.set(key, ...)
       // unlike the FunCall case where the FunCall releases the key when the async block return is resolved
-      // but for this we need to store node.sequenceKeysToRelease at each PATH node:
-      this._assignPathReleaseKeys(node);
       node.wrapInAsyncBlock = true;
       return;//no more wrapping needed for the children
     }
@@ -245,19 +210,37 @@ module.exports = class CompileSequential {
     }
   }
 
-  // This may be unnecessary, every .sequenced path will use sequencedMemberLookupAsync or sequencedContextLookup
-  // Which handle the release of the lock key
-  _assignPathReleaseKeys(node) {
-    if (node.sequenceOperations && node.lockKey) {
-      node.sequenceKeysToRelease = node.lockKey;
+
+  _extractStaticPathKey(node) {
+    // Check if the input node itself is valid to start a path extraction
+    if (!node || (node.typename !== 'LookupVal' && node.typename !== 'Symbol')) {
+      return null;
     }
-    const children = this.compiler._getImmediateChildren(node);
-    for (const child of children) {
-      if (child.sequenceOperations) {
-        this._assignPathReleaseKeys(child);
+
+    const parts = [];
+    let current = node;
+
+    while (current) {
+      if (current.typename === 'LookupVal') {
+        const valNode = current.val;
+        if (valNode.typename === 'Symbol') {
+          parts.unshift(valNode.value);
+        } else if (valNode.typename === 'Literal' && typeof valNode.value === 'string') {
+          parts.unshift(valNode.value);
+        } else {
+          return null; // Dynamic segment
+        }
+        current = current.target;
+      } else if (current.typename === 'Symbol') {
+        parts.unshift(current.value);
+        current = null; // Stop traversal
+      } else {
+        return null; // Unexpected node type in path
       }
     }
+    return '!' + parts.join('!');
   }
+
 
   //@todo - public
   _getSequenceKey(node, frame) {

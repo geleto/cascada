@@ -8,16 +8,7 @@ const { Frame, AsyncFrame } = require('./runtime');
 const { Obj } = require('./object');
 const CompileSequential = require('./compile-sequential');
 const CompileEmit = require('./compile-emit');
-
-const OPTIMIZE_ASYNC = true;//optimize async operations
-
-// these are nodes that may perform async operations even if their children do not
-const asyncOperationNodes = new Set([
-  //expression nodes
-  'LookupVal', 'Symbol', 'FunCall', 'Filter', 'Caller', 'CallExtension', 'CallExtensionAsync', 'Is',
-  //control nodes
-  'Extends', 'Include', 'Import', 'FromImport', 'Super'
-]);
+const CompileAsync = require('./compile-async');
 
 // These are all the same for now, but shouldn't be passed straight
 // through
@@ -44,6 +35,7 @@ class Compiler extends Obj {
     this.asyncMode = asyncMode;
     this.sequential = new CompileSequential(this);
     this.emit = new CompileEmit(this);
+    this.async = new CompileAsync(this);
   }
 
   _generateErrorContext(node, positionNode) {
@@ -364,7 +356,7 @@ class Compiler extends Obj {
         return;
       }
 
-      this._updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
+      this.async.updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
 
       let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
@@ -375,7 +367,7 @@ class Compiler extends Obj {
         // we can use _updateFrameReads. The last funCall can record false in the lock value
         // to indicate all further paths locked by it that they don't need to make a lock for further funCalls
         // hence we can use _updateFrameReads for all of them
-        this._updateFrameWrites(frame, nodeStaticPathKey);
+        this.async.updateFrameWrites(frame, nodeStaticPathKey);
         // Use sequenced lookup as a lock for this node exists
         // sequencedContextLookup will `set` the path key, thus releasing it (by decrementing the lock writeCount)
         this.emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
@@ -630,7 +622,7 @@ class Compiler extends Obj {
       if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
         //register the static path key as variable write so the next lock would wait for it
         //multiple static path keys can be in the same block
-        this._updateFrameWrites(frame, nodeStaticPathKey);
+        this.async.updateFrameWrites(frame, nodeStaticPathKey);
         // This will also release the lock by using `set` on the lock value decrementing writeCount:
         this.emit(`runtime.sequencedMemberLookupAsync(frame, (`);
         this.compile(node.target, frame); // Mark target as part of a call path
@@ -702,7 +694,7 @@ class Compiler extends Obj {
         if (this._isDeclared(frame, keyRoot)) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }
-        this._updateFrameWrites(frame, sequenceLockKey);
+        this.async.updateFrameWrites(frame, sequenceLockKey);
       }
       let asyncName = node.name.isAsync;
       if (node.name.typename === 'Symbol' && !frame.lookup(node.name.value)) {
@@ -827,7 +819,7 @@ class Compiler extends Obj {
       ids.push(id);
 
       if (this.asyncMode) {
-        this._updateFrameWrites(frame, name);
+        this.async.updateFrameWrites(frame, name);
       }
     });
 
@@ -874,92 +866,6 @@ class Compiler extends Obj {
         this.emit.Line('}');
       }
     });
-  }
-
-  //@todo - do not store writes that will not be read by the parents
-  _updateFrameWrites(frame, name) {
-    //store the writes and variable declarations down the scope chain
-    //search for the var in the scope chain
-    let vf = frame;
-    if (name.startsWith('!')) {
-      // Sequence keys are conceptually declared at the root for propagation purposes.
-      // We add them in a separate pass with _propagateIsAsyncAndDeclareSequentialLocks
-      /*vf = frame.sequenceLockFrame;
-      if (!vf.declaredVars) {
-        vf.declaredVars = new Set();
-      }
-      vf.declaredVars.add(name);*/
-      while (vf.parent) {
-        vf = vf.parent;
-      }
-    } else {
-      do {
-        if (vf.declaredVars && vf.declaredVars.has(name)) {
-          break;//found the var in vf
-        }
-        if (vf.isolateWrites) {
-          vf = null;
-          break;
-        }
-        vf = vf.parent;
-      }
-      while (vf);
-
-      if (!vf) {
-        //the variable did not exist
-        //declare a new variable in the current frame (or a parent if !createScope)
-        vf = frame;
-        while (!vf.createScope) {
-          vf = vf.parent;//skip the frames that can not create a new scope
-        }
-        this._addDeclaredVar(vf, name);
-      }
-    }
-
-    //count the sets in the current frame/async block, propagate the first write down the chain
-    //do not count for the frame where the variable is declared
-    while (frame != vf) {
-      if (!frame.writeCounts || !frame.writeCounts[name]) {
-        frame.writeCounts = frame.writeCounts || {};
-        frame.writeCounts[name] = 1;//first write, countiune to the parent frames (only 1 write per async block is propagated)
-      } else {
-        frame.writeCounts[name]++;
-        break;//subsequent writes are not propagated
-      }
-      frame = frame.parent;
-    }
-  }
-
-  //@todo - handle included parent frames properly
-  _updateFrameReads(frame, name) {
-    //find the variable declaration in the scope chain
-    //let declared = false;
-    let df = frame;
-    do {
-      if (df.declaredVars && df.declaredVars.has(name)) {
-        //declared = true;
-        break;//found the var declaration
-      }
-      df = df.parent;
-    }
-    while (df);//&& !df.isolateWrites );
-
-    if (!df) {
-      //a context variable
-      return;
-    }
-
-    while (frame != df) {
-      if ((frame.readVars && frame.readVars.has(name)) || (frame.writeCounts && frame.writeCounts[name])) {
-        //found the var
-        //if it's already in readVars - skip
-        //if it's set here or by children - it will be snapshotted anyway, don't add
-        break;
-      }
-      frame.readVars = frame.readVars || new Set();
-      frame.readVars.add(name);
-      frame = frame.parent;
-    }
   }
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
@@ -1016,7 +922,7 @@ class Compiler extends Obj {
         // Use case body 'c.body' as position node for this block
         this.emit.AsyncBlock(c, frame, false, (f) => {
           this.compile(c.body, f);
-          branchWriteCounts.push(this.countsTo1(f.writeCounts) || {});
+          branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
         }, c.body); // Pass body as code position
         this.emit.Line('break;');
       }
@@ -1032,7 +938,7 @@ class Compiler extends Obj {
       // Use default body 'node.default' as position node for this block
       this.emit.AsyncBlock(node, frame, false, (f) => {
         this.compile(node.default, f);
-        branchWriteCounts.push(this.countsTo1(f.writeCounts) || {});
+        branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
       }, node.default); // Pass default as code position
     }
 
@@ -1051,19 +957,6 @@ class Compiler extends Obj {
 
     // Use node.expr (passed earlier) for the end block
     frame = this.emit.AsyncBlockBufferNodeEnd(node, frame, false, false, node.expr);
-  }
-
-  //within an async block, each set is counted, but when propagating the writes to the parent async block
-  //only the first write is propagated
-  countsTo1(writeCounts) {
-    if (!writeCounts) {
-      return undefined;
-    }
-    let firstWritesOnly = {};
-    for (let key in writeCounts) {
-      firstWritesOnly[key] = 1;
-    }
-    return firstWritesOnly;
   }
 
   //todo! - get rid of the callback
@@ -1088,7 +981,7 @@ class Compiler extends Obj {
       // Use node.body as the position node for the true branch block
       this.emit.AsyncBlock(node, frame, false, (f) => {
         this.compile(node.body, f);
-        trueBranchWriteCounts = this.countsTo1(f.writeCounts);
+        trueBranchWriteCounts = this.async.countsTo1(f.writeCounts);
       }, node.body); // Pass body as code position
     }
     else {
@@ -1112,7 +1005,7 @@ class Compiler extends Obj {
         // Use node.else_ as the position node for the false branch block
         this.emit.AsyncBlock(node, frame, false, (f) => {
           this.compile(node.else_, f);
-          falseBranchWriteCounts = this.countsTo1(f.writeCounts);
+          falseBranchWriteCounts = this.async.countsTo1(f.writeCounts);
         }, node.else_); // Pass else as code position
       }
       else {
@@ -1987,49 +1880,6 @@ class Compiler extends Obj {
     return children;
   }
 
-  //in async mode: store node.isAsync=true if the node or a child node performs async operations
-  //when !OPTIMIZE_ASYNC - all nodes are treated as async
-  /*_propagateIsAsync(node) {
-    let hasAsync = this.asyncMode ? !OPTIMIZE_ASYNC || asyncOperationNodes.has(node.typename) : false;
-
-    for (const key in node) {
-      if (Array.isArray(node[key])) {
-        node[key].forEach(item => {
-          if (item && typeof item === 'object') {
-            const childHasAsync = this.propagateIsAsync(item);
-            hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
-          }
-        });
-      }
-      else if (typeof node[key] === 'object' && node[key] !== null) {
-        const childHasAsync = this.propagateIsAsync(node[key]);
-        hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
-      }
-    }
-
-    if (node.typename) {
-      node.isAsync = hasAsync;
-    }
-    return hasAsync;
-  }*/
-
-  //when !OPTIMIZE_ASYNC - all nodes are treated as async
-  _propagateIsAsync(node) {
-    let hasAsync = this.asyncMode ? !OPTIMIZE_ASYNC || asyncOperationNodes.has(node.typename) : false;
-
-    // Get immediate children using the _getImmediateChildren method
-    const children = this._getImmediateChildren(node);
-
-    // Process each child node
-    for (const child of children) {
-      const childHasAsync = this._propagateIsAsync(child);
-      hasAsync = this.asyncMode ? hasAsync || childHasAsync : false;
-    }
-
-    node.isAsync = hasAsync;
-    return hasAsync;
-  }
-
   compileRoot(node, frame) {
 
     if (frame) {
@@ -2039,7 +1889,7 @@ class Compiler extends Obj {
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
 
     if (this.asyncMode) {
-      this._propagateIsAsync(node);
+      this.async.propagateIsAsync(node);
       this.sequential._declareSequentialLocks(node, frame.sequenceLockFrame);
     }
 
