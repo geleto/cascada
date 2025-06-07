@@ -189,9 +189,9 @@ account!.withdraw(50)       // #3, waits for getStatus to complete.
 
 ### Consistent Output Assembly
 
-**Note**: This feature is under active development for Cascada Script.
+**Note**: This feature is under development for Cascada Script.
 
-Both the final **text output of templates** and the **structured data from scripts** are assembled in a predictable, sequential order that matches your source code. This is true even when underlying async operations complete at different times, guaranteeing that the final result is always consistent.
+For scripts, **Data Assembly Commands** (`put`, `push`, `merge`) build the **structured return value** in a predictable, sequential order that matches your source code. Similarly, the final **text output of templates** is also buffered and assembled sequentially. This is true even when underlying async operations complete at different times.
 
 </td>
 <td valign="top">
@@ -244,7 +244,7 @@ endfor
 
 ### Resilient Error Handling
 
-**Note**: This feature is under active development.
+**Note**: This feature is under development.
 
 Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structure lets you catch errors, define **conditional retry logic** with `resume`, and provide a final fallback. The special `resume.count` variable is **automatically managed by the engine** to track retry attempts.
 
@@ -449,7 +449,7 @@ const context = {
   user: fetchUser(123) // An async function
 };
 
-const data = await env.renderScriptString(script, context);
+const data = await env.renderScript(script, context);
 console.log(data); // { result: { greeting: "Hello, Alice" } }
 ```
 
@@ -457,6 +457,24 @@ console.log(data); // { result: { greeting: "Hello, Alice" } }
 </td>
 </tr>
 </table>
+
+
+## Quick Start
+  1. Install Cascada:
+     ```bash
+     npm install cascada-tmpl
+     ```
+  2. Create a simple template:
+     ```njk
+     Hello, {{ name }}!
+     ```
+  3. Render it with JavaScript:
+     ```javascript
+     import { AsyncEnvironment } from 'cascada-tmpl';
+     const env = new AsyncEnvironment();
+     const result = await env.renderString('Hello, {{ name }}!', { name: 'World' });
+     console.log(result); // Hello, World!
+     ```
 
 ## Further Reading
 
