@@ -652,4 +652,198 @@
       });
     });
   });
+
+  describe('Nunjucks Sync Filter with Asynchronous (Non-Sequenced) Arguments Tests', () => {
+    let env;
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+      // Async filter (Nunjucks callback-style)
+      env.addFilter('asyncToUpperCb', (str, callback) => {
+        setTimeout(() => {
+          callback(null, str.toUpperCase());
+        }, 5);
+      }, true);
+
+      // Async filter (Cascada Promise-style)
+      env.addFilterAsync('asyncReversePromise', async (str) => {
+        await delay(3);
+        return str.split('').reverse().join('');
+      });
+
+      // Sync filter 1
+      env.addFilter('syncConcat', (str1, str2) => {
+        if (typeof str1 !== 'string' || typeof str2 !== 'string') {
+          throw new Error(`syncConcat expects two strings, got: ${typeof str1}, ${typeof str2}`);
+        }
+        return str1 + str2;
+      });
+
+      // Sync filter 2 (using a built-in Nunjucks filter for variety)
+      // 'capitalize' is inherently synchronous.
+      // 'replace' is inherently synchronous.
+    });
+
+    it('should handle a sync filter with a single async value as input', async () => {
+      const context = {
+        async getValue() {
+          await delay(10);
+          return 'world';
+        }
+      };
+      const template = '{{ getValue() | capitalize }}'; // capitalize is sync
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('World');
+    });
+
+    it('should handle a sync filter with a single async value as an argument', async () => {
+      const context = {
+        async getSuffix() {
+          await delay(10);
+          return '-extra';
+        }
+      };
+      const template = '{{ "base" | syncConcat(getSuffix()) }}';
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('base-extra');
+    });
+
+    it('should handle a sync filter with multiple async arguments', async () => {
+      const context = {
+        async getPart1() {
+          await delay(5);
+          return 'first';
+        },
+        async getPart2() {
+          await delay(15);
+          return 'Second'; // Test with different casing for capitalize
+        }
+      };
+      // Here, the output of syncConcat (which gets async args) is piped to capitalize
+      const template = '{{ getPart1() | syncConcat(getPart2() | capitalize) }}';
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('firstSecond');
+    });
+
+    it('should handle a sync filter where input is from an async (callback-style) filter', async () => {
+      const template = '{{ "hello" | asyncToUpperCb | capitalize }}'; // asyncToUpperCb -> capitalize (sync)
+      const result = await env.renderString(template);
+      expect(result).to.equal('Hello'); // capitalize acts on "HELLO"
+    });
+
+    it('should handle a sync filter where input is from an async (promise-style) filter', async () => {
+      const template = '{{ "flow" | asyncReversePromise | syncConcat("Test") }}'; // asyncReversePromise -> syncConcat
+      const result = await env.renderString(template);
+      expect(result).to.equal('wolfTest');
+    });
+
+    it('should handle chained synchronous filters with an initial async value', async () => {
+      const context = {
+        async getFullString() {
+          await delay(10);
+          return 'start Middle end';
+        }
+      };
+      // getFullString (async) -> replace (sync) -> capitalize (sync)
+      const template = '{{ getFullString() | replace("Middle", "MIDDLE.") | capitalize }}';
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('Start middle. end');
+    });
+
+    it('should handle sync filters in a complex expression with mixed async and sync values', async () => {
+      const context = {
+        async getVerb() {
+          await delay(5);
+          return 'run';
+        },
+        noun: 'test'
+      };
+      // (getVerb() (async) + " " + noun (sync)) -> replace (sync)
+      const template = '{{ (getVerb() + " " + noun) | replace("run", "walk") }}';
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('walk test');
+    });
+
+    it('should handle sync filter with arguments within a group that is async', async () => {
+      const context = {
+        async getPrefix() {
+          await delay(10);
+          return 'pre_';
+        }
+      };
+      // The group (getPrefix() + "foo") is async. Its result is the input to replace.
+      // The arguments to replace are synchronous literals.
+      const template = '{{ (getPrefix() + "foo") | replace("foo", "bar") }}';
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('pre_bar');
+    });
+
+    it('should handle sync filter in {% set %} with async argument', async () => {
+      const context = {
+        async getReplacementValue() {
+          await delay(10);
+          return 'NEW';
+        }
+      };
+      const template = `
+        {% set myString = "old value" | replace("old", getReplacementValue()) %}
+        {{ myString }}
+      `;
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('NEW value');
+    });
+
+    it('should handle sync filter in {% if %} condition with async argument', async () => {
+      const context = {
+        async getExpectedPrefix() {
+          await delay(5);
+          return 'PREFIX';
+        }
+      };
+      // 'syncConcat' is sync, but takes an async argument. Its result is used in comparison.
+      /*const template = `
+        {% if "data" | syncConcat("_SUFFIX") == getExpectedPrefix() | syncConcat("_SUFFIX") %}
+          MATCH
+        {% else %}
+          NO MATCH
+        {% endif %}
+      `;*/
+      // This will render: "data_SUFFIX" == "PREFIX_SUFFIX" -> false -> NO MATCH
+      // Let's make it match
+      const templateMatch = `
+        {% if "PREFIX" | syncConcat("_SUFFIX") == getExpectedPrefix() | syncConcat("_SUFFIX") %}
+          MATCH
+        {% else %}
+          NO MATCH
+        {% endif %}
+      `;
+      const result = await env.renderString(templateMatch, context);
+      expect(result.trim()).to.equal('MATCH');
+    });
+
+    it('should handle sync filter with an async literal promise in context', async () => {
+      const context = {
+        usernamePromise: (async () => { await delay(10); return 'john_doe'; })()
+      };
+      // usernamePromise is a promise. 'replace' is sync.
+      const template = '{{ usernamePromise | replace("_", " ") | capitalize }}';
+      const result = await env.renderString(template, context);
+      expect(result).to.equal('John doe');
+    });
+
+    it('should throw an error from a sync filter if an async argument resolves to a wrong type', async () => {
+      const context = {
+        async getWrongTypeSuffix() {
+          await delay(5);
+          return 123; // Not a string
+        }
+      };
+      const template = '{{ "base" | syncConcat(getWrongTypeSuffix()) }}';
+      try {
+        await env.renderString(template, context);
+        expect().fail('Expected an error from syncConcat due to wrong argument type');
+      } catch (e) {
+        expect(e.message).to.contain('syncConcat expects two strings, got: string, number');
+      }
+    });
+  });
 }());

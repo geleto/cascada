@@ -741,47 +741,73 @@ class Compiler extends Obj {
     this.emit('env.getFilter("' + node.value + '")');//@todo I think this can not be async
   }
 
+  //todo tests
+  // compileFilterAsync with arguments
+  // a chain of filters
+  // non-async compileFilter
+  // async compileFilter with arguments
   compileFilter(node, frame) {
-    var name = node.name;
-
-    this.assertType(name, nodes.Symbol);
+    this.assertType(node.name, nodes.Symbol);
 
     if (node.isAsync) {
-      const filterGetNode = { value: name.value, typename: 'FilterGet' };
+      // Although filters are compiled differently to expressions -
+      // using temp var for the result so we can't wrap it as expression
+      // still we need to process it as expression for its arguments
+      // and wrap if the wrapInAsyncBlock is true
+      this.sequential.processExpression(node, frame);
+
+      const filterGetNode = { value: node.name.value, typename: 'FilterGet' };
       const mergedNode = {
         isAsync: true,
         children: [filterGetNode, ...node.args.children]
       };
-      this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
-        this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
-      });
+      if (!node.wrapInAsyncBlock) {
+        this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
+          this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
+        });
+      } else {
+        this.emit.AsyncBlockValue(mergedNode, frame, (n, f) => {
+          this._compileAggregate(n, f, '[', ']', true, false, function (result) {
+            this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
+          });
+        }, undefined, node.args);
+      }
     } else {
-      this.emit('env.getFilter("' + name.value + '").call(context, ');
+      this.emit('env.getFilter("' + node.name.value + '").call(context, ');
       this._compileAggregate(node.args, frame, '', '', false, false);
       this.emit(')');
     }
   }
 
   compileFilterAsync(node, frame) {
-    let name = node.name;
     let symbol = node.symbol.value;
 
-    this.assertType(name, nodes.Symbol);
+    this.assertType(node.name, nodes.Symbol);
 
     frame.set(symbol, symbol);
 
     if (node.isAsync) {
+      // Although filters are compiled differently to expressions,
+      // using temp var for the result so it can't be wrapped as expression
+      // still we need to process it as expression for its arguments
+      this.sequential.processExpression(node, frame);
+
       this.emit.Line(`let ${symbol} = `);
       // Use node.args as the position node since it's what's being evaluated async
-      this.emit.AsyncBlockValue(node, frame, (n, f) => {
-        //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
-        this._compileAggregate(n.args, f, '[', ']', true, false, function (result) {
-          this.emit(`return env.getFilter("${name.value}").bind(env)(...${result});`);
+      if (!node.wrapInAsyncBlock) {
+        this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
+          this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
         });
-      }, undefined, node.args);
+      } else {
+        this.emit.AsyncBlockValue(node, frame, (n, f) => {
+          this._compileAggregate(n.args, f, '[', ']', true, false, function (result) {
+            this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
+          });
+        }, undefined, node.args);
+      }
       this.emit(';');
     } else {
-      this.emit('env.getFilter("' + name.value + '").call(context, ');
+      this.emit('env.getFilter("' + node.name.value + '").call(context, ');
       this._compileAggregate(node.args, frame, '', '', false, false);
       this.emit.Line(', ' + this._makeCallback(symbol));
       this.emit._addScopeLevel();
