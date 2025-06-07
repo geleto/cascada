@@ -26,13 +26,13 @@ Cascada automatically identifies and executes **independent operations concurren
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// The fetchUser() and fetchConfig() calls are independent
-// and will run in parallel.
+// The fetchUser() and fetchConfig() calls are
+// independent and will run in parallel.
 
 set user = fetchUser(123)
 set config = fetchSiteConfig()
 
-// The script waits here for both to complete before printing.
+// Waits for both to complete before printing.
 print "Welcome, " + user.name
 print "Theme: " + config.theme
 ```
@@ -42,13 +42,13 @@ print "Theme: " + config.theme
 <summary><strong>Cascada Template</strong></summary>
 
 ```njk
-{# The fetchUser() and fetchConfig() calls are independent #}
+{# fetchUser() and fetchConfig() are independent #}
 {# and will run in parallel. #}
 
 {% set user = fetchUser(123) %}
 {% set config = fetchSiteConfig() %}
 
-{# The template waits here for both to complete before rendering. #}
+{# Waits for both to complete. #}
 <p>Welcome, {{ user.name }}</p>
 <p>Theme: {{ config.theme }}</p>
 ```
@@ -69,12 +69,12 @@ Work with **promises, `async` functions, and `async` iterators** as if they were
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// fetchPost and fetchComments are async functions/iterators.
-// Cascada handles the promise resolution automatically.
+// fetchPost is async function
+// fetchComments is async iterator.
 
 set post = fetchPost(42)
 
-// The loop waits for post to resolve, then iterates
+// Waits for post to resolve, then iterates
 // over the async comments iterator.
 for comment in fetchComments(post.id)
   print comment.author + ": " + comment.body
@@ -86,14 +86,14 @@ endfor
 <summary><strong>Cascada Template</strong></summary>
 
 ```njk
-{# fetchPost and fetchComments are async functions/iterators. #}
-{# Cascada handles the promise resolution automatically. #}
+{# fetchPost is async function. #}
+{# fetchComments is async iterator. #}
 
 {% set post = fetchPost(42) %}
 
 <h1>{{ post.title }}</h1>
 <ul>
-  {# The loop waits for post to resolve, then iterates #}
+  {# The loop iterates after post is resolved #}
   {# over the async comments iterator. #}
   {% for comment in fetchComments(post.id) %}
     <li>{{ comment.author }}: {{ comment.body }}</li>
@@ -118,8 +118,9 @@ While independent operations run in parallel, Cascada ensures that **dependent o
 
 ```javascript
 // getUser() and getFooter() run in parallel.
-// getPosts(user.id) depends on `user`, so it waits for
-// getUser() to complete before starting.
+// getPosts(user.id) depends on `user`,
+// so it waits for getUser() to complete
+// before starting.
 
 set user = getUser()
 set posts = getPosts(user.id)
@@ -133,9 +134,9 @@ print "User: " + user.name
 <summary><strong>Cascada Template</strong></summary>
 
 ```njk
-{# getUser() and getFooter() run in parallel. #}
-{# getPosts(user.id) depends on `user`, so it waits for #}
-{# getUser() to complete before starting. #}
+{# getUser()/getFooter() run in parallel. #}
+{# getPosts(user.id) waits for getUser() #}
+{# to complete before starting. #}
 
 {% set user = getUser() %}
 {% set posts = getPosts(user.id) %}
@@ -160,12 +161,16 @@ For functions with **side effects** (e.g., database writes), the `!` marker enfo
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// The `!` on deposit() creates a sequence for the 'account' path.
+// The `!` on deposit() creates a
+// sequence for the 'account' path.
 set account = getBankAccount()
 
-account!.deposit(100)       // #1 in the sequence.
-account.getStatus()         // #2, waits for deposit, uses updated state.
-account!.withdraw(50)       // #3, waits for getStatus to complete.
+//1. Set initial Deposit:
+account!.deposit(100)
+//2. Get updated status after initial deposit:
+account.getStatus()
+//3. Withdraw money after getStatus()
+account!.withdraw(50)
 ```
 
 </details>
@@ -176,9 +181,9 @@ account!.withdraw(50)       // #3, waits for getStatus to complete.
 {# The `!` on deposit() creates a sequence for 'account'. #}
 {% set account = getBankAccount() %}
 
-{% do account!.deposit(100) %}      {# #1 in the sequence. #}
-{% do account.getStatus() %}        {# #2, waits for deposit. #}
-{% do account!.withdraw(50) %}      {# #3, waits for getStatus. #}
+{% do account!.deposit(100) %} 
+{% do account.getStatus() %}        
+{% do account!.withdraw(50) %}
 ```
 
 </details>
@@ -189,7 +194,7 @@ account!.withdraw(50)       // #3, waits for getStatus to complete.
 
 ### Consistent Output Assembly
 
-**Note**: This feature is under development for Cascada Script.
+**Note**: The assembly commands feature is under development.
 
 For scripts, **Data Assembly Commands** (`put`, `push`, `merge`) build the **structured return value** in a predictable, sequential order that matches your source code. Similarly, the final **text output of templates** is also buffered and assembled sequentially. This is true even when underlying async operations complete at different times.
 
@@ -199,18 +204,20 @@ For scripts, **Data Assembly Commands** (`put`, `push`, `merge`) build the **str
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// Assume fetchProductDetails for ID 205 is the slowest.
+// Assume fetchProductDetails for
+// ID 205 is the slowest.
 set productIds = [101, 205, 302]
 
 // Each loop iteration runs in parallel.
 for id in productIds
-  // For each product, fetch details and reviews concurrently.
+  // fetch details and reviews concurrently.
   set details = fetchProductDetails(id)
   set reviews = fetchProductReviews(id)
 
-  // The final `report.products` array is built in the
-  // order of `productIds` [101, 205, 302], not the
-  // order in which the data for each product resolves.
+  // The final `report.products` array is
+  // built in the order of `productIds` 
+  // [101, 205, 302], not the order in which 
+  // the data for each product resolves.
   push report.products {
     id: details.id,
     name: details.name,
@@ -224,13 +231,12 @@ endfor
 <summary><strong>Cascada Template</strong></summary>
 
 ```njk
-{# The final HTML is buffered and assembled sequentially. #}
+{# The HTML is assembled sequentially. #}
 <div class="slow-data">
   {{ fetchSlowData() }}
 </div>
 
-{# This div will always render second, even if its #}
-{# data resolves faster than the one above. #}
+{# This div will always render second #}
 <div class="fast-data">
   {{ fetchFastData() }}
 </div>
@@ -258,12 +264,13 @@ try
   // Attempt a fallible operation
   set image = generateImage(prompt)
   put result.imageUrl image.url
-resume error.type == 'rate_limit' and resume.count < 3
-  // Retry up to 3 times on rate limit errors
-  print "Rate limited. Retrying attempt " + resume.count
+resume resume.count < 3
+  // Retry up to 3 times
+  print "Retrying attempt " + resume.count
 except
   // Handle permanent failure
-  put result.error "Image generation failed: " + error.message
+  put result.error "Image generation failed: "
+   + error.message
 endtry
 ```
 
@@ -276,8 +283,8 @@ endtry
   {# Attempt a fallible operation #}
   {% set image = generateImage(prompt) %}
   <img src="{{ image.url }}" />
-{% resume error.type == 'rate_limit' and resume.count < 3 %}
-  <p>Rate limited. Retrying attempt {{ resume.count }}...</p>
+{% resume resume.count < 3 %}
+  <p>Retrying attempt {{ resume.count }}...</p>
 {% except %}
   <p class="error">Image generation failed: {{ error.message }}</p>
 {% endtry %}
@@ -351,21 +358,25 @@ As a fork of the Nunjucks engine, Cascada provides a familiar, feature-rich synt
 <summary><strong>AI Prompt Generation Example</strong></summary>
 
 ```njk
-Analyze the following meeting transcript and generate a summary.
+Analyze the following meeting
+transcript and generate a summary.
 
 MEETING CONTEXT:
 - Topic: {{ fetchMeetingTopic(meetingId) }}
-- Attendees: {{ (fetchAttendees(meetingId) | join(", ")) }}
+- Attendees: {{ (fetchAttendees(meetingId) |
+   join(", ")) }}
 
 TRANSCRIPT:
 {{ fetchTranscript(meetingId) }}
 
 KEY DECISIONS TO IDENTIFY:
-{% for objective in ["Product Launch", "Budget Allocation", "Hiring"] %}
+{% for objective in ["Product Launch", 
+        "Budget Allocation", "Hiring"] %}
 - Decisions related to: {{ objective }}
 {% endfor %}
 
-Based on the transcript, extract action items and assign owners.
+Based on the transcript, extract
+action items and assign owners.
 ```
 
 </details>
@@ -388,12 +399,13 @@ For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cl
 
 ```javascript
 // 1. Generate a plan with an LLM call.
-set plan = generatePlan("Analyze competitor's new feature")
+set plan = makePlan(
+  "Analyze competitor's new feature")
 put result.plan plan
 
-// 2. Execute each step of the plan in parallel.
+// 2. Each step of the in parallel.
 for step in plan.steps
-  // Each `executeStep` call is an independent async operation.
+  // Each `executeStep` is an independent operation.
   set stepResult = executeStep(step.instruction)
   push result.stepResults {
     step: step.title,
@@ -401,7 +413,7 @@ for step in plan.steps
   }
 endfor
 
-// 3. Summarize the parallel results after all are complete.
+// 3. Summarize the results after all are complete.
 set summary = summarizeResults(result.stepResults)
 put result.summary summary
 ```
@@ -427,12 +439,12 @@ For production, you can improve performance by **precompiling** your templates a
 import { AsyncEnvironment } from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
-const template = '<h1>Hello {{ username }}</h1>';
+const tpl = '<h1>Hello {{ username }}</h1>';
 const context = {
   username: Promise.resolve('World')
 };
 
-const html = await env.renderString(template, context);
+const html = await env.renderString(tpl, context);
 console.log(html); // <h1>Hello World</h1>
 ```
 
@@ -444,13 +456,15 @@ console.log(html); // <h1>Hello World</h1>
 import { AsyncEnvironment } from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
-const script = 'put result.greeting "Hello, " + user.name';
-const context = {
+const script = 
+  'put result.greeting "Hello, " + user.name';
+const ctx = {
   user: fetchUser(123) // An async function
 };
 
-const data = await env.renderScript(script, context);
-console.log(data); // { result: { greeting: "Hello, Alice" } }
+const data = await env.renderScript(script, ctx);
+console.log(data);
+// { result: { greeting: "Hello, Alice" } }
 ```
 
 </details>
