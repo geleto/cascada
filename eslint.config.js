@@ -34,7 +34,7 @@ module.exports = [
   },
   mochaRecommended,
   {
-    files: ['src/**/*.js', 'scripts/**/*.js', 'tests/**/*.js'],
+    files: ['src/**/*.js', 'scripts/**/*.js', 'tests/**/*.js', 'samples/**/*.js'],
     plugins: {
       mocha: mochaPlugin
     },
