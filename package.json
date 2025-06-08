@@ -101,7 +101,7 @@
     "build:transpile": "babel src --out-dir dist/cjs",
     "build:bundle": "node scripts/bundle.js",
     "build:types": "cpy src/index.d.ts dist/types/ --flat",
-    "build": "npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types",
+    "build": "npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/",
     "build:esm": "npx rollup -c rollup.config.mjs",
     "test:quick": "npm run mocha",
     "test:prep": "cross-env NODE_ENV=test npm run build && node scripts/runprecompile.js",
