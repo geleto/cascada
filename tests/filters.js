@@ -12,8 +12,8 @@
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     util = require('./util');
-    lib = require('../nunjucks/src/lib');
-    r = require('../nunjucks/src/runtime');
+    lib = require('../src/lib');
+    r = require('../src/runtime');
   } else {
     expect = window.expect;
     util = window.util;

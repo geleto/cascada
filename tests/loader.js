@@ -10,10 +10,10 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    Environment = require('../nunjucks/src/environment').Environment;
-    WebLoader = require('../nunjucks/src/web-loaders').WebLoader;
-    FileSystemLoader = require('../nunjucks/src/node-loaders').FileSystemLoader;
-    NodeResolveLoader = require('../nunjucks/src/node-loaders').NodeResolveLoader;
+    Environment = require('../src/environment').Environment;
+    WebLoader = require('../src/web-loaders').WebLoader;
+    FileSystemLoader = require('../src/node-loaders').FileSystemLoader;
+    NodeResolveLoader = require('../src/node-loaders').NodeResolveLoader;
     templatesPath = 'tests/templates';
   } else {
     expect = window.expect;

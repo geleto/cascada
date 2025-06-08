@@ -5,7 +5,7 @@ const {
   TOKEN_SUBTYPES,
   isValidRegexContext,
   hasCompleteRegexPattern
-} = require('../nunjucks/src/script-parser');
+} = require('../src/script-parser');
 
 describe('Script Parser', function() {
 

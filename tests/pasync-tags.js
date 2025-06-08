@@ -10,9 +10,9 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
-    //Environment = require('../nunjucks/src/environment').Environment;
-    //lexer = require('../nunjucks/src/lexer');
+    AsyncEnvironment = require('../src/environment').AsyncEnvironment;
+    //Environment = require('../src/environment').Environment;
+    //lexer = require('../src/lexer');
     //unescape = require('he').unescape;
     //StringLoader = require('./pasync-loader');
   } else {

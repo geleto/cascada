@@ -1,6 +1,6 @@
 'use strict';
 
-const Loader = require('./loader');
+const Loader = require('./loader.js');
 const {PrecompiledLoader} = require('./precompiled-loader.js');
 
 class WebLoader extends Loader {

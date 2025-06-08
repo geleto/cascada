@@ -96,11 +96,11 @@
     "postinstall": "node ./scripts/dev-install.js",
     "codecov": "codecov",
     "mocha": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs mocha --check-leaks -R spec tests",
-    "lint": "eslint nunjucks scripts tests",
+    "lint": "eslint src scripts tests",
     "prepare": "npm run build",
-    "build:transpile": "babel nunjucks --out-dir dist/cjs",
+    "build:transpile": "babel src --out-dir dist/cjs",
     "build:bundle": "node scripts/bundle.js",
-    "build:types": "cpy nunjucks/index.d.ts dist/types/ --flat",
+    "build:types": "cpy src/index.d.ts dist/types/ --flat",
     "build": "npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types",
     "build:esm": "npx rollup -c rollup.config.mjs",
     "test:quick": "npm run mocha",
@@ -119,7 +119,7 @@
     "extends": "@istanbuljs/nyc-config-babel",
     "all": true,
     "include": [
-      "nunjucks/**/*.js"
+      "src/**/*.js"
     ],
     "reporter": [
       "text",

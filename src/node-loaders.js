@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const Loader = require('./loader');
+const Loader = require('./loader.js');
 const {PrecompiledLoader} = require('./precompiled-loader.js');
 let chokidar;
 

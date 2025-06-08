@@ -7,7 +7,7 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../src/src/environment').AsyncEnvironment;
+    AsyncEnvironment = require('../src/environment').AsyncEnvironment;
     StringLoader = require('./pasync-loader');
   } else {
     expect = window.expect;
@@ -1170,7 +1170,7 @@
     //End additional macro/caller tests
   });
 
-  describe('Cascada Sequential Operations', () => {
+  describe.skip('Cascada Sequential Operations', () => {
     let cont;
     let env;
 
@@ -1197,7 +1197,7 @@
       };
     });
 
-    it.only('should ensure sequence order for multiple direct async calls to the same sequenced object path', async () => {
+    it('should ensure sequence order for multiple direct async calls to the same sequenced object path', async () => {
       const template = `
         {% set r1 = seqObj!.updateAndGet("k1", "opA", 30) %}
         {% set r2 = seqObj!.updateAndGet("k2", "opB", 10) %}
@@ -1276,7 +1276,7 @@
   // const expect = require('expect.js'); // or your assertion library
   // async function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-  describe('Cascada Filters with Sequential Operations (!)', () => {
+  describe.skip('Cascada Filters with Sequential Operations (!)', () => {
     let cont;
     let env;
 

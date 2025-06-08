@@ -1,5 +1,5 @@
 {
-  "name": "nunjucks",
+  "name": "cascada-tmpl",
   "main": "browser/nunjucks.js",
   "ignore": [
     "Makefile",
@@ -7,7 +7,7 @@
     "tests",
     "docs",
     "index.js",
-    "nunjucks"
+    "src"
   ],
   "keywords": [
     "jinja",

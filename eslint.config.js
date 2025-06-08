@@ -34,7 +34,7 @@ module.exports = [
   },
   mochaRecommended,
   {
-    files: ['nunjucks/**/*.js', 'scripts/**/*.js', 'tests/**/*.js'],
+    files: ['src/**/*.js', 'scripts/**/*.js', 'tests/**/*.js'],
     plugins: {
       mocha: mochaPlugin
     },

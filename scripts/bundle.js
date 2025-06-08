@@ -23,7 +23,7 @@ function runWebpack(opts) {
     try {
       const config = {
         mode: TEST_ENV ? 'development' : (process.env.NODE_ENV || 'production'),
-        entry: './nunjucks/index.js',
+        entry: './src/index.js',
         target: 'web',
         devtool: TEST_ENV ? 'inline-source-map' : 'source-map',
         output: {
@@ -47,7 +47,7 @@ function runWebpack(opts) {
         module: {
           rules: [
             {
-              test: /nunjucks/,
+              test: /src/,
               exclude: /(node_modules|browser|tests)(?!\.js)/,
               use: {
                 loader: 'babel-loader',
@@ -66,8 +66,8 @@ function runWebpack(opts) {
                               return 'node-libs-browser/mock/empty';
                             }
                           }
-                          if (sourcePath.match(/\/loaders(\.js)?$/)) {
-                            return sourcePath.replace('loaders', opts.slim ? 'precompiled-loader' : 'web-loaders');
+                          if (sourcePath.match(/(^|\/)loaders(\.js)?$/)) {
+                            return sourcePath.replace(/loaders(\.js)?$/, opts.slim ? 'precompiled-loader$1' : 'web-loaders$1');
                           }
                           return null;
                         },

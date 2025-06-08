@@ -1957,7 +1957,7 @@ Count and output the number of words in a string:
 ```
 
 Alternatively, it's easy to [read the JavaScript
-code](https://github.com/mozilla/nunjucks/blob/master/nunjucks/src/filters.js)
+code](https://github.com/mozilla/nunjucks/blob/master/nunjucks/filters.js)
 that implements these filters.
 
 {% endraw %}

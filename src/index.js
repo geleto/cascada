@@ -1,16 +1,16 @@
 'use strict';
 
-const lib = require('./src/lib');
-const {Environment, AsyncEnvironment, Template, AsyncTemplate} = require('./src/environment');
-const Loader = require('./src/loader');
-const loaders = require('./src/loaders');
-const precompile = require('./src/precompile');
-const compiler = require('./src/compiler');
-const parser = require('./src/parser');
-const lexer = require('./src/lexer');
-const runtime = require('./src/runtime');
-const nodes = require('./src/nodes');
-const installJinjaCompat = require('./src/jinja-compat');
+const lib = require('./lib');
+const {Environment, AsyncEnvironment, Template, AsyncTemplate} = require('./environment');
+const Loader = require('./loader');
+const loaders = require('./loaders');
+const precompile = require('./precompile');
+const compiler = require('./compiler');
+const parser = require('./parser');
+const lexer = require('./lexer');
+const runtime = require('./runtime');
+const nodes = require('./nodes');
+const installJinjaCompat = require('./jinja-compat');
 
 // A single instance of an environment, since this is so commonly used
 let e;

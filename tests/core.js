@@ -9,7 +9,7 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    nunjucks = require('../nunjucks/index');
+    nunjucks = require('../src/index');
     fs = require('fs-extra');
     path = require('path');
     os = require('os');

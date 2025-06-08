@@ -29,7 +29,7 @@ const coverageConfig = {
 };
 
 const nyc = new NYC({
-  include: ['nunjucks/**/*.js'],
+  include: ['src/**/*.js'],
   reporter: ['text', 'html', 'lcov'],
   showProcessTree: true
 });

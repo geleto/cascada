@@ -30,8 +30,8 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../nunjucks/src/environment').AsyncEnvironment;
-    //Environment = require('../nunjucks/src/environment').Environment;
+    AsyncEnvironment = require('../src/environment').AsyncEnvironment;
+    //Environment = require('../src/environment').Environment;
     unescape = require('he').unescape;
 
     if (module.exports) {

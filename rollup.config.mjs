@@ -4,7 +4,7 @@ import json from '@rollup/plugin-json';
 
 export default {
   input: {
-    'index': 'nunjucks/index.mjs'
+    'index': 'src/index.mjs'
   },
   plugins: [
     nodeResolve({

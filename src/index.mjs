@@ -1,14 +1,14 @@
-import lib from './src/lib.js';
-import {Environment, AsyncEnvironment, Template, AsyncTemplate} from './src/environment.js';
-import Loader from './src/loader.js';
-import * as loaders from './src/loaders.js';
-import * as precompileModule from './src/precompile.js';
-import * as compiler from './src/compiler.js';
-import * as parser from './src/parser.js';
-import * as lexer from './src/lexer.js';
-import * as runtime from './src/runtime.js';
-import * as nodes from './src/nodes.js';
-import installJinjaCompat from './src/jinja-compat.js';
+import lib from './lib.js';
+import {Environment, AsyncEnvironment, Template, AsyncTemplate} from './environment.js';
+import Loader from './loader.js';
+import * as loaders from './loaders.js';
+import * as precompileModule from './precompile.js';
+import * as compiler from './compiler.js';
+import * as parser from './parser.js';
+import * as lexer from './lexer.js';
+import * as runtime from './runtime.js';
+import * as nodes from './nodes.js';
+import installJinjaCompat from './jinja-compat.js';
 
 // A single instance of an environment, since this is so commonly used
 let e;

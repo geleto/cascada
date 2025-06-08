@@ -18,6 +18,7 @@
         "node.js",
         "jinja",
         "nunjucks",
+        "cascada",
         "async",
         "concurrency",
         "parallel",

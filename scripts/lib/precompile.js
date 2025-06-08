@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const precompile = require('../../nunjucks/src/precompile').precompile;
+const precompile = require('../../src/precompile').precompile;
 
 const testDir = path.join(__dirname, '../../tests');
 const templateDir = path.join(testDir, 'templates');
