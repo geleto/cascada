@@ -24,5 +24,5 @@ precompileString(
 fs.writeFileSync(path.join(__dirname, 'js/templates.js'), out, 'utf-8');
 
 fs.writeFileSync(path.join(__dirname, 'js/nunjucks.js'),
-  fs.readFileSync(path.join(__dirname, '../../browser/nunjucks.js'), 'utf-8'),
+  fs.readFileSync(path.join(__dirname, '../../dist/browser/nunjucks.js'), 'utf-8'),
   'utf-8');

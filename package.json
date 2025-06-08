@@ -4,8 +4,14 @@
   "description": "A template engine with advanced async capabilities with automatic implicit concurrency",
   "license": "BSD-2-Clause",
   "author": "Angel Popov<geleto@gmail.com>",
-  "main": "dist/cjs/index.js",
-  "module": "dist/esm/index.js",
+
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "bin": {
+    "cascada-precompile": "./dist/bin/precompile"
+  },
+  "browser": "./dist/browser/nunjucks.js",
   "exports": {
     ".": {
       "require": "./dist/cjs/index.js",
@@ -13,14 +19,8 @@
       "types": "./dist/types/index.d.ts"
     }
   },
-  "types": "./dist/types/index.d.ts",
   "files": [
-    "bin/**",
-    "browser/**",
-    "dist/**",
-    "src/**",
-    "dist/index.d.ts",
-    "scripts/dev-install.js"
+    "dist/**"
   ],
   "dependencies": {
     "@babel/plugin-transform-classes": "^7.25.9",
@@ -38,7 +38,6 @@
     "istanbul-reports": "^3.1.7",
     "tiny-chalk": "^2.0.0"
   },
-  "browser": "./browser/nunjucks.js",
   "devDependencies": {
     "@babel/cli": "^7.26.4",
     "@babel/core": "^7.26.0",
@@ -98,10 +97,11 @@
     "mocha": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs mocha --check-leaks -R spec tests",
     "lint": "eslint src scripts tests",
     "prepare": "npm run build",
+    "clean": "node -e \"require('fs').rmSync('dist', {recursive: true, force: true})\"",
     "build:transpile": "babel src --out-dir dist/cjs",
     "build:bundle": "node scripts/bundle.js",
     "build:types": "cpy src/index.d.ts dist/types/ --flat",
-    "build": "npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/",
+    "build": "npm run clean && npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/",
     "build:esm": "npx rollup -c rollup.config.mjs",
     "test:quick": "npm run mocha",
     "test:prep": "cross-env NODE_ENV=test npm run build && node scripts/runprecompile.js",
@@ -111,9 +111,6 @@
     "test:browser": "cross-env NODE_ENV=test npm run test:prep && npm run test:browser-no-prep",
     "test:pasync": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register 'tests/pasync*.js'",
     "test": "npm run test:prep && npm run test:node-no-prep && npm run test:browser-no-prep -- fullTest"
-  },
-  "bin": {
-    "cascada-precompile": "bin/precompile"
   },
   "nyc": {
     "extends": "@istanbuljs/nyc-config-babel",

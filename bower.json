@@ -1,6 +1,6 @@
 {
   "name": "cascada-tmpl",
-  "main": "browser/nunjucks.js",
+  "main": "dist/browser/nunjucks.js",
   "ignore": [
     "Makefile",
     "package.json",
