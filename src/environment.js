@@ -202,6 +202,7 @@ class Environment extends EmitterObj {
     return (isRelative && loader.resolve) ? loader.resolve(parentName, filename) : filename;
   }
 
+  // @todo - getScript
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
     return this._getTemplate(name, eagerCompile, parentName, ignoreMissing, false, cb);
   }
@@ -353,6 +354,8 @@ class Environment extends EmitterObj {
     return syncResult;
   }
 
+  //@todo - renderScript
+
   //avoid ambiguity between renderString and renderScript
   //later will deprecate renderString
   async renderTemplate(src, ctx, opts, cb) {
@@ -492,6 +495,7 @@ class AsyncEnvironment extends Environment {
     return result;
   }
 
+  // @todo - getScript
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
     if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
@@ -501,6 +505,7 @@ class AsyncEnvironment extends Environment {
     return this._getTemplate(name, eagerCompile, parentName, ignoreMissing, true, cb);
   }
 
+  // @todo - getScriptAsync
   async getTemplateAsync(name, eagerCompile, parentName, ignoreMissing) {
     return new Promise((resolve, reject) => {
       this.getTemplate(name, eagerCompile, parentName, ignoreMissing, (error, template) => {
@@ -649,6 +654,8 @@ class Context extends Obj {
     return exported;
   }
 }
+
+//@todo - class Script
 
 class Template extends Obj {
   init(src, env, path, eagerCompile, asyncMode) {
@@ -937,6 +944,8 @@ class Template extends Obj {
     return blocks;
   }
 }
+
+//@todo - class AsyncScript
 
 class AsyncTemplate extends Template {
   init(src, env, path, eagerCompile) {

@@ -5,17 +5,17 @@ export function render(name: string, context?: object): string;
 export function render(name: string, context?: object, callback?: TemplateCallback<string>): void;
 export function renderAsync(name: string, context?: object): Promise<string>;
 
-export function renderString(tplString: string, context: object): string;
-export function renderString(tplString: string, context: object, callback?: TemplateCallback<string>): void;
-export function renderStringAsync(tplString: string, context: object, callback?: TemplateCallback<string>): Promise<string>;
+export function renderString(src: string, context: object): string;
+export function renderString(src: string, context: object, callback?: TemplateCallback<string>): void;
+export function renderStringAsync(src: string, context: object, callback?: TemplateCallback<string>): Promise<string>;
 
-export function renderTemplate(tplString: string, context: object): string;
-export function renderTemplate(tplString: string, context: object, callback?: TemplateCallback<string>): void;
-export function renderTemplateAsync(tplString: string, context: object, callback?: TemplateCallback<string>): Promise<string>;
+export function renderTemplate(src: string, context: object): string;
+export function renderTemplate(src: string, context: object, callback?: TemplateCallback<string>): void;
+export function renderTemplateAsync(src: string, context: object, callback?: TemplateCallback<string>): Promise<string>;
 
-export function renderScript(scriptString: string, context: object): Record<string, any>;
-export function renderScript(scriptString: string, context: object, callback?: TemplateCallback<Record<string, any>>): void;
-export function renderScriptAsync(scriptString: string, context: object, callback?: TemplateCallback<Record<string, any>>): Promise<Record<string, any>>;
+export function renderScript(src: string, context: object): Record<string, any> | string | null;
+export function renderScript(src: string, context: object, callback?: TemplateCallback<Record<string, any>> | string | null): void;
+export function renderScriptAsync(src: string, context: object, callback?: TemplateCallback<Record<string, any>> | string | null): Promise<Record<string, any> | string | null>;
 
 export function compile(src: string, env?: Environment, path?:string, eagerCompile?:boolean): Template;
 export function compileAsync(src: string, env?: AsyncEnvironment, path?:string, eagerCompile?:boolean): AsyncTemplate;
@@ -43,12 +43,15 @@ export interface PrecompileOptionsAsync extends PrecompileOptionsBase {
     env?: AsyncEnvironment | undefined;
 }
 
+// @todo class Script
 
 export class Template {
     constructor(src: string, env?: Environment, path?: string, eagerCompile?: boolean);
     render(context?: object): string;
     render(context?: object, callback?: TemplateCallback<string>): void;
 }
+
+// @todo class AsyncScript
 
 export class AsyncTemplate {
     constructor(src: string, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean);
@@ -98,11 +101,11 @@ export class Environment {
     render(name: string, context?: object): string;
     render(name: string, context?: object, callback?: TemplateCallback<string>): void;
 
-    renderString(tplString: string, context: object): string;
-    renderString(tplString: string, context: object, callback?: TemplateCallback<string>): void;
+    renderString(src: string, context: object): string;
+    renderString(src: string, context: object, callback?: TemplateCallback<string>): void;
 
-    renderTemplate(tplString: string, context: object): string;
-    renderTemplate(tplString: string, context: object, callback?: TemplateCallback<string>): void;
+    renderTemplate(src: string, context: object): string;
+    renderTemplate(src: string, context: object, callback?: TemplateCallback<string>): void;
 
     addFilter(name: string, func: (...args: any[]) => any, async?: boolean): Environment;
     getFilter(name: string): (...args: any[]) => any;
@@ -115,6 +118,7 @@ export class Environment {
     addGlobal(name: string, value: any): Environment;
     getGlobal(name: string): any;
 
+    //@todo - getScript
     getTemplate(name: string, eagerCompile?: boolean): Template;
     getTemplate(name: string, eagerCompile?: boolean, callback?: Callback<Error, Template>): void;
 
@@ -130,9 +134,9 @@ export class AsyncEnvironment extends Environment {
     constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptions);
     render(name: string, context?: object): Promise<string>;
 
-    renderString(name: string, context: object): Promise<string>;
-    renderTemplate(name: string, context: object): Promise<string>;
-    renderScript(name: string, context: object): Promise<Record<string, any>>;
+    renderString(src: string, context: object): Promise<string>;
+    renderTemplate(src: string, context: object): Promise<string>;
+    renderScript(src: string, context: object): Promise<Record<string, any> | string | null>;
 
     getTemplate(name: string, eagerCompile?: boolean): AsyncTemplate;
     getTemplate(name: string, eagerCompile?: boolean, callback?: Callback<Error, AsyncTemplate>): void;
