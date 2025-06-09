@@ -1,5 +1,5 @@
 import lib from './lib.js';
-import {Environment, AsyncEnvironment, Template, AsyncTemplate} from './environment.js';
+import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScript} from './environment.js';
 import Loader from './loader.js';
 import * as loaders from './loaders.js';
 import * as precompileModule from './precompile.js';
@@ -60,6 +60,8 @@ export {
   AsyncEnvironment,
   Template,
   AsyncTemplate,
+  Script,
+  AsyncScript,
   Loader,
   compiler,
   parser,
@@ -85,6 +87,18 @@ export const precompileString = precompileModule ? precompileModule.precompileSt
 export const precompileAsync = precompileModule ? precompileModule.precompileAsync : undefined;
 export const precompileStringAsync = precompileModule ? precompileModule.precompileStringAsync : undefined;
 
+// New template compilation functions
+export const precompileTemplate = precompileModule ? precompileModule.precompileTemplate : undefined;
+export const precompileTemplateString = precompileModule ? precompileModule.precompileTemplateString : undefined;
+export const precompileTemplateAsync = precompileModule ? precompileModule.precompileTemplateAsync : undefined;
+export const precompileTemplateStringAsync = precompileModule ? precompileModule.precompileTemplateStringAsync : undefined;
+
+// New script compilation functions
+export const precompileScript = precompileModule ? precompileModule.precompileScript : undefined;
+export const precompileScriptString = precompileModule ? precompileModule.precompileScriptString : undefined;
+export const precompileScriptAsync = precompileModule ? precompileModule.precompileScriptAsync : undefined;
+export const precompileScriptStringAsync = precompileModule ? precompileModule.precompileScriptStringAsync : undefined;
+
 export function reset() {
   e = undefined;
   asyncE = undefined;
@@ -102,6 +116,34 @@ export function compileAsync(src, env, path, eagerCompile) {
     configureAsync();
   }
   return new AsyncTemplate(src, env, path, eagerCompile);
+}
+
+export function compileTemplate(src, env, path, eagerCompile) {
+  if (!e) {
+    configure();
+  }
+  return new Template(src, env, path, eagerCompile);
+}
+
+export function compileTemplateAsync(src, env, path, eagerCompile) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return new AsyncTemplate(src, env, path, eagerCompile);
+}
+
+export function compileScript(src, env, path, eagerCompile) {
+  if (!e) {
+    configure();
+  }
+  return new Script(src, env, path, eagerCompile);
+}
+
+export function compileScriptAsync(src, env, path, eagerCompile) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return new AsyncScript(src, env, path, eagerCompile);
 }
 
 export function render(name, ctx, asyncMode, cb) {
@@ -132,12 +174,42 @@ export function renderStringAsync(src, ctx, cb) {
   return asyncE.renderString(src, ctx, cb);
 }
 
+export function renderTemplateString(src, ctx, cb) {
+  if (!e) {
+    configure();
+  }
+  return e.renderTemplateString(src, ctx, cb);
+}
+
+export function renderTemplateStringAsync(src, ctx, cb) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return asyncE.renderTemplateString(src, ctx, cb);
+}
+
+export function renderScriptString(src, ctx, cb) {
+  if (!e) {
+    configure();
+  }
+  return e.renderScriptString(src, ctx, cb);
+}
+
+export function renderScriptStringAsync(src, ctx, cb) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return asyncE.renderScriptString(src, ctx, cb);
+}
+
 // Default export
 export default {
   Environment,
   AsyncEnvironment,
   Template,
   AsyncTemplate,
+  Script,
+  AsyncScript,
   Loader,
   FileSystemLoader: loaders.FileSystemLoader,
   NodeResolveLoader: loaders.NodeResolveLoader,
@@ -154,12 +226,28 @@ export default {
   reset,
   compile,
   compileAsync,
+  compileTemplate,
+  compileTemplateAsync,
+  compileScript,
+  compileScriptAsync,
   render,
   renderAsync,
   renderString,
   renderStringAsync,
+  renderTemplateString,
+  renderTemplateStringAsync,
+  renderScriptString,
+  renderScriptStringAsync,
   precompile,
   precompileString,
   precompileAsync,
-  precompileStringAsync
+  precompileStringAsync,
+  precompileTemplate,
+  precompileTemplateString,
+  precompileTemplateAsync,
+  precompileTemplateStringAsync,
+  precompileScript,
+  precompileScriptString,
+  precompileScriptAsync,
+  precompileScriptStringAsync
 };

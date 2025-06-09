@@ -799,7 +799,7 @@
         function templateRender() {
           tmpl.render();
         }
-        expect(templateRender).to.throwException(/template not found: doesnotexist/);
+        expect(templateRender).to.throwException(/Template not found: doesnotexist/);
       });
 
       it('should include error line in raised TemplateError', function(done) {
@@ -850,7 +850,7 @@
       function templateRender() {
         render('{% include "broken-import.njk" %}', {str: 'abc'});
       }
-      expect(templateRender).to.throwException(/template not found: doesnotexist/);
+      expect(templateRender).to.throwException(/Template not found: doesnotexist/);
     });
 
     it('should pass errors from included templates to callback when async', function(done) {
@@ -859,7 +859,7 @@
         {str: 'abc'},
         {noThrow: true},
         function(err, res) {
-          expect(err).to.match(/template not found: doesnotexist/);
+          expect(err).to.match(/Template not found: doesnotexist/);
           expect(res).to.be(undefined);
           done();
         });
@@ -1436,7 +1436,7 @@
         },
         function(err, res) {
           expect(res).to.be(undefined);
-          expect(err).to.match(/template not found: missing.njk/);
+          expect(err).to.match(/Template not found: missing.njk/);
         }
       );
 

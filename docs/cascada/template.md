@@ -274,7 +274,7 @@ endif
 Cascada Script can be executed with:
 
 ```javascript
-const result = await env.renderScript(script, context);
+const result = await env.renderScriptString(script, context);
 ```
 
 The script produces either text output (from `print` statements with no target) or structured data if an assembly command (`put`, `merge`, `push`) or `print` with target attribute is used.

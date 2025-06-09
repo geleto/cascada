@@ -197,17 +197,21 @@ class Environment extends EmitterObj {
     return this.tests[name];
   }
 
-  resolveTemplate(loader, parentName, filename) {
+  resolveFromLoader(loader, parentName, filename) {
     var isRelative = (loader.isRelative && parentName) ? loader.isRelative(filename) : false;
     return (isRelative && loader.resolve) ? loader.resolve(parentName, filename) : filename;
   }
 
-  // @todo - getScript
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
-    return this._getTemplate(name, eagerCompile, parentName, ignoreMissing, false, cb);
+    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, false, false, cb);
   }
 
-  _getTemplate(name, eagerCompile, parentName, ignoreMissing, asyncMode, cb) {
+  getScript(name, eagerCompile, parentName, ignoreMissing, cb) {
+    // Scripts use the same template loading mechanism, conversion happens at Script class level
+    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, false, true, cb);
+  }
+
+  _getCompiled(name, eagerCompile, parentName, ignoreMissing, asyncMode, isScript, cb) {
     var that = this;
     var tmpl = null;
     if (name && name.raw) {
@@ -236,14 +240,14 @@ class Environment extends EmitterObj {
       eagerCompile = false;
     }
 
-    if (name instanceof Template) {
+    if (name instanceof Template || name instanceof Script) {
       tmpl = name;
     } else if (typeof name !== 'string') {
       throw new Error('template names must be a string: ' + name);
     } else {
       for (let i = 0; i < this.loaders.length; i++) {
         const loader = this.loaders[i];
-        tmpl = loader.cache[this.resolveTemplate(loader, parentName, name)];
+        tmpl = loader.cache[this.resolveFromLoader(loader, parentName, name)];
         if (tmpl) {
           if (!!tmpl.asyncMode !== asyncMode) {
             throw new Error('The same template can not be compiled in both async and sync mode');
@@ -269,7 +273,7 @@ class Environment extends EmitterObj {
 
     const createTemplate = (err, info) => {
       if (!info && !err && !ignoreMissing) {
-        err = new Error('template not found: ' + name);
+        err = new Error(`${isScript ? 'Script' : 'Template'} not found: ` + name);
       }
 
       if (err) {
@@ -280,23 +284,39 @@ class Environment extends EmitterObj {
           throw err;
         }
       }
-      let newTmpl;
-      if (!info) {
-        newTmpl = asyncMode ?
-          new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile) :
-          new Template(noopTmplSrc, this, '', eagerCompile);
-      } else {
-        newTmpl = asyncMode ?
-          new AsyncTemplate(info.src, this, info.path, eagerCompile) :
-          new Template(info.src, this, info.path, eagerCompile);
-        if (!info.noCache) {
-          info.loader.cache[name] = newTmpl;
+      let newCompiled;
+      if (isScript) {
+        if (!info) {
+          newCompiled = asyncMode ?
+            new AsyncScript(noopTmplSrcAsync, this, '', eagerCompile) :
+            new Script(noopTmplSrc, this, '', eagerCompile);
+        } else {
+          newCompiled = asyncMode ?
+            new AsyncScript(info.src, this, info.path, eagerCompile) :
+            new Script(info.src, this, info.path, eagerCompile);
+          if (!info.noCache) {
+            info.loader.cache[name] = newCompiled;
+          }
+        }
+      }
+      else {
+        if (!info) {
+          newCompiled = asyncMode ?
+            new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile) :
+            new Template(noopTmplSrc, this, '', eagerCompile);
+        } else {
+          newCompiled = asyncMode ?
+            new AsyncTemplate(info.src, this, info.path, eagerCompile) :
+            new Template(info.src, this, info.path, eagerCompile);
+          if (!info.noCache) {
+            info.loader.cache[name] = newCompiled;
+          }
         }
       }
       if (cb) {
-        cb(null, newTmpl);
+        cb(null, newCompiled);
       } else {
-        syncResult = newTmpl;
+        syncResult = newCompiled;
       }
     };
 
@@ -313,7 +333,7 @@ class Environment extends EmitterObj {
       }
 
       // Resolve name relative to parentName
-      name = that.resolveTemplate(loader, parentName, name);
+      name = that.resolveFromLoader(loader, parentName, name);
 
       if (loader.async) {
         loader.getSource(name, handle);
@@ -329,6 +349,7 @@ class Environment extends EmitterObj {
     return expressApp(this, app);
   }
 
+  /** @deprecated Use renderTemplate instead */
   render(name, ctx, cb) {
     if (lib.isFunction(ctx)) {
       cb = ctx;
@@ -354,15 +375,15 @@ class Environment extends EmitterObj {
     return syncResult;
   }
 
-  //@todo - renderScript
-
-  //avoid ambiguity between renderString and renderScript
-  //later will deprecate renderString
-  async renderTemplate(src, ctx, opts, cb) {
-    return this.renderString(src, ctx, opts, cb);
+  renderTemplate(name, ctx, cb) {
+    return this.render(name, ctx, cb);
   }
 
   renderString(src, ctx, opts, cb) {
+    return this.renderTemplateString(src, ctx, opts, cb);
+  }
+
+  renderTemplateString(src, ctx, opts, cb) {
     if (lib.isFunction(opts)) {
       cb = opts;
       opts = {};
@@ -373,7 +394,7 @@ class Environment extends EmitterObj {
     return tmpl.render(ctx, cb);
   }
 
-  renderScript(scriptStr, ctx, cb) {
+  renderScriptString(scriptStr, ctx, cb) {
     if (lib.isFunction(ctx)) {
       cb = ctx;
       ctx = {};
@@ -405,12 +426,20 @@ class AsyncEnvironment extends Environment {
   }
 
   async renderAsync(templateName, ctx, parentFrame) {
-    return this._asyncRender(templateName, ctx, true, parentFrame);
+    return this._asyncRenderTemplate(templateName, ctx, true, parentFrame);
   }
 
-  //avoid ambiguity between renderString and renderScript
+  async renderTemplateAsync(templateName, ctx, parentFrame) {
+    return this._asyncRenderTemplate(templateName, ctx, true, parentFrame);
+  }
+
+  async renderScriptAsync(templateName, ctx, parentFrame) {
+    return this._asyncRenderScript(templateName, ctx, true, parentFrame);
+  }
+
+  //avoid ambiguity between renderString and renderScriptString
   //later will deprecate renderString
-  async renderTemplate(src, ctx, opts, cb) {
+  async renderTemplateString(src, ctx, opts, cb) {
     return this.renderString(src, ctx, opts, cb);
   }
 
@@ -422,7 +451,7 @@ class AsyncEnvironment extends Environment {
     opts = opts || {};
 
     try {
-      const result = this._asyncRender(src, ctx, false, opts);
+      const result = this._asyncRenderTemplate(src, ctx, false, opts);
       if (cb) {
         cb(null, result);
       }
@@ -434,7 +463,7 @@ class AsyncEnvironment extends Environment {
     }
   }
 
-  async renderScript(scriptStr, ctx, cb) {
+  async renderScriptString(scriptStr, ctx, cb) {
     if (lib.isFunction(ctx)) {
       cb = ctx;
       ctx = {};
@@ -467,7 +496,7 @@ class AsyncEnvironment extends Environment {
     }
   }
 
-  async _asyncRender(template, ctx, namedTemplate, opts) {
+  async _asyncRenderTemplate(template, ctx, namedTemplate, opts) {
     const result = await new Promise((resolve, reject) => {
       let callback = (err, res) => {
         if (err || res === null) {
@@ -495,24 +524,72 @@ class AsyncEnvironment extends Environment {
     return result;
   }
 
-  // @todo - getScript
+  async _asyncRenderScript(script, ctx, namedScript, opts) {
+    const result = await new Promise((resolve, reject) => {
+      let callback = (err, res) => {
+        if (err || res === null) {
+          reject(err || new Error('No render result'));
+        } else {
+          resolve(res);
+        }
+      };
+
+      if (namedScript) {
+        // render script object
+        this.getScript(script, false, null, false, (err, tmpl) => {
+          if (err) {
+            callbackAsap(callback, err);
+          } else {
+            tmpl.render(ctx, callback);
+          }
+        });
+      } else {
+        // render script string
+        const tmpl = new AsyncScript(script, this, opts.path);
+        tmpl.render(ctx, callback);
+      }
+    });
+    return result;
+  }
+
+
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
     if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
-        this._getTemplate(resolvedName, eagerCompile, parentName, ignoreMissing, true, cb);
+        this._getCompiled(resolvedName, eagerCompile, parentName, ignoreMissing, true, false, cb);
       });
     }
-    return this._getTemplate(name, eagerCompile, parentName, ignoreMissing, true, cb);
+    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, true, false, cb);
   }
 
-  // @todo - getScriptAsync
-  async getTemplateAsync(name, eagerCompile, parentName, ignoreMissing) {
+  getScript(name, eagerCompile, parentName, ignoreMissing, cb) {
+    if (typeof name.then === 'function') { // the name is a promise
+      return name.then((resolvedName) => {
+        this._getCompiled(resolvedName, eagerCompile, parentName, ignoreMissing, true, true, cb);
+      });
+    }
+    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, true, true, cb);
+  }
+
+  getTemplateAsync(name, eagerCompile, parentName, ignoreMissing) {
     return new Promise((resolve, reject) => {
       this.getTemplate(name, eagerCompile, parentName, ignoreMissing, (error, template) => {
         if (error) {
           reject(error);
         } else {
           resolve(template);
+        }
+      });
+    });
+  }
+
+  getScriptAsync(name, eagerCompile, parentName, ignoreMissing) {
+    return new Promise((resolve, reject) => {
+      this.getScript(name, eagerCompile, parentName, ignoreMissing, (error, script) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(script);
         }
       });
     });

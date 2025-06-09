@@ -1,7 +1,7 @@
 'use strict';
 
 const lib = require('./lib');
-const {Environment, AsyncEnvironment, Template, AsyncTemplate} = require('./environment');
+const {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScript} = require('./environment');
 const Loader = require('./loader');
 const loaders = require('./loaders');
 const precompile = require('./precompile');
@@ -61,6 +61,8 @@ module.exports = {
   AsyncEnvironment: AsyncEnvironment,
   Template: Template,
   AsyncTemplate: AsyncTemplate,
+  Script: Script,
+  AsyncScript: AsyncScript,
   Loader: Loader,
   FileSystemLoader: loaders.FileSystemLoader,
   NodeResolveLoader: loaders.NodeResolveLoader,
@@ -89,6 +91,30 @@ module.exports = {
     }
     return new AsyncTemplate(src, env, path, eagerCompile);
   },
+  compileTemplate(src, env, path, eagerCompile) {
+    if (!e) {
+      configure();
+    }
+    return new Template(src, env, path, eagerCompile);
+  },
+  compileTemplateAsync(src, env, path, eagerCompile) {
+    if (!asyncE) {
+      configureAsync();
+    }
+    return new AsyncTemplate(src, env, path, eagerCompile);
+  },
+  compileScript(src, env, path, eagerCompile) {
+    if (!e) {
+      configure();
+    }
+    return new Script(src, env, path, eagerCompile);
+  },
+  compileScriptAsync(src, env, path, eagerCompile) {
+    if (!asyncE) {
+      configureAsync();
+    }
+    return new AsyncScript(src, env, path, eagerCompile);
+  },
   render(name, ctx, asyncMode, cb) {
     if (!e) {
       configure();
@@ -114,32 +140,44 @@ module.exports = {
     }
     return asyncE.renderString(src, ctx, cb);
   },
-  renderTemplate(src, ctx, cb) {
+  renderTemplateString(src, ctx, cb) {
     if (!e) {
       configure();
     }
-    return e.renderTemplate(src, ctx, cb);
+    return e.renderTemplateString(src, ctx, cb);
   },
-  renderTemplateAsync(src, ctx, cb) {
+  renderTemplateStringAsync(src, ctx, cb) {
     if (!asyncE) {
       configureAsync();
     }
-    return asyncE.renderTemplate(src, ctx, cb);
+    return asyncE.renderTemplateString(src, ctx, cb);
   },
-  renderScript(src, ctx, cb) {
+  renderScriptString(src, ctx, cb) {
     if (!e) {
       configure();
     }
-    return e.renderScript(src, ctx, cb);
+    return e.renderScriptString(src, ctx, cb);
   },
-  renderScriptAsync(src, ctx, cb) {
+  renderScriptStringAsync(src, ctx, cb) {
     if (!asyncE) {
       configureAsync();
     }
-    return asyncE.renderScript(src, ctx, cb);
+    return asyncE.renderScriptString(src, ctx, cb);
   },
   precompile: (precompile) ? precompile.precompile : undefined,
   precompileString: (precompile) ? precompile.precompileString : undefined,
   precompileAsync: (precompile) ? precompile.precompileAsync : undefined,
   precompileStringAsync: (precompile) ? precompile.precompileStringAsync : undefined,
+
+  // New template compilation functions
+  precompileTemplate: (precompile) ? precompile.precompileTemplate : undefined,
+  precompileTemplateString: (precompile) ? precompile.precompileTemplateString : undefined,
+  precompileTemplateAsync: (precompile) ? precompile.precompileTemplateAsync : undefined,
+  precompileTemplateStringAsync: (precompile) ? precompile.precompileTemplateStringAsync : undefined,
+
+  // New script compilation functions
+  precompileScript: (precompile) ? precompile.precompileScript : undefined,
+  precompileScriptString: (precompile) ? precompile.precompileScriptString : undefined,
+  precompileScriptAsync: (precompile) ? precompile.precompileScriptAsync : undefined,
+  precompileScriptStringAsync: (precompile) ? precompile.precompileScriptStringAsync : undefined,
 };

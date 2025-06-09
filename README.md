@@ -181,8 +181,8 @@ account!.withdraw(50)
 {# The `!` on deposit() creates a sequence for 'account'. #}
 {% set account = getBankAccount() %}
 
-{% do account!.deposit(100) %} 
-{% do account.getStatus() %}        
+{% do account!.deposit(100) %}
+{% do account.getStatus() %}
 {% do account!.withdraw(50) %}
 ```
 
@@ -215,8 +215,8 @@ for id in productIds
   set reviews = fetchProductReviews(id)
 
   // The final `report.products` array is
-  // built in the order of `productIds` 
-  // [101, 205, 302], not the order in which 
+  // built in the order of `productIds`
+  // [101, 205, 302], not the order in which
   // the data for each product resolves.
   push report.products {
     id: details.id,
@@ -330,9 +330,9 @@ put result.items processedItems
 
 {% block content %}
   {% include "header.njk" %}
-  
+
   <h1>{{ macros.page_title("Latest News") }}</h1>
-  
+
   {% for item in fetchNews() %}
     <article>{{ item.title }}</article>
   {% endfor %}
@@ -370,7 +370,7 @@ TRANSCRIPT:
 {{ fetchTranscript(meetingId) }}
 
 KEY DECISIONS TO IDENTIFY:
-{% for objective in ["Product Launch", 
+{% for objective in ["Product Launch",
         "Budget Allocation", "Hiring"] %}
 - Decisions related to: {{ objective }}
 {% endfor %}
@@ -444,7 +444,7 @@ const context = {
   username: Promise.resolve('World')
 };
 
-const html = await env.renderString(tpl, context);
+const html = await env.renderTemplateString(tpl, context);
 console.log(html); // <h1>Hello World</h1>
 ```
 
@@ -456,13 +456,13 @@ console.log(html); // <h1>Hello World</h1>
 import { AsyncEnvironment } from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
-const script = 
+const script =
   'put result.greeting "Hello, " + user.name';
 const ctx = {
   user: fetchUser(123) // An async function
 };
 
-const data = await env.renderScript(script, ctx);
+const data = await env.renderScriptString(script, ctx);
 console.log(data);
 // { result: { greeting: "Hello, Alice" } }
 ```
@@ -486,7 +486,7 @@ console.log(data);
      ```javascript
      import { AsyncEnvironment } from 'cascada-tmpl';
      const env = new AsyncEnvironment();
-     const result = await env.renderString('Hello, {{ name }}!', { name: 'World' });
+     const result = await env.renderTemplateString('Hello, {{ name }}!', { name: 'World' });
      console.log(result); // Hello, World!
      ```
 

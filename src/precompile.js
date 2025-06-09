@@ -150,4 +150,15 @@ module.exports = {
   precompileString: precompileString,
   precompileStringAsync: precompileStringAsync,
 
+  // Template variants (new names for existing functions)
+  precompileTemplate: precompile,
+  precompileTemplateAsync: precompileAsync,
+  precompileTemplateString: precompileString,
+  precompileTemplateStringAsync: precompileStringAsync,
+
+  // Script variants (use same underlying functions since script conversion happens at Script class level)
+  precompileScript: precompile,
+  precompileScriptAsync: precompileAsync,
+  precompileScriptString: precompileString,
+  precompileScriptStringAsync: precompileStringAsync,
 };

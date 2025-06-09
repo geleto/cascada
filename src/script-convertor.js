@@ -375,11 +375,13 @@ function processLine(line, state) {
   }
 
   const firstWord = getFirstWord(parseResult.codeContent);
-
   if (RESERVED_KEYWORDS.has(firstWord)) {
     if (firstWord === 'print') {
       parseResult.lineType = 'PRINT';
       parseResult.blockType = null;
+      // Strip the 'print' keyword from codeContent for output expressions
+      const printPos = parseResult.codeContent.indexOf('print');
+      parseResult.codeContent = parseResult.codeContent.substring(printPos + 'print'.length).trim(); // Remove 'print'
     } else {
       parseResult.lineType = 'TAG';
       parseResult.blockType = getBlockType(firstWord);
