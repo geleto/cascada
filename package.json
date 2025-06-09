@@ -93,7 +93,6 @@
   },
   "scripts": {
     "postinstall": "node ./scripts/dev-install.js",
-    "codecov": "codecov",
     "mocha": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs mocha --check-leaks -R spec tests",
     "lint": "eslint src scripts tests",
     "prepare": "npm run build",
