@@ -1,8 +1,8 @@
 /* eslint-disable no-undef */
 
-const js = require('@eslint/js');
-const globals = require('globals');
-const mochaPlugin = require('eslint-plugin-mocha');
+import js from '@eslint/js';
+import globals from 'globals';
+import mochaPlugin from 'eslint-plugin-mocha';
 
 // Get mocha recommended config and update its format
 const mochaRecommended = {
@@ -18,7 +18,7 @@ const mochaRecommended = {
 };
 delete mochaRecommended.env;  // Remove the old env key
 
-module.exports = [
+export default [
   js.configs.recommended,
   {
     ignores: [

@@ -1,5 +1,4 @@
 const connect = require('connect');
-const getPort = require('get-port');
 const serveStatic = require('serve-static');
 const http = require('http');
 const path = require('path');
@@ -7,9 +6,33 @@ const fs = require('fs').promises;
 const babel = require('@babel/core');
 const url = require('url');
 
+async function findAvailablePort(startPort = 3000) {
+  const net = require('net');
+
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+
+    server.listen(startPort, () => {
+      const port = server.address().port;
+      server.close(() => {
+        resolve(port);
+      });
+    });
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        // Port is in use, try the next one
+        resolve(findAvailablePort(startPort + 1));
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
 async function getStaticServer(prt) {
   const staticRoot = path.join(__dirname, '../..');
-  const port = typeof prt === 'undefined' ? await getPort() : prt;
+  const port = typeof prt === 'undefined' ? await findAvailablePort() : prt;
 
   try {
     const app = connect();

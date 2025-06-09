@@ -13,7 +13,7 @@ program
   .name('precompile')
   .usage('[-f|--force] [-a|--filters <filters>] [-n|--name <name>] [-i|--include <regex>] [-x|--exclude <regex>] [-w|--wrapper <wrapper>] <path>')
   .arguments('<path>')
-  .helpOption('-?, -h, --help', 'Display this help message')
+  .helpOption('-h, --help', 'display help for command')
   .option('-f, --force', 'Force compilation to continue on error')
   .option('-a, --filters <filters>', 'Give the compiler a comma-delimited list of asynchronous filters, required for correctly generating code')
   .option('-n, --name <name>', 'Specify the template name when compiling a single file')

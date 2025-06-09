@@ -9,7 +9,9 @@ const NYC = require('nyc');
 const mocha = require('mocha');
 const path = require('path');
 const fs = require('fs').promises;
-const chalk = require('tiny-chalk');
+//const chalk = require('tiny-chalk');
+let chalk;
+
 const libCoverage = require('istanbul-lib-coverage');
 const getStaticServer = require('./lib/static-server');
 const { chromium } = require('playwright');
@@ -35,6 +37,14 @@ const nyc = new NYC({
   tempDir: path.join(__dirname, '../coverage/.nyc_output'),
   cacheDir: path.join(__dirname, '../coverage/.nyc_output')
 });
+
+(async () => {
+  chalk = await import('tiny-chalk');
+  runTests().catch(error => {
+    console.error('Unhandled error in test runner:', error);
+    process.exit(1);
+  });
+})();
 
 function colorConsoleOutput(message) {
   // Check for summary lines first
@@ -272,8 +282,3 @@ async function runTests() {
     process.exit(1);
   }
 }
-
-runTests().catch(error => {
-  console.error('Unhandled error in test runner:', error);
-  process.exit(1);
-});
