@@ -1,6 +1,6 @@
 {
   "name": "cascada-tmpl",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "A template engine with advanced async capabilities with automatic implicit concurrency",
   "license": "BSD-2-Clause",
   "author": "Angel Popov<geleto@gmail.com>",
@@ -90,7 +90,7 @@
     "node": ">= 6.9.0"
   },
   "scripts": {
-    "postinstall": "node ./scripts/dev-install.js",
+    "postinstall": "node -e \"try { require('./scripts/dev-install.js') } catch (e) { console.log('Skipping dev install (script not found)') }\"",
     "mocha": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs mocha --check-leaks -R spec tests",
     "lint": "eslint src scripts tests",
     "prepare": "npm run build",
