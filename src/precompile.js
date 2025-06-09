@@ -14,6 +14,7 @@ function match(filename, patterns) {
   return patterns.some((pattern) => filename.match(pattern));
 }
 
+/** @deprecated Use precompileTemplateString instead */
 function precompileString(str, opts) {
   opts = opts || {};
   opts.isString = true;
@@ -26,6 +27,7 @@ function precompileString(str, opts) {
   return wrapper([_precompile(str, opts.name, env)], opts);
 }
 
+/** @deprecated Use precompileTemplateStringAsync instead */
 function precompileStringAsync(str, opts) {
   opts = opts || {};
   opts.isString = true;
@@ -38,6 +40,7 @@ function precompileStringAsync(str, opts) {
   return wrapper([_precompile(str, opts.name, env)], opts);
 }
 
+/** @deprecated Use precompileTemplate instead */
 function precompile(input, opts, isAsync = false) {
   // The following options are available:
   //
@@ -115,6 +118,7 @@ function precompile(input, opts, isAsync = false) {
   return wrapper(precompiled, opts);
 }
 
+/** @deprecated Use precompileTemplateAsync instead */
 function precompileAsync(input, opts) {
   return precompile(input, opts, true);
 }
@@ -145,9 +149,13 @@ function _precompile(str, name, env) {
 }
 
 module.exports = {
+  /** @deprecated Use precompileTemplate instead */
   precompile: precompile,
+  /** @deprecated Use precompileTemplateAsync instead */
   precompileAsync: precompileAsync,
+  /** @deprecated Use precompileTemplateString instead */
   precompileString: precompileString,
+  /** @deprecated Use precompileTemplateStringAsync instead */
   precompileStringAsync: precompileStringAsync,
 
   // Template variants (new names for existing functions)

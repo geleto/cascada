@@ -82,9 +82,13 @@ export const {
 } = loaders;
 
 // Export precompile functions
+/** @deprecated Use precompileTemplate instead */
 export const precompile = precompileModule ? precompileModule.precompile : undefined;
+/** @deprecated Use precompileTemplateString instead */
 export const precompileString = precompileModule ? precompileModule.precompileString : undefined;
+/** @deprecated Use precompileTemplateAsync instead */
 export const precompileAsync = precompileModule ? precompileModule.precompileAsync : undefined;
+/** @deprecated Use precompileTemplateStringAsync instead */
 export const precompileStringAsync = precompileModule ? precompileModule.precompileStringAsync : undefined;
 
 // New template compilation functions
@@ -104,6 +108,7 @@ export function reset() {
   asyncE = undefined;
 }
 
+/** @deprecated Use compileTemplate instead */
 export function compile(src, env, path, eagerCompile) {
   if (!e) {
     configure();
@@ -111,6 +116,7 @@ export function compile(src, env, path, eagerCompile) {
   return new Template(src, env, path, eagerCompile);
 }
 
+/** @deprecated Use compileTemplateAsync instead */
 export function compileAsync(src, env, path, eagerCompile) {
   if (!asyncE) {
     configureAsync();
@@ -146,6 +152,7 @@ export function compileScriptAsync(src, env, path, eagerCompile) {
   return new AsyncScript(src, env, path, eagerCompile);
 }
 
+/** @deprecated Use renderTemplate instead */
 export function render(name, ctx, asyncMode, cb) {
   if (!e) {
     configure();
@@ -153,6 +160,7 @@ export function render(name, ctx, asyncMode, cb) {
   return e.render(name, ctx, asyncMode, cb);
 }
 
+/** @deprecated Use renderTemplateAsync instead */
 export function renderAsync(name, ctx) {
   if (!asyncE) {
     configureAsync();

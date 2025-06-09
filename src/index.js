@@ -79,12 +79,14 @@ module.exports = {
   reset() {
     e = undefined;
   },
+  /** @deprecated Use compileTemplate instead */
   compile(src, env, path, eagerCompile) {
     if (!e) {
       configure();
     }
     return new Template(src, env, path, eagerCompile);
   },
+  /** @deprecated Use compileTemplateAsync instead */
   compileAsync(src, env, path, eagerCompile) {
     if (!asyncE) {
       configureAsync();
@@ -115,13 +117,14 @@ module.exports = {
     }
     return new AsyncScript(src, env, path, eagerCompile);
   },
+  /** @deprecated Use renderTemplate instead */
   render(name, ctx, asyncMode, cb) {
     if (!e) {
       configure();
     }
-
     return e.render(name, ctx, asyncMode, cb);
   },
+  /** @deprecated Use renderTemplateAsync instead */
   renderAsync(name, ctx) {
     if (!asyncE) {
       configureAsync();
@@ -164,9 +167,13 @@ module.exports = {
     }
     return asyncE.renderScriptString(src, ctx, cb);
   },
+  /** @deprecated Use precompileTemplate instead */
   precompile: (precompile) ? precompile.precompile : undefined,
+  /** @deprecated Use precompileTemplateString instead */
   precompileString: (precompile) ? precompile.precompileString : undefined,
+  /** @deprecated Use precompileTemplateAsync instead */
   precompileAsync: (precompile) ? precompile.precompileAsync : undefined,
+  /** @deprecated Use precompileTemplateStringAsync instead */
   precompileStringAsync: (precompile) ? precompile.precompileStringAsync : undefined,
 
   // New template compilation functions

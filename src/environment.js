@@ -379,6 +379,7 @@ class Environment extends EmitterObj {
     return this.render(name, ctx, cb);
   }
 
+  /** @deprecated Use renderTemplateString instead */
   renderString(src, ctx, opts, cb) {
     return this.renderTemplateString(src, ctx, opts, cb);
   }
@@ -436,13 +437,13 @@ class AsyncEnvironment extends Environment {
   async renderScriptAsync(templateName, ctx, parentFrame) {
     return this._asyncRenderScript(templateName, ctx, true, parentFrame);
   }
-
   //avoid ambiguity between renderString and renderScriptString
   //later will deprecate renderString
   async renderTemplateString(src, ctx, opts, cb) {
     return this.renderString(src, ctx, opts, cb);
   }
 
+  /** @deprecated Use renderTemplateString instead */
   async renderString(src, ctx, opts, cb) {
     if (typeof opts === 'function') {
       cb = opts;
