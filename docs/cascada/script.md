@@ -523,7 +523,7 @@ const context = {
 };
 
 // Execute the script
-const result = await env.renderScript(script, context);
+const result = await env.renderScriptString(script, context);
 console.log(JSON.stringify(result, null, 2));
 // Output:
 // {

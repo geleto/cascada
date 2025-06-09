@@ -215,7 +215,7 @@ describe('Script Converter', () => {
         const result = processLine(line, state);
 
         expect(result.lineType).to.equal('PRINT');
-        expect(result.codeContent).to.equal('print "Hello"');
+        expect(result.codeContent).to.equal('"Hello"');
         expect(result.continuesToNext).to.equal(false);
         expect(result.blockType).to.equal(null);
       });
@@ -267,14 +267,14 @@ describe('Script Converter', () => {
         const processedLine = {
           indentation: '',
           lineType: 'PRINT',
-          codeContent: 'print "Hello"',
+          codeContent: '"Hello"',
           comments: [],
           isContinuation: false
         };
 
         const output = generateOutput(processedLine, false, 'PRINT');
 
-        expect(output).to.equal('{{- print "Hello" -}}');
+        expect(output).to.equal('{{- "Hello" -}}');
       });
 
       it('should generate output for a tag statement', () => {
@@ -437,7 +437,7 @@ describe('Script Converter', () => {
     it('should convert print statements', () => {
       const script = 'print "Hello, World!"';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print "Hello, World!" -}}');
+      expect(template).to.equal('{{- "Hello, World!" -}}');
     });
 
     it('should convert tag statements', () => {
@@ -461,7 +461,7 @@ describe('Script Converter', () => {
     it('should preserve indentation', () => {
       const script = 'if condition\n  print "Indented"\nendif';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- if condition -%}\n  {{- print "Indented" -}}\n{%- endif -%}');
+      expect(template).to.equal('{%- if condition -%}\n  {{- "Indented" -}}\n{%- endif -%}');
     });
 
     it('should properly convert set statements', () => {
@@ -485,7 +485,7 @@ describe('Script Converter', () => {
     it('should convert while loops', () => {
       const script = 'while condition\n  print "Looping"\nendwhile';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{%- while condition -%}\n  {{- print "Looping" -}}\n{%- endwhile -%}');
+      expect(template).to.equal('{%- while condition -%}\n  {{- "Looping" -}}\n{%- endwhile -%}');
     });
   });
 
@@ -494,31 +494,31 @@ describe('Script Converter', () => {
     it('should handle single-quoted strings', () => {
       const script = 'print \'Hello, World!\'';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print \'Hello, World!\' -}}');
+      expect(template).to.equal('{{- \'Hello, World!\' -}}');
     });
 
     it('should handle double-quoted strings', () => {
       const script = 'print "Hello, World!"';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print "Hello, World!" -}}');
+      expect(template).to.equal('{{- "Hello, World!" -}}');
     });
 
     it('should handle template literals', () => {
       const script = 'print `Hello, World!`';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print `Hello, World!` -}}');
+      expect(template).to.equal('{{- `Hello, World!` -}}');
     });
 
     it('should handle single-line comments', () => {
       const script = 'print "Hello"// This is a comment';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print "Hello" -}}{#- This is a comment -#}');
+      expect(template).to.equal('{{- "Hello" -}}{#- This is a comment -#}');
     });
 
     it('should handle multi-line comments', () => {
       const script = 'print "Hello"/* This is a multi-line comment */';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print "Hello" -}}{#- This is a multi-line comment -#}');
+      expect(template).to.equal('{{- "Hello" -}}{#- This is a multi-line comment -#}');
     });
 
     it('should handle standalone comments', () => {
@@ -559,7 +559,7 @@ describe('Script Converter', () => {
       const script = 'if condition1\n  if condition2\n    print "Nested"\n  endif\nendif';
       const { template, error } = scriptToTemplate(script);
       expect(error).to.equal(null);
-      expect(template).to.equal('{%- if condition1 -%}\n  {%- if condition2 -%}\n    {{- print "Nested" -}}\n  {%- endif -%}\n{%- endif -%}');
+      expect(template).to.equal('{%- if condition1 -%}\n  {%- if condition2 -%}\n    {{- "Nested" -}}\n  {%- endif -%}\n{%- endif -%}');
     });
 
     it('should validate middle tags', () => {
@@ -617,7 +617,7 @@ endif`;
     it('should handle expressions spanning multiple lines', () => {
       const script = 'print "Hello, " +\n      "World!"';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print "Hello, " +\n      "World!" -}}');
+      expect(template).to.equal('{{- "Hello, " +\n      "World!" -}}');
     });
 
     it('should detect continuation at end of line', () => {
@@ -711,31 +711,31 @@ endif`;
     it('should handle special characters', () => {
       const script = 'print "@#$%^&*"';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print "@#$%^&*" -}}');
+      expect(template).to.equal('{{- "@#$%^&*" -}}');
     });
 
     it('should handle escape sequences in strings', () => {
       const script = 'print "Line 1\\nLine 2"';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print "Line 1\\nLine 2" -}}');
+      expect(template).to.equal('{{- "Line 1\\nLine 2" -}}');
     });
 
     it('should handle multi-line string literals', () => {
       const script = 'print "Line 1\\\nLine 2"';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print "Line 1\\\nLine 2" -}}');
+      expect(template).to.equal('{{- "Line 1\\\nLine 2" -}}');
     });
 
     it('should handle strings with embedded quotes', () => {
       const script = 'print "He said \\"Hello\\""';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print "He said \\"Hello\\"" -}}');
+      expect(template).to.equal('{{- "He said \\"Hello\\"" -}}');
     });
 
     it('should handle strings with multiple line continuations', () => {
       const script = 'print "First line \\\nSecond line \\\nThird line"';
       const { template } = scriptToTemplate(script);
-      expect(template).to.equal('{{- print "First line \\\nSecond line \\\nThird line" -}}');
+      expect(template).to.equal('{{- "First line \\\nSecond line \\\nThird line" -}}');
     });
 
     it('should handle empty blocks', () => {
@@ -772,10 +772,10 @@ endif`;
       expect(error).to.equal(null);
       expect(template).to.contain('{#- User authentication example -#}');
       expect(template).to.contain('{%- if user.isLoggedIn -%}');
-      expect(template).to.contain('{{- print "Hello, " + user.name -}}');
+      expect(template).to.contain('{{- "Hello, " + user.name -}}');
       expect(template).to.contain('{%- do processedItems.push(item.process()) -%}');
       expect(template).to.contain('{%- else -%}');
-      expect(template).to.contain('{{- print "Please log in" -}}');
+      expect(template).to.contain('{{- "Please log in" -}}');
       expect(template).to.contain('{%- endif -%}');
     });
 
@@ -791,7 +791,7 @@ print "Total: $" + total.toFixed(2)`;
       expect(template).to.contain('{%- do total = price *');
       expect(template).to.contain('(1 + taxRate) *');
       expect(template).to.contain('(1 - discount) -%}');
-      expect(template).to.contain('{{- print "Total: $" + total.toFixed(2) -}}');
+      expect(template).to.contain('{{- "Total: $" + total.toFixed(2) -}}');
     });
 
     it('should handle complex block structure with mixed tags', () => {
@@ -827,7 +827,7 @@ endfor`;
       expect(template).to.contain('{%- for product in products -%}');
       expect(template).to.contain('{%- if product.inStock -%}');
       expect(template).to.contain('{%- set formattedPrice = formatCurrency(product.price) -%}');
-      expect(template).to.contain('{{- print "<div class=\'product\'>" -}}');
+      expect(template).to.contain('{{- "<div class=\'product\'>" -}}');
       expect(template).to.contain('{%- if product.hasDiscount -%}');
       expect(template).to.contain('{%- else -%}');
       expect(template).to.contain('{%- endif -%}');
@@ -861,7 +861,7 @@ endtry`;
 
       expect(template).to.contain('{%- try -%}');
       expect(template).to.contain('{%- set data = fetchData(userId) -%}');
-      expect(template).to.contain('{{- print "User data: " + data.name -}}');
+      expect(template).to.contain('{{- "User data: " + data.name -}}');
       expect(template).to.contain('{%- resume askUser(\'Retry operation?\') -%}');
       expect(template).to.contain('{%- set warningMessage = \'Resuming operation (attempt \' + resume.count + \')\' -%}');
       expect(template).to.contain('{%- except -%}');
@@ -891,9 +891,9 @@ endwhile`;
       expect(template).to.contain('{%- set stream = createAsyncStream() -%}');
       expect(template).to.contain('{%- while stream.hasNext() -%}');
       expect(template).to.contain('{%- set chunk = stream.next() -%}');
-      expect(template).to.contain('{{- print "Processing chunk " + loop.index + ": " + chunk -}}');
+      expect(template).to.contain('{{- "Processing chunk " + loop.index + ": " + chunk -}}');
       expect(template).to.contain('{%- if !chunk -%}');
-      expect(template).to.contain('{{- print \'Empty chunk\' -}}');
+      expect(template).to.contain('{{- \'Empty chunk\' -}}');
       expect(template).to.contain('{%- else -%}');
       expect(template).to.contain('{%- do results.push(processChunk(chunk)) -%}');
       expect(template).to.contain('{%- endif -%}');
@@ -922,7 +922,7 @@ endblock`;
       expect(template).to.contain('{%- depends frameVar1, frameVar2, frameVar3 -%}');
       expect(template).to.contain('{%- extends "parentTemplate_" + dynamicPart + ".njk" -%}');
       expect(template).to.contain('{%- block content -%}');
-      expect(template).to.contain('{{- print "<h1>" + frameVar1 + "</h1>" -}}');
+      expect(template).to.contain('{{- "<h1>" + frameVar1 + "</h1>" -}}');
       expect(template).to.contain('{%- set frameVar3 = "Updated Value" -%}');
       expect(template).to.contain('{%- include includedTemplateName + ".njk" depends = var1, var2 -%}');
       expect(template).to.contain('{%- endblock -%}');
