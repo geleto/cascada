@@ -23,27 +23,19 @@
     "dist/**"
   ],
   "dependencies": {
-    "@babel/plugin-transform-classes": "^7.25.9",
-    "@babel/traverse": "^7.26.4",
-    "@eslint/js": "^9.13.0",
     "a-sync-waterfall": "^1.0.1",
     "asap": "^2.0.6",
-    "commander": "^12.1.0",
-    "cpy-cli": "^5.0.0",
-    "globals": "^15.11.0",
-    "he": "^1.2.0",
-    "istanbul-lib-coverage": "^3.2.2",
-    "istanbul-lib-instrument": "^6.0.3",
-    "istanbul-lib-report": "^3.0.1",
-    "istanbul-reports": "^3.1.7",
-    "tiny-chalk": "^2.0.0"
+    "commander": "^12.1.0"
   },
   "devDependencies": {
     "@babel/cli": "^7.26.4",
     "@babel/core": "^7.26.0",
+    "@babel/plugin-transform-classes": "^7.25.9",
     "@babel/plugin-transform-modules-commonjs": "^7.26.3",
     "@babel/preset-env": "^7.26.0",
     "@babel/register": "^7.25.9",
+    "@babel/traverse": "^7.26.4",
+    "@eslint/js": "^9.13.0",
     "@istanbuljs/nyc-config-babel": "^3.0.0",
     "@rollup/plugin-babel": "^6.0.4",
     "@rollup/plugin-commonjs": "^28.0.2",
@@ -55,6 +47,7 @@
     "babel-plugin-module-resolver": "^5.0.2",
     "connect": "^3.7.0",
     "core-js": "^3.38.1",
+    "cpy-cli": "^5.0.0",
     "cross-env": "^7.0.3",
     "eslint": "^9.13.0",
     "eslint-plugin-mocha": "^10.5.0",
@@ -62,6 +55,11 @@
     "express": "4.x",
     "fs-extra": "^11.2.0",
     "get-port": "^5.1.1",
+    "globals": "^15.11.0",
+    "istanbul-lib-coverage": "^3.2.2",
+    "istanbul-lib-instrument": "^6.0.3",
+    "istanbul-lib-report": "^3.0.1",
+    "istanbul-reports": "^3.1.7",
     "mocha": "<10.x",
     "module-alias": "^2.2.3",
     "node-libs-browser": "^2.2.1",
@@ -71,8 +69,10 @@
     "serve-static": "^1.16.2",
     "supertest": "*",
     "terser-webpack-plugin": "^5.3.10",
+    "tiny-chalk": "^2.0.0",
     "webpack": "^5.95.0",
-    "webpack-cli": "^5.1.4"
+    "webpack-cli": "^5.1.4",
+    "he": "^1.2.0"
   },
   "peerDependencies": {
     "chokidar": "^3.3.0"
