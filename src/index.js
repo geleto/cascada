@@ -114,6 +114,30 @@ module.exports = {
     }
     return asyncE.renderString(src, ctx, cb);
   },
+  renderTemplate(src, ctx, cb) {
+    if (!e) {
+      configure();
+    }
+    return e.renderTemplate(src, ctx, cb);
+  },
+  renderTemplateAsync(src, ctx, cb) {
+    if (!asyncE) {
+      configureAsync();
+    }
+    return asyncE.renderTemplate(src, ctx, cb);
+  },
+  renderScript(src, ctx, cb) {
+    if (!e) {
+      configure();
+    }
+    return e.renderScript(src, ctx, cb);
+  },
+  renderScriptAsync(src, ctx, cb) {
+    if (!asyncE) {
+      configureAsync();
+    }
+    return asyncE.renderScript(src, ctx, cb);
+  },
   precompile: (precompile) ? precompile.precompile : undefined,
   precompileString: (precompile) ? precompile.precompileString : undefined,
   precompileAsync: (precompile) ? precompile.precompileAsync : undefined,
