@@ -67,9 +67,9 @@ class Compiler extends Obj {
     this.bufferStack.push(this.buffer);
     this.buffer = id;
     if (this.asyncMode) {
-      this.emit.Line(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
+      this.emit.line(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
     } else {
-      this.emit.Line(`let ${this.buffer} = "";`);
+      this.emit.line(`let ${this.buffer} = "";`);
     }
     return id;
   }
@@ -158,7 +158,7 @@ class Compiler extends Obj {
     } else {
       if (compileThen) {
         const result = this._tmpid();
-        this.emit.Line(`(${asyncThen ? 'async ' : ''}function(${result}){`);
+        this.emit.line(`(${asyncThen ? 'async ' : ''}function(${result}){`);
         compileThen.call(this, result, node.children.length);
         this.emit('})(');
         this.emit(startChar);
@@ -211,9 +211,9 @@ class Compiler extends Obj {
 
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
-      this.emit.Line(`let ${ext} = env.getExtension("${node.extName}");`);
+      this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
 
-      frame = this.emit.AsyncBlockAddToBufferBegin(node, frame, positionNode);
+      frame = this.emit.asyncBlockAddToBufferBegin(node, frame, positionNode);
       this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
       if (noExtensionCallback) {
         //the extension returns a value directly
@@ -269,23 +269,23 @@ class Compiler extends Obj {
         if (arg) {
           if (node.isAsync && !resolveArgs) {
             //when args are not resolved, the contentArgs are promises
-            this.emit.AsyncBlockRender(node, frame, function (f) {
+            this.emit.asyncBlockRender(node, frame, function (f) {
               this.compile(arg, f);
             }, null, arg); // Use content arg node for position
           }
           else {
             //when not resolve args, the contentArgs are callback functions
-            this.emit.Line('function(cb) {');
-            this.emit.Line('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
+            this.emit.line('function(cb) {');
+            this.emit.line('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
 
-            this.emit._withScopedSyntax(() => {
-              this.emit.AsyncBlockRender(node, frame, function (f) {
+            this.emit.withScopedSyntax(() => {
+              this.emit.asyncBlockRender(node, frame, function (f) {
                 this.compile(arg, f);
               }, 'cb', arg); // Use content arg node for position
-              this.emit.Line(';');
+              this.emit.line(';');
             });
 
-            this.emit.Line('}');//end callback
+            this.emit.line('}');//end callback
           }
         } else {
           this.emit('null');
@@ -296,15 +296,15 @@ class Compiler extends Obj {
     if (noExtensionCallback || node.isAsync) {
       this.emit(`)`);//close the extension call
       this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
-      frame = this.emit.AsyncBlockAddToBufferEnd(node, frame, positionNode);
+      frame = this.emit.asyncBlockAddToBufferEnd(node, frame, positionNode);
     } else {
       const res = this._tmpid();
-      this.emit.Line(', ' + this._makeCallback(res));
-      frame = this.emit.AsyncBlockAddToBufferBegin(node, frame, positionNode);
+      this.emit.line(', ' + this._makeCallback(res));
+      frame = this.emit.asyncBlockAddToBufferBegin(node, frame, positionNode);
       this.emit(`${node.isAsync ? 'await runtime.suppressValueAsync' : 'runtime.suppressValue'}(${res}, ${autoescape} && env.opts.autoescape);`);
-      frame = this.emit.AsyncBlockAddToBufferEnd(node, frame, positionNode);
+      frame = this.emit.asyncBlockAddToBufferEnd(node, frame, positionNode);
 
-      this.emit._addScopeLevel();
+      this.emit.addScopeLevel();
     }
   }
 
@@ -465,14 +465,14 @@ class Compiler extends Obj {
       };
       // Resolve the left-hand side and arguments (if any)
       this._compileAggregate(mergedNode, frame, '[', ']', true, true, function (args) {
-        this.emit.Line(`  const testFunc = ${testFunc};`);
-        this.emit.Line(`  if (!testFunc) { throw runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}"); }`);
-        this.emit.Line(`  const result = await testFunc.call(context, ${args}[0]`);
+        this.emit.line(`  const testFunc = ${testFunc};`);
+        this.emit.line(`  if (!testFunc) { throw runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}"); }`);
+        this.emit.line(`  const result = await testFunc.call(context, ${args}[0]`);
         if (node.right.args && node.right.args.children.length > 0) {
-          this.emit.Line(`, ...${args}.slice(1)`);
+          this.emit.line(`, ...${args}.slice(1)`);
         }
-        this.emit.Line(');');
-        this.emit.Line('  return result === true;');
+        this.emit.line(');');
+        this.emit.line('  return result === true;');
       }, true);
     } else {
       this.emit(`(${testFunc} ? ${testFunc}.call(context, `);
@@ -724,7 +724,7 @@ class Compiler extends Obj {
         this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
           this.emit(`return runtime.callWrap(`);
           this.compile(node.name, frame);
-          this.emit.Line(`, "${funcName}", context, ${result});`);
+          this.emit.line(`, "${funcName}", context, ${result});`);
         }); // Resolve arguments using _compileAggregate.
       }
     } else {
@@ -766,7 +766,7 @@ class Compiler extends Obj {
           this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
         });
       } else {
-        this.emit.AsyncBlockValue(mergedNode, frame, (n, f) => {
+        this.emit.asyncBlockValue(mergedNode, frame, (n, f) => {
           this._compileAggregate(n, f, '[', ']', true, false, function (result) {
             this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
           });
@@ -792,14 +792,14 @@ class Compiler extends Obj {
       // still we need to process it as expression for its arguments
       this.sequential.processExpression(node, frame);
 
-      this.emit.Line(`let ${symbol} = `);
+      this.emit.line(`let ${symbol} = `);
       // Use node.args as the position node since it's what's being evaluated async
       if (!node.wrapInAsyncBlock) {
         this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
           this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
         });
       } else {
-        this.emit.AsyncBlockValue(node, frame, (n, f) => {
+        this.emit.asyncBlockValue(node, frame, (n, f) => {
           this._compileAggregate(n.args, f, '[', ']', true, false, function (result) {
             this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
           });
@@ -809,8 +809,8 @@ class Compiler extends Obj {
     } else {
       this.emit('env.getFilter("' + node.name.value + '").call(context, ');
       this._compileAggregate(node.args, frame, '', '', false, false);
-      this.emit.Line(', ' + this._makeCallback(symbol));
-      this.emit._addScopeLevel();
+      this.emit.line(', ' + this._makeCallback(symbol));
+      this.emit.addScopeLevel();
     }
 
   }
@@ -835,7 +835,7 @@ class Compiler extends Obj {
 
         // Note: This relies on js allowing scope across
         // blocks, in case this is created inside an `if`
-        this.emit.Line('let ' + id + ';');
+        this.emit.line('let ' + id + ';');
 
         //@bug from nunjucks, the temporary variable is not added to the frame
         //leave it as is because we need to use node.get to handle async scenarios
@@ -863,11 +863,11 @@ class Compiler extends Obj {
       // set block
       this.emit(ids.join(' = ') + ' = ');
       // Use node.body as the position node since it's the block being evaluated
-      this.emit.AsyncBlockValue(node, frame, (n, f) => {
+      this.emit.asyncBlockValue(node, frame, (n, f) => {
         this.compile(n.body, f);
       }, undefined, node.body); // Pass body as code position
     }
-    this.emit.Line(';');
+    this.emit.line(';');
 
     node.targets.forEach((target, i) => {
       var id = ids[i];
@@ -875,21 +875,21 @@ class Compiler extends Obj {
 
       // We are running this for every var, but it's very
       // uncommon to assign to multiple vars anyway
-      this.emit.Line(`frame.set("${name}", ${id}, true);`);
+      this.emit.line(`frame.set("${name}", ${id}, true);`);
 
       //if (!this.asyncMode) {
       //in async mode writing to the context is not possible
       //will use a separate input/output tags and attributes to
       //declare variable exports/imports
-      this.emit.Line('if(frame.topLevel) {');
-      this.emit.Line(`context.setVariable("${name}", ${id});`);
-      this.emit.Line('}');
+      this.emit.line('if(frame.topLevel) {');
+      this.emit.line(`context.setVariable("${name}", ${id});`);
+      this.emit.line('}');
       //}
 
       if (name.charAt(0) !== '_') {
-        this.emit.Line('if(frame.topLevel) {');
-        this.emit.Line(`context.addExport("${name}", ${id});`);
-        this.emit.Line('}');
+        this.emit.line('if(frame.topLevel) {');
+        this.emit.line(`context.addExport("${name}", ${id});`);
+        this.emit.line('}');
       }
     });
   }
@@ -897,7 +897,7 @@ class Compiler extends Obj {
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
     // Use node.expr as the primary position node for the overall switch block
-    frame = this.emit.AsyncBlockBufferNodeBegin(node, frame, false, node.expr);
+    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.expr);
 
     const branchPositions = [];
     const branchWriteCounts = [];
@@ -946,11 +946,11 @@ class Compiler extends Obj {
 
       if (c.body.children.length) {
         // Use case body 'c.body' as position node for this block
-        this.emit.AsyncBlock(c, frame, false, (f) => {
+        this.emit.asyncBlock(c, frame, false, (f) => {
           this.compile(c.body, f);
           branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
         }, c.body); // Pass body as code position
-        this.emit.Line('break;');
+        this.emit.line('break;');
       }
     });
 
@@ -962,7 +962,7 @@ class Compiler extends Obj {
       this.emit('');
 
       // Use default body 'node.default' as position node for this block
-      this.emit.AsyncBlock(node, frame, false, (f) => {
+      this.emit.asyncBlock(node, frame, false, (f) => {
         this.compile(node.default, f);
         branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
       }, node.default); // Pass default as code position
@@ -977,12 +977,12 @@ class Compiler extends Obj {
     branchPositions.forEach((pos, i) => {
       const writesToSkip = excludeCurrentWrites(totalWrites, branchWriteCounts[i]);
       if (Object.keys(writesToSkip).length > 0) {
-        this.emit.InsertLine(pos, `frame.skipBranchWrites(${JSON.stringify(writesToSkip)});`);
+        this.emit.insertLine(pos, `frame.skipBranchWrites(${JSON.stringify(writesToSkip)});`);
       }
     });
 
     // Use node.expr (passed earlier) for the end block
-    frame = this.emit.AsyncBlockBufferNodeEnd(node, frame, false, false, node.expr);
+    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, false, node.expr);
   }
 
   //todo! - get rid of the callback
@@ -992,7 +992,7 @@ class Compiler extends Obj {
     }
 
     // Use node.cond as the position node for the overarching If block
-    frame = this.emit.AsyncBlockBufferNodeBegin(node, frame, false, node.cond);
+    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.cond);
 
     let trueBranchWriteCounts, falseBranchWriteCounts;
     let trueBranchCodePos;
@@ -1005,13 +1005,13 @@ class Compiler extends Obj {
       trueBranchCodePos = this.codebuf.length;
       this.emit('');
       // Use node.body as the position node for the true branch block
-      this.emit.AsyncBlock(node, frame, false, (f) => {
+      this.emit.asyncBlock(node, frame, false, (f) => {
         this.compile(node.body, f);
         trueBranchWriteCounts = this.async.countsTo1(f.writeCounts);
       }, node.body); // Pass body as code position
     }
     else {
-      this.emit._withScopedSyntax(() => {
+      this.emit.withScopedSyntax(() => {
         this.compile(node.body, frame);
         if (async) {
           this.emit('cb()');
@@ -1029,13 +1029,13 @@ class Compiler extends Obj {
     if (node.else_) {
       if (this.asyncMode) {
         // Use node.else_ as the position node for the false branch block
-        this.emit.AsyncBlock(node, frame, false, (f) => {
+        this.emit.asyncBlock(node, frame, false, (f) => {
           this.compile(node.else_, f);
           falseBranchWriteCounts = this.async.countsTo1(f.writeCounts);
         }, node.else_); // Pass else as code position
       }
       else {
-        this.emit._withScopedSyntax(() => {
+        this.emit.withScopedSyntax(() => {
           this.compile(node.else_, frame);
           if (async) {
             this.emit('cb()');
@@ -1052,11 +1052,11 @@ class Compiler extends Obj {
 
     if (falseBranchWriteCounts) {
       //skip the false branch writes in the true branch code
-      this.emit.InsertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
+      this.emit.insertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
     }
 
     // Use node.cond (passed earlier) for the end block
-    frame = this.emit.AsyncBlockBufferNodeEnd(node, frame, false, false, node.cond);
+    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, false, node.cond);
   }
 
   compileIfAsync(node, frame) {
@@ -1066,7 +1066,7 @@ class Compiler extends Obj {
       this.emit('(function(cb) {');
       this.compileIf(node, frame, true);
       this.emit('})(' + this._makeCallback());
-      this.emit._addScopeLevel();
+      this.emit.addScopeLevel();
     }
   }
 
@@ -1080,13 +1080,13 @@ class Compiler extends Obj {
     // not much.
 
     // Use node.arr as the position for the outer async block (evaluating the array)
-    frame = this.emit.AsyncBlockBufferNodeBegin(node, frame, true, node.arr);
+    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, true, node.arr);
 
     // Evaluate the array expression
     const arr = this._tmpid();
     this.emit(`let ${arr} = `);
     this._compileAwaitedExpression(node.arr, frame, false);
-    this.emit.Line(';');
+    this.emit.line(';');
 
     // Determine loop variable names
     const loopVars = [];
@@ -1129,17 +1129,17 @@ class Compiler extends Obj {
     this.emit(`, ${loopIndex}, ${loopLength}, ${isLast}) {`);
 
     // Use node.body as the position for the inner buffer block (loop body execution)
-    frame = this.emit.AsyncBlockBufferNodeBegin(node, frame, false, node.body);
+    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.body);
 
     const makeSequentialPos = this.codebuf.length;
-    this.emit.Line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+    this.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
 
     // Handle array unpacking within the loop body
     if (loopVars.length === 2 && !Array.isArray(arr)) {
       // Object key/value iteration
       const [keyVar, valueVar] = loopVars;
-      this.emit.Line(`frame.set("${keyVar}", ${keyVar});`);
-      this.emit.Line(`frame.set("${valueVar}", ${valueVar});`);
+      this.emit.line(`frame.set("${keyVar}", ${keyVar});`);
+      this.emit.line(`frame.set("${valueVar}", ${valueVar});`);
 
       if (node.isAsync) {
         frame.set(keyVar, keyVar);
@@ -1152,8 +1152,8 @@ class Compiler extends Obj {
       node.name.children.forEach((child, index) => {
         const varName = child.value;
         const tid = this._tmpid();
-        this.emit.Line(`let ${tid} = Array.isArray(${varName}) ? ${varName}[${index}] : undefined;`);
-        this.emit.Line(`frame.set("${varName}", ${tid});`);
+        this.emit.line(`let ${tid} = Array.isArray(${varName}) ? ${varName}[${index}] : undefined;`);
+        this.emit.line(`frame.set("${varName}", ${tid});`);
         if (node.isAsync) {
           frame.set(varName, tid);
           this._addDeclaredVar(frame, varName);
@@ -1162,7 +1162,7 @@ class Compiler extends Obj {
     } else {
       // Single variable loop
       const varName = node.name.value;
-      this.emit.Line(`frame.set("${varName}", ${varName});`);
+      this.emit.line(`frame.set("${varName}", ${varName});`);
       if (node.isAsync) {
         frame.set(varName, varName);
         this._addDeclaredVar(frame, varName);
@@ -1170,7 +1170,7 @@ class Compiler extends Obj {
     }
 
     // Compile the loop body with the updated frame
-    this.emit._withScopedSyntax(() => {
+    this.emit.withScopedSyntax(() => {
       this.compile(node.body, frame);
     });
 
@@ -1179,14 +1179,14 @@ class Compiler extends Obj {
       sequential = true;//should be sequential to avoid write race conditions and long promise chains
     }
     if (sequential) {
-      this.emit.InsertLine(makeSequentialPos, 'frame.sequentialLoopBody = true;');
+      this.emit.insertLine(makeSequentialPos, 'frame.sequentialLoopBody = true;');
     }
 
     // End buffer block for the loop body (using node.body position)
-    frame = this.emit.AsyncBlockBufferNodeEnd(node, frame, false, true, node.body);
+    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, true, node.body);
 
     // Close the loop body function
-    this.emit.Line('};');
+    this.emit.line('};');
 
     // Define the else function if it exists
     let elseFuncId = 'null';
@@ -1201,11 +1201,11 @@ class Compiler extends Obj {
       }
 
       // Use node.else_ as position for the else block buffer
-      frame = this.emit.AsyncBlockBufferNodeBegin(node, frame, false, node.else_);
+      frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.else_);
       this.compile(node.else_, frame);
-      frame = this.emit.AsyncBlockBufferNodeEnd(node, frame, false, false, node.else_);
+      frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, false, node.else_);
 
-      this.emit.Line('};');
+      this.emit.line('};');
     }
 
     // Call the runtime iterate loop function
@@ -1219,7 +1219,7 @@ class Compiler extends Obj {
     this.emit(`], ${sequential}, ${node.isAsync});`);
 
     // End buffer block for the node (using node.arr position)
-    frame = this.emit.AsyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
+    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
   }
 
   _compileAsyncLoopBindings(node, arr, i, len) {
@@ -1234,7 +1234,7 @@ class Compiler extends Obj {
     ];
 
     bindings.forEach((b) => {
-      this.emit.Line(`frame.set("loop.${b.name}", ${b.val});`);
+      this.emit.line(`frame.set("loop.${b.name}", ${b.val});`);
     });
   }
 
@@ -1254,11 +1254,11 @@ class Compiler extends Obj {
     asyncMethod = parallel ? 'asyncAll' : 'asyncEach';
 
     frame = frame.push();
-    this.emit.Line('frame = frame.push();');
+    this.emit.line('frame = frame.push();');
 
     this.emit('let ' + arr + ' = runtime.fromIterator(');
     this._compileExpression(node.arr, frame, false);
-    this.emit.Line(');');
+    this.emit.line(');');
 
     if (node.name instanceof nodes.Array) {
       const arrayLen = node.name.children.length;
@@ -1274,26 +1274,26 @@ class Compiler extends Obj {
         const id = name.value;
         frame.set(id, id);
         //this._addDeclaredVar(frame, id);
-        this.emit.Line(`frame.set("${id}", ${id});`);
+        this.emit.line(`frame.set("${id}", ${id});`);
       });
     } else {
       const id = node.name.value;
-      this.emit.Line(`runtime.${asyncMethod}(${arr}, 1, function(${id}, ${i}, ${len},next) {`);
+      this.emit.line(`runtime.${asyncMethod}(${arr}, 1, function(${id}, ${i}, ${len},next) {`);
       //this._addDeclaredVar(frame, id);
-      this.emit.Line('frame.set("' + id + '", ' + id + ');');
+      this.emit.line('frame.set("' + id + '", ' + id + ');');
       frame.set(id, id);
     }
 
     this._compileAsyncLoopBindings(node, arr, i, len);
 
-    this.emit._withScopedSyntax(() => {
+    this.emit.withScopedSyntax(() => {
       let buf;
       if (parallel) {
         buf = this._pushBuffer();
       }
 
       this.compile(node.body, frame);
-      this.emit.Line('next(' + i + (buf ? ',' + buf : '') + ');');
+      this.emit.line('next(' + i + (buf ? ',' + buf : '') + ');');
 
       if (parallel) {
         this._popBuffer();
@@ -1301,25 +1301,25 @@ class Compiler extends Obj {
     });
 
     const output = this._tmpid();
-    this.emit.Line('}, ' + this._makeCallback(output));
-    this.emit._addScopeLevel();
+    this.emit.line('}, ' + this._makeCallback(output));
+    this.emit.addScopeLevel();
 
     if (parallel) {
       if (this.asyncMode) {
         //non-async node but in async mode -> use the proper buffer implementation
         this.emit(`${this.buffer}[index++] = ${output};`);
       } else {
-        this.emit.Line(`${this.buffer} += ${output};`);
+        this.emit.line(`${this.buffer} += ${output};`);
       }
     }
 
     if (node.else_) {
-      this.emit.Line('if (!' + arr + '.length) {');
+      this.emit.line('if (!' + arr + '.length) {');
       this.compile(node.else_, frame);
-      this.emit.Line('}');
+      this.emit.line('}');
     }
 
-    this.emit.Line('frame = frame.pop();');
+    this.emit.line('frame = frame.pop();');
     //frame = frame.pop();// - not in nunjucks (a bug?)
   }
 
@@ -1372,16 +1372,16 @@ class Compiler extends Obj {
     // The `Caller` node (for `{{ caller() }}`) is a distinct typename.
     this.sequential.isCompilingMacroBody = node.typename !== 'Caller';
 
-    this.emit.Lines(
+    this.emit.lines(
       `let ${funcId} = runtime.makeMacro(`,
       `[${argNames.join(', ')}], `,
       `[${kwargNames.join(', ')}], `,
       `function (${realNames.join(', ')}, astate) {`
     );
     if (!keepFrame) {
-      this.emit.Line('let callerFrame = frame;');
+      this.emit.line('let callerFrame = frame;');
     }
-    this.emit.Lines(
+    this.emit.lines(
       'frame = ' + ((keepFrame) ? 'frame.push(true);' : 'frame.new();'),
       'kwargs = kwargs || {};',
       'if (Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
@@ -1390,7 +1390,7 @@ class Compiler extends Obj {
 
     let err = this._tmpid();
     if (node.isAsync) {
-      this.emit.Lines(
+      this.emit.lines(
         `let ${err} = null;`,
         'function cb(err) {',
         `if(err) {${err} = err;}`,
@@ -1401,7 +1401,7 @@ class Compiler extends Obj {
     // random names because the function
     // will create a new run-time scope for us
     args.forEach((arg) => {
-      this.emit.Line(`frame.set("${arg.value}", l_${arg.value});`);
+      this.emit.line(`frame.set("${arg.value}", l_${arg.value});`);
       currFrame.set(arg.value, `l_${arg.value}`);
       if (node.isAsync) {
         this._addDeclaredVar(currFrame, arg.value);
@@ -1428,14 +1428,14 @@ class Compiler extends Obj {
     }
     const bufferId = this._pushBuffer();
 
-    this.emit._withScopedSyntax(() => {
+    this.emit.withScopedSyntax(() => {
       this.compile(node.body, currFrame);
     });
 
-    this.emit.Line('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
+    this.emit.line('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
     //return the buffer, in async mode it may not be ready yet
-    //this.emit.Line(`return ${node.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
-    this.emit.Line('return ' + (
+    //this.emit.line(`return ${node.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
+    this.emit.line('return ' + (
       node.isAsync ?
         `astate.waitAllClosures().then(() => {if (${err}) throw ${err}; return runtime.newSafeStringAsync(runtime.flattentBuffer(${bufferId}));}).catch(error => Promise.reject(error));` :
         `new runtime.SafeString(${bufferId})`
@@ -1443,9 +1443,9 @@ class Compiler extends Obj {
     );
 
     if (node.isAsync) {
-      this.emit.Line('}, astate);');
+      this.emit.line('}, astate);');
     } else {
-      this.emit.Line('});');
+      this.emit.line('});');
     }
     this._popBuffer();
 
@@ -1462,12 +1462,12 @@ class Compiler extends Obj {
     frame.set(name, funcId);
 
     if (frame.parent) {
-      this.emit.Line(`frame.set("${name}", ${funcId});`);
+      this.emit.line(`frame.set("${name}", ${funcId});`);
     } else {
       if (node.name.value.charAt(0) !== '_') {
-        this.emit.Line(`context.addExport("${name}");`);
+        this.emit.line(`context.addExport("${name}");`);
       }
-      this.emit.Line(`context.setVariable("${name}", ${funcId});`);
+      this.emit.line(`context.setVariable("${name}", ${funcId});`);
     }
   }
 
@@ -1489,7 +1489,7 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
       const getTemplateFunc = this._tmpid();
-      this.emit.Line(`const ${getTemplateFunc} = runtime.promisify(env.getTemplate.bind(env));`);
+      this.emit.line(`const ${getTemplateFunc} = runtime.promisify(env.getTemplate.bind(env));`);
       this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
       /*if (wrapInAsyncBlock) {
         // Wrap the expression evaluation in an async block if needed, use template node position
@@ -1499,12 +1499,12 @@ class Compiler extends Obj {
       } else {*/
       this._compileExpression(node.template, frame, wrapInAsyncBlock, positionNode);
       /*}*/
-      this.emit.Line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
+      this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     } else {
       const cb = this._makeCallback(parentTemplateId);
       this.emit('env.getTemplate(');
       this._compileExpression(node.template, frame, false);
-      this.emit.Line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
+      this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
     }
 
     return parentTemplateId;
@@ -1519,19 +1519,19 @@ class Compiler extends Obj {
       const res = this._tmpid();
       this.emit(`${id} = `);
       // Use node as position node for the getExported part
-      this.emit.AsyncBlockValue(node, frame, (n, f) => {
-        this.emit.Line(`let ${res} = await ${id};`);
-        this.emit.Line(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${n.withContext
+      this.emit.asyncBlockValue(node, frame, (n, f) => {
+        this.emit.line(`let ${res} = await ${id};`);
+        this.emit.line(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${n.withContext
           ? `context.getVariables(), frame, astate`
           : `null, null, astate`
         });`);
       }, res, node);
     } else {
-      this.emit._addScopeLevel();
-      this.emit.Line(id + '.getExported(' +
+      this.emit.addScopeLevel();
+      this.emit.line(id + '.getExported(' +
         (node.withContext ? 'context.getVariables(), frame, ' : '') +
         this._makeCallback(id));
-      this.emit._addScopeLevel();
+      this.emit.addScopeLevel();
     }
 
     frame.set(target, id);
@@ -1540,13 +1540,13 @@ class Compiler extends Obj {
     }
 
     if (frame.parent) {
-      this.emit.Line(`frame.set("${target}", ${id});`);
+      this.emit.line(`frame.set("${target}", ${id});`);
     } else {
       // AI:
       //if (node.name.value.charAt(0) !== '_') {
-      //  this.emit.Line(`context.addExport("${target}");`);
+      //  this.emit.line(`context.addExport("${target}");`);
       //}
-      this.emit.Line(`context.setVariable("${target}", ${id});`);
+      this.emit.line(`context.setVariable("${target}", ${id});`);
     }
   }
 
@@ -1558,26 +1558,26 @@ class Compiler extends Obj {
       const res = this._tmpid();
       this.emit(`${importedId} = `);
       // Use node as position node for the getExported part
-      this.emit.AsyncBlockValue(node, frame, (n, f) => {
-        this.emit.Line(`let ${res} = await ${importedId};`);
-        this.emit.Line(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${n.withContext
+      this.emit.asyncBlockValue(node, frame, (n, f) => {
+        this.emit.line(`let ${res} = await ${importedId};`);
+        this.emit.line(`${res} = await runtime.promisify(${res}.getExported.bind(${res}))(${n.withContext
           ? `context.getVariables(), frame, astate`
           : `null, null, astate`
         });`);
       }, res, node);
     } else {
-      this.emit._addScopeLevel();//after _compileGetTemplate
-      this.emit.Line(importedId + '.getExported(' +
+      this.emit.addScopeLevel();//after _compileGetTemplate
+      this.emit.line(importedId + '.getExported(' +
         (node.withContext ? 'context.getVariables(), frame, ' : '') +
         this._makeCallback(importedId));
-      this.emit._addScopeLevel();
+      this.emit.addScopeLevel();
     }
 
     node.names.children.forEach((nameNode) => {
       let name;
       let alias;
       let id = this._tmpid();
-      this.emit.Line(`let ${id};`);
+      this.emit.line(`let ${id};`);
 
       if (nameNode instanceof nodes.Pair) {
         name = nameNode.key.value;
@@ -1595,20 +1595,20 @@ class Compiler extends Obj {
         //@todo - error handling in the async() function - This manual IIFE still bypasses handlePromise wrapper.
         // The async IIFE here doesn't use our helpers, error pos comes from JS runtime
         // @todo This needs refactoring to use handlePromise for proper context reporting via catch handler
-        this.emit.Line(`${id} = (async () => { try { `); // Add try
-        this.emit.Line(`  let exported = await ${importedId};`);
-        this.emit.Line(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
-        this.emit.Line(`    return exported["${name}"];`);
-        this.emit.Line(`  } else {`);
-        this.emit.Line(`    throw runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}");`);
-        this.emit.Line(`  }`);
-        this.emit.Line(`} catch(e) { throw runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}"); } })();`);
+        this.emit.line(`${id} = (async () => { try { `); // Add try
+        this.emit.line(`  let exported = await ${importedId};`);
+        this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
+        this.emit.line(`    return exported["${name}"];`);
+        this.emit.line(`  } else {`);
+        this.emit.line(`    throw runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}");`);
+        this.emit.line(`  }`);
+        this.emit.line(`} catch(e) { throw runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}"); } })();`);
       } else {
-        this.emit.Line(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
-        this.emit.Line(`${id} = ${importedId}.${name};`);
-        this.emit.Line('} else {');
-        this.emit.Line(`cb(runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}")); return;`);
-        this.emit.Line('}');
+        this.emit.line(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
+        this.emit.line(`${id} = ${importedId}.${name};`);
+        this.emit.line('} else {');
+        this.emit.line(`cb(runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}")); return;`);
+        this.emit.line('}');
       }
 
       frame.set(alias, id);
@@ -1617,9 +1617,9 @@ class Compiler extends Obj {
       }
 
       if (frame.parent) {
-        this.emit.Line(`frame.set("${alias}", ${id});`);
+        this.emit.line(`frame.set("${alias}", ${id});`);
       } else {
-        this.emit.Line(`context.setVariable("${alias}", ${id});`);
+        this.emit.line(`context.setVariable("${alias}", ${id});`);
       }
     });
   }
@@ -1640,16 +1640,16 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
       // Use the block node itself for position
-      this.emit.AsyncBlockAddToBuffer(node, frame, (id, f) => {
+      this.emit.asyncBlockAddToBuffer(node, frame, (id, f) => {
         if (!this.inBlock) {
           this.emit(`if(parentTemplate) ${id}=""; else {`);
         }
         const blockFunc = this._tmpid();
-        this.emit.Line(`let ${blockFunc} = await context.getAsyncBlock("${node.name.value}");`);
-        this.emit.Line(`${blockFunc} = runtime.promisify(${blockFunc}.bind(context));`);
-        this.emit.Line(`${id} = await ${blockFunc}(env, context, frame, runtime, astate);`);
+        this.emit.line(`let ${blockFunc} = await context.getAsyncBlock("${node.name.value}");`);
+        this.emit.line(`${blockFunc} = runtime.promisify(${blockFunc}.bind(context));`);
+        this.emit.line(`${id} = await ${blockFunc}(env, context, frame, runtime, astate);`);
         if (!this.inBlock) {
-          this.emit.Line('}');
+          this.emit.line('}');
         }
       }, node);
     }
@@ -1662,15 +1662,15 @@ class Compiler extends Obj {
       if (!this.inBlock) {
         this.emit(')');
       }
-      this.emit.Line('(env, context, frame, runtime, ' + this._makeCallback(id));
+      this.emit.line('(env, context, frame, runtime, ' + this._makeCallback(id));
 
       if (this.asyncMode) {
         //non-async node but in async mode -> use the proper buffer implementation
         this.emit(`${this.buffer}[index++] = ${id};`);
       } else {
-        this.emit.Line(`${this.buffer} += ${id};`);
+        this.emit.line(`${this.buffer} += ${id};`);
       }
-      this.emit._addScopeLevel();
+      this.emit.addScopeLevel();
     }
   }
 
@@ -1679,16 +1679,16 @@ class Compiler extends Obj {
     var id = node.symbol.value;
 
     if (node.isAsync) {
-      this.emit.Line(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime, astate);`);
+      this.emit.line(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime, astate);`);
     }
     else {
       const cb = this._makeCallback(id);
-      this.emit.Line(`context.getSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
+      this.emit.line(`context.getSuper(env, "${name}", b_${name}, frame, runtime, ${cb}`);
     }
-    this.emit.Line(`${id} = runtime.markSafe(${id});`);
+    this.emit.line(`${id} = runtime.markSafe(${id});`);
 
     if (!node.isAsync) {
-      this.emit._addScopeLevel();
+      this.emit.addScopeLevel();
     }
     frame.set(id, id);
     if (node.isAsync) {
@@ -1700,7 +1700,7 @@ class Compiler extends Obj {
     var k = this._tmpid();
 
     if (node.isAsync) {
-      this.emit.Line('context.prepareForAsyncBlocks();');
+      this.emit.line('context.prepareForAsyncBlocks();');
     }
 
     // Pass node.template for position in _compileGetTemplate
@@ -1712,22 +1712,22 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
       // Use node.template as position for the block resolving the parent template
-      frame = this.emit.AsyncBlockBegin(node, frame, false, node.template);
+      frame = this.emit.asyncBlockBegin(node, frame, false, node.template);
     }
 
     //isAsync: set the global parent template, compileRoot will use it after waitAllClosures
-    this.emit.Line(`parentTemplate = ${node.isAsync ? 'await ' : ''}${parentTemplateId};`);
-    this.emit.Line(`for(let ${k} in parentTemplate.blocks) {`);
-    this.emit.Line(`context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
-    this.emit.Line('}');
+    this.emit.line(`parentTemplate = ${node.isAsync ? 'await ' : ''}${parentTemplateId};`);
+    this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
+    this.emit.line(`context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
+    this.emit.line('}');
 
     if (!node.isAsync) {
-      this.emit._addScopeLevel();
+      this.emit.addScopeLevel();
     }
     else {
-      this.emit.Line('context.finsihsAsyncBlocks()');
+      this.emit.line('context.finsihsAsyncBlocks()');
       // Use node.template for the end block position
-      frame = this.emit.AsyncBlockEnd(node, frame, false, false, node.template);
+      frame = this.emit.asyncBlockEnd(node, frame, false, false, node.template);
     }
   }
 
@@ -1737,7 +1737,7 @@ class Compiler extends Obj {
       return;
     }
     // Use node.template for position of getTemplate, node for render
-    this.emit.AsyncBlockAddToBuffer(node, frame, (resultVar, f) => {
+    this.emit.asyncBlockAddToBuffer(node, frame, (resultVar, f) => {
       // Get the template
       const templateVar = this._tmpid();
       const templateNameVar = this._tmpid();
@@ -1745,49 +1745,49 @@ class Compiler extends Obj {
       // Get the template name expression
       this.emit(`let ${templateNameVar} = `);
       this._compileExpression(node.template, f, false);
-      this.emit.Line(';');
+      this.emit.line(';');
 
       // getTemplate
-      this.emit.Line(`let ${templateVar} = await runtime.promisify(env.getTemplate.bind(env))(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
+      this.emit.line(`let ${templateVar} = await runtime.promisify(env.getTemplate.bind(env))(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
       // render
-      this.emit.Line(`${resultVar} = await runtime.promisify(${templateVar}.render.bind(${templateVar}))(context.getVariables(), frame${node.isAsync ? ', astate' : ''});`);
+      this.emit.line(`${resultVar} = await runtime.promisify(${templateVar}.render.bind(${templateVar}))(context.getVariables(), frame${node.isAsync ? ', astate' : ''});`);
     }, node);
   }
 
   compileIncludeSync(node, frame) {
     //we can't use the async implementation with (async(){...})().then(...
     //as the .render() method is expected to return the result immediately
-    this.emit.Line('let tasks = [];');
-    this.emit.Line('tasks.push(');
-    this.emit.Line('function(callback) {');
+    this.emit.line('let tasks = [];');
+    this.emit.line('tasks.push(');
+    this.emit.line('function(callback) {');
 
     const id = this._compileGetTemplate(node, frame, false, node.ignoreMissing, false);
-    this.emit.Line(`callback(null,${id});});`);
+    this.emit.line(`callback(null,${id});});`);
 
-    this.emit.Line('});');
+    this.emit.line('});');
 
     const id2 = this._tmpid();
-    this.emit.Line('tasks.push(');
-    this.emit.Line('function(template, callback){');
-    this.emit.Line('template.render(context.getVariables(), frame, ' + (node.isAsync ? 'astate,' : '') + this._makeCallback(id2));
-    this.emit.Line('callback(null,' + id2 + ');});');
-    this.emit.Line('});');
+    this.emit.line('tasks.push(');
+    this.emit.line('function(template, callback){');
+    this.emit.line('template.render(context.getVariables(), frame, ' + (node.isAsync ? 'astate,' : '') + this._makeCallback(id2));
+    this.emit.line('callback(null,' + id2 + ');});');
+    this.emit.line('});');
 
-    this.emit.Line('tasks.push(');
-    this.emit.Line('function(result, callback){');
+    this.emit.line('tasks.push(');
+    this.emit.line('function(result, callback){');
 
     // Adding to buffer is synchronous here
     if (this.asyncMode) {
       //non-async node but in async mode -> use the proper buffer implementation
-      this.emit.Line(`${this.buffer}[index++] = result;`);
+      this.emit.line(`${this.buffer}[index++] = result;`);
     } else {
-      this.emit.Line(`${this.buffer} += result;`);
+      this.emit.line(`${this.buffer} += result;`);
     }
-    this.emit.Line('callback(null);');
-    this.emit.Line('});');
-    this.emit.Line('env.waterfall(tasks, function(){');
-    this.emit._addScopeLevel();
+    this.emit.line('callback(null);');
+    this.emit.line('});');
+    this.emit.line('env.waterfall(tasks, function(){');
+    this.emit.addScopeLevel();
   }
 
   compileTemplateData(node, frame) {
@@ -1802,25 +1802,25 @@ class Compiler extends Obj {
     if (node.isAsync) {
       const res = this._tmpid();
       // Use node.body as position node for the capture block evaluation
-      this.emit.AsyncBlockValue(node, frame, (n, f) => {
+      this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
-        this.emit.Line('let output = [];');
+        this.emit.line('let output = [];');
 
         this.compile(n.body, f);//write to output
 
-        this.emit.Line('await astate.waitAllClosures(1)');
-        this.emit.Line(`let ${res} = runtime.flattentBuffer(output);`);
+        this.emit.line('await astate.waitAllClosures(1)');
+        this.emit.line(`let ${res} = runtime.flattentBuffer(output);`);
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
       }, res, node.body);
     }
     else {
-      this.emit.Line('(function() {');
-      this.emit.Line('let output = "";');
-      this.emit._withScopedSyntax(() => {
+      this.emit.line('(function() {');
+      this.emit.line('let output = "";');
+      this.emit.withScopedSyntax(() => {
         this.compile(node.body, frame);
       });
-      this.emit.Line('return output;');
-      this.emit.Line('})()');
+      this.emit.line('return output;');
+      this.emit.line('})()');
     }
 
     // and of course, revert back to the old buffer id
@@ -1835,13 +1835,13 @@ class Compiler extends Obj {
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
           // Position node is the TemplateData node itself
-          this.emit.AddToBuffer(node, frame, function () {
+          this.emit.addToBuffer(node, frame, function () {
             this.compileLiteral(child, frame);
           }, child); // Pass TemplateData as position
         }
       } else {
         // Use the specific child expression node for position
-        frame = this.emit.AsyncBlockAddToBufferBegin(node, frame, child);
+        frame = this.emit.asyncBlockAddToBufferBegin(node, frame, child);
         this.emit(`${node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
 
         if (this.throwOnUndefined) {
@@ -1854,7 +1854,7 @@ class Compiler extends Obj {
         }
         // Use child position for suppressValue error
         this.emit(', env.opts.autoescape);\n');
-        frame = this.emit.AsyncBlockAddToBufferEnd(node, frame, child); // Pass Output node as op, child as pos
+        frame = this.emit.asyncBlockAddToBufferEnd(node, frame, child); // Pass Output node as op, child as pos
       }
     });
   }
@@ -1919,47 +1919,47 @@ class Compiler extends Obj {
       this.sequential._declareSequentialLocks(node, frame.sequenceLockFrame);
     }
 
-    this.emit.FuncBegin(node, 'root');
-    this.emit.Line('let parentTemplate = null;');
+    this.emit.funcBegin(node, 'root');
+    this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
     if (node.isAsync) {
-      this.emit.Line('let isIncluded = !!(frame.parent || frame.isIncluded);');
-      this.emit.Line('if(!isIncluded){');
-      this.emit.Line('astate.waitAllClosures().then(() => {');
-      this.emit.Line('  if(parentTemplate) {');
-      this.emit.Line('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
-      this.emit.Line('  } else {');
-      this.emit.Line(`    cb(null, runtime.flattentBuffer(${this.buffer}));`);
-      this.emit.Line('  }');
-      this.emit.Line('}).catch(e => {');
+      this.emit.line('let isIncluded = !!(frame.parent || frame.isIncluded);');
+      this.emit.line('if(!isIncluded){');
+      this.emit.line('astate.waitAllClosures().then(() => {');
+      this.emit.line('  if(parentTemplate) {');
+      this.emit.line('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
+      this.emit.line('  } else {');
+      this.emit.line(`    cb(null, runtime.flattentBuffer(${this.buffer}));`);
+      this.emit.line('  }');
+      this.emit.line('}).catch(e => {');
       // Use static node position for root catch in async mode
       // Do NOT pass errorContext here
-      this.emit.Line(`cb(runtime.handleError(e, ${node.lineno}, ${node.colno}))`);
-      this.emit.Line('});');
-      this.emit.Line('} else {');
-      this.emit.Line('if(parentTemplate) {');
-      this.emit.Line('parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
-      this.emit.Line('} else {');
-      this.emit.Line(`cb(null, ${this.buffer});`);
-      this.emit.Line('}');
-      this.emit.Line('}');
+      this.emit.line(`cb(runtime.handleError(e, ${node.lineno}, ${node.colno}))`);
+      this.emit.line('});');
+      this.emit.line('} else {');
+      this.emit.line('if(parentTemplate) {');
+      this.emit.line('parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
+      this.emit.line('} else {');
+      this.emit.line(`cb(null, ${this.buffer});`);
+      this.emit.line('}');
+      this.emit.line('}');
     }
     else {
-      this.emit.Line('if(parentTemplate) {');
-      this.emit.Line(`parentTemplate.rootRenderFunc(env, context, frame, runtime, ${this.asyncMode ? 'astate, ' : ''}cb);`);
-      this.emit.Line('} else {');
+      this.emit.line('if(parentTemplate) {');
+      this.emit.line(`parentTemplate.rootRenderFunc(env, context, frame, runtime, ${this.asyncMode ? 'astate, ' : ''}cb);`);
+      this.emit.line('} else {');
       if (this.asyncMode) {
         // This case (sync root in asyncMode) might be unlikely/problematic,
         // but keep flatten for consistency if it somehow occurs.
-        this.emit.Line(`cb(null, runtime.flattentBuffer(${this.buffer}));`);
+        this.emit.line(`cb(null, runtime.flattentBuffer(${this.buffer}));`);
       } else {
-        this.emit.Line(`cb(null, ${this.buffer});`);
+        this.emit.line(`cb(null, ${this.buffer});`);
       }
-      this.emit.Line('}');
+      this.emit.line('}');
     }
 
     // Pass the node to _emitFuncEnd for error position info (used in sync catch)
-    this.emit.FuncEnd(node, true);
+    this.emit.funcEnd(node, true);
 
     this.inBlock = true;
 
@@ -1975,30 +1975,30 @@ class Compiler extends Obj {
       }
       blockNames.push(name);
 
-      this.emit.FuncBegin(block, `b_${name}`);
+      this.emit.funcBegin(block, `b_${name}`);
 
       let tmpFrame = frame.new();//new Frame();
-      this.emit.Line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
+      this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       this.compile(block.body, tmpFrame);
       // Pass the block node to _emitFuncEnd
-      this.emit.FuncEnd(block);
+      this.emit.funcEnd(block);
     });
 
-    this.emit.Line('return {');
+    this.emit.line('return {');
 
     blocks.forEach((block, i) => {
       const blockName = `b_${block.name.value}`;
-      this.emit.Line(`${blockName}: ${blockName},`);
+      this.emit.line(`${blockName}: ${blockName},`);
     });
 
-    this.emit.Line('root: root\n};');
+    this.emit.line('root: root\n};');
   }
 
   compile(node, frame) {
     var _compile = this['compile' + node.typename];
     if (_compile) {
       if (node.wrapInAsyncBlock) {
-        this.emit.AsyncBlockValue(node, frame, (n, f) => {
+        this.emit.asyncBlockValue(node, frame, (n, f) => {
           _compile.call(this, n, f);
         }, undefined, node);
       } else {
@@ -2073,7 +2073,7 @@ class Compiler extends Obj {
       this.sequential.processExpression(node, frame);
       if (forceWrap || node.wrapInAsyncBlock) {
         node.wrapInAsyncBlock = false;//so that compile won't wrap it and ignore positionNode
-        this.emit.AsyncBlockValue(node, frame, (n, f) => {
+        this.emit.asyncBlockValue(node, frame, (n, f) => {
           this.compile(n, f);
         }, undefined, positionNode ?? node);
       } else {
@@ -2091,30 +2091,30 @@ class Compiler extends Obj {
   compileDo(node, frame) {
     if (node.isAsync) {
       // Use the Do node itself for the outer async block position
-      this.emit.AsyncBlock(node, frame, false, (f) => {
+      this.emit.asyncBlock(node, frame, false, (f) => {
         const promisesVar = this._tmpid();
-        this.emit.Line(`let ${promisesVar} = [];`);
+        this.emit.line(`let ${promisesVar} = [];`);
         node.children.forEach((child) => {
           // Position node for individual expressions is the child itself
           const resultVar = this._tmpid();
-          this.emit.Line(`let ${resultVar} = `);
+          this.emit.line(`let ${resultVar} = `);
           // Expressions inside DO shouldn't be wrapped in another IIFE,
           // but if they were async, their results (promises) need handling.
           // We compile them directly here.
           this._compileExpression(child, f, false);
-          this.emit.Line(';');
+          this.emit.line(';');
           // We only push actual promises to the wait list
-          this.emit.Line(`if (${resultVar} && typeof ${resultVar}.then === 'function') ${promisesVar}.push(${resultVar});`);
+          this.emit.line(`if (${resultVar} && typeof ${resultVar}.then === 'function') ${promisesVar}.push(${resultVar});`);
         });
-        this.emit.Line(`if (${promisesVar}.length > 0) {`);
-        this.emit.Line(`  await Promise.all(${promisesVar});`);
-        this.emit.Line(`}`);
+        this.emit.line(`if (${promisesVar}.length > 0) {`);
+        this.emit.line(`  await Promise.all(${promisesVar});`);
+        this.emit.line(`}`);
       }, node); // Pass Do node as positionNode for the overall block
-      //this.emit.Line(';'); // Removed semicolon after block
+      //this.emit.line(';'); // Removed semicolon after block
     } else {
       node.children.forEach(child => {
         this._compileExpression(child, frame, false);
-        this.emit.Line(';');
+        this.emit.line(';');
       });
     }
   }
