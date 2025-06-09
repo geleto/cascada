@@ -31,7 +31,9 @@ const coverageConfig = {
 const nyc = new NYC({
   include: ['src/**/*.js'],
   reporter: ['text', 'html', 'lcov'],
-  showProcessTree: true
+  showProcessTree: true,
+  tempDir: path.join(__dirname, '../coverage/.nyc_output'),
+  cacheDir: path.join(__dirname, '../coverage/.nyc_output')
 });
 
 function colorConsoleOutput(message) {
@@ -213,6 +215,20 @@ async function runTests() {
     const mergedCoverageFile = path.join(coverageConfig.dir, 'merged-coverage.json');
     await fs.writeFile(mergedCoverageFile, JSON.stringify(coverageMap));
 
+    // Write the merged coverage data to NYC's temp directory so it can read it
+    const nycTempDir = path.join(coverageConfig.dir, '.nyc_output');
+    await fs.mkdir(nycTempDir, { recursive: true });
+
+    // Write each file's coverage data as separate files in NYC temp directory
+    const coverageData = coverageMap.toJSON();
+    for (const [filePath, fileCoverage] of Object.entries(coverageData)) {
+      const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.json`;
+      await fs.writeFile(
+        path.join(nycTempDir, fileName),
+        JSON.stringify({ [filePath]: fileCoverage })
+      );
+    }
+
     if (mergeNodeTestsCoverage) {
       console.log('\nCombined Coverage Summary from Node and browser tests:');
     }
@@ -220,7 +236,17 @@ async function runTests() {
       console.log('\nCoverage Summary from browser tests:');
     }
 
-    await nyc.report();
+    // Create a new NYC instance that reads from our merged coverage data
+    const reportNyc = new NYC({
+      include: ['src/**/*.js'],
+      reporter: ['text', 'html', 'lcov'],
+      showProcessTree: true,
+      tempDir: nycTempDir,
+      cacheDir: nycTempDir,
+      cwd: path.join(__dirname, '..')
+    });
+
+    await reportNyc.report();
 
   } catch (error) {
     console.error('Test runner encountered an error:', error);
