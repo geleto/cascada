@@ -694,6 +694,137 @@ endif`;
     });
   });
 
+  // @ Command conversion tests
+  describe('@ Command Conversions', () => {
+    describe('Statement-Style Commands', () => {
+      it('should convert simple command with path and string value', () => {
+        const script = '@put user.name \'Alice\'';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command put user.name \'Alice\' -%}');
+      });
+
+      it('should convert command with path and numeric value', () => {
+        const script = '@put user.age 30';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command put user.age 30 -%}');
+      });
+
+      it('should convert command with complex path', () => {
+        const script = '@put user.settings.theme \'dark\'';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command put user.settings.theme \'dark\' -%}');
+      });
+
+      it('should convert command with object literal argument', () => {
+        const script = '@push users { id: 1, name: \'Bob\' }';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command push users { id: 1, name: \'Bob\' } -%}');
+      });
+
+      it('should convert command with no argument', () => {
+        const script = '@pop user.roles';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command pop user.roles -%}');
+      });
+
+      it('should handle command with extra whitespace', () => {
+        const script = '  @put  user.name   \'Alice\'  ';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('  {%- statement_command put  user.name   \'Alice\'   -%}');
+      });
+
+      it('should convert command that looks like function but has no parentheses', () => {
+        const script = '@turtle.forward 50';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command turtle.forward 50 -%}');
+      });
+    });
+
+    describe('Function-Style Commands', () => {
+      it('should convert simple function call with dot in name', () => {
+        const script = '@turtle.forward(50)';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- function_command turtle.forward(50) -%}');
+      });
+
+      it('should convert call with complex expression as argument', () => {
+        const script = '@turtle.turn(getAngle() * 2)';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- function_command turtle.turn(getAngle() * 2) -%}');
+      });
+
+      it('should handle call with extra whitespace around parentheses', () => {
+        const script = '@turtle.forward ( 50 )';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- function_command turtle.forward ( 50 ) -%}');
+      });
+
+      it('should convert function call with multiple arguments', () => {
+        const script = '@move.to(x + 10, y - 5, z)';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- function_command move.to(x + 10, y - 5, z) -%}');
+      });
+
+      it('should convert function call with nested function calls', () => {
+        const script = '@calc.process(getValue(a), transform(b, c))';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- function_command calc.process(getValue(a), transform(b, c)) -%}');
+      });
+    });
+
+    describe('@ Commands with Comments', () => {
+      it('should handle statement command with trailing comment', () => {
+        const script = '@put user.name \'Alice\' // Set user name';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command put user.name \'Alice\'  -%}{#- Set user name -#}');
+      });
+
+      it('should handle function command with trailing comment', () => {
+        const script = '@turtle.forward(50) // Move turtle forward';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- function_command turtle.forward(50)  -%}{#- Move turtle forward -#}');
+      });
+
+      it('should handle command with multi-line comment', () => {
+        const script = '@put user.status \'active\' /* Update user status to active */';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command put user.status \'active\'  -%}{#- Update user status to active -#}');
+      });
+    });
+
+    describe('@ Commands Edge Cases', () => {
+      it('should handle @ command with indentation', () => {
+        const script = '  @put user.name \'Alice\'';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('  {%- statement_command put user.name \'Alice\' -%}');
+      });
+
+      it('should handle @ command with empty function call', () => {
+        const script = '@reset()';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- function_command reset() -%}');
+      });
+
+      it('should handle @ command with string containing spaces', () => {
+        const script = '@set message "Hello World with spaces"';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command set message "Hello World with spaces" -%}');
+      });
+
+      it('should handle @ command with boolean values', () => {
+        const script = '@toggle user.active true';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command toggle user.active true -%}');
+      });
+
+      it('should handle @ command with array notation', () => {
+        const script = '@update items[0].status \'completed\'';
+        const { template } = scriptToTemplate(script);
+        expect(template).to.equal('{%- statement_command update items[0].status \'completed\' -%}');
+      });
+    });
+  });
+
   // Edge cases
   describe('Edge Cases', () => {
     it('should handle empty input', () => {

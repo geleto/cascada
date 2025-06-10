@@ -180,7 +180,7 @@ const RESERVED_KEYWORDS = new Set([
  */
 function getFirstWord(text) {
   // Get the first space-separated word
-  const match = text.trim().match(/^([a-zA-Z0-9_]+)(?:\s|$)/);
+  const match = text.trim().match(/^(@?[a-zA-Z0-9_]+)(?:\s|$)/);
   return match ? match[1] : '';
 }
 
@@ -350,8 +350,50 @@ function continuesFromPrevious(codeContent) {
     if (isCompleteWord(codeContent, keywordIndex, firstWord.length)) {
       return true;
     }
+  }  return false;
+}
+
+/**
+ * Checks if a command follows function-style syntax
+ * Function-style: identifier(.identifier)*(...)
+ * Statement-style: identifier(.identifier)* ...other
+ * @param {string} commandContent - The command content after the @ symbol
+ * @return {boolean} True if it's function-style
+ */
+function isCommandFunctionStyle(commandContent) {
+  // Find the first opening parenthesis
+  const parenIndex = commandContent.indexOf('(');
+  if (parenIndex === -1) {
+    return false;
   }
-  return false;
+
+  // Extract the part before the parenthesis and validate it
+  const beforeParen = commandContent.substring(0, parenIndex).trim();
+  if (!beforeParen) {
+    return false;
+  }
+
+  // Split by dots and validate each part as an identifier
+  const parts = beforeParen.split('.');
+  for (const part of parts) {
+    if (!isValidIdentifier(part)) {
+      throw new Error(`Invalid identifier in command path: "${part}" in "${commandContent}"`);
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Checks if a string is a valid JavaScript identifier
+ * @param {string} str - The string to check
+ * @return {boolean} True if it's a valid identifier
+ */
+function isValidIdentifier(str) {
+  if (!str) return false;
+
+  // JavaScript identifier rules: start with letter, $, or _, followed by letters, digits, $, or _
+  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);
 }
 
 function processLine(line, state) {
@@ -374,22 +416,36 @@ function processLine(line, state) {
     parseResult.comments.push(comments[i].content);
   }
 
+  // Handle special @-command syntax before checking for standard keywords.
   const firstWord = getFirstWord(parseResult.codeContent);
-  if (RESERVED_KEYWORDS.has(firstWord)) {
-    if (firstWord === 'print') {
-      parseResult.lineType = 'PRINT';
-      parseResult.blockType = null;
-      // Strip the 'print' keyword from codeContent for output expressions
-      const printPos = parseResult.codeContent.indexOf('print');
-      parseResult.codeContent = parseResult.codeContent.substring(printPos + 'print'.length).trim(); // Remove 'print'
-    } else {
-      parseResult.lineType = 'TAG';
-      parseResult.blockType = getBlockType(firstWord);
-      parseResult.tagName = firstWord;
-    }
-  } else {
-    parseResult.lineType = 'CODE';
+  if (parseResult.codeContent.trim().startsWith('@')) {
+    // Find the @ symbol position and preserve all whitespace after it
+    const atIndex = parseResult.codeContent.indexOf('@');
+    const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
+    let isFunctionStyle = isCommandFunctionStyle(commandContent.trim());
+
+    parseResult.lineType = 'TAG';
+    parseResult.tagName = isFunctionStyle ? 'function_command' : 'statement_command';
     parseResult.blockType = null;
+    parseResult.codeContent = commandContent; // The content for the Nunjucks tag
+  } else {
+    // Standard keyword processing
+    if (RESERVED_KEYWORDS.has(firstWord)) {
+      if (firstWord === 'print') {
+        parseResult.lineType = 'PRINT';
+        parseResult.blockType = null;
+        // Strip the 'print' keyword from codeContent for output expressions
+        const printPos = parseResult.codeContent.indexOf('print');
+        parseResult.codeContent = parseResult.codeContent.substring(printPos + 'print'.length).trim(); // Remove 'print'
+      } else {
+        parseResult.lineType = 'TAG';
+        parseResult.blockType = getBlockType(firstWord);
+        parseResult.tagName = firstWord;
+      }
+    } else {
+      parseResult.lineType = 'CODE';
+      parseResult.blockType = null;
+    }
   }
 
   parseResult.continuesToNext = willContinueToNextLine(codeTokens, parseResult.codeContent, firstWord);
@@ -452,6 +508,12 @@ function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLi
     switch (processedLine.lineType) {
       case 'TAG':
         output += '{%- ';
+        if (processedLine.tagName) {
+          // For internal commands, prepend the tag name that the Nunjucks parser expects
+          if (processedLine.tagName === 'function_command' || processedLine.tagName === 'statement_command') {
+            output += processedLine.tagName + ' ';
+          }
+        }
         break;
       case 'PRINT':
         output += '{{- ';
@@ -601,4 +663,5 @@ function scriptToTemplate(scriptStr) {
 
 module.exports = { scriptToTemplate, getFirstWord, isCompleteWord, getBlockType,
   extractComments, filterOutComments, tokensToCode, willContinueToNextLine,
-  continuesFromPrevious, generateOutput, processedLine: processLine, validateBlockStructure };
+  continuesFromPrevious, generateOutput, processedLine: processLine, validateBlockStructure,
+  isCommandFunctionStyle, isValidIdentifier };
