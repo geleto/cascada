@@ -4,7 +4,7 @@
 
 **Note**: Cascada is under active development. Some features mentioned here may not be fully implemented, and this documentation may not yet reflect the latest changes.
 
-Cascada is a powerful engine designed to dramatically simplify complex, asynchronous workflows. It allows you to write clean, synchronous-looking code that executes with maximum concurrency. The engine **automatically parallelizes** independent operations and **manages data dependencies**, delivering high performance without the boilerplate of manual async handling.
+Cascada is a powerful engine designed to dramatically simplify complex, asynchronous workflows. It allows you to write clean, synchronous-looking code that executes with maximum concurrency. The engine **automatically parallelizes** independent operations, **manages data dependencies** and eliminates race conditions while delivering high performance without the boilerplate of manual async handling.
 
 It offers both a familiar **template syntax** for generating text-based output and a clean **scripting language** for complex data orchestration, all powered by the same concurrent core. This makes Cascada exceptionally versatile, whether you're building a dynamic website, crafting detailed LLM prompts, or orchestrating multi-step AI agent workflows.
 
@@ -33,8 +33,8 @@ set user = fetchUser(123)
 set config = fetchSiteConfig()
 
 // Waits for both to complete before printing.
-print "Welcome, " + user.name
-print "Theme: " + config.theme
+@print "Welcome, " + user.name
+@print "Theme: " + config.theme
 ```
 
 </details>
@@ -77,7 +77,7 @@ set post = fetchPost(42)
 // Waits for post to resolve, then iterates
 // over the async comments iterator.
 for comment in fetchComments(post.id)
-  print comment.author + ": " + comment.body
+  @print comment.author + ": " + comment.body
 endfor
 ```
 
@@ -126,7 +126,7 @@ set user = getUser()
 set posts = getPosts(user.id)
 set footer = getFooter()
 
-print "User: " + user.name
+@print "User: " + user.name
 ```
 
 </details>
@@ -153,7 +153,7 @@ print "User: " + user.name
 
 ### Sequential Execution Control (`!`)
 
-For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
+For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent access on that path (reads and calls without side effects do not need `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
 
 </td>
 <td valign="top">
@@ -196,7 +196,8 @@ account!.withdraw(50)
 
 **Note**: The assembly commands feature is under development.
 
-For scripts, **Data Assembly Commands** (`put`, `push`, `merge`) build the **structured return value** in a predictable, sequential order that matches your source code. Similarly, the final **text output of templates** is also buffered and assembled sequentially. This is true even when underlying async operations complete at different times.
+For scripts, **Data Assembly Commands** (`@put`, `@push`, `@pop`, `@shift`, `@unshift`, `@merge`) build the **structured return value** in a predictable, sequential order that matches your source code. Similarly, the final **text output of templates** is also buffered and assembled sequentially. This is true even when underlying async operations complete at different times.
+You can add your own data assembly commands using `addDataMethods`, the final assembly happens after the script execution.
 
 </td>
 <td valign="top">
@@ -218,7 +219,7 @@ for id in productIds
   // built in the order of `productIds`
   // [101, 205, 302], not the order in which
   // the data for each product resolves.
-  push report.products {
+  @push report.products {
     id: details.id,
     name: details.name,
     reviewCount: reviews.length
@@ -243,10 +244,115 @@ endfor
 ```
 
 </details>
+
+<details>
+  <summary><strong>Custom Data Assembly Methods</strong></summary>
+
+  ```javascript
+  const env = new AsyncEnvironment();
+  env.addDataMethods({
+    upsert: (target, data) => {
+      const ind = target.findIndex(item => item.id === data.id);
+      if (ind > -1) Object.assign(target[ind], data);
+      else target.push(data);
+    }
+  });
+
+  const script = `// The built-in @push command
+    @push users {id: 1, name: "Alice", active: true}
+    @push users {id: 2, name: "Bob", active: true}
+
+    // The custom @upsert command will UPDATE Alice.
+    @upsert users {id: 1, active: false}
+
+    // This will ADD Charlie.
+    @upsert users {id: 3, name: "Charlie", active: true}`;
+
+  console.log( await env.renderScriptString(
+    script, {}, { output: 'data' }
+  ));
+
+  /*
+  [ { id: 1, name: "Alice", active: false },
+    { id: 2, name: "Bob", active: true },
+    { id: 3, name: "Charlie", active: true } ]
+  */
+  ```
+</details>
+
 </td>
 </tr>
 <tr>
 <td valign="top">
+
+### Command Handlers
+
+**Note**: This feature is under development.
+
+For scripts, the **Command Handlers** feature lets you specify classes and object that execute commands.
+You can add set a class that executes custom commands with `addCommandHandlerClass`.
+The cusom commands are guaranteed to execute in-order and are much more efficient than the Sequential Execution feature, but they can't be async and the processing happens after rendering.
+
+</td>
+<td valign="top">
+
+<details>
+  <summary><strong>Custom Command Handlers - Class Setup</strong></summary>
+
+  ```javascript
+  // Turtle graphics on an HTML5 Canvas
+  class CanvasTurtle {
+    constructor(context) {
+      this.ctx = context.canvas.getContext('2d');
+      this.x = this.ctx.canvas.width / 2;
+      this.y = this.ctx.canvas.height / 2;
+      this.angle = -90; // Start pointing up
+    }
+    begin() {
+      this.ctx.beginPath();
+      this.ctx.moveTo(this.x, this.y);
+    }
+    forward(dist) {
+      const rad = this.angle * (Math.PI / 180);
+      this.x += dist * Math.cos(rad);
+      this.y += dist * Math.sin(rad);
+      this.ctx.lineTo(this.x, this.y);
+    }
+    turn(deg) { this.angle = (this.angle + deg) % 360; }
+    stroke(color) {
+      this.ctx.strokeStyle = color ?? 'white';
+      this.ctx.stroke();
+    }
+  }
+  ```
+</details>
+
+<details open>
+  <summary><strong>Custom Command Handlers - Usage</strong></summary>
+
+  ```javascript
+  // Draw an 8-sided star using canvas
+  const env = new AsyncEnvironment();
+  env.addCommandHandlerClass('turtle', CanvasTurtle);
+  const script = `// Draw an 8-point star
+    @turtle.begin()
+    for i in range(8)
+      @turtle.forward(60)
+      @turtle.turn(135)
+    endfor
+    @turtle.stroke('cyan')`;
+
+  env.renderScriptString(script,
+    { canvas: document.querySelector('canvas') });
+  ```
+</details>
+
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
 
 ### Resilient Error Handling
 
@@ -263,13 +369,13 @@ Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structur
 try
   // Attempt a fallible operation
   set image = generateImage(prompt)
-  put result.imageUrl image.url
+  @put result.imageUrl image.url
 resume resume.count < 3
   // Retry up to 3 times
-  print "Retrying attempt " + resume.count
+  @print "Retrying attempt " + resume.count
 except
   // Handle permanent failure
-  put result.error "Image generation failed: "
+  @put result.error "Image generation failed: "
    + error.message
 endtry
 ```
@@ -315,7 +421,7 @@ set config = fetchConfig()
 
 // Use the imported macro to process the data
 set processedItems = utils.process(items, config)
-put result.items processedItems
+@put result.items processedItems
 ```
 
 </details>
@@ -389,7 +495,7 @@ action items and assign owners.
 
 For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's parallelization capabilities and adds specialized commands for building structured data results.
 - **Clean, delimiter-free syntax**
-- **Data assembly commands**: `put`, `push`, `merge`
+- **Data assembly commands**: `@put`, `@push`, `@merge`
 - **Focus on logic and orchestration**
 
 </td>
@@ -401,13 +507,13 @@ For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cl
 // 1. Generate a plan with an LLM call.
 set plan = makePlan(
   "Analyze competitor's new feature")
-put result.plan plan
+@put result.plan plan
 
 // 2. Each step of the in parallel.
 for step in plan.steps
   // Each `executeStep` is an independent operation.
   set stepResult = executeStep(step.instruction)
-  push result.stepResults {
+  @push result.stepResults {
     step: step.title,
     result: stepResult
   }
@@ -415,7 +521,7 @@ endfor
 
 // 3. Summarize the results after all are complete.
 set summary = summarizeResults(result.stepResults)
-put result.summary summary
+@put result.summary summary
 ```
 
 </details>
@@ -433,6 +539,26 @@ For production, you can improve performance by **precompiling** your templates a
 </td>
 <td valign="top">
 <details open>
+
+<summary><strong>Executing a Script</strong></summary>
+
+```javascript
+import { AsyncEnvironment } from 'cascada-tmpl';
+
+const env = new AsyncEnvironment();
+const script =
+  '@put result.greeting "Hello, " + user.name';
+const ctx = {
+  user: fetchUser(123) // An async function
+};
+
+const data = await env.renderScriptString(script, ctx);
+console.log(data);
+// { result: { greeting: "Hello, Alice" } }
+```
+
+</details>
+<details>
 <summary><strong>Rendering a Template</strong></summary>
 
 ```javascript
@@ -447,26 +573,6 @@ const context = {
 const html = await env.renderTemplateString(tpl, context);
 console.log(html); // <h1>Hello World</h1>
 ```
-
-</details>
-<details>
-<summary><strong>Executing a Script</strong></summary>
-
-```javascript
-import { AsyncEnvironment } from 'cascada-tmpl';
-
-const env = new AsyncEnvironment();
-const script =
-  'put result.greeting "Hello, " + user.name';
-const ctx = {
-  user: fetchUser(123) // An async function
-};
-
-const data = await env.renderScriptString(script, ctx);
-console.log(data);
-// { result: { greeting: "Hello, Alice" } }
-```
-
 </details>
 </td>
 </tr>
