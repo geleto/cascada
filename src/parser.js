@@ -590,9 +590,7 @@ class Parser extends Obj {
 
     // and return the switch node.
     return new nodes.Switch(tag.lineno, tag.colno, expr, cases, defaultCase);
-  }
-
-  parseDo() {
+  }  parseDo() {
     const doTok = this.peekToken();
     if (!this.skipSymbol('do')) {
       this.fail('expected do', doTok.lineno, doTok.colno);
@@ -607,6 +605,50 @@ class Parser extends Obj {
     }
     this.advanceAfterBlockEnd(doTok.value);
     return new nodes.Do(doTok.lineno, doTok.colno, exprs);
+  }
+
+  parseStatementCommand() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('statement_command')) {
+      this.fail('parseStatementCommand: expected statement_command', tag.lineno, tag.colno);
+    }
+
+    // Parse the command name (should be a literal string)
+    const command = this.parseExpression();
+
+    // Expect comma after command
+    if (!this.skip(lexer.TOKEN_COMMA)) {
+      this.fail('parseStatementCommand: expected comma after command name', tag.lineno, tag.colno);
+    }
+
+    // Parse the path expression
+    const path = this.parseExpression();
+
+    // Parse any additional arguments
+    const args = new nodes.NodeList(tag.lineno, tag.colno);
+
+    while (this.skip(lexer.TOKEN_COMMA)) {
+      const arg = this.parseExpression();
+      args.addChild(arg);
+    }
+
+    this.advanceAfterBlockEnd(tag.value);
+
+    return new nodes.StatementCommand(tag.lineno, tag.colno, command, path, args);
+  }
+
+  parseFunctionCommand() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('function_command')) {
+      this.fail('parseFunctionCommand: expected function_command', tag.lineno, tag.colno);
+    }
+
+    // Parse the entire function call expression
+    const call = this.parsePrimary();
+
+    this.advanceAfterBlockEnd(tag.value);
+
+    return new nodes.FunctionCommand(tag.lineno, tag.colno, call);
   }
 
   parseStatement() {
@@ -653,9 +695,12 @@ class Parser extends Obj {
       case 'filter':
         return this.parseFilterStatement();
       case 'switch':
-        return this.parseSwitch();
-      case 'do':
+        return this.parseSwitch();      case 'do':
         return this.parseDo();
+      case 'statement_command':
+        return this.parseStatementCommand();
+      case 'function_command':
+        return this.parseFunctionCommand();
       default:
         if (this.extensions.length) {
           for (let i = 0; i < this.extensions.length; i++) {
