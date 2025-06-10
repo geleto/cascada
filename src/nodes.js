@@ -169,7 +169,7 @@ const CallExtensionAsync = CallExtension.extend('CallExtensionAsync', {
 const Do = NodeList.extend('Do');
 
 // Output Command nodes
-const StatementCommand = Node.extend('StatementCommand', { fields: ['command', 'path', 'args'] });
+const StatementCommand = Node.extend('StatementCommand', { fields: ['command', 'path', 'argument'] });
 const FunctionCommand = Node.extend('FunctionCommand', { fields: ['call'] });
 
 // This is hacky, but this is just a debugging function anyway

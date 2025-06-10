@@ -605,36 +605,34 @@ class Parser extends Obj {
     }
     this.advanceAfterBlockEnd(doTok.value);
     return new nodes.Do(doTok.lineno, doTok.colno, exprs);
-  }
-
-  parseStatementCommand() {
+  }  parseStatementCommand() {
     const tag = this.peekToken();
     if (!this.skipSymbol('statement_command')) {
       this.fail('parseStatementCommand: expected statement_command', tag.lineno, tag.colno);
     }
 
-    // Parse the command name (should be a literal string)
-    const command = this.parseExpression();
-
-    // Expect comma after command
-    if (!this.skip(lexer.TOKEN_COMMA)) {
-      this.fail('parseStatementCommand: expected comma after command name', tag.lineno, tag.colno);
+    // Step 1: Parse Command Name
+    const command = this.parsePrimary();
+    if (!(command instanceof nodes.Symbol)) {
+      this.fail('Expected a command name (like "put" or "push") for statement_command.', command.lineno, command.colno);
     }
 
-    // Parse the path expression
-    const path = this.parseExpression();
+    // Step 2: Parse Path
+    const path = this.parseUnary();
 
-    // Parse any additional arguments
-    const args = new nodes.NodeList(tag.lineno, tag.colno);
-
-    while (this.skip(lexer.TOKEN_COMMA)) {
-      const arg = this.parseExpression();
-      args.addChild(arg);
+    // Step 3: Parse Optional Argument
+    let argument = null;
+    if (this.peekToken().type !== lexer.TOKEN_BLOCK_END) {
+      argument = this.parseExpression();
     }
 
+    // Step 5: Finalize - pass the tag value to advanceAfterBlockEnd
     this.advanceAfterBlockEnd(tag.value);
 
-    return new nodes.StatementCommand(tag.lineno, tag.colno, command, path, args);
+    // Step 4: Create Node
+    const node = new nodes.StatementCommand(command.lineno, command.colno, command, path, argument);
+
+    return node;
   }
 
   parseFunctionCommand() {
