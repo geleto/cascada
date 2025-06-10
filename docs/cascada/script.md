@@ -5,13 +5,13 @@
 Cascada Script is a scripting language built on top of the Cascada templating engine, designed for orchestrating asynchronous workflows and data processing tasks. Unlike traditional templating, which focuses on generating text output, Cascada Script prioritizes logic flow, task coordination, and data assembly.
 
 ## Table of Contents
+- [Overview](#overview)
 - [Key Features](#key-features)
 - [Core Syntax Features](#core-syntax-features)
 - [Expressions](#expressions)
-- [Data Assembly Commands](#data-assembly-commands)
-- [Data Assembly Ordering](#data-assembly-ordering)
-- [Macros](#macros)
 - [Sequential Execution Control (`!`)](#sequential-execution-control-)
+- [Output Commands (`@`)](#output-commands-)
+- [Macros](#macros)
 - [Resilient Error Handling (`try`/`resume`/`except`)](#resilient-error-handling-tryresumeexcept)
 - [Filters and Global Functions](#filters-and-global-functions)
 - [Importing Templates](#importing-templates)
@@ -168,77 +168,94 @@ if emailRegex.test(user.email)
 endif
 ```
 
-## Data Assembly Commands
+## Sequential Execution Control (`!`)
 
-Cascada Script provides special commands for constructing data objects during script execution. These commands let you build complex result objects.
+**Note**: This feature is under development.
 
-**Important**: Despite the automatic concurrency of operations, Data Assembly Commands (`put`, `merge`, `push`) and `print` maintain the sequential order in which they appear in the script. This ensures consistent and predictable output, regardless of when underlying async operations complete.
+For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
 
-### print
+```javascript
+// The `!` on deposit() creates a
+// sequence for the 'account' path.
+set account = getBankAccount()
 
-Outputs text content, with an optional target path.
-
-```
-// Basic usage (adds to text output)
-print "Hello world!"
-
-// With target path (adds to data output)
-print info.message "Hello world!"
-```
-
-The second example produces a data object: `{ info: { message: "Hello world!" } }`
-
-### put
-
-Sets a value at a specific path in the result data.
-
-```
-// Setting simple and nested values
-put count 100
-put user.name "Alice"
-put user.role "Admin"
-
-// Setting object literals
-put config {
-  darkMode: true,
-  language: "en"
-}
+//1. Set initial Deposit:
+account!.deposit(100)
+//2. Get updated status after initial deposit:
+account.getStatus()
+//3. Withdraw money after getStatus()
+account!.withdraw(50)
 ```
 
-### merge
+## Output Commands (`@`)
 
-Combines objects at a specific path.
+Cascada Script features a powerful system for operations that are guaranteed to execute in a strict sequential order. These **Output Commands**, marked with the `@` sigil, are your primary tool for building the script's final return value.
 
-```
-// Create initial object
-put user { name: "Alice" }
+All `@` commands are assembled during script execution and run sequentially *after* all other template logic (including async operations) has completed. This provides a highly efficient way to construct complex, structured results.
 
-// Merge additional properties
-merge user {
-  role: "Admin",
-  location: "New York"
-}
-```
+**Important Distinction:** Output Commands are different from the `!` marker for sequential execution.
+*   **Output Commands (`@`)**: Fast, non-async, and executed *after* the script or macro finishes. They are designed exclusively for building a return value. Although the methods are not async - you can use buffering and process them asynchronously.
+*   **Sequential Execution (`!`)**: Slower, can be `async`, executes *during* the script run and the result can be used in the script. They are for controlling the order of operations with side effects.
 
-### push
+### Command Syntax
 
-Adds values to arrays in the result data.
+Output Commands support two distinct syntaxes, depending on the task.
 
-```
-// Basic push to arrays
-push items 123
-push items 456
+#### Statement-Style Syntax
+This syntax (`@command path value`) is used for path-based data manipulation. It offers a clean, declarative feel.
 
-// Push with target path
-push user.roles "Editor"
-push user.roles "Reviewer"
+```javascript
+// Set a value at a path
+@put user.settings.theme 'dark'
 
-// Push objects to arrays
-push users { name: "Alice", role: "Admin" }
-push users { name: "Bob", role: "Editor" }
+// Push an element into an array
+@push user.roles 'editor'
 ```
 
-### Array Index Targeting
+#### Function-Style Syntax
+This syntax (`@command(arg1, arg2, ...)`) is used for imperative actions and can take multiple complex expressions as arguments. It is required for all commands on named handlers.
+
+```javascript
+// Call a command on a named handler
+@turtle.forward(50)
+
+// Call a custom command with multiple arguments
+@log('User updated', user.id, { level: 'INFO' })
+```
+
+### The Built-in Data Object
+
+By default, Cascada provides a built-in data object and a rich set of commands to modify it. This is the simplest way to produce a structured result.
+
+#### Standard Output Data Assembly Methods
+
+These statement-style commands manipulate the script's data object.
+
+| Command | Description |
+|---|---|
+| `@put path value` | **Replaces** the value at `path`. |
+| `@push path value` | Appends an element to an array at `path`. |
+| `@merge path value` | Merges an object into the object at `path`. |
+| `@pop path` | Removes and returns the last element from the array at `path`. |
+| `@shift path` | Removes and returns the first element from the array at `path`. |
+| `@unshift path value`| Adds one or more elements to the beginning of the array at `path`. |
+| `@reverse path` | Reverses the order of the elements in the array at `path`. |
+
+#### The `@print` Command
+The `@print` command is a versatile tool for generating text output. Its behavior depends on whether a path is provided.
+
+*   **`@print path value`**: **Appends** the `value` to the content at `path`. If the existing content is a string, it concatenates.
+    ```javascript
+    @put user.log "Login successful. "
+    @print user.log "Session extended."
+    // user.log is now "Login successful. Session extended."
+    ```
+*   **`@print value`** (no path): Appends to the global text output stream, similar to how `{{ value }}` works in a template.
+    ```javascript
+    @print "Request received at " + timestamp
+    ```
+
+#### Array Index Targeting
 
 Target specific array indices with square brackets. The empty bracket notation `[]` always refers to the last item added in the script's sequential order, **not** the most recently pushed item in terms of operation completion. Due to implicit concurrency, the order of completion can vary, but Cascada Script ensures consistency by following the script's logical sequence.
 
@@ -251,30 +268,155 @@ push users { name: "Charlie" }
 push users[].permissions "read"  // Always affects "Charlie", not a randomly completed item
 ```
 
-This sequential behavior aligns with how `print` appends text and how Data Assembly Commands arrange data, providing predictability despite async execution.
+#### Customizing the Data Object
+You can add your own custom methods to the default data builder using `env.addDataMethods()`.
 
-### Data Assembly Ordering
+**Example: A custom `@upsert` command.**
+```javascript
+// --- In your JavaScript setup ---
+env.addDataMethods({
+  upsert: (target, data) => {
+    if (!Array.isArray(target)) return;
+    const index = target.findIndex(item => item.id === data.id);
+    if (index > -1) Object.assign(target[index], data);
+    else target.push(data);
+  }
+});
 
-Cascada Script’s Data Assembly Commands (`put`, `push`, `merge`) and `print` maintain consistent **sequential ordering** based on their appearance in the script, regardless of when their underlying operations complete. This ensures that the final data structure reflects the logical sequence in your code, combining the mental simplicity of sequential programming with the performance benefits of automatic parallelization.
-
-For example:
-```
-// These commands produce consistent results despite parallel execution
-put user.name "Alice"
-push user.roles "Admin"
-push user.roles "Editor"
-merge user.settings { theme: "dark" }
-```
-
-Here, `user.roles` will always be `["Admin", "Editor"]` in that order, and `print` statements will append text in the order they appear, not based on operation completion.
-
-This sequential ordering is especially critical for array targeting with `[]`:
-```
-push users { name: "Alice" }
-push users[].permissions "read"  // Always affects "Alice"
+// --- In your Cascada Script ---
+@push users {id: 1, name: "Alice"}
+// This custom command will UPDATE Alice
+@upsert users {id: 1, status: "inactive"}
 ```
 
-The empty bracket `[]` reliably references the "Alice" object because it follows the script’s sequence, not the unpredictable timing of concurrent operations.
+### Output Command Handlers
+For advanced use cases that go beyond simple data construction, you can define **Output Command Handlers**. These are classes that receive and process `@` commands, allowing you to create powerful domain-specific logic within your scripts.
+
+#### Registering and Using Named Handlers
+You register all handlers with a unique name using `addCommandHandlerClass`. To use a named handler, prefix the command with the handler's name and a dot.
+
+**Example: Using a `turtle` handler.**
+```javascript
+// --- In your JavaScript setup ---
+env.addCommandHandlerClass('turtle', CanvasTurtle);
+
+// --- In your Cascada Script ---
+// These commands are dispatched to the 'turtle' handler
+@turtle.begin()
+@turtle.forward(50)
+@turtle.stroke('cyan')
+```
+
+#### The Default Handler
+You can designate one of the registered handlers as the "default". Commands without a handler name prefix (`@command(...)`) will be sent to this default handler.
+
+**Setting the Default Handler:**
+```javascript
+// --- In your JavaScript setup ---
+// Register two handlers
+env.addCommandHandlerClass('log', CommandLogger);
+env.addCommandHandlerClass('turtle', CanvasTurtle);
+
+// Designate 'log' as the default
+env.setDefaultHandler('log');
+
+// --- In your Cascada Script ---
+@log('Process starting...') // This works because 'log' is the default
+@turtle.begin()             // This works because 'turtle' is a named handler
+```
+
+**Overriding the Default Handler Per-Run:**
+For a single script execution, you can temporarily override the globally set default handler.
+
+```javascript
+// Temporarily make 'turtle' the default for this run only
+await env.renderScriptString(script, context, {
+  defaultHandler: 'turtle'
+});
+```
+
+#### Handler Implementation Patterns
+Cascada supports two powerful patterns for how your handler classes are instantiated and used.
+
+**Pattern 1: The Factory (Clean Slate per Render)**
+Provide a **class** with `addCommandHandlerClass(name, handlerClass)`. For each render, the engine creates a new, clean instance, passing the `context` to its `constructor`. This is the recommended pattern for most use cases.
+
+```javascript
+// --- In your JavaScript setup (Handler Class) ---
+class CanvasTurtle {
+  // The constructor receives the runtime context
+  constructor(context) {
+    this.ctx = context.canvas.getContext('2d');
+    // ... setup logic ...
+  }
+  forward(dist) { /* ... */ }
+  turn(deg) { /* ... */ }
+}
+
+// --- In your JavaScript setup (API Usage) ---
+env.addCommandHandlerClass('turtle', CanvasTurtle);
+```
+
+**Pattern 2: The Singleton (Persistent State)**
+Provide a pre-built **instance** with `addCommandHandler(name, handlerInstance)`. The same instance is used across all render calls, which is useful for accumulating state (e.g., logging). If the handler has an `_init(context)` method, the engine will call it before each run.
+
+```javascript
+// --- In your JavaScript setup (Handler Class) ---
+class CommandLogger {
+  constructor() { this.log = []; }
+  // This hook is called before each script run
+  _init(context) { this.log.push(`--- START (User: ${context.userId}) ---`); }
+  _call(command, ...args) { this.log.push(`${command}: ${JSON.stringify(args)}`); }
+}
+
+// --- In your JavaScript setup (API Usage) ---
+const logger = new CommandLogger();
+env.addCommandHandler('audit', logger);
+```
+
+### Script Return Value
+
+#### The Final Result Object
+`renderScriptString` returns a single, flat object containing all the outputs generated by your script. Each output type has a distinct top-level key.
+
+**Default Structure:**
+```javascript
+{
+  // From path-based data commands (@put, @push, etc.)
+  "data": { /* ... */ },
+
+  // From un-pathed @print commands
+  "text": "...",
+
+  // Final state of each named command handler
+  "handlerName1": ... // Final state of handler 1
+  "handlerName2": ... // Final state of handler 2
+}
+```
+
+**Customizing Result Keys:**
+You can rename the default `data` and `text` keys for the result object.
+```javascript
+env.setResultStructure({
+  dataKey: 'payload',
+  textKey: 'consoleOutput'
+});
+```
+
+#### Focused Output
+To get just one piece of the result, use the `output` option in the render call. The value should be the final key name of the property you want. If any of these properties
+are missing - the return value will be `undefined`.
+
+```javascript
+// Get ONLY the structured data object
+const myData = await env.renderScriptString(script, context, { output: 'data' });
+
+// Get ONLY the final state of the turtle handler
+const myTurtle = await env.renderScriptString(script, context, { output: 'turtle' });
+
+// Get ONLY the final state of the turtle handler
+const myText = await env.renderScriptString(script, context, { output: 'text' });
+```
 
 ## Macros
 
@@ -334,11 +476,6 @@ call withWrapper("User Data")
 endcall
 ```
 
-#### Variable Scope Rules
-- Variables defined within a macro are local and do not affect the outer scope.
-- Arguments passed to a macro are also local.
-- A macro returns the data object constructed by its internal data assembly commands, unless an explicit `return` statement is used.
-
 ### Simple Example with Macros
 ```
 // Define a macro to build and return a user object
@@ -355,25 +492,6 @@ set user2 = buildUser(456)
 // Assemble the final result
 put result.firstUser user1
 put result.secondUser user2
-```
-
-## Sequential Execution Control (`!`)
-
-**Note**: This feature is under development.
-
-For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
-
-```javascript
-// The `!` on deposit() creates a
-// sequence for the 'account' path.
-set account = getBankAccount()
-
-//1. Set initial Deposit:
-account!.deposit(100)
-//2. Get updated status after initial deposit:
-account.getStatus()
-//3. Withdraw money after getStatus()
-account!.withdraw(50)
 ```
 
 ## Resilient Error Handling (`try`/`resume`/`except`)
