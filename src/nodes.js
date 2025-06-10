@@ -168,6 +168,10 @@ const CallExtensionAsync = CallExtension.extend('CallExtensionAsync', {
 
 const Do = NodeList.extend('Do');
 
+// Output Command nodes
+const StatementCommand = Node.extend('StatementCommand', { fields: ['command', 'path', 'args'] });
+const FunctionCommand = Node.extend('FunctionCommand', { fields: ['call'] });
+
 // This is hacky, but this is just a debugging function anyway
 function print(str, indent, inline) {
   var lines = str.split('\n');
@@ -288,6 +292,8 @@ module.exports = {
   CallExtension: CallExtension,
   CallExtensionAsync: CallExtensionAsync,
   Do: Do,
+  StatementCommand: StatementCommand,
+  FunctionCommand: FunctionCommand,
 
   printNodes: printNodes
 };
