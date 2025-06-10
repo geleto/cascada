@@ -588,12 +588,25 @@ console.log(html); // <h1>Hello World</h1>
      ```njk
      Hello, {{ name }}!
      ```
-  3. Render it with JavaScript:
+  3. Render a Cascada template
      ```javascript
      import { AsyncEnvironment } from 'cascada-tmpl';
      const env = new AsyncEnvironment();
      const result = await env.renderTemplateString('Hello, {{ name }}!', { name: 'World' });
      console.log(result); // Hello, World!
+     ```
+  4. Run a Cascada script
+     ```javascript
+     import { AsyncEnvironment } from 'cascada-tmpl';
+     const env = new AsyncEnvironment();
+     const script = `// Set initial user object
+       @put user {name: 'Alice', id: 123, log: "User profile  created. "}
+       @print user.log "Login successful." //append`;
+
+     // The 'data' output focuses the result on the data object
+     const { user } = await env.renderScriptString(script, {}, { output: 'data' });
+     console.log(user.name);    // Alice
+     console.log(user.log);     // User profile created. Login  successful.
      ```
 
 ## Further Reading
