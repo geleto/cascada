@@ -107,7 +107,7 @@ endfor
 <tr>
 <td valign="top">
 
-### Smart Dependency Management
+### Transparent Dependent Operations Management
 
 While independent operations run in parallel, Cascada ensures that **dependent operations wait for their prerequisites**. This guarantees the correct execution order and produces results identical to a sequential process, giving you the best of both worlds: performance and predictability.
 
@@ -402,7 +402,7 @@ endtry
 <tr>
 <td valign="top">
 
-### Powerful Template Composition
+### Modular Composition
 
 Build complex, modular templates using **`extends`** for inheritance, **`block`** for defining overrideable sections, **`include`** for embedding content, and **`import`** for reusing macros. Included templates and other async operations are processed concurrently.
 
