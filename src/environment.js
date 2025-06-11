@@ -424,6 +424,64 @@ class Environment extends EmitterObj {
 class AsyncEnvironment extends Environment {
   init(loaders, opts) {
     super.init(loaders, opts);
+
+    // Initialize script configuration properties
+    this.dataMethods = {}; // Pre-fill with built-in methods later
+    this.commandHandlerClasses = {};
+    this.commandHandlerInstances = {};
+    this.defaultHandlerName = null;
+    this.resultStructure = {
+      dataKey: 'data',
+      textKey: 'text'
+    };
+  }
+
+  /**
+   * Merges a map of custom methods into the built-in data methods.
+   * @param {Object.<string, Function>} methods - An object where keys are command names
+   * and values are the functions to execute.
+   */
+  addDataMethods(methods) {
+    Object.assign(this.dataMethods, methods);
+    return this;
+  }
+
+  /**
+   * Registers a command handler class that will be instantiated for each script run.
+   * @param {string} name - The name used to invoke the handler (e.g., 'turtle').
+   * @param {Class} handlerClass - The class constructor.
+   */
+  addCommandHandlerClass(name, handlerClass) {
+    this.commandHandlerClasses[name] = handlerClass;
+    return this;
+  }
+
+  /**
+   * Registers a pre-existing object instance as a command handler (singleton).
+   * @param {string} name - The name used to invoke the handler.
+   * @param {object} handlerInstance - The object instance to use.
+   */
+  addCommandHandler(name, handlerInstance) {
+    this.commandHandlerInstances[name] = handlerInstance;
+    return this;
+  }
+
+  /**
+   * Sets the default handler for commands without a prefix.
+   * @param {string} name - The name of the registered handler to use as default.
+   */
+  setDefaultHandler(name) {
+    this.defaultHandlerName = name;
+    return this;
+  }
+
+  /**
+   * Customizes the top-level keys in the script's final result object.
+   * @param {object} opts - Options object with `dataKey` and/or `textKey`.
+   */
+  setResultStructure(opts) {
+    Object.assign(this.resultStructure, opts);
+    return this;
   }
 
   async renderAsync(templateName, ctx, parentFrame) {
@@ -437,8 +495,7 @@ class AsyncEnvironment extends Environment {
   async renderScriptAsync(templateName, ctx, parentFrame) {
     return this._asyncRenderScript(templateName, ctx, true, parentFrame);
   }
-  //avoid ambiguity between renderString and renderScriptString
-  //later will deprecate renderString
+
   async renderTemplateString(src, ctx, opts, cb) {
     return this.renderString(src, ctx, opts, cb);
   }
