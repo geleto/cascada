@@ -307,33 +307,46 @@ env.addCommandHandlerClass('turtle', CanvasTurtle);
 @turtle.stroke('cyan')
 ```
 
-#### The Default Handler
-You can designate one of the registered handlers as the "default". Commands without a handler name prefix (`@command(...)`) will be sent to this default handler.
+#### The `@default` Directive
 
-**Setting the Default Handler:**
+To simplify scripts that primarily use one command handler, you can declare a default handler for the entire script. Any unqualified command (e.g., `@fetchOrder()`) will automatically be routed to this default handler.
+
+**Syntax:** `@default 'handlerName'`
+
+Place it at the top of the script file, the name must be a static string like `'db'`, not a variable.
+
+**Example:**
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Without <code>@default</code>**
 ```javascript
-// --- In your JavaScript setup ---
-// Register two handlers
-env.addCommandHandlerClass('log', CommandLogger);
-env.addCommandHandlerClass('turtle', CanvasTurtle);
+// All commands must be fully qualified.
+set order = @db.fetchOrder(123)
+@db.updateStatus(order.id)
 
-// Designate 'log' as the default
-env.setDefaultHandler('log');
-
-// --- In your Cascada Script ---
-@log('Process starting...') // This works because 'log' is the default
-@turtle.begin()             // This works because 'turtle' is a named handler
+// Other handlers are qualified.
+@log.info("Updated")
 ```
+</td>
+<td width="50%" valign="top">
 
-**Overriding the Default Handler Per-Run:**
-For a single script execution, you can temporarily override the globally set default handler.
-
+**With <code>@default</code>**
 ```javascript
-// Temporarily make 'turtle' the default for this run only
-await env.renderScriptString(script, context, {
-  defaultHandler: 'turtle'
-});
+@default 'db'
+
+// Unqualified commands now use the 'db' handler.
+set order = @fetchOrder(123)
+@updateStatus(order.id)
+
+// Qualified calls still work.
+@log.info("Updated")
 ```
+</td>
+</tr>
+</table>
 
 #### Handler Implementation Patterns
 Cascada supports two powerful patterns for how your handler classes are instantiated and used.
