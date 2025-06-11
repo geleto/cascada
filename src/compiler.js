@@ -1489,7 +1489,8 @@ class Compiler extends Obj {
 
     if (node.isAsync) {
       const getTemplateFunc = this._tmpid();
-      this.emit.line(`const ${getTemplateFunc} = runtime.promisify(env.getTemplate.bind(env));`);
+      //the AsyncEnviuronment.getTemplate returns a Promise
+      this.emit.line(`const ${getTemplateFunc} = env.getTemplate.bind(env);`);
       this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
       /*if (wrapInAsyncBlock) {
         // Wrap the expression evaluation in an async block if needed, use template node position
@@ -1747,10 +1748,10 @@ class Compiler extends Obj {
       this._compileExpression(node.template, f, false);
       this.emit.line(';');
 
-      // getTemplate
-      this.emit.line(`let ${templateVar} = await runtime.promisify(env.getTemplate.bind(env))(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
+      //the AsyncEnviuronment.getTemplate returns a Promise
+      this.emit.line(`let ${templateVar} = await env.getTemplate.bind(env)(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
-      // render
+      // render, @todo - use promise returning version
       this.emit.line(`${resultVar} = await runtime.promisify(${templateVar}.render.bind(${templateVar}))(context.getVariables(), frame${node.isAsync ? ', astate' : ''});`);
     }, node);
   }

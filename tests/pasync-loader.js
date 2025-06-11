@@ -577,7 +577,7 @@
         const mainTemplate = '{% include getTemplateName() %}';
         loader.addTemplate('main.njk', mainTemplate);
 
-        const result = await env.renderAsync('main.njk', context);
+        const result = await env.renderTemplate('main.njk', context);
         expect(result).to.equal('Hello, World!');
       });
 
@@ -599,7 +599,7 @@
         const mainTemplate = '{% include "greeting.njk" %} {{ getPlace() }}';
         loader.addTemplate('main.njk', mainTemplate);
 
-        const result = await env.renderAsync('main.njk', context);
+        const result = await env.renderTemplate('main.njk', context);
         expect(result).to.equal('Hello, World, welcome to London');
       });
 
@@ -620,7 +620,7 @@
         const mainTemplate = 'Hello! {% include "greeting.njk" %}';
         loader.addTemplate('main.njk', mainTemplate);
 
-        const result = await env.renderAsync('main.njk', context);
+        const result = await env.renderTemplate('main.njk', context);
         expect(result).to.equal('Hello! Welcome, John (admin)!');
       });
 
@@ -638,7 +638,7 @@
         const mainTemplate = '{% set userId = 1 %}{% include "user.njk" %}';
         loader.addTemplate('main.njk', mainTemplate);
 
-        const result = await env.renderAsync('main.njk', context);
+        const result = await env.renderTemplate('main.njk', context);
         expect(result).to.equal('User 1 (user)');
       });
 
@@ -656,7 +656,7 @@
         const mainTemplate = '{%- for userId in [1, 2] -%}{% include "user.njk" %}\n{% endfor -%}';
         loader.addTemplate('main.njk', mainTemplate);
 
-        const result = await env.renderAsync('main.njk', context);
+        const result = await env.renderTemplate('main.njk', context);
         expect(result).to.equal('User 1 (user)\nUser 2 (admin)\n');
       });
     });

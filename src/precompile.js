@@ -118,11 +118,6 @@ function precompile(input, opts, isAsync = false) {
   return wrapper(precompiled, opts);
 }
 
-/** @deprecated Use precompileTemplateAsync instead */
-function precompileAsync(input, opts) {
-  return precompile(input, opts, true);
-}
-
 function _precompile(str, name, env) {
   env = env || new Environment([]);
 
@@ -148,25 +143,25 @@ function _precompile(str, name, env) {
   };
 }
 
+function _precompileAsync(input, opts) {
+  return precompile(input, opts, true);
+}
+
 module.exports = {
   /** @deprecated Use precompileTemplate instead */
-  precompile: precompile,
-  /** @deprecated Use precompileTemplateAsync instead */
-  precompileAsync: precompileAsync,
+  precompile,
   /** @deprecated Use precompileTemplateString instead */
-  precompileString: precompileString,
-  /** @deprecated Use precompileTemplateStringAsync instead */
-  precompileStringAsync: precompileStringAsync,
+  precompileString,
 
   // Template variants (new names for existing functions)
   precompileTemplate: precompile,
-  precompileTemplateAsync: precompileAsync,
+  precompileTemplateAsync: _precompileAsync,
   precompileTemplateString: precompileString,
   precompileTemplateStringAsync: precompileStringAsync,
 
   // Script variants (use same underlying functions since script conversion happens at Script class level)
   precompileScript: precompile,
-  precompileScriptAsync: precompileAsync,
+  precompileScriptAsync: _precompileAsync,
   precompileScriptString: precompileString,
   precompileScriptStringAsync: precompileStringAsync,
 };

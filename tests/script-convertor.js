@@ -327,10 +327,7 @@ describe('Script Converter', () => {
           { blockType: 'END', codeContent: 'endif', isContinuation: false }
         ];
 
-        const result = validateBlockStructure(processedLines);
-
-        expect(result.valid).to.equal(true);
-        expect(result.error).to.equal(undefined);
+        validateBlockStructure(processedLines);
       });
 
       it('should detect unclosed blocks', () => {
@@ -338,10 +335,11 @@ describe('Script Converter', () => {
           { blockType: 'START', codeContent: 'if condition', isContinuation: false }
         ];
 
-        const result = validateBlockStructure(processedLines);
-
-        expect(result.valid).to.equal(false);
-        expect(result.error).to.contain('Unclosed');
+        try {
+          validateBlockStructure(processedLines);
+        } catch (error) {
+          expect(error.message).to.contain('Unclosed');
+        }
       });
 
       it('should detect mismatched tags', () => {
@@ -350,10 +348,11 @@ describe('Script Converter', () => {
           { blockType: 'END', codeContent: 'endfor', isContinuation: false }
         ];
 
-        const result = validateBlockStructure(processedLines);
-
-        expect(result.valid).to.equal(false);
-        expect(result.error).to.contain('Unexpected');
+        try {
+          validateBlockStructure(processedLines);
+        } catch (error) {
+          expect(error.message).to.contain('Unexpected');
+        }
       });
 
       it('should validate correct middle tags', () => {
@@ -363,9 +362,7 @@ describe('Script Converter', () => {
           { blockType: 'END', codeContent: 'endif', isContinuation: false }
         ];
 
-        const result = validateBlockStructure(processedLines);
-
-        expect(result.valid).to.equal(true);
+        validateBlockStructure(processedLines);
       });
 
       it('should detect invalid middle tags', () => {
@@ -375,10 +372,11 @@ describe('Script Converter', () => {
           { blockType: 'END', codeContent: 'endfor', isContinuation: false }
         ];
 
-        const result = validateBlockStructure(processedLines);
-
-        expect(result.valid).to.equal(false);
-        expect(result.error).to.contain('not valid in');
+        try {
+          validateBlockStructure(processedLines);
+        } catch (error) {
+          expect(error.message).to.contain('not valid in');
+        }
       });
 
       it('should detect middle tags outside blocks', () => {
@@ -386,10 +384,11 @@ describe('Script Converter', () => {
           { blockType: 'MIDDLE', codeContent: 'else', isContinuation: false }
         ];
 
-        const result = validateBlockStructure(processedLines);
-
-        expect(result.valid).to.equal(false);
-        expect(result.error).to.contain('outside of any block');
+        try {
+          validateBlockStructure(processedLines);
+        } catch (error) {
+          expect(error.message).to.contain('outside of any block');
+        }
       });
 
       it('should validate complex nested structures', () => {
@@ -404,8 +403,7 @@ describe('Script Converter', () => {
           { blockType: 'END', codeContent: 'endif', isContinuation: false }
         ];
 
-        const result = validateBlockStructure(processedLines);
-        expect(result.valid).to.equal(true);
+        validateBlockStructure(processedLines);
       });
 
       it('should detect invalid resume outside try block', () => {
@@ -413,9 +411,11 @@ describe('Script Converter', () => {
           { blockType: 'MIDDLE', codeContent: 'resume', isContinuation: false }
         ];
 
-        const result = validateBlockStructure(processedLines);
-        expect(result.valid).to.equal(false);
-        expect(result.error).to.contain('outside of any block');
+        try {
+          validateBlockStructure(processedLines);
+        } catch (error) {
+          expect(error.message).to.contain('outside of any block');
+        }
       });
 
       it('should validate try/resume/except structure', () => {
@@ -426,8 +426,7 @@ describe('Script Converter', () => {
           { blockType: 'END', codeContent: 'endtry', isContinuation: false }
         ];
 
-        const result = validateBlockStructure(processedLines);
-        expect(result.valid).to.equal(true);
+        validateBlockStructure(processedLines);
       });
     });
   });
@@ -436,55 +435,55 @@ describe('Script Converter', () => {
   describe('Basic Conversions', () => {
     it('should convert print statements', () => {
       const script = 'print "Hello, World!"';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- "Hello, World!" -}}');
     });
 
     it('should convert tag statements', () => {
       const script = 'if condition\nendif';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition -%}\n{%- endif -%}');
     });
 
     it('should convert code statements to do tags', () => {
       const script = 'variable = value';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- do variable = value -%}');
     });
 
     it('should handle empty lines', () => {
       const script = 'if condition\n\nendif';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition -%}\n\n{%- endif -%}');
     });
 
     it('should preserve indentation', () => {
       const script = 'if condition\n  print "Indented"\nendif';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition -%}\n  {{- "Indented" -}}\n{%- endif -%}');
     });
 
     it('should properly convert set statements', () => {
       const script = 'set x = 1';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- set x = 1 -%}');
     });
 
     it('should properly convert include statements', () => {
       const script = 'include "partial.html"';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- include "partial.html" -%}');
     });
 
     it('should convert depends statements', () => {
       const script = 'depends var1, var2';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- depends var1, var2 -%}');
     });
 
     it('should convert while loops', () => {
       const script = 'while condition\n  print "Looping"\nendwhile';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- while condition -%}\n  {{- "Looping" -}}\n{%- endwhile -%}');
     });
   });
@@ -493,43 +492,43 @@ describe('Script Converter', () => {
   describe('Token Types', () => {
     it('should handle single-quoted strings', () => {
       const script = 'print \'Hello, World!\'';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- \'Hello, World!\' -}}');
     });
 
     it('should handle double-quoted strings', () => {
       const script = 'print "Hello, World!"';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- "Hello, World!" -}}');
     });
 
     it('should handle template literals', () => {
       const script = 'print `Hello, World!`';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- `Hello, World!` -}}');
     });
 
     it('should handle single-line comments', () => {
       const script = 'print "Hello"// This is a comment';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- "Hello" -}}{#- This is a comment -#}');
     });
 
     it('should handle multi-line comments', () => {
       const script = 'print "Hello"/* This is a multi-line comment */';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- "Hello" -}}{#- This is a multi-line comment -#}');
     });
 
     it('should handle standalone comments', () => {
       const script = '// This is a standalone comment';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{#- This is a standalone comment -#}');
     });
 
     it('should handle regular expressions', () => {
       const script = 'if r/pattern/.test(value)\nendif';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- if r/pattern/.test(value) -%}\n{%- endif -%}');
     });
   });
@@ -538,53 +537,61 @@ describe('Script Converter', () => {
   describe('Block Structure', () => {
     it('should validate correct block structure', () => {
       const script = 'if condition\n  for item in items\n  endfor\nendif';
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
       expect(template).to.be.ok();
     });
 
     it('should detect missing end tags', () => {
       const script = 'if condition\n  for item in items\n  endfor';
-      const { error } = scriptToTemplate(script);
-      expect(error).to.contain('Unclosed');
+      try {
+        scriptToTemplate(script);
+      } catch (error) {
+        expect(error.message).to.contain('Unclosed');
+      }
     });
 
     it('should detect mismatched tags', () => {
       const script = 'if condition\n  for item in items\n  endif\nendfor';
-      const { error } = scriptToTemplate(script);
-      expect(error).to.contain('Unexpected');
+      try {
+        scriptToTemplate(script);
+      } catch (error) {
+        expect(error.message).to.contain('Unexpected');
+      }
     });
 
     it('should handle nested blocks', () => {
       const script = 'if condition1\n  if condition2\n    print "Nested"\n  endif\nendif';
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition1 -%}\n  {%- if condition2 -%}\n    {{- "Nested" -}}\n  {%- endif -%}\n{%- endif -%}');
     });
 
     it('should validate middle tags', () => {
       const script = 'if condition\n  print "True"\nelse\n  print "False"\nendif';
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
       expect(template).to.be.ok();
     });
 
     it('should detect invalid middle tags', () => {
       const script = 'for item in items\n  print item\nelif\n  print "Empty"\nendfor';
-      const { error } = scriptToTemplate(script);
-      expect(error).to.contain('not valid in');
+      try {
+        scriptToTemplate(script);
+      } catch (error) {
+        expect(error.message).to.contain('not valid in');
+      }
     });
 
     it('should detect middle tags outside blocks', () => {
       const script = 'print "Before"\nelse\nprint "After"';
-      const { error } = scriptToTemplate(script);
-      expect(error).to.contain('outside of any block');
+      try {
+        scriptToTemplate(script);
+      } catch (error) {
+        expect(error.message).to.contain('outside of any block');
+      }
     });
 
     it('should handle try/resume/except blocks', () => {
       const script = 'try\n  print "Try block"\nresume\n  print "Resume block"\nexcept\n  print "Except block"\nendtry';
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
       expect(template).to.be.ok();
     });
 
@@ -600,15 +607,17 @@ describe('Script Converter', () => {
 else
   print "Outer else"
 endif`;
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
       expect(template).to.be.ok();
     });
 
     it('should detect invalid resume outside try block', () => {
       const script = 'print "Before"\nresume\nprint "After"';
-      const { error } = scriptToTemplate(script);
-      expect(error).to.contain('outside of any block');
+      try {
+        scriptToTemplate(script);
+      } catch (error) {
+        expect(error.message).to.contain('outside of any block');
+      }
     });
   });
 
@@ -616,31 +625,31 @@ endif`;
   describe('Multi-line Expressions', () => {
     it('should handle expressions spanning multiple lines', () => {
       const script = 'print "Hello, " +\n      "World!"';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- "Hello, " +\n      "World!" -}}');
     });
 
     it('should detect continuation at end of line', () => {
       const script = 'if condition &&\n   anotherCondition\nendif';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition &&\n   anotherCondition -%}\n{%- endif -%}');
     });
 
     it('should detect continuation at start of line', () => {
       const script = 'if condition\n   && anotherCondition\nendif';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition\n   && anotherCondition -%}\n{%- endif -%}');
     });
 
     it('should handle comments within multi-line expressions', () => {
       const script = 'if condition && // First condition\n   anotherCondition// Second condition\nendif';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition && \n   anotherCondition -%}{#- First condition; Second condition -#}\n{%- endif -%}');
     });
 
     it('should handle empty lines within multi-line expressions', () => {
       const script = 'if condition &&\n\n   anotherCondition\nendif';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition &&\n\n   anotherCondition -%}\n{%- endif -%}');
     });
 
@@ -650,8 +659,7 @@ endif`;
 && anotherCondition
 endif`;
 
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
       expect(template).to.contain('if condition');
       expect(template).to.contain('&& anotherCondition');
       expect(template).to.contain('{#');
@@ -666,8 +674,7 @@ endif`;
   finalCondition
 endif`;
 
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
       // Check that all comments are collected
       expect(template).to.contain('First part');
       expect(template).to.contain('Another comment');
@@ -684,8 +691,7 @@ endif`;
   )
 )`;
 
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
       expect(template).to.contain('set result = calculate(');
       expect(template).to.contain('first +');
       expect(template).to.contain('second * (');
@@ -699,43 +705,43 @@ endif`;
     describe('Statement-Style Commands', () => {
       it('should convert simple command with path and string value', () => {
         const script = '@put user.name \'Alice\'';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command put user.name \'Alice\' -%}');
       });
 
       it('should convert command with path and numeric value', () => {
         const script = '@put user.age 30';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command put user.age 30 -%}');
       });
 
       it('should convert command with complex path', () => {
         const script = '@put user.settings.theme \'dark\'';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command put user.settings.theme \'dark\' -%}');
       });
 
       it('should convert command with object literal argument', () => {
         const script = '@push users { id: 1, name: \'Bob\' }';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command push users { id: 1, name: \'Bob\' } -%}');
       });
 
       it('should convert command with no argument', () => {
         const script = '@pop user.roles';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command pop user.roles -%}');
       });
 
       it('should handle command with extra whitespace', () => {
         const script = '  @put  user.name   \'Alice\'  ';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('  {%- statement_command put  user.name   \'Alice\'   -%}');
       });
 
       it('should convert command that looks like function but has no parentheses', () => {
         const script = '@turtle.forward 50';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command turtle.forward 50 -%}');
       });
     });
@@ -743,31 +749,31 @@ endif`;
     describe('Function-Style Commands', () => {
       it('should convert simple function call with dot in name', () => {
         const script = '@turtle.forward(50)';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- function_command turtle.forward(50) -%}');
       });
 
       it('should convert call with complex expression as argument', () => {
         const script = '@turtle.turn(getAngle() * 2)';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- function_command turtle.turn(getAngle() * 2) -%}');
       });
 
       it('should handle call with extra whitespace around parentheses', () => {
         const script = '@turtle.forward ( 50 )';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- function_command turtle.forward ( 50 ) -%}');
       });
 
       it('should convert function call with multiple arguments', () => {
         const script = '@move.to(x + 10, y - 5, z)';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- function_command move.to(x + 10, y - 5, z) -%}');
       });
 
       it('should convert function call with nested function calls', () => {
         const script = '@calc.process(getValue(a), transform(b, c))';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- function_command calc.process(getValue(a), transform(b, c)) -%}');
       });
     });
@@ -775,19 +781,19 @@ endif`;
     describe('@ Commands with Comments', () => {
       it('should handle statement command with trailing comment', () => {
         const script = '@put user.name \'Alice\' // Set user name';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command put user.name \'Alice\'  -%}{#- Set user name -#}');
       });
 
       it('should handle function command with trailing comment', () => {
         const script = '@turtle.forward(50) // Move turtle forward';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- function_command turtle.forward(50)  -%}{#- Move turtle forward -#}');
       });
 
       it('should handle command with multi-line comment', () => {
         const script = '@put user.status \'active\' /* Update user status to active */';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command put user.status \'active\'  -%}{#- Update user status to active -#}');
       });
     });
@@ -795,31 +801,31 @@ endif`;
     describe('@ Commands Edge Cases', () => {
       it('should handle @ command with indentation', () => {
         const script = '  @put user.name \'Alice\'';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('  {%- statement_command put user.name \'Alice\' -%}');
       });
 
       it('should handle @ command with empty function call', () => {
         const script = '@reset()';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- function_command reset() -%}');
       });
 
       it('should handle @ command with string containing spaces', () => {
         const script = '@set message "Hello World with spaces"';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command set message "Hello World with spaces" -%}');
       });
 
       it('should handle @ command with boolean values', () => {
         const script = '@toggle user.active true';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command toggle user.active true -%}');
       });
 
       it('should handle @ command with array notation', () => {
         const script = '@update items[0].status \'completed\'';
-        const { template } = scriptToTemplate(script);
+        const template = scriptToTemplate(script);
         expect(template).to.equal('{%- statement_command update items[0].status \'completed\' -%}');
       });
     });
@@ -829,49 +835,49 @@ endif`;
   describe('Edge Cases', () => {
     it('should handle empty input', () => {
       const script = '';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('');
     });
 
     it('should handle input with only whitespace', () => {
       const script = '   ';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('   ');
     });
 
     it('should handle special characters', () => {
       const script = 'print "@#$%^&*"';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- "@#$%^&*" -}}');
     });
 
     it('should handle escape sequences in strings', () => {
       const script = 'print "Line 1\\nLine 2"';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- "Line 1\\nLine 2" -}}');
     });
 
     it('should handle multi-line string literals', () => {
       const script = 'print "Line 1\\\nLine 2"';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- "Line 1\\\nLine 2" -}}');
     });
 
     it('should handle strings with embedded quotes', () => {
       const script = 'print "He said \\"Hello\\""';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- "He said \\"Hello\\"" -}}');
     });
 
     it('should handle strings with multiple line continuations', () => {
       const script = 'print "First line \\\nSecond line \\\nThird line"';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{{- "First line \\\nSecond line \\\nThird line" -}}');
     });
 
     it('should handle empty blocks', () => {
       const script = 'if condition\nendif';
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.equal('{%- if condition -%}\n{%- endif -%}');
     });
   });
@@ -899,8 +905,7 @@ else
   print "Please log in"
 endif`;
 
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
       expect(template).to.contain('{#- User authentication example -#}');
       expect(template).to.contain('{%- if user.isLoggedIn -%}');
       expect(template).to.contain('{{- "Hello, " + user.name -}}');
@@ -918,7 +923,7 @@ total = price *
 
 print "Total: $" + total.toFixed(2)`;
 
-      const { template } = scriptToTemplate(script);
+      const template = scriptToTemplate(script);
       expect(template).to.contain('{%- do total = price *');
       expect(template).to.contain('(1 + taxRate) *');
       expect(template).to.contain('(1 - discount) -%}');
@@ -951,8 +956,7 @@ for product in products
   endif
 endfor`;
 
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
 
       // Check for properly converted tags and nested structure
       expect(template).to.contain('{%- for product in products -%}');
@@ -987,8 +991,7 @@ except
   throwError('Operation failed permanently')
 endtry`;
 
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
 
       expect(template).to.contain('{%- try -%}');
       expect(template).to.contain('{%- set data = fetchData(userId) -%}');
@@ -1016,8 +1019,7 @@ while stream.hasNext()
   endif
 endwhile`;
 
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
 
       expect(template).to.contain('{%- set stream = createAsyncStream() -%}');
       expect(template).to.contain('{%- while stream.hasNext() -%}');
@@ -1047,8 +1049,7 @@ block content
   include includedTemplateName + ".njk" depends = var1, var2
 endblock`;
 
-      const { template, error } = scriptToTemplate(script);
-      expect(error).to.equal(null);
+      const template = scriptToTemplate(script);
 
       expect(template).to.contain('{%- depends frameVar1, frameVar2, frameVar3 -%}');
       expect(template).to.contain('{%- extends "parentTemplate_" + dynamicPart + ".njk" -%}');

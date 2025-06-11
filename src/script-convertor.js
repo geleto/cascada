@@ -551,7 +551,7 @@ function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLi
 /**
  * Validate block structure of processed lines
  * @param {Array} processedLines - Array of processed line info objects
- * @return {Object} Validation result with valid flag and error message
+ * @throws {Error} If block structure is invalid
  */
 function validateBlockStructure(processedLines) {
   const stack = [];
@@ -567,38 +567,26 @@ function validateBlockStructure(processedLines) {
     }
     else if (line.blockType === BLOCK_TYPE.MIDDLE) {
       if (!stack.length) {
-        return {
-          valid: false,
-          error: `Line ${i + 1}: '${tag}' outside of any block (content: "${line.codeContent}")`
-        };
+        throw new Error(`Line ${i + 1}: '${tag}' outside of any block (content: "${line.codeContent}")`);
       }
 
       const topTag = stack[stack.length - 1].tag;
       const validParents = SYNTAX.middleTags[tag] || [];
 
       if (!validParents.includes(topTag)) {
-        return {
-          valid: false,
-          error: `Line ${i + 1}: '${tag}' not valid in '${topTag}' block (content: "${line.codeContent}")`
-        };
+        throw new Error(`Line ${i + 1}: '${tag}' not valid in '${topTag}' block (content: "${line.codeContent}")`);
       }
     }
     else if (line.blockType === BLOCK_TYPE.END) {
       if (!stack.length) {
-        return {
-          valid: false,
-          error: `Line ${i + 1}: Unexpected '${tag}' (content: "${line.codeContent}")`
-        };
+        throw new Error(`Line ${i + 1}: Unexpected '${tag}' (content: "${line.codeContent}")`);
       }
 
       const topTag = stack[stack.length - 1].tag;
       const expectedEndTag = SYNTAX.blockPairs[topTag];
 
       if (expectedEndTag !== tag) {
-        return {
-          valid: false,
-          error: `Line ${i + 1}: Unexpected '${tag}', was expecting '${expectedEndTag}' (content: "${line.codeContent}")`
-        };
+        throw new Error(`Line ${i + 1}: Unexpected '${tag}', was expecting '${expectedEndTag}' (content: "${line.codeContent}")`);
       }
 
       stack.pop();
@@ -606,11 +594,8 @@ function validateBlockStructure(processedLines) {
   }
 
   if (stack.length > 0) {
-    const { tag, line } = stack[stack.length - 1];
-    return { valid: false, error: `Unclosed '${tag}' at line ${line}` };
+    throw new Error(`Unclosed block '${stack[stack.length - 1].tag}' at line ${stack[stack.length - 1].line}`);
   }
-
-  return { valid: true };
 }
 
 /**
@@ -653,12 +638,9 @@ function scriptToTemplate(scriptStr) {
   }
 
   // Validate block structure
-  const validationResult = validateBlockStructure(processedLines);
-  if (!validationResult.valid) {
-    return { template: null, error: validationResult.error };
-  }
+  validateBlockStructure(processedLines);
 
-  return { template: output, error: null };
+  return output;
 }
 
 module.exports = { scriptToTemplate, getFirstWord, isCompleteWord, getBlockType,

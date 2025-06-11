@@ -86,22 +86,18 @@ export const {
 export const precompile = precompileModule ? precompileModule.precompile : undefined;
 /** @deprecated Use precompileTemplateString instead */
 export const precompileString = precompileModule ? precompileModule.precompileString : undefined;
-/** @deprecated Use precompileTemplateAsync instead */
-export const precompileAsync = precompileModule ? precompileModule.precompileAsync : undefined;
-/** @deprecated Use precompileTemplateStringAsync instead */
-export const precompileStringAsync = precompileModule ? precompileModule.precompileStringAsync : undefined;
 
-// New template compilation functions
 export const precompileTemplate = precompileModule ? precompileModule.precompileTemplate : undefined;
 export const precompileTemplateString = precompileModule ? precompileModule.precompileTemplateString : undefined;
-export const precompileTemplateAsync = precompileModule ? precompileModule.precompileTemplateAsync : undefined;
-export const precompileTemplateStringAsync = precompileModule ? precompileModule.precompileTemplateStringAsync : undefined;
-
-// New script compilation functions
 export const precompileScript = precompileModule ? precompileModule.precompileScript : undefined;
 export const precompileScriptString = precompileModule ? precompileModule.precompileScriptString : undefined;
+
+//@todo - does this realy return a promise?
+export const precompileTemplateAsync = precompileModule ? precompileModule.precompileTemplateAsync : undefined;
+export const precompileTemplateStringAsync = precompileModule ? precompileModule.precompileTemplateStringAsync : undefined;
 export const precompileScriptAsync = precompileModule ? precompileModule.precompileScriptAsync : undefined;
 export const precompileScriptStringAsync = precompileModule ? precompileModule.precompileScriptStringAsync : undefined;
+
 
 export function reset() {
   e = undefined;
@@ -168,18 +164,25 @@ export function renderAsync(name, ctx) {
   return asyncE.render(name, ctx, true);
 }
 
+export function renderTemplate(name, ctx, cb) {
+  if (!e) {
+    configure();
+  }
+  return e.renderTemplate(name, ctx, cb);
+}
+
+export function renderTemplateAsync(name, ctx) {
+  if (!asyncE) {
+    configureAsync();
+  }
+  return asyncE.renderTemplate(name, ctx);
+}
+
 export function renderString(src, ctx, cb) {
   if (!e) {
     configure();
   }
   return e.renderString(src, ctx, cb);
-}
-
-export function renderStringAsync(src, ctx, cb) {
-  if (!asyncE) {
-    configureAsync();
-  }
-  return asyncE.renderString(src, ctx, cb);
 }
 
 export function renderTemplateString(src, ctx, cb) {
@@ -241,15 +244,14 @@ export default {
   render,
   renderAsync,
   renderString,
-  renderStringAsync,
+  renderTemplate,
+  renderTemplateAsync,
   renderTemplateString,
   renderTemplateStringAsync,
   renderScriptString,
   renderScriptStringAsync,
   precompile,
   precompileString,
-  precompileAsync,
-  precompileStringAsync,
   precompileTemplate,
   precompileTemplateString,
   precompileTemplateAsync,

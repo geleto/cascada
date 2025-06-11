@@ -402,9 +402,10 @@ class Environment extends EmitterObj {
     }
 
     // Convert script to template
-    const { template, error } = scriptToTemplate(scriptStr);
-
-    if (error) {
+    let template;
+    try {
+      template = scriptToTemplate(scriptStr);
+    } catch (error) {
       if (cb) {
         callbackAsap(cb, error);
         return undefined;
@@ -429,7 +430,6 @@ class AsyncEnvironment extends Environment {
     this.dataMethods = {}; // Pre-fill with built-in methods later
     this.commandHandlerClasses = {};
     this.commandHandlerInstances = {};
-    this.defaultHandlerName = null;
     this.resultStructure = {
       dataKey: 'data',
       textKey: 'text'
@@ -467,15 +467,6 @@ class AsyncEnvironment extends Environment {
   }
 
   /**
-   * Sets the default handler for commands without a prefix.
-   * @param {string} name - The name of the registered handler to use as default.
-   */
-  setDefaultHandler(name) {
-    this.defaultHandlerName = name;
-    return this;
-  }
-
-  /**
    * Customizes the top-level keys in the script's final result object.
    * @param {object} opts - Options object with `dataKey` and/or `textKey`.
    */
@@ -484,76 +475,34 @@ class AsyncEnvironment extends Environment {
     return this;
   }
 
-  async renderAsync(templateName, ctx, parentFrame) {
+  async renderTemplate(templateName, ctx, parentFrame) {
     return this._asyncRenderTemplate(templateName, ctx, true, parentFrame);
   }
 
-  async renderTemplateAsync(templateName, ctx, parentFrame) {
-    return this._asyncRenderTemplate(templateName, ctx, true, parentFrame);
-  }
-
-  async renderScriptAsync(templateName, ctx, parentFrame) {
+  async renderScript(templateName, ctx, parentFrame) {
     return this._asyncRenderScript(templateName, ctx, true, parentFrame);
   }
 
-  async renderTemplateString(src, ctx, opts, cb) {
-    return this.renderString(src, ctx, opts, cb);
+  async renderTemplateString(src, ctx, opts) {
+    return this._asyncRenderTemplate(src, ctx, false, opts || {});
   }
 
-  /** @deprecated Use renderTemplateString instead */
-  async renderString(src, ctx, opts, cb) {
-    if (typeof opts === 'function') {
-      cb = opts;
-      opts = {};
-    }
-    opts = opts || {};
+  async renderScriptString(scriptStr, ctx, opts) {
+    ctx = ctx || {};
 
+    // Convert script to template
+    let template;
     try {
-      const result = this._asyncRenderTemplate(src, ctx, false, opts);
-      if (cb) {
-        cb(null, result);
-      }
-      return result;
+      template = scriptToTemplate(scriptStr);
+    } catch (error) {
+      throw new Error(`Error converting script to template: ${error.message}`);
     }
-    catch (err) {
-      if (cb) cb(err);
-      throw err;
-    }
+
+    // Use the async template renderer
+    return this._asyncRenderTemplate(template, ctx, false, opts || {});
   }
 
-  async renderScriptString(scriptStr, ctx, cb) {
-    if (lib.isFunction(ctx)) {
-      cb = ctx;
-      ctx = {};
-    }
-
-    try {
-      // Convert script to template
-      const { template, error } = scriptToTemplate(scriptStr);
-
-      if (error) {
-        if (cb) {
-          callbackAsap(cb, error);
-          return undefined;
-        }
-        throw error;
-      }
-
-      // Use the async template renderer
-      const result = await this.renderString(template, ctx);
-      if (cb) {
-        callbackAsap(cb, null, result);
-      }
-      return result;
-    } catch (err) {
-      if (cb) {
-        callbackAsap(cb, err);
-        return undefined;
-      }
-      throw err;
-    }
-  }
-
+  //@todo - rewrite once template.render with no callback returns a promise
   async _asyncRenderTemplate(template, ctx, namedTemplate, opts) {
     const result = await new Promise((resolve, reject) => {
       let callback = (err, res) => {
@@ -563,15 +512,13 @@ class AsyncEnvironment extends Environment {
           resolve(res);
         }
       };
-
       if (namedTemplate) {
-        // render template object
-        this.getTemplate(template, false, null, false, (err, tmpl) => {
-          if (err) {
-            callbackAsap(callback, err);
-          } else {
-            tmpl.render(ctx, callback);
+        // render template
+        this.getTemplate(template, false, null, false).then((tmpl) => {
+          if (!tmpl) {
+            throw new Error(`Template not found: ${template}`);
           }
+          tmpl.render(ctx, callback);
         });
       } else {
         // render template string
@@ -610,49 +557,41 @@ class AsyncEnvironment extends Environment {
     return result;
   }
 
-
-  getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
+  //returns a Promise, unlike the sync version
+  getTemplate(name, eagerCompile, parentName, ignoreMissing) {
     if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
-        this._getCompiled(resolvedName, eagerCompile, parentName, ignoreMissing, true, false, cb);
+        return this._getCompiledAsync(resolvedName, eagerCompile, parentName, ignoreMissing, true, false);
       });
     }
-    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, true, false, cb);
+    return this._getCompiledAsync(name, eagerCompile, parentName, ignoreMissing, true, false);
   }
 
-  getScript(name, eagerCompile, parentName, ignoreMissing, cb) {
+  //@todo - in script mode use instead of getTemplate
+  //or maybe it's not needed, just use getCompiled?
+  getScript(name, eagerCompile, parentName, ignoreMissing) {
     if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
-        this._getCompiled(resolvedName, eagerCompile, parentName, ignoreMissing, true, true, cb);
+        this._getCompiledAsync(resolvedName, eagerCompile, parentName, ignoreMissing, true, true);
       });
     }
-    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, true, true, cb);
+    return this._getCompiledAsync(name, eagerCompile, parentName, ignoreMissing, true, true);
   }
 
-  getTemplateAsync(name, eagerCompile, parentName, ignoreMissing) {
+  _getCompiledAsync(name, eagerCompile, parentName, ignoreMissing, asyncMode, isScript) {
     return new Promise((resolve, reject) => {
-      this.getTemplate(name, eagerCompile, parentName, ignoreMissing, (error, template) => {
-        if (error) {
-          reject(error);
+      this._getCompiled(name, eagerCompile, parentName, ignoreMissing, asyncMode, isScript, (err, tmpl) => {
+        if (err) {
+          reject(err);
         } else {
-          resolve(template);
+          resolve(tmpl);
         }
       });
     });
   }
 
-  getScriptAsync(name, eagerCompile, parentName, ignoreMissing) {
-    return new Promise((resolve, reject) => {
-      this.getScript(name, eagerCompile, parentName, ignoreMissing, (error, script) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(script);
-        }
-      });
-    });
-  }
-
+  //@todo - AsyncEnvironment should only support async functions,
+  // not functions with callbacks
   addFilter(name, func, async) {
     if (async) {
       this.asyncFilters.push(name);
@@ -828,6 +767,7 @@ class Template extends Obj {
     }
   }
 
+  // @todo - return promise if isAsync and no callback is provided
   render(ctx, parentFrame, astate, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
@@ -1080,8 +1020,6 @@ class Template extends Obj {
   }
 }
 
-//@todo - class AsyncScript
-
 class AsyncTemplate extends Template {
   init(src, env, path, eagerCompile) {
     env = env || new AsyncEnvironment();
@@ -1097,11 +1035,7 @@ class Script extends Template {
   init(src, env, path, eagerCompile) {
     // Convert script to template if it's a string
     if (lib.isString(src)) {
-      const { template, error } = scriptToTemplate(src);
-      if (error) {
-        throw error;
-      }
-      src = template;
+      src = scriptToTemplate(src);
     }
 
     super.init(src, env, path, eagerCompile);
@@ -1115,10 +1049,7 @@ class AsyncScript extends AsyncTemplate {
   init(src, env, path, eagerCompile) {
     // Convert script to template if it's a string
     if (lib.isString(src)) {
-      const { template, error } = scriptToTemplate(src);
-      if (error) {
-        throw error;
-      }
+      const template = scriptToTemplate(src);
       src = template;
     }
 

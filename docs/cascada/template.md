@@ -494,6 +494,7 @@ Additional async-specific methods:
 #### 2. Function Mappings
 
 New top-level functions use the Async suffix:
+TODO: Update API docs
 
 | Nunjucks Function | Cascada Equivalent | Difference |
 |------------------|-------------------|------------|

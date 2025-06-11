@@ -57,27 +57,28 @@ function configureAsync(templatesPath, opts) {
 }
 
 module.exports = {
-  Environment: Environment,
-  AsyncEnvironment: AsyncEnvironment,
-  Template: Template,
-  AsyncTemplate: AsyncTemplate,
-  Script: Script,
-  AsyncScript: AsyncScript,
-  Loader: Loader,
+  Environment,
+  AsyncEnvironment,
+  Template,
+  AsyncTemplate,
+  Script,
+  AsyncScript,
+  Loader,
   FileSystemLoader: loaders.FileSystemLoader,
   NodeResolveLoader: loaders.NodeResolveLoader,
   PrecompiledLoader: loaders.PrecompiledLoader,
   WebLoader: loaders.WebLoader,
-  compiler: compiler,
-  parser: parser,
-  lexer: lexer,
-  runtime: runtime,
-  lib: lib,
-  nodes: nodes,
-  installJinjaCompat: installJinjaCompat,
-  configure: configure,
+  compiler,
+  parser,
+  lexer,
+  runtime,
+  lib,
+  nodes,
+  installJinjaCompat,
+  configure,
   reset() {
     e = undefined;
+    asyncE = undefined;
   },
   /** @deprecated Use compileTemplate instead */
   compile(src, env, path, eagerCompile) {
@@ -129,19 +130,13 @@ module.exports = {
     if (!asyncE) {
       configureAsync();
     }
-    return asyncE.render(name, ctx, true);
+    return asyncE.renderTemplate(name, ctx);
   },
   renderString(src, ctx, cb) {
     if (!e) {
       configure();
     }
     return e.renderString(src, ctx, cb);
-  },
-  renderStringAsync(src, ctx, cb) {
-    if (!asyncE) {
-      configureAsync();
-    }
-    return asyncE.renderString(src, ctx, cb);
   },
   renderTemplateString(src, ctx, cb) {
     if (!e) {
@@ -167,24 +162,33 @@ module.exports = {
     }
     return asyncE.renderScriptString(src, ctx, cb);
   },
+  renderTemplate(name, ctx, cb) {
+    if (!e) {
+      configure();
+    }
+    return e.renderTemplate(name, ctx, cb);
+  },
+  renderTemplateAsync(name, ctx) {
+    if (!asyncE) {
+      configureAsync();
+    }
+    return asyncE.renderTemplate(name, ctx);
+  },
   /** @deprecated Use precompileTemplate instead */
   precompile: (precompile) ? precompile.precompile : undefined,
   /** @deprecated Use precompileTemplateString instead */
   precompileString: (precompile) ? precompile.precompileString : undefined,
-  /** @deprecated Use precompileTemplateAsync instead */
-  precompileAsync: (precompile) ? precompile.precompileAsync : undefined,
-  /** @deprecated Use precompileTemplateStringAsync instead */
-  precompileStringAsync: (precompile) ? precompile.precompileStringAsync : undefined,
 
-  // New template compilation functions
   precompileTemplate: (precompile) ? precompile.precompileTemplate : undefined,
   precompileTemplateString: (precompile) ? precompile.precompileTemplateString : undefined,
-  precompileTemplateAsync: (precompile) ? precompile.precompileTemplateAsync : undefined,
-  precompileTemplateStringAsync: (precompile) ? precompile.precompileTemplateStringAsync : undefined,
 
-  // New script compilation functions
   precompileScript: (precompile) ? precompile.precompileScript : undefined,
   precompileScriptString: (precompile) ? precompile.precompileScriptString : undefined,
+
+
+  //@todo - does this reall return a promise?
+  precompileTemplateAsync: (precompile) ? precompile.precompileTemplateAsync : undefined,
+  precompileTemplateStringAsync: (precompile) ? precompile.precompileTemplateStringAsync : undefined,
   precompileScriptAsync: (precompile) ? precompile.precompileScriptAsync : undefined,
   precompileScriptStringAsync: (precompile) ? precompile.precompileScriptStringAsync : undefined,
 };
