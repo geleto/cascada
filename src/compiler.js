@@ -2119,6 +2119,90 @@ class Compiler extends Obj {
       });
     }
   }
+
+  compileFunctionCommand(node, frame) {
+    const isAsync = node.isAsync;
+
+    // Use a wrapper to avoid duplicating the sync/async logic.
+    const wrapper = (emitLogic) => {
+      if (isAsync) {
+        this.emit.asyncBlockAddToBuffer(node, frame, (resultVar, f) => {
+          this.emit(`${resultVar} = `);
+          emitLogic(f); // Pass the inner frame to the logic.
+        });
+      } else {
+        this.emit.addToBuffer(node, frame, () => {
+          emitLogic(frame); // Pass the current frame.
+        });
+      }
+    };
+
+    wrapper((f) => {
+      this.emit('{');
+      if (node.call.name instanceof nodes.LookupVal) {
+        // Handles: @turtle.forward(50)
+        this.emit(`handler: '${node.call.name.target.value}', command: '${node.call.name.val.value}', `);
+      } else {
+        // Handles: @print("hello")
+        this.emit(`handler: null, command: '${node.call.name.value}', `);
+      }      this.emit('arguments: ');
+      // _compileAggregate will correctly handle promise resolution if isAsync is true.
+      this._compileAggregate(node.call.args, f, '[', ']', isAsync, true);
+      this.emit(', \'node\': node }');
+    });
+  }
+
+  compileStatementCommand(node, frame) {
+    const isAsync = node.isAsync;
+
+    const wrapper = (emitLogic) => {
+      if (isAsync) {
+        this.emit.asyncBlockAddToBuffer(node, frame, (resultVar, f) => {
+          this.emit(`${resultVar} = `);
+          emitLogic(f);
+        });
+      } else {
+        this.emit.addToBuffer(node, frame, () => {
+          emitLogic(frame);
+        });
+      }
+    };    wrapper((f) => {      this.emit('{');
+      this.emit(`'method': '${node.command.value}', `);
+      this.emit('\'path\': [');
+      this._compilePath(node.path, f, isAsync); // Use the new helper.
+      this.emit('], \'value\': ');
+      if (node.argument) {
+        this._compileAwaitedExpression(node.argument, f, isAsync);
+      } else {
+        this.emit('null');
+      }
+      this.emit(', \'node\': node }');
+    });
+  }
+
+  // Private helper method to compile path expressions for Output Commands
+  _compilePath(node, frame, isAsync) {
+    if (node instanceof nodes.Symbol) {
+      // Base case: The start of a path (e.g., `user`).
+      this.emit(`'${node.value}'`);
+    } else if (node instanceof nodes.LookupVal) {
+      // Recursive step: A property or index access (e.g., `.posts` or `[0]`).
+      // First, compile the target of the lookup.
+      this._compilePath(node.target, frame, isAsync);
+      this.emit(', ');      // Then, compile the value/key.
+      if (node.val === null) {
+        // This is the special case for `[]` syntax.
+        this.emit('\'[]\'');
+      } else {
+        // This is a normal lookup (e.g., `[0]` or `.name`).
+        this._compileAwaitedExpression(node.val, frame, isAsync);
+      }
+    } else {
+      // Path validation.
+      this.fail('Invalid node type in path for Output Command. Only symbols and lookups are allowed.',
+        node.lineno, node.colno, node);
+    }
+  }
 }
 
 module.exports = {
