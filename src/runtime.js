@@ -892,32 +892,49 @@ function _findPathTarget(root, path) {
   return { target: parent, key };
 }
 
-
-function flattenBuffer(arr, context = null, focusOutput = null) {
+function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerName = null) {
+  // FAST PATH: If no context, it's a simple template. Concatenate strings and arrays.
   if (!context) {
-    // no context (a template) - use a fast path that only handles strings and arrays.
     if (!Array.isArray(arr)) {
       return arr || '';
     }
     return arr.reduce((acc, item) => {
-      // The simple mode still needs to handle nested arrays recursively.
       if (Array.isArray(item)) {
-        // We pass null for context to ensure it stays in simple mode.
-        return acc + flattenBuffer(item, null, null);
+        return acc + flattenBuffer(item, null, null, null);
       }
-      // In simple mode, a function in the buffer is a legacy pattern (e.g., from SafeString).
-      if (typeof item === 'function') {
+      if (typeof item === 'function') { // Legacy SafeString support
         return (item(acc) || '');
       }
       return acc + ((item !== null && item !== undefined) ? item : '');
     }, '');
   }
 
-  // Context Provided - process commands
+  // Script processing path
   const env = context.env;
   const dataOutput = {};
   const textOutput = [];
   const handlerInstances = {}; // Cache instantiated handlers for this run.
+
+  function getOrInstantiateHandler(handlerName) {
+    if (handlerInstances[handlerName]) {
+      return handlerInstances[handlerName];
+    }
+    if (env.commandHandlerInstances[handlerName]) {
+      const instance = env.commandHandlerInstances[handlerName];
+      if (typeof instance._init === 'function') {
+        instance._init(context.getVariables());
+      }
+      handlerInstances[handlerName] = instance;
+      return instance;
+    }
+    if (env.commandHandlerClasses[handlerName]) {
+      const HandlerClass = env.commandHandlerClasses[handlerName];
+      const instance = new HandlerClass(context.getVariables());
+      handlerInstances[handlerName] = instance;
+      return instance;
+    }
+    return null;
+  }
 
   function processItem(item) {
     if (item === null || item === undefined) return;
@@ -926,10 +943,10 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
       return;
     }
 
-    // Check if the item is a command object produced by the compiler.
+    // Process a command object from the compiler
     if (typeof item === 'object' && (item.method || item.handler !== undefined)) {
       if (item.method) {
-        // Statement Command (@put, @push, etc.)
+        // Statement Command: @put, @push, etc.
         const dataMethod = env.dataMethods[item.method];
         if (!dataMethod) {
           throw handleError(new Error(`Unknown data method: ${item.method}`), item.node.lineno, item.node.colno);
@@ -938,52 +955,41 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
         dataMethod(target, key, item.value);
 
       } else {
-        // Function Command (@handler.cmd, @print, etc.)
-        let handlerName = item.handler;// || env.defaultHandlerName; we will implement default handler at script coverter/compiler level
+        // Function Command: @handler.cmd(), @callableHandler()
+        const handlerName = item.handler || defaultHandlerName;
+        const commandName = item.command;
+        const args = item.arguments;
 
         if (!handlerName || handlerName === 'text') {
-          // This command targets the simple text output stream (e.g., @print('...'))
-          if (Array.isArray(item.arguments)) {
-            textOutput.push(...item.arguments);
-          } else {
-            textOutput.push(item.arguments);
-          }
+          textOutput.push(...args);
         } else {
-          // This command targets a named handler
-          let handlerInstance = handlerInstances[handlerName];
+          const handlerInstance = getOrInstantiateHandler(handlerName);
+
           if (!handlerInstance) {
-            // Lazily instantiate the handler for this run
-            if (env.commandHandlerInstances[handlerName]) {
-              handlerInstance = env.commandHandlerInstances[handlerName];
-              if (typeof handlerInstance._init === 'function') {
-                handlerInstance._init(context.getVariables());
-              }
-            } else if (env.commandHandlerClasses[handlerName]) {
-              const HandlerClass = env.commandHandlerClasses[handlerName];
-              handlerInstance = new HandlerClass(context.getVariables());
-            } else {
-              throw handleError(new Error(`Unknown command handler: ${handlerName}`), item.node.lineno, item.node.colno);
-            }
-            handlerInstances[handlerName] = handlerInstance;
+            throw handleError(new Error(`Unknown command handler: ${handlerName}`), item.node.lineno, item.node.colno);
           }
 
-          const commandFunc = handlerInstance[item.command];
-          if (typeof commandFunc !== 'function') {
-            throw handleError(new Error(`Handler '${handlerName}' has no method '${item.command}'`), item.node.lineno, item.node.colno);
+          const commandFunc = handlerInstance[commandName];
+          if (typeof commandFunc === 'function') {
+            // Found a method on the handler: @turtle.forward()
+            commandFunc.apply(handlerInstance, args);
+          } else if (typeof handlerInstance === 'function' && !commandName) {
+            // The handler itself is callable and no command was specified: @myCallableHandler(...)
+            handlerInstance.apply(handlerInstance, args);
+          } else {
+            throw handleError(new Error(`Handler '${handlerName}' has no method '${commandName}' and is not callable`), item.node.lineno, item.node.colno);
           }
-          commandFunc.apply(handlerInstance, item.arguments);
         }
       }
       return;
     }
-
-    // Default case: Treat as a literal value for text output.
+    // Default: treat as literal value for text output.
     textOutput.push(item);
   }
 
   arr.forEach(processItem);
 
-  // Assemble the final result
+  // Assemble the final result object
   const { dataKey, textKey } = env.resultStructure;
   const finalResult = {};
 
@@ -994,8 +1000,17 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
   Object.assign(finalResult, handlerInstances);
 
-  // Return the full, structured object (default) or just the focused property if specified.
-  return focusOutput ? finalResult[focusOutput] : finalResult;
+  // Handle focused output
+  if (focusOutput) {
+    return finalResult[focusOutput];
+  }
+
+  // For standard templates, the default should be just the text.
+  if (!focusOutput && Object.keys(finalResult).length === 1 && finalResult[textKey]) {
+    return finalResult[textKey];
+  }
+
+  return finalResult;
 }
 
 function memberLookup(obj, val) {
