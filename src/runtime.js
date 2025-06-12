@@ -849,24 +849,153 @@ function resolveArguments(fn, skipArguments = 0) {
   };
 }
 
-function flattenBuffer(arr) {
-  const result = arr.reduce((acc, item) => {
+/**
+ * Traverses a root object based on a path array to find the target object
+ * for a data manipulation command. It creates nested objects/arrays as needed.
+ */
+function _findPathTarget(root, path) {
+  let parent = null;
+  let current = root;
+  let key = path[0];
+
+  for (let i = 0; i < path.length; i++) {
+    key = path[i];
+    parent = current;
+
+    if (current === null || typeof current === 'undefined') {
+      throw new Error(`Cannot set property '${key}' on null or undefined path segment.`);
+    }
+
+    // Handle the '[]' syntax for accessing the LAST element of an array.
+    if (key === '[]') {
+      if (!Array.isArray(current)) {
+        throw new Error('Path target for \'[]\' is not an array.');
+      }
+      if (current.length === 0) {
+        throw new Error('Cannot use \'[]\' to access an element of an empty array.');
+      }
+      // Set current to the last element to continue traversal.
+      current = current[current.length - 1];
+      // After this, the loop continues to the next path segment (e.g., 'permissions').
+      continue;
+    }
+
+    const nextKey = path[i + 1];
+    // If we're not at the end of the path and the next key doesn't exist, create it.
+    if (typeof current[key] === 'undefined' && i < path.length - 1) {
+      // If the next path segment looks like an array index, create an array.
+      // Otherwise, create an object.
+      current[key] = (typeof nextKey === 'number' || nextKey === '[]') ? [] : {};
+    }
+    current = current[key];
+  }
+  return { target: parent, key };
+}
+
+
+function flattenBuffer(arr, context = null, focusOutput = null) {
+  if (!context) {
+    // no context (a template) - use a fast path that only handles strings and arrays.
+    if (!Array.isArray(arr)) {
+      return arr || '';
+    }
+    return arr.reduce((acc, item) => {
+      // The simple mode still needs to handle nested arrays recursively.
+      if (Array.isArray(item)) {
+        // We pass null for context to ensure it stays in simple mode.
+        return acc + flattenBuffer(item, null, null);
+      }
+      // In simple mode, a function in the buffer is a legacy pattern (e.g., from SafeString).
+      if (typeof item === 'function') {
+        return (item(acc) || '');
+      }
+      return acc + ((item !== null && item !== undefined) ? item : '');
+    }, '');
+  }
+
+  // Context Provided - process commands
+  const env = context.env;
+  const dataOutput = {};
+  const textOutput = [];
+  const handlerInstances = {}; // Cache instantiated handlers for this run.
+
+  function processItem(item) {
+    if (item === null || item === undefined) return;
     if (Array.isArray(item)) {
-      return acc + flattenBuffer(item);
+      item.forEach(processItem);
+      return;
     }
-    if (typeof item === 'function') {
-      return (item(acc) || '');
+
+    // Check if the item is a command object produced by the compiler.
+    if (typeof item === 'object' && (item.method || item.handler !== undefined)) {
+      if (item.method) {
+        // Statement Command (@put, @push, etc.)
+        const dataMethod = env.dataMethods[item.method];
+        if (!dataMethod) {
+          throw handleError(new Error(`Unknown data method: ${item.method}`), item.node.lineno, item.node.colno);
+        }
+        const { target, key } = _findPathTarget(dataOutput, item.path);
+        dataMethod(target, key, item.value);
+
+      } else {
+        // Function Command (@handler.cmd, @print, etc.)
+        let handlerName = item.handler;// || env.defaultHandlerName; we will implement default handler at script coverter/compiler level
+
+        if (!handlerName || handlerName === 'text') {
+          // This command targets the simple text output stream (e.g., @print('...'))
+          if (Array.isArray(item.arguments)) {
+            textOutput.push(...item.arguments);
+          } else {
+            textOutput.push(item.arguments);
+          }
+        } else {
+          // This command targets a named handler
+          let handlerInstance = handlerInstances[handlerName];
+          if (!handlerInstance) {
+            // Lazily instantiate the handler for this run
+            if (env.commandHandlerInstances[handlerName]) {
+              handlerInstance = env.commandHandlerInstances[handlerName];
+              if (typeof handlerInstance._init === 'function') {
+                handlerInstance._init(context.getVariables());
+              }
+            } else if (env.commandHandlerClasses[handlerName]) {
+              const HandlerClass = env.commandHandlerClasses[handlerName];
+              handlerInstance = new HandlerClass(context.getVariables());
+            } else {
+              throw handleError(new Error(`Unknown command handler: ${handlerName}`), item.node.lineno, item.node.colno);
+            }
+            handlerInstances[handlerName] = handlerInstance;
+          }
+
+          const commandFunc = handlerInstance[item.command];
+          if (typeof commandFunc !== 'function') {
+            throw handleError(new Error(`Handler '${handlerName}' has no method '${item.command}'`), item.node.lineno, item.node.colno);
+          }
+          commandFunc.apply(handlerInstance, item.arguments);
+        }
+      }
+      return;
     }
-    if (item && typeof item.then === 'function') {
-      // Handle promises in the buffer by awaiting them
-      return (async () => {
-        const resolvedItem = await item;
-        return acc + (resolvedItem || '');
-      })();
-    }
-    return acc + (item || '');
-  }, '');
-  return result;
+
+    // Default case: Treat as a literal value for text output.
+    textOutput.push(item);
+  }
+
+  arr.forEach(processItem);
+
+  // Assemble the final result
+  const { dataKey, textKey } = env.resultStructure;
+  const finalResult = {};
+
+  if (Object.keys(dataOutput).length > 0) finalResult[dataKey] = dataOutput;
+
+  const textResult = textOutput.join('');
+  if (textResult) finalResult[textKey] = textResult;
+
+  Object.assign(finalResult, handlerInstances);
+
+  // Return the full, structured object (default) or just the focused property if specified.
+  return focusOutput ? finalResult[focusOutput] : finalResult;
 }
 
 function memberLookup(obj, val) {
