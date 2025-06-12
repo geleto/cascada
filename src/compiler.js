@@ -2121,6 +2121,52 @@ class Compiler extends Obj {
   }
 
   compileFunctionCommand(node, frame) {
+    if (this.outputFocus) {
+      //skip compiling commands that do not target the focued property
+      let commandTarget;
+      if (node.call.name instanceof nodes.LookupVal) {
+        // This is a command for a named handler, e.g., @turtle.forward()
+        commandTarget = node.call.name.target.value;
+      } else if (node.call.name.value === 'print') {
+        // This is a command for text output, e.g., @print('hello')
+        commandTarget = 'text';
+      }
+      // @todo - add support for the default hanler, to be declared with ':text' syntax in the first line
+
+      // If we identified a specific target and it doesn't match the focus, skip compilation.
+      if (commandTarget && this.outputFocus !== commandTarget) {
+        return;
+      }
+      // If the focus is on 'data', we can safely skip all FunctionCommands.
+      if (this.outputFocus === 'data') {
+        return;
+      }
+    }
+
+    // Do some validation of the AST structure.
+    if (node.call.name instanceof nodes.Symbol) {
+      // This is a valid call to a default handler command, like @print().
+      // No further structural validation needed for the name itself.
+    } else if (node.call.name instanceof nodes.LookupVal) {
+      // This is potentially a call to a named handler, like @turtle.forward().
+      // We must validate its internal structure.
+      const target = node.call.name.target;
+      const command = node.call.name.val;
+
+      if (!(target instanceof nodes.Symbol) || !(command instanceof nodes.Symbol)) {
+        this.fail(
+          'Invalid Function Command syntax. Expected format is @handler.command(...).',
+          node.lineno, node.colno, node
+        );
+      }
+    } else {
+      // Any other type is a structural error.
+      this.fail(
+        'Invalid Function Command syntax. Command must be a static name, not an expression.',
+        node.lineno, node.colno, node
+      );
+    }
+
     const isAsync = node.isAsync;
 
     // Use a wrapper to avoid duplicating the sync/async logic.
@@ -2145,14 +2191,21 @@ class Compiler extends Obj {
       } else {
         // Handles: @print("hello")
         this.emit(`handler: null, command: '${node.call.name.value}', `);
-      }      this.emit('arguments: ');
+      }
+      this.emit('arguments: ');
       // _compileAggregate will correctly handle promise resolution if isAsync is true.
       this._compileAggregate(node.call.args, f, '[', ']', isAsync, true);
-      this.emit(', \'node\': node }');
+      this.emit(', "node": node }');
     });
   }
 
   compileStatementCommand(node, frame) {
+    // StatementCommands ALWAYS target the 'data' object. If the focus is
+    // on something else (like a specific handler or 'text'), we can skip this.
+    if (this.outputFocus && this.outputFocus !== 'data') {
+      return;
+    }
+
     const isAsync = node.isAsync;
 
     const wrapper = (emitLogic) => {
@@ -2166,36 +2219,40 @@ class Compiler extends Obj {
           emitLogic(frame);
         });
       }
-    };    wrapper((f) => {      this.emit('{');
-      this.emit(`'method': '${node.command.value}', `);
-      this.emit('\'path\': [');
-      this._compilePath(node.path, f, isAsync); // Use the new helper.
-      this.emit('], \'value\': ');
+    };
+
+    wrapper((f) => {
+      this.emit('{');
+      this.emit(`"method": '${node.command.value}', `);
+      this.emit('"path": [');
+      this._compilePath(node.path, f); // Use the new helper.
+      this.emit('], "value": ');
       if (node.argument) {
-        this._compileAwaitedExpression(node.argument, f, isAsync);
+        this._compileAwaitedExpression(node.argument, f, node.argument.isAsync);
       } else {
         this.emit('null');
       }
-      this.emit(', \'node\': node }');
+      this.emit(', "node": node }');
     });
   }
 
-  // Private helper method to compile path expressions for Output Commands
-  _compilePath(node, frame, isAsync) {
+  _compilePath(node, frame) {
     if (node instanceof nodes.Symbol) {
       // Base case: The start of a path (e.g., `user`).
       this.emit(`'${node.value}'`);
     } else if (node instanceof nodes.LookupVal) {
       // Recursive step: A property or index access (e.g., `.posts` or `[0]`).
       // First, compile the target of the lookup.
-      this._compilePath(node.target, frame, isAsync);
-      this.emit(', ');      // Then, compile the value/key.
+      this._compilePath(node.target, frame);
+      this.emit(', ');
+
+      // Then, compile the value/key.
       if (node.val === null) {
         // This is the special case for `[]` syntax.
-        this.emit('\'[]\'');
+        this.emit('"[]"');
       } else {
         // This is a normal lookup (e.g., `[0]` or `.name`).
-        this._compileAwaitedExpression(node.val, frame, isAsync);
+        this._compileAwaitedExpression(node.val, frame, node.val.isAsync);
       }
     } else {
       // Path validation.
