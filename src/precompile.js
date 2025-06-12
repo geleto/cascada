@@ -16,7 +16,7 @@ function match(filename, patterns) {
 
 /** @deprecated Use precompileTemplateString instead */
 function precompileString(str, opts) {
-  opts = opts || {};
+  opts = opts || {isAsync: false, isScript: false};
   opts.isString = true;
   const env = opts.env || new Environment([]);
   const wrapper = opts.wrapper || precompileGlobal;
@@ -24,24 +24,40 @@ function precompileString(str, opts) {
   if (!opts.name) {
     throw new Error('the "name" option is required when compiling a string');
   }
-  return wrapper([_precompile(str, opts.name, env)], opts);
+  return wrapper([_precompile(str, opts.name, opts, env)], opts);
 }
 
-/** @deprecated Use precompileTemplateStringAsync instead */
-function precompileStringAsync(str, opts) {
+function precompileTemplateString(str, opts) {
   opts = opts || {};
-  opts.isString = true;
-  const env = opts.asyncEnv || new AsyncEnvironment([]);
-  const wrapper = opts.wrapper || precompileGlobal;
+  opts.isAsync = false;
+  opts.isScript = false;
+  return precompileString(str, opts);
+}
 
-  if (!opts.name) {
-    throw new Error('the "name" option is required when compiling a string');
-  }
-  return wrapper([_precompile(str, opts.name, env)], opts);
+function precompileScriptString(str, opts) {
+  opts = opts || {};
+  opts.isAsync = false;
+  opts.isScript = true;
+
+  return precompileString(str, opts);
+}
+
+function precompileTemplateStringAsync(str, opts) {
+  opts = opts || {};
+  opts.isAsync = true;
+  opts.isScript = false;
+  return precompileString(str, opts);
+}
+
+function precompileScriptStringAsync(str, opts) {
+  opts = opts || {};
+  opts.isAsync = true;
+  opts.isScript = true;
+  return precompileString(str, opts);
 }
 
 /** @deprecated Use precompileTemplate instead */
-function precompile(input, opts, isAsync = false) {
+function precompile(input, opts) {
   // The following options are available:
   //
   // * name: name of the template (auto-generated when compiling a directory)
@@ -57,11 +73,15 @@ function precompile(input, opts, isAsync = false) {
   //       A custom loader will be necessary to load your custom wrapper.
 
   opts = opts || {};
-  const env = isAsync ? opts.asyncEnv || new AsyncEnvironment([]) : opts.env || new Environment([]);
+  const env = opts.isAsync ? opts.asyncEnv || new AsyncEnvironment([]) : opts.env || new Environment([]);
   const wrapper = opts.wrapper || precompileGlobal;
 
   if (opts.isString) {
-    return isAsync ? precompileStringAsync(input, opts) : precompileString(input, opts);
+    if (opts.isScript) {
+      return opts.isAsync ? precompileScriptStringAsync(input, opts) : precompileScriptString(input, opts);
+    } else {
+      return opts.isAsync ? precompileTemplateStringAsync(input, opts) : precompileTemplateString(input, opts);
+    }
   }
 
   const pathStats = fs.existsSync(input) && fs.statSync(input);
@@ -89,7 +109,8 @@ function precompile(input, opts, isAsync = false) {
     precompiled.push(_precompile(
       fs.readFileSync(input, 'utf-8'),
       opts.name || input,
-      env
+      env,
+      opts
     ));
   } else if (pathStats.isDirectory()) {
     addTemplates(input);
@@ -101,7 +122,8 @@ function precompile(input, opts, isAsync = false) {
         precompiled.push(_precompile(
           fs.readFileSync(templates[i], 'utf-8'),
           name,
-          env
+          env,
+          opts
         ));
       } catch (e) {
         if (opts.force) {
@@ -118,7 +140,7 @@ function precompile(input, opts, isAsync = false) {
   return wrapper(precompiled, opts);
 }
 
-function _precompile(str, name, env) {
+function _precompile(str, name, env, opts) {
   env = env || new Environment([]);
 
   const asyncFilters = env.asyncFilters;
@@ -132,7 +154,8 @@ function _precompile(str, name, env) {
       asyncFilters,
       extensions,
       name,
-      env.opts);
+      Object.assign({asyncMode: opts.isAsync, scriptMode: opts.isScript}, env.opts)
+    );
   } catch (err) {
     throw _prettifyError(name, false, err);
   }
@@ -143,8 +166,20 @@ function _precompile(str, name, env) {
   };
 }
 
-function _precompileAsync(input, opts) {
-  return precompile(input, opts, true);
+function precompileTemplate(str, opts) {
+  return precompile(str, opts, false/*async*/, false/*script*/);
+}
+
+function precompileScript(str, opts) {
+  return precompile(str, opts, false/*async*/, true/*script*/);
+}
+
+function precompileTemplateAsync(str, opts) {
+  return precompile(str, opts, false/*async*/, false/*script*/);
+}
+
+function precompileScriptAsync(str, opts) {
+  return precompile(str, opts, false/*async*/, true/*script*/);
 }
 
 module.exports = {
@@ -154,14 +189,14 @@ module.exports = {
   precompileString,
 
   // Template variants (new names for existing functions)
-  precompileTemplate: precompile,
-  precompileTemplateAsync: _precompileAsync,
-  precompileTemplateString: precompileString,
-  precompileTemplateStringAsync: precompileStringAsync,
+  precompileTemplate,
+  precompileTemplateAsync,
+  precompileTemplateString,
+  precompileTemplateStringAsync,
 
   // Script variants (use same underlying functions since script conversion happens at Script class level)
-  precompileScript: precompile,
-  precompileScriptAsync: _precompileAsync,
-  precompileScriptString: precompileString,
-  precompileScriptStringAsync: precompileStringAsync,
+  precompileScript,
+  precompileScriptAsync,
+  precompileScriptString,
+  precompileScriptStringAsync,
 };

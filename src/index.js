@@ -185,8 +185,6 @@ module.exports = {
   precompileScript: (precompile) ? precompile.precompileScript : undefined,
   precompileScriptString: (precompile) ? precompile.precompileScriptString : undefined,
 
-
-  //@todo - does this reall return a promise?
   precompileTemplateAsync: (precompile) ? precompile.precompileTemplateAsync : undefined,
   precompileTemplateStringAsync: (precompile) ? precompile.precompileTemplateStringAsync : undefined,
   precompileScriptAsync: (precompile) ? precompile.precompileScriptAsync : undefined,

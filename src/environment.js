@@ -211,7 +211,7 @@ class Environment extends EmitterObj {
     return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, false, true, cb);
   }
 
-  _getCompiled(name, eagerCompile, parentName, ignoreMissing, asyncMode, isScript, cb) {
+  _getCompiled(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode, cb) {
     var that = this;
     var tmpl = null;
     if (name && name.raw) {
@@ -273,7 +273,7 @@ class Environment extends EmitterObj {
 
     const createTemplate = (err, info) => {
       if (!info && !err && !ignoreMissing) {
-        err = new Error(`${isScript ? 'Script' : 'Template'} not found: ` + name);
+        err = new Error(`${scriptMode ? 'Script' : 'Template'} not found: ` + name);
       }
 
       if (err) {
@@ -285,7 +285,7 @@ class Environment extends EmitterObj {
         }
       }
       let newCompiled;
-      if (isScript) {
+      if (scriptMode) {
         if (!info) {
           newCompiled = asyncMode ?
             new AsyncScript(noopTmplSrcAsync, this, '', eagerCompile) :
@@ -302,12 +302,12 @@ class Environment extends EmitterObj {
       else {
         if (!info) {
           newCompiled = asyncMode ?
-            new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile) :
-            new Template(noopTmplSrc, this, '', eagerCompile);
+            new AsyncTemplate(noopTmplSrcAsync, this, '', eagerCompile, asyncMode, scriptMode) :
+            new Template(noopTmplSrc, this, '', eagerCompile, asyncMode, scriptMode);
         } else {
           newCompiled = asyncMode ?
-            new AsyncTemplate(info.src, this, info.path, eagerCompile) :
-            new Template(info.src, this, info.path, eagerCompile);
+            new AsyncTemplate(info.src, this, info.path, eagerCompile, asyncMode, scriptMode) :
+            new Template(info.src, this, info.path, eagerCompile, asyncMode, scriptMode);
           if (!info.noCache) {
             info.loader.cache[name] = newCompiled;
           }
@@ -395,7 +395,7 @@ class Environment extends EmitterObj {
     return tmpl.render(ctx, cb);
   }
 
-  renderScriptString(scriptStr, ctx, cb) {
+  renderScriptString(scriptStr, ctx, opts, cb) {
     if (lib.isFunction(ctx)) {
       cb = ctx;
       ctx = {};
@@ -413,8 +413,8 @@ class Environment extends EmitterObj {
       throw error;
     }
 
-    // Use the template renderer
-    return this.renderString(template, ctx, cb);
+    const tmpl = new Template(template, this, opts.path);
+    return tmpl.render(ctx, cb);
   }
 
   waterfall(tasks, callback, forceAsync) {
@@ -430,7 +430,7 @@ class AsyncEnvironment extends Environment {
     this.dataMethods = {}; // Pre-fill with built-in methods later
     this.commandHandlerClasses = {};
     this.commandHandlerInstances = {};
-    this.resultStructure = {
+    this.resultStructure = {//@todo - remove
       dataKey: 'data',
       textKey: 'text'
     };
@@ -578,9 +578,9 @@ class AsyncEnvironment extends Environment {
     return this._getCompiledAsync(name, eagerCompile, parentName, ignoreMissing, true, true);
   }
 
-  _getCompiledAsync(name, eagerCompile, parentName, ignoreMissing, asyncMode, isScript) {
+  _getCompiledAsync(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode) {
     return new Promise((resolve, reject) => {
-      this._getCompiled(name, eagerCompile, parentName, ignoreMissing, asyncMode, isScript, (err, tmpl) => {
+      this._getCompiled(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode, (err, tmpl) => {
         if (err) {
           reject(err);
         } else {
@@ -732,9 +732,10 @@ class Context extends Obj {
 //@todo - class Script
 
 class Template extends Obj {
-  init(src, env, path, eagerCompile, asyncMode) {
+  init(src, env, path, eagerCompile, asyncMode = false, scriptMode = false) {
     this.env = env || new Environment();
     this.asyncMode = asyncMode;
+    this.scriptMode = scriptMode;
 
     if (lib.isObject(src)) {
       switch (src.type) {
@@ -958,8 +959,8 @@ class Template extends Obj {
         this.env.asyncFilters,
         this.env.extensionsList,
         this.path,
-        this.asyncMode,
-        this.env.opts);
+        Object.assign({scriptMode: this.scriptMode, asyncMode: this.asyncMode}, this.env.opts)
+      );
 
       let func;
       try {
@@ -1023,7 +1024,7 @@ class Template extends Obj {
 class AsyncTemplate extends Template {
   init(src, env, path, eagerCompile) {
     env = env || new AsyncEnvironment();
-    super.init(src, env, path, eagerCompile, true);
+    super.init(src, env, path, eagerCompile, true/*async*/, false/*script*/);
   }
 }
 
@@ -1038,14 +1039,14 @@ class Script extends Template {
       src = scriptToTemplate(src);
     }
 
-    super.init(src, env, path, eagerCompile);
+    super.init(src, env, path, eagerCompile, false/*async*/, true/*script*/);
   }
 }
 
 /**
  * AsyncScript class - represents a compiled async Cascada script
  */
-class AsyncScript extends AsyncTemplate {
+class AsyncScript extends Template {
   init(src, env, path, eagerCompile) {
     // Convert script to template if it's a string
     if (lib.isString(src)) {
@@ -1053,7 +1054,7 @@ class AsyncScript extends AsyncTemplate {
       src = template;
     }
 
-    super.init(src, env, path, eagerCompile);
+    super.init(src, env, path, eagerCompile, true/*async*/, true/*script*/);
   }
 }
 

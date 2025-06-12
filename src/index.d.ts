@@ -15,16 +15,16 @@ export function renderTemplate(name: string, context?: object, callback?: Templa
 export function renderTemplateAsync(name: string, context?: object): Promise<string>;
 
 /** @deprecated Use renderTemplateString instead */
-export function renderString(src: string, context: object): string;
+export function renderString(src: string, context?: object): string;
 
 /** @deprecated Use renderTemplateString instead */
-export function renderString(src: string, context: object, callback?: TemplateCallback<string>): void;
+export function renderString(src: string, context?: object, callback?: TemplateCallback<string>): void;
 
-export function renderTemplateString(src: string, context: object): string;
-export function renderTemplateStringAsync(src: string, context: object): Promise<string>;
+export function renderTemplateString(src: string, context?: object): string;
+export function renderTemplateStringAsync(src: string, context?: object): Promise<string>;
 
-export function renderScriptString(src: string, context: object): Record<string, any> | string | null;
-export function renderScriptStringAsync(src: string, context: object): Promise<Record<string, any> | string | null>;
+export function renderScriptString(src: string, context?: object): Record<string, any> | string | null;
+export function renderScriptStringAsync(src: string, context?: object): Promise<Record<string, any> | string | null>;
 
 /** @deprecated Use compileTemplate instead */
 export function compile(src: string, env?: Environment, path?: string, eagerCompile?: boolean): Template;
@@ -120,6 +120,10 @@ interface ConfigureOptions {
   | undefined;
 }
 
+interface RenderOptions {
+  path?: string | undefined;
+};
+
 export class Environment {
   options: {
     autoescape: boolean;
@@ -134,16 +138,13 @@ export class Environment {
   renderTemplate(name: string, context?: object, callback?: TemplateCallback<string>): void;
 
   /** @deprecated Use renderTemplateString instead */
-  renderString(src: string, context: object): string;
+  renderString(src: string, context?: object, opts?:RenderOptions, callback?: TemplateCallback<string>): string;
 
-  /** @deprecated Use renderTemplateString instead */
-  renderString(src: string, context: object, callback?: TemplateCallback<string>): void;
+  renderTemplateString(src: string, context?: object, opts?:RenderOptions): string;
+  renderTemplateString(src: string, context?: object, opts?:RenderOptions, callback?: TemplateCallback<string>): void;
 
-  renderTemplateString(src: string, context: object): string;
-  renderTemplateString(src: string, context: object, callback?: TemplateCallback<string>): void;
-
-  renderScriptString(src: string, context: object): Record<string, any> | string | null;
-  renderScriptString(src: string, context: object, callback?: TemplateCallback<Record<string, any> | string | null>): void;
+  renderScriptString(src: string, context?: object, opts?:RenderOptions): Record<string, any> | string | null;
+  renderScriptString(src: string, context?: object, opts?:RenderOptions, callback?: TemplateCallback<Record<string, any> | string | null>): void;
 
   addFilter(name: string, func: (...args: any[]) => any, async?: boolean): Environment;
   getFilter(name: string): (...args: any[]) => any;
@@ -179,8 +180,8 @@ export class AsyncEnvironment extends Environment {
   renderTemplate(name: string, context?: object): Promise<string>;
   renderScript(name: string, context?: object): Promise<string>;
 
-  renderTemplateString(src: string, context: object): Promise<string>;
-  renderScriptString(src: string, context: object): Promise<Record<string, any> | string | null>;
+  renderTemplateString(src: string, context?: object, opts?:RenderOptions): Promise<string>;
+  renderScriptString(src: string, context?: object, opts?:RenderOptions): Promise<Record<string, any> | string | null>;
 
   getTemplate(name: string, eagerCompile?: boolean): Promise<AsyncTemplate>;
   getScript(name: string, eagerCompile?: boolean): Promise<AsyncScript>;
