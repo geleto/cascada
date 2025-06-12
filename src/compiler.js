@@ -1437,7 +1437,7 @@ class Compiler extends Obj {
     //this.emit.line(`return ${node.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
     this.emit.line('return ' + (
       node.isAsync ?
-        `astate.waitAllClosures().then(() => {if (${err}) throw ${err}; return runtime.newSafeStringAsync(runtime.flattentBuffer(${bufferId}));}).catch(error => Promise.reject(error));` :
+        `astate.waitAllClosures().then(() => {if (${err}) throw ${err}; return runtime.newSafeStringAsync(runtime.flattenBuffer(${bufferId}));}).catch(error => Promise.reject(error));` :
         `new runtime.SafeString(${bufferId})`
     )
     );
@@ -1810,7 +1810,7 @@ class Compiler extends Obj {
         this.compile(n.body, f);//write to output
 
         this.emit.line('await astate.waitAllClosures(1)');
-        this.emit.line(`let ${res} = runtime.flattentBuffer(output);`);
+        this.emit.line(`let ${res} = runtime.flattenBuffer(output);`);
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
       }, res, node.body);
     }
@@ -1930,7 +1930,7 @@ class Compiler extends Obj {
       this.emit.line('  if(parentTemplate) {');
       this.emit.line('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
       this.emit.line('  } else {');
-      this.emit.line(`    cb(null, runtime.flattentBuffer(${this.buffer}));`);
+      this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer}));`);
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
       // Use static node position for root catch in async mode
@@ -1952,7 +1952,7 @@ class Compiler extends Obj {
       if (this.asyncMode) {
         // This case (sync root in asyncMode) might be unlikely/problematic,
         // but keep flatten for consistency if it somehow occurs.
-        this.emit.line(`cb(null, runtime.flattentBuffer(${this.buffer}));`);
+        this.emit.line(`cb(null, runtime.flattenBuffer(${this.buffer}));`);
       } else {
         this.emit.line(`cb(null, ${this.buffer});`);
       }

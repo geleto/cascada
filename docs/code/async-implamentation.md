@@ -100,7 +100,7 @@ Executing operations concurrently requires a mechanism to ensure the final outpu
     *   **Hierarchical Arrays:** The buffer is implemented as nested JavaScript arrays.
     *   **Dedicated Branches:** Each async block that produces output (often using `_emitAsyncBlockBufferNodeBegin`) writes to its *own* sub-array within this tree. Independent blocks write to different branches concurrently without conflict.
     *   **Preserving Order:** The *position* where a sub-buffer array is inserted into its parent array is determined by the *start* time of the async block in the template's logical flow. This preserves the correct sequential order relative to sibling blocks and surrounding static content.
-    *   **Final Flattening:** After `astate.waitAllClosures()` resolves (all blocks done), the entire buffer tree is recursively flattened (`runtime.flattentBuffer`) into the final output string, respecting the structure established during parallel execution.
+    *   **Final Flattening:** After `astate.waitAllClosures()` resolves (all blocks done), the entire buffer tree is recursively flattened (`runtime.flattenBuffer`) into the final output string, respecting the structure established during parallel execution.
 *   **(Future/Scripting) Data Assembly Ordering:** This same principle of ordered insertion into a structure based on initiation sequence (not completion) is planned for Cascada Script's Data Assembly Commands (`put`, `merge`, `push`). They will operate on a parallel data structure (instead of the text buffer) to ensure data modifications appear in the final result object in the same order they were specified in the script, providing predictable data construction despite concurrency. (This is not yet implemented in the core engine).
 
 ### SafeString Interaction in Async Contexts
@@ -111,7 +111,7 @@ Here's the fundamental approach:
 
 1.  **Placeholders in the Buffer:** When an operation results in a value that needs special handling like being marked safe (or suppressed/escaped), especially if that value is asynchronous (a Promise), Cascada doesn't immediately resolve the Promise or wrap the value. Instead, it often places a **placeholder** into the hierarchical output buffer. This placeholder is frequently a **function**.
 2.  **Deferred Processing Function:** This function encapsulates the logic for the final processing step (e.g., wrapping the resolved value in `SafeString`). Runtime helpers like `runtime.newSafeStringAsync` (when operating on array-like buffers), `runtime.suppressValueAsync`, and `runtime.ensureDefinedAsync` utilize this pattern by adding such processing functions to the buffer array.
-3.  **Final Assembly by `flattentBuffer`:** During the final output generation phase, `runtime.flattentBuffer` traverses the hierarchical buffer. When it encounters:
+3.  **Final Assembly by `flattenBuffer`:** During the final output generation phase, `runtime.flattenBuffer` traverses the hierarchical buffer. When it encounters:
     *   **Promises:** It awaits their resolution to get the concrete string value.
     *   **Processing Functions:** *After* processing the preceding items in its current buffer segment (which might involve resolving Promises and concatenating strings), it calls the processing function, passing the accumulated string segment (`acc`) to it. The function then performs its designated action (like wrapping `acc` in `SafeString`) and returns the final, processed string (or the `SafeString` object whose value is then used).
 
@@ -209,7 +209,7 @@ The runtime (`runtime.js`) provides the classes and helpers that execute the com
 
 *   **`AsyncFrame`:** Extends `Frame` for async ops. Key properties: `asyncVars` (snapshots/intermediate values), `writeCounters`, `promiseResolves`. Key methods: `pushAsyncBlock`, `_snapshotVariables`, `_promisifyParentVariables`, `_countdownAndResolveAsyncWrites`, `skipBranchWrites`, `_resolveAsyncVar`, `finalizeLoopWrites`.
 *   **`AsyncState` (Conceptual):** Manages overall async state: active block count (`enter/leaveAsyncBlock`), completion waiting (`waitAllClosures`).
-*   **Buffer Management (`flattentBuffer`):** Recursively flattens the nested buffer array into the final output string.
+*   **Buffer Management (`flattenBuffer`):** Recursively flattens the nested buffer array into the final output string.
 *   **Async Helpers:** Functions (`resolveAll`, `resolveDuo`, `resolveSingle`, `memberLookupAsync`, `iterate`, `promisify`, etc.) provide building blocks for implicit Promise handling.
 
 ## How Specific Constructs are Handled

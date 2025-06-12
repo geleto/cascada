@@ -201,7 +201,7 @@ module.exports = class CompileEmit {
     this.compiler._popBuffer();
 
     this.line('await astate.waitAllClosures(1);');
-    this.line(`${id} = runtime.flattentBuffer(${id});`);
+    this.line(`${id} = runtime.flattenBuffer(${id});`);
 
     //return via callback or directly
     if (callbackName) {

@@ -849,10 +849,10 @@ function resolveArguments(fn, skipArguments = 0) {
   };
 }
 
-function flattentBuffer(arr) {
+function flattenBuffer(arr) {
   const result = arr.reduce((acc, item) => {
     if (Array.isArray(item)) {
-      return acc + flattentBuffer(item);
+      return acc + flattenBuffer(item);
     }
     if (typeof item === 'function') {
       return (item(acc) || '');
@@ -1308,7 +1308,7 @@ module.exports = {
   resolveSingleArr,
   resolveObjectProperties,
   resolveArguments,
-  flattentBuffer,
+  flattenBuffer,
   memberLookup,
   memberLookupAsync,
   contextOrFrameLookup,
