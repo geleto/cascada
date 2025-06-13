@@ -209,11 +209,14 @@ account!.withdraw(50)
 <tr>
 <td valign="top">
 
-### Consistent Output Assembly
+### Consistent Output Commands Assembly
 
 **Note**: The assembly commands feature is under development.
 
-All returned output is buffered and assembled in a **predictable, sequential order** that matches your source code, even when underlying async operations complete at different times. In scripts, **Output Commands** (like `@put` and `@push`) build a structured data object, while in templates, the final text is generated in source order. This guarantees that results are always consistent.
+In scripts, output Commands, marked with the `@` sigil are buffered and assembled in a **predictable, sequential order**. For scripts, **Output Commands** (`@`) build a structured data object using a rich set of default methods: `@put` (set/replace), `@push`/`@unshift` (add to array), `@pop`/`@shift` (remove from array), `@merge` (combine objects), and `@reverse`. You can also add your own custom commands with `addDataMethods`.
+
+Similarly in templates, the final text output is also assembled in source-code order, guaranteeing that the rendered content is always predictable, even when built from multiple async operations that finish at different times.
+
 
 </td>
 <td valign="top">
