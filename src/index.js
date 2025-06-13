@@ -119,11 +119,11 @@ module.exports = {
     return new AsyncScript(src, env, path, eagerCompile);
   },
   /** @deprecated Use renderTemplate instead */
-  render(name, ctx, asyncMode, cb) {
+  render(name, ctx, cb) {
     if (!e) {
       configure();
     }
-    return e.render(name, ctx, asyncMode, cb);
+    return e.render(name, ctx, cb);
   },
   /** @deprecated Use renderTemplateAsync instead */
   renderAsync(name, ctx) {
@@ -144,23 +144,17 @@ module.exports = {
     }
     return e.renderTemplateString(src, ctx, cb);
   },
-  renderTemplateStringAsync(src, ctx, cb) {
-    if (!asyncE) {
-      configureAsync();
-    }
-    return asyncE.renderTemplateString(src, ctx, cb);
-  },
   renderScriptString(src, ctx, cb) {
     if (!e) {
       configure();
     }
     return e.renderScriptString(src, ctx, cb);
   },
-  renderScriptStringAsync(src, ctx, cb) {
+  renderScriptStringAsync(src, ctx) {
     if (!asyncE) {
       configureAsync();
     }
-    return asyncE.renderScriptString(src, ctx, cb);
+    return asyncE.renderScriptString(src, ctx);
   },
   renderTemplate(name, ctx, cb) {
     if (!e) {

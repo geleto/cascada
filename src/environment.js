@@ -1026,6 +1026,21 @@ class AsyncTemplate extends Template {
     env = env || new AsyncEnvironment();
     super.init(src, env, path, eagerCompile, true/*async*/, false/*script*/);
   }
+  render(ctx, parentFrame, astate, cb) {
+    if (cb) {
+      return super.render(ctx, parentFrame, astate, cb);
+    }
+    // If no callback is provided, return a promise
+    return new Promise((resolve, reject) => {
+      super.render(ctx, parentFrame, astate, (err, res) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(res);
+        }
+      });
+    });
+  }
 }
 
 
@@ -1055,6 +1070,21 @@ class AsyncScript extends Template {
     }
 
     super.init(src, env, path, eagerCompile, true/*async*/, true/*script*/);
+  }
+  render(ctx, parentFrame, astate, cb) {
+    if (cb) {
+      return super.render(ctx, parentFrame, astate, cb);
+    }
+    // If no callback is provided, return a promise
+    return new Promise((resolve, reject) => {
+      super.render(ctx, parentFrame, astate, (err, res) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(res);
+        }
+      });
+    });
   }
 }
 

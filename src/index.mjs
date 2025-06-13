@@ -161,7 +161,7 @@ export function renderAsync(name, ctx) {
   if (!asyncE) {
     configureAsync();
   }
-  return asyncE.render(name, ctx, true);
+  return asyncE.renderTemplate(name, ctx);
 }
 
 export function renderTemplate(name, ctx, cb) {
@@ -192,11 +192,11 @@ export function renderTemplateString(src, ctx, cb) {
   return e.renderTemplateString(src, ctx, cb);
 }
 
-export function renderTemplateStringAsync(src, ctx, cb) {
+export function renderTemplateStringAsync(src, ctx) {
   if (!asyncE) {
     configureAsync();
   }
-  return asyncE.renderTemplateString(src, ctx, cb);
+  return asyncE.renderTemplateString(src, ctx);
 }
 
 export function renderScriptString(src, ctx, cb) {
@@ -206,11 +206,11 @@ export function renderScriptString(src, ctx, cb) {
   return e.renderScriptString(src, ctx, cb);
 }
 
-export function renderScriptStringAsync(src, ctx, cb) {
+export function renderScriptStringAsync(src, ctx) {
   if (!asyncE) {
     configureAsync();
   }
-  return asyncE.renderScriptString(src, ctx, cb);
+  return asyncE.renderScriptString(src, ctx);
 }
 
 // Default export

@@ -49,10 +49,10 @@ export function precompileScript(path: string, opts?: PrecompileOptions): string
 export function precompileScriptString(src: string, opts?: PrecompileOptions): string;
 
 //@todo - does this realy return a promise?
-export function precompileTemplateAsync(path: string, opts?: PrecompileOptionsAsync): Promise<string>;
-export function precompileScriptAsync(path: string, opts?: PrecompileOptionsAsync): Promise<string>;
-export function precompileTemplateStringAsync(src: string, opts?: PrecompileOptionsAsync): Promise<string>;
-export function precompileScriptStringAsync(src: string, opts?: PrecompileOptionsAsync): Promise<string>;
+export function precompileTemplateAsync(path: string, opts?: PrecompileOptionsAsync): string;
+export function precompileScriptAsync(path: string, opts?: PrecompileOptionsAsync): string;
+export function precompileTemplateStringAsync(src: string, opts?: PrecompileOptionsAsync): string;
+export function precompileScriptStringAsync(src: string, opts?: PrecompileOptionsAsync): string;
 
 export interface PrecompileOptionsBase {
   name?: string | undefined;
