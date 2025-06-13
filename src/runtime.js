@@ -902,7 +902,8 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
       if (Array.isArray(item)) {
         return acc + flattenBuffer(item, null, null, null);
       }
-      if (typeof item === 'function') { // Legacy SafeString support
+      // A post-processing function, e.g. for SafeString
+      if (typeof item === 'function') {
         return (item(acc) || '');
       }
       return acc + ((item !== null && item !== undefined) ? item : '');
@@ -939,7 +940,33 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
   function processItem(item) {
     if (item === null || item === undefined) return;
     if (Array.isArray(item)) {
-      item.forEach(processItem);
+      const last = item.length > 0 ? item[item.length - 1] : null;
+
+      // Handle arrays with a post-processing function (e.g., from auto-escaping).
+      if (typeof last === 'function') {
+        const subArray = item.slice(0, -1);
+
+        // This helper function flattens an array of stringifiable items.
+        // It's a simplified version of the main buffer flattening and assumes
+        // no command objects are present in such arrays.
+        function _flattenStringifiable(arr) {
+          return arr.reduce((acc, current) => {
+            if (Array.isArray(current)) {
+              return acc + _flattenStringifiable(current);
+            }
+            return acc + ((current !== null && current !== undefined) ? current : '');
+          }, '');
+        }
+
+        const subResult = _flattenStringifiable(subArray);
+        const finalResult = last(subResult);
+
+        // The result of the function (e.g., a SafeString) needs to be processed.
+        processItem(finalResult);
+      } else {
+        // Standard array: process each item.
+        item.forEach(processItem);
+      }
       return;
     }
 
@@ -990,13 +1017,12 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
   arr.forEach(processItem);
 
   // Assemble the final result object
-  const { dataKey, textKey } = env.resultStructure;
   const finalResult = {};
 
-  if (Object.keys(dataOutput).length > 0) finalResult[dataKey] = dataOutput;
+  if (Object.keys(dataOutput).length > 0) finalResult.data = dataOutput;
 
   const textResult = textOutput.join('');
-  if (textResult) finalResult[textKey] = textResult;
+  if (textResult) finalResult.text = textResult;
 
   Object.assign(finalResult, handlerInstances);
 
@@ -1005,10 +1031,10 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
     return finalResult[focusOutput];
   }
 
-  // For standard templates, the default should be just the text.
-  if (!focusOutput && Object.keys(finalResult).length === 1 && finalResult[textKey]) {
-    return finalResult[textKey];
-  }
+  // Wrong for scripts: For standard templates, the default should be just the text - this is not str
+  /*if (!focusOutput && Object.keys(finalResult).length === 1 && finalResult.text) {
+    return finalResult.text;
+  }*/
 
   return finalResult;
 }
