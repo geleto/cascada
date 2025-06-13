@@ -3,27 +3,33 @@ export type Callback<E, T> = (err: E | null, res: T | null) => void;
 
 /** @deprecated Use renderTemplate instead */
 export function render(name: string, context?: object): string;
-
 /** @deprecated Use renderTemplate instead */
-export function render(name: string, context?: object, callback?: TemplateCallback<string>): void;
+export function render(name: string, callback: TemplateCallback<string>): void;
+/** @deprecated Use renderTemplate instead */
+export function render(name: string, context: object, callback?: TemplateCallback<string>): void;
 
 /** @deprecated Use renderTemplateAsync instead */
 export function renderAsync(name: string, context?: object): Promise<string>;
 
 export function renderTemplate(name: string, context?: object): string;
-export function renderTemplate(name: string, context?: object, callback?: TemplateCallback<string>): void;
-export function renderTemplateAsync(name: string, context?: object): Promise<string>;
+export function renderTemplate(name: string, callback: TemplateCallback<string>): void;
+export function renderTemplate(name: string, context: object, callback?: TemplateCallback<string>): void;
 
 /** @deprecated Use renderTemplateString instead */
 export function renderString(src: string, context?: object): string;
-
 /** @deprecated Use renderTemplateString instead */
-export function renderString(src: string, context?: object, callback?: TemplateCallback<string>): void;
+export function renderString(src: string, callback: TemplateCallback<string>): void;
+/** @deprecated Use renderTemplateString instead */
+export function renderString(src: string, context: object, callback?: TemplateCallback<string>): void;
 
 export function renderTemplateString(src: string, context?: object): string;
+export function renderTemplateString(src: string, callback: TemplateCallback<string>): void;
+export function renderTemplateString(src: string, context: object, callback?: TemplateCallback<string>): void;
 export function renderTemplateStringAsync(src: string, context?: object): Promise<string>;
 
 export function renderScriptString(src: string, context?: object): Record<string, any> | string | null;
+export function renderScriptString(src: string, callback: TemplateCallback<Record<string, any> | string | null>): void;
+export function renderScriptString(src: string, context: object, callback?: TemplateCallback<Record<string, any> | string | null>): void;
 export function renderScriptStringAsync(src: string, context?: object): Promise<Record<string, any> | string | null>;
 
 /** @deprecated Use compileTemplate instead */
@@ -74,13 +80,15 @@ export interface PrecompileOptionsAsync extends PrecompileOptionsBase {
 export class Script {
   constructor(src: string, env?: Environment, path?: string, eagerCompile?: boolean);
   render(context?: object): Record<string, any> | string | null;
-  render(context?: object, callback?: TemplateCallback<Record<string, any> | string | null>): void;
+  render(callback: TemplateCallback<Record<string, any> | string | null>): void;
+  render(context: object, callback?: TemplateCallback<Record<string, any> | string | null>): void;
 }
 
 export class Template {
   constructor(src: string, env?: Environment, path?: string, eagerCompile?: boolean);
   render(context?: object): string;
-  render(context?: object, callback?: TemplateCallback<string>): void;
+  render(callback: TemplateCallback<string>): void;
+  render(context: object, callback?: TemplateCallback<string>): void;
 }
 
 export class AsyncScript {
@@ -132,19 +140,33 @@ export class Environment {
   constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptions);
   /** @deprecated Use renderTemplate instead */
   render(name: string, context?: object): string;
-
   /** @deprecated Use renderTemplate instead */
-  render(name: string, context?: object, callback?: TemplateCallback<string>): void; renderTemplate(name: string, context?: object): string;
-  renderTemplate(name: string, context?: object, callback?: TemplateCallback<string>): void;
+  render(name: string, callback: TemplateCallback<string>): void;
+  /** @deprecated Use renderTemplate instead */
+  render(name: string, context: object, callback?: TemplateCallback<string>): void;
+
+  renderTemplate(name: string, context?: object): string;
+  renderTemplate(name: string, callback: TemplateCallback<string>): void;
+  renderTemplate(name: string, context: object, callback?: TemplateCallback<string>): void;
 
   /** @deprecated Use renderTemplateString instead */
-  renderString(src: string, context?: object, opts?:RenderOptions, callback?: TemplateCallback<string>): string;
+  renderString(src: string, context?: object, opts?: RenderOptions): string;
+  /** @deprecated Use renderTemplateString instead */
+  renderString(src: string, callback: TemplateCallback<string>): void;
+  /** @deprecated Use renderTemplateString instead */
+  renderString(src: string, context: object, callback: TemplateCallback<string>): void;
+  /** @deprecated Use renderTemplateString instead */
+  renderString(src: string, context: object, opts: RenderOptions, callback: TemplateCallback<string>): void;
 
   renderTemplateString(src: string, context?: object, opts?:RenderOptions): string;
-  renderTemplateString(src: string, context?: object, opts?:RenderOptions, callback?: TemplateCallback<string>): void;
+  renderTemplateString(src: string, callback: TemplateCallback<string>): void;
+  renderTemplateString(src: string, context: object, callback: TemplateCallback<string>): void;
+  renderTemplateString(src: string, context: object, opts: RenderOptions, callback: TemplateCallback<string>): void;
 
   renderScriptString(src: string, context?: object, opts?:RenderOptions): Record<string, any> | string | null;
-  renderScriptString(src: string, context?: object, opts?:RenderOptions, callback?: TemplateCallback<Record<string, any> | string | null>): void;
+  renderScriptString(src: string, callback: TemplateCallback<Record<string, any> | string | null>): void;
+  renderScriptString(src: string, context: object, callback: TemplateCallback<Record<string, any> | string | null>): void;
+  renderScriptString(src: string, context: object, opts: RenderOptions, callback: TemplateCallback<Record<string, any> | string | null>): void;
 
   addFilter(name: string, func: (...args: any[]) => any, async?: boolean): Environment;
   getFilter(name: string): (...args: any[]) => any;
@@ -158,13 +180,12 @@ export class Environment {
   getGlobal(name: string): any;
 
   getTemplate(name: string, eagerCompile?: boolean): Template;
-  getTemplate(name: string, eagerCompile?: boolean, callback?: Callback<Error, Template>): void;
+  getTemplate(name: string, eagerCompile: boolean, callback: Callback<Error, Template>): void;
+  getTemplate(name: string, callback: Callback<Error, Template>): void;
 
   getScript(name: string, eagerCompile?: boolean): Script;
-  getScript(name: string, eagerCompile?: boolean, callback?: Callback<Error, Script>): void;
-
-  getScript(name: string, eagerCompile?: boolean): Script;
-  getScript(name: string, eagerCompile?: boolean, callback?: Callback<Error, Script>): void;
+  getScript(name: string, eagerCompile: boolean, callback?: Callback<Error, Script>): void;
+  getScript(name: string, callback: Callback<Error, Script>): void;
 
   express(app: object): void;
 
@@ -175,7 +196,7 @@ export class Environment {
 }
 
 export class AsyncEnvironment extends Environment {
-  constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptions);    /** @deprecated Use renderTemplate instead */
+  constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptions);
 
   renderTemplate(name: string, context?: object): Promise<string>;
   renderScript(name: string, context?: object): Promise<string>;
