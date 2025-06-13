@@ -430,10 +430,6 @@ class AsyncEnvironment extends Environment {
     this.dataMethods = {}; // Pre-fill with built-in methods later
     this.commandHandlerClasses = {};
     this.commandHandlerInstances = {};
-    this.resultStructure = {//@todo - remove
-      dataKey: 'data',
-      textKey: 'text'
-    };
   }
 
   /**
@@ -463,15 +459,6 @@ class AsyncEnvironment extends Environment {
    */
   addCommandHandler(name, handlerInstance) {
     this.commandHandlerInstances[name] = handlerInstance;
-    return this;
-  }
-
-  /**
-   * Customizes the top-level keys in the script's final result object.
-   * @param {object} opts - Options object with `dataKey` and/or `textKey`.
-   */
-  setResultStructure(opts) {
-    Object.assign(this.resultStructure, opts);
     return this;
   }
 

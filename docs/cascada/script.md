@@ -407,15 +407,6 @@ env.addCommandHandler('audit', logger);
 }
 ```
 
-**Customizing Result Keys:**
-You can rename the default `data` and `text` keys for the result object.
-```javascript
-env.setResultStructure({
-  dataKey: 'payload',
-  textKey: 'consoleOutput'
-});
-```
-
 #### Focused Output
 To get just one piece of the result, use the `output` option in the render call. The value should be the final key name of the property you want. If any of these properties
 are missing - the return value will be `undefined`.
