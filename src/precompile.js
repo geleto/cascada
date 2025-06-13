@@ -16,7 +16,7 @@ function match(filename, patterns) {
 
 /** @deprecated Use precompileTemplateString instead */
 function precompileString(str, opts) {
-  opts = opts || {isAsync: false, isScript: false};
+  opts = Object.assign((opts ?? {}), { isAsync: false, isScript: false });
   opts.isString = true;
   const env = opts.env || new Environment([]);
   const wrapper = opts.wrapper || precompileGlobal;
@@ -24,7 +24,7 @@ function precompileString(str, opts) {
   if (!opts.name) {
     throw new Error('the "name" option is required when compiling a string');
   }
-  return wrapper([_precompile(str, opts.name, opts, env)], opts);
+  return wrapper([_precompile(str, opts.name, env, opts)], opts);
 }
 
 function precompileTemplateString(str, opts) {
