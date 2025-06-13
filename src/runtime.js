@@ -860,24 +860,30 @@ function _findPathTarget(root, path) {
 
   for (let i = 0; i < path.length; i++) {
     key = path[i];
+
+    const keyType = typeof key;
+    if (keyType !== 'string' && keyType !== 'number') {
+      const pathString = path.slice(0, i).join('.');
+      throw new Error(
+        `Invalid path segment for Output Command. Expected a string or number but got a ${keyType} ([${key}]) in path '${pathString}[...]'`
+      );
+    }
+
     parent = current;
 
     if (current === null || typeof current === 'undefined') {
       throw new Error(`Cannot set property '${key}' on null or undefined path segment.`);
     }
 
-    // Handle the '[]' syntax for accessing the LAST element of an array.
+    // This is the "create on the fly" logic for the special '[]' syntax
     if (key === '[]') {
       if (!Array.isArray(current)) {
-        throw new Error('Path target for \'[]\' is not an array.');
+        throw new Error(`Path target for '[]' is not an array.`);
       }
-      if (current.length === 0) {
-        throw new Error('Cannot use \'[]\' to access an element of an empty array.');
-      }
-      // Set current to the last element to continue traversal.
-      current = current[current.length - 1];
-      // After this, the loop continues to the next path segment (e.g., 'permissions').
-      continue;
+      const newTarget = {};
+      current.push(newTarget);
+      current = newTarget;
+      continue; // Next path segment will apply to the new object.
     }
 
     const nextKey = path[i + 1];
@@ -900,6 +906,7 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
     }
     return arr.reduce((acc, item) => {
       if (Array.isArray(item)) {
+        // The `null` context indicates a recursive call for a simple sub-array.
         return acc + flattenBuffer(item, null, null, null);
       }
       // A post-processing function, e.g. for SafeString
@@ -949,8 +956,8 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
         // This helper function flattens an array of stringifiable items.
         // It's a simplified version of the main buffer flattening and assumes
         // no command objects are present in such arrays.
-        function _flattenStringifiable(arr) {
-          return arr.reduce((acc, current) => {
+        function _flattenStringifiable(subArr) {
+          return subArr.reduce((acc, current) => {
             if (Array.isArray(current)) {
               return acc + _flattenStringifiable(current);
             }
@@ -1030,11 +1037,6 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
   if (focusOutput) {
     return finalResult[focusOutput];
   }
-
-  // Wrong for scripts: For standard templates, the default should be just the text - this is not str
-  /*if (!focusOutput && Object.keys(finalResult).length === 1 && finalResult.text) {
-    return finalResult.text;
-  }*/
 
   return finalResult;
 }
