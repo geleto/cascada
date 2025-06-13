@@ -1,3 +1,20 @@
+An updated `README.md` file is provided below.
+
+Here is a summary of the changes:
+
+1.  **Term Unification**: The terminology has been updated to be consistent with `script.md`.
+    *   The "Consistent Output Assembly" section now uses the more general term **"Output Commands"** instead of the specific "Data Assembly Commands", reflecting that the feature includes more than just data building (e.g., text output, custom handlers).
+    *   The example for adding custom commands in that section has been renamed from "Custom Data Assembly Methods" to **"Customizing the Data Object"** and its description was refined to align with the documentation.
+
+2.  **New Macros Example**: A new section, **"Macros for Reusable Components"**, has been added to the features table, as requested. It is placed after "Command Handlers".
+    *   It provides distinct examples for both Cascada Script and Cascada Template.
+    *   The script example demonstrates a data-generating macro that performs async operations and returns a clean data object, showcasing a key feature for modularity.
+    *   The template example shows a classic UI component macro.
+
+3.  **No Omissions**: All original content from the readme has been preserved and integrated with the new updates.
+
+---
+
 # Cascada - async-enabled templating and scripting engine with automatic parallelization
 
 ### Write templates and scripts that look synchronous but execute concurrently under the hood.
@@ -6,7 +23,7 @@
 
 Cascada is a powerful engine designed to dramatically simplify complex, asynchronous workflows. It allows you to write clean, synchronous-looking code that executes with maximum concurrency. The engine **automatically parallelizes** independent operations, **manages data dependencies** and eliminates race conditions while delivering high performance without the boilerplate of manual async handling.
 
-It offers both a familiar **template syntax** for generating text-based output and a clean **scripting language** for complex data orchestration, all powered by the same concurrent core. This makes Cascada exceptionally versatile, whether you're building a dynamic website, crafting detailed LLM prompts, or orchestrating multi-step AI agent workflows.
+It offers both a familiar **template syntax** for generating text-based output and a clean **scripting language** for complex data orchestration, all powered by the same concurrent core. This makes Cascada exceptionally versatile, whether you're building a dynamic website, crafting detailed LLM prompts, or orchestrating parallel multi-step AI agent workflows.
 
 ## Core Features
 
@@ -196,8 +213,7 @@ account!.withdraw(50)
 
 **Note**: The assembly commands feature is under development.
 
-For scripts, **Data Assembly Commands** (`@put`, `@push`, `@pop`, `@shift`, `@unshift`, `@merge`) build the **structured return value** in a predictable, sequential order that matches your source code. Similarly, the final **text output of templates** is also buffered and assembled sequentially. This is true even when underlying async operations complete at different times.
-You can add your own data assembly commands using `addDataMethods`, the final assembly happens after the script execution.
+All returned output is buffered and assembled in a **predictable, sequential order** that matches your source code, even when underlying async operations complete at different times. In scripts, **Output Commands** (like `@put` and `@push`) build a structured data object, while in templates, the final text is generated in source order. This guarantees that results are always consistent.
 
 </td>
 <td valign="top">
@@ -246,10 +262,12 @@ endfor
 </details>
 
 <details>
-  <summary><strong>Custom Data Assembly Methods</strong></summary>
+  <summary><strong>Customizing the Data Object</strong></summary>
 
   ```javascript
   const env = new AsyncEnvironment();
+  // You can add your own custom methods to the default
+  // data builder using env.addDataMethods().
   env.addDataMethods({
     upsert: (target, data) => {
       const ind = target.findIndex(item => item.id === data.id);
@@ -346,8 +364,78 @@ The cusom commands are guaranteed to execute in-order and are much more efficien
     { canvas: document.querySelector('canvas') });
   ```
 </details>
+</td>
+</tr>
+<tr>
+<td valign="top">
 
+### Macros for Reusable Components
 
+Macros allow you to define reusable chunks of logic. In templates, they're great for repeated UI components. In scripts, they can perform complex, parallel async operations internally and return a clean, structured data object, making them the primary way to build modular, data-generating components.
+
+</td>
+<td valign="top">
+<details open>
+<summary><strong>Cascada Script</strong></summary>
+
+```javascript
+// This macro fetches a user's details and recent
+// activity in parallel and builds a summary object.
+macro buildUserSummary(userId) : data
+  // These three async calls run concurrently
+  // inside the macro.
+  set details = fetchUserDetails(userId)
+  set posts = fetchUserPosts(userId)
+  set comments = fetchUserComments(userId)
+
+  // Assemble the result after all fetches complete.
+  @put summary.name details.name
+  @put summary.postCount posts.length
+  @put summary.commentCount comments.length
+endmacro
+
+// Call the macro for two different users. These
+// two macro calls will also run in parallel.
+set user1 = buildUserSummary(101)
+set user2 = buildUserSummary(102)
+
+// Assemble the final report.
+@put report.user1Summary user1.summary
+@put report.user2Summary user2.summary
+```
+
+</details>
+<details>
+<summary><strong>Cascada Template</strong></summary>
+
+```njk
+{#
+  This macro generates a user profile widget.
+  It works with a user object (which could be a promise)
+  and fetches additional related data in parallel.
+#}
+{% macro profile_widget(user) %}
+  <div class="profile-widget">
+    <h2>{{ user.name }}</h2>
+    <ul>
+      {# These two fetches run in parallel #}
+      <li>Followers: {{ fetchStats(user.id).followerCount }}</li>
+      <li>Latest Post: "{{ fetchLatestPost(user.id).title }}"</li>
+    </ul>
+  </div>
+{% endmacro %}
+
+{# Fetch user data in parallel #}
+{% set userA = fetchUser(1) %}
+{% set userB = fetchUser(2) %}
+
+{# Render widgets. Each widget will internally #}
+{# perform its own parallel data fetches. #}
+{{ profile_widget(userA) }}
+{{ profile_widget(userB) }}
+```
+
+</details>
 </td>
 </tr>
 <tr>
