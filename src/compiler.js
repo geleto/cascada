@@ -2196,7 +2196,7 @@ class Compiler extends Obj {
       this.emit('arguments: ');
       // _compileAggregate will correctly handle promise resolution if isAsync is true.
       this._compileAggregate(node.call.args, f, '[', ']', isAsync, true);
-      this.emit(', "node": node }');
+      this.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} }`);
     });
   }
 
@@ -2233,7 +2233,7 @@ class Compiler extends Obj {
       } else {
         this.emit('null');
       }
-      this.emit(', "node": node }');
+      this.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} }`);
     });
   }
 
