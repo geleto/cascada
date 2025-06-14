@@ -13,6 +13,7 @@ const globalRuntime = require('./runtime');
 const { handleError, Frame, AsyncFrame, AsyncState } = globalRuntime;
 const expressApp = require('./express-app');
 const { scriptToTemplate } = require('./script-convertor');
+const defaultDataMethods = require('./default-data-methods');
 
 // If the user is using the async API, *always* call it
 // asynchronously even if the template was synchronous.
@@ -427,7 +428,7 @@ class AsyncEnvironment extends Environment {
     super.init(loaders, opts);
 
     // Initialize script configuration properties
-    this.dataMethods = {}; // Pre-fill with built-in methods later
+    this.dataMethods = Object.assign({}, defaultDataMethods);
     this.commandHandlerClasses = {};
     this.commandHandlerInstances = {};
   }
