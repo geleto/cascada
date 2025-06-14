@@ -7,19 +7,15 @@ Cascada Script is a scripting language built on top of the Cascada templating en
 ## Table of Contents
 - [Overview](#overview)
 - [Key Features](#key-features)
-- [Core Syntax Features](#core-syntax-features)
-- [Expressions](#expressions)
-- [Sequential Execution Control (`!`)](#sequential-execution-control-)
-- [Output Commands (`@`)](#output-commands-)
-- [Macros](#macros)
-- [Resilient Error Handling (`try`/`resume`/`except`)](#resilient-error-handling-tryresumeexcept)
-- [Filters and Global Functions](#filters-and-global-functions)
-- [Importing Templates](#importing-templates)
-- [API Methods](#api-methods)
-- [Return Values](#return-values)
 - [Executing a Script](#executing-a-script)
+- [Core Syntax and Expressions](#core-syntax-and-expressions)
+- [Assembling Data with Output Commands (`@`)](#assembling-data-with-output-commands-)
+- [Macros and Reusable Components](#macros-and-reusable-components)
+- [Advanced Flow Control](#advanced-flow-control)
+- [Extending and Organizing Code](#extending-and-organizing-code)
+- [API Reference](#api-reference)
 
-### Key Features
+## Key Features
 
 - **Clean Syntax**: No template delimiters (`{% %}` or `{{ }}`) cluttering your code
 - **Automatic Parallelization**: Independent operations run concurrently with no extra effort
@@ -28,9 +24,66 @@ Cascada Script is a scripting language built on top of the Cascada templating en
 - **Smart Dependency Management**: While independent operations run in parallel, Cascada ensures that **dependent operations wait for their prerequisites**. This guarantees correct execution order, giving you the performance of parallelism with the predictability of sequential code.
 - **Macros**: Reusable code blocks for building independent data objects
 
-## Core Syntax Features
+## Executing a Script
 
-Cascada Script removes the visual noise of template syntax while preserving Cascada's powerful capabilities:
+Here’s an example of executing a script that defines and uses a macro to build a structured data object.
+
+```javascript
+const { AsyncEnvironment } = require('cascada-tmpl');
+const env = new AsyncEnvironment();
+
+const script = `
+// The ':data' directive focuses the macro's output
+macro fetchAndEnhanceUser(id) : data
+  set userData = fetchUser(id)
+  @put user.id userData.id
+  @put user.name userData.name
+  @push user.tasks "Review code"
+endmacro
+
+// Each macro call runs in parallel
+set user1 = fetchAndEnhanceUser(1)
+set user2 = fetchAndEnhanceUser(2)
+
+// Assemble the final result using the macro outputs
+@put result.user1 user1.user
+@put result.user2 user2.user
+`;
+
+const context = {
+  fetchUser: async (id) => {
+    const users = {
+      1: { id: 1, name: "Alice" },
+      2: { id: 2, name: "Bob" },
+    };
+    return users[id] || null;
+  }
+};
+
+// Execute the script
+// We will focus the script's output later to get this clean result.
+const result = await env.renderScriptString(script, context);
+console.log(JSON.stringify(result.data, null, 2)); // Focusing on the .data property for clarity
+// Output:
+// {
+//   "result": {
+//     "user1": {
+//       "id": 1,
+//       "name": "Alice",
+//       "tasks": [ "Review code" ]
+//     },
+//     "user2": {
+//       "id": 2,
+//       "name": "Bob",
+//       "tasks": [ "Review code" ]
+//     }
+//   }
+// }
+```
+
+## Core Syntax and Expressions
+
+Cascada Script removes the visual noise of template syntax while preserving Cascada's powerful capabilities.
 
 - **No Tag Delimiters**: Write `if condition` instead of `{% if condition %}`
 - **Multiline Expressions**: Expressions can span multiple lines for readability. The system automatically detects continuation based on syntax (e.g., unclosed operators, brackets, or parentheses). For example:
@@ -43,7 +96,6 @@ Cascada Script removes the visual noise of template syntax while preserving Casc
   ```
   items.push("value")  // Implicitly a "do" statement
   ```
-- **Macros**: Define reusable blocks of code with `macro`
 
 ### Basic Statements
 
@@ -69,31 +121,6 @@ for item in collection
   // statements
 endfor
 ```
-Loops can also iterate seamlessly over **async iterators**. First, you would provide the async iterator function in your context object:
-```javascript
-// Add an async generator to the context
-const context = {
-  fetchComments: async function* (postId) {
-    let page = 0;
-    while(true) {
-      const comments = await fetchPageOfComments(postId, page++);
-      if (comments.length === 0) break;
-      for (const comment of comments) {
-        yield comment;
-      }
-    }
-  }
-};
-```
-Then, use it in your script:
-```javascript
-// The loop waits for each comment to resolve
-// before processing the body.
-for comment in fetchComments(postId)
-  print comment.author + ": " + comment.body
-endfor
-```
-
 A `for` loop can have an `else` block that is executed only if the collection is empty:
 ```
 for item in []
@@ -102,7 +129,6 @@ else
   print "The collection was empty."
 endfor
 ```
-
 Inside a loop, you have access to the special `loop` variable:
 *   `loop.index`: The current iteration (1-indexed).
 *   `loop.index0`: The current iteration (0-indexed).
@@ -121,7 +147,7 @@ endfor
 print expression
 ```
 
-## Expressions
+### Literals, Operators, and Expressions
 
 Cascada Script supports a wide range of expressions, similar to JavaScript.
 
@@ -168,46 +194,11 @@ if emailRegex.test(user.email)
 endif
 ```
 
-## Sequential Execution Control (`!`)
+## Assembling Data with Output Commands (`@`)
 
-**Note**: This feature is under development.
+Output Commands, marked with the `@` sigil, are Cascada Script's specialized system for building structured results. Their primary role is to assemble a comprehensive result object.
 
-For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
-
-```javascript
-// The `!` on deposit() creates a
-// sequence for the 'account' path.
-set account = getBankAccount()
-
-//1. Set initial Deposit:
-account!.deposit(100)
-//2. Get updated status after initial deposit:
-account.getStatus()
-//3. Withdraw money after getStatus()
-account!.withdraw(50)
-```
-
-## Output Commands (`@`)
-
-Output Commands, marked with the `@` sigil, are Cascada Script's specialized system for building structured results. Their primary role is to assemble a comprehensive result object which can contain three distinct types of output:
-
-*   **Structured Data:** Objects and arrays built with commands like `@put`, `@push`, and `@merge`. This is typically the main output of a script.
-*   **Text Output:** A simple string of text generated by `@print` commands.
-*   **Command Handler Objects:** The final state of any custom command handlers (like the `turtle` graphics example) used in the script.
-
-For example, a script that uses all three might produce a complete result object like this:
-```json
-{
-  "data": {
-    "report": { "title": "Q3 Summary", "items": [ ... ] }
-  },
-  "text": "Report generation started... completed.",
-  "turtle": { "x": 100, "y": 50, "angle": 90, ... }
-}
-```
-Often, you only need one part of this result. Cascada allows you to focus the output to get just the `data`, `text`, or a specific handler object. This is covered in the **Return Values and Output Focusing** section.
-
-#### How It Works: Buffering and Sequential Assembly
+### How It Works: Buffering and Sequential Assembly
 
 Instead of being executed immediately, `@` commands are handled in three steps:
 
@@ -217,10 +208,12 @@ Instead of being executed immediately, `@` commands are handled in three steps:
 
 This process allows you to define the *shape* of your output declaratively, while the engine figures out the most efficient way to fetch the data.
 
-### Command Scopes and Examples
+### Output Command Scopes
+
+The timing of the "Assemble" step depends on the scope in which the `@` commands appear. This is a key concept for modular design.
 
 #### 1. Main Script Body
-Commands in the main script body (i.e., not inside a macro or capture block) are assembled **last**, after all other logic in the script has finished. They build the **final return value** of the entire script.
+Commands in the main script body are assembled **last**, after all other logic in the script has finished. They build the **final return value** of the entire script.
 
 <table>
 <tr>
@@ -248,15 +241,14 @@ endfor
 </td>
 <td width="50%" valign="top">
 <details open>
-<summary><strong>Focused Result (`output: 'data'`)</strong></summary>
+<summary><strong>Final Return Value (`:data` focused)</strong></summary>
 
 ```json
 {
   "company": {
     "employees": [
       { "id": 101, "name": "Alice" },
-      { "id": 102, "name": "Bob" },
-      { "id": 103, "name": "Charlie" }
+      { "id": 102, "name": "Bob" }
     ]
   }
 }
@@ -268,8 +260,6 @@ endfor
 
 #### 2. Macro Body (`macro ... endmacro`)
 Commands inside a `macro` are assembled when the **macro call completes**. They build a structured object that becomes the immediate **return value** of that macro. This lets you create reusable components that perform their own internal, parallel async operations.
-
-By adding `: data` to the macro definition, you can directly return the assembled data object.
 
 <table>
 <tr>
@@ -299,7 +289,7 @@ set salesDept = buildDepartment("sales")
 </td>
 <td width="50%" valign="top">
 <details open>
-<summary><strong>Focused Result (`output: 'data'`)</strong></summary>
+<summary><strong>Final Return Value (`:data` focused)</strong></summary>
 
 ```json
 {
@@ -348,7 +338,7 @@ endcapture
 </td>
 <td width="50%" valign="top">
 <details open>
-<summary><strong>Focused Result (`output: 'data'`)</strong></summary>
+<summary><strong>Final Return Value (`:data` focused)</strong></summary>
 
 ```json
 {
@@ -365,19 +355,23 @@ endcapture
 </tr>
 </table>
 
-### Important Distinction: `@` Commands vs. `!` Sequential Execution
+### Understanding the Result Object (`data`, `text`, `handlers`)
 
-It is crucial to understand the difference between these two features, as they solve different problems.
+Any block of logic—the entire script, a macro, or a capture block—produces a result. This result is a comprehensive object that can contain up to three distinct types of output:
 
-*   **`@` Output Commands:**
-    *   **Purpose:** For **assembling a result** from a buffer after data is fetched.
-    *   **Timing:** They are processed *after* their containing scope (script, macro, or capture) finishes its main evaluation.
-    *   **Nature:** They are for data construction, not for controlling live async operations.
+*   **`data`**: A structured object or array built with commands like `@put`, `@push`, and `@merge`. This is typically the main output of a script.
+*   **`text`**: A simple string of text generated by `@print` commands.
+*   **Command Handler Objects**: The final state of any custom command handlers (like `turtle`) used in the script.
 
-*   **`!` Sequential Execution:**
-    *   **Purpose:** For **controlling the order of live, async operations** that have side effects (e.g., database writes).
-    *   **Timing:** It forces one async call to wait for another to finish *during* the main script evaluation.
-    *   **Nature:** It manages the real-time execution flow of asynchronous functions, and their results are immediately available to the next line of code.
+A scope that uses all three might produce a result object like this:
+```json
+{
+  "data": { "report": { "title": "Q3 Summary" } },
+  "text": "Report generation completed.",
+  "turtle": { "x": 100, "y": 50, "angle": 90 }
+}
+```
+Often, you only need one piece of this result. Cascada allows you to focus the output to get just the `data`, `text`, or a specific handler object.
 
 ### Command Syntax
 
@@ -405,13 +399,9 @@ This syntax (`@command(arg1, arg2, ...)`) is used for imperative actions and can
 @log('User updated', user.id, { level: 'INFO' })
 ```
 
-### The Built-in Data Object
+### The Built-in Data Object (`@put`, `@push`, `@merge`, etc.)
 
-By default, Cascada provides a built-in data object and a rich set of commands to modify it. This is the simplest way to produce a structured result.
-
-#### Standard Output Data Assembly Methods
-
-These statement-style commands manipulate the script's data object.
+By default, Cascada provides a built-in data object and a rich set of commands to modify it.
 
 | Command | Description |
 |---|---|
@@ -423,6 +413,19 @@ These statement-style commands manipulate the script's data object.
 | `@unshift path value`| Adds one or more elements to the beginning of the array at `path`. |
 | `@reverse path` | Reverses the order of the elements in the array at `path`. |
 
+#### Array Index Targeting
+
+Target specific array indices with square brackets. The empty bracket notation `[]` always refers to the last item added in the script's sequential order, **not** the most recently pushed item in terms of operation completion. Due to implicit concurrency, the order of completion can vary, but Cascada Script ensures consistency by following the script's logical sequence.
+
+```
+// Target specific index
+@push users[0].permissions "read"
+
+// Target the last item added in the script's sequence
+@push users { name: "Charlie" }
+@push users[].permissions "read"  // Always affects "Charlie", not a randomly completed item
+```
+
 #### The `@print` Command
 The `@print` command is a versatile tool for generating text output. Its behavior depends on whether a path is provided.
 
@@ -432,26 +435,320 @@ The `@print` command is a versatile tool for generating text output. Its behavio
     @print user.log "Session extended."
     // user.log is now "Login successful. Session extended."
     ```
-*   **`@print value`** (no path): Appends to the global text output stream, similar to how `{{ value }}` works in a template.
+*   **`@print value`** (no path): Appends to the global text output stream, which populates the `text` property of the result object.
     ```javascript
     @print "Request received at " + timestamp
     ```
 
-#### Array Index Targeting
+### Focusing the Output (`:data`, `:text`, `:hanlerName`)
 
-Target specific array indices with square brackets. The empty bracket notation `[]` always refers to the last item added in the script's sequential order, **not** the most recently pushed item in terms of operation completion. Due to implicit concurrency, the order of completion can vary, but Cascada Script ensures consistency by following the script's logical sequence.
+To simplify the result, you use a colon (`:`) followed by the name of the desired output key (`data`, `text`, or a handler name like `turtle`). This **output focus directive** changes the return value of its scope from the full result object to just the single property you specified.
 
+#### Focusing the Script's Return Value
+
+To control the return value for the entire script, place the directive on the **very first line** of the file.
+
+##### Without a Focus Directive
+
+By default, the script returns the full, unfocused result object containing all output types (`data`, `text`, etc.).
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Cascada Script</strong></summary>
+
+```javascript
+// No directive on the first line.
+
+@put report.title "Q3 Summary"
+@print "Report generation complete."
 ```
-// Target specific index
-push users[0].permissions "read"
+</details>
+</td>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Final Return Value</strong></summary>
 
-// Target the last item added in the script's sequence
-push users { name: "Charlie" }
-push users[].permissions "read"  // Always affects "Charlie", not a randomly completed item
+```json
+{
+  "data": {
+    "report": {
+      "title": "Q3 Summary"
+    }
+  },
+  "text": "Report generation complete."
+}
+```
+</details>
+</td>
+</tr>
+</table>
+
+##### With a Focus Directive
+
+When a directive is present, the script's return value is filtered down to only the specified property.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Cascada Script with <code>:data</code></strong></summary>
+
+```javascript
+:data
+
+@put report.title "Q3 Summary"
+@print "Report generation complete."
+```
+</details>
+</td>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Final Return Value</strong></summary>
+
+```json
+{
+  "report": {
+    "title": "Q3 Summary"
+  }
+}
+```
+</details>
+</td>
+</tr>
+</table>
+
+### Important Distinction: `@` Commands vs. `!` Sequential Execution
+
+It is crucial to understand the difference between these two features, as they solve different problems.
+
+*   **`@` Output Commands:**
+    *   **Purpose:** For **assembling a result** from a buffer after data is fetched.
+    *   **Timing:** They are processed *after* their containing scope (script, macro, or capture) finishes its main evaluation.
+    *   **Nature:** They are for data construction, not for controlling live async operations.
+
+*   **`!` Sequential Execution:**
+    *   **Purpose:** For **controlling the order of live, async operations** that have side effects (e.g., database writes).
+    *   **Timing:** It forces one async call to wait for another to finish *during* the main script evaluation.
+    *   **Nature:** It manages the real-time execution flow of asynchronous functions, and their results are immediately available to the next line of code.
+
+## Macros and Reusable Components
+
+Macros allow you to define reusable chunks of logic that build and return structured data objects. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
+
+Macros implicitly return the structured object built by the Output Commands (`@put`, `@push`, etc.) within their scope. An explicit `return` statement is not required, but if you include one, its value will override the implicitly built object.
+
+### Defining and Calling a Macro
+
+```javascript
+// Define a macro to build a user object
+macro buildUser(id) : data // :data focuses the return value
+  set userData = fetchUserData(id)
+  // These '@put' commands operate on the macro's return object
+  @put user.id userData.id
+  @put user.name userData.name
+endmacro
+
+// Calling the macro
+// The macro returns { user: { id: ..., name: ... } }
+set myUser = buildUser(123)
+@put result.user myUser.user
 ```
 
-#### Customizing the Data Object
-You can add your own custom methods to the default data builder using `env.addDataMethods()`.
+### Keyword Arguments
+Macros support keyword arguments, allowing for more explicit and flexible calls. You can define default values for arguments, and callers can pass arguments by name.
+
+```javascript
+// Macro with default arguments
+macro input(name, value="", type="text") : data
+  @put field.name name
+  @put field.value value
+  @put field.type type
+endmacro
+
+// Calling with mixed and keyword arguments
+set passwordField = input("pass", type="password")
+@put result.password passwordField.field
+```
+
+### Output Scopes and Focusing in Macros
+
+Commands inside a `macro` are assembled when the **macro call completes**. They build a structured object that becomes the immediate **return value** of that macro. To get a clean data object instead of the full result object, use an output focus directive.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Macro with <code>:data</code> focus</strong></summary>
+
+```javascript
+// The :data directive filters the macro's
+// return value to be just the data object.
+macro buildUser(name) : data
+  @put user.name name
+  @put user.active true
+endmacro
+
+// 'userObject' is now a clean object,
+// not { data: { user: ... } }.
+set userObject = buildUser("Alice")
+
+@put company.manager userObject.user
+```
+</details>
+</td>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Final Return Value of Script</strong></summary>
+
+```json
+{
+  "company": {
+    "manager": {
+      "name": "Alice",
+      "active": true
+    }
+  }
+}
+```
+</details>
+</td>
+</tr>
+</table>
+
+### The `call` Block
+A `call` block allows you to pass a block of logic into a macro. This content is available inside the macro via a special function called `caller()`. When invoked, `caller()` executes the block, which builds its own result object using output commands. `caller()` then returns this result object.
+
+```javascript
+// Define a macro that wraps content
+macro withWrapper(title) : data
+  @put block.title title
+  // caller() executes the logic from the 'call' block
+  // and returns the object it built.
+  set contentObject = caller()
+  @put block.content contentObject.username
+endmacro
+
+// Use 'call' to provide the logic to the macro
+call withWrapper("User Data") : data
+  // This logic is executed by caller().
+  // It uses @put to build its own result.
+  set user = fetchUser(123)
+  @put username user.name
+endcall
+```
+
+### The `capture` Block
+Commands inside a `capture` block are assembled when the **capture block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use. You can focus its output just like a macro.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Capture with <code>:data</code> focus</strong></summary>
+
+```javascript
+// The :data directive focuses the
+// value assigned to 'permissions'.
+capture permissions : data
+  @push grants "read"
+  @push grants "write"
+endcapture
+
+// 'permissions' is now { grants: [...] },
+// not { data: { grants: [...] } }.
+@put company.roles permissions.grants
+```
+</details>
+</td>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Final Return Value of Script</strong></summary>
+
+```json
+{
+  "company": {
+    "roles": [ "read", "write" ]
+  }
+}
+```
+</details>
+</td>
+</tr>
+</table>
+
+## Advanced Flow Control
+
+### Looping over Async Iterators
+Loops can iterate seamlessly over **async iterators**. First, you would provide the async iterator function in your context object:
+```javascript
+// Add an async generator to the context
+const context = {
+  fetchComments: async function* (postId) {
+    let page = 0;
+    while(true) {
+      const comments = await fetchPageOfComments(postId, page++);
+      if (comments.length === 0) break;
+      for (const comment of comments) {
+        yield comment;
+      }
+    }
+  }
+};
+```
+Then, use it in your script:
+```javascript
+// The loop waits for each comment to resolve
+// before processing the body.
+for comment in fetchComments(postId)
+  print comment.author + ": " + comment.body
+endfor
+```
+
+### Sequential Execution Control (`!`)
+
+**Note**: This feature is under development.
+
+For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
+
+```javascript
+// The `!` on deposit() creates a
+// sequence for the 'account' path.
+set account = getBankAccount()
+
+//1. Set initial Deposit:
+account!.deposit(100)
+//2. Get updated status after initial deposit:
+account.getStatus()
+//3. Withdraw money after getStatus()
+account!.withdraw(50)
+```
+
+### Resilient Error Handling (`try`/`resume`/`except`)
+
+**Note**: This feature is under development.
+
+Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structure lets you catch errors, define **conditional retry logic** with `resume`, and provide a final fallback. The special `resume.count` variable is **automatically managed by the engine** to track retry attempts.
+
+```javascript
+try
+  // Attempt a fallible operation
+  set image = generateImage(prompt)
+  @put result.imageUrl image.url
+resume resume.count < 3
+  // Retry up to 3 times
+  print "Retrying attempt " + resume.count
+except
+  // Handle permanent failure
+  @put result.error "Image generation failed: " + error.message
+endtry
+```
+
+## Extending and Organizing Code
+
+### Customizing the Data Object
+You can add your own custom methods to the default data builder using `env.addDataMethods()`. This is a powerful way to create reusable, domain-specific logic that operates on your script's main data object.
 
 **Example: A custom `@upsert` command.**
 ```javascript
@@ -467,11 +764,11 @@ env.addDataMethods({
 
 // --- In your Cascada Script ---
 @push users {id: 1, name: "Alice"}
-// This custom command will UPDATE Alice
+// This custom command will UPDATE Alice instead of adding a new entry
 @upsert users {id: 1, status: "inactive"}
 ```
 
-### Output Command Handlers
+### Custom Output Command Handlers
 For advanced use cases that go beyond simple data construction, you can define **Output Command Handlers**. These are classes that receive and process `@` commands, allowing you to create powerful domain-specific logic within your scripts.
 
 #### Registering and Using Named Handlers
@@ -569,319 +866,11 @@ const logger = new CommandLogger();
 env.addCommandHandler('audit', logger);
 ```
 
-### Script Return Value
-
-#### The Final Result Object
-`renderScriptString` returns a single, flat object containing all the outputs generated by your script. Each output type has a distinct top-level key.
-
-**Default Structure:**
-```javascript
-{
-  // From path-based data commands (@put, @push, etc.)
-  "data": { /* ... */ },
-
-  // From un-pathed @print commands
-  "text": "...",
-
-  // Final state of each named command handler
-  "handlerName1": ... // Final state of handler 1
-  "handlerName2": ... // Final state of handler 2
-}
-```
-
-#######################
-Excellent point. You're absolutely right—the concept of a return value and how to control it is fundamental to all three execution scopes (script, macro, and capture). The documentation needs to reflect this general applicability from the start.
-
-Here is the revised section, retitled and rewritten to be more comprehensive and accurate.
-
----
-
-## Return Values and Output Focusing
-
-In Cascada Script, any block of logic—whether it's the entire script, a macro, or a capture block—produces a result. This result is a comprehensive object that can contain up to three distinct types of output:
-
-*   **`data`**: A structured object or array built with commands like `@put`, `@push`, and `@merge`.
-*   **`text`**: A simple string of text generated by `@print` commands.
-*   **Command Handler Objects**: The final state of any custom command handlers (like `turtle`) used in the script.
-
-A scope that uses all three might produce a result object like this:
-```json
-{
-  "data": { "report": { "title": "Q3 Summary" } },
-  "text": "Report generation completed.",
-  "turtle": { "x": 100, "y": 50, "angle": 90 }
-}
-```
-Often, you only need one piece of this result. Cascada provides a simple, in-script **output focus directive** to control exactly what a scope returns.
-
-### The Output Focus Directive
-
-To focus the output, you use a colon (`:`) followed by the name of the desired output key (`data`, `text`, or a handler name like `turtle`). This directive changes the return value of its scope from the full result object to just the single property you specified.
-
-#### Focusing the Script's Return Value
-
-To control the return value for the entire script, place the directive on the **very first line** of the file.
-
-##### Without a Focus Directive
-
-By default, the script returns the full, unfocused result object containing all output types (`data`, `text`, etc.).
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Cascada Script</strong></summary>
-
-```javascript
-// No directive on the first line.
-
-@put report.title "Q3 Summary"
-@print "Report generation complete."
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value</strong></summary>
-
-```json
-{
-  "data": {
-    "report": {
-      "title": "Q3 Summary"
-    }
-  },
-  "text": "Report generation complete."
-}
-```
-</details>
-</td>
-</tr>
-</table>
-
-##### With a Focus Directive
-
-When a directive is present, the script's return value is filtered down to only the specified property.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Cascada Script with <code>:data</code></strong></summary>
-
-```javascript
-:data
-
-@put report.title "Q3 Summary"
-@print "Report generation complete."
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value</strong></summary>
-
-```json
-{
-  "report": {
-    "title": "Q3 Summary"
-  }
-}
-```
-</details>
-</td>
-</tr>
-</table>
-
-#### Focusing a Macro's Return Value
-
-For macros, place the directive on the same line as the macro declaration. This is the most common way to create data-generating macros, as it ensures they return a clean data object directly.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Macro with <code>:data</code> focus</strong></summary>
-
-```javascript
-// The :data directive filters the macro's
-// return value to be just the data object.
-macro buildUser(name) : data
-  @put user.name name
-  @put user.active true
-endmacro
-
-// 'userObject' is now a clean object,
-// not { data: { user: ... } }.
-set userObject = buildUser("Alice")
-
-@put company.manager userObject.user
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value of Script</strong></summary>
-
-```json
-{
-  "company": {
-    "manager": {
-      "name": "Alice",
-      "active": true
-    }
-  }
-}
-```
-</details>
-</td>
-</tr>
-</table>
-
-#### Focusing a Capture Block's Value
-
-Similarly, place the directive on the `capture` declaration line. This focuses the value assigned to the capture variable, making it immediately usable as a clean data object without needing to access a `.data` property.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Capture with <code>:data</code> focus</strong></summary>
-
-```javascript
-// The :data directive focuses the
-// value assigned to 'permissions'.
-capture permissions : data
-  @push grants "read"
-  @push grants "write"
-endcapture
-
-// 'permissions' is now { grants: [...] },
-// not { data: { grants: [...] } }.
-@put company.roles permissions.grants
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value of Script</strong></summary>
-
-```json
-{
-  "company": {
-    "roles": [ "read", "write" ]
-  }
-}
-```
-</details>
-</td>
-</tr>
-</table>
-
-If the focus directive is omitted, the scope will return the full, unfocused result object (`{ data: ..., text: ... }`). This can be useful in advanced scenarios where you need to inspect multiple output types from a single component.
-
-## Macros
-
-Macros allow you to define reusable chunks of logic that build and return structured data objects. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
-
-Inside a macro, the **Data Assembly Commands** (`put`, `push`, `merge`) work on a local, implicit return object. This object is automatically returned by the macro when it finishes.
-
-A `return` statement is not required. If you omit it, the macro returns the object built by the assembly commands. If you include an explicit `return` statement, its value will override the implicit return object.
-
-#### Defining a Macro
-```
-macro buildUser(id)
-  set userData = fetchUserData(id)
-  // These 'put' commands operate on the macro's return object
-  put user.id userData.id
-  put user.name userData.name
-endmacro
-```
-
-#### Calling a Macro
-```
-// The macro returns { user: { id: ..., name: ... } }
-set myUser = buildUser(123)
-put result.user myUser
-```
-
-#### Keyword Arguments in Macros
-Macros support keyword arguments, allowing for more explicit and flexible calls. You can define default values for arguments, and callers can pass arguments by name.
-
-```javascript
-// Macro with default arguments
-macro input(name, value="", type="text")
-  put field.name name
-  put field.value value
-  put field.type type
-endmacro
-
-// Calling with mixed and keyword arguments
-set password = input("pass", type="password")
-put result.password password
-```
-
-#### The `call` Block
-A `call` block allows you to pass a block of logic into a macro. This content is available inside the macro via a special function called `caller()`, which executes the block and returns its result.
-
-```javascript
-macro withWrapper(title)
-  put block.title title
-  // caller() executes the logic from the 'call' block
-  put block.content caller()
-endmacro
-
-call withWrapper("User Data")
-  // This logic is executed by caller()
-  set user = fetchUser(123)
-  return user.name
-endcall
-```
-
-### Simple Example with Macros
-```
-// Define a macro to build and return a user object
-macro buildUser(id)
-  set userData = fetchUserData(id)
-  put user.id userData.id
-  put user.name userData.name
-endmacro
-
-// Use the macro to build two user objects in parallel
-set user1 = buildUser(123)
-set user2 = buildUser(456)
-
-// Assemble the final result
-put result.firstUser user1
-put result.secondUser user2
-```
-
-## Resilient Error Handling (`try`/`resume`/`except`)
-
-**Note**: This feature is under development.
-
-Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structure lets you catch errors, define **conditional retry logic** with `resume`, and provide a final fallback. The special `resume.count` variable is **automatically managed by the engine** to track retry attempts.
-
-```javascript
-try
-  // Attempt a fallible operation
-  set image = generateImage(prompt)
-  put result.imageUrl image.url
-resume resume.count < 3
-  // Retry up to 3 times
-  print "Retrying attempt " + resume.count
-except
-  // Handle permanent failure
-  put result.error "Image generation failed: "
-   + error.message
-endtry
-```
-
-## Filters and Global Functions
+### Filters and Global Functions
 
 Cascada Script supports the full range of Nunjucks [built-in filters](https://mozilla.github.io/nunjucks/templating.html#builtin-filters) and [global functions](https://mozilla.github.io/nunjucks/templating.html#global-functions). You can use them just as you would in a template.
 
-### Filters
+#### Filters
 Filters are applied with the pipe `|` operator.
 ```javascript
 set title = "a tale of two cities" | title
@@ -891,7 +880,7 @@ set users = ["Alice", "Bob"]
 print "Users: " + (users | join(", ")) // "Users: Alice, Bob"
 ```
 
-### Global Functions
+#### Global Functions
 Global functions like `range` can be called directly.
 ```javascript
 for i in range(3)
@@ -899,20 +888,20 @@ for i in range(3)
 endfor
 ```
 
-### Additional Global Functions
+#### Additional Global Functions
 
-#### `cycler(...items)`
+##### `cycler(...items)`
 The `cycler` function creates an object that cycles through a set of values each time its `next()` method is called.
 
 ```javascript
 set rowClass = cycler("even", "odd")
 for item in items
   // First item gets "even", second "odd", third "even", etc.
-  push report.rows { class: rowClass.next(), value: item }
+  @push report.rows { class: rowClass.next(), value: item }
 endfor
 ```
 
-#### `joiner([separator])`
+##### `joiner([separator])`
 The `joiner` creates a function that returns the separator (default is `,`) on every call except the first. This is useful for delimiting items in a list.
 
 ```javascript
@@ -925,25 +914,25 @@ endfor
 print output // "rock, pop, jazz"
 ```
 
-## Importing Templates
+### Importing Scripts and Templates
 
-In Cascada scripts, use `import` to access templates:
+In Cascada scripts, use `import` to access standard Nunjucks templates:
 
 ```
 import "header.njk" as header
 ```
 
-Use `import-script` to load Cascada scripts:
+Use `import-script` to load other Cascada scripts. This can be done with the clean script syntax or the traditional tag syntax.
 
-```njk
+```
+// Clean syntax
+import-script "data.script" as data
+
+// Tag-based syntax
 {% import-script "data.script" as data %}
 ```
 
-```
-import-script "data.script" as data
-```
-
-## API Methods
+## API Reference
 
 ### Environment Class
 
@@ -956,72 +945,8 @@ environment.renderScriptString(scriptSource, context[, options][, callback])
 
 ```javascript
 // Always returns Promises
-asyncEnvironment.renderScript(scriptName, context[, callback])
-asyncEnvironment.renderScriptString(scriptSource, context[, options][, callback])
+asyncEnvironment.renderScript(scriptName, context[, options])
+asyncEnvironment.renderScriptString(scriptSource, context[, options])
 ```
 
 For production environments, you can improve performance by **precompiling** your scripts to JavaScript, which eliminates parsing overhead at runtime. This can be done using the same precompilation API methods available for templates.
-
-## Return Values
-
-Scripts return **either** text output **or** structured data:
-
-- **Text output**: When only using `print` statements without target paths
-- **Data output**: When using assembly commands (`put`, `merge`, `push`) or `print` with target paths
-
-## Executing a Script
-
-Here’s an example of executing a script with a macro:
-
-```javascript
-const { AsyncEnvironment } = require('cascada-tmpl');
-const env = new AsyncEnvironment();
-
-const script = `
-macro fetchAndEnhanceUser(id)
-  set userData = fetchUser(id)
-  put user.id userData.id
-  put user.name userData.name
-  push user.tasks "Review code"
-endmacro
-
-set user1 = fetchAndEnhanceUser(1)
-set user2 = fetchAndEnhanceUser(2)
-
-put result.user1 user1
-put result.user2 user2
-`;
-
-const context = {
-  fetchUser: async (id) => {
-    const users = {
-      1: { id: 1, name: "Alice" },
-      2: { id: 2, name: "Bob" },
-    };
-    return users[id] || null;
-  }
-};
-
-// Execute the script
-const result = await env.renderScriptString(script, context);
-console.log(JSON.stringify(result, null, 2));
-// Output:
-// {
-//   "result": {
-//     "user1": {
-//       "user": {
-//         "id": 1,
-//         "name": "Alice",
-//         "tasks": [ "Review code" ]
-//       }
-//     },
-//     "user2": {
-//       "user": {
-//         "id": 2,
-//         "name": "Bob",
-//         "tasks": [ "Review code" ]
-//       }
-//     }
-//   }
-// }
-```
