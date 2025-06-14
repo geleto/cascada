@@ -4,34 +4,21 @@
   var expect;
   var AsyncEnvironment;
   var StringLoader;
+  var delay;
+  var expectAsyncError;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../src/environment').AsyncEnvironment;
     StringLoader = require('./pasync-loader');
+    delay = require('./util').delay;
+    expectAsyncError = require('./util').expectAsyncError;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     StringLoader = window.StringLoader;
-  }
-
-  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-  // Helper function for async rejection tests with expect.js
-  async function expectAsyncError(asyncFn, checkFn) {
-    let error = null;
-    let res = null;
-    try {
-      res = await asyncFn();
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error).to.be.an(Error); // Check an error was thrown
-    expect(res).to.equal(null); // Check no result was returned
-    if (checkFn) {
-      checkFn(error); // Optional additional checks on the error
-    }
+    delay = window.util.delay;
+    expectAsyncError = window.util.expectAsyncError;
   }
 
 

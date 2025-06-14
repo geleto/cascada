@@ -494,10 +494,7 @@ describe('Script Parser', function() {
     it('should properly manage state transitions', function() {
       // This test checks multiple state transitions in one line
       const script = 'code "string" /* comment */ r/regex/g more';
-      console.log('DEBUG - Parser State Management script:', script);
       const result = parseTemplateLine(script);
-      console.log('DEBUG - Parser State Management tokens:', result.tokens.length);
-      console.log('DEBUG - Parser State Management token types:', result.tokens.map(t => t.type));
 
       expect(result.tokens).to.have.length(7); // Adjusted to match actual implementation
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);

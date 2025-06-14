@@ -3,30 +3,18 @@
 let expect;
 let AsyncEnvironment;
 let flattenBuffer;
+let expectAsyncError;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   AsyncEnvironment = require('../src/environment').AsyncEnvironment;
   flattenBuffer = require('../src/runtime').flattenBuffer;
+  expectAsyncError = require('./util').expectAsyncError;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   flattenBuffer = nunjucks.runtime.flattenBuffer;
-}
-
-// Helper function for async rejection tests with expect.js
-async function expectAsyncError(asyncFn, checkFn) {
-  let error = null;
-  try {
-    await asyncFn();
-  } catch (e) {
-    error = e;
-  }
-
-  expect(error).to.be.an(Error); // Check an error was thrown
-  if (checkFn) {
-    checkFn(error); // Optional additional checks on the error
-  }
+  expectAsyncError = nunjucks.util.expectAsyncError;
 }
 
 describe('flattenBuffer', function () {

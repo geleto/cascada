@@ -7,6 +7,7 @@
   var StringLoader;
   //var Environment;
   //var lexer;
+  var delay;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -15,6 +16,7 @@
     //lexer = require('../src/lexer');
     unescape = require('he').unescape;
     StringLoader = require('./pasync-loader');
+    delay = require('./util').delay;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
@@ -22,9 +24,8 @@
     StringLoader = window.StringLoader;
     //Environment = nunjucks.Environment;
     //lexer = nunjucks.lexer;
+    delay = window.util.delay;
   }
-
-  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   describe('Async mode race conditions tests', () => {
     let env;

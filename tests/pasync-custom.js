@@ -6,6 +6,7 @@
   var AsyncEnvironment;
   //var Environment;
   var lexer;
+  var delay;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -13,15 +14,15 @@
     //Environment = require('../src/environment').Environment;
     lexer = require('../src/lexer');
     unescape = require('he').unescape;
+    delay = require('./util').delay;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     //Environment = nunjucks.Environment;
     lexer = nunjucks.lexer;
+    delay = window.util.delay;
   }
-
-  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   class AsyncExtension {
     constructor(tagName, method, options = {}) {

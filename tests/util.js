@@ -201,6 +201,23 @@
     }
   }
 
+  // Helper function for async rejection tests with expect.js
+  async function expectAsyncError(asyncFn, checkFn) {
+    let error = null;
+    try {
+      await asyncFn();
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).to.be.an(Error); // Check an error was thrown
+    if (checkFn) {
+      checkFn(error); // Optional additional checks on the error
+    }
+  }
+
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
   if (typeof window === 'undefined') {
     module.exports.render = render;
     module.exports.equal = equal;
@@ -209,6 +226,8 @@
     module.exports.normEOL = normEOL;
     module.exports.isSlim = isSlim;
     module.exports.Loader = Loader;
+    module.exports.expectAsyncError = expectAsyncError;
+    module.exports.delay = delay;
   } else {
     window.util = {
       render: render,
@@ -218,6 +237,8 @@
       normEOL: normEOL,
       isSlim: isSlim,
       Loader: Loader,
+      expectAsyncError: expectAsyncError,
+      delay: delay
     };
   }
 }());
