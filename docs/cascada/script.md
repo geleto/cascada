@@ -371,10 +371,14 @@ By default, Cascada provides a built-in handler and a rich set of commands to mo
 | `@put path value` | **Replaces** the value at `path`. |
 | `@push path value` | Appends an element to an array at `path`. |
 | `@merge path value` | Merges an object into the object at `path`. |
+| `@deepMerge path value` | Deep-merges an object into the object at `path`. |
 | `@pop path` | Removes and returns the last element from the array at `path`. |
 | `@shift path` | Removes and returns the first element from the array at `path`. |
 | `@unshift path value`| Adds one or more elements to the beginning of the array at `path`. |
 | `@reverse path` | Reverses the order of the elements in the array at `path`. |
+
+Any array operation on a non-existent array will create an ampty array first.
+Any onject operation on non-existent object will create an empty object first.
 
 ##### Array Index Targeting
 

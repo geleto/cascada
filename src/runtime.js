@@ -983,10 +983,10 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
         // Statement Command: @put, @push, etc.
         const dataMethod = env.dataMethods[item.method];
         if (!dataMethod) {
-          throw handleError(new Error(`Unknown data method: ${item.method}`), item.node.lineno, item.node.colno);
+          throw handleError(new Error(`Unknown data method: ${item.method}`), item.pos.lineno, item.pos.colno);
         }
         const { target, key } = _findPathTarget(dataOutput, item.path);
-        dataMethod(target, key, item.value);
+        target[key] = dataMethod(target[key], item.value);
 
       } else {
         // Function Command: @handler.cmd(), @callableHandler()
@@ -1000,7 +1000,7 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
           const handlerInstance = getOrInstantiateHandler(handlerName);
 
           if (!handlerInstance) {
-            throw handleError(new Error(`Unknown command handler: ${handlerName}`), item.node.lineno, item.node.colno);
+            throw handleError(new Error(`Unknown command handler: ${handlerName}`), item.pos.lineno, item.pos.colno);
           }
 
           const commandFunc = handlerInstance[commandName];
@@ -1011,7 +1011,7 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
             // The handler itself is callable and no command was specified: @myCallableHandler(...)
             handlerInstance.apply(handlerInstance, args);
           } else {
-            throw handleError(new Error(`Handler '${handlerName}' has no method '${commandName}' and is not callable`), item.node.lineno, item.node.colno);
+            throw handleError(new Error(`Handler '${handlerName}' has no method '${commandName}' and is not callable`), item.pos.lineno, item.pos.colno);
           }
         }
       }
