@@ -476,22 +476,12 @@ class AsyncEnvironment extends Environment {
   }
 
   async renderScriptString(scriptStr, ctx, opts) {
-    ctx = ctx || {};
-
-    // Convert script to template
-    let template;
-    try {
-      template = scriptToTemplate(scriptStr);
-    } catch (error) {
-      throw new Error(`Error converting script to template: ${error.message}`);
-    }
-
-    // Use the async template renderer
-    return this._asyncRenderTemplate(template, ctx, false, opts || {});
+    return this._asyncRenderScript(scriptStr, ctx, false, opts || {});
   }
 
   //@todo - rewrite once template.render with no callback returns a promise
   async _asyncRenderTemplate(template, ctx, namedTemplate, opts) {
+    ctx = ctx || {};
     const result = await new Promise((resolve, reject) => {
       let callback = (err, res) => {
         if (err || res === null) {
@@ -518,6 +508,7 @@ class AsyncEnvironment extends Environment {
   }
 
   async _asyncRenderScript(script, ctx, namedScript, opts) {
+    ctx = ctx || {};
     const result = await new Promise((resolve, reject) => {
       let callback = (err, res) => {
         if (err || res === null) {
@@ -529,12 +520,11 @@ class AsyncEnvironment extends Environment {
 
       if (namedScript) {
         // render script object
-        this.getScript(script, false, null, false, (err, tmpl) => {
-          if (err) {
-            callbackAsap(callback, err);
-          } else {
-            tmpl.render(ctx, callback);
+        this.getScript(script, false, null, false).then((scr) => {
+          if (!scr) {
+            throw new Error(`Template not found: ${script}`);
           }
+          scr.render(ctx, callback);
         });
       } else {
         // render script string
