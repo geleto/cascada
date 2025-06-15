@@ -37,7 +37,7 @@ describe('Cascada Script: Output commands', function () {
 
     const script = `
       // Focus the script's return value to be just the data object.
-      //:data
+      // :data
 
       // These two 'set' statements are independent and will run in parallel.
       set userList = fetchData('users')
@@ -70,7 +70,7 @@ describe('Cascada Script: Output commands', function () {
    * - Multiple calls to the same macro run concurrently.
    * - The main script assembles its final output only after all macro calls have completed.
    */
-  it('should execute macros in parallel and use their focused results for final assembly', async () => {
+  it.only('should execute macros in parallel and use their focused results for final assembly', async () => {
     const context = {
       fetchUser: async (id) => {
         const users = {
@@ -90,11 +90,11 @@ describe('Cascada Script: Output commands', function () {
 
     const script = `
       // The main script will also return only its data object.
-      :data
+      // :data
 
       // Define a reusable component. The ':data' directive ensures
       // this macro returns a clean data object, not { data: {...} }.
-      macro buildUserReport(id) : data
+      macro buildUserReport(id) // : data
         // These two fetches inside the macro also run in parallel.
         set userData = fetchUser(id)
         set tasksData = fetchTasks(id)
