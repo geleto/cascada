@@ -98,7 +98,9 @@ const InlineIf = Node.extend('InlineIf', { fields: ['cond', 'body', 'else_'] });
 const For = Node.extend('For', { fields: ['arr', 'name', 'body', 'else_'] });
 const AsyncEach = For.extend('AsyncEach');
 const AsyncAll = For.extend('AsyncAll');
-const Macro = Node.extend('Macro', { fields: ['name', 'args', 'body'] });
+const Macro = Node.extend('Macro', {
+  fields: ['name', 'args', 'body', 'focus']
+});
 const Caller = Macro.extend('Caller');
 const Import = Node.extend('Import', { fields: ['template', 'target', 'withContext'] });
 
@@ -120,11 +122,14 @@ const Super = Node.extend('Super', { fields: ['blockName', 'symbol'] });
 const TemplateRef = Node.extend('TemplateRef', { fields: ['template'] });
 const Extends = TemplateRef.extend('Extends');
 const Include = Node.extend('Include', { fields: ['template', 'ignoreMissing'] });
-const Set = Node.extend('Set', { fields: ['targets', 'value'] });
+const Set = Node.extend('Set', {
+  fields: ['targets', 'value', 'focus']
+});
 const Switch = Node.extend('Switch', { fields: ['expr', 'cases', 'default'] });
 const Case = Node.extend('Case', { fields: ['cond', 'body'] });
 const Output = NodeList.extend('Output');
 const Capture = Node.extend('Capture', { fields: ['body'] });
+const Option = Node.extend('Option', { fields: ['key', 'value'] });
 const TemplateData = Literal.extend('TemplateData');
 const UnaryOp = Node.extend('UnaryOp', { fields: ['target'] });
 const BinOp = Node.extend('BinOp', { fields: ['left', 'right'] });
@@ -247,6 +252,7 @@ module.exports = {
   Dict: Dict,
   Output: Output,
   Capture: Capture,
+  Option: Option,
   TemplateData: TemplateData,
   If: If,
   IfAsync: IfAsync,
