@@ -185,7 +185,7 @@ describe('flattenBuffer', function () {
       { handler: 'turtle', command: 'forward', arguments: [10] }
     ];
 
-    it.only('should return only the data object when focus is "data"', async function () {
+    it('should return only the data object when focus is "data"', async function () {
       const result = await flattenBuffer(fullBuffer, context, 'data');
       expect(result).to.eql({ user: { name: 'Bob' } });
     });
@@ -266,7 +266,7 @@ describe('flattenBuffer', function () {
     });
 
     it('should throw an error for an unknown command handler', async function () {
-      const buffer = [{ handler: 'nonexistent', command: 'do', arguments: [], node: { lineno: 1, colno: 1 } }];
+      const buffer = [{ handler: 'nonexistent', command: 'do', arguments: [], pos: { lineno: 1, colno: 1 } }];
       await expectAsyncError(
         () => flattenBuffer(buffer, context),
         (err) => expect(err.message).to.contain('Unknown command handler: nonexistent')
@@ -275,7 +275,7 @@ describe('flattenBuffer', function () {
 
     it('should throw an error for an unknown command method on a handler', async function () {
       env.addCommandHandler('logger', { log: () => {} });
-      const buffer = [{ handler: 'logger', command: 'nonexistent', arguments: [], node: { lineno: 1, colno: 1 } }];
+      const buffer = [{ handler: 'logger', command: 'nonexistent', arguments: [], pos: { lineno: 1, colno: 1 } }];
       await expectAsyncError(
         () => flattenBuffer(buffer, context),
         (err) => expect(err.message).to.contain(`has no method 'nonexistent'`)
