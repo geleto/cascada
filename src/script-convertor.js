@@ -521,7 +521,7 @@ function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLi
   if (!processedLine.isContinuation) {
     switch (processedLine.lineType) {
       case 'TAG':
-        output += `{%- ${processedLine.tagName} `;
+        output += `{%- ${processedLine.tagName}`;
         /*if (processedLine.tagName) {
           // For internal commands, prepend the tag name that the Nunjucks parser expects
           if (processedLine.tagName === 'function_command' || processedLine.tagName === 'statement_command') {
@@ -538,7 +538,9 @@ function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLi
     }
   }
 
-  output += processedLine.codeContent;
+  if (processedLine.codeContent) {
+    output += ' ' + processedLine.codeContent;
+  }
 
   //@todo - find the continuationLineType
   if (!nextIsContinuation) {
