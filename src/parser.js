@@ -203,6 +203,19 @@ class Parser extends Obj {
     return node;
   }
 
+  parseFocusDirective() {
+    // Check for a colon token
+    if (!this.skip(lexer.TOKEN_COLON)) {
+      return null;
+    }
+
+    // Expect a symbol token (e.g. 'data', 'text')
+    const tok = this.expect(lexer.TOKEN_SYMBOL);
+
+    // Parse the symbol into a Symbol node
+    return new nodes.Symbol(tok.lineno, tok.colno, tok.value);
+  }
+
   parseMacro() {
     const macroTok = this.peekToken();
     if (!this.skipSymbol('macro')) {
@@ -211,7 +224,8 @@ class Parser extends Obj {
 
     const name = this.parsePrimary(true);
     const args = this.parseSignature();
-    const node = new nodes.Macro(macroTok.lineno, macroTok.colno, name, args);
+    const focus = this.parseFocusDirective();
+    const node = new nodes.Macro(macroTok.lineno, macroTok.colno, name, args, null, focus);
 
     this.advanceAfterBlockEnd(macroTok.value);
     node.body = this.parseUntilBlocks('endmacro');
@@ -229,6 +243,7 @@ class Parser extends Obj {
     }
 
     const callerArgs = this.parseSignature(true) || new nodes.NodeList();
+    const focus = this.parseFocusDirective();
     const macroCall = this.parsePrimary();
 
     this.advanceAfterBlockEnd(callTok.value);
@@ -242,7 +257,8 @@ class Parser extends Obj {
       callTok.colno,
       callerName,
       callerArgs,
-      body);
+      body,
+      focus);
 
     // add the additional caller kwarg, adding kwargs if necessary
     const args = macroCall.args.children;
@@ -508,6 +524,11 @@ class Parser extends Obj {
           tag.lineno,
           tag.colno);
       } else {
+        // This is a block assignment, so we can have a focus directive
+        const focus = this.parseFocusDirective();
+        if (focus) {
+          node.focus = focus;
+        }
         node.body = new nodes.Capture(
           tag.lineno,
           tag.colno,
@@ -517,6 +538,12 @@ class Parser extends Obj {
         this.advanceAfterBlockEnd();
       }
     } else {
+      // This is a value assignment, so focus directive is not allowed
+      if (this.peekToken().type === lexer.TOKEN_COLON) {
+        this.fail('parseSet: focus directive not allowed in value assignment',
+          tag.lineno,
+          tag.colno);
+      }
       node.value = this.parseExpression();
       this.advanceAfterBlockEnd(tag.value);
     }
@@ -590,7 +617,9 @@ class Parser extends Obj {
 
     // and return the switch node.
     return new nodes.Switch(tag.lineno, tag.colno, expr, cases, defaultCase);
-  }  parseDo() {
+  }
+
+  parseDo() {
     const doTok = this.peekToken();
     if (!this.skipSymbol('do')) {
       this.fail('expected do', doTok.lineno, doTok.colno);
@@ -605,7 +634,9 @@ class Parser extends Obj {
     }
     this.advanceAfterBlockEnd(doTok.value);
     return new nodes.Do(doTok.lineno, doTok.colno, exprs);
-  }  parseStatementCommand() {
+  }
+
+  parseStatementCommand() {
     const tag = this.peekToken();
     if (!this.skipSymbol('statement_command')) {
       this.fail('parseStatementCommand: expected statement_command', tag.lineno, tag.colno);
@@ -693,7 +724,8 @@ class Parser extends Obj {
       case 'filter':
         return this.parseFilterStatement();
       case 'switch':
-        return this.parseSwitch();      case 'do':
+        return this.parseSwitch();
+      case 'do':
         return this.parseDo();
       case 'statement_command':
         return this.parseStatementCommand();
