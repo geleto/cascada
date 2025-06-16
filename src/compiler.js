@@ -2261,6 +2261,13 @@ class Compiler extends Obj {
         node.lineno, node.colno, node);
     }
   }
+
+  /**
+   * Do nothing for now, currently used only for focus directive
+   * which logic is handled in the parser
+   */
+  compileOption(node, frame) {
+  }
 }
 
 module.exports = {
