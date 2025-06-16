@@ -530,10 +530,10 @@ function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLi
         }*/
         break;
       case 'PRINT':
-        output += '{{- ';
+        output += '{{-';
         break;
       case 'CODE':
-        output += '{%- do ';
+        output += '{%- do';
         break;
     }
   }
