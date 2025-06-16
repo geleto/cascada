@@ -242,6 +242,11 @@ class Parser extends Obj {
     return node;
   }
 
+  /**
+   * @todo: The call'ed macro must write directly to the parent scope output data object, this is not yet implemented
+   * @todo: The {% call %} tag is cleverly parsed into a structure where it is treated as a standard FunCall node that is placed inside an Output node, exactly like a {{ ... }} expression.
+   * @todo: For script the above will not work, we have to run the macro call in the parent command scope
+   */
   parseCall() {
     // a call block is parsed as a normal FunCall, but with an added
     // 'caller' kwarg which is a Caller node.
@@ -251,7 +256,7 @@ class Parser extends Obj {
     }
 
     const callerArgs = this.parseSignature(true) || new nodes.NodeList();
-    //const focus = this.parseFocusDirective();
+    const focus = this.parseFocusDirective();
     const macroCall = this.parsePrimary();
 
     this.advanceAfterBlockEnd(callTok.value);
@@ -265,8 +270,8 @@ class Parser extends Obj {
       callTok.colno,
       callerName,
       callerArgs,
-      body
-      //, focus
+      body,
+      focus
     );
 
     // add the additional caller kwarg, adding kwargs if necessary
@@ -689,6 +694,28 @@ class Parser extends Obj {
     return new nodes.FunctionCommand(tag.lineno, tag.colno, call);
   }
 
+  parseOption() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('option')) {
+      this.fail('parseOption: expected option', tag.lineno, tag.colno);
+    }
+
+    // Parse the key (typically a string literal)
+    const key = this.parseExpression();
+
+    // Expect the = operator
+    if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+      this.fail('parseOption: expected =', tag.lineno, tag.colno);
+    }
+
+    // Parse the value (typically a string literal)
+    const value = this.parseExpression();
+
+    this.advanceAfterBlockEnd(tag.value);
+
+    return new nodes.Option(tag.lineno, tag.colno, key, value);
+  }
+
   parseStatement() {
     var tok = this.peekToken();
     var node;
@@ -740,6 +767,8 @@ class Parser extends Obj {
         return this.parseStatementCommand();
       case 'function_command':
         return this.parseFunctionCommand();
+      case 'option':
+        return this.parseOption();
       default:
         if (this.extensions.length) {
           for (let i = 0; i < this.extensions.length; i++) {
@@ -1451,7 +1480,21 @@ class Parser extends Obj {
   }
 
   parseAsRoot() {
-    return new nodes.Root(0, 0, this.parseNodes());
+    //return new nodes.Root(0, 0, this.parseNodes());
+    const start = this.peekToken();
+    const parsedNodes = this.parseNodes();
+    const root = new nodes.Root(start.lineno, start.colno, parsedNodes);
+
+    // Process Option nodes and set root properties
+    parsedNodes.forEach(node => {
+      if (node instanceof nodes.Option) {
+        if (node.key.value === 'focus') {
+          root.focus = node.value.value;
+        }
+      }
+    });
+
+    return root;
   }
 }
 
