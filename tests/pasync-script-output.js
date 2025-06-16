@@ -25,7 +25,7 @@ describe('Cascada Script: Output commands', function () {
    * - All `@` commands are buffered and executed sequentially *after* the parallel fetches complete.
    * - The `:data` directive focuses the final output on the assembled data object.
    */
-  it.only('should run independent operations in parallel and assemble the result object', async () => {
+  it('should run independent operations in parallel and assemble the result object', async () => {
     const context = {
       // Simulate async data fetching for different resources.
       fetchData: async (source) => {
@@ -37,7 +37,7 @@ describe('Cascada Script: Output commands', function () {
 
     const script = `
       // Focus the script's return value to be just the data object.
-      // :data
+      :data
 
       // These two 'set' statements are independent and will run in parallel.
       set userList = fetchData('users')
@@ -70,7 +70,7 @@ describe('Cascada Script: Output commands', function () {
    * - Multiple calls to the same macro run concurrently.
    * - The main script assembles its final output only after all macro calls have completed.
    */
-  it.only('should execute macros in parallel and use their focused results for final assembly', async () => {
+  it('should execute macros in parallel and use their focused results for final assembly', async () => {
     const context = {
       fetchUser: async (id) => {
         const users = {
@@ -94,7 +94,7 @@ describe('Cascada Script: Output commands', function () {
 
       // Define a reusable component. The ':data' directive ensures
       // this macro returns a clean data object, not { data: {...} }.
-      macro buildUserReport(id) // : data
+      macro buildUserReport(id) : data
         // These two fetches inside the macro also run in parallel.
         set userData = fetchUser(id)
         set tasksData = fetchTasks(id)
@@ -136,5 +136,98 @@ describe('Cascada Script: Output commands', function () {
         summary: 'Generated 2 reports'
       }
     });
+  });
+
+  /**
+   * This test demonstrates that caller() blocks can use input focusing
+   * to control what data is returned to the macro.
+   * @todo: The call'ed macro must write directly to the parent scope output data object, this is not yet implemented
+   * @todo: The {% call %} tag is cleverly parsed into a structure where it is treated as a standard FunCall node that is placed inside an Output node, exactly like a {{ ... }} expression.
+   * @todo: For scripts implement merging from the output tag (see above todo)
+   * @todo: Check if the merge concatenates arrays
+   * @todo - just merging will not pop, shift and delete. Mayne we should run in the parent command scope - harder to implement
+   */
+  it('should allow input focusing in caller() blocks', async () => {
+    const script = `
+      macro processUser(id) : data
+        // The caller() block will return just the data object
+        // due to its :data directive
+        set userData = caller()
+        @put result.id id
+        @merge result userData
+      endmacro
+
+      call processUser(123) : data
+        // This block's output is focused to just the data object
+        set user = { name: "Alice", role: "admin" }
+        @put name user.name
+        @put role user.role
+      endcall
+    `;
+
+    const result = await env.renderScriptString(script, {});
+
+    expect(result).to.eql({
+      result: {
+        id: 123,
+        name: 'Alice',
+        role: 'admin'
+      }
+    });
+  });
+
+
+  it('should allow input focusing in set blocks', async () => {
+    const script = `
+      // The set block's output is focused to just the data object
+      set userData :data
+        set user = { name: "Bob", role: "user" }
+        @put name user.name
+        @put role user.role
+      endset
+
+      @put result.user userData
+    `;
+
+    const result = await env.renderScriptString(script, {});
+
+    expect(result).to.eql({
+      result: {
+        user: {
+          name: 'Bob',
+          role: 'user'
+        }
+      }
+    });
+  });
+
+  it(`should not allow input focusing after the '=' in set assignments`, async () => {
+    const script = `
+      // This should throw an error since :data cannot be used
+      // with direct assignment
+      set userData = :data { name: "Charlie" }
+    `;
+
+    try {
+      await env.renderScriptString(script, {});
+      throw new Error('Expected an error to be thrown');
+    } catch (error) {
+      expect(error.message).to.contain('Input focusing cannot be used with direct assignment');
+    }
+  });
+
+  it('should not allow input focusing at the end of set assignments', async () => {
+    const script = `
+      // This should throw an error since :data cannot be used
+      // with direct assignment
+      set userData = { name: "Charlie" } :data
+    `;
+
+    try {
+      await env.renderScriptString(script, {});
+      throw new Error('Expected an error to be thrown');
+    } catch (error) {
+      expect(error.message).to.contain('Input focusing cannot be used with direct assignment');
+    }
   });
 });
