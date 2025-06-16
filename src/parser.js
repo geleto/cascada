@@ -224,8 +224,16 @@ class Parser extends Obj {
 
     const name = this.parsePrimary(true);
     const args = this.parseSignature();
-    const focus = this.parseFocusDirective();
-    const node = new nodes.Macro(macroTok.lineno, macroTok.colno, name, args, null, focus);
+    const node = new nodes.Macro(macroTok.lineno, macroTok.colno, name, args);
+
+    const focusTok = this.peekToken();
+    if (focusTok.type === lexer.TOKEN_COLON) {
+      this.nextToken();//skip the peeked ':'
+      node.focus = this.nextToken();
+      if (!node.focus && node.focus.type !== lexer.TOKEN_SYMBOL) {
+        this.fail('parseMacro: expected focus directive value', focusTok.lineno, focusTok.colno);
+      }
+    }
 
     this.advanceAfterBlockEnd(macroTok.value);
     node.body = this.parseUntilBlocks('endmacro');
@@ -243,7 +251,7 @@ class Parser extends Obj {
     }
 
     const callerArgs = this.parseSignature(true) || new nodes.NodeList();
-    const focus = this.parseFocusDirective();
+    //const focus = this.parseFocusDirective();
     const macroCall = this.parsePrimary();
 
     this.advanceAfterBlockEnd(callTok.value);
@@ -257,8 +265,9 @@ class Parser extends Obj {
       callTok.colno,
       callerName,
       callerArgs,
-      body,
-      focus);
+      body
+      //, focus
+    );
 
     // add the additional caller kwarg, adding kwargs if necessary
     const args = macroCall.args.children;
@@ -525,10 +534,10 @@ class Parser extends Obj {
           tag.colno);
       } else {
         // This is a block assignment, so we can have a focus directive
-        const focus = this.parseFocusDirective();
+        /*const focus = this.parseFocusDirective();
         if (focus) {
           node.focus = focus;
-        }
+        }*/
         node.body = new nodes.Capture(
           tag.lineno,
           tag.colno,
@@ -539,11 +548,11 @@ class Parser extends Obj {
       }
     } else {
       // This is a value assignment, so focus directive is not allowed
-      if (this.peekToken().type === lexer.TOKEN_COLON) {
+      /*if (this.peekToken().type === lexer.TOKEN_COLON) {
         this.fail('parseSet: focus directive not allowed in value assignment',
           tag.lineno,
           tag.colno);
-      }
+      }*/
       node.value = this.parseExpression();
       this.advanceAfterBlockEnd(tag.value);
     }
