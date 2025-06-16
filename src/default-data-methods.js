@@ -55,7 +55,7 @@ module.exports = {
       return (item && typeof item === 'object' && !Array.isArray(item));
     };
 
-    if (!value ) {
+    if (!value) {
       throw new Error('Error: Value for \'deepMerge\' must be a non-null object.');
     }
     if (!isObject(value)) {
