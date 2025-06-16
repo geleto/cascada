@@ -260,6 +260,18 @@ describe('Script Converter', () => {
 
         expect(result.isEmpty).to.equal(true);
       });
+
+      it('should convert :data directive to option focus tag', () => {
+        const line = ':data';
+        const state = { inMultiLineComment: false, stringState: null };
+
+        const result = processLine(line, state);
+
+        expect(result.lineType).to.equal('TAG');
+        expect(result.tagName).to.equal('option');
+        expect(result.codeContent).to.equal('focus="data"');
+        expect(result.blockType).to.equal(null);
+      });
     });
 
     describe('generateOutput', () => {
@@ -884,35 +896,35 @@ endif`;
 
   // Complex integration tests
   describe('Integration Tests', () => {
-    it('should convert a complex script with multiple features', () => {
-      const script = `// User authentication example
-if user.isLoggedIn
-  print "Hello, " + user.name
+    it('should convert a complete script with all features', () => {
+      const script = `
+        // A complete script example
+        :data
+        set user = { name: "Alice", role: "admin" }
+        if user.role == "admin"
+          print "Hello, " + user.name
+          for item in user.items
+            print item.name
+          endfor
+        else
+          print "Access denied"
+        endif
+      `;
 
-  // Display user items
-  for item in user.items
-    // Process each item
-    processedItems.push(item.process())
-
-    if item.isSpecial
-      print "Special: " + item.name
-    else
-      print "Regular: " + item.name
-    endif
-  endfor
-else
-  // Show login prompt
-  print "Please log in"
-endif`;
-
-      const template = scriptToTemplate(script);
-      expect(template).to.contain('{#- User authentication example -#}');
-      expect(template).to.contain('{%- if user.isLoggedIn -%}');
-      expect(template).to.contain('{{- "Hello, " + user.name -}}');
-      expect(template).to.contain('{%- do processedItems.push(item.process()) -%}');
-      expect(template).to.contain('{%- else -%}');
-      expect(template).to.contain('{{- "Please log in" -}}');
-      expect(template).to.contain('{%- endif -%}');
+      const result = scriptToTemplate(script);
+      expect(result).to.equal(`
+        {#- A complete script example -#}
+        {%- option focus="data" -%}
+        {%- do set user = { name: "Alice", role: "admin" } -%}
+        {%- if user.role == "admin" -%}
+          {{- "Hello, " + user.name -}}
+          {%- for item in user.items -%}
+            {{- item.name -}}
+          {%- endfor -%}
+        {%- else -%}
+          {{- "Access denied" -}}
+        {%- endif -%}
+      `);
     });
 
     it('should handle complex mathematical expressions', () => {
