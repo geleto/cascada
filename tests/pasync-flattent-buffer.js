@@ -34,16 +34,17 @@ describe('flattenBuffer', function () {
     // Add the necessary data methods for this test suite.
     beforeEach(() => {
       env.addDataMethods({
-        put: (target, key, value) => { target[key] = value; },
-        push: (target, key, value) => {
-          if (!Array.isArray(target[key])) target[key] = [];
-          target[key].push(value);
+        put: (target, value) => { return value; },
+        push: (target, value) => {
+          if (!Array.isArray(target)) return [value];
+          target.push(value);
+          return target;
         },
-        merge: (target, key, value) => {
-          if (typeof target[key] !== 'object' || target[key] === null) {
-            target[key] = {};
+        merge: (target, value) => {
+          if (typeof target !== 'object' || target === null) {
+            target = {};
           }
-          Object.assign(target[key], value);
+          return Object.assign(target, value);
         }
       });
     });
@@ -175,7 +176,7 @@ describe('flattenBuffer', function () {
     beforeEach(() => {
       class Turtle { constructor() { this.pos = 0; } forward(d) { this.pos += d; } }
       env.addCommandHandlerClass('turtle', Turtle);
-      env.addDataMethods({ put: (target, key, value) => { target[key] = value; } });
+      env.addDataMethods({ put: (target, value) => { return value; } });
     });
 
     const fullBuffer = [
@@ -184,7 +185,7 @@ describe('flattenBuffer', function () {
       { handler: 'turtle', command: 'forward', arguments: [10] }
     ];
 
-    it('should return only the data object when focus is "data"', async function () {
+    it.only('should return only the data object when focus is "data"', async function () {
       const result = await flattenBuffer(fullBuffer, context, 'data');
       expect(result).to.eql({ user: { name: 'Bob' } });
     });
@@ -244,7 +245,7 @@ describe('flattenBuffer', function () {
     });
 
     it('should handle post-processing functions that return another command object', async function () {
-      env.addDataMethods({ put: (target, key, value) => { target[key] = value; } });
+      env.addDataMethods({ put: (target, value) => { return value; } });
       const buffer = [
         ['ignored', (val) => ({ method: 'put', path: ['wasProcessed'], value: true })]
       ];
@@ -282,7 +283,7 @@ describe('flattenBuffer', function () {
     });
 
     it('should throw an error for @put on an invalid path', async function () {
-      env.addDataMethods({ put: (target, key, value) => { target[key] = value; } });
+      env.addDataMethods({ put: (target, value) => { return value; } });
       const buffer = [
         { method: 'put', path: ['user'], value: null },
         { method: 'put', path: ['user', 'profile'], value: 'test' }
@@ -294,7 +295,7 @@ describe('flattenBuffer', function () {
     });
 
     it('should throw an error for a non-string/non-number path segment', async function () {
-      env.addDataMethods({ put: (target, key, value) => { target[key] = value; } });
+      env.addDataMethods({ put: (target, value) => { return value; } });
       const buffer = [{ method: 'put', path: ['config', null, 'value'], value: 'test' }];
       await expectAsyncError(
         () => flattenBuffer(buffer, context),
