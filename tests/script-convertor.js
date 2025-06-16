@@ -293,7 +293,8 @@ describe('Script Converter', () => {
         const processedLine = {
           indentation: '  ',
           lineType: 'TAG',
-          codeContent: 'if condition',
+          tagName: 'if',
+          codeContent: 'condition',
           comments: [],
           isContinuation: false
         };
@@ -335,8 +336,8 @@ describe('Script Converter', () => {
     describe('validateBlockStructure', () => {
       it('should validate correct block structure', () => {
         const processedLines = [
-          { blockType: 'START', codeContent: 'if condition', isContinuation: false },
-          { blockType: 'END', codeContent: 'endif', isContinuation: false }
+          { blockType: 'START', tagName: 'if', codeContent: 'condition', isContinuation: false },
+          { blockType: 'END', tagName: 'endif', codeContent: '', isContinuation: false }
         ];
 
         validateBlockStructure(processedLines);
@@ -344,7 +345,7 @@ describe('Script Converter', () => {
 
       it('should detect unclosed blocks', () => {
         const processedLines = [
-          { blockType: 'START', codeContent: 'if condition', isContinuation: false }
+          { blockType: 'START', tagName: 'if', codeContent: 'condition', isContinuation: false }
         ];
 
         try {
@@ -356,8 +357,8 @@ describe('Script Converter', () => {
 
       it('should detect mismatched tags', () => {
         const processedLines = [
-          { blockType: 'START', codeContent: 'if condition', isContinuation: false },
-          { blockType: 'END', codeContent: 'endfor', isContinuation: false }
+          { blockType: 'START', tagName: 'if', codeContent: 'condition', isContinuation: false },
+          { blockType: 'END', tagName: 'endfor', codeContent: '', isContinuation: false }
         ];
 
         try {
@@ -369,9 +370,9 @@ describe('Script Converter', () => {
 
       it('should validate correct middle tags', () => {
         const processedLines = [
-          { blockType: 'START', codeContent: 'if condition', isContinuation: false },
-          { blockType: 'MIDDLE', codeContent: 'else', isContinuation: false },
-          { blockType: 'END', codeContent: 'endif', isContinuation: false }
+          { blockType: 'START', tagName: 'if', codeContent: 'condition', isContinuation: false },
+          { blockType: 'MIDDLE', tagName: 'else', codeContent: '', isContinuation: false },
+          { blockType: 'END', tagName: 'endif', codeContent: '', isContinuation: false }
         ];
 
         validateBlockStructure(processedLines);
@@ -379,9 +380,9 @@ describe('Script Converter', () => {
 
       it('should detect invalid middle tags', () => {
         const processedLines = [
-          { blockType: 'START', codeContent: 'for item in items', isContinuation: false },
-          { blockType: 'MIDDLE', codeContent: 'elif', isContinuation: false },
-          { blockType: 'END', codeContent: 'endfor', isContinuation: false }
+          { blockType: 'START', tagName: 'for', codeContent: 'item in items', isContinuation: false },
+          { blockType: 'MIDDLE', tagName: 'elif', codeContent: '', isContinuation: false },
+          { blockType: 'END', tagName: 'endfor', codeContent: '', isContinuation: false }
         ];
 
         try {
@@ -393,7 +394,7 @@ describe('Script Converter', () => {
 
       it('should detect middle tags outside blocks', () => {
         const processedLines = [
-          { blockType: 'MIDDLE', codeContent: 'else', isContinuation: false }
+          { blockType: 'MIDDLE', tagName: 'else', codeContent: '', isContinuation: false }
         ];
 
         try {
@@ -405,14 +406,14 @@ describe('Script Converter', () => {
 
       it('should validate complex nested structures', () => {
         const processedLines = [
-          { blockType: 'START', codeContent: 'if outer', isContinuation: false },
-          { blockType: 'START', codeContent: 'for item in items', isContinuation: false },
-          { blockType: 'START', codeContent: 'if inner', isContinuation: false },
-          { blockType: 'MIDDLE', codeContent: 'else', isContinuation: false },
-          { blockType: 'END', codeContent: 'endif', isContinuation: false },
-          { blockType: 'END', codeContent: 'endfor', isContinuation: false },
-          { blockType: 'MIDDLE', codeContent: 'else', isContinuation: false },
-          { blockType: 'END', codeContent: 'endif', isContinuation: false }
+          { blockType: 'START', tagName: 'if', codeContent: 'outer', isContinuation: false },
+          { blockType: 'START', tagName: 'for', codeContent: 'item in items', isContinuation: false },
+          { blockType: 'START', tagName: 'if', codeContent: 'inner', isContinuation: false },
+          { blockType: 'MIDDLE', tagName: 'else', codeContent: '', isContinuation: false },
+          { blockType: 'END', tagName: 'endif', codeContent: '', isContinuation: false },
+          { blockType: 'END', tagName: 'endfor', codeContent: '', isContinuation: false },
+          { blockType: 'MIDDLE', tagName: 'else', codeContent: '', isContinuation: false },
+          { blockType: 'END', tagName: 'endif', codeContent: '', isContinuation: false }
         ];
 
         validateBlockStructure(processedLines);
@@ -420,7 +421,7 @@ describe('Script Converter', () => {
 
       it('should detect invalid resume outside try block', () => {
         const processedLines = [
-          { blockType: 'MIDDLE', codeContent: 'resume', isContinuation: false }
+          { blockType: 'MIDDLE', tagName: 'resume', codeContent: '', isContinuation: false }
         ];
 
         try {
@@ -432,10 +433,10 @@ describe('Script Converter', () => {
 
       it('should validate try/resume/except structure', () => {
         const processedLines = [
-          { blockType: 'START', codeContent: 'try', isContinuation: false },
-          { blockType: 'MIDDLE', codeContent: 'resume', isContinuation: false },
-          { blockType: 'MIDDLE', codeContent: 'except', isContinuation: false },
-          { blockType: 'END', codeContent: 'endtry', isContinuation: false }
+          { blockType: 'START', tagName: 'try', codeContent: '', isContinuation: false },
+          { blockType: 'MIDDLE', tagName: 'resume', codeContent: '', isContinuation: false },
+          { blockType: 'MIDDLE', tagName: 'except', codeContent: '', isContinuation: false },
+          { blockType: 'END', tagName: 'endtry', codeContent: '', isContinuation: false }
         ];
 
         validateBlockStructure(processedLines);
@@ -915,7 +916,7 @@ endif`;
       expect(result).to.equal(`
         {#- A complete script example -#}
         {%- option focus="data" -%}
-        {%- do set user = { name: "Alice", role: "admin" } -%}
+        {%- set user = { name: "Alice", role: "admin" } -%}
         {%- if user.role == "admin" -%}
           {{- "Hello, " + user.name -}}
           {%- for item in user.items -%}

@@ -536,13 +536,13 @@ function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLi
         output += '{%- do';
         break;
     }
+    if (processedLine.codeContent) {
+      //add space between tag and code content
+      output += ' ';
+    }
   }
+  output += processedLine.codeContent;
 
-  if (processedLine.codeContent) {
-    output += ' ' + processedLine.codeContent;
-  }
-
-  //@todo - find the continuationLineType
   if (!nextIsContinuation) {
     //close the tag
     switch (lastNonContinuationLineType) {

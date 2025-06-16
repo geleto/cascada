@@ -449,7 +449,7 @@ endfor
 </tr>
 </table>
 
-##### 2. Macro Body (`macro ... endmacro`)
+##### 2. Macro Body (`macro ... endmacro`) and caller block
 Commands inside a `macro` are assembled when the **macro call completes**. They build a structured object that becomes the immediate **return value** of that macro. This lets you create reusable components that perform their own internal, parallel async operations.
 
 <table>
