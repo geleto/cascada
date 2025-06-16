@@ -111,7 +111,7 @@ const BLOCK_TYPE = {
 const SYNTAX = {
   // Block-related tags
   blockTags: ['for', 'if', 'block', 'macro', 'filter', 'call', 'raw', 'verbatim', 'while', 'try'],
-  lineTags: ['set', 'include', 'extends', 'from', 'import', 'depends'],
+  lineTags: ['set', 'include', 'extends', 'from', 'import', 'depends', 'option'],
 
   // Middle tags with their parent block types
   middleTags: {
@@ -418,7 +418,8 @@ function processLine(line, state) {
 
   // Handle special @-command syntax before checking for standard keywords.
   const firstWord = getFirstWord(parseResult.codeContent);
-  if (parseResult.codeContent.trim().startsWith('@')) {
+  const code = parseResult.codeContent.trim();
+  if (code.startsWith('@')) {
     // Find the @ symbol position and preserve all whitespace after it
     const atIndex = parseResult.codeContent.indexOf('@');
     const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
@@ -428,6 +429,18 @@ function processLine(line, state) {
     parseResult.tagName = isFunctionStyle ? 'function_command' : 'statement_command';
     parseResult.blockType = null;
     parseResult.codeContent = commandContent; // The content for the Nunjucks tag
+  } else if (code.startsWith(':')) {
+    // Handle :data/text/handleName output focus directive
+    const focus = code.substring(1); // Remove : but keep the directive name
+    if (!focus) {
+      throw new Error(`Invalid output focus: "${parseResult.codeContent}"`);
+    }
+    if (focus === 'data') {
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = 'option';
+      parseResult.blockType = null;//no block
+      parseResult.codeContent = `focus="${focus}"`;
+    }
   } else {
     // Standard keyword processing
     if (RESERVED_KEYWORDS.has(firstWord)) {
@@ -439,6 +452,7 @@ function processLine(line, state) {
         parseResult.codeContent = parseResult.codeContent.substring(printPos + 'print'.length).trim(); // Remove 'print'
       } else {
         parseResult.lineType = 'TAG';
+        parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1);//skip the first word
         parseResult.blockType = getBlockType(firstWord);
         parseResult.tagName = firstWord;
       }
@@ -507,13 +521,13 @@ function generateOutput(processedLine, nextIsContinuation, lastNonContinuationLi
   if (!processedLine.isContinuation) {
     switch (processedLine.lineType) {
       case 'TAG':
-        output += '{%- ';
-        if (processedLine.tagName) {
+        output += `{%- ${processedLine.tagName} `;
+        /*if (processedLine.tagName) {
           // For internal commands, prepend the tag name that the Nunjucks parser expects
           if (processedLine.tagName === 'function_command' || processedLine.tagName === 'statement_command') {
             output += processedLine.tagName + ' ';
           }
-        }
+        }*/
         break;
       case 'PRINT':
         output += '{{- ';
@@ -561,7 +575,7 @@ function validateBlockStructure(processedLines) {
 
     if (!line.blockType || line.isContinuation) continue;
 
-    const tag = getFirstWord(line.codeContent);
+    const tag = line.tagName;//getFirstWord(line.codeContent);
     if (line.blockType === BLOCK_TYPE.START) {
       stack.push({ tag, line: i + 1 });
     }
