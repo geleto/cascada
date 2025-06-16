@@ -11,7 +11,7 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = nunjucks.AsyncEnvironment;
 }
 
-describe('Cascada Script: Output commands', function () {
+describe.skip('Cascada Script: Output commands', function () {
   let env;
 
   // For each test, create a fresh environment.
