@@ -48,7 +48,8 @@ describe('Script Converter', () => {
         expect(getBlockType('endblock')).to.equal('END');
         expect(getBlockType('endmacro')).to.equal('END');
         expect(getBlockType('print')).to.equal(null);
-        expect(getBlockType('set')).to.equal(null);
+        expect(getBlockType('set', 'x')).to.equal('START');
+        expect(getBlockType('set', 'x = 1')).to.equal(null);
       });
     });
 
