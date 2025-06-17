@@ -731,24 +731,27 @@ set userObject = buildUser("Alice")
 </table>
 
 ### The `call` Block
-The call block from Nunjucks, used for passing content to macros for text output, is not implemented in Cascada Script. Its functionality is covered by capture blocks and macro calls, aligning with Cascada’s data-driven focus while simplifying the language.
+The call block from Nunjucks, used for passing content to macros for text output, is not implemented in Cascada Script. Its functionality is covered by set blocks and macro calls, aligning with Cascada’s data-driven focus while simplifying the language.
 
-### The `capture` Block
-Commands inside a `capture` block are assembled when the **capture block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use. You can focus its output just like a macro.
+### The `set` Block (Block Assignment)
+
+In Cascada Script, a `set` tag used without an assignment (`=`) becomes a **block assignment**. It captures the output generated within its body—including the result of Output Commands (`@`)—and assigns it to a variable. This provides the same functionality as the `capture` tag found in some other template engines, but with a more integrated syntax.
+
+Commands inside a `set` block are assembled when the **block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use. You can focus its output with `:data` just like a macro, ensuring the variable contains a clean data object instead of the full result object.
 
 <table>
 <tr>
 <td width="50%" valign="top">
 <details open>
-<summary><strong>Capture with <code>:data</code> focus</strong></summary>
+<summary><strong><code>set</code> Block with <code>:data</code> focus</strong></summary>
 
 ```javascript
 // The :data directive focuses the
 // value assigned to 'permissions'.
-capture permissions : data
+set permissions : data
   @push grants "read"
   @push grants "write"
-endcapture
+endset
 
 // 'permissions' is now { grants: [...] },
 // not { data: { grants: [...] } }.
