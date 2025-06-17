@@ -516,13 +516,14 @@ class Parser extends Obj {
 
     if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
       // no =, so this is a block assignment
+      let focus;
       if (this.skip(lexer.TOKEN_COLON)) {
         // a focus directive is allowed for block assignments
         const tok = this.nextToken();
         if (!tok && tok.type !== lexer.TOKEN_SYMBOL) {
           this.fail('parseSet: expected focus directive value', tok.lineno, tok.colno);
         } else {
-          node.focus = tok.value;
+          focus = tok.value;
         }
       }
 
@@ -534,7 +535,8 @@ class Parser extends Obj {
         node.body = new nodes.Capture(
           tag.lineno,
           tag.colno,
-          this.parseUntilBlocks('endset')
+          this.parseUntilBlocks('endset'),
+          focus
         );
         node.value = null;
         this.advanceAfterBlockEnd();
