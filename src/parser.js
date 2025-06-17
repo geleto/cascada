@@ -203,19 +203,6 @@ class Parser extends Obj {
     return node;
   }
 
-  parseFocusDirective() {
-    // Check for a colon token
-    if (!this.skip(lexer.TOKEN_COLON)) {
-      return null;
-    }
-
-    // Expect a symbol token (e.g. 'data', 'text')
-    const tok = this.expect(lexer.TOKEN_SYMBOL);
-
-    // Parse the symbol into a Symbol node
-    return new nodes.Symbol(tok.lineno, tok.colno, tok.value);
-  }
-
   parseMacro() {
     const macroTok = this.peekToken();
     if (!this.skipSymbol('macro')) {
@@ -226,12 +213,12 @@ class Parser extends Obj {
     const args = this.parseSignature();
     const node = new nodes.Macro(macroTok.lineno, macroTok.colno, name, args);
 
-    const focusTok = this.peekToken();
-    if (focusTok.type === lexer.TOKEN_COLON) {
-      this.nextToken();//skip the peeked ':'
+    if (this.skip(lexer.TOKEN_COLON)) {
       node.focus = this.nextToken();
       if (!node.focus && node.focus.type !== lexer.TOKEN_SYMBOL) {
-        this.fail('parseMacro: expected focus directive value', focusTok.lineno, focusTok.colno);
+        this.fail('parseMacro: expected focus directive value', node.focus.lineno, node.focus.colno);
+      } else {
+        node.focus = node.focus.value;
       }
     }
 
@@ -528,16 +515,22 @@ class Parser extends Obj {
     }
 
     if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+      // no =, so this is a block assignment
+      if (this.skip(lexer.TOKEN_COLON)) {
+        // a focus directive is allowed for block assignments
+        const tok = this.nextToken();
+        if (!tok && tok.type !== lexer.TOKEN_SYMBOL) {
+          this.fail('parseSet: expected focus directive value', tok.lineno, tok.colno);
+        } else {
+          node.focus = tok.value;
+        }
+      }
+
       if (!this.skip(lexer.TOKEN_BLOCK_END)) {
         this.fail('parseSet: expected = or block end in set tag',
           tag.lineno,
           tag.colno);
       } else {
-        // This is a block assignment, so we can have a focus directive
-        /*const focus = this.parseFocusDirective();
-        if (focus) {
-          node.focus = focus;
-        }*/
         node.body = new nodes.Capture(
           tag.lineno,
           tag.colno,
@@ -1485,6 +1478,8 @@ class Parser extends Obj {
       if (node instanceof nodes.Option) {
         if (node.key.value === 'focus') {
           root.focus = node.value.value;
+        } else {
+          this.fail('parseAsRoot: unknown option: ' + node.key.value, node.lineno, node.colno);
         }
       }
     });
