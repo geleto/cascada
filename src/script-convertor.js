@@ -110,7 +110,7 @@ const BLOCK_TYPE = {
 // Define block-related configuration
 const SYNTAX = {
   // Block-related tags
-  blockTags: ['for', 'if', 'block', 'macro', 'filter', 'call', 'raw', 'verbatim', 'while', 'try'],
+  blockTags: ['for', 'if', 'block', 'macro', 'filter', 'raw', 'verbatim', 'while', 'try'],
   lineTags: ['set', 'include', 'extends', 'from', 'import', 'depends', 'option'],
 
   // Middle tags with their parent block types

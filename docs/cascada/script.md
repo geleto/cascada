@@ -497,54 +497,6 @@ set salesDept = buildDepartment("sales")
 </tr>
 </table>
 
-Macros can also accept a block of content using a `call` block. Inside the macro, the special `caller()` function executes this bloc which builds its own result object, returned by `caller()`, allowing the macro to incorporate it into its own output.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Cascada Script with <code>caller()</code></strong></summary>
-
-```javascript
-macro panel(title) : data
-  @put pane.title title
-  // Execute the 'call' block's logic
-  // and get its result object.
-  set content = caller()
-  // Merge the result into the panel.
-  @merge pane.body content
-endmacro
-
-// Pass a block of logic into the macro.
-call panel("User Details") : data
-  // This logic builds the object that
-  // caller() will return.
-  @put name "Alice"
-  @put status "Active"
-endcall
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value (`:data` focused)</strong></summary>
-
-```json
-{
-  "pane": {
-    "title": "User Details",
-    "body": {
-      "name": "Alice",
-      "status": "Active"
-    }
-  }
-}
-```
-</details>
-</td>
-</tr>
-</table>
-
 ##### 3. Capture Block (`capture ... endcapture`)
 Commands inside a `capture` block are assembled when the **capture block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use.
 
@@ -779,26 +731,7 @@ set userObject = buildUser("Alice")
 </table>
 
 ### The `call` Block
-A `call` block allows you to pass a block of logic into a macro. This content is available inside the macro via a special function called `caller()`. When invoked, `caller()` executes the block, which builds its own result object using output commands. `caller()` then returns this result object.
-
-```javascript
-// Define a macro that wraps content
-macro withWrapper(title) : data
-  @put block.title title
-  // caller() executes the logic from the 'call' block
-  // and returns the object it built.
-  set contentObject = caller()
-  @put block.content contentObject.username
-endmacro
-
-// Use 'call' to provide the logic to the macro
-call withWrapper("User Data") : data
-  // This logic is executed by caller().
-  // It uses @put to build its own result.
-  set user = fetchUser(123)
-  @put username user.name
-endcall
-```
+The call block from Nunjucks, used for passing content to macros for text output, is not implemented in Cascada Script. Its functionality is covered by capture blocks and macro calls, aligning with Cascada’s data-driven focus while simplifying the language.
 
 ### The `capture` Block
 Commands inside a `capture` block are assembled when the **capture block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use. You can focus its output just like a macro.

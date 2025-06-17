@@ -242,11 +242,6 @@ class Parser extends Obj {
     return node;
   }
 
-  /**
-   * @todo: The call'ed macro must write directly to the parent scope output data object, this is not yet implemented
-   * @todo: The {% call %} tag is cleverly parsed into a structure where it is treated as a standard FunCall node that is placed inside an Output node, exactly like a {{ ... }} expression.
-   * @todo: For script the above will not work, we have to run the macro call in the parent command scope
-   */
   parseCall() {
     // a call block is parsed as a normal FunCall, but with an added
     // 'caller' kwarg which is a Caller node.
@@ -256,7 +251,7 @@ class Parser extends Obj {
     }
 
     const callerArgs = this.parseSignature(true) || new nodes.NodeList();
-    const focus = this.parseFocusDirective();
+    //const focus = this.parseFocusDirective();
     const macroCall = this.parsePrimary();
 
     this.advanceAfterBlockEnd(callTok.value);
@@ -271,7 +266,7 @@ class Parser extends Obj {
       callerName,
       callerArgs,
       body,
-      focus
+      //focus
     );
 
     // add the additional caller kwarg, adding kwargs if necessary
