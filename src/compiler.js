@@ -1438,7 +1438,8 @@ class Compiler extends Obj {
     //this.emit.line(`return ${node.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
     this.emit.line('return ' + (
       node.isAsync ?
-        `astate.waitAllClosures().then(() => {if (${err}) throw ${err}; return runtime.newSafeStringAsync(runtime.flattenBuffer(${bufferId}${this.scriptMode ? ', context' : ''}));}).catch(error => Promise.reject(error));` :
+        `astate.waitAllClosures().then(() => {if (${err}) throw ${err};` +
+        `return runtime.newSafeStringAsync(runtime.flattenBuffer(${bufferId}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));}).catch(error => Promise.reject(error));` :
         `new runtime.SafeString(${bufferId})`
     )
     );
@@ -1811,7 +1812,7 @@ class Compiler extends Obj {
         this.compile(n.body, f);//write to output
 
         this.emit.line('await astate.waitAllClosures(1)');
-        this.emit.line(`let ${res} = runtime.flattenBuffer(output${this.scriptMode ? ', context' : ''});`);
+        this.emit.line(`let ${res} = runtime.flattenBuffer(output${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''});`);
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
       }, res, node.body);
     }
@@ -1931,7 +1932,7 @@ class Compiler extends Obj {
       this.emit.line('  if(parentTemplate) {');
       this.emit.line('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
       this.emit.line('  } else {');
-      this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer}${this.scriptMode ? ', context' : ''}));`);
+      this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
       // Use static node position for root catch in async mode
@@ -1953,7 +1954,7 @@ class Compiler extends Obj {
       if (this.asyncMode) {
         // This case (sync root in asyncMode) might be unlikely/problematic,
         // but keep flatten for consistency if it somehow occurs.
-        this.emit.line(`cb(null, runtime.flattenBuffer(${this.buffer}));`);
+        this.emit.line(`cb(null, runtime.flattenBuffer(${this.buffer}${node.focus ? ', "' + node.focus + '"' : ''}));`);
       } else {
         this.emit.line(`cb(null, ${this.buffer});`);
       }
