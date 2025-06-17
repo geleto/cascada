@@ -5,7 +5,7 @@ const {
   TOKEN_SUBTYPES,
   isValidRegexContext,
   hasCompleteRegexPattern
-} = require('../src/script-parser');
+} = require('../src/script-lexer');
 
 describe('Script Parser', function() {
 

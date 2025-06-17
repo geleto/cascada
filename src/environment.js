@@ -12,7 +12,7 @@ const { Obj, EmitterObj } = require('./object');
 const globalRuntime = require('./runtime');
 const { handleError, Frame, AsyncFrame, AsyncState } = globalRuntime;
 const expressApp = require('./express-app');
-const { scriptToTemplate } = require('./script-convertor');
+const { scriptToTemplate } = require('./script-transpiler');
 const defaultDataMethods = require('./default-data-methods');
 
 // If the user is using the async API, *always* call it

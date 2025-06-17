@@ -1,7 +1,7 @@
 const { scriptToTemplate, getFirstWord, isCompleteWord, getBlockType,
   extractComments, filterOutComments, tokensToCode, willContinueToNextLine,
-  continuesFromPrevious, generateOutput, processedLine: processLine, validateBlockStructure } = require('../src/script-convertor');
-const { TOKEN_TYPES } = require('../src/script-parser');
+  continuesFromPrevious, generateOutput, processedLine: processLine, validateBlockStructure } = require('../src/script-transpiler');
+const { TOKEN_TYPES } = require('../src/script-lexer');
 const expect = require('expect.js');
 
 describe('Script Converter', () => {

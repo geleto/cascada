@@ -2,7 +2,7 @@
  * Cascada Script to Template Converter
  *
  * Converts Cascada script syntax to Nunjucks/Cascada template syntax.
- * Uses script-parser for token extraction and handling.
+ * Uses script-lexer for token extraction and handling.
  *
  * Cascada scripts provide a cleaner syntax for writing Cascada templates with less visual noise.
  * This module converts Cascada script files to standard Nunjucks/Cascada template syntax.
@@ -92,7 +92,7 @@
  */
 
 // Import the script parser
-const { parseTemplateLine, TOKEN_TYPES } = require('./script-parser');
+const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
 
 // Comment type constants
 const COMMENT_TYPE = {
@@ -236,7 +236,7 @@ function getBlockType(tag, code) {
 
 /**
  * Extracts comments from parser tokens
- * @param {Array} tokens - Array of tokens from script-parser
+ * @param {Array} tokens - Array of tokens from script-lexer
  * @return {Array} Array of comment objects with type and content
  */
 function extractComments(tokens) {
@@ -260,7 +260,7 @@ function extractComments(tokens) {
 
 /**
  * Filters out comment tokens from all tokens
- * @param {Array} tokens - Array of tokens from script-parser
+ * @param {Array} tokens - Array of tokens from script-lexer
  * @return {Array} Tokens without comments
  */
 function filterOutComments(tokens) {
