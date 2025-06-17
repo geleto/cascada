@@ -99,7 +99,7 @@ const For = Node.extend('For', { fields: ['arr', 'name', 'body', 'else_'] });
 const AsyncEach = For.extend('AsyncEach');
 const AsyncAll = For.extend('AsyncAll');
 const Macro = Node.extend('Macro', {
-  fields: ['name', 'args', 'body', 'focus']
+  fields: ['name', 'args', 'body']
 });
 const Caller = Macro.extend('Caller');
 const Import = Node.extend('Import', { fields: ['template', 'target', 'withContext'] });
@@ -123,12 +123,12 @@ const TemplateRef = Node.extend('TemplateRef', { fields: ['template'] });
 const Extends = TemplateRef.extend('Extends');
 const Include = Node.extend('Include', { fields: ['template', 'ignoreMissing'] });
 const Set = Node.extend('Set', {
-  fields: ['targets', 'value', 'focus']
+  fields: ['targets', 'value']
 });
 const Switch = Node.extend('Switch', { fields: ['expr', 'cases', 'default'] });
 const Case = Node.extend('Case', { fields: ['cond', 'body'] });
 const Output = NodeList.extend('Output');
-const Capture = Node.extend('Capture', { fields: ['body'] });
+const Capture = Node.extend('Capture', { fields: ['body', 'focus'] });
 const Option = Node.extend('Option', { fields: ['key', 'value'] });
 const TemplateData = Literal.extend('TemplateData');
 const UnaryOp = Node.extend('UnaryOp', { fields: ['target'] });
