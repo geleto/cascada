@@ -110,7 +110,7 @@ const BLOCK_TYPE = {
 // Define block-related configuration
 const SYNTAX = {
   // Block-related tags
-  blockTags: ['for', 'if', 'block', 'macro', 'filter', 'raw', 'verbatim', 'while', 'try'],
+  blockTags: ['for', 'if', 'block', 'macro', 'filter', 'raw', 'verbatim', 'while', 'try'], //asyncEach, asyncAll
   lineTags: ['set', 'include', 'extends', 'from', 'import', 'depends', 'option'],
 
   // Middle tags with their parent block types
@@ -132,7 +132,8 @@ const SYNTAX = {
     'raw': 'endraw',
     'verbatim': 'endverbatim',
     'while': 'endwhile',
-    'try': 'endtry'
+    'try': 'endtry',
+    'set': 'endset'//only when no = in the set, then the block has to be closed
   },
 
   // Tags that should never be treated as multi-line
@@ -219,11 +220,18 @@ function isCompleteWord(text, position, length) {
  * @param {string} tag - The tag to check
  * @return {string|null} The block type (START, MIDDLE, END) or null
  */
-function getBlockType(tag) {
+function getBlockType(tag, code) {
+  if (tag === 'set') {
+    if (code.includes('=')) {
+      //a set with assignment is a line tag
+      return null;//not a block
+    }
+    return BLOCK_TYPE.START;
+  }
   if (SYNTAX.blockTags.includes(tag)) return BLOCK_TYPE.START;
   if (Object.keys(SYNTAX.middleTags).includes(tag)) return BLOCK_TYPE.MIDDLE;
   if (Object.values(SYNTAX.blockPairs).includes(tag)) return BLOCK_TYPE.END;
-  return null;
+  return null;//not a block
 }
 
 /**
@@ -453,7 +461,7 @@ function processLine(line, state) {
       } else {
         parseResult.lineType = 'TAG';
         parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1);//skip the first word
-        parseResult.blockType = getBlockType(firstWord);
+        parseResult.blockType = getBlockType(firstWord, code);
         parseResult.tagName = firstWord;
       }
     } else {
