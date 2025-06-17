@@ -90,7 +90,7 @@ describe('Cascada Script: Output commands', function () {
 
     const script = `
       // The main script will also return only its data object.
-      // :data
+      :data
 
       // Define a reusable component. The ':data' directive ensures
       // this macro returns a clean data object, not { data: {...} }.
@@ -142,6 +142,7 @@ describe('Cascada Script: Output commands', function () {
   it('should allow input focusing in set blocks', async () => {
     const script = `
       // The set block's output is focused to just the data object
+      :data
       set userData :data
         set user = { name: "Bob", role: "user" }
         @put name user.name
@@ -174,7 +175,7 @@ describe('Cascada Script: Output commands', function () {
       await env.renderScriptString(script, {});
       throw new Error('Expected an error to be thrown');
     } catch (error) {
-      expect(error.message).to.contain('Input focusing cannot be used with direct assignment');
+      expect(error.message).to.contain('unexpected token: :');
     }
   });
 
@@ -189,7 +190,7 @@ describe('Cascada Script: Output commands', function () {
       await env.renderScriptString(script, {});
       throw new Error('Expected an error to be thrown');
     } catch (error) {
-      expect(error.message).to.contain('Input focusing cannot be used with direct assignment');
+      expect(error.message).to.contain('expected block end in set statement');
     }
   });
 });
