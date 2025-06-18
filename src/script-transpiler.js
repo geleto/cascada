@@ -171,7 +171,7 @@ const RESERVED_KEYWORDS = new Set([
   ...SYNTAX.lineTags,
   ...Object.keys(SYNTAX.middleTags),
   ...Object.values(SYNTAX.blockPairs)
-]);``
+]);
 
 /**
  * Extracts the first word from a string, ensuring it's a complete word
@@ -182,11 +182,6 @@ function getFirstWord(text) {
   // Get the first space-separated word
   const match = text.trim().match(/^(@?[a-zA-Z0-9_]+)(?:\s|$)/);
   return match ? match[1] : '';
-}
-
-function splitArgs(text) {
-  //split the text into words, ignoring spaces, tabs, newlines, etc.
-  return text.trim().split(/\s+/);
 }
 
 /**
@@ -218,6 +213,174 @@ function isCompleteWord(text, position, length) {
 
   return true;
 }
+
+function isValidPathChar(char) {
+  return /[a-zA-Z0-9_.]/.test(char);
+}
+
+/**
+ * Checks if a character is a valid start for a value expression.
+ */
+function isAllowedValueStart(char) {
+  // Identifier, Digit, Quote, or Grouping Character
+  return /[a-zA-Z_$\d"'{[(]/.test(char) || char === '`';
+}
+
+/**
+ * Analyzes a stream of tokens for a Cascada Script output command line.
+ * Unary + and are not allowed after a path, use (-x)
+ *
+ * @param {Array<object>} tokens The array of tokens from the lexer.
+ * @returns {{command: string, path: string | null, value: string | null}}
+ * @throws {Error} If the command syntax is invalid.
+ */
+function analyzeCommandSyntax(tokens, lineIndex) {
+  let state = 'PARSING_COMMAND';
+  let skippingWhitespace = true;
+
+  let bracketLevel = 0;
+  let commandBuffer = '';
+  let pathBuffer = '';
+  let valueBuffer = '';
+  let separatorBuffer = '';
+  let isValueStart = true;
+
+  const setState = (newState) => {
+    state = newState;
+    skippingWhitespace = true;
+  };
+
+  const switchState = (newState) => {
+    state = newState;
+  };
+
+  for (const token of tokens) {
+    if (token.type === 'COMMENT') continue;
+
+    if (token.type === 'STRING' && state === 'PARSING_PATH' && bracketLevel === 0) {
+      // There can be no string in the path, this is a value
+      switchState('PARSING_VALUE');
+      skippingWhitespace = false;
+      isValueStart = false;
+      valueBuffer = pathBuffer + token.value;
+      pathBuffer = '';
+      continue;
+    }
+
+    if (token.type !== 'CODE') {
+      // Strings, regexes, etc.
+      switch (state) {
+        case 'PARSING_COMMAND':
+          throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Command name cannot be a string, regex, or comment.`);
+        case 'PARSING_PATH':
+          if (bracketLevel > 0) {
+            pathBuffer += token.value;
+          } else {
+            valueBuffer = pathBuffer + separatorBuffer + token.value;
+            pathBuffer = '';
+            separatorBuffer = '';
+            switchState('PARSING_VALUE');
+            isValueStart = false;
+          }
+          break;
+        case 'PARSING_VALUE':
+          valueBuffer += token.value;
+          isValueStart = false;
+          break;
+      }
+      continue;
+    }
+
+    for (const char of token.value) {
+      if (skippingWhitespace) {
+        if (/\s/.test(char)) {
+          if (state === 'PARSING_VALUE') {
+            separatorBuffer += char; // Capture separator whitespace
+          }
+          continue;
+        }
+        skippingWhitespace = false;
+      }
+
+      switch (state) {
+        case 'PARSING_COMMAND':
+          if (/\s/.test(char)) {
+            setState('PARSING_PATH');
+          } else {
+            commandBuffer += char;
+          }
+          break;
+        case 'PARSING_PATH':
+          if (char === '[') {
+            pathBuffer += char;
+            bracketLevel++;
+          } else if (char === ']') {
+            pathBuffer += char;
+            bracketLevel--;
+            if (bracketLevel < 0) throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched closing bracket ']'.`);
+          } else if (bracketLevel === 0) {
+            if (/\s/.test(char)) {
+              // *** FIX STARTS HERE ***
+              if (pathBuffer.endsWith('.')) {
+                // Invalid path termination (e.g., "user."). Backtrack.
+                valueBuffer = pathBuffer + char;
+                pathBuffer = '';
+                switchState('PARSING_VALUE');
+                skippingWhitespace = false; // The space is part of the value now
+              } else {
+                // Path looks valid so far, switch to parsing the value.
+                setState('PARSING_VALUE');
+                separatorBuffer += char;
+              }
+              // *** FIX ENDS HERE ***
+            } else if (isValidPathChar(char)) {
+              pathBuffer += char;
+            } else {
+              // Path is broken by an invalid character. Backtrack.
+              valueBuffer = pathBuffer + char;
+              pathBuffer = '';
+              switchState('PARSING_VALUE');
+            }
+          } else {
+            pathBuffer += char;
+          }
+          break;
+        case 'PARSING_VALUE':
+          if (isValueStart) {
+            if (!isAllowedValueStart(char)) {
+              // Path-breaker found. Backtrack.
+              valueBuffer = pathBuffer + separatorBuffer + char;
+              pathBuffer = '';
+              separatorBuffer = '';
+            } else {
+              valueBuffer += char;
+            }
+            isValueStart = false;
+          } else {
+            valueBuffer += char;
+          }
+          break;
+      }
+    }
+  }
+
+  if (bracketLevel > 0) throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched opening bracket '['.`);
+  if (state === 'PARSING_PATH') {
+    valueBuffer = pathBuffer;
+    pathBuffer = '';
+  }
+  if (pathBuffer && valueBuffer.trim() === '') {
+    valueBuffer = pathBuffer;
+    pathBuffer = '';
+  }
+
+  return {
+    command: commandBuffer.substring(1),
+    path: !pathBuffer ? null : pathBuffer.trim(),
+    value: !valueBuffer ? null : valueBuffer.trim()
+  };
+}
+
 
 /**
  * Determines the block type for a tag
@@ -440,18 +603,23 @@ function processLine(line, state, lineIndex) {
     let isPrint = getFirstWord(commandContent) === 'print';
     if (isPrint) {
       // there are two types of print commands:
-      // 1. print path value - converted to statement_command tag
-      // 2. print value - converted to {{ }}
+      // 1. @print path expression - converted to statement_command tag
+      // 2. @print expression - converted to {{ }}
+      // the second type can also look like  @print obj1.value + obj2.value
+      // we have to distinguish it from @print obj1.value obj2.value
+      // => For the second type, we have to check if:
+      // - the first argument is a path
+      // - the second argument is not an expression operator
 
-      if (codeTokens.length < 2 || codeTokens.length > 3) {
-        throw new Error(`Invalid print command: "${commandContent}" at line ${lineIndex + 1}`);
-      }
-
-      if (codeTokens.length === 2) {
+      const analysis = analyzeCommandSyntax(parseResult.tokens, lineIndex);
+      if (!analysis.path) {
         // no path just value, will be converted to {{ }}
+        if (!analysis.value) {
+          throw new Error(`Invalid print command: "${commandContent}" at line ${lineIndex + 1}`);
+        }
         parseResult.lineType = 'PRINT';
         parseResult.blockType = null;
-        parseResult.codeContent = codeTokens[1].value;
+        parseResult.codeContent = analysis.value;
       } else {
         isPrint = false;
       }
