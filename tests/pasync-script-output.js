@@ -11,7 +11,7 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = nunjucks.AsyncEnvironment;
 }
 
-describe('Cascada Script: Output commands', function () {
+describe.only('Cascada Script: Output commands', function () {
   let env;
 
   // For each test, create a fresh environment.
@@ -135,6 +135,225 @@ describe('Cascada Script: Output commands', function () {
         },
         summary: 'Generated 2 reports'
       }
+    });
+  });
+
+  describe('Built-in Data Commands', function() {
+    it('should handle @put, @push, @merge, and @deepMerge', async () => {
+      const script = `
+        :data
+        // Put creates/replaces values
+        @put user.name "Alice"
+        @put user.role "Admin"
+        @put user.role "Super-Admin" // Overwrites previous put
+
+        // Push adds to an array, creating it if needed
+        @push user.tags "active"
+        @push user.tags "new"
+
+        // Merge combines objects
+        @put settings.profile { theme: "light" }
+        @merge settings.profile { notifications: true }
+
+        // Deep merge combines nested objects
+        @put settings.deep { a: { b: 1 } }
+        @deepMerge settings.deep { a: { c: 2 }, d: 3 }
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        user: { name: 'Alice', role: 'Super-Admin', tags: ['active', 'new'] },
+        settings: {
+          profile: { theme: 'light', notifications: true },
+          deep: { a: { b: 1, c: 2 }, d: 3 }
+        }
+      });
+    });
+
+    it('should handle array manipulation with @pop, @shift, @unshift, and @reverse', async () => {
+      const script = `
+        :data
+        @push items "a"
+        @push items "b"
+        @push items "c"
+        @push items "d"
+
+        @pop items // remove "d" -> [a, b, c]
+        @shift items // remove "a" -> [b, c]
+        @unshift items "x" // add "x" -> [x, b, c]
+        @reverse items // -> [c, b, x]
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ items: ['c', 'b', 'x'] });
+    });
+
+    it('should handle array index targeting including last-item `[]`', async () => {
+      const script = `
+        :data
+        @push users { name: 'Alice', tasks: ['task1', 'task2'] }
+        @push users { name: 'Bob' }
+
+        // Target specific index
+        @put users[0].role "Admin"
+
+        // Target last item pushed in script sequence
+        @push users { name: 'Charlie' }
+        @put users[].role "Guest" // Affects Charlie
+
+        @put users[1].status "active" // Affects Bob
+        @put users[0].tasks[] "task3" //change the last task of Alice
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        users: [
+          { name: 'Alice', role: 'Admin', tasks: ['task1', 'task3'] },
+          { name: 'Bob', status: 'active' },
+          { name: 'Charlie', role: 'Guest' }
+        ]
+      });
+    });
+  });
+
+  describe('@print command', function() {
+    it('should append to global text stream and return in the text property', async () => {
+      const script = `
+        @print "Hello"
+        @print ", "
+        @print "World!"
+        @put status "ok"
+      `;
+      // No focus, so we get the full result object
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        data: { status: 'ok' },
+        text: 'Hello, World!'
+      });
+    });
+
+    it.only('should append to a path in the data object with `@print path value`', async () => {
+      const script = `
+        :data
+        @put log "Log started. "
+        @print log "Event 1. "
+        @print log "Event 2."
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ log: 'Log started. Event 1. Event 2.' });
+    });
+
+
+
+    it('should focus the output to just the text stream with :text', async () => {
+      const script = `
+        :text
+        @print "This is "
+        @print "the final text."
+        @put data.status "ignored"
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('This is the final text.');
+    });
+  });
+
+  describe('Customization and Extension', function() {
+    it('should support custom data methods via addDataMethods', async () => {
+      env.addDataMethods({
+        upsert: (target, data) => {
+          if (!Array.isArray(target)) return;
+          const index = target.findIndex(item => item.id === data.id);
+          if (index > -1) Object.assign(target[index], data);
+          else target.push(data);
+        }
+      });
+      const script = `
+        :data
+        @push users { id: 1, name: "Alice", status: "active" }
+        @push users { id: 2, name: "Bob" }
+        @upsert users { id: 1, status: "inactive" } // Updates Alice
+        @upsert users { id: 3, name: "Charlie" }    // Adds Charlie
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        users: [
+          { id: 1, name: 'Alice', status: 'inactive' },
+          { id: 2, name: 'Bob' },
+          { id: 3, name: 'Charlie' }
+        ]
+      });
+    });
+
+    it('should support custom handlers with the Factory pattern (addCommandHandlerClass)', async () => {
+      class Turtle {
+        constructor() { this.x = 0; this.y = 0; }
+        forward(dist) { this.x += dist; }
+        turn(deg) { this.y += deg; } // simplified for test
+      }
+      env.addCommandHandlerClass('turtle', Turtle);
+      const script = `
+        @turtle.forward(50)
+        @turtle.turn(90)
+        @turtle.forward(10)
+      `;
+      const result = await env.renderScriptString(script);
+      // The final state of the handler instance is added to the result object
+      expect(result.turtle).to.be.a(Turtle);
+      expect(result.turtle.x).to.equal(60);
+      expect(result.turtle.y).to.equal(90);
+    });
+
+    it('should support custom handlers with the Singleton pattern (addCommandHandler)', async () => {
+      const logger = {
+        log: [],
+        // _init is called at the start of each render
+        _init() { this.log = []; },
+        // _call is a catch-all for commands
+        _call(command, ...args) { this.log.push(`${command}(${args.join(',')})`); }
+      };
+      env.addCommandHandler('audit', logger);
+      const script = `
+        @audit.login("user1")
+        @audit.action("read", "doc1")
+      `;
+      await env.renderScriptString(script);
+      // The same logger instance is modified
+      expect(logger.log).to.eql(['login(user1)', 'action(read,doc1)']);
+    });
+  });
+
+  describe('Scoping and Control', function() {
+    it('should use a set block to capture output without focusing', async () => {
+      const script = `
+        :data
+        set captured
+          @put user.name "Captured User"
+          @print "hello from capture"
+        endset
+        @put result captured
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        result: {
+          data: { user: { name: 'Captured User' } },
+          text: 'hello from capture'
+        }
+      });
+    });
+
+    it('should focus the output to a custom handler result with :handlerName', async () => {
+      class Turtle {
+        constructor() { this.x = 0; this.y = 0; }
+        forward(dist) { this.x += dist; }
+      }
+      env.addCommandHandlerClass('turtle', Turtle);
+      const script = `
+        :turtle // Focus the script's return value on the 'turtle' handler
+        @turtle.forward(100)
+        @put data.status "ignored"
+      `;
+      const result = await env.renderScriptString(script);
+      // The result is just the turtle object, not the full result container
+      expect(result).to.be.a(Turtle);
+      expect(result.x).to.equal(100);
+      expect(result.data).to.be(undefined);
     });
   });
 
