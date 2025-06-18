@@ -861,6 +861,13 @@ function _findPathTarget(root, path) {
   for (let i = 0; i < path.length; i++) {
     key = path[i];
 
+    if (key === '[]') {
+      if (!Array.isArray(current)) {
+        throw new Error(`Path target for '[]' is not an array.`);
+      }
+      key = current.length - 1;
+    }
+
     const keyType = typeof key;
     if (keyType !== 'string' && keyType !== 'number') {
       const pathString = path.slice(0, i).join('.');
@@ -875,22 +882,11 @@ function _findPathTarget(root, path) {
       throw new Error(`Cannot set property '${key}' on null or undefined path segment.`);
     }
 
-    // This is the "create on the fly" logic for the special '[]' syntax
-    if (key === '[]') {
-      if (!Array.isArray(current)) {
-        throw new Error(`Path target for '[]' is not an array.`);
-      }
-      const newTarget = {};
-      current.push(newTarget);
-      current = newTarget;
-      continue; // Next path segment will apply to the new object.
-    }
-
-    const nextKey = path[i + 1];
     // If we're not at the end of the path and the next key doesn't exist, create it.
     if (typeof current[key] === 'undefined' && i < path.length - 1) {
       // If the next path segment looks like an array index, create an array.
       // Otherwise, create an object.
+      const nextKey = path[i + 1];
       current[key] = (typeof nextKey === 'number' || nextKey === '[]') ? [] : {};
     }
     current = current[key];
