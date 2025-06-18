@@ -167,12 +167,11 @@ const SYNTAX = {
 
 // Build set of all reserved keywords for quick lookups
 const RESERVED_KEYWORDS = new Set([
-  'print',
   ...SYNTAX.blockTags,
   ...SYNTAX.lineTags,
   ...Object.keys(SYNTAX.middleTags),
   ...Object.values(SYNTAX.blockPairs)
-]);
+]);``
 
 /**
  * Extracts the first word from a string, ensuring it's a complete word
@@ -183,6 +182,11 @@ function getFirstWord(text) {
   // Get the first space-separated word
   const match = text.trim().match(/^(@?[a-zA-Z0-9_]+)(?:\s|$)/);
   return match ? match[1] : '';
+}
+
+function splitArgs(text) {
+  //split the text into words, ignoring spaces, tabs, newlines, etc.
+  return text.trim().split(/\s+/);
 }
 
 /**
@@ -404,7 +408,7 @@ function isValidIdentifier(str) {
   return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);
 }
 
-function processLine(line, state) {
+function processLine(line, state, lineIndex) {
   // Parse line with script parser
   const parseResult = parseTemplateLine(
     line,
@@ -433,10 +437,32 @@ function processLine(line, state) {
     const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
     let isFunctionStyle = isCommandFunctionStyle(commandContent.trim());
 
-    parseResult.lineType = 'TAG';
-    parseResult.tagName = isFunctionStyle ? 'function_command' : 'statement_command';
-    parseResult.blockType = null;
-    parseResult.codeContent = commandContent; // The content for the Nunjucks tag
+    let isPrint = getFirstWord(commandContent) === 'print';
+    if (isPrint) {
+      // there are two types of print commands:
+      // 1. print path value - converted to statement_command tag
+      // 2. print value - converted to {{ }}
+
+      if (codeTokens.length < 2 || codeTokens.length > 3) {
+        throw new Error(`Invalid print command: "${commandContent}" at line ${lineIndex + 1}`);
+      }
+
+      if (codeTokens.length === 2) {
+        // no path just value, will be converted to {{ }}
+        parseResult.lineType = 'PRINT';
+        parseResult.blockType = null;
+        parseResult.codeContent = codeTokens[1].value;
+      } else {
+        isPrint = false;
+      }
+    }
+
+    if (!isPrint) {
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = isFunctionStyle ? 'function_command' : 'statement_command';
+      parseResult.blockType = null;
+      parseResult.codeContent = commandContent; // The content for the Nunjucks tag
+    }
   } else if (code.startsWith(':')) {
     // Handle :data/text/handleName output focus directive
     const focus = code.substring(1); // Remove : but keep the directive name
@@ -452,18 +478,10 @@ function processLine(line, state) {
   } else {
     // Standard keyword processing
     if (RESERVED_KEYWORDS.has(firstWord)) {
-      if (firstWord === 'print') {
-        parseResult.lineType = 'PRINT';
-        parseResult.blockType = null;
-        // Strip the 'print' keyword from codeContent for output expressions
-        const printPos = parseResult.codeContent.indexOf('print');
-        parseResult.codeContent = parseResult.codeContent.substring(printPos + 'print'.length).trim(); // Remove 'print'
-      } else {
-        parseResult.lineType = 'TAG';
-        parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1);//skip the first word
-        parseResult.blockType = getBlockType(firstWord, code);
-        parseResult.tagName = firstWord;
-      }
+      parseResult.lineType = 'TAG';
+      parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1);//skip the first word
+      parseResult.blockType = getBlockType(firstWord, code);
+      parseResult.tagName = firstWord;
     } else {
       parseResult.lineType = 'CODE';
       parseResult.blockType = null;
@@ -641,7 +659,7 @@ function scriptToTemplate(scriptStr) {
   const processedLines = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const processedLine = processLine(line, state);
+    const processedLine = processLine(line, state, i);
 
     // Store processed line for potential reuse in lookahead
     processedLines.push(processedLine);
