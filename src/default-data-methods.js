@@ -6,7 +6,7 @@ module.exports = {
    * @param {Array<any>} target The array at the specified `path`.
    * @param {any} value The value to append to the array.
    */
-  push: (target, value) => {
+  push : function(target, value) {
     if (target === undefined) {
       target = [];
     }
@@ -25,7 +25,7 @@ module.exports = {
    * @param {Object} target The target object at the specified `path`.
    * @param {Object} value The source object whose properties will be merged.
    */
-  merge: (target, value) => {
+  merge : function(target, value) {
     if (target === undefined) {
       return value;
     }
@@ -47,7 +47,7 @@ module.exports = {
    * @param {Object} target The target object at the specified `path` that will be mutated.
    * @param {Object} value The source object whose properties will be merged.
    */
-  deepMerge: (target, value) => {
+  deepMerge : function(target, value) {
     if (target === undefined) {
       return value;
     }
@@ -92,7 +92,7 @@ module.exports = {
    *
    * @param {Array<any>} target The array at the specified `path`.
    */
-  pop: (target) => {
+  pop : function(target) {
     if (target === undefined) {
       return [];
     }
@@ -111,7 +111,7 @@ module.exports = {
    *
    * @param {Array<any>} target The array at the specified `path`.
    */
-  shift: (target) => {
+  shift : function(target) {
     if (target === undefined) {
       return [];
     }
@@ -130,7 +130,7 @@ module.exports = {
    * @param {Array<any>} target The array at the specified `path`.
    * @param {any} value The value to add to the beginning of the array.
    */
-  unshift: (target, value) => {
+  unshift : function(target, value) {
     if (target === undefined) {
       target = [];
     }
@@ -149,7 +149,7 @@ module.exports = {
    *
    * @param {Array<any>} target The array at the specified `path`.
    */
-  reverse: (target) => {
+  reverse : function(target) {
     if (target === undefined) {
       return [];
     }
@@ -167,7 +167,7 @@ module.exports = {
    * @param {Object | Array |string} value The source object to replace the target.
    * @returns {Object | Array | string} The target
    */
-  put: (target, value) => {
+  put : function(target, value) {
     return value;
   },
 
@@ -181,7 +181,7 @@ module.exports = {
    * @param {any} value The value to append or push.
    * @returns {string|undefined} The new concatenated string if the target was a string, otherwise just the target.
    */
-  print: (target, value) => {
+  print : function(target, value) {
     if (target === undefined) {
       target = '';
     }

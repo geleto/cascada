@@ -986,7 +986,7 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
           throw handleError(new Error(`Unknown data method: ${item.method}`), item.pos.lineno, item.pos.colno);
         }
         const { target, key } = _findPathTarget(dataOutput, item.path);
-        target[key] = dataMethod(target[key], item.value);
+        target[key] = dataMethod.call(env.dataMethods, target[key], item.value);
 
       } else {
         // Function Command: @handler.cmd(), @callableHandler()
