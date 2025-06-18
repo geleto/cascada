@@ -546,56 +546,6 @@ endcapture
 </tr>
 </table>
 
-#### Extending with Custom Output Command Handlers
-
-For advanced use cases that go beyond simple data construction, you can define **Custom Output Command Handlers**. These are classes that receive and process `@` commands, allowing you to create powerful, domain-specific logic (like interacting with a database, drawing on a canvas, or logging) directly within your scripts.
-
-##### Registering and Using Named Handlers
-You register a handler class with a unique name. To use it, prefix the command with the handler's name and a dot.
-
-**Example: Using a `turtle` handler for drawing.**
-```javascript
-// --- In your JavaScript setup ---
-env.addCommandHandlerClass('turtle', CanvasTurtle);
-
-// --- In your Cascada Script ---
-// These commands are dispatched to the 'turtle' handler
-@turtle.begin()
-@turtle.forward(50)
-@turtle.stroke('cyan')
-```
-
-##### Handler Implementation Patterns
-Cascada supports two powerful patterns for how your handler classes are instantiated and used.
-
-**Pattern 1: The Factory (Clean Slate per Render)**
-Provide a **class** with `addCommandHandlerClass(name, handlerClass)`. For each render, the engine creates a new, clean instance, passing the `context` to its `constructor`. This is the recommended pattern for most use cases.
-
-```javascript
-// --- In your JavaScript setup (Handler Class) ---
-class CanvasTurtle {
-  constructor(context) { this.ctx = context.canvas.getContext('2d'); /* ... */ }
-  forward(dist) { /* ... */ }
-}
-// --- In your JavaScript setup (API Usage) ---
-env.addCommandHandlerClass('turtle', CanvasTurtle);
-```
-
-**Pattern 2: The Singleton (Persistent State)**
-Provide a pre-built **instance** with `addCommandHandler(name, handlerInstance)`. The same instance is used across all render calls, which is useful for accumulating state (e.g., logging). If the handler has an `_init(context)` method, the engine will call it before each run.
-
-```javascript
-// --- In your JavaScript setup (Handler Class) ---
-class CommandLogger {
-  constructor() { this.log = []; }
-  _init(context) { this.log.push(`--- START (User: ${context.userId}) ---`); }
-  _call(command, ...args) { this.log.push(`${command}: ${JSON.stringify(args)}`); }
-}
-// --- In your JavaScript setup (API Usage) ---
-const logger = new CommandLogger();
-env.addCommandHandler('audit', logger);
-```
-
 #### Important Distinction: `@` Commands vs. `!` Sequential Execution
 
 It is crucial to understand the difference between these two features, as they solve different problems.
@@ -830,7 +780,7 @@ env.addDataMethods({
 ```
 
 ### Custom Output Command Handlers
-For advanced use cases that go beyond simple data construction, you can define **Output Command Handlers**. These are classes that receive and process `@` commands, allowing you to create powerful domain-specific logic within your scripts.
+For advanced use cases that go beyond simple data construction, you can define **Custom Output Command Handlers**. These are classes that receive and process `@` commands, allowing you to create powerful, domain-specific logic (like interacting with a database, drawing on a canvas, or logging) directly within your scripts.
 
 #### Registering and Using Named Handlers
 You register all handlers with a unique name using `addCommandHandlerClass`. To use a named handler, prefix the command with the handler's name and a dot.
