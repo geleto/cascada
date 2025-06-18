@@ -9,7 +9,7 @@ Cascada Script is a scripting language built on top of the Cascada templating en
 - [Key Features](#key-features)
 - [Executing a Script](#executing-a-script)
 - [Core Syntax and Expressions](#core-syntax-and-expressions)
-- [Assembling Data with Output Commands (`@`)](#assembling-data-with-output-commands-)
+- [Output Commands (`@`)](#assembling-data-with-output-commands-)
 - [Macros and Reusable Components](#macros-and-reusable-components)
 - [Advanced Flow Control](#advanced-flow-control)
 - [Extending and Organizing Code](#extending-and-organizing-code)
@@ -194,7 +194,7 @@ if emailRegex.test(user.email)
 endif
 ```
 
-### **Assembling Data with Output Commands (`@`)**
+### **Output Commands (`@`)**
 
 Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct the **response object** that is returned by any executable scope, such as an entire **script**, a **macro**, a **`capture`** block, or a `caller()` block.
 
@@ -565,42 +565,6 @@ env.addCommandHandlerClass('turtle', CanvasTurtle);
 @turtle.stroke('cyan')
 ```
 
-##### The `@default` Directive
-To simplify scripts that primarily use one command handler, you can declare a default handler for the entire script. Any unqualified command (e.g., `@fetchOrder()`) will automatically be routed to this default handler.
-
-**Syntax:** `@default 'handlerName'` (must be a static string)
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-**Without <code>@default</code>**
-```javascript
-// All commands must be fully qualified.
-set order = @db.fetchOrder(123)
-@db.updateStatus(order.id)
-
-// Other handlers are qualified.
-@log.info("Updated")
-```
-</td>
-<td width="50%" valign="top">
-
-**With <code>@default</code>**
-```javascript
-@default 'db'
-
-// Unqualified commands now use the 'db' handler.
-set order = @fetchOrder(123)
-@updateStatus(order.id)
-
-// Qualified calls still work.
-@log.info("Updated")
-```
-</td>
-</tr>
-</table>
-
 ##### Handler Implementation Patterns
 Cascada supports two powerful patterns for how your handler classes are instantiated and used.
 
@@ -882,47 +846,6 @@ env.addCommandHandlerClass('turtle', CanvasTurtle);
 @turtle.forward(50)
 @turtle.stroke('cyan')
 ```
-
-#### The `@default` Directive
-
-To simplify scripts that primarily use one command handler, you can declare a default handler for the entire script. Any unqualified command (e.g., `@fetchOrder()`) will automatically be routed to this default handler.
-
-**Syntax:** `@default 'handlerName'`
-
-Place it at the top of the script file, the name must be a static string like `'db'`, not a variable.
-
-**Example:**
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-**Without <code>@default</code>**
-```javascript
-// All commands must be fully qualified.
-set order = @db.fetchOrder(123)
-@db.updateStatus(order.id)
-
-// Other handlers are qualified.
-@log.info("Updated")
-```
-</td>
-<td width="50%" valign="top">
-
-**With <code>@default</code>**
-```javascript
-@default 'db'
-
-// Unqualified commands now use the 'db' handler.
-set order = @fetchOrder(123)
-@updateStatus(order.id)
-
-// Qualified calls still work.
-@log.info("Updated")
-```
-</td>
-</tr>
-</table>
 
 #### Handler Implementation Patterns
 Cascada supports two powerful patterns for how your handler classes are instantiated and used.
