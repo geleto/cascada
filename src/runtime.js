@@ -866,6 +866,9 @@ function _findPathTarget(root, path) {
         throw new Error(`Path target for '[]' is not an array.`);
       }
       key = current.length - 1;
+      if (key === -1) {
+        throw new Error(`Cannot set last element ('[]') on empty array.`);
+      }
     }
 
     const keyType = typeof key;
@@ -887,6 +890,9 @@ function _findPathTarget(root, path) {
       // If the next path segment looks like an array index, create an array.
       // Otherwise, create an object.
       const nextKey = path[i + 1];
+      if (nextKey === '[]') {
+        throw new Error(`Cannot set last element ('[]') on null or undefined path segment.`);
+      }
       current[key] = (typeof nextKey === 'number' || nextKey === '[]') ? [] : {};
     }
     current = current[key];

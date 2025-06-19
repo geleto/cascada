@@ -75,6 +75,7 @@ describe('flattenBuffer', function () {
 
     it('should handle the "[]" path syntax for creating and populating array items', async function () {
       const buffer = [
+        { method: 'push', path: ['users'], value: { id: 0 } },
         { method: 'put', path: ['users', '[]', 'id'], value: 1 },
         { method: 'put', path: ['users', 0, 'name'], value: 'Alice' }
       ];
