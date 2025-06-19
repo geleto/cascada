@@ -240,8 +240,6 @@ describe('Cascada Script: Output commands', function () {
       expect(result).to.eql({ log: 'Log started. Event 1. Event 2.' });
     });
 
-
-
     it('should focus the output to just the text stream with :text', async () => {
       const script = `
         :text
@@ -338,6 +336,45 @@ describe('Cascada Script: Output commands', function () {
       // The same logger instance is modified
       expect(logger.log).to.eql(['login(user1)', 'action(read,doc1)']);
     });
+
+    it('should support multi-segment path handlers', async () => {
+      // Create a utility object with nested structure
+      class OutputLogger {
+        constructor() {
+          this.logs = [];
+          this.errors = [];
+          this.warnings = [];
+        }
+        log(message) {
+          this.logs.push(message);
+        }
+        error(message) {
+          this.errors.push(message);
+        }
+        warn(message) {
+          this.warnings.push(message);
+        }
+      }
+      const util = {
+        output: new OutputLogger()
+      };
+      env.addCommandHandler('util', util);
+
+      const script = `
+        @util.output.log("User logged in")
+        @util.output.error("Connection failed")
+        @util.output.warn("Deprecated feature used")
+      `;
+
+      const result = await env.renderScriptString(script);
+
+      // Verify the multi-segment handler is accessible and functional
+      expect(result.util).to.equal(util);
+      expect(result.util.output).to.be.an(OutputLogger);
+      expect(result.util.output.logs).to.eql(['User logged in']);
+      expect(result.util.output.errors).to.eql(['Connection failed']);
+      expect(result.util.output.warnings).to.eql(['Deprecated feature used']);
+    });
   });
 
   describe('Scoping and Control', function() {
@@ -377,7 +414,6 @@ describe('Cascada Script: Output commands', function () {
       expect(result.data).to.be(undefined);
     });
   });
-
 
   it('should allow input focusing in set blocks', async () => {
     const script = `
