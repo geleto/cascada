@@ -12,7 +12,7 @@ const { Obj, EmitterObj } = require('./object');
 const globalRuntime = require('./runtime');
 const { handleError, Frame, AsyncFrame, AsyncState } = globalRuntime;
 const expressApp = require('./express-app');
-const { scriptToTemplate } = require('./script-transpiler');
+const scriptTranspiler = require('./script-transpiler');
 const defaultDataMethods = require('./default-data-methods');
 
 // If the user is using the async API, *always* call it
@@ -405,7 +405,7 @@ class Environment extends EmitterObj {
     // Convert script to template
     let template;
     try {
-      template = scriptToTemplate(scriptStr);
+      template = scriptTranspiler.scriptToTemplate(scriptStr);
     } catch (error) {
       if (cb) {
         callbackAsap(cb, error);
@@ -1029,7 +1029,7 @@ class Script extends Template {
   init(src, env, path, eagerCompile) {
     // Convert script to template if it's a string
     if (lib.isString(src)) {
-      src = scriptToTemplate(src);
+      src = scriptTranspiler.scriptToTemplate(src);
     }
 
     super.init(src, env, path, eagerCompile, false/*async*/, true/*script*/);
@@ -1043,7 +1043,7 @@ class AsyncScript extends Template {
   init(src, env, path, eagerCompile) {
     // Convert script to template if it's a string
     if (lib.isString(src)) {
-      const template = scriptToTemplate(src);
+      const template = scriptTranspiler.scriptToTemplate(src);
       src = template;
     }
 

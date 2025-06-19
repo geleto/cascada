@@ -18,10 +18,10 @@ describe('Script Parser', function() {
     });
 
     it('should parse a simple code line', function() {
-      const result = parseTemplateLine('print user.name');
+      const result = parseTemplateLine('@print user.name');
       expect(result.tokens).to.have.length(1);
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[0].value).to.equal('print user.name');
+      expect(result.tokens[0].value).to.equal('@print user.name');
     });
 
     /*it('should handle whitespace', function() {
@@ -34,74 +34,74 @@ describe('Script Parser', function() {
 
   describe('String Parsing', function() {
     it('should parse single-quoted strings', function() {
-      const result = parseTemplateLine('print \'Hello, World!\'');
+      const result = parseTemplateLine('@print \'Hello, World!\'');
 
       // Should generate 2 tokens: CODE and STRING
       expect(result.tokens).to.have.length(2);
 
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.SINGLE_QUOTED);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(21);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(22);
       expect(result.tokens[1].value).to.equal('\'Hello, World!\'');
     });
 
     it('should parse double-quoted strings', function() {
-      const result = parseTemplateLine('print "Hello, World!"');
+      const result = parseTemplateLine('@print "Hello, World!"');
 
       // Should generate 2 tokens: CODE and STRING
       expect(result.tokens).to.have.length(2);
 
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(21);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(22);
       expect(result.tokens[1].value).to.equal('"Hello, World!"');
     });
 
     it('should handle escaped quotes in strings', function() {
-      const result = parseTemplateLine('print "She said \\"Hello\\""');
+      const result = parseTemplateLine('@print "She said \\"Hello\\""');
 
       // Should generate 2 tokens: CODE and STRING
       expect(result.tokens).to.have.length(2);
 
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(26);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(27);
       expect(result.tokens[1].value).to.equal('"She said \\"Hello\\""');
     });
 
     it('should handle string continuation at end of line', function() {
-      const result = parseTemplateLine('print "This string continues \\');
+      const result = parseTemplateLine('@print "This string continues \\');
 
       // Should generate 2 tokens: CODE and incomplete STRING
       expect(result.tokens).to.have.length(2);
 
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(30);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(31);
       expect(result.tokens[1].value).to.equal('"This string continues \\');
       expect(result.tokens[1].incomplete).to.be(true);
 
@@ -126,38 +126,38 @@ describe('Script Parser', function() {
     });
 
     it('should parse multiple strings in a line', function() {
-      const result = parseTemplateLine('print "Hello" + \' World\'');
+      const result = parseTemplateLine('@print "Hello" + \' World\'');
 
       // Should generate 4 tokens: CODE, STRING, CODE, STRING
       expect(result.tokens).to.have.length(4);
 
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(13);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(14);
       expect(result.tokens[1].value).to.equal('"Hello"');
 
       expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[2].start).to.equal(13);
-      expect(result.tokens[2].end).to.equal(16);
+      expect(result.tokens[2].start).to.equal(14);
+      expect(result.tokens[2].end).to.equal(17);
       expect(result.tokens[2].value).to.equal(' + ');
 
       expect(result.tokens[3].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[3].subtype).to.equal(TOKEN_SUBTYPES.SINGLE_QUOTED);
-      expect(result.tokens[3].start).to.equal(16);
-      expect(result.tokens[3].end).to.equal(24);
+      expect(result.tokens[3].start).to.equal(17);
+      expect(result.tokens[3].end).to.equal(25);
       expect(result.tokens[3].value).to.equal('\' World\'');
     });
   });
 
   describe('Comment Parsing', function() {
     it('should parse single-line comments', function() {
-      const result = parseTemplateLine('print user.name // Display username');
+      const result = parseTemplateLine('@print user.name // Display username');
       expect(result.tokens).to.have.length(2);
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.COMMENT);
@@ -190,7 +190,7 @@ describe('Script Parser', function() {
     });
 
     it('should handle code followed by multi-line comment', function() {
-      const result = parseTemplateLine('print /* In-line comment */ user.name');
+      const result = parseTemplateLine('@print /* In-line comment */ user.name');
       expect(result.tokens).to.have.length(3);
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.COMMENT);
@@ -260,7 +260,7 @@ describe('Script Parser', function() {
 
   describe('Token Position Accuracy', function() {
     it('should correctly capture token positions for all token types', function() {
-      const script = 'print "hello" /* comment */ + r/pattern/g';
+      const script = '@print "hello" /* comment */ + r/pattern/g';
 
       const result = parseTemplateLine(script);
 
@@ -270,37 +270,37 @@ describe('Script Parser', function() {
       // CODE token before string
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       // STRING token
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(13);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(14);
       expect(result.tokens[1].value).to.equal('"hello"');
 
       // CODE token (space between string and comment)
       expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[2].start).to.equal(13);
-      expect(result.tokens[2].end).to.equal(14);
+      expect(result.tokens[2].start).to.equal(14);
+      expect(result.tokens[2].end).to.equal(15);
       expect(result.tokens[2].value).to.equal(' ');
 
       // COMMENT token
       expect(result.tokens[3].type).to.equal(TOKEN_TYPES.COMMENT);
-      expect(result.tokens[3].start).to.equal(14);
-      expect(result.tokens[3].end).to.equal(27);
+      expect(result.tokens[3].start).to.equal(15);
+      expect(result.tokens[3].end).to.equal(28);
       expect(result.tokens[3].value).to.equal('/* comment */');
 
       // CODE token (space and + between comment and regex)
       expect(result.tokens[4].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[4].start).to.equal(27);
-      expect(result.tokens[4].end).to.equal(30);
+      expect(result.tokens[4].start).to.equal(28);
+      expect(result.tokens[4].end).to.equal(31);
       expect(result.tokens[4].value).to.equal(' + ');
 
       // REGEX token
       expect(result.tokens[5].type).to.equal(TOKEN_TYPES.REGEX);
-      expect(result.tokens[5].start).to.equal(30);
-      expect(result.tokens[5].end).to.equal(41);
+      expect(result.tokens[5].start).to.equal(31);
+      expect(result.tokens[5].end).to.equal(42);
       expect(result.tokens[5].value).to.equal('r/pattern/g');
       expect(result.tokens[5].flags).to.equal('g');
     });
@@ -340,20 +340,20 @@ describe('Script Parser', function() {
     });
 
     it('should parse template literals', function() {
-      const result = parseTemplateLine('print `User: ${user.name}`');
+      const result = parseTemplateLine('@print `User: ${user.name}`');
 
       // Should generate 2 tokens: CODE and STRING
       expect(result.tokens).to.have.length(2);
 
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(26);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(27);
       expect(result.tokens[1].value).to.equal('`User: ${user.name}`');
     });
 
@@ -403,25 +403,25 @@ describe('Script Parser', function() {
     });
 
     it('should handle cascada print statement', function() {
-      const result = parseTemplateLine('print "Hello, " + user.name');
+      const result = parseTemplateLine('@print "Hello, " + user.name');
 
       // Should generate 3 tokens: CODE, STRING, CODE
       expect(result.tokens).to.have.length(3);
 
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(15);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(16);
       expect(result.tokens[1].value).to.equal('"Hello, "');
 
       expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
-      expect(result.tokens[2].start).to.equal(15);
-      expect(result.tokens[2].end).to.equal(27);
+      expect(result.tokens[2].start).to.equal(16);
+      expect(result.tokens[2].end).to.equal(28);
       expect(result.tokens[2].value).to.equal(' + user.name');
     });
 
@@ -472,7 +472,7 @@ describe('Script Parser', function() {
     describe('parseStringChar behavior', function() {
       it('should handle string escaping correctly', function() {
         // Test by creating a scenario that exercises parseStringChar
-        const result = parseTemplateLine('print "escaped \\"quotes\\" here"');
+        const result = parseTemplateLine('@print "escaped \\"quotes\\" here"');
 
         expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
         expect(result.tokens[1].value).to.equal('"escaped \\"quotes\\" here"');
@@ -519,7 +519,7 @@ describe('Script Parser', function() {
 
     it('should properly handle string state between lines', function() {
       // First line has string with escape at end
-      const result1 = parseTemplateLine('print "escaped \\');
+      const result1 = parseTemplateLine('@print "escaped \\');
       expect(result1.stringState).not.to.be(null);
       expect(result1.stringState.escaped).to.be(true);
       expect(result1.stringState.delimiter).to.equal('"');
@@ -564,20 +564,20 @@ describe('Script Parser', function() {
     });
 
     it('should handle strings with nested quotes', function() {
-      const result = parseTemplateLine('print "String with \'nested\' quotes"');
+      const result = parseTemplateLine('@print "String with \'nested\' quotes"');
 
       // Should generate 2 tokens: CODE and STRING
       expect(result.tokens).to.have.length(2);
 
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(35);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(36);
       expect(result.tokens[1].value).to.equal('"String with \'nested\' quotes"');
     });
 
@@ -590,20 +590,20 @@ describe('Script Parser', function() {
     });
 
     it('should parse escaped backslashes correctly', function() {
-      const result = parseTemplateLine('print "Double backslash: \\\\"');
+      const result = parseTemplateLine('@print "Double backslash: \\\\"');
 
       // Should generate 2 tokens: CODE and STRING
       expect(result.tokens).to.have.length(2);
 
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(28);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(29);
       expect(result.tokens[1].value).to.equal('"Double backslash: \\\\"');
     });
 
@@ -621,20 +621,20 @@ describe('Script Parser', function() {
     });
 
     it('should handle consecutive string delimiters', function() {
-      const result = parseTemplateLine('print ""');
+      const result = parseTemplateLine('@print ""');
 
       // Should generate 2 tokens: CODE and STRING
       expect(result.tokens).to.have.length(2);
 
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
       expect(result.tokens[0].start).to.equal(0);
-      expect(result.tokens[0].end).to.equal(6);
-      expect(result.tokens[0].value).to.equal('print ');
+      expect(result.tokens[0].end).to.equal(7);
+      expect(result.tokens[0].value).to.equal('@print ');
 
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
       expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.DOUBLE_QUOTED);
-      expect(result.tokens[1].start).to.equal(6);
-      expect(result.tokens[1].end).to.equal(8);
+      expect(result.tokens[1].start).to.equal(7);
+      expect(result.tokens[1].end).to.equal(9);
       expect(result.tokens[1].value).to.equal('""');
     });
 
@@ -648,7 +648,7 @@ describe('Script Parser', function() {
 
   describe('Template Literals with Complex Expressions', function() {
     it('should handle template literals with nested expressions', function() {
-      const result = parseTemplateLine('print `User: ${user.info ? `${user.info.name}` : "Unknown"}`');
+      const result = parseTemplateLine('@print `User: ${user.info ? `${user.info.name}` : "Unknown"}`');
 
       // Should recognize the entire template literal as a single token
       expect(result.tokens).to.have.length(2); // CODE + STRING
@@ -658,7 +658,7 @@ describe('Script Parser', function() {
     });
 
     it('should handle template literals with nested template literals', function() {
-      const result = parseTemplateLine('print `Outer ${`Inner ${value}`}`');
+      const result = parseTemplateLine('@print `Outer ${`Inner ${value}`}`');
 
       expect(result.tokens).to.have.length(2);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
@@ -667,7 +667,7 @@ describe('Script Parser', function() {
     });
 
     it('should handle escaped expressions in template literals', function() {
-      const result = parseTemplateLine('print `Not an expression: \\${escapedContent}`');
+      const result = parseTemplateLine('@print `Not an expression: \\${escapedContent}`');
 
       expect(result.tokens).to.have.length(2);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
@@ -678,7 +678,7 @@ describe('Script Parser', function() {
 
   describe('String Continuation Corner Cases', function() {
     it('should handle multiple escape characters at end of line', function() {
-      const result = parseTemplateLine('print "String with double escape at end \\\\');
+      const result = parseTemplateLine('@print "String with double escape at end \\\\');
 
       expect(result.tokens).to.have.length(2);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
@@ -695,7 +695,7 @@ describe('Script Parser', function() {
       // The implementation should handle Unicode escapes correctly across lines,
       // but it doesn't. The following test documents how it *should* work.
 
-      const result = parseTemplateLine('print "Unicode escape \\u00');
+      const result = parseTemplateLine('@print "Unicode escape \\u00');
 
       expect(result.tokens).to.have.length(2);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
@@ -713,7 +713,7 @@ describe('Script Parser', function() {
     });
 
     it('should handle strings that immediately continue', function() {
-      const result1 = parseTemplateLine('print "Line 1 \\');
+      const result1 = parseTemplateLine('@print "Line 1 \\');
       const result2 = parseTemplateLine('Line 2"', false, result1.stringState);
 
       expect(result1.tokens[1].incomplete).to.be(true);
@@ -766,7 +766,7 @@ describe('Script Parser', function() {
 
   describe('Nested Token Interactions', function() {
     it('should handle strings containing regex-like patterns', function() {
-      const result = parseTemplateLine('print "String with r/pattern/ inside"');
+      const result = parseTemplateLine('@print "String with r/pattern/ inside"');
 
       expect(result.tokens).to.have.length(2);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
@@ -791,7 +791,7 @@ describe('Script Parser', function() {
     });
 
     it('should handle strings containing template-like expressions', function() {
-      const result = parseTemplateLine('print "Text ${not.executed} more"');
+      const result = parseTemplateLine('@print "Text ${not.executed} more"');
 
       expect(result.tokens).to.have.length(2);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
@@ -802,7 +802,7 @@ describe('Script Parser', function() {
 
   describe('Unicode and Special Characters', function() {
     it('should handle Unicode in strings', function() {
-      const result = parseTemplateLine('print "Unicode: 你好, 世界"');
+      const result = parseTemplateLine('@print "Unicode: 你好, 世界"');
 
       expect(result.tokens).to.have.length(2);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
@@ -818,7 +818,7 @@ describe('Script Parser', function() {
     });
 
     it('should handle control characters in strings', function() {
-      const result = parseTemplateLine('print "Tab: \\t Newline: \\n"');
+      const result = parseTemplateLine('@print "Tab: \\t Newline: \\n"');
 
       expect(result.tokens).to.have.length(2);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
@@ -889,7 +889,7 @@ describe('Script Parser', function() {
     });
 
     it('should handle adjacent tokens without whitespace', function() {
-      const result = parseTemplateLine('print"no space"/* comment */r/pattern/');
+      const result = parseTemplateLine('@print"no space"/* comment */r/pattern/');
 
       expect(result.tokens).to.have.length(4);
       expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
@@ -901,7 +901,7 @@ describe('Script Parser', function() {
 
   describe('Error Recovery and Malformed Input', function() {
     it('should handle unterminated strings', function() {
-      const result = parseTemplateLine('print "Unterminated string');
+      const result = parseTemplateLine('@print "Unterminated string');
 
       expect(result.tokens).to.have.length(2);
       expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
@@ -996,7 +996,7 @@ describe('Script Parser', function() {
 
   describe('Combined Complex Scenarios', function() {
     it('should handle interleaved strings, comments, and regex', function() {
-      const script = 'print "string" /* comment */ + r/regex/g; x = 1/2; // End';
+      const script = '@print "string" /* comment */ + r/regex/g; x = 1/2; // End';
       const result = parseTemplateLine(script);
 
       // Be more specific about our expectations
@@ -1006,7 +1006,7 @@ describe('Script Parser', function() {
       const types = result.tokens.map(t => t.type);
 
       // Check specific token types in sequence
-      expect(types[0]).to.equal(TOKEN_TYPES.CODE);    // 'print '
+      expect(types[0]).to.equal(TOKEN_TYPES.CODE);    // '@print '
       expect(types[1]).to.equal(TOKEN_TYPES.STRING);  // '"string"'
       expect(types[2]).to.equal(TOKEN_TYPES.CODE);    // ' '
       expect(types[3]).to.equal(TOKEN_TYPES.COMMENT); // '/* comment */'
@@ -1030,7 +1030,7 @@ describe('Script Parser', function() {
     });
 
     it('should handle escaped backslashes at string boundaries', function() {
-      const script = 'print "\\\\" + "\\\\";';
+      const script = '@print "\\\\" + "\\\\";';
       const result = parseTemplateLine(script);
 
       expect(result.tokens.length).to.be.greaterThan(2);
@@ -1048,11 +1048,11 @@ describe('Script Parser', function() {
 
     describe('Backticks as Simple Strings', function() {
       it('should parse backticks as simple strings without interpolation', function() {
-        const result = parseTemplateLine('print `Simple backtick string without ${interpolation}`');
+        const result = parseTemplateLine('@print `Simple backtick string without ${interpolation}`');
 
         expect(result.tokens).to.have.length(2);
         expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
-        expect(result.tokens[0].value).to.equal('print ');
+        expect(result.tokens[0].value).to.equal('@print ');
 
         expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
         expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
@@ -1063,7 +1063,7 @@ describe('Script Parser', function() {
       });
 
       it('should handle backtick strings with escape sequences', function() {
-        const result = parseTemplateLine('print `Escaped \\` backtick and \\${text}`');
+        const result = parseTemplateLine('@print `Escaped \\` backtick and \\${text}`');
 
         expect(result.tokens).to.have.length(2);
         expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
@@ -1071,7 +1071,7 @@ describe('Script Parser', function() {
       });
 
       it('should support multi-line continuation with backtick strings', function() {
-        const result1 = parseTemplateLine('print `Line 1 \\');
+        const result1 = parseTemplateLine('@print `Line 1 \\');
         expect(result1.stringState).not.to.be(null);
         expect(result1.stringState.delimiter).to.equal('`');
 
@@ -1089,24 +1089,24 @@ describe('Script Parser', function() {
 
         // Test with single backslash (represented by \\ in JavaScript string)
         // This should continue the string
-        const result1 = parseTemplateLine('print "String with single backslash \\');
+        const result1 = parseTemplateLine('@print "String with single backslash \\');
         expect(result1.stringState).not.to.be(null);  // Should continue
         expect(result1.stringState.escaped).to.be(true);
 
         // Test with double backslash (represented by \\\\ in JavaScript string)
         // This should NOT continue the string
-        const result2 = parseTemplateLine('print "String with double backslash \\\\');
+        const result2 = parseTemplateLine('@print "String with double backslash \\\\');
         expect(result2.stringState).to.be(null);  // Should NOT continue
 
         // Test with triple backslash (represented by \\\\\\ in JavaScript string)
         // This should continue the string
-        const result3 = parseTemplateLine('print "String with triple backslash \\\\\\');
+        const result3 = parseTemplateLine('@print "String with triple backslash \\\\\\');
         expect(result3.stringState).not.to.be(null);  // Should continue
         expect(result3.stringState.escaped).to.be(true);
 
         // Test with quadruple backslash (represented by \\\\\\\\ in JavaScript string)
         // This should NOT continue the string
-        const result4 = parseTemplateLine('print "String with quadruple backslash \\\\\\\\');
+        const result4 = parseTemplateLine('@print "String with quadruple backslash \\\\\\\\');
         expect(result4.stringState).to.be(null);  // Should NOT continue
       });
     });
@@ -1122,7 +1122,7 @@ describe('Script Parser', function() {
       });
 
       it('should handle strings with unclosed quotes', function() {
-        const result = parseTemplateLine('print "Unclosed string');
+        const result = parseTemplateLine('@print "Unclosed string');
 
         expect(result.tokens).to.have.length(2);
         expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);

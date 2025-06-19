@@ -11,7 +11,7 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = nunjucks.AsyncEnvironment;
 }
 
-describe.only('Cascada Script: Output commands', function () {
+describe('Cascada Script: Output commands', function () {
   let env;
 
   // For each test, create a fresh environment.
@@ -229,7 +229,7 @@ describe.only('Cascada Script: Output commands', function () {
       });
     });
 
-    it.only('should append to a path in the data object with `@print path value`', async () => {
+    it('should append to a path in the data object with `@print path value`', async () => {
       const script = `
         :data
         @put log "Log started. "
@@ -247,7 +247,7 @@ describe.only('Cascada Script: Output commands', function () {
         :text
         @print "This is "
         @print "the final text."
-        @put data.status "ignored"
+        @put status "ignored"
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.equal('This is the final text.');
