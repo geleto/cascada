@@ -2155,16 +2155,17 @@ class Compiler extends Obj {
       const target = node.call.name.target;
       const command = node.call.name.val;
 
-      if (!(target instanceof nodes.Symbol) || !(command instanceof nodes.Symbol)) {
+      //@todo - LookupVal.LookupVal.Symbol targets
+      if (!(target instanceof nodes.Symbol) || !(command instanceof nodes.Literal)) {
         this.fail(
-          'Invalid Function Command syntax. Expected format is @handler.command(...).',
+          'Invalid Method Command syntax. Expected format is @handler.command(...).',
           node.lineno, node.colno, node
         );
       }
     } else {
       // Any other type is a structural error.
       this.fail(
-        'Invalid Function Command syntax. Command must be a static name, not an expression.',
+        'Invalid Method Command syntax. Command must be a static name, not an expression.',
         node.lineno, node.colno, node
       );
     }
