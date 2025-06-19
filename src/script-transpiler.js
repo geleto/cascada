@@ -183,7 +183,7 @@ class ScriptTranspiler {
    */
   _getFirstWord(text) {
     // Get the first space-separated word
-    const match = text.trim().match(/^(@?[a-zA-Z0-9_]+)(?:\s|$)/);
+    const match = text.trim().match(/^([@:]?[a-zA-Z0-9_]+)(?:\s|$)/);
     return match ? match[1] : '';
   }
 
@@ -640,12 +640,10 @@ class ScriptTranspiler {
       if (!focus) {
         throw new Error(`Invalid output focus: "${parseResult.codeContent}"`);
       }
-      if (focus === 'data') {
-        parseResult.lineType = 'TAG';
-        parseResult.tagName = 'option';
-        parseResult.blockType = null;//no block
-        parseResult.codeContent = `focus="${focus}"`;
-      }
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = 'option';
+      parseResult.blockType = null;//no block
+      parseResult.codeContent = `focus="${focus}"`;
     } else {
       // Standard keyword processing
       if (this.RESERVED_KEYWORDS.has(firstWord)) {
