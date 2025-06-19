@@ -262,6 +262,7 @@ describe('Cascada Script: Output commands', function () {
           const index = target.findIndex(item => item.id === data.id);
           if (index > -1) Object.assign(target[index], data);
           else target.push(data);
+          return target;
         }
       });
       const script = `
@@ -300,12 +301,32 @@ describe('Cascada Script: Output commands', function () {
       expect(result.turtle.y).to.equal(90);
     });
 
+    it('Supports callable callable command handlers', async () => {
+      class Logger {
+        constructor() {
+          //make the instances of this class callable, e.g. log('message')
+          this.logs = [];
+          return (...args) => this._call(...args);
+        }
+        _call(command, ...args) { this.logs.push(`${command}(${args.join(',')})`); }
+      };
+      env.addCommandHandler('log', new Logger());
+      const script = `
+        @log("user1 logged in")
+        @log("user2 logged in")
+      `;
+      const result = await env.renderScriptString(script);
+      // The same logger instance is modified
+      expect(result.log.logs).to.eql(['user1 logged in', 'user2 logged in']);
+    });
+
     it('should support custom handlers with the Singleton pattern (addCommandHandler)', async () => {
       const logger = {
         log: [],
-        // _init is called at the start of each render
-        _init() { this.log = []; },
-        // _call is a catch-all for commands
+        constructor() {
+          //make the instances of this class callable, e.g. log('message')
+          return (...args) => this._call(...args);
+        },
         _call(command, ...args) { this.log.push(`${command}(${args.join(',')})`); }
       };
       env.addCommandHandler('audit', logger);
