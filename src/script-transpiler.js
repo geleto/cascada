@@ -540,22 +540,22 @@ class ScriptTranspiler {
    */
   _isCommandFunctionStyle(commandContent) {
     // Find the first opening parenthesis
-    const parenIndex = commandContent.indexOf('(');
-    if (parenIndex === -1) {
-      return false;
+    const parenthesisIndex = commandContent.indexOf('(');
+    if (parenthesisIndex === -1) {
+      return false;//quick and dirty initial test
     }
 
     // Extract the part before the parenthesis and validate it
-    const beforeParen = commandContent.substring(0, parenIndex).trim();
-    if (!beforeParen) {
+    const beforeParenthesis = commandContent.substring(0, parenthesisIndex).trim();
+    if (!beforeParenthesis) {
       return false;
     }
 
     // Split by dots and validate each part as an identifier
-    const parts = beforeParen.split('.');
+    const parts = beforeParenthesis.split('.');
     for (const part of parts) {
       if (!this._isValidIdentifier(part)) {
-        throw new Error(`Invalid identifier in command path: "${part}" in "${commandContent}"`);
+        return false;
       }
     }
 
