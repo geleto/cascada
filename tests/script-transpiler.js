@@ -929,14 +929,13 @@ endif`;
 
     it('should handle complex mathematical expressions', () => {
       const script = `// Calculate total
-total = price *
-      (1 + taxRate) *
-      (1 - discount)
-
-@print "Total: $" + total.toFixed(2)`;
+      set total = price *
+        (1 + taxRate) *
+        (1 - discount)
+      @print "Total: $" + total.toFixed(2)`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('{%- do total = price *');
+      expect(template).to.contain('{%- set total = price *');
       expect(template).to.contain('(1 + taxRate) *');
       expect(template).to.contain('(1 - discount) -%}');
       expect(template).to.contain('{{- "Total: $" + total.toFixed(2) -}}');
