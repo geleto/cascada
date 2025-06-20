@@ -299,15 +299,19 @@ describe('Cascada Script: Output commands', function () {
       expect(result.turtle.y).to.equal(90);
     });
 
-    it('Supports callable callable command handlers', async () => {
+    it('Supports callable callable command handlers - no path', async () => {
       class Logger {
         constructor() {
-          //make the instances of this class callable, e.g. log('message')
           this.logs = [];
-          return (...args) => this._call(...args);
+          const callable = (...args) => this._call(...args);
+          callable.logs = this.logs;
+          return callable;
         }
-        _call(command, ...args) { this.logs.push(`${command}(${args.join(',')})`); }
+        _call(text) {
+          this.logs.push(text);
+        }
       };
+
       env.addCommandHandler('log', new Logger());
       const script = `
         @log("user1 logged in")
@@ -318,14 +322,15 @@ describe('Cascada Script: Output commands', function () {
       expect(result.log.logs).to.eql(['user1 logged in', 'user2 logged in']);
     });
 
-    it('should support custom handlers with the Singleton pattern (addCommandHandler)', async () => {
+    it('should support custom handlers with the Singleton pattern (addCommandHandler) - 1 segment path', async () => {
       const logger = {
         log: [],
-        constructor() {
-          //make the instances of this class callable, e.g. log('message')
-          return (...args) => this._call(...args);
+        login: function(user) {
+          this.log.push(`login(${user})`);
         },
-        _call(command, ...args) { this.log.push(`${command}(${args.join(',')})`); }
+        action: function(action, doc) {
+          this.log.push(`action(${action},${doc})`);
+        },
       };
       env.addCommandHandler('audit', logger);
       const script = `
@@ -337,7 +342,7 @@ describe('Cascada Script: Output commands', function () {
       expect(logger.log).to.eql(['login(user1)', 'action(read,doc1)']);
     });
 
-    it('should support multi-segment path handlers', async () => {
+    it('should support multi-segment path handlers - 2 segments path', async () => {
       // Create a utility object with nested structure
       class OutputLogger {
         constructor() {
