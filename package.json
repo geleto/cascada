@@ -59,7 +59,7 @@
     "istanbul-lib-instrument": "^6.0.3",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.1.7",
-    "mocha": "<11.x",
+    "mocha": "^11.1.0",
     "module-alias": "^2.2.3",
     "node-libs-browser": "^2.2.1",
     "nyc": "^17.1.0",
