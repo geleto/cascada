@@ -900,7 +900,7 @@ function _findPathTarget(root, path) {
   return { target: parent, key };
 }
 
-function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerName = null) {
+function flattenBuffer(arr, context = null, focusOutput = null) {
   // FAST PATH: If no context, it's a simple template. Concatenate strings and arrays.
   if (!context) {
     if (!Array.isArray(arr)) {
@@ -992,7 +992,7 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
 
       } else {
         // Function Command: @handler.cmd(), @callableHandler()
-        const handlerName = item.handler || defaultHandlerName;
+        const handlerName = item.handler;
         const commandName = item.command;
         const args = item.arguments;
 
@@ -1005,15 +1005,26 @@ function flattenBuffer(arr, context = null, focusOutput = null, defaultHandlerNa
             throw handleError(new Error(`Unknown command handler: ${handlerName}`), item.pos.lineno, item.pos.colno);
           }
 
-          const commandFunc = handlerInstance[commandName];
+          const commandFunc = commandName ? handlerInstance[commandName] : handlerInstance;
+
+          // if no command name is provided, use the handler itself as the command
           if (typeof commandFunc === 'function') {
-            // Found a method on the handler: @turtle.forward()
+            // Found a method on the handler: @turtle.forward() or the handler itself is a function @log()
             commandFunc.apply(handlerInstance, args);
-          } else if (typeof handlerInstance === 'function' && !commandName) {
-            // The handler itself is callable and no command was specified: @myCallableHandler(...)
-            handlerInstance.apply(handlerInstance, args);
+          } else if (!commandName) {
+            // The handler may be a proxy
+            try {
+              //the handler may be a Proxy
+              commandFunc(...args);
+            } catch (e) {
+              if (!commandName) {
+                throw handleError(new Error(`Handler '${handlerName}' is not callable (use Proxy or constructor function return)`), item.pos.lineno, item.pos.colno);
+              } else {
+                throw handleError(new Error(`Handler '${handlerName}' has no method '${commandName}' and is not callable`), item.pos.lineno, item.pos.colno);
+              }
+            }
           } else {
-            throw handleError(new Error(`Handler '${handlerName}' has no method '${commandName}' and is not callable`), item.pos.lineno, item.pos.colno);
+            throw handleError(new Error(`Handler '${handlerName}' has no method '${commandName}'`), item.pos.lineno, item.pos.colno);
           }
         }
       }
