@@ -2122,18 +2122,71 @@ class Compiler extends Obj {
     }
   }
 
+  /**
+   * Extracts a static path from a LookupVal node chain.
+   * A static path consists only of Symbol and Literal nodes in a chain.
+   * Returns null if the path is not static (contains expressions, function calls, etc.)
+   *
+   * @param {nodes.LookupVal|nodes.Symbol|nodes.Literal} node - The node to extract path from
+   * @returns {Array<string>|null} Array of path segments or null if not static
+   */
+  _extractStaticPath(node) {
+    const path = [];
+
+    // Helper function to recursively traverse the lookup chain
+    const traverse = (currentNode) => {
+      if (currentNode instanceof nodes.Symbol) {
+        // Base case: symbol node (e.g., 'paths')
+        path.unshift(currentNode.value);
+        return true;
+      } else if (currentNode instanceof nodes.Literal && typeof currentNode.value === 'string') {
+        // String literal (e.g., 'subpath')
+        path.unshift(currentNode.value);
+        return true;
+      } else if (currentNode instanceof nodes.LookupVal) {
+        // Recursive case: lookup node (e.g., paths.subpath)
+        // First, try to extract the value/key part
+        if (currentNode.val instanceof nodes.Literal && typeof currentNode.val.value === 'string') {
+          // Property access like .subpath
+          path.unshift(currentNode.val.value);
+        } else if (currentNode.val instanceof nodes.Symbol) {
+          // Property access like .subpath (as symbol)
+          path.unshift(currentNode.val.value);
+        } else {
+          // Non-static value (expression, function call, etc.)
+          return false;
+        }
+
+        // Then recursively traverse the target
+        return traverse(currentNode.target);
+      } else {
+        // Any other node type is not static
+        return false;
+      }
+    };
+
+    // Start traversal from the given node
+    if (traverse(node)) {
+      return path;
+    }
+
+    return null;
+  }
+
   compileFunctionCommand(node, frame) {
-    if (this.outputFocus) {
+    // Extract static path once for both focus detection and compilation
+    const staticPath = this._extractStaticPath(node.call.name);
+
+    if (this.outputFocus) {//@todo - think this over
       //skip compiling commands that do not target the focued property
       let commandTarget;
-      if (node.call.name instanceof nodes.LookupVal) {
-        // This is a command for a named handler, e.g., @turtle.forward()
-        commandTarget = node.call.name.target.value;
+
+      if (staticPath && staticPath.length >= 1) {
+        commandTarget = staticPath[0]; // First segment is always the handler
       } else if (node.call.name.value === 'print') {
-        // This is a command for text output, e.g., @print('hello')
+        // Special case for print command
         commandTarget = 'text';
       }
-      // @todo - add support for the default hanler, to be declared with ':text' syntax in the first line
 
       // If we identified a specific target and it doesn't match the focus, skip compilation.
       if (commandTarget && this.outputFocus !== commandTarget) {
@@ -2145,30 +2198,18 @@ class Compiler extends Obj {
       }
     }
 
-    // Do some validation of the AST structure.
-    if (node.call.name instanceof nodes.Symbol) {
-      // This is a valid call to a default handler command, like @print().
-      // No further structural validation needed for the name itself.
-    } else if (node.call.name instanceof nodes.LookupVal) {
-      // This is potentially a call to a named handler, like @turtle.forward().
-      // We must validate its internal structure.
-      const target = node.call.name.target;
-      const command = node.call.name.val;
-
-      //@todo - LookupVal.LookupVal.Symbol targets
-      if (!(target instanceof nodes.Symbol) || !(command instanceof nodes.Literal)) {
-        this.fail(
-          'Invalid Method Command syntax. Expected format is @handler.command(...).',
-          node.lineno, node.colno, node
-        );
-      }
-    } else {
-      // Any other type is a structural error.
+    // Validate the static path
+    if (!staticPath || staticPath.length === 0) {
       this.fail(
-        'Invalid Method Command syntax. Command must be a static name, not an expression.',
+        'Invalid Method Command syntax. Expected format is @handler(...) or @handler.command(...) or @handler.subpath.command(...).',
         node.lineno, node.colno, node
       );
     }
+
+    // Extract handler, subpath, and command from static path
+    const handler = staticPath[0];
+    const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
+    const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
 
     const isAsync = node.isAsync;
 
@@ -2188,12 +2229,14 @@ class Compiler extends Obj {
 
     wrapper((f) => {
       this.emit('{');
-      if (node.call.name instanceof nodes.LookupVal) {
-        // Handles: @turtle.forward(50)
-        this.emit(`handler: '${node.call.name.target.value}', command: '${node.call.name.val.value}', `);
+      this.emit(`handler: '${handler}', `);
+      if (command) {
+        this.emit(`command: '${command}', `);
       } else {
-        // Handles: @print("hello")
-        this.emit(`handler: null, command: '${node.call.name.value}', `);
+        this.emit('command: null, ');
+      }
+      if (subpath && subpath.length > 0) {
+        this.emit(`subpath: ${JSON.stringify(subpath)}, `);
       }
       this.emit('arguments: ');
       // _compileAggregate will correctly handle promise resolution if isAsync is true.
