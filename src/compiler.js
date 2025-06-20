@@ -2232,8 +2232,6 @@ class Compiler extends Obj {
       this.emit(`handler: '${handler}', `);
       if (command) {
         this.emit(`command: '${command}', `);
-      } else {
-        this.emit('command: null, ');
       }
       if (subpath && subpath.length > 0) {
         this.emit(`subpath: ${JSON.stringify(subpath)}, `);
@@ -2271,7 +2269,7 @@ class Compiler extends Obj {
       this.emit('{');
       this.emit(`"method": '${node.command.value}', `);
       this.emit('"path": [');
-      this._compilePath(node.path, f); // Use the new helper.
+      this._compilePath(node.path, f);
       this.emit('], "value": ');
       if (node.argument) {
         this._compileAwaitedExpression(node.argument, f, node.argument.isAsync);
@@ -2282,26 +2280,43 @@ class Compiler extends Obj {
     });
   }
 
+  /**
+   * Compiles a path expression into JavaScript code that represents a path array.
+   * This method handles the compilation of path expressions used in StatementCommands
+   * (like @data.set, @data.delete, etc.) where a path like "user.posts[0].title"
+   * needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
+   * The method recursively traverses the AST nodes representing the path and generates
+   * JavaScript code that builds this array. It handles:
+   * - Symbol nodes (variable names like 'user')
+   * - LookupVal nodes (property access like '.posts' or array access like '[0]')
+   * - Special case for empty bracket notation '[]'
+   * @param {nodes.Node} node - The AST node representing the path to compile
+   * @param {Frame} frame - The current compilation frame for variable lookup
+   */
   _compilePath(node, frame) {
     if (node instanceof nodes.Symbol) {
       // Base case: The start of a path (e.g., `user`).
+      // Emit the symbol name as a string literal in the path array
       this.emit(`'${node.value}'`);
     } else if (node instanceof nodes.LookupVal) {
       // Recursive step: A property or index access (e.g., `.posts` or `[0]`).
-      // First, compile the target of the lookup.
+      // First, compile the target of the lookup (the part before the dot/bracket)
       this._compilePath(node.target, frame);
       this.emit(', ');
 
-      // Then, compile the value/key.
+      // Then, compile the value/key (the part after the dot/bracket).
       if (node.val === null) {
         // This is the special case for `[]` syntax.
+        // Empty bracket notation is represented as the string "[]"
         this.emit('"[]"');
       } else {
         // This is a normal lookup (e.g., `[0]` or `.name`).
+        // Compile the expression that represents the key/index
+        // Use _compileAwaitedExpression to handle async expressions properly
         this._compileAwaitedExpression(node.val, frame, node.val.isAsync);
       }
     } else {
-      // Path validation.
+      // Path validation - only symbols and lookups are allowed in paths
       this.fail('Invalid node type in path for Output Command. Only symbols and lookups are allowed.',
         node.lineno, node.colno, node);
     }

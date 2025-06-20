@@ -994,6 +994,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
         // Function Command: @handler.cmd(), @callableHandler()
         const handlerName = item.handler;
         const commandName = item.command;
+        const subpath = item.subpath;
         const args = item.arguments;
 
         if (!handlerName || handlerName === 'text') {
@@ -1005,12 +1006,24 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
             throw handleError(new Error(`Unknown command handler: ${handlerName}`), item.pos.lineno, item.pos.colno);
           }
 
-          const commandFunc = commandName ? handlerInstance[commandName] : handlerInstance;
+          // Navigate through subpath properties to reach the final target
+          let targetObject = handlerInstance;
+          if (subpath && subpath.length > 0) {
+            for (const pathSegment of subpath) {
+              if (targetObject && typeof targetObject === 'object' && targetObject !== null) {
+                targetObject = targetObject[pathSegment];
+              } else {
+                throw handleError(new Error(`Cannot access property '${pathSegment}' on ${typeof targetObject} in handler '${handlerName}'`), item.pos.lineno, item.pos.colno);
+              }
+            }
+          }
+
+          const commandFunc = commandName ? targetObject[commandName] : targetObject;
 
           // if no command name is provided, use the handler itself as the command
           if (typeof commandFunc === 'function') {
             // Found a method on the handler: @turtle.forward() or the handler itself is a function @log()
-            commandFunc.apply(handlerInstance, args);
+            commandFunc.apply(targetObject, args);
           } else if (!commandName) {
             // The handler may be a proxy
             try {
@@ -1018,13 +1031,13 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
               commandFunc(...args);
             } catch (e) {
               if (!commandName) {
-                throw handleError(new Error(`Handler '${handlerName}' is not callable (use Proxy or constructor function return)`), item.pos.lineno, item.pos.colno);
+                throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable (use Proxy or constructor function return)`), item.pos.lineno, item.pos.colno);
               } else {
-                throw handleError(new Error(`Handler '${handlerName}' has no method '${commandName}' and is not callable`), item.pos.lineno, item.pos.colno);
+                throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}' and is not callable`), item.pos.lineno, item.pos.colno);
               }
             }
           } else {
-            throw handleError(new Error(`Handler '${handlerName}' has no method '${commandName}'`), item.pos.lineno, item.pos.colno);
+            throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`), item.pos.lineno, item.pos.colno);
           }
         }
       }
