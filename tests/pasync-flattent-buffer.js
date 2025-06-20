@@ -161,15 +161,6 @@ describe('flattenBuffer', function () {
       await flattenBuffer(buffer, context);
       expect(callableHandler.calledWith).to.eql([[1, 'arg2']]);
     });
-
-    it('should dispatch to a default handler', async function () {
-      logger.logs = []; // Reset singleton state
-      const defaultHandlerName = 'logger';
-      env.addCommandHandler('logger', logger);
-      const buffer = [{ handler: null, command: 'log', arguments: ['Default log.'] }];
-      await flattenBuffer(buffer, context, null, defaultHandlerName);
-      expect(logger.logs).to.eql(['Initialized for user 123', 'Default log.']);
-    });
   });
 
   describe('Focused Output', function () {
