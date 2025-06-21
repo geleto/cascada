@@ -474,4 +474,196 @@ describe('Cascada Script: Output commands', function () {
       expect(error.message).to.contain('expected block end in set statement');
     }
   });
+
+  describe('Script Transpiler: @-Command Integration Tests', () => {
+    beforeEach(() => {
+      // Create a fresh environment for each test to ensure isolation
+      env = new AsyncEnvironment();
+    });
+
+    // ========================================================================
+    // Group 1: Expression-style @print -> {{ expression }} -> result.text
+    //
+    // These tests verify that when `@print` is used with a single argument
+    // or a complex expression, it correctly transpiles to a Nunjucks
+    // output tag `{{ ... }}` and contributes to the `text` property of the result.
+    // ========================================================================
+    describe('Expression-style @print (generates text output)', () => {
+
+      it('should handle a simple path-like expression', async () => {
+        const script = '@print user.name';
+        const context = { user: { name: 'Alice' } };
+        const result = await env.renderScriptString(script, context);
+        expect(result.text).to.equal('Alice');
+      });
+
+      it('should handle a simple path-like expression with trailing whitespace', async () => {
+        const script = '@print user.name  ';
+        const context = { user: { name: 'Alice' } };
+        const result = await env.renderScriptString(script, context);
+        expect(result.text).to.equal('Alice');
+      });
+
+      it('should handle an expression with a binary operator', async () => {
+        const script = '@print "Hello, " + user.name';
+        const context = { user: { name: 'Bob' } };
+        const result = await env.renderScriptString(script, context);
+        expect(result.text).to.equal('Hello, Bob');
+      });
+
+      it('should handle an expression starting with a string literal', async () => {
+        const script = '@print "Hello World"';
+        const result = await env.renderScriptString(script, {});
+        expect(result.text).to.equal('Hello World');
+      });
+
+      it('should handle an expression that is a function call', async () => {
+        const script = '@print format(user.name)';
+        const context = {
+          user: { name: 'charlie' },
+          format: (str) => str.toUpperCase()
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result.text).to.equal('CHARLIE');
+      });
+
+      it('should handle a path-like expression broken by a filter', async () => {
+        const script = '@print user.name|title';
+        const context = { user: { name: 'dave' } };
+        const result = await env.renderScriptString(script, context);
+        expect(result.text).to.equal('Dave');
+      });
+
+      it('should handle a path-like expression broken by a math operator', async () => {
+        const script = '@print user.id + 1';
+        const context = { user: { id: 99 } };
+        const result = await env.renderScriptString(script, context);
+        expect(result.text).to.equal('100');
+      });
+
+      it('should handle a path-like expression broken by parenthesis', async () => {
+        const script = '@print (user.name)';
+        const context = { user: { name: 'Eve' } };
+        const result = await env.renderScriptString(script, context);
+        expect(result.text).to.equal('Eve');
+      });
+
+      it('should handle an expression with multiple path-like parts', async () => {
+        const script = '@print user.name + " " + user.lastName';
+        const context = { user: { name: 'Frank', lastName: 'Castle' } };
+        const result = await env.renderScriptString(script, context);
+        expect(result.text).to.equal('Frank Castle');
+      });
+
+      it('should handle an expression with a path broken by internal whitespace', async () => {
+        // Transpiles to `{{ user. firstName }}`, where `user.` is undefined.
+        // Nunjucks treats `undefined` as an empty string in concatenation.
+        const script = '@print user. firstName';
+        const context = { user: {firstName: 'Grace'} };
+        const result = await env.renderScriptString(script, context);
+        expect(result.text).to.equal('Grace');
+      });
+
+      it('should handle an object as an expression', async () => {
+        const script = '@print user';
+        const context = {user: 'John'};
+        const result = await env.renderScriptString(script, context);
+        // Nunjucks default object stringification
+        expect(result.text).to.equal('John');
+      });
+    });
+
+
+    // ========================================================================
+    // Group 2: Statement-style Commands -> {% ... %} -> result.data
+    //
+    // These tests verify that when a command is used with a distinct path
+    // and value (e.g., `@put`, `@print path value`), it correctly transpiles
+    // to a `statement_command` tag and modifies the `data` property of the result.
+    // ========================================================================
+    describe('Statement-style commands (modifies data output)', () => {
+      it('should handle `@put` with a simple path and string value', async () => {
+        const script = `
+                :data
+                @put user.name "Alice"
+            `;
+        const result = await env.renderScriptString(script, {});
+        expect(result).to.eql({ user: { name: 'Alice' } });
+      });
+
+      it('should handle `@put` with a path and a variable value', async () => {
+        const script = `
+                :data
+                set userId = 123
+                @put user.profile.id userId
+            `;
+        const result = await env.renderScriptString(script, {});
+        expect(result).to.eql({ user: { profile: { id: 123 } } });
+      });
+
+      it.only('should handle `@push` with a numeric array index', async () => {
+        const script = `
+                :data
+                @put users [{}, {}]
+                @push users[0].roles "admin"
+            `;
+        const result = await env.renderScriptString(script, {});
+        expect(result).to.eql({ users: [{ roles: ['admin'] }, {}] });
+      });
+
+      it('should handle `@put` with a complex expression in brackets', async () => {
+        const script = `
+                :data
+                set key = "complex"
+                @put items[key + "_id"] "value"
+            `;
+        const result = await env.renderScriptString(script, {});
+        expect(result).to.eql({ items: { complexId: 'value' } });
+      });
+
+      it('should handle statement-style `@print` to append to a data path', async () => {
+        // Note: statement-style `@print` APPENDS, it doesn't set.
+        const script = `
+                :data
+                @put user.log "Event: "
+                @print user.log "User Logged In"
+            `;
+        const result = await env.renderScriptString(script, {});
+        expect(result).to.eql({ user: { log: 'Event: User Logged In' } });
+      });
+
+      it('should handle command with path but no value argument (`@pop`)', async () => {
+        const script = `
+                :data
+                @put user.items ["a", "b", "c"]
+                @pop user.items
+            `;
+        const result = await env.renderScriptString(script, {});
+        expect(result).to.eql({ user: { items: ['a', 'b'] } });
+      });
+
+      it('should handle command with no arguments (`@reverse`) on a path', async () => {
+        // Note: The built-in `@reverse` command requires a path.
+        // A command like `@reverse` with no args is valid syntax but would
+        // throw an error in the handler. Here we test a valid use case.
+        const script = `
+                :data
+                @put user.items [1, 2, 3]
+                @reverse user.items
+            `;
+        const result = await env.renderScriptString(script, {});
+        expect(result).to.eql({ user: { items: [3, 2, 1] } });
+      });
+
+      it('should ignore comments between command parts', async () => {
+        const script = `
+                :data
+                @put /* set user */ user.name /* to value */ "Heidi"
+            `;
+        const result = await env.renderScriptString(script, {});
+        expect(result).to.eql({ user: { name: 'Heidi' } });
+      });
+    });
+  });
+
 });
