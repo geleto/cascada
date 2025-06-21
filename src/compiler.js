@@ -1925,7 +1925,7 @@ class Compiler extends Obj {
     this.emit.funcBegin(node, 'root');
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
-    if (node.isAsync) {
+    if (this.asyncMode) {
       this.emit.line('let isIncluded = !!(frame.parent || frame.isIncluded);');
       this.emit.line('if(!isIncluded){');
       this.emit.line('astate.waitAllClosures().then(() => {');
