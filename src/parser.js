@@ -640,36 +640,6 @@ class Parser extends Obj {
     return new nodes.Do(doTok.lineno, doTok.colno, exprs);
   }
 
-  parseStatementCommand() {
-    const tag = this.peekToken();
-    if (!this.skipSymbol('statement_command')) {
-      this.fail('parseStatementCommand: expected statement_command', tag.lineno, tag.colno);
-    }
-
-    // Step 1: Parse Command Name
-    const command = this.parsePrimary();
-    if (!(command instanceof nodes.Symbol)) {
-      this.fail('Expected a command name (like "put" or "push") for statement_command.', command.lineno, command.colno);
-    }
-
-    // Step 2: Parse Path
-    const path = this.parseUnary();
-
-    // Step 3: Parse Optional Argument
-    let argument = null;
-    if (this.peekToken().type !== lexer.TOKEN_BLOCK_END) {
-      argument = this.parseExpression();
-    }
-
-    // Step 5: Finalize - pass the tag value to advanceAfterBlockEnd
-    this.advanceAfterBlockEnd(tag.value);
-
-    // Step 4: Create Node
-    const node = new nodes.StatementCommand(command.lineno, command.colno, command, path, argument);
-
-    return node;
-  }
-
   parseFunctionCommand() {
     const tag = this.peekToken();
     if (!this.skipSymbol('function_command')) {
@@ -753,8 +723,6 @@ class Parser extends Obj {
         return this.parseSwitch();
       case 'do':
         return this.parseDo();
-      case 'statement_command':
-        return this.parseStatementCommand();
       case 'function_command':
         return this.parseFunctionCommand();
       case 'option':

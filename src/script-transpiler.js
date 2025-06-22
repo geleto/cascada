@@ -198,17 +198,14 @@ class ScriptTranspiler {
     // Check character before (if not at start)
     if (position > 0) {
       const charBefore = text[position - 1];
-      // Include $ in identifier characters
       if (/[a-zA-Z0-9_$]/.test(charBefore)) {
         return false;
       }
     }
 
     // Check character after (if not at end)
-    const afterIndex = position + length;
-    if (afterIndex < text.length) {
-      const charAfter = text[afterIndex];
-      // Include $ in identifier characters
+    if (position + length < text.length) {
+      const charAfter = text[position + length];
       if (/[a-zA-Z0-9_$]/.test(charAfter)) {
         return false;
       }
@@ -216,174 +213,6 @@ class ScriptTranspiler {
 
     return true;
   }
-
-  _isValidPathChar(char) {
-    return /[a-zA-Z0-9_.]/.test(char);
-  }
-
-  /**
-   * Checks if a character is a valid start for a value expression.
-   */
-  _isAllowedValueStart(char) {
-    // Identifier, Digit, Quote, or Grouping Character
-    return /[a-zA-Z_$\d"'{[(]/.test(char) || char === '`';
-  }
-
-  /**
-   * Analyzes a stream of tokens for a Cascada Script output command line.
-   * Unary + and are not allowed after a path, use (-x)
-   *
-   * @param {Array<object>} tokens The array of tokens from the lexer.
-   * @returns {{command: string, path: string | null, value: string | null}}
-   * @throws {Error} If the command syntax is invalid.
-   */
-  _analyzeCommandSyntax(tokens, lineIndex) {
-    let state = 'PARSING_COMMAND';
-    let skippingWhitespace = true;
-
-    let bracketLevel = 0;
-    let commandBuffer = '';
-    let pathBuffer = '';
-    let valueBuffer = '';
-    let separatorBuffer = '';
-    let isValueStart = true;
-
-    const setState = (newState) => {
-      state = newState;
-      skippingWhitespace = true;
-    };
-
-    const switchState = (newState) => {
-      state = newState;
-    };
-
-    for (const token of tokens) {
-      if (token.type === 'COMMENT') continue;
-
-      if (token.type === 'STRING' && state === 'PARSING_PATH' && bracketLevel === 0) {
-        // There can be no string in the path, this is a value
-        switchState('PARSING_VALUE');
-        skippingWhitespace = false;
-        isValueStart = false;
-        valueBuffer = pathBuffer + token.value;
-        pathBuffer = '';
-        continue;
-      }
-
-      if (token.type !== 'CODE') {
-        // Strings, regexes, etc.
-        switch (state) {
-          case 'PARSING_COMMAND':
-            throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Command name cannot be a string, regex, or comment.`);
-          case 'PARSING_PATH':
-            if (bracketLevel > 0) {
-              pathBuffer += token.value;
-            } else {
-              valueBuffer = pathBuffer + separatorBuffer + token.value;
-              pathBuffer = '';
-              separatorBuffer = '';
-              switchState('PARSING_VALUE');
-              isValueStart = false;
-            }
-            break;
-          case 'PARSING_VALUE':
-            valueBuffer += token.value;
-            isValueStart = false;
-            break;
-        }
-        continue;
-      }
-
-      for (const char of token.value) {
-        if (skippingWhitespace) {
-          if (/\s/.test(char)) {
-            if (state === 'PARSING_VALUE') {
-              separatorBuffer += char; // Capture separator whitespace
-            }
-            continue;
-          }
-          skippingWhitespace = false;
-        }
-
-        switch (state) {
-          case 'PARSING_COMMAND':
-            if (/\s/.test(char)) {
-              setState('PARSING_PATH');
-            } else {
-              commandBuffer += char;
-            }
-            break;
-          case 'PARSING_PATH':
-            if (char === '[') {
-              pathBuffer += char;
-              bracketLevel++;
-            } else if (char === ']') {
-              pathBuffer += char;
-              bracketLevel--;
-              if (bracketLevel < 0) throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched closing bracket ']'.`);
-            } else if (bracketLevel === 0) {
-              if (/\s/.test(char)) {
-                // *** FIX STARTS HERE ***
-                if (pathBuffer.endsWith('.')) {
-                  // Invalid path termination (e.g., "user."). Backtrack.
-                  valueBuffer = pathBuffer + char;
-                  pathBuffer = '';
-                  switchState('PARSING_VALUE');
-                  skippingWhitespace = false; // The space is part of the value now
-                } else {
-                  // Path looks valid so far, switch to parsing the value.
-                  setState('PARSING_VALUE');
-                  separatorBuffer += char;
-                }
-                // *** FIX ENDS HERE ***
-              } else if (this._isValidPathChar(char)) {
-                pathBuffer += char;
-              } else {
-                // Path is broken by an invalid character. Backtrack.
-                valueBuffer = pathBuffer + char;
-                pathBuffer = '';
-                switchState('PARSING_VALUE');
-              }
-            } else {
-              pathBuffer += char;
-            }
-            break;
-          case 'PARSING_VALUE':
-            if (isValueStart) {
-              if (!this._isAllowedValueStart(char)) {
-                // Path-breaker found. Backtrack.
-                valueBuffer = pathBuffer + separatorBuffer + char;
-                pathBuffer = '';
-                separatorBuffer = '';
-              } else {
-                valueBuffer += char;
-              }
-              isValueStart = false;
-            } else {
-              valueBuffer += char;
-            }
-            break;
-        }
-      }
-    }
-
-    if (bracketLevel > 0) throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched opening bracket '['.`);
-    if (state === 'PARSING_PATH') {
-      valueBuffer = pathBuffer;
-      pathBuffer = '';
-    }
-    if (pathBuffer && valueBuffer.trim() === '') {
-      valueBuffer = pathBuffer;
-      pathBuffer = '';
-    }
-
-    return {
-      command: commandBuffer.substring(1),
-      path: !pathBuffer ? null : pathBuffer.trim(),
-      value: !valueBuffer ? null : valueBuffer.trim()
-    };
-  }
-
 
   /**
    * Determines the block type for a tag
@@ -531,36 +360,7 @@ class ScriptTranspiler {
     } return false;
   }
 
-  /**
-   * Checks if a command follows function-style syntax
-   * Function-style: identifier(.identifier)*(...)
-   * Statement-style: identifier(.identifier)* ...other
-   * @param {string} commandContent - The command content after the @ symbol
-   * @return {boolean} True if it's function-style
-   */
-  _isCommandFunctionStyle(commandContent) {
-    // Find the first opening parenthesis
-    const parenthesisIndex = commandContent.indexOf('(');
-    if (parenthesisIndex === -1) {
-      return false;//quick and dirty initial test
-    }
 
-    // Extract the part before the parenthesis and validate it
-    const beforeParenthesis = commandContent.substring(0, parenthesisIndex).trim();
-    if (!beforeParenthesis) {
-      return false;
-    }
-
-    // Split by dots and validate each part as an identifier
-    const parts = beforeParenthesis.split('.');
-    for (const part of parts) {
-      if (!this._isValidIdentifier(part)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
 
   /**
    * Checks if a string is a valid JavaScript identifier
@@ -601,36 +401,46 @@ class ScriptTranspiler {
       // Find the @ symbol position and preserve all whitespace after it
       const atIndex = parseResult.codeContent.indexOf('@');
       const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
-      let isFunctionStyle = this._isCommandFunctionStyle(commandContent.trim());
 
-      let isPrint = this._getFirstWord(commandContent) === 'print';
-      if (isPrint) {
-        // there are two types of print commands:
-        // 1. @print path expression - converted to statement_command tag
-        // 2. @print expression - converted to {{ }}
-        // the second type can also look like  @print obj1.value + obj2.value
-        // we have to distinguish it from @print obj1.value obj2.value
-        // => For the second type, we have to check if:
-        // - the first argument is a path
-        // - the second argument is not an expression operator
-
-        const analysis = this._analyzeCommandSyntax(parseResult.tokens, lineIndex);
-        if (!analysis.path) {
-          // no path just value, will be converted to {{ }}
-          if (!analysis.value) {
-            throw new Error(`Invalid print command: "${commandContent}" at line ${lineIndex + 1}`);
+      // Check if this is a @text command (the new replacement for @print)
+      let isText = this._getFirstWord(commandContent) === 'text';
+      if (isText) {
+        // Check if @text has parentheses (function call syntax)
+        const hasParentheses = commandContent.includes('(');
+        if (hasParentheses) {
+          // @text(value) - extract the value and convert to {{ }}
+          const openParenIndex = commandContent.indexOf('(');
+          const closeParenIndex = commandContent.lastIndexOf(')');
+          if (openParenIndex === -1 || closeParenIndex === -1 || closeParenIndex <= openParenIndex) {
+            throw new Error(`Invalid text command syntax: "${commandContent}" at line ${lineIndex + 1}`);
+          }
+          const expression = commandContent.substring(openParenIndex + 1, closeParenIndex).trim();
+          if (!expression) {
+            throw new Error(`Invalid text command: "${commandContent}" at line ${lineIndex + 1}`);
           }
           parseResult.lineType = 'PRINT';
           parseResult.blockType = null;
-          parseResult.codeContent = analysis.value;
+          parseResult.codeContent = expression;
         } else {
-          isPrint = false;
+          // @text value (legacy style) - convert to {{ }}
+          const trimmedContent = commandContent.trim();
+          if (trimmedContent === 'text') {
+            throw new Error(`Invalid text command: "${commandContent}" at line ${lineIndex + 1}`);
+          }
+          // Remove 'text' and any leading whitespace
+          const expression = commandContent.substring(4).trim();
+          if (!expression) {
+            throw new Error(`Invalid text command: "${commandContent}" at line ${lineIndex + 1}`);
+          }
+          parseResult.lineType = 'PRINT';
+          parseResult.blockType = null;
+          parseResult.codeContent = expression;
         }
-      }
-
-      if (!isPrint) {
+      } else {
+        // All other @ commands are treated as function commands
+        // @print is deprecated and should be replaced with @text(value)
         parseResult.lineType = 'TAG';
-        parseResult.tagName = isFunctionStyle ? 'function_command' : 'statement_command';
+        parseResult.tagName = 'function_command';
         parseResult.blockType = null;
         parseResult.codeContent = commandContent; // The content for the Nunjucks tag
       }
