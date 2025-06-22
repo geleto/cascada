@@ -49,25 +49,25 @@ describe('flattenBuffer', function () {
       });
     });
 
-    it('should handle a simple @put command', async function () {
+    it('should handle a simple @data.put command', async function () {
       const buffer = [{ method: 'put', path: ['user'], value: { name: 'Alice' } }];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { user: { name: 'Alice' } } });
     });
 
-    it('should create nested objects with @put', async function () {
+    it('should create nested objects with @data.put', async function () {
       const buffer = [{ method: 'put', path: ['config', 'theme', 'color'], value: 'dark' }];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { config: { theme: { color: 'dark' } } } });
     });
 
-    it('should handle a simple @push command', async function () {
+    it('should handle a simple @data.push command', async function () {
       const buffer = [{ method: 'push', path: ['users'], value: 'Alice' }];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { users: ['Alice'] } });
     });
 
-    it('should create an array with @push if it does not exist', async function () {
+    it('should create an array with @data.push if it does not exist', async function () {
       const buffer = [{ method: 'push', path: ['config', 'admins'], value: 'root' }];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { config: { admins: ['root'] } } });
@@ -83,7 +83,7 @@ describe('flattenBuffer', function () {
       expect(result).to.eql({ data: { users: [{ id: 1, name: 'Alice' }] } });
     });
 
-    it('should handle the @merge command', async function () {
+    it('should handle the @data.merge command', async function () {
       const buffer = [
         { method: 'put', path: ['user'], value: { id: 1, name: 'Alice' } },
         { method: 'merge', path: ['user'], value: { name: 'Alicia', active: true } },
@@ -100,7 +100,7 @@ describe('flattenBuffer', function () {
       expect(result).to.eql({ text: 'Hello, world! 2024' });
     });
 
-    it('should handle @print commands (handler: null)', async function () {
+    it('should handle @text commands (handler: null)', async function () {
       const buffer = [{ handler: null, command: 'print', arguments: ['Log message.'] }];
       const result = await flattenBuffer(buffer, context, null, 'text');
       expect(result).to.eql({ text: 'Log message.' });
@@ -274,7 +274,7 @@ describe('flattenBuffer', function () {
       );
     });
 
-    it('should throw an error for @put on an invalid path', async function () {
+    it('should throw an error for @data.put on an invalid path', async function () {
       env.addDataMethods({ put: (target, value) => { return value; } });
       const buffer = [
         { method: 'put', path: ['user'], value: null },
