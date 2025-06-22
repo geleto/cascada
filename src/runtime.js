@@ -6,7 +6,6 @@ var supportsIterators = (
   typeof Symbol === 'function' && Symbol.iterator && typeof arrayFrom === 'function'
 );
 
-
 // Frames keep track of scoping both at compile-time and run-time so
 // we know how to access variables. Block tags can introduce special
 // variables, for example.
@@ -849,57 +848,6 @@ function resolveArguments(fn, skipArguments = 0) {
   };
 }
 
-/**
- * Traverses a root object based on a path array to find the target object
- * for a data manipulation command. It creates nested objects/arrays as needed.
- */
-function _findPathTarget(root, path) {
-  let parent = null;
-  let current = root;
-  let key = path[0];
-
-  for (let i = 0; i < path.length; i++) {
-    key = path[i];
-
-    if (key === '[]') {
-      if (!Array.isArray(current)) {
-        throw new Error(`Path target for '[]' is not an array.`);
-      }
-      key = current.length - 1;
-      if (key === -1) {
-        throw new Error(`Cannot set last element ('[]') on empty array.`);
-      }
-    }
-
-    const keyType = typeof key;
-    if (keyType !== 'string' && keyType !== 'number') {
-      const pathString = path.slice(0, i).join('.');
-      throw new Error(
-        `Invalid path segment for Output Command. Expected a string or number but got a ${keyType} ([${key}]) in path '${pathString}[...]'`
-      );
-    }
-
-    parent = current;
-
-    if (current === null || typeof current === 'undefined') {
-      throw new Error(`Cannot set property '${key}' on null or undefined path segment.`);
-    }
-
-    // If we're not at the end of the path and the next key doesn't exist, create it.
-    if (typeof current[key] === 'undefined' && i < path.length - 1) {
-      // If the next path segment looks like an array index, create an array.
-      // Otherwise, create an object.
-      const nextKey = path[i + 1];
-      if (nextKey === '[]') {
-        throw new Error(`Cannot set last element ('[]') on null or undefined path segment.`);
-      }
-      current[key] = (typeof nextKey === 'number' || nextKey === '[]') ? [] : {};
-    }
-    current = current[key];
-  }
-  return { target: parent, key };
-}
-
 function flattenBuffer(arr, context = null, focusOutput = null) {
   // FAST PATH: If no context, it's a simple template. Concatenate strings and arrays.
   if (!context) {
@@ -921,7 +869,6 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
   // Script processing path
   const env = context.env;
-  const dataOutput = {};
   const textOutput = [];
   const handlerInstances = {}; // Cache instantiated handlers for this run.
 
@@ -939,7 +886,8 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     }
     if (env.commandHandlerClasses[handlerName]) {
       const HandlerClass = env.commandHandlerClasses[handlerName];
-      const instance = new HandlerClass(context.getVariables());
+      // For DataHandler, pass the environment; for other handlers, pass context variables
+      const instance = new HandlerClass(context.getVariables(), env);
       handlerInstances[handlerName] = instance;
       return instance;
     }
@@ -981,64 +929,53 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
     // Process a command object from the compiler
     if (typeof item === 'object' && (item.method || item.handler !== undefined)) {
-      if (item.method) {
-        // Statement Command: @put, @push, etc.
-        const dataMethod = env.dataMethods[item.method];
-        if (!dataMethod) {
-          throw handleError(new Error(`Unknown data method: ${item.method}`), item.pos.lineno, item.pos.colno);
-        }
-        const { target, key } = _findPathTarget(dataOutput, item.path);
-        target[key] = dataMethod.call(env.dataMethods, target[key], item.value);
+      // Function Command: @handler.cmd(), @callableHandler()
+      const handlerName = item.handler;
+      const commandName = item.command;
+      const subpath = item.subpath;
+      const args = item.arguments;
 
+      if (!handlerName || handlerName === 'text') {
+        textOutput.push(...args);
       } else {
-        // Function Command: @handler.cmd(), @callableHandler()
-        const handlerName = item.handler;
-        const commandName = item.command;
-        const subpath = item.subpath;
-        const args = item.arguments;
+        const handlerInstance = getOrInstantiateHandler(handlerName);
 
-        if (!handlerName || handlerName === 'text') {
-          textOutput.push(...args);
+        if (!handlerInstance) {
+          throw handleError(new Error(`Unknown command handler: ${handlerName}`), item.pos.lineno, item.pos.colno);
+        }
+
+        // Navigate through subpath properties to reach the final target
+        let targetObject = handlerInstance;
+        if (subpath && subpath.length > 0) {
+          for (const pathSegment of subpath) {
+            if (targetObject && typeof targetObject === 'object' && targetObject !== null) {
+              targetObject = targetObject[pathSegment];
+            } else {
+              throw handleError(new Error(`Cannot access property '${pathSegment}' on ${typeof targetObject} in handler '${handlerName}'`), item.pos.lineno, item.pos.colno);
+            }
+          }
+        }
+
+        const commandFunc = commandName ? targetObject[commandName] : targetObject;
+
+        // if no command name is provided, use the handler itself as the command
+        if (typeof commandFunc === 'function') {
+          // Found a method on the handler: @turtle.forward() or the handler itself is a function @log()
+          commandFunc.apply(targetObject, args);
+        } else if (!commandName) {
+          // The handler may be a proxy
+          try {
+            //the handler may be a Proxy
+            commandFunc(...args);
+          } catch (e) {
+            if (!commandName) {
+              throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable (use Proxy or constructor function return)`), item.pos.lineno, item.pos.colno);
+            } else {
+              throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}' and is not callable`), item.pos.lineno, item.pos.colno);
+            }
+          }
         } else {
-          const handlerInstance = getOrInstantiateHandler(handlerName);
-
-          if (!handlerInstance) {
-            throw handleError(new Error(`Unknown command handler: ${handlerName}`), item.pos.lineno, item.pos.colno);
-          }
-
-          // Navigate through subpath properties to reach the final target
-          let targetObject = handlerInstance;
-          if (subpath && subpath.length > 0) {
-            for (const pathSegment of subpath) {
-              if (targetObject && typeof targetObject === 'object' && targetObject !== null) {
-                targetObject = targetObject[pathSegment];
-              } else {
-                throw handleError(new Error(`Cannot access property '${pathSegment}' on ${typeof targetObject} in handler '${handlerName}'`), item.pos.lineno, item.pos.colno);
-              }
-            }
-          }
-
-          const commandFunc = commandName ? targetObject[commandName] : targetObject;
-
-          // if no command name is provided, use the handler itself as the command
-          if (typeof commandFunc === 'function') {
-            // Found a method on the handler: @turtle.forward() or the handler itself is a function @log()
-            commandFunc.apply(targetObject, args);
-          } else if (!commandName) {
-            // The handler may be a proxy
-            try {
-              //the handler may be a Proxy
-              commandFunc(...args);
-            } catch (e) {
-              if (!commandName) {
-                throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable (use Proxy or constructor function return)`), item.pos.lineno, item.pos.colno);
-              } else {
-                throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}' and is not callable`), item.pos.lineno, item.pos.colno);
-              }
-            }
-          } else {
-            throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`), item.pos.lineno, item.pos.colno);
-          }
+          throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`), item.pos.lineno, item.pos.colno);
         }
       }
       return;
@@ -1052,12 +989,18 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
   // Assemble the final result object
   const finalResult = {};
 
-  if (Object.keys(dataOutput).length > 0) finalResult.data = dataOutput;
-
   const textResult = textOutput.join('');
   if (textResult) finalResult.text = textResult;
 
-  Object.assign(finalResult, handlerInstances);
+  // Add handler return values to the result
+  Object.keys(handlerInstances).forEach(handlerName => {
+    const handler = handlerInstances[handlerName];
+    if (typeof handler.getReturnValue === 'function') {
+      finalResult[handlerName] = handler.getReturnValue();
+    } else {
+      finalResult[handlerName] = handler;
+    }
+  });
 
   // Handle focused output
   if (focusOutput) {

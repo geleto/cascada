@@ -13,7 +13,7 @@ const globalRuntime = require('./runtime');
 const { handleError, Frame, AsyncFrame, AsyncState } = globalRuntime;
 const expressApp = require('./express-app');
 const scriptTranspiler = require('./script-transpiler');
-const defaultDataMethods = require('./default-data-methods');
+const DataHandler = require('./data-handler');
 
 // If the user is using the async API, *always* call it
 // asynchronously even if the template was synchronous.
@@ -428,9 +428,12 @@ class AsyncEnvironment extends Environment {
     super.init(loaders, opts);
 
     // Initialize script configuration properties
-    this.dataMethods = Object.assign({}, defaultDataMethods);
+    this.customDataMethods = {};
     this.commandHandlerClasses = {};
     this.commandHandlerInstances = {};
+
+    // Register the DataHandler as a default command handler
+    this.addCommandHandlerClass('data', DataHandler);
   }
 
   /**
@@ -439,7 +442,7 @@ class AsyncEnvironment extends Environment {
    * and values are the functions to execute.
    */
   addDataMethods(methods) {
-    Object.assign(this.dataMethods, methods);
+    Object.assign(this.customDataMethods, methods);
     return this;
   }
 
