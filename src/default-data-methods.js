@@ -193,5 +193,24 @@ module.exports = {
       return target;
     }
     throw new Error('Error: Target for \'print\' must be a string or an array.');
+  },
+
+  /**
+   * Appends a value to a string. Returns a new concatenated string.
+   * Corresponds to the Cascada command: `@append path value`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @param {any} value The value to append to the string.
+   * @returns {string} The new concatenated string.
+   */
+  append : function(target, value) {
+    if (target === undefined) {
+      target = '';
+    }
+    if (typeof target === 'string') {
+      return target + String(value);
+    } else {
+      throw new Error('Error: Target for \'append\' must be a string.');
+    }
   }
 };
