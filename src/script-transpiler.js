@@ -403,7 +403,7 @@ class ScriptTranspiler {
       const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
 
       // Check if this is a @text command (the new replacement for @print)
-      let isText = this._getFirstWord(commandContent) === 'text';
+      let isText = commandContent.trim().startsWith('text(') || this._getFirstWord(commandContent) === 'text';
       if (isText) {
         // Check if @text has parentheses (function call syntax)
         const hasParentheses = commandContent.includes('(');

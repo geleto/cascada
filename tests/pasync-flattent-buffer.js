@@ -50,34 +50,34 @@ describe('flattenBuffer', function () {
     });
 
     it('should handle a simple @data.put command', async function () {
-      const buffer = [{ method: 'put', path: ['user'], value: { name: 'Alice' } }];
+      const buffer = [{ handler: 'data', command: 'put', arguments: [['user'], { name: 'Alice' }] }];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { user: { name: 'Alice' } } });
     });
 
     it('should create nested objects with @data.put', async function () {
-      const buffer = [{ method: 'put', path: ['config', 'theme', 'color'], value: 'dark' }];
+      const buffer = [{ handler: 'data', command: 'put', arguments: [['config', 'theme', 'color'], 'dark'] }];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { config: { theme: { color: 'dark' } } } });
     });
 
     it('should handle a simple @data.push command', async function () {
-      const buffer = [{ method: 'push', path: ['users'], value: 'Alice' }];
+      const buffer = [{ handler: 'data', command: 'push', arguments: [['users'], 'Alice'] }];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { users: ['Alice'] } });
     });
 
     it('should create an array with @data.push if it does not exist', async function () {
-      const buffer = [{ method: 'push', path: ['config', 'admins'], value: 'root' }];
+      const buffer = [{ handler: 'data', command: 'push', arguments: [['config', 'admins'], 'root'] }];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { config: { admins: ['root'] } } });
     });
 
     it('should handle the "[]" path syntax for creating and populating array items', async function () {
       const buffer = [
-        { method: 'push', path: ['users'], value: { id: 0 } },
-        { method: 'put', path: ['users', '[]', 'id'], value: 1 },
-        { method: 'put', path: ['users', 0, 'name'], value: 'Alice' }
+        { handler: 'data', command: 'push', arguments: [['users'], { id: 0 }] },
+        { handler: 'data', command: 'put', arguments: [['users', '[]', 'id'], 1] },
+        { handler: 'data', command: 'put', arguments: [['users', 0, 'name'], 'Alice'] }
       ];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { users: [{ id: 1, name: 'Alice' }] } });
@@ -85,8 +85,8 @@ describe('flattenBuffer', function () {
 
     it('should handle the @data.merge command', async function () {
       const buffer = [
-        { method: 'put', path: ['user'], value: { id: 1, name: 'Alice' } },
-        { method: 'merge', path: ['user'], value: { name: 'Alicia', active: true } },
+        { handler: 'data', command: 'put', arguments: [['user'], { id: 1, name: 'Alice' }] },
+        { handler: 'data', command: 'merge', arguments: [['user'], { name: 'Alicia', active: true }] },
       ];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { user: { id: 1, name: 'Alicia', active: true } } });
@@ -172,7 +172,7 @@ describe('flattenBuffer', function () {
     });
 
     const fullBuffer = [
-      { method: 'put', path: ['user', 'name'], value: 'Bob' },
+      { handler: 'data', command: 'put', arguments: [['user', 'name'], 'Bob'] },
       'Some text. ',
       { handler: 'turtle', command: 'forward', arguments: [10] }
     ];
@@ -239,7 +239,7 @@ describe('flattenBuffer', function () {
     it('should handle post-processing functions that return another command object', async function () {
       env.addDataMethods({ put: (target, value) => { return value; } });
       const buffer = [
-        ['ignored', (val) => ({ method: 'put', path: ['wasProcessed'], value: true })]
+        ['ignored', (val) => ({ handler: 'data', command: 'put', arguments: [['wasProcessed'], true] })]
       ];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { wasProcessed: true } });
@@ -277,8 +277,8 @@ describe('flattenBuffer', function () {
     it('should throw an error for @data.put on an invalid path', async function () {
       env.addDataMethods({ put: (target, value) => { return value; } });
       const buffer = [
-        { method: 'put', path: ['user'], value: null },
-        { method: 'put', path: ['user', 'profile'], value: 'test' }
+        { handler: 'data', command: 'put', arguments: [['user'], null] },
+        { handler: 'data', command: 'put', arguments: [['user', 'profile'], 'test'] }
       ];
       await expectAsyncError(
         () => flattenBuffer(buffer, context),
@@ -288,7 +288,7 @@ describe('flattenBuffer', function () {
 
     it('should throw an error for a non-string/non-number path segment', async function () {
       env.addDataMethods({ put: (target, value) => { return value; } });
-      const buffer = [{ method: 'put', path: ['config', null, 'value'], value: 'test' }];
+      const buffer = [{ handler: 'data', command: 'put', arguments: [['config', null, 'value'], 'test'] }];
       await expectAsyncError(
         () => flattenBuffer(buffer, context),
         (err) => expect(err.message).to.contain('Invalid path segment')

@@ -45,10 +45,10 @@ describe('Cascada Script: Output commands', function () {
 
       // The '@' commands are buffered. They run sequentially AFTER the parallel
       // operations above complete, using their now-resolved values.
-      @data.put("result.users", userList)
-      @data.merge("result.config", appConfig)
-      @data.put("result.config.loaded", true)
-      @data.push("result.log", "Data fetch complete")
+      @data.put(result.users, userList)
+      @data.merge(result.config, appConfig)
+      @data.put(result.config.loaded, true)
+      @data.push(result.log, "Data fetch complete")
     `;
 
     const result = await env.renderScriptString(script, context);
@@ -101,9 +101,9 @@ describe('Cascada Script: Output commands', function () {
 
         // Assemble the macro's own return value. This happens after
         // its internal fetches are complete.
-        @data.put("user.id", userData.id)
-        @data.put("user.name", userData.name)
-        @data.put("user.tasks", tasksData)
+        @data.put(user.id, userData.id)
+        @data.put(user.name, userData.name)
+        @data.put(user.tasks, tasksData)
       endmacro
 
       // Call the macro for different users. These two calls are independent
@@ -113,9 +113,9 @@ describe('Cascada Script: Output commands', function () {
 
       // The final assembly step for the main script. This block waits for
       // both 'report1' and 'report2' to be fully resolved before running.
-      @data.put("reports.user1", report1.user)
-      @data.put("reports.user2", report2.user)
-      @data.put("reports.summary", "Generated 2 reports")
+      @data.put(reports.user1, report1.user)
+      @data.put(reports.user2, report2.user)
+      @data.put(reports.summary, "Generated 2 reports")
     `;
 
     const result = await env.renderScriptString(script, context);
@@ -143,21 +143,21 @@ describe('Cascada Script: Output commands', function () {
       const script = `
         :data
         // Put creates/replaces values
-        @data.put("user.name", "Alice")
-        @data.put("user.role", "Admin")
-        @data.put("user.role", "Super-Admin") // Overwrites previous put
+        @data.put(user.name, "Alice")
+        @data.put(user.role, "Admin")
+        @data.put(user.role, "Super-Admin") // Overwrites previous put
 
         // Push adds to an array, creating it if needed
-        @data.push("user.tags", "active")
-        @data.push("user.tags", "new")
+        @data.push(user.tags, "active")
+        @data.push(user.tags, "new")
 
         // Merge combines objects
-        @data.put("settings.profile", { theme: "light" })
-        @data.merge("settings.profile", { notifications: true })
+        @data.put(settings.profile, { theme: "light" })
+        @data.merge(settings.profile, { notifications: true })
 
         // Deep merge combines nested objects
-        @data.put("settings.deep", { a: { b: 1 } })
-        @data.deepMerge("settings.deep", { a: { c: 2 }, d: 3 })
+        @data.put(settings.deep, { a: { b: 1 } })
+        @data.deepMerge(settings.deep, { a: { c: 2 }, d: 3 })
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
@@ -172,15 +172,15 @@ describe('Cascada Script: Output commands', function () {
     it('should handle array manipulation with @data.pop, @data.shift, @data.unshift, and @data.reverse', async () => {
       const script = `
         :data
-        @data.push("items", "a")
-        @data.push("items", "b")
-        @data.push("items", "c")
-        @data.push("items", "d")
+        @data.push(items, "a")
+        @data.push(items, "b")
+        @data.push(items, "c")
+        @data.push(items, "d")
 
-        @data.pop("items") // remove "d" -> [a, b, c]
-        @data.shift("items") // remove "a" -> [b, c]
-        @data.unshift("items", "x") // add "x" -> [x, b, c]
-        @data.reverse("items") // -> [c, b, x]
+        @data.pop(items) // remove "d" -> [a, b, c]
+        @data.shift(items) // remove "a" -> [b, c]
+        @data.unshift(items, "x") // add "x" -> [x, b, c]
+        @data.reverse(items) // -> [c, b, x]
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ items: ['c', 'b', 'x'] });
@@ -189,18 +189,18 @@ describe('Cascada Script: Output commands', function () {
     it('should handle array index targeting including last-item `[]`', async () => {
       const script = `
         :data
-        @data.push("users", { name: 'Alice', tasks: ['task1', 'task2'] })
-        @data.push("users", { name: 'Bob' })
+        @data.push(users, { name: 'Alice', tasks: ['task1', 'task2'] })
+        @data.push(users, { name: 'Bob' })
 
         // Target specific index
-        @data.put("users[0].role", "Admin")
+        @data.put(users[0].role, "Admin")
 
         // Target last item pushed in script sequence
-        @data.push("users", { name: 'Charlie' })
-        @data.put("users[].role", "Guest") // Affects Charlie
+        @data.push(users, { name: 'Charlie' })
+        @data.put(users[].role, "Guest") // Affects Charlie
 
-        @data.put("users[1].status", "active") // Affects Bob
-        @data.put("users[0].tasks[]", "task3") //change the last task of Alice
+        @data.put(users[1].status, "active") // Affects Bob
+        @data.put(users[0].tasks[], "task3") //change the last task of Alice
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
@@ -219,7 +219,7 @@ describe('Cascada Script: Output commands', function () {
         @text("Hello")
         @text(", ")
         @text("World!")
-        @data.put("status", "ok")
+        @data.put(status, "ok")
       `;
       // No focus, so we get the full result object
       const result = await env.renderScriptString(script);
@@ -232,9 +232,9 @@ describe('Cascada Script: Output commands', function () {
     it('should append to a path in the data object with `@data.append`', async () => {
       const script = `
         :data
-        @data.put("log", "Log started. ")
-        @data.append("log", "Event 1. ")
-        @data.append("log", "Event 2.")
+        @data.put(log, "Log started. ")
+        @data.append(log, "Event 1. ")
+        @data.append(log, "Event 2.")
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ log: 'Log started. Event 1. Event 2.' });
@@ -245,7 +245,7 @@ describe('Cascada Script: Output commands', function () {
         :text
         @text("This is ")
         @text("the final text.")
-        @data.put("status", "ignored")
+        @data.put(status, "ignored")
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.equal('This is the final text.');
@@ -265,10 +265,10 @@ describe('Cascada Script: Output commands', function () {
       });
       const script = `
         :data
-        @data.push("users", { id: 1, name: "Alice", status: "active" })
-        @data.push("users", { id: 2, name: "Bob" })
-        @data.upsert("users", { id: 1, status: "inactive" }) // Updates Alice
-        @data.upsert("users", { id: 3, name: "Charlie" })    // Adds Charlie
+        @data.push(users, { id: 1, name: "Alice", status: "active" })
+        @data.push(users, { id: 2, name: "Bob" })
+        @data.upsert(users, { id: 1, status: "inactive" }) // Updates Alice
+        @data.upsert(users, { id: 3, name: "Charlie" })    // Adds Charlie
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
@@ -387,10 +387,10 @@ describe('Cascada Script: Output commands', function () {
       const script = `
         :data
         set captured
-          @data.put("user.name", "Captured User")
+          @data.put(user.name, "Captured User")
           @text("hello from capture")
         endset
-        @data.put("result", captured)
+        @data.put(result, captured)
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
@@ -410,7 +410,7 @@ describe('Cascada Script: Output commands', function () {
       const script = `
         :turtle // Focus the script's return value on the 'turtle' handler
         @turtle.forward(100)
-        @data.put("data.status", "ignored")
+        @data.put(status, "ignored")
       `;
       const result = await env.renderScriptString(script);
       // The result is just the turtle object, not the full result container
@@ -426,11 +426,11 @@ describe('Cascada Script: Output commands', function () {
       :data
       set userData :data
         set user = { name: "Bob", role: "user" }
-        @data.put("name", user.name)
-        @data.put("role", user.role)
+        @data.put(name, user.name)
+        @data.put(role, user.role)
       endset
 
-      @data.put("result.user", userData)
+      @data.put(result.user, userData)
     `;
 
     const result = await env.renderScriptString(script, {});
@@ -585,7 +585,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle `@data.put` with a simple path and string value', async () => {
         const script = `
                 :data
-                @data.put("user.name", "Alice")
+                @data.put(user.name, "Alice")
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { name: 'Alice' } });
@@ -595,7 +595,7 @@ describe('Cascada Script: Output commands', function () {
         const script = `
                 :data
                 set userId = 123
-                @data.put("user.profile.id", userId)
+                @data.put(user.profile.id, userId)
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { profile: { id: 123 } } });
@@ -604,8 +604,8 @@ describe('Cascada Script: Output commands', function () {
       it('should handle `@data.push` with a numeric array index', async () => {
         const script = `
                 :data
-                @data.put("users", [{}, {}])
-                @data.push("users[0].roles", "admin")
+                @data.put(users, [{}, {}])
+                @data.push(users[0].roles, "admin")
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ users: [{ roles: ['admin'] }, {}] });
@@ -615,7 +615,7 @@ describe('Cascada Script: Output commands', function () {
         const script = `
                 :data
                 set key = "complex"
-                @data.put("items[" + key + "_id]", "value")
+                @data.put(items[key + "Id"], "value")
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ items: { complexId: 'value' } });
@@ -625,8 +625,8 @@ describe('Cascada Script: Output commands', function () {
         // Note: statement-style `@data.append` APPENDS, it doesn't set.
         const script = `
                 :data
-                @data.put("user.log", "Event: ")
-                @data.append("user.log", "User Logged In")
+                @data.put(user.log, "Event: ")
+                @data.append(user.log, "User Logged In")
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { log: 'Event: User Logged In' } });
@@ -635,8 +635,8 @@ describe('Cascada Script: Output commands', function () {
       it('should handle command with path but no value argument (`@data.pop`)', async () => {
         const script = `
                 :data
-                @data.put("user.items", ["a", "b", "c"])
-                @data.pop("user.items")
+                @data.put(user.items, ["a", "b", "c"])
+                @data.pop(user.items)
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { items: ['a', 'b'] } });
@@ -648,8 +648,8 @@ describe('Cascada Script: Output commands', function () {
         // throw an error in the handler. Here we test a valid use case.
         const script = `
                 :data
-                @data.put("user.items", [1, 2, 3])
-                @data.reverse("user.items")
+                @data.put(user.items, [1, 2, 3])
+                @data.reverse(user.items)
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { items: [3, 2, 1] } });
@@ -658,7 +658,7 @@ describe('Cascada Script: Output commands', function () {
       it('should ignore comments between command parts', async () => {
         const script = `
                 :data
-                @data.put(/* set user */ "user.name", /* to value */ "Heidi")
+                @data.put(/* set user */ user.name, /* to value */ "Heidi")
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { name: 'Heidi' } });
