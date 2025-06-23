@@ -2228,24 +2228,106 @@ class Compiler extends Obj {
     };
 
     wrapper((f) => {
-      this.emit('{');
-      this.emit(`handler: '${handler}', `);
+      this.emit(`{ handler: '${handler}', `);
       if (command) {
         this.emit(`command: '${command}', `);
       }
       if (subpath && subpath.length > 0) {
         this.emit(`subpath: ${JSON.stringify(subpath)}, `);
       }
-      this.emit('arguments: ');
-      // _compileAggregate will correctly handle promise resolution if isAsync is true.
-      this._compileAggregate(node.call.args, f, '[', ']', isAsync, true);
+
+      let argList = node.call.args;
+      const asyncArgs = argList.isAsync;
+      this.emit('arguments: ' + (asyncArgs ? 'await ' : ''));
+
+      if (handler === 'data') {
+        // For @data commands, we create a new "virtual" AST for the arguments.
+        // where the first argument is a path like "user.posts[0].title" that
+        // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
+        const originalArgs = node.call.args.children;
+        if (originalArgs.length === 0) {
+          this.fail(`@data command '${command}' requires at least a path argument.`, node.lineno, node.colno, node);
+        }
+
+        const pathArg = originalArgs[0];
+
+        // A temporary, "virtual" node to wrap the path:
+        const dataPathNode = {
+          typename: 'DataPath',
+          pathNode: pathArg,
+          // Propagate async flag so _compileAggregate can handle it correctly.
+          isAsync: pathArg.isAsync
+        };
+
+        // Our virtual node at the front.
+        const newArgs = [dataPathNode, ...originalArgs.slice(1)];
+
+        argList = new nodes.NodeList(node.call.args.lineno, node.call.args.colno, newArgs);
+        argList.isAsync = asyncArgs;
+      }
+
+      this._compileAggregate(argList, f, '[', ']', isAsync, true);
+
       this.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} }`);
     });
   }
 
   /**
+   * Compiles a virtual "DataPath" node into a JavaScript array literal.
+   * While there is no DataPath node in the AST, we create a temporary node with
+   * typename 'DataPath' and pathNode property to store the actual AST for the path.
+   * This is used to compile the first argument (path) of @data commands
+   * where a path like "user.posts[0].title"
+   * needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
+   * The method recursively traverses the AST nodes representing the path and generates
+   * JavaScript code that builds this array. It handles:
+   * - Symbol nodes (variable names like 'user')
+   * - LookupVal nodes (property access like '.posts' or array access like '[0]')
+   * - Special case for empty bracket notation '[]'
+   */
+  compileDataPath(node, frame) {
+    // Define an inner, recursive function to handle the actual path compilation.
+    // Using an arrow function is convenient as it preserves the `this` context of the Compiler instance.
+    const _compile = (pathNode) => {
+      if (pathNode instanceof nodes.Symbol) {
+        // Base case: The start of a path (e.g., `user` in `user.profile`).
+        // We emit the symbol's value as a string literal in the JS array.
+        this.emit(`'${pathNode.value}'`);
+
+      } else if (pathNode instanceof nodes.LookupVal) {
+        // Recursive step: A property or index access (e.g., `.profile` or `[0]`).
+
+        // First, compile the target of the lookup (the part before the dot/bracket).
+        _compile(pathNode.target);
+
+        // Then, add the comma separator for the next array element.
+        this.emit(', ');
+
+        // Finally, compile the value/key (the part after the dot/bracket).
+        if (pathNode.val === null) {
+          // This is the special case for `[]` syntax, which means "append to end".
+          // We represent it with a special string for the runtime handler to interpret.
+          this.emit('"[]"');
+        } else {
+          // This is a normal lookup (e.g., `[0]` or `.name`).
+          // We compile the expression that represents the key/index.
+          this._compileExpression(pathNode.val, frame, false);
+        }
+      } else {
+        // Path validation: only symbols and lookups are allowed in paths for @data commands.
+        this.fail('Invalid node type in path for @data command. Only symbols and lookups are allowed.',
+          pathNode.lineno, pathNode.colno, pathNode);
+      }
+    };
+
+    this.emit('[');
+    _compile(node.pathNode);
+    this.emit(']');
+  }
+
+  /**
    * Do nothing for now, currently used only for focus directive
-   * which logic is handled in the parser
+   * where the logic is handled in the parser
    */
   compileOption(node, frame) {
   }
