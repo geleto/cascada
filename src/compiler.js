@@ -2284,45 +2284,40 @@ class Compiler extends Obj {
    * - Symbol nodes (variable names like 'user')
    * - LookupVal nodes (property access like '.posts' or array access like '[0]')
    * - Special case for empty bracket notation '[]'
+   * - Special case for null (represents root of data object)
    */
   compileDataPath(node, frame) {
-    // Define an inner, recursive function to handle the actual path compilation.
-    // Using an arrow function is convenient as it preserves the `this` context of the Compiler instance.
-    const _compile = (pathNode) => {
-      if (pathNode instanceof nodes.Symbol) {
-        // Base case: The start of a path (e.g., `user` in `user.profile`).
-        // We emit the symbol's value as a string literal in the JS array.
-        this.emit(`'${pathNode.value}'`);
+    // Flatten the path into a NodeList and use _compileAggregate
+    // _compileAggregate will automatically handle sync vs async based on node.isAsync
+    const pathNodes = this._flattenPathToNodeList(node.pathNode);
+    this._compileAggregate(pathNodes, frame, '[', ']', true, true);
+  }
 
-      } else if (pathNode instanceof nodes.LookupVal) {
-        // Recursive step: A property or index access (e.g., `.profile` or `[0]`).
-
-        // First, compile the target of the lookup (the part before the dot/bracket).
-        _compile(pathNode.target);
-
-        // Then, add the comma separator for the next array element.
-        this.emit(', ');
-
-        // Finally, compile the value/key (the part after the dot/bracket).
-        if (pathNode.val === null) {
-          // This is the special case for `[]` syntax, which means "append to end".
-          // We represent it with a special string for the runtime handler to interpret.
-          this.emit('"[]"');
+  // Helper to flatten a path into a NodeList of path segments
+  _flattenPathToNodeList(pathNode) {
+    const segments = [];
+    const flatten = (node) => {
+      if (node instanceof nodes.Symbol) {
+        segments.push(new nodes.Literal(node.lineno, node.colno, node.value));
+      } else if (node instanceof nodes.LookupVal) {
+        flatten(node.target);
+        if (node.val === null) {
+          segments.push(new nodes.Literal(node.lineno, node.colno, '[]'));
         } else {
-          // This is a normal lookup (e.g., `[0]` or `.name`).
-          // We compile the expression that represents the key/index.
-          this._compileExpression(pathNode.val, frame, false);
+          segments.push(node.val);
         }
+      } else if (node instanceof nodes.Literal && node.value === null) {
+        segments.push(new nodes.Literal(node.lineno, node.colno, null));
       } else {
-        // Path validation: only symbols and lookups are allowed in paths for @data commands.
-        this.fail('Invalid node type in path for @data command. Only symbols and lookups are allowed.',
-          pathNode.lineno, pathNode.colno, pathNode);
+        this.fail('Invalid node type in path for @data command. Only symbols, lookups, and null are allowed.',
+          node.lineno, node.colno, node);
       }
     };
+    flatten(pathNode);
 
-    this.emit('[');
-    _compile(node.pathNode);
-    this.emit(']');
+    const nodeList = new nodes.NodeList(pathNode.lineno, pathNode.colno, segments);
+    nodeList.isAsync = segments.some(seg => seg.isAsync);
+    return nodeList;
   }
 
   /**

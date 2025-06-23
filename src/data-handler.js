@@ -38,6 +38,13 @@ class DataHandler {
     // Create a wrapper that handles path traversal and argument conversion
     this[name] = function (path, ...args) {
 
+      // Special case: null path or [null] means we're working on the root object itself
+      if (path === null || (Array.isArray(path) && path.length === 1 && path[0] === null)) {
+        // Replace this data with the return
+        this.data = func.apply(this.methods, [this.data, ...args]);
+        return this.data;
+      }
+
       // Find the target location in the data object
       const { target, key } = this._findPathTarget(this.data, path);
 
@@ -64,10 +71,15 @@ class DataHandler {
    * Traverses the data object using the provided path and returns the target location.
    * Creates intermediate objects/arrays as needed.
    * @param {Object} root - The root object to traverse.
-   * @param {Array} path - The path array to traverse.
+   * @param {Array} path - The path array to traverse. An empty array or [null] represents the root.
    * @returns {Object} Object containing { target, key } for the final location.
    */
   _findPathTarget(root, path) {
+    // Special case: empty path or [null] means we're working on the root object itself
+    if (path.length === 0 || (path.length === 1 && path[0] === null)) {
+      return { target: root, key: null };
+    }
+
     let parent = null;
     let current = root;
     let key = path[0];
