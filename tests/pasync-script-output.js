@@ -169,6 +169,68 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
+    it('should handle null path to work on the root of the data object', async () => {
+      const script = `
+        :data
+        // Set the entire data object to a new value
+        @data.put(null, { name: 'George', age: 30 })
+
+        // This should replace the entire object, not add to it
+        @data.put(null, { status: 'active', role: 'user' })
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        status: 'active',
+        role: 'user'
+      });
+    });
+
+    it('should handle null path with merge to combine with existing root data', async () => {
+      const script = `
+        :data
+        // Start with some initial data
+        @data.put(user.name, "Alice")
+        @data.put(user.role, "Admin")
+
+        // Merge new data into the root object
+        @data.deepMerge(null, { user: { status: "active" }, config: { theme: "dark" } })
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        user: { name: 'Alice', role: 'Admin', status: 'active' },
+        config: { theme: 'dark' }
+      });
+    });
+
+    it('should handle null path with deepMerge for nested object merging', async () => {
+      const script = `
+        :data
+        // Start with nested data
+        @data.put(user.profile.name, "Bob")
+        @data.put(user.profile.settings.theme, "light")
+
+        // Deep merge new data into the root object
+        @data.deepMerge(null, {
+          user: {
+            profile: {
+              settings: { notifications: true },
+              email: "bob@example.com"
+            }
+          }
+        })
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        user: {
+          profile: {
+            name: 'Bob',
+            settings: { theme: 'light', notifications: true },
+            email: 'bob@example.com'
+          }
+        }
+      });
+    });
+
     it('should handle array manipulation with @data.pop, @data.shift, @data.unshift, and @data.reverse', async () => {
       const script = `
         :data
@@ -662,6 +724,472 @@ describe('Cascada Script: Output commands', function () {
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { name: 'Heidi' } });
+      });
+    });
+
+    describe('Dynamic path commands (function calls and expressions in paths)', () => {
+      it('should handle @data.put with function call in array index', async () => {
+        const script = `
+          :data
+          @data.put(company, companyData)
+          @data.put(company.users[getUserId()].name, "Alice")
+        `;
+        const context = {
+          getUserId: () => 0,
+          companyData: {
+            users: [
+              { name: 'Bob' },
+              { name: 'Charlie' }
+            ]
+          }
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            users: [
+              { name: 'Alice' },
+              { name: 'Charlie' }
+            ]
+          }
+        });
+      });
+
+      it('should handle @data.put with function call returning string key', async () => {
+        const script = `
+          :data
+          @data.put(company, companyData)
+          @data.put(company.users[getUserKey()].status, "active")
+        `;
+        const context = {
+          getUserKey: () => 'admin',
+          companyData: {
+            users: {
+              admin: { name: 'Admin User' },
+              guest: { name: 'Guest User' }
+            }
+          }
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            users: {
+              admin: { name: 'Admin User', status: 'active' },
+              guest: { name: 'Guest User' }
+            }
+          }
+        });
+      });
+
+      it('should handle @data.put with expression in array index', async () => {
+        const script = `
+          :data
+          @data.put(items, itemsData)
+          set index = 1
+          @data.put(items[index + 1].name, "Item C")
+        `;
+        const context = {
+          itemsData: [
+            { name: 'Item A' },
+            { name: 'Item B' },
+            { name: 'Item D' }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          items: [
+            { name: 'Item A' },
+            { name: 'Item B' },
+            { name: 'Item C' }
+          ]
+        });
+      });
+
+      it('should handle @data.put with complex expression in object key', async () => {
+        const script = `
+          :data
+          @data.put(data, dataSource)
+          set prefix = "user"
+          set suffix = "Profile"
+          @data.put(data[prefix + suffix].name, "Dynamic User")
+        `;
+        const context = {
+          dataSource: {
+            userProfile: { id: 1 },
+            otherProfile: { id: 2 }
+          }
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          data: {
+            userProfile: { id: 1, name: 'Dynamic User' },
+            otherProfile: { id: 2 }
+          }
+        });
+      });
+
+      it('should handle @data.push with function call in array index', async () => {
+        const script = `
+          :data
+          @data.put(users, usersData)
+          @data.push(users[getUserIndex()].roles, "editor")
+        `;
+        const context = {
+          getUserIndex: () => 0,
+          usersData: [
+            { name: 'Alice', roles: ['admin'] },
+            { name: 'Bob', roles: ['user'] }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          users: [
+            { name: 'Alice', roles: ['admin', 'editor'] },
+            { name: 'Bob', roles: ['user'] }
+          ]
+        });
+      });
+
+      it('should handle @data.merge with dynamic path', async () => {
+        const script = `
+          :data
+          @data.put(company, companyData)
+          @data.merge(company.departments[getDeptId()], { budget: 50000 })
+        `;
+        const context = {
+          getDeptId: () => 'engineering',
+          companyData: {
+            departments: {
+              engineering: { name: 'Engineering', staff: 10 },
+              marketing: { name: 'Marketing', staff: 5 }
+            }
+          }
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            departments: {
+              engineering: { name: 'Engineering', staff: 10, budget: 50000 },
+              marketing: { name: 'Marketing', staff: 5 }
+            }
+          }
+        });
+      });
+
+      it('should handle @data.deepMerge with nested dynamic paths', async () => {
+        const script = `
+          :data
+          @data.put(company, companyData)
+          @data.deepMerge(company.users[getUserId()].profile.settings, { theme: "dark" })
+        `;
+        const context = {
+          getUserId: () => 1,
+          companyData: {
+            users: [
+              { profile: { settings: { theme: 'light' } } },
+              { profile: { settings: { notifications: true } } }
+            ]
+          }
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            users: [
+              { profile: { settings: { theme: 'light' } } },
+              { profile: { settings: { notifications: true, theme: 'dark' } } }
+            ]
+          }
+        });
+      });
+
+      it('should handle @data.append with dynamic path', async () => {
+        const script = `
+          :data
+          @data.put(company, companyData)
+          @data.append(company.users[getUserId()].log, " - User logged in")
+        `;
+        const context = {
+          getUserId: () => 0,
+          companyData: {
+            users: [
+              { name: 'Alice', log: 'Session started' },
+              { name: 'Bob', log: 'Session started' }
+            ]
+          }
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            users: [
+              { name: 'Alice', log: 'Session started - User logged in' },
+              { name: 'Bob', log: 'Session started' }
+            ]
+          }
+        });
+      });
+
+      it('should handle @data.pop with dynamic array index', async () => {
+        const script = `
+          :data
+          @data.put(users, usersData)
+          @data.pop(users[getUserIndex()].items)
+        `;
+        const context = {
+          getUserIndex: () => 1,
+          usersData: [
+            { name: 'Alice', items: ['item1', 'item2'] },
+            { name: 'Bob', items: ['item3', 'item4', 'item5'] }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          users: [
+            { name: 'Alice', items: ['item1', 'item2'] },
+            { name: 'Bob', items: ['item3', 'item4'] }
+          ]
+        });
+      });
+
+      it('should handle @data.shift with dynamic array index', async () => {
+        const script = `
+          :data
+          @data.put(users, usersData)
+          @data.shift(users[getUserIndex()].tasks)
+        `;
+        const context = {
+          getUserIndex: () => 0,
+          usersData: [
+            { name: 'Alice', tasks: ['task1', 'task2', 'task3'] },
+            { name: 'Bob', tasks: ['task4'] }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          users: [
+            { name: 'Alice', tasks: ['task2', 'task3'] },
+            { name: 'Bob', tasks: ['task4'] }
+          ]
+        });
+      });
+
+      it('should handle @data.unshift with dynamic array index', async () => {
+        const script = `
+          :data
+          @data.put(users, usersData)
+          @data.unshift(users[getUserIndex()].tasks, "urgent")
+        `;
+        const context = {
+          getUserIndex: () => 1,
+          usersData: [
+            { name: 'Alice', tasks: ['task1'] },
+            { name: 'Bob', tasks: ['task2', 'task3'] }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          users: [
+            { name: 'Alice', tasks: ['task1'] },
+            { name: 'Bob', tasks: ['urgent', 'task2', 'task3'] }
+          ]
+        });
+      });
+
+      it('should handle @data.reverse with dynamic array index', async () => {
+        const script = `
+          :data
+          @data.put(users, usersData)
+          @data.reverse(users[getUserIndex()].items)
+        `;
+        const context = {
+          getUserIndex: () => 0,
+          usersData: [
+            { name: 'Alice', items: ['a', 'b', 'c'] },
+            { name: 'Bob', items: ['x', 'y'] }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          users: [
+            { name: 'Alice', items: ['c', 'b', 'a'] },
+            { name: 'Bob', items: ['x', 'y'] }
+          ]
+        });
+      });
+
+      it('should handle multiple dynamic paths in sequence', async () => {
+        const script = `
+          :data
+          @data.put(company, companyData)
+          @data.put(company.users[getUserId()].name, "Updated User")
+          @data.push(company.users[getUserId()].roles, "manager")
+          @data.put(company.departments[getDeptId()].head, getUserId())
+        `;
+        const context = {
+          getUserId: () => 1,
+          getDeptId: () => 'engineering',
+          companyData: {
+            users: [
+              { name: 'Alice', roles: ['admin'] },
+              { name: 'Bob', roles: ['user'] }
+            ],
+            departments: {
+              engineering: { name: 'Engineering' },
+              marketing: { name: 'Marketing' }
+            }
+          }
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            users: [
+              { name: 'Alice', roles: ['admin'] },
+              { name: 'Updated User', roles: ['user', 'manager'] }
+            ],
+            departments: {
+              engineering: { name: 'Engineering', head: 1 },
+              marketing: { name: 'Marketing' }
+            }
+          }
+        });
+      });
+
+      it('should handle dynamic path with async function call', async () => {
+        const script = `
+          :data
+          @data.put(users, usersData)
+          set userId = await getUserIdAsync()
+          @data.put(users[userId].status, "active")
+        `;
+        const context = {
+          getUserIdAsync: async () => 0,
+          usersData: [
+            { name: 'Alice' },
+            { name: 'Bob' }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          users: [
+            { name: 'Alice', status: 'active' },
+            { name: 'Bob' }
+          ]
+        });
+      });
+
+      it('should handle dynamic path with conditional expression', async () => {
+        const script = `
+          :data
+          @data.put(users, usersData)
+          set isAdmin = true
+          @data.put(users[isAdmin ? 0 : 1].role, "admin")
+        `;
+        const context = {
+          usersData: [
+            { name: 'Alice' },
+            { name: 'Bob' }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          users: [
+            { name: 'Alice', role: 'admin' },
+            { name: 'Bob' }
+          ]
+        });
+      });
+
+      it('should handle dynamic path with mathematical expression', async () => {
+        const script = `
+          :data
+          @data.put(items, itemsData)
+          set baseIndex = 2
+          @data.put(items[baseIndex * 2 - 1].priority, "high")
+        `;
+        const context = {
+          itemsData: [
+            { name: 'Item 1' },
+            { name: 'Item 2' },
+            { name: 'Item 3' },
+            { name: 'Item 4' },
+            { name: 'Item 5' }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          items: [
+            { name: 'Item 1' },
+            { name: 'Item 2' },
+            { name: 'Item 3' },
+            { name: 'Item 4', priority: 'high' },
+            { name: 'Item 5' }
+          ]
+        });
+      });
+
+      it('should handle dynamic path with nested function calls', async () => {
+        const script = `
+          :data
+          @data.put(company, companyData)
+          @data.put(company.users[getNestedUserId()].profile.settings[getSettingKey()], "enabled")
+        `;
+        const context = {
+          getNestedUserId: () => 0,
+          getSettingKey: () => 'notifications',
+          companyData: {
+            users: [
+              {
+                name: 'Alice',
+                profile: {
+                  settings: {
+                    theme: 'dark'
+                  }
+                }
+              }
+            ]
+          }
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            users: [
+              {
+                name: 'Alice',
+                profile: {
+                  settings: {
+                    theme: 'dark',
+                    notifications: 'enabled'
+                  }
+                }
+              }
+            ]
+          }
+        });
+      });
+
+      it('should handle dynamic path with array method call result', async () => {
+        const script = `
+          :data
+          @data.put(users, usersData)
+          @data.put(users[getUserIndex()].name, "Updated Name")
+        `;
+        const context = {
+          getUserIndex: () => {
+            const ids = [1, 0, 2];
+            return ids.indexOf(1);
+          },
+          usersData: [
+            { name: 'Alice' },
+            { name: 'Bob' },
+            { name: 'Charlie' }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          users: [
+            { name: 'Alice' },
+            { name: 'Updated Name' },
+            { name: 'Charlie' }
+          ]
+        });
       });
     });
   });

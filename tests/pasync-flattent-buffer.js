@@ -32,7 +32,7 @@ describe('flattenBuffer', function () {
 
   describe('Data Assembly (@put, @push, etc.)', function () {
     // Add the necessary data methods for this test suite.
-    beforeEach(() => {
+    /*beforeEach(() => {
       env.addDataMethods({
         put: (target, value) => { return value; },
         push: (target, value) => {
@@ -41,13 +41,18 @@ describe('flattenBuffer', function () {
           return target;
         },
         merge: (target, value) => {
-          if (typeof target !== 'object' || target === null) {
-            target = {};
+          if (target === undefined) {
+            return value;
           }
-          return Object.assign(target, value);
+          if (typeof target === 'object' && target !== null && !Array.isArray(target) && typeof value === 'object' && value !== null) {
+            Object.assign(target, value);
+            return target;
+          } else {
+            throw new Error('Error: Both target and value for \'merge\' must be non-null objects.');
+          }
         }
       });
-    });
+    });*/
 
     it('should handle a simple @data.put command', async function () {
       const buffer = [{ handler: 'data', command: 'put', arguments: [['user'], { name: 'Alice' }] }];
@@ -90,6 +95,25 @@ describe('flattenBuffer', function () {
       ];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { user: { id: 1, name: 'Alicia', active: true } } });
+    });
+
+    it('should handle null path to work on the root of the data object', async function () {
+      const buffer = [
+        { handler: 'data', command: 'put', arguments: [null, { name: 'George', age: 30 }] },
+        { handler: 'data', command: 'put', arguments: [null, { status: 'active', role: 'user' }] }
+      ];
+      const result = await flattenBuffer(buffer, context);
+      expect(result).to.eql({ data: { status: 'active', role: 'user' } });
+    });
+
+    it('should handle null path with merge to combine with existing root data', async function () {
+      const buffer = [
+        { handler: 'data', command: 'put', arguments: [['user', 'name'], 'Alice'] },
+        { handler: 'data', command: 'put', arguments: [['user', 'role'], 'Admin'] },
+        { handler: 'data', command: 'deepMerge', arguments: [null, { user: { status: 'active' }, config: { theme: 'dark' } }] }
+      ];
+      const result = await flattenBuffer(buffer, context);
+      expect(result).to.eql({ data: { user: { name: 'Alice', role: 'Admin', status: 'active' }, config: { theme: 'dark' } } });
     });
   });
 

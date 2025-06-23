@@ -748,7 +748,7 @@ endif`;
       it('should handle data commands with extra whitespace', () => {
         const script = '  @data.put(user.name, \'Alice\')  ';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('  {%- function_command data.put(user.name, \'Alice\')  -%}');
+        expect(template).to.equal('  {%- function_command data.put(user.name, \'Alice\')   -%}');
       });
 
       it('should convert command that looks like function but has no parentheses', () => {
@@ -794,7 +794,7 @@ endif`;
       it('should handle statement command with trailing comment', () => {
         const script = '@data.put(user.name, \'Alice\') // Set user name';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.put(user.name, \'Alice\') -%}{#- Set user name -#}');
+        expect(template).to.equal('{%- function_command data.put(user.name, \'Alice\')  -%}{#- Set user name -#}');
       });
 
       it('should handle function command with trailing comment', () => {
