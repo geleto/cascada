@@ -374,6 +374,10 @@ class ScriptTranspiler {
     return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);
   }
 
+  /**
+   * Only '@text' needs more validations and continuation handling because the content is
+   * between the '()' and for other cases content goes directly to the template tag unmodified
+   */
   _processLine(line, state, lineIndex) {
     // Parse line with script parser
     const parseResult = parseTemplateLine(
@@ -403,39 +407,46 @@ class ScriptTranspiler {
       const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
 
       // Check if this is a @text command (the new replacement for @print)
-      let isText = commandContent.trim().startsWith('text(') || this._getFirstWord(commandContent) === 'text';
+      let ccontent = commandContent.trim();
+      let isText = ccontent.startsWith('text(') || this._getFirstWord(ccontent) === 'text';
       if (isText) {
+        //skip the 'text'
+        ccontent = ccontent.substring('text'.length).trim();
         // Check if @text has parentheses (function call syntax)
-        const hasParentheses = commandContent.includes('(');
+        const hasParentheses = ccontent.startsWith('(');
+        let expression = '';
         if (hasParentheses) {
           // @text(value) - extract the value and convert to {{ }}
-          const openParenIndex = commandContent.indexOf('(');
-          const closeParenIndex = commandContent.lastIndexOf(')');
-          if (openParenIndex === -1 || closeParenIndex === -1 || closeParenIndex <= openParenIndex) {
-            throw new Error(`Invalid text command syntax: "${commandContent}" at line ${lineIndex + 1}`);
+          const openParenIndex = ccontent.indexOf('(');
+          const closeParenIndex = ccontent.lastIndexOf(')');
+          /*if (openParenIndex === -1 || closeParenIndex === -1 || closeParenIndex <= openParenIndex) {
+            throw new Error(`Invalid text command syntax: "${ccontent}" at line ${lineIndex + 1}`);
+          }*/
+          expression = ccontent.substring(
+            openParenIndex + 1,
+            closeParenIndex === -1 ? ccontent.length : closeParenIndex
+          ).trim();
+
+          if (closeParenIndex && !expression) {
+            throw new Error(`Invalid text command: "${ccontent}" at line ${lineIndex + 1}`);
           }
-          const expression = commandContent.substring(openParenIndex + 1, closeParenIndex).trim();
-          if (!expression) {
-            throw new Error(`Invalid text command: "${commandContent}" at line ${lineIndex + 1}`);
+
+          if (closeParenIndex === -1) {
+            //we expect the last continuation line to end with ')' which shall be ignored
+            parseResult.continuesToNext = true;
+            parseResult.expectedContinuationEnd = ')';
           }
-          parseResult.lineType = 'PRINT';
-          parseResult.blockType = null;
-          parseResult.codeContent = expression;
         } else {
-          // @text value (legacy style) - convert to {{ }}
-          const trimmedContent = commandContent.trim();
-          if (trimmedContent === 'text') {
-            throw new Error(`Invalid text command: "${commandContent}" at line ${lineIndex + 1}`);
+          //make sure there is no content after the 'text', we expect '(' on the next line (@todo)
+          if (ccontent.length > 0) {
+            throw new Error(`Expected '(' after 'text' at line ${lineIndex + 1}`);
           }
-          // Remove 'text' and any leading whitespace
-          const expression = commandContent.substring(4).trim();
-          if (!expression) {
-            throw new Error(`Invalid text command: "${commandContent}" at line ${lineIndex + 1}`);
-          }
-          parseResult.lineType = 'PRINT';
-          parseResult.blockType = null;
-          parseResult.codeContent = expression;
+          parseResult.continuesToNext = true;
+          parseResult.expectedContinuationEnd = ')';
         }
+        parseResult.lineType = 'PRINT';
+        parseResult.blockType = null;
+        parseResult.codeContent = expression;
       } else {
         // All other @ commands are treated as function commands
         // @print is deprecated and should be replaced with @text(value)
@@ -467,7 +478,7 @@ class ScriptTranspiler {
       }
     }
 
-    parseResult.continuesToNext = this._willContinueToNextLine(codeTokens, parseResult.codeContent, firstWord);
+    parseResult.continuesToNext = parseResult.continuesToNext || this._willContinueToNextLine(codeTokens, parseResult.codeContent, firstWord);
     parseResult.continuesFromPrev = this._continuesFromPrevious(parseResult.codeContent);
 
     //update the state used by the parser (it works only with state + current line)
@@ -502,6 +513,18 @@ class ScriptTranspiler {
             //}
           }
           presult.comments = tagLineParseResult.comments;//we need the comments in the last line of continuation
+          //inherit expectedContinuationEnd to the last continuation line
+          //check if any line in the continuation sequence has expectedContinuationEnd
+          let continuationEnd = tagLineParseResult.expectedContinuationEnd;
+          for (let j = prevLineIndex + 1; j <= i; j++) {
+            if (parseResults[j].expectedContinuationEnd) {
+              continuationEnd = parseResults[j].expectedContinuationEnd;
+              break;
+            }
+          }
+          if (continuationEnd) {
+            presult.expectedContinuationEnd = continuationEnd;
+          }
         } else {
           // this is do tag, code not part of continuation but it can be start of continuation
           tagLineParseResult = presult;//all comments from continuations are added here
@@ -511,7 +534,7 @@ class ScriptTranspiler {
     }
   }
 
-  _generateOutput(processedLine, nextIsContinuation, lastNonContinuationLineType) {
+  _generateOutput(processedLine, nextIsContinuation, lastNonContinuationLineType, lineIndex) {
     let output = processedLine.indentation;
 
     if (processedLine.isEmpty) {
@@ -549,6 +572,22 @@ class ScriptTranspiler {
     output += processedLine.codeContent;
 
     if (!nextIsContinuation) {
+      // Handle expectedContinuationEnd - remove the expected character from the last continuation line
+      if (processedLine.expectedContinuationEnd && processedLine.isContinuation) {
+        // This is the last line of a continuation that expects a specific ending character
+        const trimmedContent = processedLine.codeContent.trim();
+        if (trimmedContent.endsWith(processedLine.expectedContinuationEnd)) {
+          // Remove the expected character from the end of the output
+          const lastIndex = output.lastIndexOf(processedLine.expectedContinuationEnd);
+          if (lastIndex !== -1) {
+            // Remove the character but keep any whitespace after it
+            output = output.substring(0, lastIndex) + output.substring(lastIndex + 1);
+          } else {
+            throw new Error(`Expected '${processedLine.expectedContinuationEnd}' at line ${lineIndex + 1}`);
+          }
+        }
+      }
+
       //close the tag
       switch (lastNonContinuationLineType) {
         case 'CODE':
@@ -652,7 +691,7 @@ class ScriptTranspiler {
       if (!processedLines[i].isContinuation) {
         lastNonContinuationLineType = processedLines[i].lineType;
       }
-      output += this._generateOutput(processedLines[i], processedLines[i + 1]?.isContinuation, lastNonContinuationLineType);
+      output += this._generateOutput(processedLines[i], processedLines[i + 1]?.isContinuation, lastNonContinuationLineType, i);
       if (i != processedLines.length - 1) {
         output += '\n';
       }
