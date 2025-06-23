@@ -37,11 +37,9 @@ class DataHandler {
   addMethod(name, func) {
     // Create a wrapper that handles path traversal and argument conversion
     this[name] = function (path, ...args) {
-      // Convert path string to array if needed
-      const pathArray = Array.isArray(path) ? path : path.split('.');
 
       // Find the target location in the data object
-      const { target, key } = this._findPathTarget(this.data, pathArray);
+      const { target, key } = this._findPathTarget(this.data, path);
 
       // Get the current value at the target location
       const currentValue = target[key];
