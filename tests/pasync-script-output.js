@@ -45,9 +45,9 @@ describe('Cascada Script: Output commands', function () {
 
       // The '@' commands are buffered. They run sequentially AFTER the parallel
       // operations above complete, using their now-resolved values.
-      @data.put(result.users, userList)
+      @data.set(result.users, userList)
       @data.merge(result.config, appConfig)
-      @data.put(result.config.loaded, true)
+      @data.set(result.config.loaded, true)
       @data.push(result.log, "Data fetch complete")
     `;
 
@@ -101,9 +101,9 @@ describe('Cascada Script: Output commands', function () {
 
         // Assemble the macro's own return value. This happens after
         // its internal fetches are complete.
-        @data.put(user.id, userData.id)
-        @data.put(user.name, userData.name)
-        @data.put(user.tasks, tasksData)
+        @data.set(user.id, userData.id)
+        @data.set(user.name, userData.name)
+        @data.set(user.tasks, tasksData)
       endmacro
 
       // Call the macro for different users. These two calls are independent
@@ -113,9 +113,9 @@ describe('Cascada Script: Output commands', function () {
 
       // The final assembly step for the main script. This block waits for
       // both 'report1' and 'report2' to be fully resolved before running.
-      @data.put(reports.user1, report1.user)
-      @data.put(reports.user2, report2.user)
-      @data.put(reports.summary, "Generated 2 reports")
+      @data.set(reports.user1, report1.user)
+      @data.set(reports.user2, report2.user)
+      @data.set(reports.summary, "Generated 2 reports")
     `;
 
     const result = await env.renderScriptString(script, context);
@@ -139,24 +139,24 @@ describe('Cascada Script: Output commands', function () {
   });
 
   describe('Built-in Data Commands', function() {
-    it('should handle @data.put, @data.push, @data.merge, and @data.deepMerge', async () => {
+    it('should handle @data.set, @data.push, @data.merge, and @data.deepMerge', async () => {
       const script = `
         :data
-        // Put creates/replaces values
-        @data.put(user.name, "Alice")
-        @data.put(user.role, "Admin")
-        @data.put(user.role, "Super-Admin") // Overwrites previous put
+        // Set creates/replaces values
+        @data.set(user.name, "Alice")
+        @data.set(user.role, "Admin")
+        @data.set(user.role, "Super-Admin") // Overwrites previous set
 
         // Push adds to an array, creating it if needed
         @data.push(user.tags, "active")
         @data.push(user.tags, "new")
 
         // Merge combines objects
-        @data.put(settings.profile, { theme: "light" })
+        @data.set(settings.profile, { theme: "light" })
         @data.merge(settings.profile, { notifications: true })
 
         // Deep merge combines nested objects
-        @data.put(settings.deep, { a: { b: 1 } })
+        @data.set(settings.deep, { a: { b: 1 } })
         @data.deepMerge(settings.deep, { a: { c: 2 }, d: 3 })
       `;
       const result = await env.renderScriptString(script);
@@ -173,10 +173,10 @@ describe('Cascada Script: Output commands', function () {
       const script = `
         :data
         // Set the entire data object to a new value
-        @data.put(null, { name: 'George', age: 30 })
+        @data.set(null, { name: 'George', age: 30 })
 
         // This should replace the entire object, not add to it
-        @data.put(null, { status: 'active', role: 'user' })
+        @data.set(null, { status: 'active', role: 'user' })
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
@@ -189,8 +189,8 @@ describe('Cascada Script: Output commands', function () {
       const script = `
         :data
         // Start with some initial data
-        @data.put(user.name, "Alice")
-        @data.put(user.role, "Admin")
+        @data.set(user.name, "Alice")
+        @data.set(user.role, "Admin")
 
         // Merge new data into the root object
         @data.deepMerge(null, { user: { status: "active" }, config: { theme: "dark" } })
@@ -206,8 +206,8 @@ describe('Cascada Script: Output commands', function () {
       const script = `
         :data
         // Start with nested data
-        @data.put(user.profile.name, "Bob")
-        @data.put(user.profile.settings.theme, "light")
+        @data.set(user.profile.name, "Bob")
+        @data.set(user.profile.settings.theme, "light")
 
         // Deep merge new data into the root object
         @data.deepMerge(null, {
@@ -255,14 +255,14 @@ describe('Cascada Script: Output commands', function () {
         @data.push(users, { name: 'Bob' })
 
         // Target specific index
-        @data.put(users[0].role, "Admin")
+        @data.set(users[0].role, "Admin")
 
         // Target last item pushed in script sequence
         @data.push(users, { name: 'Charlie' })
-        @data.put(users[].role, "Guest") // Affects Charlie
+        @data.set(users[].role, "Guest") // Affects Charlie
 
-        @data.put(users[1].status, "active") // Affects Bob
-        @data.put(users[0].tasks[], "task3") //change the last task of Alice
+        @data.set(users[1].status, "active") // Affects Bob
+        @data.set(users[0].tasks[], "task3") //change the last task of Alice
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
@@ -281,7 +281,7 @@ describe('Cascada Script: Output commands', function () {
         @text("Hello")
         @text(", ")
         @text("World!")
-        @data.put(status, "ok")
+        @data.set(status, "ok")
       `;
       // No focus, so we get the full result object
       const result = await env.renderScriptString(script);
@@ -294,7 +294,7 @@ describe('Cascada Script: Output commands', function () {
     it('should append to a path in the data object with `@data.append`', async () => {
       const script = `
         :data
-        @data.put(log, "Log started. ")
+        @data.set(log, "Log started. ")
         @data.append(log, "Event 1. ")
         @data.append(log, "Event 2.")
       `;
@@ -307,7 +307,7 @@ describe('Cascada Script: Output commands', function () {
         :text
         @text("This is ")
         @text("the final text.")
-        @data.put(status, "ignored")
+        @data.set(status, "ignored")
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.equal('This is the final text.');
@@ -449,10 +449,10 @@ describe('Cascada Script: Output commands', function () {
       const script = `
         :data
         set captured
-          @data.put(user.name, "Captured User")
+          @data.set(user.name, "Captured User")
           @text("hello from capture")
         endset
-        @data.put(result, captured)
+        @data.set(result, captured)
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
@@ -472,7 +472,7 @@ describe('Cascada Script: Output commands', function () {
       const script = `
         :turtle // Focus the script's return value on the 'turtle' handler
         @turtle.forward(100)
-        @data.put(status, "ignored")
+        @data.set(status, "ignored")
       `;
       const result = await env.renderScriptString(script);
       // The result is just the turtle object, not the full result container
@@ -488,11 +488,11 @@ describe('Cascada Script: Output commands', function () {
       :data
       set userData :data
         set user = { name: "Bob", role: "user" }
-        @data.put(name, user.name)
-        @data.put(role, user.role)
+        @data.set(name, user.name)
+        @data.set(role, user.role)
       endset
 
-      @data.put(result.user, userData)
+      @data.set(result.user, userData)
     `;
 
     const result = await env.renderScriptString(script, {});
@@ -640,24 +640,24 @@ describe('Cascada Script: Output commands', function () {
     // Group 2: Statement-style Commands -> {% ... %} -> result.data
     //
     // These tests verify that when a command is used with a distinct path
-    // and value (e.g., `@data.put`, `@data.append`), it correctly transpiles
+    // and value (e.g., `@data.set`, `@data.append`), it correctly transpiles
     // to a `statement_command` tag and modifies the `data` property of the result.
     // ========================================================================
     describe('Statement-style commands (modifies data output)', () => {
-      it('should handle `@data.put` with a simple path and string value', async () => {
+      it('should handle `@data.set` with a simple path and string value', async () => {
         const script = `
                 :data
-                @data.put(user.name, "Alice")
+                @data.set(user.name, "Alice")
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { name: 'Alice' } });
       });
 
-      it('should handle `@data.put` with a path and a variable value', async () => {
+      it('should handle `@data.set` with a path and a variable value', async () => {
         const script = `
                 :data
                 set userId = 123
-                @data.put(user.profile.id, userId)
+                @data.set(user.profile.id, userId)
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { profile: { id: 123 } } });
@@ -666,18 +666,18 @@ describe('Cascada Script: Output commands', function () {
       it('should handle `@data.push` with a numeric array index', async () => {
         const script = `
                 :data
-                @data.put(users, [{}, {}])
+                @data.set(users, [{}, {}])
                 @data.push(users[0].roles, "admin")
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ users: [{ roles: ['admin'] }, {}] });
       });
 
-      it('should handle `@data.put` with a complex expression in brackets', async () => {
+      it('should handle `@data.set` with a complex expression in brackets', async () => {
         const script = `
                 :data
                 set key = "complex"
-                @data.put(items[key + "Id"], "value")
+                @data.set(items[key + "Id"], "value")
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ items: { complexId: 'value' } });
@@ -687,7 +687,7 @@ describe('Cascada Script: Output commands', function () {
         // Note: statement-style `@data.append` APPENDS, it doesn't set.
         const script = `
                 :data
-                @data.put(user.log, "Event: ")
+                @data.set(user.log, "Event: ")
                 @data.append(user.log, "User Logged In")
             `;
         const result = await env.renderScriptString(script, {});
@@ -697,7 +697,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle command with path but no value argument (`@data.pop`)', async () => {
         const script = `
                 :data
-                @data.put(user.items, ["a", "b", "c"])
+                @data.set(user.items, ["a", "b", "c"])
                 @data.pop(user.items)
             `;
         const result = await env.renderScriptString(script, {});
@@ -710,7 +710,7 @@ describe('Cascada Script: Output commands', function () {
         // throw an error in the handler. Here we test a valid use case.
         const script = `
                 :data
-                @data.put(user.items, [1, 2, 3])
+                @data.set(user.items, [1, 2, 3])
                 @data.reverse(user.items)
             `;
         const result = await env.renderScriptString(script, {});
@@ -720,7 +720,7 @@ describe('Cascada Script: Output commands', function () {
       it('should ignore comments between command parts', async () => {
         const script = `
                 :data
-                @data.put(/* set user */ user.name, /* to value */ "Heidi")
+                @data.set(/* set user */ user.name, /* to value */ "Heidi")
             `;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { name: 'Heidi' } });
@@ -728,11 +728,11 @@ describe('Cascada Script: Output commands', function () {
     });
 
     describe('Dynamic path commands (function calls and expressions in paths)', () => {
-      it('should handle @data.put with function call in array index', async () => {
+      it('should handle @data.set with function call in array index', async () => {
         const script = `
           :data
-          @data.put(company, companyData)
-          @data.put(company.users[getUserId()].name, "Alice")
+          @data.set(company, companyData)
+          @data.set(company.users[getUserId()].name, "Alice")
         `;
         const context = {
           getUserId: () => 0,
@@ -754,11 +754,11 @@ describe('Cascada Script: Output commands', function () {
         });
       });
 
-      it('should handle @data.put with function call returning string key', async () => {
+      it('should handle @data.set with function call returning string key', async () => {
         const script = `
           :data
-          @data.put(company, companyData)
-          @data.put(company.users[getUserKey()].status, "active")
+          @data.set(company, companyData)
+          @data.set(company.users[getUserKey()].status, "active")
         `;
         const context = {
           getUserKey: () => 'admin',
@@ -780,12 +780,12 @@ describe('Cascada Script: Output commands', function () {
         });
       });
 
-      it('should handle @data.put with expression in array index', async () => {
+      it('should handle @data.set with expression in array index', async () => {
         const script = `
           :data
-          @data.put(items, itemsData)
+          @data.set(items, itemsData)
           set index = 1
-          @data.put(items[index + 1].name, "Item C")
+          @data.set(items[index + 1].name, "Item C")
         `;
         const context = {
           itemsData: [
@@ -804,13 +804,13 @@ describe('Cascada Script: Output commands', function () {
         });
       });
 
-      it('should handle @data.put with complex expression in object key', async () => {
+      it('should handle @data.set with complex expression in object key', async () => {
         const script = `
           :data
-          @data.put(data, dataSource)
+          @data.set(data, dataSource)
           set prefix = "user"
           set suffix = "Profile"
-          @data.put(data[prefix + suffix].name, "Dynamic User")
+          @data.set(data[prefix + suffix].name, "Dynamic User")
         `;
         const context = {
           dataSource: {
@@ -830,7 +830,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle @data.push with function call in array index', async () => {
         const script = `
           :data
-          @data.put(users, usersData)
+          @data.set(users, usersData)
           @data.push(users[getUserIndex()].roles, "editor")
         `;
         const context = {
@@ -852,7 +852,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle @data.merge with dynamic path', async () => {
         const script = `
           :data
-          @data.put(company, companyData)
+          @data.set(company, companyData)
           @data.merge(company.departments[getDeptId()], { budget: 50000 })
         `;
         const context = {
@@ -878,7 +878,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle @data.deepMerge with nested dynamic paths', async () => {
         const script = `
           :data
-          @data.put(company, companyData)
+          @data.set(company, companyData)
           @data.deepMerge(company.users[getUserId()].profile.settings, { theme: "dark" })
         `;
         const context = {
@@ -904,7 +904,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle @data.append with dynamic path', async () => {
         const script = `
           :data
-          @data.put(company, companyData)
+          @data.set(company, companyData)
           @data.append(company.users[getUserId()].log, " - User logged in")
         `;
         const context = {
@@ -930,7 +930,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle @data.pop with dynamic array index', async () => {
         const script = `
           :data
-          @data.put(users, usersData)
+          @data.set(users, usersData)
           @data.pop(users[getUserIndex()].items)
         `;
         const context = {
@@ -952,7 +952,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle @data.shift with dynamic array index', async () => {
         const script = `
           :data
-          @data.put(users, usersData)
+          @data.set(users, usersData)
           @data.shift(users[getUserIndex()].tasks)
         `;
         const context = {
@@ -974,7 +974,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle @data.unshift with dynamic array index', async () => {
         const script = `
           :data
-          @data.put(users, usersData)
+          @data.set(users, usersData)
           @data.unshift(users[getUserIndex()].tasks, "urgent")
         `;
         const context = {
@@ -996,7 +996,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle @data.reverse with dynamic array index', async () => {
         const script = `
           :data
-          @data.put(users, usersData)
+          @data.set(users, usersData)
           @data.reverse(users[getUserIndex()].items)
         `;
         const context = {
@@ -1018,10 +1018,10 @@ describe('Cascada Script: Output commands', function () {
       it('should handle multiple dynamic paths in sequence', async () => {
         const script = `
           :data
-          @data.put(company, companyData)
-          @data.put(company.users[getUserId()].name, "Updated User")
+          @data.set(company, companyData)
+          @data.set(company.users[getUserId()].name, "Updated User")
           @data.push(company.users[getUserId()].roles, "manager")
-          @data.put(company.departments[getDeptId()].head, getUserId())
+          @data.set(company.departments[getDeptId()].head, getUserId())
         `;
         const context = {
           getUserId: () => 1,
@@ -1055,9 +1055,9 @@ describe('Cascada Script: Output commands', function () {
       it('should handle dynamic path with async function call', async () => {
         const script = `
           :data
-          @data.put(users, usersData)
+          @data.set(users, usersData)
           set userId = getUserIdAsync()
-          @data.put(users[userId].status, "active")
+          @data.set(users[userId].status, "active")
         `;
         const context = {
           getUserIdAsync: async () => 0,
@@ -1078,9 +1078,9 @@ describe('Cascada Script: Output commands', function () {
       it('should handle dynamic path with conditional expression', async () => {
         const script = `
           :data
-          @data.put(users, usersData)
+          @data.set(users, usersData)
           set isAdmin = true
-          @data.put(users[0 if isAdmin else 1].role, "admin")
+          @data.set(users[0 if isAdmin else 1].role, "admin")
         `;
         const context = {
           usersData: [
@@ -1100,9 +1100,9 @@ describe('Cascada Script: Output commands', function () {
       it('should handle dynamic path with mathematical expression', async () => {
         const script = `
           :data
-          @data.put(items, itemsData)
+          @data.set(items, itemsData)
           set baseIndex = 2
-          @data.put(items[baseIndex * 2 - 1].priority, "high")
+          @data.set(items[baseIndex * 2 - 1].priority, "high")
         `;
         const context = {
           itemsData: [
@@ -1128,8 +1128,8 @@ describe('Cascada Script: Output commands', function () {
       it('should handle dynamic path with nested function calls', async () => {
         const script = `
           :data
-          @data.put(company, companyData)
-          @data.put(company.users[getNestedUserId()].profile.settings[getSettingKey()], "enabled")
+          @data.set(company, companyData)
+          @data.set(company.users[getNestedUserId()].profile.settings[getSettingKey()], "enabled")
         `;
         const context = {
           getNestedUserId: () => 0,
@@ -1168,8 +1168,8 @@ describe('Cascada Script: Output commands', function () {
       it('should handle dynamic path with array method call result', async () => {
         const script = `
           :data
-          @data.put(users, usersData)
-          @data.put(users[getUserIndex()].name, "Updated Name")
+          @data.set(users, usersData)
+          @data.set(users[getUserIndex()].name, "Updated Name")
         `;
         const context = {
           getUserIndex: () => {

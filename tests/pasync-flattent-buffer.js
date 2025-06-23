@@ -54,14 +54,14 @@ describe('flattenBuffer', function () {
       });
     });*/
 
-    it('should handle a simple @data.put command', async function () {
-      const buffer = [{ handler: 'data', command: 'put', arguments: [['user'], { name: 'Alice' }] }];
+    it('should handle a simple @data.set command', async function () {
+      const buffer = [{ handler: 'data', command: 'set', arguments: [['user'], { name: 'Alice' }] }];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { user: { name: 'Alice' } } });
     });
 
-    it('should create nested objects with @data.put', async function () {
-      const buffer = [{ handler: 'data', command: 'put', arguments: [['config', 'theme', 'color'], 'dark'] }];
+    it('should create nested objects with @data.set', async function () {
+      const buffer = [{ handler: 'data', command: 'set', arguments: [['config', 'theme', 'color'], 'dark'] }];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { config: { theme: { color: 'dark' } } } });
     });
@@ -81,8 +81,8 @@ describe('flattenBuffer', function () {
     it('should handle the "[]" path syntax for creating and populating array items', async function () {
       const buffer = [
         { handler: 'data', command: 'push', arguments: [['users'], { id: 0 }] },
-        { handler: 'data', command: 'put', arguments: [['users', '[]', 'id'], 1] },
-        { handler: 'data', command: 'put', arguments: [['users', 0, 'name'], 'Alice'] }
+        { handler: 'data', command: 'set', arguments: [['users', '[]', 'id'], 1] },
+        { handler: 'data', command: 'set', arguments: [['users', 0, 'name'], 'Alice'] }
       ];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { users: [{ id: 1, name: 'Alice' }] } });
@@ -90,7 +90,7 @@ describe('flattenBuffer', function () {
 
     it('should handle the @data.merge command', async function () {
       const buffer = [
-        { handler: 'data', command: 'put', arguments: [['user'], { id: 1, name: 'Alice' }] },
+        { handler: 'data', command: 'set', arguments: [['user'], { id: 1, name: 'Alice' }] },
         { handler: 'data', command: 'merge', arguments: [['user'], { name: 'Alicia', active: true }] },
       ];
       const result = await flattenBuffer(buffer, context);
@@ -99,8 +99,8 @@ describe('flattenBuffer', function () {
 
     it('should handle null path to work on the root of the data object', async function () {
       const buffer = [
-        { handler: 'data', command: 'put', arguments: [null, { name: 'George', age: 30 }] },
-        { handler: 'data', command: 'put', arguments: [null, { status: 'active', role: 'user' }] }
+        { handler: 'data', command: 'set', arguments: [null, { name: 'George', age: 30 }] },
+        { handler: 'data', command: 'set', arguments: [null, { status: 'active', role: 'user' }] }
       ];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { status: 'active', role: 'user' } });
@@ -108,8 +108,8 @@ describe('flattenBuffer', function () {
 
     it('should handle null path with merge to combine with existing root data', async function () {
       const buffer = [
-        { handler: 'data', command: 'put', arguments: [['user', 'name'], 'Alice'] },
-        { handler: 'data', command: 'put', arguments: [['user', 'role'], 'Admin'] },
+        { handler: 'data', command: 'set', arguments: [['user', 'name'], 'Alice'] },
+        { handler: 'data', command: 'set', arguments: [['user', 'role'], 'Admin'] },
         { handler: 'data', command: 'deepMerge', arguments: [null, { user: { status: 'active' }, config: { theme: 'dark' } }] }
       ];
       const result = await flattenBuffer(buffer, context);
@@ -192,11 +192,11 @@ describe('flattenBuffer', function () {
     beforeEach(() => {
       class Turtle { constructor() { this.pos = 0; } forward(d) { this.pos += d; } }
       env.addCommandHandlerClass('turtle', Turtle);
-      env.addDataMethods({ put: (target, value) => { return value; } });
+      env.addDataMethods({ set: (target, value) => { return value; } });
     });
 
     const fullBuffer = [
-      { handler: 'data', command: 'put', arguments: [['user', 'name'], 'Bob'] },
+      { handler: 'data', command: 'set', arguments: [['user', 'name'], 'Bob'] },
       'Some text. ',
       { handler: 'turtle', command: 'forward', arguments: [10] }
     ];
@@ -261,9 +261,9 @@ describe('flattenBuffer', function () {
     });
 
     it('should handle post-processing functions that return another command object', async function () {
-      env.addDataMethods({ put: (target, value) => { return value; } });
+      env.addDataMethods({ set: (target, value) => { return value; } });
       const buffer = [
-        ['ignored', (val) => ({ handler: 'data', command: 'put', arguments: [['wasProcessed'], true] })]
+        ['ignored', (val) => ({ handler: 'data', command: 'set', arguments: [['wasProcessed'], true] })]
       ];
       const result = await flattenBuffer(buffer, context);
       expect(result).to.eql({ data: { wasProcessed: true } });
@@ -298,11 +298,11 @@ describe('flattenBuffer', function () {
       );
     });
 
-    it('should throw an error for @data.put on an invalid path', async function () {
-      env.addDataMethods({ put: (target, value) => { return value; } });
+    it('should throw an error for @data.set on an invalid path', async function () {
+      env.addDataMethods({ set: (target, value) => { return value; } });
       const buffer = [
-        { handler: 'data', command: 'put', arguments: [['user'], null] },
-        { handler: 'data', command: 'put', arguments: [['user', 'profile'], 'test'] }
+        { handler: 'data', command: 'set', arguments: [['user'], null] },
+        { handler: 'data', command: 'set', arguments: [['user', 'profile'], 'test'] }
       ];
       await expectAsyncError(
         () => flattenBuffer(buffer, context),
@@ -311,8 +311,8 @@ describe('flattenBuffer', function () {
     });
 
     it('should throw an error for a non-string/non-number path segment', async function () {
-      env.addDataMethods({ put: (target, value) => { return value; } });
-      const buffer = [{ handler: 'data', command: 'put', arguments: [['config', null, 'value'], 'test'] }];
+      env.addDataMethods({ set: (target, value) => { return value; } });
+      const buffer = [{ handler: 'data', command: 'set', arguments: [['config', null, 'value'], 'test'] }];
       await expectAsyncError(
         () => flattenBuffer(buffer, context),
         (err) => expect(err.message).to.contain('Invalid path segment')

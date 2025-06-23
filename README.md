@@ -213,7 +213,7 @@ account!.withdraw(50)
 
 **Note**: The assembly commands feature is under development.
 
-In scripts, output Commands, marked with the `@` sigil are buffered and assembled in a **predictable, sequential order**. For scripts, **Output Commands** (`@`) build a structured data object using a rich set of default methods: `@put` (set/replace), `@push`/`@unshift` (add to array), `@pop`/`@shift` (remove from array), `@merge` (combine objects), and `@reverse`. You can also add your own custom commands with `addDataMethods`.
+In scripts, output Commands, marked with the `@` sigil are buffered and assembled in a **predictable, sequential order**. For scripts, **Output Commands** (`@`) build a structured data object using a rich set of default methods: `@set` (set/replace), `@push`/`@unshift` (add to array), `@pop`/`@shift` (remove from array), `@merge` (combine objects), and `@reverse`. You can also add your own custom commands with `addDataMethods`.
 
 Similarly in templates, the final text output is also assembled in source-code order, guaranteeing that the rendered content is always predictable, even when built from multiple async operations that finish at different times.
 
@@ -392,9 +392,9 @@ macro buildUserSummary(userId) : data
   set comments = fetchUserComments(userId)
 
   // Assemble the result after all fetches complete.
-  @put summary.name details.name
-  @put summary.postCount posts.length
-  @put summary.commentCount comments.length
+  @set summary.name details.name
+  @set summary.postCount posts.length
+  @set summary.commentCount comments.length
 endmacro
 
 // Call the macro for two different users. These
@@ -403,8 +403,8 @@ set user1 = buildUserSummary(101)
 set user2 = buildUserSummary(102)
 
 // Assemble the final report.
-@put report.user1Summary user1.summary
-@put report.user2Summary user2.summary
+@set report.user1Summary user1.summary
+@set report.user2Summary user2.summary
 ```
 
 </details>
@@ -460,13 +460,13 @@ Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structur
 try
   // Attempt a fallible operation
   set image = generateImage(prompt)
-  @put result.imageUrl image.url
+  @set result.imageUrl image.url
 resume resume.count < 3
   // Retry up to 3 times
   @print "Retrying attempt " + resume.count
 except
   // Handle permanent failure
-  @put result.error "Image generation failed: "
+  @set result.error "Image generation failed: "
    + error.message
 endtry
 ```
@@ -512,7 +512,7 @@ set config = fetchConfig()
 
 // Use the imported macro to process the data
 set processedItems = utils.process(items, config)
-@put result.items processedItems
+@set result.items processedItems
 ```
 
 </details>
@@ -586,7 +586,7 @@ action items and assign owners.
 
 For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's parallelization capabilities and adds specialized commands for building structured data results.
 - **Clean, delimiter-free syntax**
-- **Data assembly commands**: `@put`, `@push`, `@merge`
+- **Data assembly commands**: `@set`, `@push`, `@merge`
 - **Focus on logic and orchestration**
 
 </td>
@@ -598,7 +598,7 @@ For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cl
 // 1. Generate a plan with an LLM call.
 set plan = makePlan(
   "Analyze competitor's new feature")
-@put result.plan plan
+@set result.plan plan
 
 // 2. Each step of the in parallel.
 for step in plan.steps
@@ -612,7 +612,7 @@ endfor
 
 // 3. Summarize the results after all are complete.
 set summary = summarizeResults(result.stepResults)
-@put result.summary summary
+@set result.summary summary
 ```
 
 </details>
@@ -638,7 +638,7 @@ import { AsyncEnvironment } from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
 const script =
-  '@put result.greeting "Hello, " + user.name';
+  '@set result.greeting "Hello, " + user.name';
 const ctx = {
   user: fetchUser(123) // An async function
 };
@@ -691,7 +691,7 @@ console.log(html); // <h1>Hello World</h1>
      import { AsyncEnvironment } from 'cascada-tmpl';
      const env = new AsyncEnvironment();
      const script = `// Set initial user object
-       @put user {name: 'Alice', id: 123, log: "User profile  created. "}
+       @set user {name: 'Alice', id: 123, log: "User profile  created. "}
        @print user.log "Login successful." //append`;
 
      // The 'data' output focuses the result on the data object

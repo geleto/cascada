@@ -167,7 +167,7 @@ module.exports = {
    * @param {Object | Array |string} value The source object to replace the target.
    * @returns {Object | Array | string} The target
    */
-  put : function(target, value) {
+  set : function(target, value) {
     return value;
   },
 

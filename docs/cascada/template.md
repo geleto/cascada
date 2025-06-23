@@ -256,7 +256,7 @@ if user.isActive
   print "Processing data for: " + user.name
 
   // Build result data while processing
-  put result.user {
+  set result.user {
     id: user.id,
     name: user.name
   }
@@ -277,7 +277,7 @@ Cascada Script can be executed with:
 const result = await env.renderScriptString(script, context);
 ```
 
-The script produces either text output (from `print` statements with no target) or structured data if an assembly command (`put`, `merge`, `push`) or `print` with target attribute is used.
+The script produces either text output (from `print` statements with no target) or structured data if an assembly command (`set`, `merge`, `push`) or `print` with target attribute is used.
 
 For full documentation on Cascada Script, see [docs/cascada/script.md](docs/cascada/script.md).
 
@@ -406,7 +406,7 @@ In Cascada, handling functions with side effects, requires caution due to its as
 Cheapest price: {{ (prices | sort(false, false, 'value') | first).value }}
 ```
 
-Here, `fetchPrice` runs concurrently, so `prices.push()` calls happen in no fixed order. Sorting the array by `value` ensures consistent output, neutralizing the side effect’s randomness.
+Here, `fetchPrice` runs concurrently, so `prices.push()` calls happen in no fixed order. Sorting the array by `value` ensures consistent output, neutralizing the side effect's randomness.
 
 A workaround to enforce sequential execution of side effects is to create dependencies between operations by using the output of one operation as input to the next, even if the output is just a dummy value:
 
@@ -424,7 +424,7 @@ This pattern ensures that operations execute in a specific order by creating an 
 
 **Note**: This feature is not yet implemented.
 
-To maintain Cascada’s parallelization capabilities, mutable variable scopes must be known at compile time for proper dependency management. However, certain scenarios involve accessing and changing variables across templates:
+To maintain Cascada's parallelization capabilities, mutable variable scopes must be known at compile time for proper dependency management. However, certain scenarios involve accessing and changing variables across templates:
  - **Included templates** (`include`): Included templates have **read-only** access to parent variables.
  - **Extended Templates** (`extends`): Blocks in child templates can **read and modify** parent variables.
 
