@@ -1056,7 +1056,7 @@ describe('Cascada Script: Output commands', function () {
         const script = `
           :data
           @data.put(users, usersData)
-          set userId = await getUserIdAsync()
+          set userId = getUserIdAsync()
           @data.put(users[userId].status, "active")
         `;
         const context = {
@@ -1080,7 +1080,7 @@ describe('Cascada Script: Output commands', function () {
           :data
           @data.put(users, usersData)
           set isAdmin = true
-          @data.put(users[isAdmin ? 0 : 1].role, "admin")
+          @data.put(users[0 if isAdmin else 1].role, "admin")
         `;
         const context = {
           usersData: [
@@ -1173,8 +1173,7 @@ describe('Cascada Script: Output commands', function () {
         `;
         const context = {
           getUserIndex: () => {
-            const ids = [1, 0, 2];
-            return ids.indexOf(1);
+            return 1;
           },
           usersData: [
             { name: 'Alice' },
