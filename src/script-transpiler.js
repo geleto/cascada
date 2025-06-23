@@ -13,9 +13,9 @@
  *    - Skip `{%` and `%}` around tags
  *    - Skip `{{` and `}}` around expressions
  *
- * 2. **Output with `print`**
- *    - Use `print expression` instead of `{{ expression }}`
- *    - Example: `print user.name` → `{{ user.name }}`
+ * 2. **Output with `text`**
+ *    - Use `text expression` instead of `{{ expression }}`
+ *    - Example: `text user.name` → `{{ user.name }}`
  *
  * 3. **Implicit `do` Statements**
  *    - Any code line not starting with a reserved keyword becomes a `do` statement
@@ -50,13 +50,13 @@
  *
  * ```
  * if user.isLoggedIn
- *   print "Hello, " + user.name
+ *   text "Hello, " + user.name
  *   for item in cart.items
  *     items.push(processItem(item))
- *     print item.name
+ *     text item.name
  *   endfor
  * else
- *   print "Please log in"
+ *   text "Please log in"
  * endif
  * ```
  *
@@ -79,7 +79,7 @@
  *
  * Key features:
  * - Token-based parsing with accurate identification of strings, comments, and code
- * - Modular processing for different line types (print, tag, code, comment)
+ * - Modular processing for different line types (text, tag, code, comment)
  * - Intelligent continuation detection for multi-line expressions
  * - Comment preservation within complex expressions
  * - Robust block structure validation with detailed error messages
@@ -406,7 +406,7 @@ class ScriptTranspiler {
       const atIndex = parseResult.codeContent.indexOf('@');
       const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
 
-      // Check if this is a @text command (the new replacement for @print)
+      // Check if this is a @text command (the current command for text output)
       let ccontent = commandContent.trim();
       let isText = ccontent.startsWith('text(') || this._getFirstWord(ccontent) === 'text';
       if (isText) {
@@ -444,12 +444,12 @@ class ScriptTranspiler {
           parseResult.continuesToNext = true;
           parseResult.expectedContinuationEnd = ')';
         }
-        parseResult.lineType = 'PRINT';
+        parseResult.lineType = 'TEXT';
         parseResult.blockType = null;
         parseResult.codeContent = expression;
       } else {
         // All other @ commands are treated as function commands
-        // @print is deprecated and should be replaced with @text(value)
+        // @print was deprecated and replaced with @text(value)
         parseResult.lineType = 'TAG';
         parseResult.tagName = 'function_command';
         parseResult.blockType = null;
@@ -492,8 +492,8 @@ class ScriptTranspiler {
     let tagLineParseResult;
     for (let i = 0; i < parseResults.length; i++) {
       const presult = parseResults[i];
-      if (presult.lineType === 'TAG' || presult.lineType === 'PRINT') {
-        //start of a new tag or print, save it for continuation
+      if (presult.lineType === 'TAG' || presult.lineType === 'TEXT') {
+        //start of a new tag or text, save it for continuation
         tagLineParseResult = presult;
       } else {
         //p.lineType == 'CODE'
@@ -557,7 +557,7 @@ class ScriptTranspiler {
             }
           }*/
           break;
-        case 'PRINT':
+        case 'TEXT':
           output += '{{-';
           break;
         case 'CODE':
@@ -594,7 +594,7 @@ class ScriptTranspiler {
         case 'TAG':
           output += ' -%}';//close tag or do
           break;
-        case 'PRINT':
+        case 'TEXT':
           output += ' -}}';
           break;
       }

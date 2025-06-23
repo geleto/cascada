@@ -207,13 +207,13 @@ describe('Script Converter', () => {
     });
 
     describe('processLine', () => {
-      it('should correctly process a print statement', () => {
+      it('should correctly process a text statement', () => {
         const line = '@text(value)';
         const state = { inMultiLineComment: false, stringState: null };
 
         const result = scriptTranspiler._processLine(line, state);
 
-        expect(result.lineType).to.equal('PRINT');
+        expect(result.lineType).to.equal('TEXT');
         expect(result.codeContent).to.equal('value');
         expect(result.continuesToNext).to.equal(false);
         expect(result.blockType).to.equal(null);
@@ -274,16 +274,16 @@ describe('Script Converter', () => {
     });
 
     describe('generateOutput', () => {
-      it('should generate output for a print statement', () => {
+      it('should generate output for a text statement', () => {
         const processedLine = {
           indentation: '',
-          lineType: 'PRINT',
+          lineType: 'TEXT',
           codeContent: '"Hello"',
           comments: [],
           isContinuation: false
         };
 
-        const output = scriptTranspiler._generateOutput(processedLine, false, 'PRINT');
+        const output = scriptTranspiler._generateOutput(processedLine, false, 'TEXT');
 
         expect(output).to.equal('{{- "Hello" -}}');
       });
@@ -445,7 +445,7 @@ describe('Script Converter', () => {
 
   // Basic conversion tests
   describe('Basic Conversions', () => {
-    it('should convert print statements', () => {
+    it('should convert text statements', () => {
       const script = '@text("Hello, World!")';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.equal('{{- "Hello, World!" -}}');

@@ -173,7 +173,7 @@ module.exports = {
 
   /**
    * Appends a value to the content at a path.
-   * Corresponds to the Cascada command: `@print path value`
+   * Corresponds to the Cascada command: `@text path value`
    * - If the target is a string, it returns a new concatenated string.
    * - If the target is an array, it pushes the value (in-place mutation).
    *
@@ -181,7 +181,7 @@ module.exports = {
    * @param {any} value The value to append or push.
    * @returns {string|undefined} The new concatenated string if the target was a string, otherwise just the target.
    */
-  print : function(target, value) {
+  text : function(target, value) {
     if (target === undefined) {
       target = '';
     }
@@ -192,7 +192,7 @@ module.exports = {
       target.push(value);
       return target;
     }
-    throw new Error('Error: Target for \'print\' must be a string or an array.');
+    throw new Error('Error: Target for \'text\' must be a string or an array.');
   },
 
   /**

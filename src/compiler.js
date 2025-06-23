@@ -2183,8 +2183,8 @@ class Compiler extends Obj {
 
       if (staticPath && staticPath.length >= 1) {
         commandTarget = staticPath[0]; // First segment is always the handler
-      } else if (node.call.name.value === 'print') {
-        // Special case for print command
+      } else if (node.call.name.value === 'text') {
+        // Special case for text command
         commandTarget = 'text';
       }
 

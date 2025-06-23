@@ -125,7 +125,7 @@ describe('flattenBuffer', function () {
     });
 
     it('should handle @text commands (handler: null)', async function () {
-      const buffer = [{ handler: null, command: 'print', arguments: ['Log message.'] }];
+      const buffer = [{ handler: null, command: 'text', arguments: ['Log message.'] }];
       const result = await flattenBuffer(buffer, context, null, 'text');
       expect(result).to.eql({ text: 'Log message.' });
     });

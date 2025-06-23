@@ -50,8 +50,8 @@ set user = fetchUser(123)
 set config = fetchSiteConfig()
 
 // Waits for both to complete before printing.
-@print "Welcome, " + user.name
-@print "Theme: " + config.theme
+@text "Welcome, " + user.name
+@text "Theme: " + config.theme
 ```
 
 </details>
@@ -94,7 +94,7 @@ set post = fetchPost(42)
 // Waits for post to resolve, then iterates
 // over the async comments iterator.
 for comment in fetchComments(post.id)
-  @print comment.author + ": " + comment.body
+  @text comment.author + ": " + comment.body
 endfor
 ```
 
@@ -143,7 +143,7 @@ set user = getUser()
 set posts = getPosts(user.id)
 set footer = getFooter()
 
-@print "User: " + user.name
+@text "User: " + user.name
 ```
 
 </details>
@@ -463,7 +463,7 @@ try
   @set result.imageUrl image.url
 resume resume.count < 3
   // Retry up to 3 times
-  @print "Retrying attempt " + resume.count
+  @text "Retrying attempt " + resume.count
 except
   // Handle permanent failure
   @set result.error "Image generation failed: "
@@ -692,7 +692,7 @@ console.log(html); // <h1>Hello World</h1>
      const env = new AsyncEnvironment();
      const script = `// Set initial user object
        @set user {name: 'Alice', id: 123, log: "User profile  created. "}
-       @print user.log "Login successful." //append`;
+       @text user.log "Login successful." //append`;
 
      // The 'data' output focuses the result on the data object
      const { user } = await env.renderScriptString(script, {}, { output: 'data' });
