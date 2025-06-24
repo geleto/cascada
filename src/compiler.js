@@ -823,76 +823,116 @@ class Compiler extends Obj {
   }
 
   compileSet(node, frame) {
-    var ids = [];
+    if (this.scriptMode) {
+      // SCRIPT MODE: Enforce strict var/set/extern rules.
+      const ids = [];
 
-    // Lookup the variable names for each identifier and create
-    // new ones if necessary
-    node.targets.forEach((target) => {
-      var name = target.value;
-      var id = frame.lookup(name);
+      // Loop through each target variable in the statement (e.g., var x, y = 10)
+      node.targets.forEach((target) => {
+        const name = target.value;
+        const isDeclared = !!frame.lookup(name);
 
-      if (id === null || id === undefined) {
-        id = this._tmpid();
+        switch (node.varType) {
+          case 'declaration': // from 'var'
+            if (isDeclared) {
+              this.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
+            }
+            break;
+          case 'assignment': // from '='
+            if (!isDeclared) {
+              this.fail(`Cannot assign to undeclared variable '${name}'. Use 'var' to declare a new variable.`, target.lineno, target.colno, node, target);
+            }
+            break;
+          case 'extern': // from 'extern'
+            if (isDeclared) {
+              this.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
+            }
+            break;
+          default:
+            this.fail(`Unknown varType '${node.varType}' for set/var statement.`, node.lineno, node.colno, node);
+        }
 
-        // Note: This relies on js allowing scope across
-        // blocks, in case this is created inside an `if`
+        // The temporary ID logic from the original implementation is fine.
+        const id = this._tmpid();
         this.emit.line('let ' + id + ';');
+        ids.push(id);
+      });
 
-        //@bug from nunjucks, the temporary variable is not added to the frame
-        //leave it as is because we need to use node.get to handle async scenarios
-        //frame.set(name, id);
+      if (node.varType === 'extern') {
+        // Extern is declaration-only, no value assignment.
+        if (node.value) {
+          this.fail('extern variables cannot be initialized at declaration.', node.lineno, node.colno, node);
+        }
+      } else {
+        // Compile the value for 'var' or '=' assignments
+        if (node.value) {
+          this.emit(ids.join(' = ') + ' = ');
+          this._compileExpression(node.value, frame, true, node.value);
+        } else {
+          // This handles block assignments (e.g., name = capture ... endcapture)
+          this.emit(ids.join(' = ') + ' = ');
+          this.emit.asyncBlockValue(node, frame, (n, f) => {
+            this.compile(n.body, f);
+          }, undefined, node.body);
+        }
+        this.emit.line(';');
       }
 
-      ids.push(id);
+      // Set the variable in the frame for all types.
+      node.targets.forEach((target, i) => {
+        const id = ids[i];
+        const name = target.value;
+        this.emit.line(`frame.set("${name}", ${id || 'null'}, true);`); // Use null for extern
 
-      if (this.asyncMode) {
-        this.async.updateFrameWrites(frame, name);
-      }
-    });
+        // Exporting logic (can remain the same)
+        if (name.charAt(0) !== '_') {
+          this.emit.line('if(frame.topLevel) {');
+          this.emit.line(`context.addExport("${name}", ${id || 'null'});`);
+          this.emit.line('}');
+        }
+      });
 
-    if (node.value) {
-      this.emit(ids.join(' = ') + ' = ');
-      /*if (node.isAsync) {
-        // Use node.value as the position node since it's the expression being evaluated
-        this.emit.AsyncBlockValue(node, frame, (n, f) => {
-          this._compileExpression(n.value, f, true, node.value);
-        }, undefined, node.value); // Pass value as code position
-      } else {*/
-      this._compileExpression(node.value, frame, true, node.value);
-      /*}*/
     } else {
-      // set block
-      this.emit(ids.join(' = ') + ' = ');
-      // Use node.body as the position node since it's the block being evaluated
-      this.emit.asyncBlockValue(node, frame, (n, f) => {
-        this.compile(n.body, f);
-      }, undefined, node.body); // Pass body as code position
-    }
-    this.emit.line(';');
+      // TRADITIONAL TEMPLATE MODE: Keep original behavior for `set`.
+      const ids = [];
+      node.targets.forEach((target) => {
+        var name = target.value;
+        var id = frame.lookup(name);
+        if (id === null || id === undefined) {
+          id = this._tmpid();
+          this.emit.line('let ' + id + ';');
+        }
+        ids.push(id);
+        if (this.asyncMode) {
+          this.async.updateFrameWrites(frame, name);
+        }
+      });
 
-    node.targets.forEach((target, i) => {
-      var id = ids[i];
-      var name = target.value;
-
-      // We are running this for every var, but it's very
-      // uncommon to assign to multiple vars anyway
-      this.emit.line(`frame.set("${name}", ${id}, true);`);
-
-      //if (!this.asyncMode) {
-      //in async mode writing to the context is not possible
-      //will use a separate input/output tags and attributes to
-      //declare variable exports/imports
-      this.emit.line('if(frame.topLevel) {');
-      this.emit.line(`context.setVariable("${name}", ${id});`);
-      this.emit.line('}');
-      //}
-
-      if (name.charAt(0) !== '_') {
-        this.emit.line('if(frame.topLevel) {');
-        this.emit.line(`context.addExport("${name}", ${id});`);
-        this.emit.line('}');
+      if (node.value) {
+        this.emit(ids.join(' = ') + ' = ');
+        this._compileExpression(node.value, frame, true, node.value);
+      } else {
+        this.emit(ids.join(' = ') + ' = ');
+        this.emit.asyncBlockValue(node, frame, (n, f) => {
+          this.compile(n.body, f);
+        }, undefined, node.body);
       }
-    });
+      this.emit.line(';');
+
+      node.targets.forEach((target, i) => {
+        var id = ids[i];
+        var name = target.value;
+        this.emit.line(`frame.set("${name}", ${id}, true);`);
+        this.emit.line('if(frame.topLevel) {');
+        this.emit.line(`context.setVariable("${name}", ${id});`);
+        this.emit.line('}');
+        if (name.charAt(0) !== '_') {
+          this.emit.line('if(frame.topLevel) {');
+          this.emit.line(`context.addExport("${name}", ${id});`);
+          this.emit.line('}');
+        }
+      });
+    }
   }
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation

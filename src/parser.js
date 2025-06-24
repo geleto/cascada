@@ -503,7 +503,7 @@ class Parser extends Obj {
       this.fail('parseSet: expected set', tag.lineno, tag.colno);
     }
 
-    const node = new nodes.Set(tag.lineno, tag.colno, []);
+    const node = new nodes.Set(tag.lineno, tag.colno, [], null, 'assignment');
 
     let target;
     while ((target = this.parsePrimary())) {
@@ -553,6 +553,96 @@ class Parser extends Obj {
     }
 
     return node;
+  }
+
+  parseVar() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('var')) {
+      this.fail('parseVar: expected var', tag.lineno, tag.colno);
+    }
+
+    const node = new nodes.Set(tag.lineno, tag.colno, [], null, 'declaration');
+
+    let target;
+    while ((target = this.parsePrimary())) {
+      node.targets.push(target);
+
+      if (!this.skip(lexer.TOKEN_COMMA)) {
+        break;
+      }
+    }
+
+    if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+      // no =, so this is a block assignment
+      let focus;
+      if (this.skip(lexer.TOKEN_COLON)) {
+        // a focus directive is allowed for block assignments
+        const tok = this.nextToken();
+        if (!tok && tok.type !== lexer.TOKEN_SYMBOL) {
+          this.fail('parseVar: expected focus directive value', tok.lineno, tok.colno);
+        } else {
+          focus = tok.value;
+        }
+      }
+
+      if (!this.skip(lexer.TOKEN_BLOCK_END)) {
+        this.fail('parseVar: expected = or block end in var tag',
+          tag.lineno,
+          tag.colno);
+      } else {
+        node.body = new nodes.Capture(
+          tag.lineno,
+          tag.colno,
+          this.parseUntilBlocks('endvar'),
+          focus
+        );
+        node.value = null;
+        this.advanceAfterBlockEnd();
+      }
+    } else {
+      // This is a value assignment, so focus directive is not allowed
+      /*if (this.peekToken().type === lexer.TOKEN_COLON) {
+        this.fail('parseVar: focus directive not allowed in value assignment',
+          tag.lineno,
+          tag.colno);
+      }*/
+      node.value = this.parseExpression();
+      this.advanceAfterBlockEnd(tag.value);
+    }
+
+    return node;
+  }
+
+  parseExtern() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('extern')) {
+      this.fail('parseExtern: expected extern', tag.lineno, tag.colno);
+    }
+
+    const targets = [];
+
+    // Loop to parse comma-separated variable names
+    while (true) {
+      const target = this.parsePrimary();
+      if (!(target instanceof nodes.Symbol)) {
+        this.fail('parseExtern: variable name expected', target.lineno, target.colno);
+      }
+      targets.push(target);
+
+      if (!this.skip(lexer.TOKEN_COMMA)) {
+        break;
+      }
+    }
+
+    // Important: After the loop, explicitly fail if you see an = operator
+    // or if the block does not end immediately. extern does not support initialization.
+    if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+      this.fail('parseExtern: extern variables cannot be initialized', tag.lineno, tag.colno);
+    }
+
+    this.advanceAfterBlockEnd(tag.value);
+
+    return new nodes.Set(tag.lineno, tag.colno, targets, null, 'extern');
   }
 
   parseSwitch() {
@@ -709,6 +799,8 @@ class Parser extends Obj {
         return this.parseInclude();
       case 'set':
         return this.parseSet();
+      case 'var':
+        return this.parseVar();
       case 'macro':
         return this.parseMacro();
       case 'call':
@@ -727,6 +819,8 @@ class Parser extends Obj {
         return this.parseOutputCommand();
       case 'option':
         return this.parseOption();
+      case 'extern':
+        return this.parseExtern();
       default:
         if (this.extensions.length) {
           for (let i = 0; i < this.extensions.length; i++) {

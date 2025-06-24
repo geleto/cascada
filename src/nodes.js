@@ -123,7 +123,7 @@ const TemplateRef = Node.extend('TemplateRef', { fields: ['template'] });
 const Extends = TemplateRef.extend('Extends');
 const Include = Node.extend('Include', { fields: ['template', 'ignoreMissing'] });
 const Set = Node.extend('Set', {
-  fields: ['targets', 'value']
+  fields: ['targets', 'value', 'varType']
 });
 const Switch = Node.extend('Switch', { fields: ['expr', 'cases', 'default'] });
 const Case = Node.extend('Case', { fields: ['cond', 'body'] });
