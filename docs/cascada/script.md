@@ -1,5 +1,7 @@
 # Cascada Script Documentation
 
+## Write scripts that look synchronous but execute concurrently under the hood.
+
 ## Overview
 
 Cascada Script is a scripting language built on top of the Cascada templating engine, designed for orchestrating asynchronous workflows and data processing tasks. Unlike traditional templating, which focuses on generating text output, Cascada Script prioritizes logic flow, task coordination, and data assembly.
@@ -15,12 +17,12 @@ Cascada Script is a scripting language built on top of the Cascada templating en
 
 ## Key Features
 
-- **Clean Syntax**: No template delimiters (`{% %}` or `{{ }}`) cluttering your code
 - **Automatic Parallelization**: Independent operations run concurrently with no extra effort
 - **Seamless Async Handling**: Work with promises, async functions, and async iterators naturally
-- **Data Assembly**: Build complex data structures with specialized commands
+- **Data Assembly**: Build complex data structures with specialized [output commands](#the-handler-system-using--output-commands).
 - **Smart Dependency Management**: While independent operations run in parallel, Cascada ensures that **dependent operations wait for their prerequisites**. This guarantees correct execution order, giving you the performance of parallelism with the predictability of sequential code.
-- **[Macros](#macros-and-reusable-components)**: Reusable code blocks for building independent data objects
+- **Controlled Sequential Execution**: Use the [`!` marker](#sequential-execution-control-) to enforce a strict execution order for operations with side effects (like database writes) without sacrificing overall parallelism.
+- **Separation of Logic and Presentation**: Promotes a clear separation of logic from presentation—use scripts for coordinating tasks and handling data, and templates for generating text output.
 
 ## Executing a Script
 
