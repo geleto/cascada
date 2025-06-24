@@ -2173,7 +2173,7 @@ class Compiler extends Obj {
     return null;
   }
 
-  compileFunctionCommand(node, frame) {
+  compileOutputCommand(node, frame) {
     // Extract static path once for both focus detection and compilation
     const staticPath = this._extractStaticPath(node.call.name);
 
@@ -2192,7 +2192,7 @@ class Compiler extends Obj {
       if (commandTarget && this.outputFocus !== commandTarget) {
         return;
       }
-      // If the focus is on 'data', we can safely skip all FunctionCommands.
+      // If the focus is on 'data', we can safely skip all OutputCommands.
       if (this.outputFocus === 'data') {
         return;
       }

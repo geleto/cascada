@@ -718,43 +718,43 @@ endif`;
       it('should convert simple command with path and string value', () => {
         const script = '@data.set(user.name, \'Alice\')';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.set(user.name, \'Alice\') -%}');
+        expect(template).to.equal('{%- output_command data.set(user.name, \'Alice\') -%}');
       });
 
       it('should convert command with path and numeric value', () => {
         const script = '@data.set(user.age, 30)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.set(user.age, 30) -%}');
+        expect(template).to.equal('{%- output_command data.set(user.age, 30) -%}');
       });
 
       it('should convert command with complex path', () => {
         const script = '@data.set(user.settings.theme, \'dark\')';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.set(user.settings.theme, \'dark\') -%}');
+        expect(template).to.equal('{%- output_command data.set(user.settings.theme, \'dark\') -%}');
       });
 
       it('should convert data commands with object literal argument', () => {
         const script = '@data.push(users, { id: 1, name: \'Bob\' })';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.push(users, { id: 1, name: \'Bob\' }) -%}');
+        expect(template).to.equal('{%- output_command data.push(users, { id: 1, name: \'Bob\' }) -%}');
       });
 
       it('should convert data commands with no argument', () => {
         const script = '@data.pop(user.roles)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.pop(user.roles) -%}');
+        expect(template).to.equal('{%- output_command data.pop(user.roles) -%}');
       });
 
       it('should handle data commands with extra whitespace', () => {
         const script = '  @data.set(user.name, \'Alice\')  ';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('  {%- function_command data.set(user.name, \'Alice\')   -%}');
+        expect(template).to.equal('  {%- output_command data.set(user.name, \'Alice\')   -%}');
       });
 
       it('should convert command that looks like function but has no parentheses', () => {
         const script = '@turtle.forward(50)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command turtle.forward(50) -%}');
+        expect(template).to.equal('{%- output_command turtle.forward(50) -%}');
       });
     });
 
@@ -762,31 +762,31 @@ endif`;
       it('should convert simple function call with dot in name', () => {
         const script = '@turtle.forward(50)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command turtle.forward(50) -%}');
+        expect(template).to.equal('{%- output_command turtle.forward(50) -%}');
       });
 
       it('should convert call with complex expression as argument', () => {
         const script = '@turtle.turn(getAngle() * 2)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command turtle.turn(getAngle() * 2) -%}');
+        expect(template).to.equal('{%- output_command turtle.turn(getAngle() * 2) -%}');
       });
 
       it('should handle call with extra whitespace around parentheses', () => {
         const script = '@turtle.forward ( 50 )';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command turtle.forward ( 50 ) -%}');
+        expect(template).to.equal('{%- output_command turtle.forward ( 50 ) -%}');
       });
 
       it('should convert function call with multiple arguments', () => {
         const script = '@move.to(x + 10, y - 5, z)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command move.to(x + 10, y - 5, z) -%}');
+        expect(template).to.equal('{%- output_command move.to(x + 10, y - 5, z) -%}');
       });
 
       it('should convert function call with nested function calls', () => {
         const script = '@calc.process(getValue(a), transform(b, c))';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command calc.process(getValue(a), transform(b, c)) -%}');
+        expect(template).to.equal('{%- output_command calc.process(getValue(a), transform(b, c)) -%}');
       });
     });
 
@@ -794,19 +794,19 @@ endif`;
       it('should handle statement command with trailing comment', () => {
         const script = '@data.set(user.name, \'Alice\') // Set user name';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.set(user.name, \'Alice\')  -%}{#- Set user name -#}');
+        expect(template).to.equal('{%- output_command data.set(user.name, \'Alice\')  -%}{#- Set user name -#}');
       });
 
       it('should handle function command with trailing comment', () => {
         const script = '@turtle.forward(50) // Move turtle forward';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command turtle.forward(50)  -%}{#- Move turtle forward -#}');
+        expect(template).to.equal('{%- output_command turtle.forward(50)  -%}{#- Move turtle forward -#}');
       });
 
       it('should handle command with multi-line comment', () => {
         const script = '@data.set(user.status, \'active\') /* Update user status to active */';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.set(user.status, \'active\')  -%}{#- Update user status to active -#}');
+        expect(template).to.equal('{%- output_command data.set(user.status, \'active\')  -%}{#- Update user status to active -#}');
       });
     });
 
@@ -814,31 +814,31 @@ endif`;
       it('should handle @ command with indentation', () => {
         const script = '  @data.set(user.name, \'Alice\')';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('  {%- function_command data.set(user.name, \'Alice\') -%}');
+        expect(template).to.equal('  {%- output_command data.set(user.name, \'Alice\') -%}');
       });
 
       it('should handle @ command with empty function call', () => {
         const script = '@reset()';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command reset() -%}');
+        expect(template).to.equal('{%- output_command reset() -%}');
       });
 
       it('should handle @ command with string containing spaces', () => {
         const script = '@data.set(message, "Hello World with spaces")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.set(message, "Hello World with spaces") -%}');
+        expect(template).to.equal('{%- output_command data.set(message, "Hello World with spaces") -%}');
       });
 
       it('should handle @ command with boolean values', () => {
         const script = '@data.set(user.active, true)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.set(user.active, true) -%}');
+        expect(template).to.equal('{%- output_command data.set(user.active, true) -%}');
       });
 
       it('should handle @ command with array notation', () => {
         const script = '@data.set(items[0].status, \'completed\')';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- function_command data.set(items[0].status, \'completed\') -%}');
+        expect(template).to.equal('{%- output_command data.set(items[0].status, \'completed\') -%}');
       });
     });
   });

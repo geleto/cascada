@@ -640,10 +640,10 @@ class Parser extends Obj {
     return new nodes.Do(doTok.lineno, doTok.colno, exprs);
   }
 
-  parseFunctionCommand() {
+  parseOutputCommand() {
     const tag = this.peekToken();
-    if (!this.skipSymbol('function_command')) {
-      this.fail('parseFunctionCommand: expected function_command', tag.lineno, tag.colno);
+    if (!this.skipSymbol('output_command')) {
+      this.fail('parseOutputCommand: expected output_command', tag.lineno, tag.colno);
     }
 
     // Parse the entire function call expression
@@ -651,7 +651,7 @@ class Parser extends Obj {
 
     this.advanceAfterBlockEnd(tag.value);
 
-    return new nodes.FunctionCommand(tag.lineno, tag.colno, call);
+    return new nodes.OutputCommand(tag.lineno, tag.colno, call);
   }
 
   parseOption() {
@@ -723,8 +723,8 @@ class Parser extends Obj {
         return this.parseSwitch();
       case 'do':
         return this.parseDo();
-      case 'function_command':
-        return this.parseFunctionCommand();
+      case 'output_command':
+        return this.parseOutputCommand();
       case 'option':
         return this.parseOption();
       default:

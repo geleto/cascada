@@ -174,7 +174,7 @@ const CallExtensionAsync = CallExtension.extend('CallExtensionAsync', {
 const Do = NodeList.extend('Do');
 
 // Output Command nodes
-const FunctionCommand = Node.extend('FunctionCommand', { fields: ['call'] });
+const OutputCommand = Node.extend('OutputCommand', { fields: ['call'] });
 
 // This is hacky, but this is just a debugging function anyway
 function print(str, indent, inline) {
@@ -297,7 +297,7 @@ module.exports = {
   CallExtension: CallExtension,
   CallExtensionAsync: CallExtensionAsync,
   Do: Do,
-  FunctionCommand: FunctionCommand,
+  OutputCommand: OutputCommand,
 
   printNodes: printNodes
 };

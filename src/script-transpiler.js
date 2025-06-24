@@ -451,7 +451,7 @@ class ScriptTranspiler {
         // All other @ commands are treated as function commands
         // @print was deprecated and replaced with @text(value)
         parseResult.lineType = 'TAG';
-        parseResult.tagName = 'function_command';
+        parseResult.tagName = 'output_command';
         parseResult.blockType = null;
         parseResult.codeContent = commandContent; // The content for the Nunjucks tag
       }
@@ -552,7 +552,7 @@ class ScriptTranspiler {
           output += `{%- ${processedLine.tagName}`;
           /*if (processedLine.tagName) {
             // For internal commands, prepend the tag name that the Nunjucks parser expects
-            if (processedLine.tagName === 'function_command' || processedLine.tagName === 'statement_command') {
+            if (processedLine.tagName === 'output_command' || processedLine.tagName === 'statement_command') {
               output += processedLine.tagName + ' ';
             }
           }*/
