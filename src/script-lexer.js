@@ -560,33 +560,49 @@ function finalizeEndOfLine(state) {
 
   // Handle the case of a line with only indentation (no tokens)
   if (state.tokens.length === 0 && state.indentation.length > 0) {
-    // FIX: Check if we're in a string continuation state before adding an empty code token
-    if (currentState === STATES.STRING) {
-      // We're in a string state but haven't added a token yet - add a string token
-      const subtype = state.stringDelimiter === '\'' ? TOKEN_SUBTYPES.SINGLE_QUOTED :
-        state.stringDelimiter === '"' ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
-          TOKEN_SUBTYPES.TEMPLATE;
+    switch (currentState) {
+      case STATES.REGEX:
+        throw new Error('REGEX state should not be present on a whitespace-only line');
+      case STATES.SINGLE_LINE_COMMENT:
+        throw new Error('SINGLE_LINE_COMMENT state should not be present on a whitespace-only line');
+      case STATES.MULTI_LINE_COMMENT: {
+        throw new Error('MULTI_LINE_COMMENT should always create a token');
+        /*const commentToken = createToken(TOKEN_TYPES.COMMENT, TOKEN_SUBTYPES.MULTI_LINE, state.indentation.length, '');
+        commentToken.end = line.length;
+        state.tokens.push(commentToken);
+        break;*/
+      }
+      case STATES.NORMAL:
+        // In the regular state, add an empty code token
+        state.tokens.push(createCodeToken(
+          state.indentation.length,
+          state.indentation.length,
+          ''
+        ));
+        break;
+      case STATES.STRING: {
+        throw new Error('STRING state should have been handled before this point');
+        // We're in a string state but haven't added a token yet - add a string token
+        /*const subtype = state.stringDelimiter === '\'' ? TOKEN_SUBTYPES.SINGLE_QUOTED :
+          state.stringDelimiter === '"' ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
+            TOKEN_SUBTYPES.TEMPLATE;
 
-      const stringToken = createToken(TOKEN_TYPES.STRING, subtype, state.indentation.length, '');
-      stringToken.end = line.length;
-      stringToken.incomplete = true;
-      state.tokens.push(stringToken);
+        const stringToken = createToken(TOKEN_TYPES.STRING, subtype, state.indentation.length, '');
+        stringToken.end = line.length;
+        stringToken.incomplete = true;
+        state.tokens.push(stringToken);
 
-      // Also update the stringState to continue the string to the next line
-      result.stringState = {
-        escaped: false,
-        delimiter: state.stringDelimiter
-      };
-    } else {
-      // For non-string states, add an empty code token
-      state.tokens.push(createCodeToken(
-        state.indentation.length,
-        state.indentation.length,
-        ''
-      ));
+        // Also update the stringState to continue the string to the next line
+        result.stringState = {
+          escaped: false,
+          delimiter: state.stringDelimiter
+        };
+        break;*/
+      }
+      default:
+        throw new Error('Invalid state: ' + currentState);
     }
   }
-
   return result;
 }
 

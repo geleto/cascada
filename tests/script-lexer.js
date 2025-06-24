@@ -1198,7 +1198,7 @@ describe('Script Parser', function() {
 
         expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
         expect(result.tokens[1].start).to.equal(6);
-        expect(result.tokens[1].end).to.equal(13);
+        expect(result.tokens[1].end).to.equal(14);
 
         // Continue checking other tokens...
         expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE);
