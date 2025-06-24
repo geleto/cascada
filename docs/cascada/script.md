@@ -9,10 +9,8 @@ Cascada Script is a scripting language built on top of the Cascada templating en
 - [Key Features](#key-features)
 - [Executing a Script](#executing-a-script)
 - [Core Syntax and Expressions](#core-syntax-and-expressions)
-- [Output Commands (`@`)](#assembling-data-with-output-commands-)
 - [Macros and Reusable Components](#macros-and-reusable-components)
 - [Advanced Flow Control](#advanced-flow-control)
-- [Extending and Organizing Code](#extending-and-organizing-code)
 - [API Reference](#api-reference)
 
 ## Key Features
@@ -22,18 +20,18 @@ Cascada Script is a scripting language built on top of the Cascada templating en
 - **Seamless Async Handling**: Work with promises, async functions, and async iterators naturally
 - **Data Assembly**: Build complex data structures with specialized commands
 - **Smart Dependency Management**: While independent operations run in parallel, Cascada ensures that **dependent operations wait for their prerequisites**. This guarantees correct execution order, giving you the performance of parallelism with the predictability of sequential code.
-- **Macros**: Reusable code blocks for building independent data objects
+- **[Macros](#macros-and-reusable-components)**: Reusable code blocks for building independent data objects
 
 ## Executing a Script
 
-Here's an example of executing a script that defines and uses a macro to build a structured data object.
+Here's an example of executing a script that defines and uses a [macro](#macros-and-reusable-components) to build a structured data object.
 
 ```javascript
 const { AsyncEnvironment } = require('cascada-tmpl');
 const env = new AsyncEnvironment();
 
 const script = `
-// The ':data' directive focuses the macro's output
+// The '[:data](#focusing-the-output-data-text-handlername)' directive focuses the macro's output
 macro fetchAndEnhanceUser(id) : data
   set userData = fetchUser(id)
   @set user.id userData.id
@@ -196,7 +194,7 @@ endif
 
 ### **The Handler System: Using @ Output Commands**
 
-Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct a **result object** that is returned by any executable scope, such as an entire **script**, a **macro**, or a **`set` block**.
+Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct a **result object** that is returned by any executable scope, such as an entire **script**, a **[macro](#macros-and-reusable-components)**, or a **[`set` block](#the-set-block-block-assignment)**.
 
 All output operations use a standard function-call syntax, such as `@handler.method(...)`. This approach separates the *definition* of your final output from the *execution* of your asynchronous logic, allowing Cascada to run independent operations in parallel while ensuring your data is assembled correctly and in a predictable order.
 
@@ -212,7 +210,7 @@ Before diving into the theory, let's look at how a few commands work together to
 
 ```javascript
 // This script builds a user object.
-// The :data directive focuses the output to get just the data.
+// The [:data](#focusing-the-output-data-text-handlername) directive focuses the output to get just the data.
 :data
 
 set userId = 123
@@ -268,7 +266,7 @@ Instead of being executed immediately, `@` commands are handled in a three-step 
 
 #### Output Handlers: `@data`, `@text`, and Custom Logic
 
-Every `@` command is directed to an **output handler**. The handler determines what action is performed. Cascada provides two built-in handlers and allows you to define your own for custom logic.
+Every `@` command is directed to an **output handler**. The handler determines what action is performed. Cascada provides two built-in handlers and allows you to [define your own for custom logic](#creating-custom-output-command-handlers).
 
 *   **`@data`**: The built-in handler for building structured data (objects and arrays).
 *   **`@text`**: The built-in handler for generating a simple string of text.
@@ -280,7 +278,7 @@ Handler methods are executed synchronously during the "Assemble" step. For async
 
 Any block of logic—the entire script, a macro, or a `set` block—produces a result object. The keys of this object correspond to the **names of the output handlers** used within that scope. After the "Assemble" phase, the engine populates this object using values from each handler.
 
-For example, a scope that uses the `data`, `text`, and a custom `turtle` handler will produce a result object like this:
+For example, a scope that uses the `data`, `text`, and a [custom `turtle` handler](#creating-custom-output-command-handlers) will produce a result object like this:
 ```json
 {
   "data": { "report": { "title": "Q3 Summary" } },
@@ -652,7 +650,7 @@ It is crucial to understand the difference between these two features, as they s
     *   **Timing:** They are processed *after* their containing scope finishes its main evaluation. This delay may not be optimal if the operations need to have side effects as early as possible.
     *   **Nature:** They are for data construction and sequenced logic, not for controlling live async operations.
 
-*   **`!` Sequential Execution:**
+*   **`!` [Sequential Execution](#sequential-execution-control-):**
     *   **Purpose:** For **controlling the order of live, async operations** that have side effects (e.g., database writes).
     *   **Timing:** It forces one async call to wait for another to finish *during* the main script evaluation, ensuring operations run as early as possible.
     *   **Nature:** It manages the real-time execution flow of asynchronous functions, and their results are immediately available to the next line of code.
@@ -661,15 +659,15 @@ It is crucial to understand the difference between these two features, as they s
 
 Macros allow you to define reusable chunks of logic that build and return structured data objects. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
 
-Macros implicitly return the structured object built by the Output Commands (`@set`, `@push`, etc.) within their scope. An explicit `return` statement is not required, but if you include one, its value will override the implicitly built object.
+Macros implicitly return the structured object built by the [Output Commands](#the-handler-system-using--output-commands) (`@set`, `@push`, etc.) within their scope. An explicit `return` statement is not required, but if you include one, its value will override the implicitly built object.
 
 ### Defining and Calling a Macro
 
 ```javascript
 // Define a macro to build a user object
-macro buildUser(id) : data // :data focuses the return value
+macro buildUser(id) : data // [:data](#focusing-the-output-data-text-handlername) focuses the return value
   set userData = fetchUserData(id)
-  // These '@set' commands operate on the macro's return object
+  // These '[@set](#the-handler-system-using--output-commands)' commands operate on the macro's return object
   @set user.id userData.id
   @set user.name userData.name
 endmacro
@@ -698,7 +696,7 @@ set passwordField = input("pass", type="password")
 
 ### Output Scopes and Focusing in Macros
 
-Commands inside a `macro` are assembled when the **macro call completes**. They build a structured object that becomes the immediate **return value** of that macro. To get a clean data object instead of the full result object, use an output focus directive.
+Commands inside a `macro` are assembled when the **macro call completes**. They build a structured object that becomes the immediate **return value** of that macro. To get a clean data object instead of the full result object, use an [output focus directive](#focusing-the-output-data-text-handlername).
 
 <table>
 <tr>
@@ -742,13 +740,13 @@ set userObject = buildUser("Alice")
 </table>
 
 ### The `call` Block
-The call block from Nunjucks, used for passing content to macros for text output, is not implemented in Cascada Script. Its functionality is covered by set blocks and macro calls, aligning with Cascada's data-driven focus while simplifying the language.
+The call block from Nunjucks, used for passing content to macros for text output, is not implemented in Cascada Script. Its functionality is covered by [set blocks](#the-set-block-block-assignment) and macro calls, aligning with Cascada's data-driven focus while simplifying the language.
 
 ### The `set` Block (Block Assignment)
 
-In Cascada Script, a `set` tag used without an assignment (`=`) becomes a **block assignment**. It captures the output generated within its body—including the result of Output Commands (`@`)—and assigns it to a variable. This provides the same functionality as the `capture` tag found in some other template engines, but with a more integrated syntax.
+In Cascada Script, a `set` tag used without an assignment (`=`) becomes a **block assignment**. It captures the output generated within its body—including the result of [Output Commands (`@`)](#the-handler-system-using--output-commands)—and assigns it to a variable. This provides the same functionality as the `capture` tag found in some other template engines, but with a more integrated syntax.
 
-Commands inside a `set` block are assembled when the **block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use. You can focus its output with `:data` just like a macro, ensuring the variable contains a clean data object instead of the full result object.
+Commands inside a `set` block are assembled when the **block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use. You can focus its output with `:data` just like a [macro](#macros-and-reusable-components), ensuring the variable contains a clean data object instead of the full result object.
 
 <table>
 <tr>
@@ -757,7 +755,7 @@ Commands inside a `set` block are assembled when the **block completes**. This h
 <summary><strong><code>set</code> Block with <code>:data</code> focus</strong></summary>
 
 ```javascript
-// The :data directive focuses the
+// The [:data](#focusing-the-output-data-text-handlername) directive focuses the
 // value assigned to 'permissions'.
 set permissions : data
   @push grants "read"
