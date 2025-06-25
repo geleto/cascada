@@ -370,12 +370,28 @@ class ScriptTranspiler {
     return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);
   }
 
+  /**
+   * Checks if a string is a list of valid JavaScript identifiers separated by commas
+   * @param {string} str - The string to check
+   * @return {boolean} True if it's a valid identifier list
+   */
+  _isValidIdentifierList(str) {
+    if (!str) return false;
+    const varNames = str.split(',').map(name => name.trim());
+    for (const varName of varNames) {
+      if (!this._isValidIdentifier(varName)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   _isAssignment(code, lineIndex) {
     const assignPos = code.indexOf('=');
     if (assignPos === -1) return false;
 
     // for now we only support assignment to a variable
-    if (!this._isValidIdentifier(code.substring(0, assignPos).trim())) return false;
+    if (!this._isValidIdentifierList(code.substring(0, assignPos).trim())) return false;
 
     const expr = code.substring(assignPos + 1).trim();
 
@@ -388,47 +404,53 @@ class ScriptTranspiler {
 
   _processVar(parseResult, lineIndex, isAssignment = false) {
     const code = parseResult.codeContent.trim();
-    const codeContent = isAssignment ? code : code.substring('var'.length).trim();
+    // Use firstWord to correctly slice content, robust to extra spaces
+    const firstWord = isAssignment ? '' : this._getFirstWord(code);
+    // Get content after 'var' or the full line for assignment
+    const content = isAssignment ? code : code.substring(firstWord.length).trim();
 
-    // Check if this has an assignment
-    const assignPos = codeContent.indexOf('=');
+    const assignPos = content.indexOf('=');
+
     if (assignPos === -1) {
       // No assignment
-      if (!this._isValidIdentifier(codeContent)) {
-        throw new Error(`Invalid variable name: "${codeContent}" at line ${lineIndex + 1}`);
+      if (!this._isValidIdentifierList(content)) {
+        throw new Error(`Invalid variable name: "${content}" at line ${lineIndex + 1}`);
       }
       if (isAssignment) {
-        throw new Error(`Invalid assignment state: "${codeContent}" at line ${lineIndex + 1}`);
+        // This should not be possible if _isAssignment works correctly
+        throw new Error(`Invalid assignment state: "${content}" at line ${lineIndex + 1}`);
       }
-      //a var declaration with no assignment (@todo handle the '=' on the next line)
+      // These are declarations assigned to 'none'
+      if (!this._isValidIdentifierList(content)) {
+        throw new Error(`Invalid variable name in: "${content}" at line ${lineIndex + 1}`);
+      }
       parseResult.lineType = 'TAG';
       parseResult.tagName = 'var';
-      parseResult.codeContent = codeContent + ' = none';//assign to none
+      parseResult.codeContent = `${content} = none`; // All vars assigned to none
       parseResult.blockType = null;
+
     } else {
-      // Has assignment
-      const varName = codeContent.substring(0, assignPos).trim();
-      if (!this._isValidIdentifier(varName)) {
-        throw new Error(`Invalid variable name: "${varName}" at line ${lineIndex + 1}`);
+      // CASE: Has assignment (e.g., `var x, y = 10` or `var x, y = capture...`)
+      const targetsStr = content.substring(0, assignPos).trim();
+      const exprStr = content.substring(assignPos + 1).trim();
+
+      if (!this._isValidIdentifierList(targetsStr)) {
+        throw new Error(`Invalid variable name in declaration: "${targetsStr}" at line ${lineIndex + 1}`);
       }
 
-      // Get the expression after =
-      const expr = codeContent.substring(assignPos + 1).trim();
-      if (this._getFirstWord(expr) === 'capture') {
-        // Handle block assignment with capture [var ]name1,name2 = capture [:text/data/handler]
-        // block assignment accepts only single variable name
-        const captureContent = expr.substring('capture'.length).trim();
-        parseResult.lineType = 'TAG';
-        parseResult.tagName = isAssignment ? 'set' : 'var';
-        // Combine varName with the rest of the capture directive (e.g., ':data')
-        parseResult.codeContent = varName + (captureContent ? ' ' + captureContent : '');
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = isAssignment ? 'set' : 'var';
+
+      if (this._getFirstWord(exprStr) === 'capture') {
+        // Handle block assignment (`= capture`)
+        const captureContent = exprStr.substring('capture'.length).trim();
+        // The content of the tag is the list of variables and the focus directive
+        parseResult.codeContent = `${targetsStr} ${captureContent}`;
         parseResult.blockType = this.BLOCK_TYPE.START;
         this.setBlockStack.push(parseResult.tagName);
       } else {
-        // Assignment: [var ]name1,name2 = expression
-        parseResult.lineType = 'TAG';
-        parseResult.tagName = isAssignment ? 'set' : 'var';
-        parseResult.codeContent = codeContent; // Keep the full assignment
+        // Handle value assignment (`= value`)
+        parseResult.codeContent = content; // The full "targets = expression" string
         parseResult.blockType = null;
       }
     }
@@ -510,13 +532,8 @@ class ScriptTranspiler {
       throw new Error(`extern declaration must specify variable names at line ${lineIndex + 1}`);
     }
 
-    // Parse comma-separated variable names
-    const varNames = externContent.split(',').map(name => name.trim());
-
-    for (const varName of varNames) {
-      if (!this._isValidIdentifier(varName)) {
-        throw new Error(`Invalid variable name in extern declaration: "${varName}" at line ${lineIndex + 1}`);
-      }
+    if (!this._isValidIdentifierList(externContent)) {
+      throw new Error(`Invalid variable name in extern declaration: "${externContent}" at line ${lineIndex + 1}`);
     }
 
     parseResult.lineType = 'TAG';
