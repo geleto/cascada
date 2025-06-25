@@ -25,7 +25,7 @@ describe('Cascada Script: Output commands', function () {
    * - All `@` commands are buffered and executed sequentially *after* the parallel fetches complete.
    * - The `:data` directive focuses the final output on the assembled data object.
    */
-  it.only('should run independent operations in parallel and assemble the result object', async () => {
+  it('should run independent operations in parallel and assemble the result object', async () => {
     const context = {
       // Simulate async data fetching for different resources.
       fetchData: async (source) => {

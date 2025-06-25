@@ -457,10 +457,10 @@ describe('Script Converter', () => {
       expect(template).to.equal('{%- if condition -%}\n  {{- "Indented" -}}\n{%- endif -%}');
     });
 
-    it('should convert code statements to do tags', () => {
+    it('should convert code statements to set tags', () => {
       const script = 'variable = value';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- do variable = value -%}');
+      expect(template).to.equal('{%- set variable = value -%}');
     });
 
     it('should handle empty lines', () => {
@@ -891,6 +891,72 @@ endif`;
       const script = 'if condition\nendif';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.equal('{%- if condition -%}\n{%- endif -%}');
+    });
+  });
+
+  // Variable handling tests
+  describe('Variable Handling', () => {
+    it('should handle var declarations with assignment', () => {
+      const script = 'var user = fetchUser(123)';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- var user = fetchUser(123) -%}');
+    });
+
+    it.only('should handle var declarations with block assignment', () => {
+      const script = `var report = capture :data
+  @data.set(report.title, "Q3 Summary")
+  @data.set(report.status, "complete")
+endvar`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- var report :data -%}\n  {%- output_command data.set(report.title, "Q3 Summary") -%}\n  {%- output_command data.set(report.status, "complete") -%}\n{%- endvar -%}');
+    });
+
+    it('should handle extern declarations', () => {
+      const script = 'extern currentUser, config, settings';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- extern currentUser, config, settings -%}');
+    });
+
+    it('should handle simple assignments', () => {
+      const script = 'user = "new-value"';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- set user = "new-value" -%}');
+    });
+
+    it('should handle block assignments with capture', () => {
+      const script = `report = capture :data
+  @data.set(report.title, "Q3 Summary")
+  @data.set(report.status, "complete")
+endset`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- set report :data -%}\n  {%- output_command data.set(report.title, "Q3 Summary") -%}\n  {%- output_command data.set(report.status, "complete") -%}\n{%- endset -%}');
+    });
+
+    it('should handle complex assignments with expressions', () => {
+      const script = 'total = (price + tax) * (1 - discount)';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- set total = (price + tax) * (1 - discount) -%}');
+    });
+
+    it('should handle multiple variable declarations in sequence', () => {
+      const script = `var user = fetchUser(123)
+extern config
+user.name = "Updated Name"
+var settings = { theme: "dark" }`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- var user = fetchUser(123) -%}\n{%- extern config -%}\n{%- set user.name = "Updated Name" -%}\n{%- var settings = { theme: "dark" } -%}');
+    });
+
+    it('should not treat reserved keywords as assignments', () => {
+      const script = 'if condition == true\nendif';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- if condition == true -%}\n{%- endif -%}');
+    });
+
+    it('should handle assignments with comments', () => {
+      const script = 'var user = fetchUser(123) // Get user data';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- var user = fetchUser(123) -%}{#- Get user data -#}');
     });
   });
 

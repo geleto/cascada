@@ -113,7 +113,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'if', 'block', 'macro', 'filter', 'raw', 'verbatim', 'while', 'try'], //asyncEach, asyncAll
-      lineTags: ['set', 'include', 'extends', 'from', 'import', 'depends', 'option'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'option', 'var', 'extern'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -135,14 +135,15 @@ class ScriptTranspiler {
         'verbatim': 'endverbatim',
         'while': 'endwhile',
         'try': 'endtry',
-        'set': 'endset'//only when no = in the set, then the block has to be closed
+        //'set': 'endset', //only when no = in the set, then the block has to be closed
+        'var': 'endvar' //only when no = in the var, then the block has to be closed
       },
 
       // Tags that should never be treated as multi-line
       neverContinued: [
         'else', 'endif', 'endfor', 'endblock', 'endmacro',
         'endfilter', 'endcall', 'endraw', 'endverbatim',
-        'endwhile', 'endtry'
+        'endwhile', 'endtry', 'endvar'
       ],
 
       // Continuation detection
@@ -174,16 +175,20 @@ class ScriptTranspiler {
       ...Object.keys(this.SYNTAX.middleTags),
       ...Object.values(this.SYNTAX.blockPairs)
     ]);
+
+    // Track block stack for var/set blocks
+    this.setBlockStack = []; // 'var' or 'set'
   }
 
   /**
    * Extracts the first word from a string, ensuring it's a complete word
+   * It accepts words starting with @ and mathches : as a word separator
    * @param {string} text - The text to extract from
    * @return {string} The first word
    */
   _getFirstWord(text) {
     // Get the first space-separated word
-    const match = text.trim().match(/^([@:]?[a-zA-Z0-9_]+)(?:\s|$)/);
+    const match = text.trim().match(/^(@?[a-zA-Z0-9_]+)(?:[\s:]|$)/);
     return match ? match[1] : '';
   }
 
@@ -220,13 +225,6 @@ class ScriptTranspiler {
    * @return {string|null} The block type (START, MIDDLE, END) or null
    */
   _getBlockType(tag, code) {
-    if (tag === 'set') {
-      if (code.includes('=')) {
-        //a set with assignment is a line tag
-        return null;//not a block
-      }
-      return this.BLOCK_TYPE.START;
-    }
     if (this.SYNTAX.blockTags.includes(tag)) return this.BLOCK_TYPE.START;
     if (Object.keys(this.SYNTAX.middleTags).includes(tag)) return this.BLOCK_TYPE.MIDDLE;
     if (Object.values(this.SYNTAX.blockPairs).includes(tag)) return this.BLOCK_TYPE.END;
@@ -360,8 +358,6 @@ class ScriptTranspiler {
     } return false;
   }
 
-
-
   /**
    * Checks if a string is a valid JavaScript identifier
    * @param {string} str - The string to check
@@ -372,6 +368,161 @@ class ScriptTranspiler {
 
     // JavaScript identifier rules: start with letter, $, or _, followed by letters, digits, $, or _
     return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);
+  }
+
+  _isAssignment(code, lineIndex) {
+    const assignPos = code.indexOf('=');
+    if (assignPos === -1) return false;
+
+    // for now we only support assignment to a variable
+    if (!this._isValidIdentifier(code.substring(0, assignPos).trim())) return false;
+
+    const expr = code.substring(assignPos + 1).trim();
+
+    if (expr.startsWith('=')) {
+      // This is probablya comparison operator, not an assignment and we don't want a line with just a comparison
+      throw new Error(`Invalid assignment/comparison: "${code}" at line ${lineIndex + 1}`);
+    }
+    return true;
+  }
+
+  _processVar(parseResult, lineIndex, isAssignment = false) {
+    const code = parseResult.codeContent.trim();
+    const codeContent = isAssignment ? code : code.substring('var'.length).trim();
+
+    // Check if this has an assignment
+    const assignPos = codeContent.indexOf('=');
+    if (assignPos === -1) {
+      // No assignment
+      if (!this._isValidIdentifier(codeContent)) {
+        throw new Error(`Invalid variable name: "${codeContent}" at line ${lineIndex + 1}`);
+      }
+      if (isAssignment) {
+        throw new Error(`Invalid assignment state: "${codeContent}" at line ${lineIndex + 1}`);
+      }
+      //a var declaration with no assignment (@todo handle the '=' on the next line)
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = 'var';
+      parseResult.codeContent = codeContent + ' = none';//assign to none
+      parseResult.blockType = null;
+    } else {
+      // Has assignment
+      const varName = codeContent.substring(0, assignPos).trim();
+      if (!this._isValidIdentifier(varName)) {
+        throw new Error(`Invalid variable name: "${varName}" at line ${lineIndex + 1}`);
+      }
+
+      // Get the expression after =
+      const expr = codeContent.substring(assignPos + 1).trim();
+      if (this._getFirstWord(expr) === 'capture') {
+        // Handle block assignment with capture [var ]name1,name2 = capture [:text/data/handler]
+        // block assignment accepts only single variable name
+        const captureContent = expr.substring('capture'.length).trim();
+        parseResult.lineType = 'TAG';
+        parseResult.tagName = isAssignment ? 'set' : 'var';
+        // Combine varName with the rest of the capture directive (e.g., ':data')
+        parseResult.codeContent = varName + (captureContent ? ' ' + captureContent : '');
+        parseResult.blockType = this.BLOCK_TYPE.START;
+        this.setBlockStack.push(parseResult.tagName);
+      } else {
+        // Assignment: [var ]name1,name2 = expression
+        parseResult.lineType = 'TAG';
+        parseResult.tagName = isAssignment ? 'set' : 'var';
+        parseResult.codeContent = codeContent; // Keep the full assignment
+        parseResult.blockType = null;
+      }
+    }
+  }
+
+  _processOutputCommand(parseResult, lineIndex) {
+    // Find the @ symbol position and preserve all whitespace after it
+    const atIndex = parseResult.codeContent.indexOf('@');
+    const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
+    // Check if this is a @text command (the current command for text output)
+    let ccontent = commandContent.trim();
+    let isText = ccontent.startsWith('text(') || this._getFirstWord(ccontent) === 'text';
+    if (isText) {
+      //skip the 'text'
+      ccontent = ccontent.substring('text'.length).trim();
+      // Check if @text has parentheses (function call syntax)
+      const hasParentheses = ccontent.startsWith('(');
+      let expression = '';
+      if (hasParentheses) {
+        // @text(value) - extract the value and convert to {{ }}
+        const openParenIndex = ccontent.indexOf('(');
+        const closeParenIndex = ccontent.lastIndexOf(')');
+        /*if (openParenIndex === -1 || closeParenIndex === -1 || closeParenIndex <= openParenIndex) {
+          throw new Error(`Invalid text command syntax: "${ccontent}" at line ${lineIndex + 1}`);
+        }*/
+        expression = ccontent.substring(
+          openParenIndex + 1,
+          closeParenIndex === -1 ? ccontent.length : closeParenIndex
+        ).trim();
+
+        if (closeParenIndex && !expression) {
+          throw new Error(`Invalid text command: "${ccontent}" at line ${lineIndex + 1}`);
+        }
+
+        if (closeParenIndex === -1) {
+          //we expect the last continuation line to end with ')' which shall be ignored
+          parseResult.continuesToNext = true;
+          parseResult.expectedContinuationEnd = ')';
+        }
+      } else {
+        //make sure there is no content after the 'text', we expect '(' on the next line (@todo)
+        if (ccontent.length > 0) {
+          throw new Error(`Expected '(' after 'text' at line ${lineIndex + 1}`);
+        }
+        parseResult.continuesToNext = true;
+        parseResult.expectedContinuationEnd = ')';
+      }
+      parseResult.lineType = 'TEXT';
+      parseResult.blockType = null;
+      parseResult.codeContent = expression;
+    } else {
+      // All other @ commands are treated as function commands
+      // @print was deprecated and replaced with @text(value)
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = 'output_command';
+      parseResult.blockType = null;
+      parseResult.codeContent = commandContent; // The content for the Nunjucks tag
+    }
+  }
+
+  _processFocusDirective(parseResult, lineIndex) {
+    // Handle :data/text/handleName output focus directive
+    const code = parseResult.codeContent.trim();
+    const focus = code.substring(1); // Remove : but keep the directive name
+    if (!focus) {
+      throw new Error(`Invalid output focus: "${parseResult.codeContent}"`);
+    }
+    parseResult.lineType = 'TAG';
+    parseResult.tagName = 'option';
+    parseResult.blockType = null;//no block
+    parseResult.codeContent = `focus="${focus}"`;
+  }
+
+  _processExtern(parseResult, lineIndex) {
+    const code = parseResult.codeContent.trim();
+    const externContent = code.substring('extern'.length).trim();
+
+    if (!externContent) {
+      throw new Error(`extern declaration must specify variable names at line ${lineIndex + 1}`);
+    }
+
+    // Parse comma-separated variable names
+    const varNames = externContent.split(',').map(name => name.trim());
+
+    for (const varName of varNames) {
+      if (!this._isValidIdentifier(varName)) {
+        throw new Error(`Invalid variable name in extern declaration: "${varName}" at line ${lineIndex + 1}`);
+      }
+    }
+
+    parseResult.lineType = 'TAG';
+    parseResult.tagName = 'extern';
+    parseResult.codeContent = externContent;
+    parseResult.blockType = null; // extern is always a line tag
   }
 
   /**
@@ -398,84 +549,38 @@ class ScriptTranspiler {
       parseResult.comments.push(comments[i].content);
     }
 
-    // Handle special @-command syntax before checking for standard keywords.
     const firstWord = this._getFirstWord(parseResult.codeContent);
     const code = parseResult.codeContent.trim();
     if (code.startsWith('@')) {
-      // Find the @ symbol position and preserve all whitespace after it
-      const atIndex = parseResult.codeContent.indexOf('@');
-      const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
-
-      // Check if this is a @text command (the current command for text output)
-      let ccontent = commandContent.trim();
-      let isText = ccontent.startsWith('text(') || this._getFirstWord(ccontent) === 'text';
-      if (isText) {
-        //skip the 'text'
-        ccontent = ccontent.substring('text'.length).trim();
-        // Check if @text has parentheses (function call syntax)
-        const hasParentheses = ccontent.startsWith('(');
-        let expression = '';
-        if (hasParentheses) {
-          // @text(value) - extract the value and convert to {{ }}
-          const openParenIndex = ccontent.indexOf('(');
-          const closeParenIndex = ccontent.lastIndexOf(')');
-          /*if (openParenIndex === -1 || closeParenIndex === -1 || closeParenIndex <= openParenIndex) {
-            throw new Error(`Invalid text command syntax: "${ccontent}" at line ${lineIndex + 1}`);
-          }*/
-          expression = ccontent.substring(
-            openParenIndex + 1,
-            closeParenIndex === -1 ? ccontent.length : closeParenIndex
-          ).trim();
-
-          if (closeParenIndex && !expression) {
-            throw new Error(`Invalid text command: "${ccontent}" at line ${lineIndex + 1}`);
-          }
-
-          if (closeParenIndex === -1) {
-            //we expect the last continuation line to end with ')' which shall be ignored
-            parseResult.continuesToNext = true;
-            parseResult.expectedContinuationEnd = ')';
-          }
-        } else {
-          //make sure there is no content after the 'text', we expect '(' on the next line (@todo)
-          if (ccontent.length > 0) {
-            throw new Error(`Expected '(' after 'text' at line ${lineIndex + 1}`);
-          }
-          parseResult.continuesToNext = true;
-          parseResult.expectedContinuationEnd = ')';
-        }
-        parseResult.lineType = 'TEXT';
-        parseResult.blockType = null;
-        parseResult.codeContent = expression;
-      } else {
-        // All other @ commands are treated as function commands
-        // @print was deprecated and replaced with @text(value)
-        parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output_command';
-        parseResult.blockType = null;
-        parseResult.codeContent = commandContent; // The content for the Nunjucks tag
-      }
+      this._processOutputCommand(parseResult, lineIndex);
     } else if (code.startsWith(':')) {
-      // Handle :data/text/handleName output focus directive
-      const focus = code.substring(1); // Remove : but keep the directive name
-      if (!focus) {
-        throw new Error(`Invalid output focus: "${parseResult.codeContent}"`);
+      this._processFocusDirective(parseResult, lineIndex);
+    } else if (firstWord === 'var') {
+      this._processVar(parseResult, lineIndex);
+    } else if (firstWord === 'extern') {
+      this._processExtern(parseResult, lineIndex);
+    } else if (firstWord === 'endcapture') {
+      if (this.setBlockStack.length === 0) {
+        throw new Error(`Unexpected 'endcapture' at line ${lineIndex + 1} - no matching var/set block found`);
       }
+      const tag = this.setBlockStack.pop();
       parseResult.lineType = 'TAG';
-      parseResult.tagName = 'option';
-      parseResult.blockType = null;//no block
-      parseResult.codeContent = `focus="${focus}"`;
-    } else {
+      parseResult.tagName = 'end' + tag;
+      parseResult.codeContent = parseResult.codeContent.substring('endcapture'.length).trim();
+      parseResult.blockType = this.BLOCK_TYPE.END;
+    } else if (this.RESERVED_KEYWORDS.has(firstWord)) {
       // Standard keyword processing
-      if (this.RESERVED_KEYWORDS.has(firstWord)) {
-        parseResult.lineType = 'TAG';
-        parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1);//skip the first word
-        parseResult.blockType = this._getBlockType(firstWord, code);
-        parseResult.tagName = firstWord;
-      } else {
-        parseResult.lineType = 'CODE';
-        parseResult.blockType = null;
-      }
+      parseResult.lineType = 'TAG';
+      parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1);//skip the first word
+      parseResult.blockType = this._getBlockType(firstWord, code);
+      parseResult.tagName = firstWord;
+    } else if (this._isAssignment(code, lineIndex)) {
+      this._processVar(parseResult, lineIndex, true);
+    }
+    else {
+      // a code line
+      parseResult.lineType = 'CODE';
+      parseResult.blockType = null;
     }
 
     parseResult.continuesToNext = parseResult.continuesToNext || this._willContinueToNextLine(codeTokens, parseResult.codeContent, firstWord);
@@ -550,12 +655,6 @@ class ScriptTranspiler {
       switch (processedLine.lineType) {
         case 'TAG':
           output += `{%- ${processedLine.tagName}`;
-          /*if (processedLine.tagName) {
-            // For internal commands, prepend the tag name that the Nunjucks parser expects
-            if (processedLine.tagName === 'output_command' || processedLine.tagName === 'statement_command') {
-              output += processedLine.tagName + ' ';
-            }
-          }*/
           break;
         case 'TEXT':
           output += '{{-';
