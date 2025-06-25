@@ -669,7 +669,7 @@ class Compiler extends Obj {
   }
 
   _addDeclaredVar(frame, varName) {
-    if (this.asyncMode) {
+    if (this.asyncMode || this.scriptMode) {
       if (!frame.declaredVars) {
         frame.declaredVars = new Set();
       }
@@ -822,15 +822,18 @@ class Compiler extends Obj {
     this.emit(')');
   }
 
+  // @todo - add the variable in declaredVars in non-async modeW
   compileSet(node, frame) {
-    if (this.scriptMode) {
-      // SCRIPT MODE: Enforce strict var/set/extern rules.
-      const ids = [];
+    const ids = [];
 
-      // Loop through each target variable in the statement (e.g., var x, y = 10)
-      node.targets.forEach((target) => {
-        const name = target.value;
-        const isDeclared = !!frame.lookup(name);
+    // 1. First pass: Validate, declare, and prepare temporary JS variables for all targets.
+    node.targets.forEach((target) => {
+      const name = target.value;
+      let id;
+
+      if (this.scriptMode) {
+        // Script mode: Enforce strict var/set/extern rules.
+        const isDeclared = this._isDeclared(frame, name);
 
         switch (node.varType) {
           case 'declaration': // from 'var'
@@ -847,95 +850,83 @@ class Compiler extends Obj {
             if (isDeclared) {
               this.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
             }
+            if (node.value) {
+              this.fail('extern variables cannot be initialized at declaration.', node.lineno, node.colno, node);
+            }
             break;
           default:
             this.fail(`Unknown varType '${node.varType}' for set/var statement.`, node.lineno, node.colno, node);
         }
 
-        // The temporary ID logic from the original implementation is fine.
-        const id = this._tmpid();
+        // In script mode, we always generate a new temporary JS variable for the assignment.
+        id = this._tmpid();
         this.emit.line('let ' + id + ';');
-        ids.push(id);
-      });
 
-      if (node.varType === 'extern') {
-        // Extern is declaration-only, no value assignment.
-        if (node.value) {
-          this.fail('extern variables cannot be initialized at declaration.', node.lineno, node.colno, node);
-        }
       } else {
-        // Compile the value for 'var' or '=' assignments
-        if (node.value) {
-          this.emit(ids.join(' = ') + ' = ');
-          this._compileExpression(node.value, frame, true, node.value);
-        } else {
-          // This handles block assignments (e.g., name = capture ... endcapture)
-          this.emit(ids.join(' = ') + ' = ');
-          this.emit.asyncBlockValue(node, frame, (n, f) => {
-            this.compile(n.body, f);
-          }, undefined, node.body);
+        // TEMPLATE MODE: Replicates the original, tested behavior.
+        if (node.varType !== 'assignment') { // 'set' is the only valid type
+          this.fail(`'${node.varType}' is not allowed in template mode. Use 'set'.`, node.lineno, node.colno, node);
         }
-        this.emit.line(';');
-      }
 
-      // Set the variable in the frame for all types.
-      node.targets.forEach((target, i) => {
-        const id = ids[i];
-        const name = target.value;
-        this.emit.line(`frame.set("${name}", ${id || 'null'}, true);`); // Use null for extern
-
-        // Exporting logic (can remain the same)
-        if (name.charAt(0) !== '_') {
-          this.emit.line('if(frame.topLevel) {');
-          this.emit.line(`context.addExport("${name}", ${id || 'null'});`);
-          this.emit.line('}');
-        }
-      });
-
-    } else {
-      // Template Mode: Keep original behavior for `set` and dissalow 'var'
-      if (node.varType === 'declaration') {
-        this.fail('var is not allowed in template mode', node.lineno, node.colno, node);
-      }
-      const ids = [];
-      node.targets.forEach((target) => {
-        var name = target.value;
-        var id = frame.lookup(name);
+        // Look up the existing temporary variable ID. This is the crucial part
+        // for template-mode re-assignments.
+        id = frame.lookup(name);
         if (id === null || id === undefined) {
+          // If it's a new variable in this scope, generate a new ID and declare it.
           id = this._tmpid();
           this.emit.line('let ' + id + ';');
         }
-        ids.push(id);
-        if (this.asyncMode) {
-          this.async.updateFrameWrites(frame, name);
-        }
-      });
+      }
 
-      if (node.value) {
+      ids.push(id);
+
+      // This call is common and crucial for async operations in both modes.
+      if (this.asyncMode) {
+        this.async.updateFrameWrites(frame, name);
+      } else if (this.scriptMode) {
+        this._addDeclaredVar(frame, name);
+      }
+    });
+
+    // 2. Compile the value/body assignment.
+    if (node.varType !== 'extern') { // `extern` has no value.
+      if (node.value) { // e.g., set x = 123
         this.emit(ids.join(' = ') + ' = ');
         this._compileExpression(node.value, frame, true, node.value);
-      } else {
+      } else { // e.g., set x = capture ...
         this.emit(ids.join(' = ') + ' = ');
         this.emit.asyncBlockValue(node, frame, (n, f) => {
           this.compile(n.body, f);
         }, undefined, node.body);
       }
       this.emit.line(';');
-
-      node.targets.forEach((target, i) => {
-        var id = ids[i];
-        var name = target.value;
-        this.emit.line(`frame.set("${name}", ${id}, true);`);
-        this.emit.line('if(frame.topLevel) {');
-        this.emit.line(`context.setVariable("${name}", ${id});`);
-        this.emit.line('}');
-        if (name.charAt(0) !== '_') {
-          this.emit.line('if(frame.topLevel) {');
-          this.emit.line(`context.addExport("${name}", ${id});`);
-          this.emit.line('}');
-        }
-      });
     }
+
+
+    // 3. Second pass: Set the variables in the frame and update context/exports.
+    node.targets.forEach((target, i) => {
+      const id = ids[i];
+      const name = target.value;
+      // The JS value for an 'extern' variable is null.
+      const valueId = (node.varType === 'extern') ? 'null' : id;
+
+      // This is common to both modes.
+      this.emit.line(`frame.set("${name}", ${valueId}, true);`);
+
+      // This block is specific to template mode's behavior.
+      if (!this.scriptMode) {
+        this.emit.line('if(frame.topLevel) {');
+        this.emit.line(`  context.setVariable("${name}", ${valueId});`);
+        this.emit.line('}');
+      }
+
+      // This export logic is common to both modes.
+      if (name.charAt(0) !== '_') {
+        this.emit.line('if(frame.topLevel) {');
+        this.emit.line(`  context.addExport("${name}", ${valueId});`);
+        this.emit.line('}');
+      }
+    });
   }
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
