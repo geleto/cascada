@@ -35,15 +35,15 @@ const env = new AsyncEnvironment();
 const script = `
 // The '[:data](#focusing-the-output-data-text-handlername)' directive focuses the macro's output
 macro fetchAndEnhanceUser(id) : data
-  set userData = fetchUser(id)
+  var userData = fetchUser(id)
   @set user.id userData.id
   @set user.name userData.name
   @push user.tasks "Review code"
 endmacro
 
 // Each macro call runs in parallel
-set user1 = fetchAndEnhanceUser(1)
-set user2 = fetchAndEnhanceUser(2)
+var user1 = fetchAndEnhanceUser(1)
+var user2 = fetchAndEnhanceUser(2)
 
 // Assemble the final result using the macro outputs
 @set result.user1 user1.user
@@ -88,20 +88,20 @@ Cascada Script removes the visual noise of template syntax while preserving Casc
 - **No Tag Delimiters**: Write `if condition` instead of `{% if condition %}`
 - **Multiline Expressions**: Expressions can span multiple lines for readability. The system automatically detects continuation based on syntax (e.g., unclosed operators, brackets, or parentheses). For example:
   ```
-  set result = 5 + 10 *
+  var result = 5 + 10 *
     20 - 3
   ```
 - **Standard Comments**: Use JavaScript-style comments (`//` and `/* */`)
-- **Implicit `do` Statements**: Any standalone line that isn't a recognized command (e.g., `set`, `if`, `for`, `set`) or tag is treated as an expression and implicitly wrapped in a `do` statement. For example:
+- **Code**: Any standalone line that isn't a recognized command (e.g., `var`, `if`, `for`, `import`) or tag is treated as an expression. For example:
   ```
-  items.push("value")  // Implicitly a "do" statement
+  items.push("value")
   ```
 
 ### Basic Statements
 
-#### Variable Assignment
+#### Variable Declaration and Assignment
 ```
-set variableName = expression
+var variableName = expression
 ```
 
 #### Conditional Logic
@@ -164,7 +164,7 @@ All standard mathematical operators are available:
 `+` (addition), `-` (subtraction), `*` (multiplication), `/` (division), `//` (integer division), `%` (remainder), `**` (power).
 
 ```javascript
-set price = (item.cost + shipping) * 1.05
+var price = (item.cost + shipping) * 1.05
 ```
 
 #### Comparisons and Logic
@@ -181,14 +181,14 @@ For concise conditional assignments, you can use an inline `if` expression, whic
 
 ```javascript
 // Syntax: value_if_true if condition else value_if_false
-set theme = "dark" if user.darkMode else "light"
+var theme = "dark" if user.darkMode else "light"
 ```
 
 #### Regular Expressions
 You can create regular expressions by prefixing the expression with `r`.
 
 ```javascript
-set emailRegex = r/^[^\s@]+@[^\s@]+\.[^\s@]+$/
+var emailRegex = r/^[^\s@]+@[^\s@]+\.[^\s@]+$/
 if emailRegex.test(user.email)
   print "Valid email address."
 endif
@@ -196,7 +196,7 @@ endif
 
 ### **The Handler System: Using @ Output Commands**
 
-Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct a **result object** that is returned by any executable scope, such as an entire **script**, a **[macro](#macros-and-reusable-components)**, or a **[`set` block](#the-set-block-block-assignment)**.
+Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct a **result object** that is returned by any executable scope, such as an entire **script**, a **[macro](#macros-and-reusable-components)**, or a **[`capture` block](#the-capture-block-block-assignment)**.
 
 All output operations use a standard function-call syntax, such as `@handler.method(...)`. This approach separates the *definition* of your final output from the *execution* of your asynchronous logic, allowing Cascada to run independent operations in parallel while ensuring your data is assembled correctly and in a predictable order.
 
@@ -215,9 +215,9 @@ Before diving into the theory, let's look at how a few commands work together to
 // The [:data](#focusing-the-output-data-text-handlername) directive focuses the output to get just the data.
 :data
 
-set userId = 123
-set userProfile = { name: "Alice", email: "alice@example.com" }
-set userSettings = { notifications: true, theme: "light" }
+var userId = 123
+var userProfile = { name: "Alice", email: "alice@example.com" }
+var userSettings = { notifications: true, theme: "light" }
 
 // @data.set: Sets or creates a value at a path
 @data.set(user.id, userId)
@@ -262,8 +262,8 @@ set userSettings = { notifications: true, theme: "light" }
 
 Instead of being executed immediately, `@` commands are handled in a three-step process:
 
-1.  **Collect:** As your script, macro, or `set` block runs, Cascada collects `@` commands and places them into a buffer, preserving their source-code order.
-2.  **Execute:** All other logic—like `set` assignments, `async` function calls, and `for` loops—runs to completion. Independent async operations happen concurrently, maximizing performance.
+1.  **Collect:** As your script, macro, or `capture` block runs, Cascada collects `@` commands and places them into a buffer, preserving their source-code order.
+2.  **Execute:** All other logic—like `var` assignments, `async` function calls, and `for` loops—runs to completion. Independent async operations happen concurrently, maximizing performance.
 3.  **Assemble:** Once all data-fetching and logic in the current scope has finished, Cascada dispatches the buffered `@` commands **sequentially** to their corresponding handlers. Each handler is responsible for executing its commands and building its internal state.
 
 #### Output Handlers: `@data`, `@text`, and Custom Logic
@@ -278,7 +278,7 @@ Handler methods are executed synchronously during the "Assemble" step. For async
 
 #### Understanding the Result Object
 
-Any block of logic—the entire script, a macro, or a `set` block—produces a result object. The keys of this object correspond to the **names of the output handlers** used within that scope. After the "Assemble" phase, the engine populates this object using values from each handler.
+Any block of logic—the entire script, a macro, or a `capture` block—produces a result object. The keys of this object correspond to the **names of the output handlers** used within that scope. After the "Assemble" phase, the engine populates this object using values from each handler.
 
 For example, a scope that uses the `data`, `text`, and a [custom `turtle` handler](#creating-custom-output-command-handlers) will produce a result object like this:
 ```json
@@ -426,11 +426,11 @@ Commands in the main script body are assembled **last**, building the **final re
 
 ```javascript
 :data
-set employeeIds = fetchEmployeeIds()
+var employeeIds = fetchEmployeeIds()
 
 // Each loop iteration runs in parallel.
 for id in employeeIds
-  set details = fetchEmployeeDetails(id)
+  var details = fetchEmployeeDetails(id)
 
   // This command is buffered. It runs after all
   // fetches are done, using the 'details' variable.
@@ -473,8 +473,8 @@ Commands inside a `macro` are assembled when the **macro call completes**. They 
 ```javascript
 macro buildDepartment(deptId) : data
   // These two async calls run in parallel.
-  set manager = fetchManager(deptId)
-  set team = fetchTeamMembers(deptId)
+  var manager = fetchManager(deptId)
+  var team = fetchTeamMembers(deptId)
 
   // Assemble the macro's return value.
   @data.set(department.manager, manager.name)
@@ -482,7 +482,7 @@ macro buildDepartment(deptId) : data
 endmacro
 
 // Call the macro. 'salesDept' becomes the data object.
-set salesDept = buildDepartment("sales")
+var salesDept = buildDepartment("sales")
 
 // Use the returned object in the main script's assembly.
 @data.set(company.sales, salesDept)
@@ -508,8 +508,8 @@ set salesDept = buildDepartment("sales")
 </tr>
 </table>
 
-##### 3. `set` Block (Block Assignment)
-Commands inside a `set` block are assembled when the **block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use.
+##### 3. `capture` Block (Block Assignment)
+Commands inside a `capture` block are assembled when the **block completes**. The block is used on the right side of an assignment (`=`) to create a temporary data structure and **immediately assign it to a variable** for later use.
 
 <table>
 <tr>
@@ -518,20 +518,20 @@ Commands inside a `set` block are assembled when the **block completes**. This h
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-set projectId = "alpha"
+var projectId = "alpha"
 
-// Use a 'set' block for a one-off async task.
-set projectReport : data
+// Use a 'capture' block for a one-off async task.
+var projectReport = capture :data
   // These two fetches run in parallel.
-  set owner = fetchProjectOwner(projectId)
-  set members = fetchTeamMembers(projectId)
+  var owner = fetchProjectOwner(projectId)
+  var members = fetchTeamMembers(projectId)
 
   // Assemble the report data.
   @data.set(report.owner, owner.name)
   for member in members
     @data.push(report.team, member.name)
   endfor
-endset
+endcapture
 
 // Use the captured variable.
 @data.set(company.projectA, projectReport)
@@ -668,7 +668,7 @@ Macros implicitly return the structured object built by the [Output Commands](#t
 ```javascript
 // Define a macro to build a user object
 macro buildUser(id) : data // [:data](#focusing-the-output-data-text-handlername) focuses the return value
-  set userData = fetchUserData(id)
+  var userData = fetchUserData(id)
   // These '[@set](#the-handler-system-using--output-commands)' commands operate on the macro's return object
   @set user.id userData.id
   @set user.name userData.name
@@ -676,7 +676,7 @@ endmacro
 
 // Calling the macro
 // The macro returns { user: { id: ..., name: ... } }
-set myUser = buildUser(123)
+var myUser = buildUser(123)
 @set result.user myUser.user
 ```
 
@@ -692,7 +692,7 @@ macro input(name, value="", type="text") : data
 endmacro
 
 // Calling with mixed and keyword arguments
-set passwordField = input("pass", type="password")
+var passwordField = input("pass", type="password")
 @set result.password passwordField.field
 ```
 
@@ -716,7 +716,7 @@ endmacro
 
 // 'userObject' is now a clean object,
 // not { data: { user: ... } }.
-set userObject = buildUser("Alice")
+var userObject = buildUser("Alice")
 
 @set company.manager userObject.user
 ```
@@ -742,27 +742,27 @@ set userObject = buildUser("Alice")
 </table>
 
 ### The `call` Block
-The call block from Nunjucks, used for passing content to macros for text output, is not implemented in Cascada Script. Its functionality is covered by [set blocks](#the-set-block-block-assignment) and macro calls, aligning with Cascada's data-driven focus while simplifying the language.
+The call block from Nunjucks, used for passing content to macros for text output, is not implemented in Cascada Script. Its functionality is covered by [capture blocks](#the-capture-block-block-assignment) and macro calls, aligning with Cascada's data-driven focus while simplifying the language.
 
-### The `set` Block (Block Assignment)
+### The `capture` Block (Block Assignment)
 
-In Cascada Script, a `set` tag used without an assignment (`=`) becomes a **block assignment**. It captures the output generated within its body—including the result of [Output Commands (`@`)](#the-handler-system-using--output-commands)—and assigns it to a variable. This provides the same functionality as the `capture` tag found in some other template engines, but with a more integrated syntax.
+The `capture...endcapture` block is a special construct for orchestrating logic and assembling a value for assignment. It is **only** used on the right side of an assignment (`=`) for both declaration and re-assignment.
 
-Commands inside a `set` block are assembled when the **block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use. You can focus its output with `:data` just like a [macro](#macros-and-reusable-components), ensuring the variable contains a clean data object instead of the full result object.
+Commands inside a `capture` block are assembled when the **block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use. You can focus its output with `:data` just like a [macro](#macros-and-reusable-components), ensuring the variable contains a clean data object instead of the full result object.
 
 <table>
 <tr>
 <td width="50%" valign="top">
 <details open>
-<summary><strong><code>set</code> Block with <code>:data</code> focus</strong></summary>
+<summary><strong><code>capture</code> Block with <code>:data</code> focus</strong></summary>
 
 ```javascript
 // The [:data](#focusing-the-output-data-text-handlername) directive focuses the
 // value assigned to 'permissions'.
-set permissions : data
+var permissions = capture :data
   @push grants "read"
   @push grants "write"
-endset
+endcapture
 
 // 'permissions' is now { grants: [...] },
 // not { data: { grants: [...] } }.
@@ -823,7 +823,7 @@ For functions with **side effects** (e.g., database writes), the `!` marker enfo
 ```javascript
 // The `!` on deposit() creates a
 // sequence for the 'account' path.
-set account = getBankAccount()
+var account = getBankAccount()
 
 //1. Set initial Deposit:
 account!.deposit(100)
@@ -842,7 +842,7 @@ Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structur
 ```javascript
 try
   // Attempt a fallible operation
-  set image = generateImage(prompt)
+  var image = generateImage(prompt)
   @set result.imageUrl image.url
 resume resume.count < 3
   // Retry up to 3 times
@@ -860,10 +860,10 @@ Cascada Script supports the full range of Nunjucks [built-in filters](https://mo
 #### Filters
 Filters are applied with the pipe `|` operator.
 ```javascript
-set title = "a tale of two cities" | title
+var title = "a tale of two cities" | title
 print title // "A Tale Of Two Cities"
 
-set users = ["Alice", "Bob"]
+var users = ["Alice", "Bob"]
 print "Users: " + (users | join(", ")) // "Users: Alice, Bob"
 ```
 
@@ -881,7 +881,7 @@ endfor
 The `cycler` function creates an object that cycles through a set of values each time its `next()` method is called.
 
 ```javascript
-set rowClass = cycler("even", "odd")
+var rowClass = cycler("even", "odd")
 for item in items
   // First item gets "even", second "odd", third "even", etc.
   @push report.rows { class: rowClass.next(), value: item }
@@ -892,11 +892,11 @@ endfor
 The `joiner` creates a function that returns the separator (default is `,`) on every call except the first. This is useful for delimiting items in a list.
 
 ```javascript
-set comma = joiner(", ")
-set output = ""
+var comma = joiner(", ")
+var output = ""
 for tag in ["rock", "pop", "jazz"]
   // The first call to comma() returns "", subsequent calls return ", "
-  set output = output + comma() + tag
+  output = output + comma() + tag
 endfor
 print output // "rock, pop, jazz"
 ```
