@@ -36,9 +36,9 @@ const script = `
 // The '[:data](#focusing-the-output-data-text-handlername)' directive focuses the macro's output
 macro fetchAndEnhanceUser(id) : data
   var userData = fetchUser(id)
-  @set user.id userData.id
-  @set user.name userData.name
-  @push user.tasks "Review code"
+  @data.set(user.id, userData.id)
+  @data.set(user.name, userData.name)
+  @data.push(user.tasks, "Review code")
 endmacro
 
 // Each macro call runs in parallel
@@ -46,8 +46,8 @@ var user1 = fetchAndEnhanceUser(1)
 var user2 = fetchAndEnhanceUser(2)
 
 // Assemble the final result using the macro outputs
-@set result.user1 user1.user
-@set result.user2 user2.user
+@data.set(result.user1, user1.user)
+@data.set(result.user2, user2.user)
 `;
 
 const context = {
@@ -97,12 +97,90 @@ Cascada Script removes the visual noise of template syntax while preserving Casc
   items.push("value")
   ```
 
-### Basic Statements
+### Variable Declaration and Assignment
+Cascada Script uses a strict and explicit variable handling model that separates declaration from assignment for better clarity and safety.
 
-#### Variable Declaration and Assignment
+#### Declaring Local Variables with `var`
+Use `var` to declare a new, script-local variable. Re-declaring a variable that already exists in a visible scope will cause a compile-time error. If no initial value is provided, the variable defaults to `none`.
+
+```javascript
+// Declare and initialize a variable
+var user = fetchUser(1)
+
+// Declare a variable, which defaults to `none`
+var report
+
+// Declare multiple variables and assign them a single value
+var x, y = 100
 ```
-var variableName = expression
+
+#### Declaring External Variables with `extern`
+Use `extern` to declare a variable that is expected to be provided by an including script (via `import-script`), not from the global context. External variables cannot be initialized at declaration.
+
+```javascript
+// In 'component.script'
+extern currentUser, theme
+
+if not currentUser.isAuthenticated
+  // Re-assigning an extern variable is allowed
+  theme = "guest"
+endif
 ```
+
+#### Assigning to Existing Variables with `=`
+Use the `=` operator to assign or re-assign a value to any **previously declared** variable (`var` or `extern`). Using `=` on an undeclared variable will cause a compile-time error.
+
+```javascript
+var name = "Alice"
+name = "Bob" // OK: Re-assigning a declared variable
+
+// Re-assign multiple existing variables at once
+x, y = 200 // OK, if x and y were previously declared
+
+// ERROR: 'username' was never declared with 'var' or 'extern'
+username = "Charlie"
+```
+
+#### Block Assignment with `capture`
+The `capture...endcapture` block is a special construct used **exclusively on the right side of an assignment (`=`)** to orchestrate logic and assemble a value. It's perfect for transforming data or running a set of parallel operations to create a single variable.
+
+The block runs its own logic and uses [Output Commands](#the-handler-system-using--output-commands) to build a result, which is then assigned to the variable. You can use an [output focus directive](#focusing-the-output-data-text-handlername) like `:data` to assign a clean data object.
+
+```javascript
+// First, fetch some raw data from an async source.
+// This might return an object with inconsistent field names or values.
+var rawUserData = fetchUser(123) // e.g., returns { id: 123, name: "alice", isActive: 1 }
+
+// Use a 'capture' block for declaration and assignment.
+// It transforms the raw data into a clean 'user' object.
+var user = capture :data
+  // Logic inside the block can access variables from the outer scope.
+  @data.set(id, rawUserData.id)
+  @data.set(username, rawUserData.name | title) // Use a filter for formatting
+  @data.set(status, "active" if rawUserData.isActive == 1 else "inactive")
+endcapture
+
+// Now, the 'user' variable holds a clean, structured object:
+// {
+//   "id": 123,
+//   "username": "Alice",
+//   "status": "active"
+// }
+```
+
+#### Variable Scoping and Shadowing
+Cascada Script does not allow variable shadowing. You cannot declare a variable in a child scope (e.g., inside a `for` loop or `if` block) if a variable with the same name already exists in a parent scope. This helps prevent common bugs and improves code clarity.
+
+```javascript
+var item = "parent"
+for i in range(2)
+  // This would cause a compile-time ERROR, because 'item'
+  // is already declared in the parent scope.
+  var item = "child " + i
+endfor
+```
+
+### Basic Statements
 
 #### Conditional Logic
 ```
@@ -196,7 +274,7 @@ endif
 
 ### **The Handler System: Using @ Output Commands**
 
-Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct a **result object** that is returned by any executable scope, such as an entire **script**, a **[macro](#macros-and-reusable-components)**, or a **[`capture` block](#the-capture-block-block-assignment)**.
+Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct a **result object** that is returned by any executable scope, such as an entire **script**, a **[macro](#macros-and-reusable-components)**, or a **[`capture` block](#block-assignment-with-capture)**.
 
 All output operations use a standard function-call syntax, such as `@handler.method(...)`. This approach separates the *definition* of your final output from the *execution* of your asynchronous logic, allowing Cascada to run independent operations in parallel while ensuring your data is assembled correctly and in a predictable order.
 
@@ -508,55 +586,6 @@ var salesDept = buildDepartment("sales")
 </tr>
 </table>
 
-##### 3. `capture` Block (Block Assignment)
-Commands inside a `capture` block are assembled when the **block completes**. The block is used on the right side of an assignment (`=`) to create a temporary data structure and **immediately assign it to a variable** for later use.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Cascada Script</strong></summary>
-
-```javascript
-var projectId = "alpha"
-
-// Use a 'capture' block for a one-off async task.
-var projectReport = capture :data
-  // These two fetches run in parallel.
-  var owner = fetchProjectOwner(projectId)
-  var members = fetchTeamMembers(projectId)
-
-  // Assemble the report data.
-  @data.set(report.owner, owner.name)
-  for member in members
-    @data.push(report.team, member.name)
-  endfor
-endcapture
-
-// Use the captured variable.
-@data.set(company.projectA, projectReport)
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value (`:data` focused)</strong></summary>
-
-```json
-{
-  "company": {
-    "projectA": {
-      "owner": "Alice",
-      "team": [ "Bob", "Charlie" ]
-    }
-  }
-}
-```
-</details>
-</td>
-</tr>
-</table>
-
 #### Extending Output Commands
 
 ##### Customizing the `@data` Handler
@@ -661,7 +690,7 @@ It is crucial to understand the difference between these two features, as they s
 
 Macros allow you to define reusable chunks of logic that build and return structured data objects. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
 
-Macros implicitly return the structured object built by the [Output Commands](#the-handler-system-using--output-commands) (`@set`, `@push`, etc.) within their scope. An explicit `return` statement is not required, but if you include one, its value will override the implicitly built object.
+Macros implicitly return the structured object built by the [Output Commands](#the-handler-system-using--output-commands) (`@data.set`, `@data.push`, etc.) within their scope. An explicit `return` statement is not required, but if you include one, its value will override the implicitly built object.
 
 ### Defining and Calling a Macro
 
@@ -669,15 +698,15 @@ Macros implicitly return the structured object built by the [Output Commands](#t
 // Define a macro to build a user object
 macro buildUser(id) : data // [:data](#focusing-the-output-data-text-handlername) focuses the return value
   var userData = fetchUserData(id)
-  // These '[@set](#the-handler-system-using--output-commands)' commands operate on the macro's return object
-  @set user.id userData.id
-  @set user.name userData.name
+  // These '[@data.set](#the-handler-system-using--output-commands)' commands operate on the macro's return object
+  @data.set(user.id, userData.id)
+  @data.set(user.name, userData.name)
 endmacro
 
 // Calling the macro
 // The macro returns { user: { id: ..., name: ... } }
 var myUser = buildUser(123)
-@set result.user myUser.user
+@data.set(result.user, myUser.user)
 ```
 
 ### Keyword Arguments
@@ -686,14 +715,14 @@ Macros support keyword arguments, allowing for more explicit and flexible calls.
 ```javascript
 // Macro with default arguments
 macro input(name, value="", type="text") : data
-  @set field.name name
-  @set field.value value
-  @set field.type type
+  @data.set(field.name, name)
+  @data.set(field.value, value)
+  @data.set(field.type, type)
 endmacro
 
 // Calling with mixed and keyword arguments
 var passwordField = input("pass", type="password")
-@set result.password passwordField.field
+@data.set(result.password, passwordField.field)
 ```
 
 ### Output Scopes and Focusing in Macros
@@ -710,15 +739,15 @@ Commands inside a `macro` are assembled when the **macro call completes**. They 
 // The :data directive filters the macro's
 // return value to be just the data object.
 macro buildUser(name) : data
-  @set user.name name
-  @set user.active true
+  @data.set(user.name, name)
+  @data.set(user.active, true)
 endmacro
 
 // 'userObject' is now a clean object,
 // not { data: { user: ... } }.
 var userObject = buildUser("Alice")
 
-@set company.manager userObject.user
+@data.set(company.manager, userObject.user)
 ```
 </details>
 </td>
@@ -742,49 +771,7 @@ var userObject = buildUser("Alice")
 </table>
 
 ### The `call` Block
-The call block from Nunjucks, used for passing content to macros for text output, is not implemented in Cascada Script. Its functionality is covered by [capture blocks](#the-capture-block-block-assignment) and macro calls, aligning with Cascada's data-driven focus while simplifying the language.
-
-### The `capture` Block (Block Assignment)
-
-The `capture...endcapture` block is a special construct for orchestrating logic and assembling a value for assignment. It is **only** used on the right side of an assignment (`=`) for both declaration and re-assignment.
-
-Commands inside a `capture` block are assembled when the **block completes**. This happens inline, allowing you to create a temporary data structure and **immediately assign it to a variable** for later use. You can focus its output with `:data` just like a [macro](#macros-and-reusable-components), ensuring the variable contains a clean data object instead of the full result object.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong><code>capture</code> Block with <code>:data</code> focus</strong></summary>
-
-```javascript
-// The [:data](#focusing-the-output-data-text-handlername) directive focuses the
-// value assigned to 'permissions'.
-var permissions = capture :data
-  @push grants "read"
-  @push grants "write"
-endcapture
-
-// 'permissions' is now { grants: [...] },
-// not { data: { grants: [...] } }.
-@set company.roles permissions.grants
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value of Script</strong></summary>
-
-```json
-{
-  "company": {
-    "roles": [ "read", "write" ]
-  }
-}
-```
-</details>
-</td>
-</tr>
-</table>
+The call block from Nunjucks, used for passing content to macros for text output, is not implemented in Cascada Script. Its functionality is covered by [`capture` blocks](#block-assignment-with-capture) and macro calls, aligning with Cascada's data-driven focus while simplifying the language.
 
 ## Advanced Flow Control
 
@@ -843,13 +830,13 @@ Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structur
 try
   // Attempt a fallible operation
   var image = generateImage(prompt)
-  @set result.imageUrl image.url
+  @data.set(result.imageUrl, image.url)
 resume resume.count < 3
   // Retry up to 3 times
   print "Retrying attempt " + resume.count
 except
   // Handle permanent failure
-  @set result.error "Image generation failed: " + error.message
+  @data.set(result.error, "Image generation failed: " + error.message)
 endtry
 ```
 
@@ -884,7 +871,7 @@ The `cycler` function creates an object that cycles through a set of values each
 var rowClass = cycler("even", "odd")
 for item in items
   // First item gets "even", second "odd", third "even", etc.
-  @push report.rows { class: rowClass.next(), value: item }
+  @data.push(report.rows, { class: rowClass.next(), value: item })
 endfor
 ```
 
