@@ -135,7 +135,7 @@ class ScriptTranspiler {
         'verbatim': 'endverbatim',
         'while': 'endwhile',
         'try': 'endtry',
-        //'set': 'endset', //only when no = in the set, then the block has to be closed
+        'set': 'endset', //only when no = in the set, then the block has to be closed
         'var': 'endvar' //only when no = in the var, then the block has to be closed
       },
 
