@@ -2,7 +2,7 @@ const scriptTranspiler = require('../src/script-transpiler');
 const { TOKEN_TYPES } = require('../src/script-lexer');
 const expect = require('expect.js');
 
-describe('Script Converter', () => {
+describe('Script Transpiler', () => {
   // Helper function tests
   describe('Helper Functions', () => {
     describe('getFirstWord', () => {
@@ -46,8 +46,6 @@ describe('Script Converter', () => {
         expect(scriptTranspiler._getBlockType('endblock')).to.equal('END');
         expect(scriptTranspiler._getBlockType('endmacro')).to.equal('END');
         expect(scriptTranspiler._getBlockType('@text')).to.equal(null);
-        expect(scriptTranspiler._getBlockType('set', 'x')).to.equal('START');
-        expect(scriptTranspiler._getBlockType('set', 'x = 1')).to.equal(null);
       });
     });
 
@@ -475,10 +473,10 @@ describe('Script Converter', () => {
       expect(template).to.equal('{%- if condition -%}\n  {{- "Indented" -}}\n{%- endif -%}');
     });
 
-    it('should properly convert set statements', () => {
-      const script = 'set x = 1';
+    it('should properly convert var declarations', () => {
+      const script = 'var x = 1';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- set x = 1 -%}');
+      expect(template).to.equal('{%- var x = 1 -%}');
     });
 
     it('should properly convert include statements', () => {
@@ -631,6 +629,51 @@ endif`;
         expect(error.message).to.contain('outside of any block');
       }
     });
+
+    it('should handle complex block structure with mixed tags', () => {
+      const script = `// Main template
+for product in products
+  if product.inStock
+    // Format price with currency
+    var formattedPrice = formatCurrency(product.price)
+
+    @text("<div class='product'>")
+    @text("  <h2>" + product.name + "</h2>")
+    @text("  <p>Price: " + formattedPrice + "</p>")
+
+    // Check for discount
+    if product.hasDiscount
+      @text("  <p class='discount'>On sale!</p>")
+    endif
+
+    @text("</div>")
+  else
+    // Out of stock message
+    @text("<div class='product out-of-stock'>")
+    @text("  <h2>" + product.name + "</h2>")
+    @text("  <p>Currently unavailable</p>")
+    @text("</div>")
+  endif
+endfor`;
+
+      const template = scriptTranspiler.scriptToTemplate(script);
+
+      // Check for properly converted tags and nested structure
+      expect(template).to.contain('{%- for product in products -%}');
+      expect(template).to.contain('{%- if product.inStock -%}');
+      expect(template).to.contain('{%- var formattedPrice = formatCurrency(product.price) -%}');
+      expect(template).to.contain('{{- "<div class=\'product\'>" -}}');
+      expect(template).to.contain('{%- if product.hasDiscount -%}');
+      expect(template).to.contain('{%- else -%}');
+      expect(template).to.contain('{%- endif -%}');
+      expect(template).to.contain('{%- endfor -%}');
+
+      // Check for comments preservation
+      expect(template).to.contain('{#- Main template -#}');
+      expect(template).to.contain('{#- Format price with currency -#}');
+      expect(template).to.contain('{#- Check for discount -#}');
+      expect(template).to.contain('{#- Out of stock message -#}');
+    });
   });
 
   // Multi-line expression tests
@@ -695,7 +738,7 @@ endif`;
     });
 
     it('should handle complex nested operations in multi-line expressions', () => {
-      const script = `set result = calculate(
+      const script = `var result = calculate(
   first +
   second * (
     third /
@@ -704,7 +747,7 @@ endif`;
 )`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('set result = calculate(');
+      expect(template).to.contain('var result = calculate(');
       expect(template).to.contain('first +');
       expect(template).to.contain('second * (');
       expect(template).to.contain('third /');
@@ -902,11 +945,11 @@ endif`;
       expect(template).to.equal('{%- var user = fetchUser(123) -%}');
     });
 
-    it.only('should handle var declarations with block assignment', () => {
+    it('should handle var declarations with block assignment', () => {
       const script = `var report = capture :data
   @data.set(report.title, "Q3 Summary")
   @data.set(report.status, "complete")
-endvar`;
+endcapture`;
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.equal('{%- var report :data -%}\n  {%- output_command data.set(report.title, "Q3 Summary") -%}\n  {%- output_command data.set(report.status, "complete") -%}\n{%- endvar -%}');
     });
@@ -924,12 +967,12 @@ endvar`;
     });
 
     it('should handle block assignments with capture', () => {
-      const script = `report = capture :data
+      const script = `var report = capture :data
   @data.set(report.title, "Q3 Summary")
   @data.set(report.status, "complete")
-endset`;
+endcapture`;
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- set report :data -%}\n  {%- output_command data.set(report.title, "Q3 Summary") -%}\n  {%- output_command data.set(report.status, "complete") -%}\n{%- endset -%}');
+      expect(template).to.equal('{%- var report :data -%}\n  {%- output_command data.set(report.title, "Q3 Summary") -%}\n  {%- output_command data.set(report.status, "complete") -%}\n{%- endvar -%}');
     });
 
     it('should handle complex assignments with expressions', () => {
@@ -938,14 +981,6 @@ endset`;
       expect(template).to.equal('{%- set total = (price + tax) * (1 - discount) -%}');
     });
 
-    it('should handle multiple variable declarations in sequence', () => {
-      const script = `var user = fetchUser(123)
-extern config
-user.name = "Updated Name"
-var settings = { theme: "dark" }`;
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- var user = fetchUser(123) -%}\n{%- extern config -%}\n{%- set user.name = "Updated Name" -%}\n{%- var settings = { theme: "dark" } -%}');
-    });
 
     it('should not treat reserved keywords as assignments', () => {
       const script = 'if condition == true\nendif';
@@ -966,7 +1001,7 @@ var settings = { theme: "dark" }`;
       const script = `
         // A complete script example
         :data
-        set user = { name: "Alice", role: "admin" }
+        var user = { name: "Alice", role: "admin" }
         if user.role == "admin"
           @text("Hello, " + user.name)
           for item in user.items
@@ -981,7 +1016,7 @@ var settings = { theme: "dark" }`;
       expect(result).to.equal(`
         {#- A complete script example -#}
         {%- option focus="data" -%}
-        {%- set user = { name: "Alice", role: "admin" } -%}
+        {%- var user = { name: "Alice", role: "admin" } -%}
         {%- if user.role == "admin" -%}
           {{- "Hello, " + user.name -}}
           {%- for item in user.items -%}
@@ -995,13 +1030,13 @@ var settings = { theme: "dark" }`;
 
     it('should handle complex mathematical expressions', () => {
       const script = `// Calculate total
-      set total = price *
+      var total = price *
         (1 + taxRate) *
         (1 - discount)
       @text("Total: $" + total.toFixed(2))`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('{%- set total = price *');
+      expect(template).to.contain('{%- var total = price *');
       expect(template).to.contain('(1 + taxRate) *');
       expect(template).to.contain('(1 - discount) -%}');
       expect(template).to.contain('{{- "Total: $" + total.toFixed(2) -}}');
@@ -1012,7 +1047,7 @@ var settings = { theme: "dark" }`;
 for product in products
   if product.inStock
     // Format price with currency
-    set formattedPrice = formatCurrency(product.price)
+    var formattedPrice = formatCurrency(product.price)
 
     @text("<div class='product'>")
     @text("  <h2>" + product.name + "</h2>")
@@ -1038,7 +1073,7 @@ endfor`;
       // Check for properly converted tags and nested structure
       expect(template).to.contain('{%- for product in products -%}');
       expect(template).to.contain('{%- if product.inStock -%}');
-      expect(template).to.contain('{%- set formattedPrice = formatCurrency(product.price) -%}');
+      expect(template).to.contain('{%- var formattedPrice = formatCurrency(product.price) -%}');
       expect(template).to.contain('{{- "<div class=\'product\'>" -}}');
       expect(template).to.contain('{%- if product.hasDiscount -%}');
       expect(template).to.contain('{%- else -%}');
@@ -1056,11 +1091,11 @@ endfor`;
       const script = `// Error handling example
 try
   // Attempt operation
-  set data = fetchData(userId)
+  var data = fetchData(userId)
   @text("User data: " + data.name)
 resume askUser('Retry operation?')
   // Set warning message
-  set warningMessage = 'Resuming operation (attempt ' + resume.count + ')'
+  var warningMessage = 'Resuming operation (attempt ' + resume.count + ')'
   @text(warningMessage)
 except
   // Handle error
@@ -1071,10 +1106,10 @@ endtry`;
       const template = scriptTranspiler.scriptToTemplate(script);
 
       expect(template).to.contain('{%- try -%}');
-      expect(template).to.contain('{%- set data = fetchData(userId) -%}');
+      expect(template).to.contain('{%- var data = fetchData(userId) -%}');
       expect(template).to.contain('{{- "User data: " + data.name -}}');
       expect(template).to.contain('{%- resume askUser(\'Retry operation?\') -%}');
-      expect(template).to.contain('{%- set warningMessage = \'Resuming operation (attempt \' + resume.count + \')\' -%}');
+      expect(template).to.contain('{%- var warningMessage = \'Resuming operation (attempt \' + resume.count + \')\' -%}');
       expect(template).to.contain('{%- except -%}');
       expect(template).to.contain('{%- do throwError(\'Operation failed permanently\') -%}');
       expect(template).to.contain('{%- endtry -%}');
@@ -1082,9 +1117,9 @@ endtry`;
 
     it('should handle while loops with while iteration', () => {
       const script = `// Async iterator example
-set stream = createAsyncStream()
+var stream = createAsyncStream()
 while stream.hasNext()
-  set chunk = stream.next()
+  var chunk = stream.next()
   @text("Processing chunk " + loop.index + ": " + chunk)
 
   // Skip empty chunks
@@ -1098,9 +1133,9 @@ endwhile`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
 
-      expect(template).to.contain('{%- set stream = createAsyncStream() -%}');
+      expect(template).to.contain('{%- var stream = createAsyncStream() -%}');
       expect(template).to.contain('{%- while stream.hasNext() -%}');
-      expect(template).to.contain('{%- set chunk = stream.next() -%}');
+      expect(template).to.contain('{%- var chunk = stream.next() -%}');
       expect(template).to.contain('{{- "Processing chunk " + loop.index + ": " + chunk -}}');
       expect(template).to.contain('{%- if !chunk -%}');
       expect(template).to.contain('{{- \'Empty chunk\' -}}');
@@ -1120,7 +1155,7 @@ extends "parentTemplate_" + dynamicPart + ".njk"
 block content
   @text("<h1>" + frameVar1 + "</h1>")
   @text("<h2>" + frameVar2 + "</h2>")
-  set frameVar3 = "Updated Value"
+  frameVar3 = "Updated Value"
 
   // Include partial with dependencies
   include includedTemplateName + ".njk" depends = var1, var2

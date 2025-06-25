@@ -39,9 +39,9 @@ describe('Cascada Script: Output commands', function () {
       // Focus the script's return value to be just the data object.
       :data
 
-      // These two 'set' statements are independent and will run in parallel.
-      set userList = fetchData('users')
-      set appConfig = fetchData('config')
+      // These two 'var' declarations are independent and will run in parallel.
+      var userList = fetchData('users')
+      var appConfig = fetchData('config')
 
       // The '@' commands are buffered. They run sequentially AFTER the parallel
       // operations above complete, using their now-resolved values.
@@ -96,8 +96,8 @@ describe('Cascada Script: Output commands', function () {
       // this macro returns a clean data object, not { data: {...} }.
       macro buildUserReport(id) : data
         // These two fetches inside the macro also run in parallel.
-        set userData = fetchUser(id)
-        set tasksData = fetchTasks(id)
+        var userData = fetchUser(id)
+        var tasksData = fetchTasks(id)
 
         // Assemble the macro's own return value. This happens after
         // its internal fetches are complete.
@@ -108,8 +108,8 @@ describe('Cascada Script: Output commands', function () {
 
       // Call the macro for different users. These two calls are independent
       // and will execute in parallel.
-      set report1 = buildUserReport(1)
-      set report2 = buildUserReport(2)
+      var report1 = buildUserReport(1)
+      var report2 = buildUserReport(2)
 
       // The final assembly step for the main script. This block waits for
       // both 'report1' and 'report2' to be fully resolved before running.
@@ -445,13 +445,13 @@ describe('Cascada Script: Output commands', function () {
   });
 
   describe('Scoping and Control', function() {
-    it('should use a set block to capture output without focusing', async () => {
+    it('should use a capture block to capture output without focusing', async () => {
       const script = `
         :data
-        set captured
+        var captured = capture
           @data.set(user.name, "Captured User")
           @text("hello from capture")
-        endset
+        endcapture
         @data.set(result, captured)
       `;
       const result = await env.renderScriptString(script);
@@ -480,38 +480,59 @@ describe('Cascada Script: Output commands', function () {
       expect(result.x).to.equal(100);
       expect(result.data).to.be(undefined);
     });
+
+    it('should allow input focusing in capture blocks', async () => {
+      const script = `
+        // The capture block's output is focused to just the data object
+        :data
+        var userData = capture :data
+          var user = { name: "Bob", role: "user" }
+          @data.set(name, user.name)
+          @data.set(role, user.role)
+        endcapture
+
+        @data.set(result.user, userData)
+      `;
+
+      const result = await env.renderScriptString(script, {});
+
+      expect(result).to.eql({
+        result: {
+          user: {
+            name: 'Bob',
+            role: 'user'
+          }
+        }
+      });
+    });
   });
 
-  it('should allow input focusing in set blocks', async () => {
+  it('should allow input focusing in capture blocks', async () => {
     const script = `
       // The set block's output is focused to just the data object
       :data
-      set userData :data
-        set user = { name: "Bob", role: "user" }
-        @data.set(name, user.name)
-        @data.set(role, user.role)
-      endset
-
-      @data.set(result.user, userData)
+      var captured = capture
+        @data.set(user.name, "Captured User")
+        @text("hello from capture")
+      endcapture
+      @data.set(result, captured)
     `;
 
     const result = await env.renderScriptString(script, {});
 
     expect(result).to.eql({
       result: {
-        user: {
-          name: 'Bob',
-          role: 'user'
-        }
+        data: { user: { name: 'Captured User' } },
+        text: 'hello from capture'
       }
     });
   });
 
-  it(`should not allow input focusing after the '=' in set assignments`, async () => {
+  it(`should not allow input focusing after the '=' in var assignments`, async () => {
     const script = `
       // This should throw an error since :data cannot be used
       // with direct assignment
-      set userData = :data { name: "Charlie" }
+      var userData = :data { name: "Charlie" }
     `;
 
     try {
@@ -522,18 +543,18 @@ describe('Cascada Script: Output commands', function () {
     }
   });
 
-  it('should not allow input focusing at the end of set assignments', async () => {
+  it('should not allow input focusing at the end of var assignments', async () => {
     const script = `
       // This should throw an error since :data cannot be used
       // with direct assignment
-      set userData = { name: "Charlie" } :data
+      var userData = { name: "Charlie" } :data
     `;
 
     try {
       await env.renderScriptString(script, {});
       throw new Error('Expected an error to be thrown');
     } catch (error) {
-      expect(error.message).to.contain('expected block end in set statement');
+      expect(error.message).to.contain('expected block end in var statement');
     }
   });
 
@@ -656,7 +677,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle `@data.set` with a path and a variable value', async () => {
         const script = `
                 :data
-                set userId = 123
+                var userId = 123
                 @data.set(user.profile.id, userId)
             `;
         const result = await env.renderScriptString(script, {});
@@ -676,7 +697,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle `@data.set` with a complex expression in brackets', async () => {
         const script = `
                 :data
-                set key = "complex"
+                var key = "complex"
                 @data.set(items[key + "Id"], "value")
             `;
         const result = await env.renderScriptString(script, {});
@@ -784,7 +805,7 @@ describe('Cascada Script: Output commands', function () {
         const script = `
           :data
           @data.set(items, itemsData)
-          set index = 1
+          var index = 1
           @data.set(items[index + 1].name, "Item C")
         `;
         const context = {
@@ -808,8 +829,8 @@ describe('Cascada Script: Output commands', function () {
         const script = `
           :data
           @data.set(data, dataSource)
-          set prefix = "user"
-          set suffix = "Profile"
+          var prefix = "user"
+          var suffix = "Profile"
           @data.set(data[prefix + suffix].name, "Dynamic User")
         `;
         const context = {
@@ -1056,7 +1077,7 @@ describe('Cascada Script: Output commands', function () {
         const script = `
           :data
           @data.set(users, usersData)
-          set userId = getUserIdAsync()
+          var userId = getUserIdAsync()
           @data.set(users[userId].status, "active")
         `;
         const context = {
@@ -1079,7 +1100,7 @@ describe('Cascada Script: Output commands', function () {
         const script = `
           :data
           @data.set(users, usersData)
-          set isAdmin = true
+          var isAdmin = true
           @data.set(users[0 if isAdmin else 1].role, "admin")
         `;
         const context = {
@@ -1101,7 +1122,7 @@ describe('Cascada Script: Output commands', function () {
         const script = `
           :data
           @data.set(items, itemsData)
-          set baseIndex = 2
+          var baseIndex = 2
           @data.set(items[baseIndex * 2 - 1].priority, "high")
         `;
         const context = {
