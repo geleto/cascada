@@ -1,20 +1,3 @@
-An updated `README.md` file is provided below.
-
-Here is a summary of the changes:
-
-1.  **Term Unification**: The terminology has been updated to be consistent with `script.md`.
-    *   The "Consistent Output Assembly" section now uses the more general term **"Output Commands"** instead of the specific "Data Assembly Commands", reflecting that the feature includes more than just data building (e.g., text output, custom handlers).
-    *   The example for adding custom commands in that section has been renamed from "Custom Data Assembly Methods" to **"Customizing the Data Object"** and its description was refined to align with the documentation.
-
-2.  **New Macros Example**: A new section, **"Macros for Reusable Components"**, has been added to the features table, as requested. It is placed after "Command Handlers".
-    *   It provides distinct examples for both Cascada Script and Cascada Template.
-    *   The script example demonstrates a data-generating macro that performs async operations and returns a clean data object, showcasing a key feature for modularity.
-    *   The template example shows a classic UI component macro.
-
-3.  **No Omissions**: All original content from the readme has been preserved and integrated with the new updates.
-
----
-
 # Cascada - async-enabled templating and scripting engine with automatic parallelization
 
 ### Write templates and scripts that look synchronous but execute concurrently under the hood.
@@ -46,12 +29,12 @@ Cascada automatically identifies and executes **independent operations concurren
 // The fetchUser() and fetchConfig() calls are
 // independent and will run in parallel.
 
-set user = fetchUser(123)
-set config = fetchSiteConfig()
+var user = fetchUser(123)
+var config = fetchSiteConfig()
 
 // Waits for both to complete before printing.
-@text "Welcome, " + user.name
-@text "Theme: " + config.theme
+@text("Welcome, " + user.name)
+@text("Theme: " + config.theme)
 ```
 
 </details>
@@ -86,15 +69,15 @@ Work with **promises, `async` functions, and `async` iterators** as if they were
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// fetchPost is async function
-// fetchComments is async iterator.
+// fetchPost is an async function
+// fetchComments is an async iterator.
 
-set post = fetchPost(42)
+var post = fetchPost(42)
 
 // Waits for post to resolve, then iterates
 // over the async comments iterator.
 for comment in fetchComments(post.id)
-  @text comment.author + ": " + comment.body
+  @text(comment.author + ": " + comment.body)
 endfor
 ```
 
@@ -139,11 +122,11 @@ While independent operations run in parallel, Cascada ensures that **dependent o
 // so it waits for getUser() to complete
 // before starting.
 
-set user = getUser()
-set posts = getPosts(user.id)
-set footer = getFooter()
+var user = getUser()
+var posts = getPosts(user.id)
+var footer = getFooter()
 
-@text "User: " + user.name
+@text("User: " + user.name)
 ```
 
 </details>
@@ -180,7 +163,7 @@ For functions with **side effects** (e.g., database writes), the `!` marker enfo
 ```javascript
 // The `!` on deposit() creates a
 // sequence for the 'account' path.
-set account = getBankAccount()
+var account = getBankAccount()
 
 //1. Set initial Deposit:
 account!.deposit(100)
@@ -213,10 +196,9 @@ account!.withdraw(50)
 
 **Note**: The assembly commands feature is under development.
 
-In scripts, output Commands, marked with the `@` sigil are buffered and assembled in a **predictable, sequential order**. For scripts, **Output Commands** (`@`) build a structured data object using a rich set of default methods: `@set` (set/replace), `@push`/`@unshift` (add to array), `@pop`/`@shift` (remove from array), `@merge` (combine objects), and `@reverse`. You can also add your own custom commands with `addDataMethods`.
+In scripts, **Output Commands**, marked with the `@` sigil, are buffered and assembled in a **predictable, sequential order**. They build a structured data object using a rich set of methods on the `@data` handler: `@data.set` (set/replace), `@data.push`/`@data.unshift` (add to array), `@data.pop`/`@data.shift` (remove from array), `@data.merge` (combine objects), and `@data.reverse`. You can also add your own custom commands.
 
 Similarly in templates, the final text output is also assembled in source-code order, guaranteeing that the rendered content is always predictable, even when built from multiple async operations that finish at different times.
-
 
 </td>
 <td valign="top">
@@ -226,23 +208,23 @@ Similarly in templates, the final text output is also assembled in source-code o
 ```javascript
 // Assume fetchProductDetails for
 // ID 205 is the slowest.
-set productIds = [101, 205, 302]
+var productIds = [101, 205, 302]
 
 // Each loop iteration runs in parallel.
 for id in productIds
   // fetch details and reviews concurrently.
-  set details = fetchProductDetails(id)
-  set reviews = fetchProductReviews(id)
+  var details = fetchProductDetails(id)
+  var reviews = fetchProductReviews(id)
 
   // The final `report.products` array is
   // built in the order of `productIds`
   // [101, 205, 302], not the order in which
   // the data for each product resolves.
-  @push report.products {
+  @data.push(report.products, {
     id: details.id,
     name: details.name,
     reviewCount: reviews.length
-  }
+  })
 endfor
 ```
 
@@ -269,34 +251,39 @@ endfor
 
   ```javascript
   const env = new AsyncEnvironment();
-  // You can add your own custom methods to the default
-  // data builder using env.addDataMethods().
+  // You can add your own custom methods to the built-in
+  // @data handler using env.addDataMethods().
   env.addDataMethods({
     upsert: (target, data) => {
-      const ind = target.findIndex(item => item.id === data.id);
-      if (ind > -1) Object.assign(target[ind], data);
+      if (!Array.isArray(target)) return;
+      const index = target.findIndex(item => item.id === data.id);
+      if (index > -1) Object.assign(target[index], data);
       else target.push(data);
     }
   });
 
-  const script = `// The built-in @push command
-    @push users {id: 1, name: "Alice", active: true}
-    @push users {id: 2, name: "Bob", active: true}
+  const script = `// The built-in @data.push command
+    @data.push(users, {id: 1, name: "Alice", active: true})
+    @data.push(users, {id: 2, name: "Bob", active: true})
 
-    // The custom @upsert command will UPDATE Alice.
-    @upsert users {id: 1, active: false}
+    // The custom @data.upsert command will UPDATE Alice.
+    @data.upsert(users, {id: 1, active: false})
 
     // This will ADD Charlie.
-    @upsert users {id: 3, name: "Charlie", active: true}`;
+    @data.upsert(users, {id: 3, name: "Charlie", active: true})`;
 
   console.log( await env.renderScriptString(
     script, {}, { output: 'data' }
   ));
 
   /*
-  [ { id: 1, name: "Alice", active: false },
-    { id: 2, name: "Bob", active: true },
-    { id: 3, name: "Charlie", active: true } ]
+  {
+    users: [
+      { id: 1, name: 'Alice', active: false },
+      { id: 2, name: 'Bob', active: true },
+      { id: 3, name: 'Charlie', active: true }
+    ]
+  }
   */
   ```
 </details>
@@ -310,9 +297,9 @@ endfor
 
 **Note**: This feature is under development.
 
-For scripts, the **Command Handlers** feature lets you specify classes and object that execute commands.
-You can add set a class that executes custom commands with `addCommandHandlerClass`.
-The cusom commands are guaranteed to execute in-order and are much more efficient than the Sequential Execution feature, but they can't be async and the processing happens after rendering.
+For scripts, the **Command Handlers** feature lets you specify classes and objects that execute commands.
+You can add a class that executes custom commands with `addCommandHandlerClass`.
+The custom commands are guaranteed to execute in-order and are much more efficient than the Sequential Execution feature, but they can't be async and the processing happens after rendering.
 
 </td>
 <td valign="top">
@@ -387,24 +374,24 @@ Macros allow you to define reusable chunks of logic. In templates, they're great
 macro buildUserSummary(userId) : data
   // These three async calls run concurrently
   // inside the macro.
-  set details = fetchUserDetails(userId)
-  set posts = fetchUserPosts(userId)
-  set comments = fetchUserComments(userId)
+  var details = fetchUserDetails(userId)
+  var posts = fetchUserPosts(userId)
+  var comments = fetchUserComments(userId)
 
   // Assemble the result after all fetches complete.
-  @set summary.name details.name
-  @set summary.postCount posts.length
-  @set summary.commentCount comments.length
+  @data.set(summary.name, details.name)
+  @data.set(summary.postCount, posts.length)
+  @data.set(summary.commentCount, comments.length)
 endmacro
 
 // Call the macro for two different users. These
 // two macro calls will also run in parallel.
-set user1 = buildUserSummary(101)
-set user2 = buildUserSummary(102)
+var user1 = buildUserSummary(101)
+var user2 = buildUserSummary(102)
 
 // Assemble the final report.
-@set report.user1Summary user1.summary
-@set report.user2Summary user2.summary
+@data.set(report.user1Summary, user1.summary)
+@data.set(report.user2Summary, user2.summary)
 ```
 
 </details>
@@ -459,15 +446,14 @@ Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structur
 ```javascript
 try
   // Attempt a fallible operation
-  set image = generateImage(prompt)
-  @set result.imageUrl image.url
+  var image = generateImage(prompt)
+  @data.set(result.imageUrl, image.url)
 resume resume.count < 3
   // Retry up to 3 times
-  @text "Retrying attempt " + resume.count
+  @text("Retrying attempt " + resume.count)
 except
   // Handle permanent failure
-  @set result.error "Image generation failed: "
-   + error.message
+  @data.set(result.error, "Image generation failed: " + error.message)
 endtry
 ```
 
@@ -507,12 +493,12 @@ Build complex, modular templates using **`extends`** for inheritance, **`block`*
 import-script "utils.script" as utils
 
 // Fetch data in parallel
-set items = fetchItems()
-set config = fetchConfig()
+var items = fetchItems()
+var config = fetchConfig()
 
 // Use the imported macro to process the data
-set processedItems = utils.process(items, config)
-@set result.items processedItems
+var processedItems = utils.process(items, config)
+@data.set(result.items, processedItems)
 ```
 
 </details>
@@ -586,7 +572,7 @@ action items and assign owners.
 
 For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's parallelization capabilities and adds specialized commands for building structured data results.
 - **Clean, delimiter-free syntax**
-- **Data assembly commands**: `@set`, `@push`, `@merge`
+- **Data assembly commands**: `@data.set`, `@data.push`, `@data.merge`
 - **Focus on logic and orchestration**
 
 </td>
@@ -596,23 +582,22 @@ For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cl
 
 ```javascript
 // 1. Generate a plan with an LLM call.
-set plan = makePlan(
-  "Analyze competitor's new feature")
-@set result.plan plan
+var plan = makePlan("Analyze competitor's new feature")
+@data.set(result.plan, plan)
 
-// 2. Each step of the in parallel.
+// 2. Each step of the plan runs in parallel.
 for step in plan.steps
   // Each `executeStep` is an independent operation.
-  set stepResult = executeStep(step.instruction)
-  @push result.stepResults {
+  var stepResult = executeStep(step.instruction)
+  @data.push(result.stepResults, {
     step: step.title,
     result: stepResult
-  }
+  })
 endfor
 
 // 3. Summarize the results after all are complete.
-set summary = summarizeResults(result.stepResults)
-@set result.summary summary
+var summary = summarizeResults(result.stepResults)
+@data.set(result.summary, summary)
 ```
 
 </details>
@@ -638,14 +623,16 @@ import { AsyncEnvironment } from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
 const script =
-  '@set result.greeting "Hello, " + user.name';
+  '@data.set(result.greeting, "Hello, " + user.name)';
 const ctx = {
   user: fetchUser(123) // An async function
 };
 
-const data = await env.renderScriptString(script, ctx);
+const data = await env.renderScriptString(
+  script, ctx, { output: 'data' }
+);
 console.log(data);
-// { result: { greeting: "Hello, Alice" } }
+// { result: { greeting: 'Hello, Alice' } }
 ```
 
 </details>
@@ -661,7 +648,7 @@ const context = {
   username: Promise.resolve('World')
 };
 
-const html = await env.renderTemplateString(tpl, context);
+const html = await env.renderString(tpl, context);
 console.log(html); // <h1>Hello World</h1>
 ```
 </details>
@@ -683,7 +670,7 @@ console.log(html); // <h1>Hello World</h1>
      ```javascript
      import { AsyncEnvironment } from 'cascada-tmpl';
      const env = new AsyncEnvironment();
-     const result = await env.renderTemplateString('Hello, {{ name }}!', { name: 'World' });
+     const result = await env.renderString('Hello, {{ name }}!', { name: 'World' });
      console.log(result); // Hello, World!
      ```
   4. Run a Cascada script
@@ -691,13 +678,14 @@ console.log(html); // <h1>Hello World</h1>
      import { AsyncEnvironment } from 'cascada-tmpl';
      const env = new AsyncEnvironment();
      const script = `// Set initial user object
-       @set user {name: 'Alice', id: 123, log: "User profile  created. "}
-       @text user.log "Login successful." //append`;
+       @data.set(user, {name: 'Alice', id: 123, log: "User profile created. "})
+       // Append to a string property within the data object
+       @data.append(user.log, "Login successful.")`;
 
      // The 'data' output focuses the result on the data object
      const { user } = await env.renderScriptString(script, {}, { output: 'data' });
      console.log(user.name);    // Alice
-     console.log(user.log);     // User profile created. Login  successful.
+     console.log(user.log);     // User profile created. Login successful.
      ```
 
 ## Further Reading
