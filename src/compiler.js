@@ -893,7 +893,10 @@ class Compiler extends Obj {
       });
 
     } else {
-      // TRADITIONAL TEMPLATE MODE: Keep original behavior for `set`.
+      // Template Mode: Keep original behavior for `set` and dissalow 'var'
+      if (node.varType === 'declaration') {
+        this.fail('var is not allowed in template mode', node.lineno, node.colno, node);
+      }
       const ids = [];
       node.targets.forEach((target) => {
         var name = target.value;
