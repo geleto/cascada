@@ -207,7 +207,7 @@ class ScriptTranspiler {
    * @param {number} lineIndex - Current line index for error reporting
    * @return {Object} Object with path, command, and args properties. Args may not be ')' terminated in a multi-line command.
    */
-  _breakDataCommand(tokens, lineIndex) {
+  _deconstructDataCommand(tokens, lineIndex) {
     let state = 'PARSING_PREFIX';
     let prefixBuffer = '';
     let segments = []; // Array of strings: 'user', '.name', '[user.id]', etc.
@@ -215,6 +215,7 @@ class ScriptTranspiler {
     let remainingBuffer = ''; // Everything after we start looking for args
     let bracketLevel = 0;
     let skippingWhitespace = true;
+    let append = '';
 
     const setState = (newState) => {
       state = newState;
@@ -305,14 +306,19 @@ class ScriptTranspiler {
               finishCurrentSegment();
               state = 'COLLECTING_REMAINING';
               remainingBuffer = char;
+            } else if (char === '=' && bracketLevel === 0) {
+              // replace = with .set(
+              finishCurrentSegment();
+              currentSegment = '.set';
+              finishCurrentSegment();
+              state = 'COLLECTING_REMAINING';
+              remainingBuffer = '(';
+              //find the last continuation line and ')' at the end of it
+              append = ')';
             } else if (/\s/.test(char)) {
               // Handle whitespace in path/command
               if (bracketLevel === 0) {
                 //ignore the whitespace in the path
-                /*// Finish current segment, then collect remainder
-                finishCurrentSegment(false);
-                state = 'COLLECTING_REMAINING';
-                remainingBuffer = char;*/
               } else {
                 currentSegment += char;
               }
@@ -373,7 +379,8 @@ class ScriptTranspiler {
       return {
         path: path,
         command: command,
-        args: args || null
+        args: args || null,
+        append
       };
     }
 
@@ -732,8 +739,15 @@ class ScriptTranspiler {
       // Check if this is the new @data command syntax
       if (ccontent.startsWith('data.')) {
         // Parse the @data-specific syntax and convert to the generic syntax
-        const parsedCommand = this._breakDataCommand(parseResult.tokens, lineIndex);
-        const genericSyntaxCommand = this._transpileDataCommand(parsedCommand);
+        const parsedCommand = this._deconstructDataCommand(parseResult.tokens, lineIndex);
+        let genericSyntaxCommand = this._transpileDataCommand(parsedCommand);
+        if (parsedCommand.append) {
+          if (parseResult.continuesToNext) {
+            parseResult.expectedContinuationEnd = parsedCommand.append;//append at end of multiline
+          } else {
+            genericSyntaxCommand += parsedCommand.append;//append now
+          }
+        }
 
         // Update the parseResult with the converted command
         parseResult.lineType = 'TAG';
