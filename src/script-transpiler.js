@@ -609,7 +609,7 @@ class ScriptTranspiler {
     if (!str) return false;
     const varNames = str.split(',').map(name => name.trim());
     for (const varName of varNames) {
-      if (!this.isValidIdentifier(varName)) {
+      if (!this._isValidIdentifier(varName)) {
         return false;
       }
     }
