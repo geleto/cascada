@@ -36,9 +36,9 @@ const script = `
 // The '[:data](#focusing-the-output-data-text-handlername)' directive focuses the macro's output
 macro fetchAndEnhanceUser(id) : data
   var userData = fetchUser(id)
-  @data.set(user.id, userData.id)
-  @data.set(user.name, userData.name)
-  @data.push(user.tasks, "Review code")
+  @data.user.id.set(userData.id)
+  @data.user.name.set(userData.name)
+  @data.user.tasks.push("Review code")
 endmacro
 
 // Each macro call runs in parallel
@@ -46,8 +46,8 @@ var user1 = fetchAndEnhanceUser(1)
 var user2 = fetchAndEnhanceUser(2)
 
 // Assemble the final result using the macro outputs
-@data.set(result.user1, user1.user)
-@data.set(result.user2, user2.user)
+@data.result.user1.set(user1.user)
+@data.result.user2.set(user2.user)
 `;
 
 const context = {
@@ -155,9 +155,9 @@ var rawUserData = fetchUser(123) // e.g., returns { id: 123, name: "alice", isAc
 // It transforms the raw data into a clean 'user' object.
 var user = capture :data
   // Logic inside the block can access variables from the outer scope.
-  @data.set(id, rawUserData.id)
-  @data.set(username, rawUserData.name | title) // Use a filter for formatting
-  @data.set(status, "active" if rawUserData.isActive == 1 else "inactive")
+  @data.id.set(rawUserData.id)
+  @data.username.set(rawUserData.name | title) // Use a filter for formatting
+  @data.status.set("active" if rawUserData.isActive == 1 else "inactive")
 endcapture
 
 // Now, the 'user' variable holds a clean, structured object:
@@ -298,16 +298,16 @@ var userProfile = { name: "Alice", email: "alice@example.com" }
 var userSettings = { notifications: true, theme: "light" }
 
 // @data.set: Sets or creates a value at a path
-@data.set(user.id, userId)
-@data.set(user.name, userProfile.name)
+@data.user.id.set(userId)
+@data.user.name.set(userProfile.name)
 
 // @data.push: Adds an item to an array
-@data.push(user.roles, "editor")
-@data.push(user.roles, "viewer")
+@data.user.roles.push("editor")
+@data.user.roles.push("viewer")
 
 // @data.merge: Combines properties into an object
-@data.merge(user.settings, userSettings)
-@data.set(user.settings.theme, "dark") // Overwrite one setting
+@data.user.settings.merge(userSettings)
+@data.user.settings.theme.set("dark") // Overwrite one setting
 ```
 </details>
 </td>
@@ -379,7 +379,7 @@ Often, you only need one piece of the result. You can **focus the output** using
 
 ```javascript
 // No directive. Returns the full result object.
-@data.set(report.title, "Q3 Summary")
+@data.report.title.set("Q3 Summary")
 @text("Report generation complete.")
 ```
 </details>
@@ -410,7 +410,7 @@ Often, you only need one piece of the result. You can **focus the output** using
 // The :data directive filters the final return value.
 :data
 
-@data.set(report.title, "Q3 Summary")
+@data.report.title.set("Q3 Summary")
 @text("Report generation complete.")
 ```
 </details>
@@ -438,15 +438,15 @@ The `@data` handler is the primary tool for constructing your script's `data` ob
 
 | Command | Description |
 |---|---|
-| `@data.set(path, value)` | **Replaces** the value at `path`. Creates objects/arrays as needed. |
-| `@data.push(path, value)` | Appends an element to an array at `path`. |
-| `@data.append(path, value)`| Appends a string to the string value at `path`. |
-| `@data.merge(path, value)` | Merges an object into the object at `path`. |
-| `@data.deepMerge(path, value)`| Deep-merges an object into the object at `path`. |
-| `@data.pop(path)` | Removes the last element from the array at `path`. |
-| `@data.shift(path)` | Removes the first element from the array at `path`. |
-| `@data.unshift(path, value)`| Adds one or more elements to the beginning of the array at `path`. |
-| `@data.reverse(path)` | Reverses the order of the elements in the array at `path`. |
+| `@data.path.set(value)` | **Replaces** the value at `path`. Creates objects/arrays as needed. |
+| `@data.path.push(value)` | Appends an element to an array at `path`. |
+| `@data.path.append(value)`| Appends a string to the string value at `path`. |
+| `@data.path.merge(value)` | Merges an object into the object at `path`. |
+| `@data.path.deepMerge(value)`| Deep-merges an object into the object at `path`. |
+| `@data.path.pop()` | Removes the last element from the array at `path`. |
+| `@data.path.shift()` | Removes the first element from the array at `path`. |
+| `@data.path.unshift(value)`| Adds one or more elements to the beginning of the array at `path`. |
+| `@data.path.reverse()` | Reverses the order of the elements in the array at `path`. |
 
 ##### The `@text` Command: Generating Text
 The `@text(value)` command is a convenient shorthand for the `{{ value }}` output syntax found in the Cascada templating engine. It appends its `value` to a simple text stream, which populates the `text` property of the result object. This stream is completely separate from the `data` object.
@@ -467,26 +467,26 @@ Paths in `@data` commands are highly flexible.
     ```javascript
     for user in userList
       // Use the user's ID to set their status in the report object
-      @data.set(report.users[user.id].status, "processed")
+      @data.report.users[user.id].status.set("processed")
     endfor
     ```
-*   **Root-Level Modification**: Use `null` as the path to modify the root of the `data` object itself.
+*   **Root-Level Modification**: Use the `@data` handler directly to modify the root of the `data` object itself.
     ```javascript
     // Replaces the entire data object with a new one
-    @data.set(null, { status: "complete", timestamp: now() })
+    @data.set({ status: "complete", timestamp: now() })
 
     // Merges properties into the root data object
-    @data.merge(null, { version: "2.1" })
+    @data.merge({ version: "2.1" })
     ```
 *   **Array Index Targeting**: Target specific array indices with square brackets. The empty bracket notation `[]` always refers to the last item added in the script's sequential order, **not** the most recently pushed item in terms of operation completion. Due to implicit concurrency, the order of completion can vary, but Cascada Script ensures consistency by following the script's logical sequence.
     ```javascript
     // Target a specific index
-    @data.push(users[0].permissions, "read")
+    @data.users[0].permissions.push("read")
 
     // Target the last item added in the script's sequence
-    @data.push(users, { name: "Charlie" })
+    @data.users.push({ name: "Charlie" })
     // The path 'users[]' now refers to Charlie's object
-    @data.push(users[].permissions, "read") // Affects "Charlie"
+    @data.users[].permissions.push("read") // Affects "Charlie"
     ```
 
 #### Output Command Scopes: Controlling Assembly Timing
@@ -512,7 +512,7 @@ for id in employeeIds
 
   // This command is buffered. It runs after all
   // fetches are done, using the 'details' variable.
-  @data.push(company.employees, {
+  @data.company.employees.push({
     id: details.id,
     name: details.name
   })
@@ -555,15 +555,15 @@ macro buildDepartment(deptId) : data
   var team = fetchTeamMembers(deptId)
 
   // Assemble the macro's return value.
-  @data.set(department.manager, manager.name)
-  @data.set(department.teamSize, team.length)
+  @data.department.manager.set(manager.name)
+  @data.department.teamSize.set(team.length)
 endmacro
 
 // Call the macro. 'salesDept' becomes the data object.
 var salesDept = buildDepartment("sales")
 
 // Use the returned object in the main script's assembly.
-@data.set(company.sales, salesDept)
+@data.company.sales.set(salesDept)
 ```
 </details>
 </td>
@@ -604,9 +604,9 @@ env.addDataMethods({
 });
 
 // --- In your Cascada Script ---
-@data.push(users, {id: 1, name: "Alice"})
+@data.users.push({id: 1, name: "Alice"})
 // This custom command will UPDATE Alice instead of adding a new entry
-@data.upsert(users, {id: 1, status: "inactive"})
+@data.users.upsert({id: 1, status: "inactive"})
 ```
 
 ##### Creating Custom Output Command Handlers
@@ -699,14 +699,15 @@ Macros implicitly return the structured object built by the [Output Commands](#t
 macro buildUser(id) : data // [:data](#focusing-the-output-data-text-handlername) focuses the return value
   var userData = fetchUserData(id)
   // These '[@data.set](#the-handler-system-using--output-commands)' commands operate on the macro's return object
-  @data.set(user.id, userData.id)
-  @data.set(user.name, userData.name)
+  @data.user.id.set(userData.id)
+  @data.user.name.set(userData.name)
+  @data.user.tasks.push("Review code")
 endmacro
 
 // Calling the macro
 // The macro returns { user: { id: ..., name: ... } }
 var myUser = buildUser(123)
-@data.set(result.user, myUser.user)
+@data.result.user.set(myUser.user)
 ```
 
 ### Keyword Arguments
@@ -715,14 +716,14 @@ Macros support keyword arguments, allowing for more explicit and flexible calls.
 ```javascript
 // Macro with default arguments
 macro input(name, value="", type="text") : data
-  @data.set(field.name, name)
-  @data.set(field.value, value)
-  @data.set(field.type, type)
+  @data.field.name.set(name)
+  @data.field.value.set(value)
+  @data.field.type.set(type)
 endmacro
 
 // Calling with mixed and keyword arguments
 var passwordField = input("pass", type="password")
-@data.set(result.password, passwordField.field)
+@data.result.password.set(passwordField.field)
 ```
 
 ### Output Scopes and Focusing in Macros
@@ -739,15 +740,15 @@ Commands inside a `macro` are assembled when the **macro call completes**. They 
 // The :data directive filters the macro's
 // return value to be just the data object.
 macro buildUser(name) : data
-  @data.set(user.name, name)
-  @data.set(user.active, true)
+  @data.user.name.set(name)
+  @data.user.active.set(true)
 endmacro
 
 // 'userObject' is now a clean object,
 // not { data: { user: ... } }.
 var userObject = buildUser("Alice")
 
-@data.set(company.manager, userObject.user)
+@data.company.manager.set(userObject.user)
 ```
 </details>
 </td>
@@ -824,103 +825,4 @@ account!.withdraw(50)
 
 **Note**: This feature is under development.
 
-Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structure lets you catch errors, define **conditional retry logic** with `resume`, and provide a final fallback. The special `resume.count` variable is **automatically managed by the engine** to track retry attempts.
-
-```javascript
-try
-  // Attempt a fallible operation
-  var image = generateImage(prompt)
-  @data.set(result.imageUrl, image.url)
-resume resume.count < 3
-  // Retry up to 3 times
-  print "Retrying attempt " + resume.count
-except
-  // Handle permanent failure
-  @data.set(result.error, "Image generation failed: " + error.message)
-endtry
-```
-
-### Filters and Global Functions
-
-Cascada Script supports the full range of Nunjucks [built-in filters](https://mozilla.github.io/nunjucks/templating.html#builtin-filters) and [global functions](https://mozilla.github.io/nunjucks/templating.html#global-functions). You can use them just as you would in a template.
-
-#### Filters
-Filters are applied with the pipe `|` operator.
-```javascript
-var title = "a tale of two cities" | title
-print title // "A Tale Of Two Cities"
-
-var users = ["Alice", "Bob"]
-print "Users: " + (users | join(", ")) // "Users: Alice, Bob"
-```
-
-#### Global Functions
-Global functions like `range` can be called directly.
-```javascript
-for i in range(3)
-  print "Item " + i // Prints Item 0, Item 1, Item 2
-endfor
-```
-
-#### Additional Global Functions
-
-##### `cycler(...items)`
-The `cycler` function creates an object that cycles through a set of values each time its `next()` method is called.
-
-```javascript
-var rowClass = cycler("even", "odd")
-for item in items
-  // First item gets "even", second "odd", third "even", etc.
-  @data.push(report.rows, { class: rowClass.next(), value: item })
-endfor
-```
-
-##### `joiner([separator])`
-The `joiner` creates a function that returns the separator (default is `,`) on every call except the first. This is useful for delimiting items in a list.
-
-```javascript
-var comma = joiner(", ")
-var output = ""
-for tag in ["rock", "pop", "jazz"]
-  // The first call to comma() returns "", subsequent calls return ", "
-  output = output + comma() + tag
-endfor
-print output // "rock, pop, jazz"
-```
-
-### Importing Scripts and Templates
-
-In Cascada scripts, use `import` to access standard Nunjucks templates:
-
-```
-import "header.njk" as header
-```
-
-Use `import-script` to load other Cascada scripts. This can be done with the clean script syntax or the traditional tag syntax.
-
-```
-// Clean syntax
-import-script "data.script" as data
-
-// Tag-based syntax
-{% import-script "data.script" as data %}
-```
-
-## API Reference
-
-### Environment Class
-
-```javascript
-environment.renderScript(scriptName, context[, callback])
-environment.renderScriptString(scriptSource, context[, options][, callback])
-```
-
-### AsyncEnvironment Class
-
-```javascript
-// Always returns Promises
-asyncEnvironment.renderScript(scriptName, context[, options])
-asyncEnvironment.renderScriptString(scriptSource, context[, options])
-```
-
-For production environments, you can improve performance by **precompiling** your scripts to JavaScript, which eliminates parsing overhead at runtime. This can be done using the same precompilation API methods available for templates.
+Handle runtime errors gracefully with **`try`/`resume`
