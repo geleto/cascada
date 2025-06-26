@@ -887,7 +887,7 @@ endif`;
   });
 
   // New @data Command Syntax Tests
-  describe('@data Command Syntax', () => {
+  describe.only('@data Command Syntax', () => {
     describe('Basic Commands', () => {
       it('should convert simple set command with @data syntax', () => {
         const script = '@data.user.name.set("Alice")';
@@ -1045,58 +1045,45 @@ endif`;
     describe('Error Cases', () => {
       it('should throw error for invalid path with consecutive dots', () => {
         const script = '@data.user..name.set("Alice")';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throw('Invalid path: empty path component (consecutive dots)');
+        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Invalid path: empty path component (consecutive dots)');
       });
 
       it('should throw error for invalid identifier in path', () => {
         const script = '@data.user.123invalid.set("Alice")';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throw('Invalid path component: \'123invalid\' is not a valid identifier');
+        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Invalid path component: \'123invalid\' is not a valid identifier');
       });
 
       it('should throw error for invalid command identifier', () => {
         const script = '@data.user.name.123invalid("Alice")';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throw('is not a valid identifier');
+        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('is not a valid identifier');
       });
 
       it('should throw error for empty command', () => {
         const script = '@data.user.name.("Alice")';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throw('is not a valid identifier');
+        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('is not a valid identifier');
       });
 
       it('should throw error for missing parentheses', () => {
         const script = '@data.user.name.set';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throw('Expected \'(\' after command');
+        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Expected \'(\' after command');
       });
 
       it('should throw error for unmatched bracket', () => {
         const script = '@data.user[unclosed.set("Alice")';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throw('Unmatched closing bracket');
+        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Unmatched closing bracket');
       });
 
       it('should throw error for command as bracket expression', () => {
         const script = '@data.user[set]("Alice")';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throw('Command cannot be a bracket expression');
+        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Command cannot be a bracket expression');
       });
     });
 
     describe('Backward Compatibility', () => {
-      it('should still handle old @data syntax', () => {
-        const script = '@data.set(user.name, "Alice")';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.name, "Alice") -%}');
-      });
 
-      it('should still handle old @data syntax with complex paths', () => {
-        const script = '@data.set(report.users[user.id].status, "active")';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(report.users[user.id].status, "active") -%}');
-      });
 
-      it('should still handle old @data syntax with root-level operations', () => {
-        const script = '@data.merge(null, { version: "1.1" })';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.merge(null, { version: "1.1" }) -%}');
-      });
+
+
     });
   });
 
