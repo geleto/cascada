@@ -222,13 +222,17 @@ class ScriptTranspiler {
       skippingWhitespace = true;
     };
 
-    const finishCurrentSegment = () => {
+    const finishCurrentSegment = (s) => {
       if (currentSegment) {
         segments.push(currentSegment);
         currentSegment = '';
       } else {
+        if (s === 'PARSING_PATH_START') {
+          return 'PARSING_PATH_AND_COMMAND';
+        }
         throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Empty path segment.`);
       }
+      return s;
     };
 
     for (const token of tokens) {
@@ -261,7 +265,7 @@ class ScriptTranspiler {
         }
 
         if (skippingWhitespace) {
-          if (/\s/.test(char)) {
+          if (char.trim() === '') {
             continue;
           }
           skippingWhitespace = false;
@@ -270,19 +274,19 @@ class ScriptTranspiler {
         switch (state) {
           case 'PARSING_PREFIX':
             prefixBuffer += char;
-            if (prefixBuffer === '@data.') {
-              setState('PARSING_PATH_AND_COMMAND');
-              currentSegment = '.';
-            } else if (!('@data.'.startsWith(prefixBuffer))) {
+            if (prefixBuffer === '@data') {
+              setState('PARSING_PATH_START');
+              currentSegment = '';
+            } else if (!('@data'.startsWith(prefixBuffer))) {
               throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected @data prefix.`);
             }
             break;
-
+          case 'PARSING_PATH_START':
           case 'PARSING_PATH_AND_COMMAND':
             if (char === '[') {
               // If we have a current segment, finish it first
               if (bracketLevel === 0) {
-                finishCurrentSegment();
+                state = finishCurrentSegment(state);
               }
               currentSegment += char;
               bracketLevel++;
@@ -299,18 +303,18 @@ class ScriptTranspiler {
               }*/
             } else if (char === '.' && bracketLevel === 0) {
               // Finish current segment and start new one
-              finishCurrentSegment();
+              state = finishCurrentSegment(state);
               currentSegment = char;
             } else if (char === '(' && bracketLevel === 0) {
               // Found start of arguments - finish current segment first, then collect remainder
-              finishCurrentSegment();
+              state = finishCurrentSegment(state);
               state = 'COLLECTING_REMAINING';
               remainingBuffer = char;
             } else if (char === '=' && bracketLevel === 0) {
               // replace = with .set(
-              finishCurrentSegment();
+              state = finishCurrentSegment(state);
               currentSegment = '.set';
-              finishCurrentSegment();
+              state = finishCurrentSegment(state);
               state = 'COLLECTING_REMAINING';
               remainingBuffer = '(';
               //find the last continuation line and ')' at the end of it
@@ -736,8 +740,17 @@ class ScriptTranspiler {
       parseResult.blockType = null;
       parseResult.codeContent = expression;
     } else {
-      // Check if this is the new @data command syntax
-      if (ccontent.startsWith('data.')) {
+      // Check if this is the @data command syntax
+      let isDataCommand = false;
+      if (ccontent.startsWith('data')) {
+        isDataCommand = ccontent.startsWith('data.') || ccontent.startsWith('data=');
+        if (!isDataCommand) {
+          //check if the first word is a valid identifier
+          const afterData = ccontent.substring('data'.length).trim();
+          isDataCommand = afterData.startsWith('.') || afterData.startsWith('=');//@data = or @data .push(
+        }
+      }
+      if (isDataCommand) {
         // Parse the @data-specific syntax and convert to the generic syntax
         const parsedCommand = this._deconstructDataCommand(parseResult.tokens, lineIndex);
         let genericSyntaxCommand = this._transpileDataCommand(parsedCommand);
