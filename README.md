@@ -498,7 +498,7 @@ var config = fetchConfig()
 
 // Use the imported macro to process the data
 var processedItems = utils.process(items, config)
-@data.result.items.set(processedItems)
+@data.result.items = processedItems
 ```
 
 </details>
@@ -583,7 +583,7 @@ For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cl
 ```javascript
 // 1. Generate a plan with an LLM call.
 var plan = makePlan("Analyze competitor's new feature")
-@data.result.plan.set(plan)
+@data.result.plan = plan
 
 // 2. Each step of the plan runs in parallel.
 for step in plan.steps
@@ -597,7 +597,7 @@ endfor
 
 // 3. Summarize the results after all are complete.
 var summary = summarizeResults(result.stepResults)
-@data.result.summary.set(summary)
+@data.result.summary = summary
 ```
 
 </details>

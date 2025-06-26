@@ -36,8 +36,8 @@ const script = `
 // The '[:data](#focusing-the-output-data-text-handlername)' directive focuses the macro's output
 macro fetchAndEnhanceUser(id) : data
   var userData = fetchUser(id)
-  @data.user.id.set(userData.id)
-  @data.user.name.set(userData.name)
+  @data.user.id = userData.id
+  @data.user.name = userData.name
   @data.user.tasks.push("Review code")
 endmacro
 
@@ -46,8 +46,8 @@ var user1 = fetchAndEnhanceUser(1)
 var user2 = fetchAndEnhanceUser(2)
 
 // Assemble the final result using the macro outputs
-@data.result.user1.set(user1.user)
-@data.result.user2.set(user2.user)
+@data.result.user1 = user1.user
+@data.result.user2 = user2.user
 `;
 
 const context = {
@@ -155,9 +155,9 @@ var rawUserData = fetchUser(123) // e.g., returns { id: 123, name: "alice", isAc
 // It transforms the raw data into a clean 'user' object.
 var user = capture :data
   // Logic inside the block can access variables from the outer scope.
-  @data.id.set(rawUserData.id)
-  @data.username.set(rawUserData.name | title) // Use a filter for formatting
-  @data.status.set("active" if rawUserData.isActive == 1 else "inactive")
+  @data.id = rawUserData.id
+  @data.username = rawUserData.name | title // Use a filter for formatting
+  @data.status = "active" if rawUserData.isActive == 1 else "inactive"
 endcapture
 
 // Now, the 'user' variable holds a clean, structured object:
@@ -298,8 +298,8 @@ var userProfile = { name: "Alice", email: "alice@example.com" }
 var userSettings = { notifications: true, theme: "light" }
 
 // @data.set: Sets or creates a value at a path
-@data.user.id.set(userId)
-@data.user.name.set(userProfile.name)
+@data.user.id = userId
+@data.user.name = userProfile.name
 
 // @data.push: Adds an item to an array
 @data.user.roles.push("editor")
@@ -307,7 +307,7 @@ var userSettings = { notifications: true, theme: "light" }
 
 // @data.merge: Combines properties into an object
 @data.user.settings.merge(userSettings)
-@data.user.settings.theme.set("dark") // Overwrite one setting
+@data.user.settings.theme = "dark" // Overwrite one setting
 ```
 </details>
 </td>
@@ -379,7 +379,7 @@ Often, you only need one piece of the result. You can **focus the output** using
 
 ```javascript
 // No directive. Returns the full result object.
-@data.report.title.set("Q3 Summary")
+@data.report.title = "Q3 Summary"
 @text("Report generation complete.")
 ```
 </details>
@@ -410,7 +410,7 @@ Often, you only need one piece of the result. You can **focus the output** using
 // The :data directive filters the final return value.
 :data
 
-@data.report.title.set("Q3 Summary")
+@data.report.title = "Q3 Summary"
 @text("Report generation complete.")
 ```
 </details>
@@ -436,8 +436,11 @@ Often, you only need one piece of the result. You can **focus the output** using
 ##### The `@data` Handler: Building Structured Data
 The `@data` handler is the primary tool for constructing your script's `data` object. Paths are provided as the first argument and can be complex expressions.
 
+**Assignment Operator (`=`):** The most common way to set values is using the assignment operator `@data.path = value`, which is equivalent to `@data.path.set(value)`.
+
 | Command | Description |
 |---|---|
+| `@data.path = value` | **Replaces** the value at `path`. Creates objects/arrays as needed. Same as `@data.path.set(value)`. |
 | `@data.path.set(value)` | **Replaces** the value at `path`. Creates objects/arrays as needed. |
 | `@data.path.push(value)` | Appends an element to an array at `path`. |
 | `@data.path.append(value)`| Appends a string to the string value at `path`. |
@@ -467,7 +470,7 @@ Paths in `@data` commands are highly flexible.
     ```javascript
     for user in userList
       // Use the user's ID to set their status in the report object
-      @data.report.users[user.id].status.set("processed")
+      @data.report.users[user.id].status = "processed"
     endfor
     ```
 *   **Root-Level Modification**: Use the `@data` handler directly to modify the root of the `data` object itself.
@@ -555,15 +558,15 @@ macro buildDepartment(deptId) : data
   var team = fetchTeamMembers(deptId)
 
   // Assemble the macro's return value.
-  @data.department.manager.set(manager.name)
-  @data.department.teamSize.set(team.length)
+  @data.department.manager = manager.name
+  @data.department.teamSize = team.length
 endmacro
 
 // Call the macro. 'salesDept' becomes the data object.
 var salesDept = buildDepartment("sales")
 
 // Use the returned object in the main script's assembly.
-@data.company.sales.set(salesDept)
+@data.company.sales = salesDept
 ```
 </details>
 </td>
@@ -690,7 +693,7 @@ It is crucial to understand the difference between these two features, as they s
 
 Macros allow you to define reusable chunks of logic that build and return structured data objects. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
 
-Macros implicitly return the structured object built by the [Output Commands](#the-handler-system-using--output-commands) (`@data.set`, `@data.push`, etc.) within their scope. An explicit `return` statement is not required, but if you include one, its value will override the implicitly built object.
+Macros implicitly return the structured object built by the [Output Commands](#the-handler-system-using--output-commands) (`@data =`, `@data.set`, `@data.push`, etc.) within their scope. An explicit `return` statement is not required, but if you include one, its value will override the implicitly built object.
 
 ### Defining and Calling a Macro
 
@@ -698,16 +701,16 @@ Macros implicitly return the structured object built by the [Output Commands](#t
 // Define a macro to build a user object
 macro buildUser(id) : data // [:data](#focusing-the-output-data-text-handlername) focuses the return value
   var userData = fetchUserData(id)
-  // These '[@data.set](#the-handler-system-using--output-commands)' commands operate on the macro's return object
-  @data.user.id.set(userData.id)
-  @data.user.name.set(userData.name)
+  // These '[@data](#the-handler-system-using--output-commands)' commands operate on the macro's return object
+  @data.user.id = userData.id
+  @data.user.name = userData.name
   @data.user.tasks.push("Review code")
 endmacro
 
 // Calling the macro
 // The macro returns { user: { id: ..., name: ... } }
 var myUser = buildUser(123)
-@data.result.user.set(myUser.user)
+@data.result.user = myUser.user
 ```
 
 ### Keyword Arguments
@@ -716,14 +719,14 @@ Macros support keyword arguments, allowing for more explicit and flexible calls.
 ```javascript
 // Macro with default arguments
 macro input(name, value="", type="text") : data
-  @data.field.name.set(name)
-  @data.field.value.set(value)
-  @data.field.type.set(type)
+  @data.field.name = name
+  @data.field.value = value
+  @data.field.type = type
 endmacro
 
 // Calling with mixed and keyword arguments
 var passwordField = input("pass", type="password")
-@data.result.password.set(passwordField.field)
+@data.result.password = passwordField.field
 ```
 
 ### Output Scopes and Focusing in Macros
@@ -740,15 +743,15 @@ Commands inside a `macro` are assembled when the **macro call completes**. They 
 // The :data directive filters the macro's
 // return value to be just the data object.
 macro buildUser(name) : data
-  @data.user.name.set(name)
-  @data.user.active.set(true)
+  @data.user.name = name
+  @data.user.active = true
 endmacro
 
 // 'userObject' is now a clean object,
 // not { data: { user: ... } }.
 var userObject = buildUser("Alice")
 
-@data.company.manager.set(userObject.user)
+@data.company.manager = userObject.user
 ```
 </details>
 </td>
