@@ -215,6 +215,7 @@ class ScriptTranspiler {
     let remainingBuffer = ''; // Everything after we start looking for args
     let bracketLevel = 0;
     let skippingWhitespace = true;
+    let endWhitespace = '';
 
     const setState = (newState) => {
       state = newState;
@@ -223,9 +224,10 @@ class ScriptTranspiler {
 
     const finishCurrentSegment = () => {
       if (currentSegment) {
-        // All segments get a leading dot (since they all follow a dot in the syntax)
-        segments.push('.' + currentSegment);
+        segments.push(currentSegment);
         currentSegment = '';
+      } else {
+        throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Empty path segment.`);
       }
     };
 
@@ -270,6 +272,7 @@ class ScriptTranspiler {
             prefixBuffer += char;
             if (prefixBuffer === '@data.') {
               setState('PARSING_PATH_AND_COMMAND');
+              currentSegment = '.';
             } else if (!('@data.'.startsWith(prefixBuffer))) {
               throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected @data prefix.`);
             }
@@ -278,7 +281,7 @@ class ScriptTranspiler {
           case 'PARSING_PATH_AND_COMMAND':
             if (char === '[') {
               // If we have a current segment, finish it first
-              if (currentSegment && bracketLevel === 0) {
+              if (bracketLevel === 0) {
                 finishCurrentSegment();
               }
               currentSegment += char;
@@ -290,13 +293,14 @@ class ScriptTranspiler {
                 throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched closing bracket ']'.`);
               }
               // If we've closed all brackets, finish this bracket segment
-              if (bracketLevel === 0) {
+              /*if (bracketLevel === 0) {
                 segments.push(currentSegment); // Already includes the full [...]
                 currentSegment = '';
-              }
+              }*/
             } else if (char === '.' && bracketLevel === 0) {
               // Finish current segment and start new one
               finishCurrentSegment();
+              currentSegment = char;
             } else if (char === '(' && bracketLevel === 0) {
               // Found start of arguments - finish current segment first, then collect remainder
               finishCurrentSegment();
@@ -305,10 +309,11 @@ class ScriptTranspiler {
             } else if (/\s/.test(char)) {
               // Handle whitespace in path/command
               if (bracketLevel === 0) {
-                // Finish current segment, then collect remainder
-                finishCurrentSegment();
+                //ignore the whitespace in the path
+                /*// Finish current segment, then collect remainder
+                finishCurrentSegment(false);
                 state = 'COLLECTING_REMAINING';
-                remainingBuffer = char;
+                remainingBuffer = char;*/
               } else {
                 currentSegment += char;
               }
@@ -328,6 +333,8 @@ class ScriptTranspiler {
       if (!remaining.startsWith('(') || !remaining.endsWith(')')) {
         throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected '(...)' for arguments.`);
       }
+
+      endWhitespace = remainingBuffer.substring(remainingBuffer.lastIndexOf(')') + 1);
 
       // Extract args (everything between the parentheses)
       const args = remaining.substring(1, remaining.length - 1).trim();
@@ -369,7 +376,8 @@ class ScriptTranspiler {
       return {
         path: path,
         command: command,
-        args: args || null
+        args: args || null,
+        endWhitespace: endWhitespace
       };
     }
 
@@ -396,9 +404,9 @@ class ScriptTranspiler {
     const pathArgument = tcom.path || 'null';
 
     if (tcom.args) {
-      return `@data.${tcom.command}(${pathArgument}, ${tcom.args})`;
+      return `@data.${tcom.command}(${pathArgument}, ${tcom.args})${tcom.endWhitespace}`;
     } else {
-      return `@data.${tcom.command}(${pathArgument})`;
+      return `@data.${tcom.command}(${pathArgument})${tcom.endWhitespace}`;
     }
   }
 
@@ -581,6 +589,18 @@ class ScriptTranspiler {
   }
 
   /**
+   * Checks if a string is a valid JavaScript identifier
+   * @param {string} str - The string to check
+   * @return {boolean} True if it's a valid identifier
+   */
+  _isValidIdentifier(str) {
+    if (!str) return false;
+
+    // JavaScript identifier rules: start with letter, $, or _, followed by letters, digits, $, or _
+    return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);
+  }
+
+  /**
    * Checks if a string is a list of valid JavaScript identifiers separated by commas
    * @param {string} str - The string to check
    * @return {boolean} True if it's a valid identifier list
@@ -716,23 +736,15 @@ class ScriptTranspiler {
     } else {
       // Check if this is the new @data command syntax
       if (ccontent.startsWith('data.')) {
-        try {
-          // Parse the @data-specific syntax and convert to the generic syntax
-          const parsedCommand = this._breakDataCommand(parseResult.tokens, lineIndex);
-          const genericSyntaxCommand = this._transpileDataCommand(parsedCommand);
+        // Parse the @data-specific syntax and convert to the generic syntax
+        const parsedCommand = this._breakDataCommand(parseResult.tokens, lineIndex);
+        const genericSyntaxCommand = this._transpileDataCommand(parsedCommand);
 
-          // Update the parseResult with the converted command
-          parseResult.lineType = 'TAG';
-          parseResult.tagName = 'output_command';
-          parseResult.blockType = null;
-          parseResult.codeContent = genericSyntaxCommand.substring(1); // Remove the @ prefix
-        } catch (error) {
-          // If parsing fails, fall back to treating it as a regular command
-          parseResult.lineType = 'TAG';
-          parseResult.tagName = 'output_command';
-          parseResult.blockType = null;
-          parseResult.codeContent = commandContent; // The content for the Nunjucks tag
-        }
+        // Update the parseResult with the converted command
+        parseResult.lineType = 'TAG';
+        parseResult.tagName = 'output_command';
+        parseResult.blockType = null;
+        parseResult.codeContent = genericSyntaxCommand.substring(1); // Remove the @ prefix
       } else {
         // All other @ commands are treated as function commands
         // @print was deprecated and replaced with @text(value)
