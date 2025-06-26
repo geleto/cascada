@@ -178,6 +178,21 @@ class ScriptTranspiler {
 
     // Track block stack for var/set blocks
     this.setBlockStack = []; // 'var' or 'set'
+
+    this.DATA_COMMANDS = {
+      operators: {
+        //'=': '.set',
+        '+=': '.add',
+        '-=': '.subtract',
+        '++': '.increment',
+        '--': '.decrement',
+        '*=': '.multiply',
+        '/=': '.divide',
+        '&=': '.and',
+        '|=': '.or'
+      },
+      operatorStart: ['=', '+', '-', '*', '/', '&', '|'],
+    };
   }
 
   /**
@@ -258,7 +273,9 @@ class ScriptTranspiler {
       }
 
       // Process CODE tokens character by character
-      for (const char of token.value) {
+      //for (const char of token.value) {
+      for (let i = 0; i < token.value.length; i++) {
+        const char = token.value[i];
         if (state === 'COLLECTING_REMAINING') {
           remainingBuffer += char;
           continue;
@@ -296,11 +313,6 @@ class ScriptTranspiler {
               if (bracketLevel < 0) {
                 throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched closing bracket ']'.`);
               }
-              // If we've closed all brackets, finish this bracket segment
-              /*if (bracketLevel === 0) {
-                segments.push(currentSegment); // Already includes the full [...]
-                currentSegment = '';
-              }*/
             } else if (char === '.' && bracketLevel === 0) {
               // Finish current segment and start new one
               state = finishCurrentSegment(state);
@@ -310,16 +322,38 @@ class ScriptTranspiler {
               state = finishCurrentSegment(state);
               state = 'COLLECTING_REMAINING';
               remainingBuffer = char;
-            } else if (char === '=' && bracketLevel === 0) {
+            /*} else if (char === '=' && bracketLevel === 0) {
+              // TEMP
               // replace = with .set(
               state = finishCurrentSegment(state);
               currentSegment = '.set';
               state = finishCurrentSegment(state);
               state = 'COLLECTING_REMAINING';
               remainingBuffer = '(';
-              //find the last continuation line and ')' at the end of it
+              append = ')';//find the last continuation line and ')' at the end of it*/
+            } else if (this.DATA_COMMANDS.operatorStart.includes(char) && bracketLevel === 0) {
+              // =, +=, -=, ++, --, *=, /=, &=, |=
+              state = finishCurrentSegment(state);
+              const nextChar = token.value[i + 1];
+              const operator = char + nextChar;
+              const operatorCommand = this.DATA_COMMANDS.operators[operator];
+              if (operatorCommand) {
+                currentSegment = operatorCommand;
+                i++;
+              } else if (operatorCommand === '==') {
+                throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${operator} is not a valid operator.`);
+              } else if (char === '=') {
+                //assume it's an assignment operator
+                currentSegment = '.set';
+              } else {
+                throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${operator}`);
+              }
+              state = finishCurrentSegment(state);
+              state = 'COLLECTING_REMAINING';
+              remainingBuffer = '(';
               append = ')';
-            } else if (/\s/.test(char)) {
+            }
+            else if (char.trim() === '') {
               // Handle whitespace in path/command
               if (bracketLevel === 0) {
                 //ignore the whitespace in the path

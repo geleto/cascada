@@ -54,8 +54,12 @@ class DataHandler {
       // Call the original method with the correct context and arguments
       const result = func.apply(this.methods, [currentValue, ...args]);
 
-      // Update the target with the result
-      target[key] = result;
+      // Update the target with the result, delete if undefined
+      if (result !== undefined) {
+        target[key] = result;
+      } else {
+        delete target[key];
+      }
 
       return result;
     };

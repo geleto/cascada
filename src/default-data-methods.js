@@ -212,5 +212,159 @@ module.exports = {
     } else {
       throw new Error('Error: Target for \'append\' must be a string.');
     }
+  },
+
+  /**
+   * Adds values together. If the target is a number, performs arithmetic addition.
+   * If the target is a string, appends the value to the string.
+   * Corresponds to the Cascada command: `@add path value`
+   *
+   * @param {number|string} target The number or string at the specified `path`.
+   * @param {any} value The value to add or append.
+   * @returns {number|string} The result of the addition or concatenation.
+   */
+  add : function(target, value) {
+    if (target === undefined) {
+      target = 0;
+    }
+    if (typeof target === 'number') {
+      return target + Number(value);
+    } else if (typeof target === 'string') {
+      return target + String(value);
+    } else {
+      throw new Error('Error: Target for \'add\' must be a number or string.');
+    }
+  },
+
+  /**
+   * Subtracts a value from the target. Arithmetic-only operation.
+   * Corresponds to the Cascada command: `@subtract path value`
+   *
+   * @param {number} target The number at the specified `path`.
+   * @param {any} value The value to subtract from the target.
+   * @returns {number} The result of the subtraction.
+   */
+  subtract : function(target, value) {
+    if (target === undefined) {
+      target = 0;
+    }
+    if (typeof target === 'number') {
+      return target - Number(value);
+    } else {
+      throw new Error('Error: Target for \'subtract\' must be a number.');
+    }
+  },
+
+  /**
+   * Increments the target by 1. Arithmetic-only operation.
+   * Corresponds to the Cascada command: `@increment path`
+   *
+   * @param {number} target The number at the specified `path`.
+   * @returns {number} The incremented value.
+   */
+  increment : function(target) {
+    if (target === undefined) {
+      target = 0;
+    }
+    if (typeof target === 'number') {
+      return target + 1;
+    } else {
+      throw new Error('Error: Target for \'increment\' must be a number.');
+    }
+  },
+
+  /**
+   * Decrements the target by 1. Arithmetic-only operation.
+   * Corresponds to the Cascada command: `@decrement path`
+   *
+   * @param {number} target The number at the specified `path`.
+   * @returns {number} The decremented value.
+   */
+  decrement : function(target) {
+    if (target === undefined) {
+      target = 0;
+    }
+    if (typeof target === 'number') {
+      return target - 1;
+    } else {
+      throw new Error('Error: Target for \'decrement\' must be a number.');
+    }
+  },
+
+  /**
+   * Multiplies the target by a value. Arithmetic-only operation.
+   * Corresponds to the Cascada command: `@multiply path value`
+   *
+   * @param {number} target The number at the specified `path`.
+   * @param {any} value The value to multiply by.
+   * @returns {number} The result of the multiplication.
+   */
+  multiply : function(target, value) {
+    if (target === undefined) {
+      target = 1;
+    }
+    if (typeof target === 'number') {
+      return target * Number(value);
+    } else {
+      throw new Error('Error: Target for \'multiply\' must be a number.');
+    }
+  },
+
+  /**
+   * Divides the target by a value. Arithmetic-only operation.
+   * Corresponds to the Cascada command: `@divide path value`
+   *
+   * @param {number} target The number at the specified `path`.
+   * @param {any} value The value to divide by.
+   * @returns {number} The result of the division.
+   */
+  divide : function(target, value) {
+    if (target === undefined) {
+      target = 0;
+    }
+    if (typeof target === 'number') {
+      const divisor = Number(value);
+      if (divisor === 0) {
+        throw new Error('Error: Division by zero is not allowed.');
+      }
+      return target / divisor;
+    } else {
+      throw new Error('Error: Target for \'divide\' must be a number.');
+    }
+  },
+
+  /**
+   * Performs logical AND operation using JavaScript && operator.
+   * Corresponds to the Cascada command: `@and path value`
+   *
+   * @param {any} target The value at the specified `path`.
+   * @param {any} value The value to perform AND operation with.
+   * @returns {any} The result of the logical AND operation.
+   */
+  and : function(target, value) {
+    return target && value;
+  },
+
+  /**
+   * Performs logical OR operation using JavaScript || operator.
+   * Corresponds to the Cascada command: `@or path value`
+   *
+   * @param {any} target The value at the specified `path`.
+   * @param {any} value The value to perform OR operation with.
+   * @returns {any} The result of the logical OR operation.
+   */
+  or : function(target, value) {
+    return target || value;
+  },
+
+  /**
+   * Returns undefined, effectively deleting the target.
+   * Corresponds to the Cascada command: `@delete path`
+   *
+   * @param {any} target The value at the specified `path` (ignored).
+   * @returns {undefined} Always returns undefined.
+   */
+  delete : function(target) {
+    return undefined;
   }
 };
