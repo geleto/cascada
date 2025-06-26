@@ -220,7 +220,7 @@ for id in productIds
   // built in the order of `productIds`
   // [101, 205, 302], not the order in which
   // the data for each product resolves.
-  @data.push(report.products, {
+  @data.report.products.push({
     id: details.id,
     name: details.name,
     reviewCount: reviews.length
@@ -263,14 +263,14 @@ endfor
   });
 
   const script = `// The built-in @data.push command
-    @data.push(users, {id: 1, name: "Alice", active: true})
-    @data.push(users, {id: 2, name: "Bob", active: true})
+    @data.users.push({id: 1, name: "Alice", active: true})
+    @data.users.push({id: 2, name: "Bob", active: true})
 
     // The custom @data.upsert command will UPDATE Alice.
-    @data.upsert(users, {id: 1, active: false})
+    @data.users.upsert({id: 1, active: false})
 
     // This will ADD Charlie.
-    @data.upsert(users, {id: 3, name: "Charlie", active: true})`;
+    @data.users.upsert({id: 3, name: "Charlie", active: true})`;
 
   console.log( await env.renderScriptString(
     script, {}, { output: 'data' }
@@ -379,9 +379,9 @@ macro buildUserSummary(userId) : data
   var comments = fetchUserComments(userId)
 
   // Assemble the result after all fetches complete.
-  @data.set(summary.name, details.name)
-  @data.set(summary.postCount, posts.length)
-  @data.set(summary.commentCount, comments.length)
+  @data.summary.name.set(details.name)
+  @data.summary.postCount.set(posts.length)
+  @data.summary.commentCount.set(comments.length)
 endmacro
 
 // Call the macro for two different users. These
@@ -390,8 +390,8 @@ var user1 = buildUserSummary(101)
 var user2 = buildUserSummary(102)
 
 // Assemble the final report.
-@data.set(report.user1Summary, user1.summary)
-@data.set(report.user2Summary, user2.summary)
+@data.report.user1Summary.set(user1.summary)
+@data.report.user2Summary.set(user2.summary)
 ```
 
 </details>
@@ -447,13 +447,13 @@ Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structur
 try
   // Attempt a fallible operation
   var image = generateImage(prompt)
-  @data.set(result.imageUrl, image.url)
+  @data.result.imageUrl.set(image.url)
 resume resume.count < 3
   // Retry up to 3 times
   @text("Retrying attempt " + resume.count)
 except
   // Handle permanent failure
-  @data.set(result.error, "Image generation failed: " + error.message)
+  @data.result.error.set("Image generation failed: " + error.message)
 endtry
 ```
 
@@ -498,7 +498,7 @@ var config = fetchConfig()
 
 // Use the imported macro to process the data
 var processedItems = utils.process(items, config)
-@data.set(result.items, processedItems)
+@data.result.items.set(processedItems)
 ```
 
 </details>
@@ -583,13 +583,13 @@ For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cl
 ```javascript
 // 1. Generate a plan with an LLM call.
 var plan = makePlan("Analyze competitor's new feature")
-@data.set(result.plan, plan)
+@data.result.plan.set(plan)
 
 // 2. Each step of the plan runs in parallel.
 for step in plan.steps
   // Each `executeStep` is an independent operation.
   var stepResult = executeStep(step.instruction)
-  @data.push(result.stepResults, {
+  @data.result.stepResults.push({
     step: step.title,
     result: stepResult
   })
@@ -597,7 +597,7 @@ endfor
 
 // 3. Summarize the results after all are complete.
 var summary = summarizeResults(result.stepResults)
-@data.set(result.summary, summary)
+@data.result.summary.set(summary)
 ```
 
 </details>
@@ -623,7 +623,7 @@ import { AsyncEnvironment } from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
 const script =
-  '@data.set(result.greeting, "Hello, " + user.name)';
+  '@data.result.greeting.set("Hello, " + user.name)';
 const ctx = {
   user: fetchUser(123) // An async function
 };
@@ -678,9 +678,9 @@ console.log(html); // <h1>Hello World</h1>
      import { AsyncEnvironment } from 'cascada-tmpl';
      const env = new AsyncEnvironment();
      const script = `// Set initial user object
-       @data.set(user, {name: 'Alice', id: 123, log: "User profile created. "})
+       @data.user.set({name: 'Alice', id: 123, log: "User profile created. "})
        // Append to a string property within the data object
-       @data.append(user.log, "Login successful.")`;
+       @data.user.log.append("Login successful.")`;
 
      // The 'data' output focuses the result on the data object
      const { user } = await env.renderScriptString(script, {}, { output: 'data' });
