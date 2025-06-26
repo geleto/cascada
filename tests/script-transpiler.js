@@ -759,39 +759,39 @@ endif`;
   describe('@ Command Conversions', () => {
     describe('Statement-Style Commands', () => {
       it('should convert simple command with path and string value', () => {
-        const script = '@data.set(user.name, \'Alice\')';
+        const script = '@data.user.name.set(\'Alice\')';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.name, \'Alice\') -%}');
+        expect(template).to.equal('{%- output_command data.set(user.name,\'Alice\') -%}');
       });
 
       it('should convert command with path and numeric value', () => {
-        const script = '@data.set(user.age, 30)';
+        const script = '@data.user.age.set(30)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.age, 30) -%}');
+        expect(template).to.equal('{%- output_command data.set(user.age,30) -%}');
       });
 
       it('should convert command with complex path', () => {
-        const script = '@data.set(user.settings.theme, \'dark\')';
+        const script = '@data.user.settings.theme.set(\'dark\')';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.settings.theme, \'dark\') -%}');
+        expect(template).to.equal('{%- output_command data.set(user.settings.theme,\'dark\') -%}');
       });
 
       it('should convert data commands with object literal argument', () => {
-        const script = '@data.push(users, { id: 1, name: \'Bob\' })';
+        const script = '@data.users.push({ id: 1, name: \'Bob\' })';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.push(users, { id: 1, name: \'Bob\' }) -%}');
+        expect(template).to.equal('{%- output_command data.push(users,{ id: 1, name: \'Bob\' }) -%}');
       });
 
       it('should convert data commands with no argument', () => {
-        const script = '@data.pop(user.roles)';
+        const script = '@data.user.roles.pop()';
         const template = scriptTranspiler.scriptToTemplate(script);
         expect(template).to.equal('{%- output_command data.pop(user.roles) -%}');
       });
 
       it('should handle data commands with extra whitespace', () => {
-        const script = '  @data.set(user.name, \'Alice\')  ';
+        const script = '  @data.user.name.set(\'Alice\')  ';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('  {%- output_command data.set(user.name, \'Alice\')   -%}');
+        expect(template).to.equal('  {%- output_command data.set(user.name,\'Alice\')   -%}');
       });
 
       it('should convert command that looks like function but has no parentheses', () => {
@@ -835,9 +835,9 @@ endif`;
 
     describe('@ Commands with Comments', () => {
       it('should handle statement command with trailing comment', () => {
-        const script = '@data.set(user.name, \'Alice\') // Set user name';
+        const script = '@data.user.name.set(\'Alice\') // Set user name';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.name, \'Alice\')  -%}{#- Set user name -#}');
+        expect(template).to.equal('{%- output_command data.set(user.name,\'Alice\')  -%}{#- Set user name -#}');
       });
 
       it('should handle function command with trailing comment', () => {
@@ -847,17 +847,17 @@ endif`;
       });
 
       it('should handle command with multi-line comment', () => {
-        const script = '@data.set(user.status, \'active\') /* Update user status to active */';
+        const script = '@data.user.status.set("active") /* Update user status */';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.status, \'active\')  -%}{#- Update user status to active -#}');
+        expect(template).to.equal('{%- output_command data.set(user.status,"active")  -%}{#- Update user status -#}');
       });
     });
 
     describe('@ Commands Edge Cases', () => {
       it('should handle @ command with indentation', () => {
-        const script = '  @data.set(user.name, \'Alice\')';
+        const script = '  @data.user.name.set(\'Alice\')';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('  {%- output_command data.set(user.name, \'Alice\') -%}');
+        expect(template).to.equal('  {%- output_command data.set(user.name,\'Alice\') -%}');
       });
 
       it('should handle @ command with empty function call', () => {
@@ -867,62 +867,62 @@ endif`;
       });
 
       it('should handle @ command with string containing spaces', () => {
-        const script = '@data.set(message, "Hello World with spaces")';
+        const script = '@data.message.set("Hello World with spaces")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(message, "Hello World with spaces") -%}');
+        expect(template).to.equal('{%- output_command data.set(message,"Hello World with spaces") -%}');
       });
 
       it('should handle @ command with boolean values', () => {
-        const script = '@data.set(user.active, true)';
+        const script = '@data.user.active.set(true)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.active, true) -%}');
+        expect(template).to.equal('{%- output_command data.set(user.active,true) -%}');
       });
 
       it('should handle @ command with array notation', () => {
-        const script = '@data.set(items[0].status, \'completed\')';
+        const script = '@data.items[0].status.set(\'completed\')';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(items[0].status, \'completed\') -%}');
+        expect(template).to.equal('{%- output_command data.set(items[0].status,\'completed\') -%}');
       });
     });
   });
 
   // New @data Command Syntax Tests
-  describe.only('@data Command Syntax', () => {
+  describe('@data Command Syntax', () => {
     describe('Basic Commands', () => {
       it('should convert simple set command with @data syntax', () => {
         const script = '@data.user.name.set("Alice")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.name, "Alice") -%}');
+        expect(template).to.equal('{%- output_command data.set(user.name,"Alice") -%}');
       });
 
       it('should convert push command with @data syntax', () => {
         const script = '@data.user.roles.push("admin")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.push(user.roles, "admin") -%}');
+        expect(template).to.equal('{%- output_command data.push(user.roles,"admin") -%}');
       });
 
       it('should convert root-level merge command', () => {
         const script = '@data.merge({ version: "1.1" })';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.merge(null, { version: "1.1" }) -%}');
+        expect(template).to.equal('{%- output_command data.merge(null,{ version: "1.1" }) -%}');
       });
 
       it('should convert command with complex path', () => {
         const script = '@data.report.users[user.id].status.set("active")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(report.users[user.id].status, "active") -%}');
+        expect(template).to.equal('{%- output_command data.set(report.users[user.id].status,"active") -%}');
       });
 
       it('should convert command with dynamic array lookup', () => {
         const script = '@data.users[getUser(params[0])].name.set("Bob")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(users[getUser(params[0])].name, "Bob") -%}');
+        expect(template).to.equal('{%- output_command data.set(users[getUser(params[0])].name,"Bob") -%}');
       });
 
       it('should convert command with whitespace', () => {
         const script = '@data.user.name.set (  "Alice"  )';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.name, "Alice") -%}');
+        expect(template).to.equal('{%- output_command data.set(user.name,  "Alice"  ) -%}');
       });
     });
 
@@ -930,25 +930,25 @@ endif`;
       it('should handle nested object paths', () => {
         const script = '@data.user.settings.notifications.email.set(true)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.settings.notifications.email, true) -%}');
+        expect(template).to.equal('{%- output_command data.set(user.settings.notifications.email,true) -%}');
       });
 
       it('should handle array indices in paths', () => {
         const script = '@data.items[0].tags[1].set("urgent")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(items[0].tags[1], "urgent") -%}');
+        expect(template).to.equal('{%- output_command data.set(items[0].tags[1],"urgent") -%}');
       });
 
       it('should handle mixed array and object access', () => {
         const script = '@data.users[user.id].permissions.admin.set(true)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(users[user.id].permissions.admin, true) -%}');
+        expect(template).to.equal('{%- output_command data.set(users[user.id].permissions.admin,true) -%}');
       });
 
       it('should handle complex expressions in brackets', () => {
         const script = '@data.reports[getReportId(user.id, "monthly")].data.set(reportData)';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(reports[getReportId(user.id, "monthly")].data, reportData) -%}');
+        expect(template).to.equal('{%- output_command data.set(reports[getReportId(user.id, "monthly")].data,reportData) -%}');
       });
     });
 
@@ -956,7 +956,7 @@ endif`;
       it('should handle push command', () => {
         const script = '@data.user.tasks.push("Review code")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.push(user.tasks, "Review code") -%}');
+        expect(template).to.equal('{%- output_command data.push(user.tasks,"Review code") -%}');
       });
 
       it('should handle pop command', () => {
@@ -974,19 +974,19 @@ endif`;
       it('should handle unshift command', () => {
         const script = '@data.user.tasks.unshift("New task")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.unshift(user.tasks, "New task") -%}');
+        expect(template).to.equal('{%- output_command data.unshift(user.tasks,"New task") -%}');
       });
 
       it('should handle merge command', () => {
         const script = '@data.user.settings.merge({ theme: "dark", notifications: true })';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.merge(user.settings, { theme: "dark", notifications: true }) -%}');
+        expect(template).to.equal('{%- output_command data.merge(user.settings,{ theme: "dark", notifications: true }) -%}');
       });
 
       it('should handle deepMerge command', () => {
         const script = '@data.user.profile.deepMerge({ address: { city: "New York" } })';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.deepMerge(user.profile, { address: { city: "New York" } }) -%}');
+        expect(template).to.equal('{%- output_command data.deepMerge(user.profile,{ address: { city: "New York" } }) -%}');
       });
 
       it('should handle reverse command', () => {
@@ -998,7 +998,7 @@ endif`;
       it('should handle append command', () => {
         const script = '@data.user.bio.append(" - Updated")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.append(user.bio, " - Updated") -%}');
+        expect(template).to.equal('{%- output_command data.append(user.bio," - Updated") -%}');
       });
     });
 
@@ -1006,19 +1006,19 @@ endif`;
       it('should handle root-level set', () => {
         const script = '@data.set({ status: "complete", timestamp: now() })';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(null, { status: "complete", timestamp: now() }) -%}');
+        expect(template).to.equal('{%- output_command data.set(null,{ status: "complete", timestamp: now() }) -%}');
       });
 
       it('should handle root-level merge', () => {
         const script = '@data.merge({ version: "2.1", build: 123 })';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.merge(null, { version: "2.1", build: 123 }) -%}');
+        expect(template).to.equal('{%- output_command data.merge(null,{ version: "2.1", build: 123 }) -%}');
       });
 
       it('should handle root-level deepMerge', () => {
         const script = '@data.deepMerge({ config: { debug: true } })';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.deepMerge(null, { config: { debug: true } }) -%}');
+        expect(template).to.equal('{%- output_command data.deepMerge(null,{ config: { debug: true } }) -%}');
       });
     });
 
@@ -1026,19 +1026,19 @@ endif`;
       it('should handle command with trailing comment', () => {
         const script = '@data.user.name.set("Alice") // Set user name';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.name, "Alice")  -%}{#- Set user name -#}');
+        expect(template).to.equal('{%- output_command data.set(user.name,"Alice")  -%}{#- Set user name -#}');
       });
 
       it('should handle command with multi-line comment', () => {
         const script = '@data.user.status.set("active") /* Update user status */';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command data.set(user.status, "active")  -%}{#- Update user status -#}');
+        expect(template).to.equal('{%- output_command data.set(user.status,"active")  -%}{#- Update user status -#}');
       });
 
       it('should handle command with indentation', () => {
         const script = '  @data.user.name.set("Alice")';
         const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('  {%- output_command data.set(user.name, "Alice") -%}');
+        expect(template).to.equal('  {%- output_command data.set(user.name,"Alice") -%}');
       });
     });
 
@@ -1148,11 +1148,11 @@ endif`;
 
     it('should handle var declarations with block assignment', () => {
       const script = `var report = capture :data
-  @data.set(report.title, "Q3 Summary")
-  @data.set(report.status, "complete")
+  @data.report.title.set("Q3 Summary")
+  @data.report.status.set("complete")
 endcapture`;
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- var report :data -%}\n  {%- output_command data.set(report.title, "Q3 Summary") -%}\n  {%- output_command data.set(report.status, "complete") -%}\n{%- endvar -%}');
+      expect(template).to.equal('{%- var report :data -%}\n  {%- output_command data.set(report.title,"Q3 Summary") -%}\n  {%- output_command data.set(report.status,"complete") -%}\n{%- endvar -%}');
     });
 
     it('should handle extern declarations', () => {
@@ -1169,11 +1169,11 @@ endcapture`;
 
     it('should handle block assignments with capture', () => {
       const script = `var report = capture :data
-  @data.set(report.title, "Q3 Summary")
-  @data.set(report.status, "complete")
+  @data.report.title.set("Q3 Summary")
+  @data.report.status.set("complete")
 endcapture`;
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- var report :data -%}\n  {%- output_command data.set(report.title, "Q3 Summary") -%}\n  {%- output_command data.set(report.status, "complete") -%}\n{%- endvar -%}');
+      expect(template).to.equal('{%- var report :data -%}\n  {%- output_command data.set(report.title,"Q3 Summary") -%}\n  {%- output_command data.set(report.status,"complete") -%}\n{%- endvar -%}');
     });
 
     it('should handle complex assignments with expressions', () => {
