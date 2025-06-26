@@ -24,7 +24,7 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         var user = fetchUser(1)
-        @data.result.user.set(user)
+        @data.result.user = user
       `;
 
       const context = {
@@ -39,9 +39,9 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         var report
-        @data.result.hasReport.set(report !== undefined)
-		@data.result.hasReportValue.set(report !== none)
-        @data.result.reportValue.set(report)
+        @data.result.hasReport = report !== undefined
+		@data.result.hasReportValue = report !== none
+        @data.result.reportValue = report
       `;
 
       const result = await env.renderScriptString(script, {});
@@ -54,8 +54,8 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         var x, y = 100
-        @data.result.x.set(x)
-        @data.result.y.set(y)
+        @data.result.x = x
+        @data.result.y = y
       `;
 
       const result = await env.renderScriptString(script, {});
@@ -84,8 +84,8 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         extern currentUser, theme
-        @data.result.user.set(currentUser)
-        @data.result.theme.set(theme)
+        @data.result.user = currentUser
+        @data.result.theme = theme
       `;
 
       const context = {
@@ -103,7 +103,7 @@ describe('Cascada Script: Variables', function () {
         :data
         extern currentUser, theme
         theme = "guest"
-        @data.result.theme.set(theme)
+        @data.result.theme = theme
       `;
 
       const context = {
@@ -136,7 +136,7 @@ describe('Cascada Script: Variables', function () {
         :data
         var name = "Alice"
         name = "Bob"
-        @data.result.name.set(name)
+        @data.result.name = name
       `;
 
       const result = await env.renderScriptString(script, {});
@@ -149,8 +149,8 @@ describe('Cascada Script: Variables', function () {
         var x = 10
         var y = 20
         x, y = 200
-        @data.result.x.set(x)
-        @data.result.y.set(y)
+        @data.result.x = x
+        @data.result.y = y
       `;
 
       const result = await env.renderScriptString(script, {});
@@ -179,11 +179,11 @@ describe('Cascada Script: Variables', function () {
         :data
         var rawUserData = fetchUser(123)
         var user = capture :data
-          @data.id.set(rawUserData.id)
-          @data.username.set(rawUserData.name | title)
-          @data.status.set("active" if rawUserData.isActive == 1 else "inactive")
+          @data.id = rawUserData.id
+          @data.username = rawUserData.name | title
+          @data.status = "active" if rawUserData.isActive == 1 else "inactive"
         endcapture
-        @data.result.user.set(user)
+        @data.result.user = user
       `;
 
       const context = {
@@ -203,10 +203,10 @@ describe('Cascada Script: Variables', function () {
         :data
         var user
         user = capture :data
-          @data.name.set("Bob")
-          @data.role.set("admin")
+          @data.name = "Bob"
+          @data.role = "admin"
         endcapture
-        @data.result.user.set(user)
+        @data.result.user = user
       `;
 
       const result = await env.renderScriptString(script, {});
@@ -221,10 +221,10 @@ describe('Cascada Script: Variables', function () {
         :data
         var baseUrl = "https://api.example.com"
         var user = capture :data
-          @data.apiUrl.set(baseUrl + "/users")
-          @data.name.set("Alice")
+          @data.apiUrl = baseUrl + "/users"
+          @data.name = "Alice"
         endcapture
-        @data.result.user.set(user)
+        @data.result.user = user
       `;
 
       const result = await env.renderScriptString(script, {});
@@ -286,14 +286,14 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         var outer = capture :data
-          @data.level.set("outer")
+          @data.level = "outer"
           var inner = capture :data
-            @data.level.set("inner")
-            @data.parentLevel.set("outer")
+            @data.level = "inner"
+            @data.parentLevel = "outer"
           endcapture
-          @data.innerResult.set(inner)
+          @data.innerResult = inner
         endcapture
-        @data.result.outer.set(outer)
+        @data.result.outer = outer
       `;
 
       const result = await env.renderScriptString(script, {});
@@ -312,12 +312,12 @@ describe('Cascada Script: Variables', function () {
         extern user, settings, theme
         theme = "dark"
         settings = capture :data
-          @data.set(notifications, true)
-          @data.set(language, "en")
+          @data.notifications = true
+          @data.language = "en"
         endcapture
-        @data.set(result.user, user)
-        @data.set(result.settings, settings)
-        @data.set(result.theme, theme)
+        @data.result.user = user
+        @data.result.settings = settings
+        @data.result.theme = theme
       `;
 
       const context = {
@@ -341,12 +341,12 @@ describe('Cascada Script: Variables', function () {
         var userData = fetchUser(1)
         var settings = fetchSettings(1)
         var profile = capture :data
-          @data.name.set(userData.name)
-          @data.email.set(userData.email)
-          @data.theme.set(settings.theme)
-          @data.notifications.set(settings.notifications)
+          @data.name = userData.name
+          @data.email = userData.email
+          @data.theme = settings.theme
+          @data.notifications = settings.notifications
         endcapture
-        @data.result.profile.set(profile)
+        @data.result.profile = profile
       `;
 
       const context = {
@@ -369,11 +369,11 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         var result = capture :data
-          @data.value.set("success")
+          @data.value = "success"
           // This would cause an error if not handled
           var invalid = someUndefinedFunction()
         endcapture
-        @data.result.output.set(result)
+        @data.result.output = result
       `;
 
       try {
@@ -388,7 +388,7 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         extern requiredVar
-        @data.set(result.value, requiredVar)
+        @data.result.value = requiredVar
       `;
 
       try {
