@@ -205,7 +205,7 @@ class ScriptTranspiler {
    * Breaks down a new @data command syntax into its components
    * @param {Array} tokens - Array of tokens from script-lexer
    * @param {number} lineIndex - Current line index for error reporting
-   * @return {Object} Object with path, command, and args properties
+   * @return {Object} Object with path, command, and args properties. Args may not be ')' terminated in a multi-line command.
    */
   _breakDataCommand(tokens, lineIndex) {
     let state = 'PARSING_PREFIX';
@@ -215,7 +215,6 @@ class ScriptTranspiler {
     let remainingBuffer = ''; // Everything after we start looking for args
     let bracketLevel = 0;
     let skippingWhitespace = true;
-    let endWhitespace = '';
 
     const setState = (newState) => {
       state = newState;
@@ -327,17 +326,15 @@ class ScriptTranspiler {
 
     if (state === 'COLLECTING_REMAINING') {
       // Parse the remaining buffer to extract args
-      const remaining = remainingBuffer.trim();
+      const remaining = remainingBuffer;
 
       // Must start with '(' and end with ')'
-      if (!remaining.startsWith('(') || !remaining.endsWith(')')) {
+      if (!remaining.startsWith('(')) {
         throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected '(...)' for arguments.`);
       }
 
-      endWhitespace = remainingBuffer.substring(remainingBuffer.lastIndexOf(')') + 1);
-
-      // Extract args (everything between the parentheses)
-      const args = remaining.substring(1, remaining.length - 1).trim();
+      // Extract args (everything after the '('
+      const args = remaining.substring(1);
 
       // Command is the last segment - pop it off
       if (segments.length === 0) {
@@ -376,8 +373,7 @@ class ScriptTranspiler {
       return {
         path: path,
         command: command,
-        args: args || null,
-        endWhitespace: endWhitespace
+        args: args || null
       };
     }
 
@@ -391,7 +387,7 @@ class ScriptTranspiler {
 
   /**
    * Converts new @data command syntax to the generic syntax
-   * @param {Object} tcom - Parsed command object with path, command, and args
+   * @param {Object} tcom - Parsed command object with path, command, and extra args (ending in ')' unless multiline
    * @return {string} The generic syntax command string
    */
   _transpileDataCommand(tcom) {
@@ -402,12 +398,11 @@ class ScriptTranspiler {
     // generic: @data.merge(null, { version: "1.1" })
 
     const pathArgument = tcom.path || 'null';
+    const args = tcom.args || '';
 
-    if (tcom.args) {
-      return `@data.${tcom.command}(${pathArgument}, ${tcom.args})${tcom.endWhitespace}`;
-    } else {
-      return `@data.${tcom.command}(${pathArgument})${tcom.endWhitespace}`;
-    }
+    const addComma = args.trim() !== ')';//this happens with empty args
+
+    return `@data.${tcom.command}(${pathArgument}${addComma ? ',' : ''}${args}`;
   }
 
   /**
