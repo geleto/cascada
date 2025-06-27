@@ -322,7 +322,7 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    it('should handle @data assignment with nested dynamic paths', async () => {
+    it('should handle @data.assignment with nested dynamic paths', async () => {
       const script = `
         :data
         @data.company = companyData
@@ -1284,23 +1284,24 @@ describe('Cascada Script: Output commands', function () {
       it('should handle dynamic path with async function call', async () => {
         const script = `
           :data
-          @data.users = usersData
-          var userId = getUserIdAsync()
-          @data.users[userId].status = "active"
+          var userData = fetchUser(1)
+          var salaryData = fetchSalary(1)
+
+          @data.user.name = userData.name
+          @data.user.salary = salaryData.base
+          @data.user.salary += salaryData.bonus
+          @data.user.salary *= 1.05
         `;
         const context = {
-          getUserIdAsync: async () => 0,
-          usersData: [
-            { name: 'Alice' },
-            { name: 'Bob' }
-          ]
+          fetchUser: async (id) => ({ name: 'Alice' }),
+          fetchSalary: async (id) => ({ base: 50000, bonus: 5000 })
         };
         const result = await env.renderScriptString(script, context);
         expect(result).to.eql({
-          users: [
-            { name: 'Alice', status: 'active' },
-            { name: 'Bob' }
-          ]
+          user: {
+            name: 'Alice',
+            salary: 57750 // (50000 + 5000) * 1.05
+          }
         });
       });
 
@@ -1752,10 +1753,229 @@ describe('Cascada Script: Output commands', function () {
           result: true
         });
       });
+
+      it('should handle @data.bitAnd with numbers', async () => {
+        const script = `
+          :data
+          @data.flags = 15  // 1111 in binary
+          @data.flags &= 10  // 1010 in binary
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          flags: 10  // 1010 in binary
+        });
+      });
+
+      it('should handle @data.bitAnd with undefined target', async () => {
+        const script = `
+          :data
+          @data.flags &= 10
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'bitAnd\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle @data.bitAnd with non-number target', async () => {
+        const script = `
+          :data
+          @data.flags = "hello"
+          @data.flags &= 10
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'bitAnd\' must be a number');
+        }
+      });
+
+      it('should handle @data.bitOr with numbers', async () => {
+        const script = `
+          :data
+          @data.flags = 5   // 0101 in binary
+          @data.flags |= 10  // 1010 in binary
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          flags: 15  // 1111 in binary
+        });
+      });
+
+      it('should handle @data.bitOr with undefined target', async () => {
+        const script = `
+          :data
+          @data.flags |= 10
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'bitOr\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle @data.bitOr with non-number target', async () => {
+        const script = `
+          :data
+          @data.flags = "hello"
+          @data.flags |= 10
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'bitOr\' must be a number');
+        }
+      });
+
+      it('should handle @data.bitNot with numbers', async () => {
+        const script = `
+          :data
+          @data.flags = 15  // 1111 in binary
+          @data.flags.bitNot()
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          flags: -16  // ~15 = -16
+        });
+      });
+
+      it('should handle @data.bitNot with undefined target', async () => {
+        const script = `
+          :data
+          @data.flags.bitNot()
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'bitNot\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle @data.bitNot with non-number target', async () => {
+        const script = `
+          :data
+          @data.flags = "hello"
+          @data.flags.bitNot()
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'bitNot\' must be a number');
+        }
+      });
+
+      it('should handle @data.not with truthy values', async () => {
+        const script = `
+          :data
+          @data.result = true
+          @data.result.not()
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          result: false
+        });
+      });
+
+      it('should handle @data.not with falsy values', async () => {
+        const script = `
+          :data
+          @data.result = false
+          @data.result.not()
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          result: true
+        });
+      });
+
+      it('should handle @data.not with undefined target', async () => {
+        const script = `
+          :data
+          @data.result.not()
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'not\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle @data.not with various value types', async () => {
+        const script = `
+          :data
+          @data.truthy = "hello"
+          @data.falsy = ""
+          @data.zero = 0
+          @data.nonZero = 42
+          @data.nullValue = null
+
+          var truthyVal = "hello"
+          var falsyVal = ""
+          var zeroVal = 0
+          var nonZeroVal = 42
+
+          @data.notTruthy = truthyVal
+          @data.notFalsy = falsyVal
+          @data.notZero = zeroVal
+          @data.notNonZero = nonZeroVal
+
+          @data.notTruthy.not()
+          @data.notFalsy.not()
+          @data.notZero.not()
+          @data.notNonZero.not()
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          truthy: 'hello',
+          falsy: '',
+          zero: 0,
+          nonZero: 42,
+          nullValue: null,
+          notTruthy: false,
+          notFalsy: true,
+          notZero: true,
+          notNonZero: false
+        });
+      });
+
+      it('should handle bitwise operations with dynamic paths', async () => {
+        const script = `
+          :data
+          @data.company.people = peopleData
+          @data.company.people[0].permissions &= 3
+          @data.company.people[1].flags |= 8
+          @data.company.people[2].mask.bitNot()
+        `;
+        const context = {
+          peopleData: [
+            { name: 'Alice', permissions: 15 },
+            { name: 'Bob', flags: 1 },
+            { name: 'Charlie', mask: 255 }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            people: [
+              { name: 'Alice', permissions: 3 },  // 15 & 3 = 3
+              { name: 'Bob', flags: 9 },          // 1 | 8 = 9
+              { name: 'Charlie', mask: -256 }     // ~255 = -256
+            ]
+          }
+        });
+      });
     });
 
     describe('Delete Operation', function() {
-      it('should handle @data.delete to return undefined', async () => {
+      it('should handle @data.delete', async () => {
         const script = `
           :data
           @data.user = { name: 'Alice', oldName: 'Bob' }

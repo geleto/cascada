@@ -364,6 +364,76 @@ module.exports = {
   },
 
   /**
+   * Performs bitwise AND operation using JavaScript & operator.
+   * Corresponds to the Cascada command: `@bitAnd path value`
+   *
+   * @param {number} target The number at the specified `path`.
+   * @param {any} value The value to perform bitwise AND operation with.
+   * @returns {number} The result of the bitwise AND operation.
+   */
+  bitAnd : function(target, value) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'bitAnd\' cannot be undefined or null.');
+    }
+    if (typeof target === 'number') {
+      return target & Number(value);
+    } else {
+      throw new Error('Error: Target for \'bitAnd\' must be a number.');
+    }
+  },
+
+  /**
+   * Performs bitwise OR operation using JavaScript | operator.
+   * Corresponds to the Cascada command: `@bitOr path value`
+   *
+   * @param {number} target The number at the specified `path`.
+   * @param {any} value The value to perform bitwise OR operation with.
+   * @returns {number} The result of the bitwise OR operation.
+   */
+  bitOr : function(target, value) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'bitOr\' cannot be undefined or null.');
+    }
+    if (typeof target === 'number') {
+      return target | Number(value);
+    } else {
+      throw new Error('Error: Target for \'bitOr\' must be a number.');
+    }
+  },
+
+  /**
+   * Performs bitwise NOT operation using JavaScript ~ operator.
+   * Corresponds to the Cascada command: `@bitNot path`
+   *
+   * @param {number} target The number at the specified `path`.
+   * @returns {number} The result of the bitwise NOT operation.
+   */
+  bitNot : function(target) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'bitNot\' cannot be undefined or null.');
+    }
+    if (typeof target === 'number') {
+      return ~target;
+    } else {
+      throw new Error('Error: Target for \'bitNot\' must be a number.');
+    }
+  },
+
+  /**
+   * Performs logical NOT operation using JavaScript ! operator.
+   * Corresponds to the Cascada command: `@not path`
+   *
+   * @param {any} target The value at the specified `path`.
+   * @returns {boolean} The result of the logical NOT operation.
+   */
+  not : function(target) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'not\' cannot be undefined or null.');
+    }
+    return !target;
+  },
+
+  /**
    * Returns undefined, effectively deleting the target.
    * Corresponds to the Cascada command: `@delete path`
    *
