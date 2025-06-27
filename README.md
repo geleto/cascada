@@ -203,8 +203,6 @@ account!.withdraw(50)
 
 ### Consistent Output Commands Assembly
 
-**Note**: The assembly commands feature is under development.
-
 In scripts, **Output Commands**, marked with the `@` sigil, are buffered and assembled in a **predictable, sequential order**. They build a structured data object using a rich set of methods on the `@data` handler: `@data.set` (set/replace), `@data.push`/`@data.unshift` (add to array), `@data.pop`/`@data.shift` (remove from array), `@data.merge` (combine objects), and `@data.reverse`. You can also add your own custom commands.
 
 Similarly in templates, the final text output is also assembled in source-code order, guaranteeing that the rendered content is always predictable, even when built from multiple async operations that finish at different times.
@@ -303,8 +301,6 @@ endfor
 <td valign="top">
 
 ### Command Handlers
-
-**Note**: This feature is under development.
 
 For scripts, the **Command Handlers** feature lets you specify classes and objects that execute commands.
 You can add a class that executes custom commands with `addCommandHandlerClass`.
@@ -500,6 +496,8 @@ endtry
 
 ### Modular Composition
 
+**Note**: This feature is under development.
+
 Build complex, modular templates using **`extends`** for inheritance, **`block`** for defining overrideable sections, **`include`** for embedding content, and **`import`** for reusing macros. Included templates and other async operations are processed concurrently.
 
 </td>
@@ -549,7 +547,7 @@ var items = utils.process(items, config)
 <tr>
 <td valign="top">
 
-### Rich Templating (Cascada Templates)
+### Rich Templating **[(Cascada Templates)](docs/cascada/template.md)**
 
 As a fork of the Nunjucks engine, Cascada provides a familiar, feature-rich syntax ideal for generating text-based output like HTML or for **crafting complex LLM prompts** by dynamically embedding data.
 - **Full programming constructs**: `if`, `for`, `set`
@@ -589,7 +587,7 @@ action items and assign owners.
 <tr>
 <td valign="top">
 
-### Powerful Scripting (Cascada Script)
+### Powerful Scripting **[(Cascada Script)](docs/cascada/script.md)**
 
 For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's parallelization capabilities and adds specialized commands for building structured data results.
 - **Clean, delimiter-free syntax**
