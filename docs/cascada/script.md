@@ -348,7 +348,7 @@ Instead of being executed immediately, `@` commands are handled in a three-step 
 
 Every `@` command is directed to an **output handler**. The handler determines what action is performed. Cascada provides two built-in handlers and allows you to [define your own for custom logic](#creating-custom-output-command-handlers).
 
-*   **`@data`**: The built-in handler for building structured data (objects and arrays).
+*   **`@data`**: The built-in handler for building structured data (objects, arrays, strings and numbers).
 *   **`@text`**: The built-in handler for generating a simple string of text.
 *   **Custom Handlers**: You can define your own handlers for domain-specific tasks where a sequence of operations is important, such as drawing graphics (`@turtle.forward(50)`), logging, or writing to a database (`@db.users.insert(...)`).
 
@@ -434,22 +434,116 @@ Often, you only need one piece of the result. You can **focus the output** using
 #### Built-in Output Handlers
 
 ##### The `@data` Handler: Building Structured Data
-The `@data` handler is the primary tool for constructing your script's `data` object. Paths are provided as the first argument and can be complex expressions.
+The `@data` handler is the primary tool for constructing your script's `data` object. It provides a declarative, easy-to-read syntax for building complex data structures. All `@data` commands are collected during the script's execution and then applied in order to assemble the final data object.
 
-**Assignment Operator (`=`):** The most common way to set values is using the assignment operator `@data.path = value`, which is equivalent to `@data.path.set(value)`.
+Here's a simple example of how it works:
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Cascada Script</strong></summary>
+
+```javascript
+// The ':data' directive focuses the output
+:data
+
+// Set a simple value
+@data.user.name = "Alice"
+// Initialize 'logins' and increment it
+@data.user.logins = 0
+@data.user.logins++
+
+// The 'roles' array is created automatically on first push
+@data.user.roles.push("editor")
+```
+</details>
+</td>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Final Assembled Data</strong></summary>
+
+```json
+{
+  "user": {
+    "name": "Alice",
+    "logins": 1,
+    "roles": [ "editor" ]
+  }
+}
+```
+</details>
+</td>
+</tr>
+</table>
+
+Below is a detailed list of all available commands and operators.
+
+**Assignment and Deletion**
+The most common operations involve setting or removing a value at a given path.
 
 | Command | Description |
 |---|---|
-| `@data.path = value` | **Replaces** the value at `path`. Creates objects/arrays as needed. Same as `@data.path.set(value)`. |
-| `@data.path.set(value)` | **Replaces** the value at `path`. Creates objects/arrays as needed. |
-| `@data.path.push(value)` | Appends an element to an array at `path`. |
-| `@data.path.append(value)`| Appends a string to the string value at `path`. |
-| `@data.path.merge(value)` | Merges an object into the object at `path`. |
-| `@data.path.deepMerge(value)`| Deep-merges an object into the object at `path`. |
+| `@data.path = value` | **Replaces** the value at `path`. Creates objects/arrays as needed. This is a shortcut for the underlying `set` method. |
+| `@data.path.delete()` | **Deletes** the value at `path` by setting it to `undefined`, which typically removes the key from the final JSON output. |
+
+**Array Manipulation**
+These methods modify arrays in place. If the target path does not exist when a method is called, an empty array is created first.
+
+| Command | Description |
+|---|---|
+| `@data.path.push(value)` | Appends an element to the array at `path`. |
+| `@data.path.concat(value)` | Concatenates another array to the array at `path`. If `value` is not an array, it is simply pushed as a single element. |
 | `@data.path.pop()` | Removes the last element from the array at `path`. |
 | `@data.path.shift()` | Removes the first element from the array at `path`. |
 | `@data.path.unshift(value)`| Adds one or more elements to the beginning of the array at `path`. |
 | `@data.path.reverse()` | Reverses the order of the elements in the array at `path`. |
+
+**Object Manipulation**
+These methods are used for combining objects.
+
+| Command | Description |
+|---|---|
+| `@data.path.merge(value)` | Merges the properties of an object into the object at `path`. This is a shallow merge. |
+| `@data.path.deepMerge(value)`| Deeply merges the properties of an object into the object at `path`. |
+
+**Arithmetic Operations**
+These operators provide a concise way to perform numeric modifications. They require the target to be a number.
+
+| Command | Description |
+|---|---|
+| `@data.path += value` | Adds a number to the target. |
+| `@data.path -= value` | Subtracts a number from the target. |
+| `@data.path *= value` | Multiplies the target by a number. |
+| `@data.path /= value` | Divides the target by a number. |
+| `@data.path++` | Increments the target number by 1. |
+| `@data.path--` | Decrements the target number by 1. |
+
+**String Operations**
+These methods are specialized for string manipulation.
+
+| Command | Description |
+|---|---|
+| `@data.path += value` | Appends a string to the target string. Note: This operator is overloaded and also works for number addition. |
+| `@data.path.append(value)`| Appends a string to the string value at `path`. |
+
+**Logical & Bitwise Operations**
+These operators are shortcuts for common logical and bitwise operations.
+
+| Command | Description |
+|---|---|
+| `@data.path &&= value` | Performs a logical AND assignment (`target = target && value`). |
+| `@data.path ||= value` | Performs a logical OR assignment (`target = target || value`). |
+| `@data.path &= value` | Performs a bitwise AND assignment. |
+| `@data.path |= value` | Performs a bitwise OR assignment. |
+| `@data.path.not()` | Replaces the target with its logical NOT (`!target`). |
+| `@data.path.bitNot()`| Replaces the target number with its bitwise NOT (`~target`). |
+
+###### Handling `undefined` and `null` Targets
+The `@data` handler is designed to be robust but also safe. Its behavior with non-existent (`undefined`) or `null` targets depends on the type of operation:
+
+*   **Structure-building methods** (like `.push()`, `.merge()`, `.append()`) will gracefully handle an `undefined` target. For example, if you call `.push()` on a path that doesn't exist, Cascada will automatically create an empty array before pushing the new element.
+*   **Arithmetic and Logical operators** (`+=`, `--`, `&&=`, etc.) are stricter. To prevent silent errors and unexpected results (like `null + 1` evaluating to `1`), these operators will throw a runtime error if the target path is `undefined` or `null`. You must explicitly initialize a value (e.g., `@data.counter = 0`) before you can increment or add to it.
 
 ##### The `@text` Command: Generating Text
 The `@text(value)` command is a convenient shorthand for the `{{ value }}` output syntax found in the Cascada templating engine. It appends its `value` to a simple text stream, which populates the `text` property of the result object. This stream is completely separate from the `data` object.
@@ -492,7 +586,7 @@ Paths in `@data` commands are highly flexible.
     @data.users[].permissions.push("read") // Affects "Charlie"
     ```
 
-#### Output Command Scopes: Controlling Assembly Timing
+#### Output Command Scopes: Data Assembly Timing
 
 The "Assemble" step happens at the end of a **scope**. This is key to building modular, reusable code.
 
@@ -592,24 +686,87 @@ var salesDept = buildDepartment("sales")
 #### Extending Output Commands
 
 ##### Customizing the `@data` Handler
-You can add your own custom methods to the built-in `@data` handler using `env.addDataMethods()`. This is a powerful way to create reusable, domain-specific logic that operates on your script's `data` object.
+You can add your own custom methods or override existing ones for the built-in `@data` handler using `env.addDataMethods()`. This method takes an object where each key is a method name and each value is a function that defines the custom logic.
 
-**Example: A custom `@data.upsert` command.**
+This is a powerful way to create reusable, domain-specific logic. Your custom methods are defined in JavaScript and can be called from within your Cascada scripts like any built-in method.
+
+A custom data method has the following signature:
+
+```javascript
+// In your JS setup
+env.addDataMethods({
+  // methodName is how you'll call it in the script: @data.path.methodName(...)
+  methodName: function(target, ...args) {
+    // ... your logic ...
+    return newValue;
+  }
+});
+```
+
+**Parameters:**
+
+*   `target`: The current value at the path the command is targeting. For example, in `@data.users[0].name.append("!")`, the `target` passed to the `append` method would be the current string value of `users[0].name`. If the path doesn't exist yet, `target` will be `undefined`. Your method should often handle this case, for instance by creating a default array or object.
+*   `...args`: A list of the arguments passed to the method in the script. For a call like `@data.users.upsert(newUser, { overwrite: true })`, the `args` array would be `[newUser, { overwrite: true }]`.
+
+**Return Value:**
+
+The value returned by your function determines the new state of the data at the target path.
+
+*   **If you return any value** (an object, array, string, number, etc.), it **replaces** the `target` value at that path. For in-place mutations (like modifying an array), you must return the mutated `target` itself to save the changes.
+*   **If you return `undefined`**, it signals to the engine to **delete** the property at that path. This is equivalent to `delete parent[key]`.
+
+**Overriding Operators:**
+
+All shortcut operators (`+=`, `++`, `&&=`, etc.) are mapped to underlying methods. By overriding these methods, you can fundamentally change the behavior of the operators.
+
+| Operator | Corresponding Method |
+|---|---|
+| `@... = value` | `set(target, value)` |
+| `@... += value` | `add(target, value)` |
+| `@... -= value` | `subtract(target, value)` |
+| `@... *= value` | `multiply(target, value)` |
+| `@... /= value` | `divide(target, value)` |
+| `@...++` | `increment(target)` |
+| `@...--` | `decrement(target)` |
+| `@... &&= value` | `and(target, value)` |
+| `@... ||= value` | `or(target, value)` |
+| `@... &= value` | `bitAnd(target, value)` |
+| `@... |= value` | `bitOr(target, value)` |
+
+
+**Example: Adding a custom `@data.upsert` command.**
+Here's how you can add a new `upsert` method that either updates an existing item in an array or adds it if it's not found. This example demonstrates handling an `undefined` target and returning the modified array.
+
 ```javascript
 // --- In your JavaScript setup ---
 env.addDataMethods({
-  upsert: (target, data) => {
-    if (!Array.isArray(target)) return;
-    const index = target.findIndex(item => item.id === data.id);
-    if (index > -1) Object.assign(target[index], data);
-    else target.push(data);
+  upsert: (target, newItem) => {
+    // 1. Handle the case where the path doesn't exist yet.
+    if (!Array.isArray(target)) {
+      target = []; // Initialize target as a new array.
+    }
+
+    // 2. Implement the upsert logic.
+    const index = target.findIndex(item => item.id === newItem.id);
+    if (index > -1) {
+      // Item found, so update it.
+      Object.assign(target[index], newItem);
+    } else {
+      // Item not found, so add it.
+      target.push(newItem);
+    }
+
+    // 3. Return the modified array to save the changes.
+    return target;
   }
 });
 
 // --- In your Cascada Script ---
-@data.users.push({id: 1, name: "Alice"})
-// This custom command will UPDATE Alice instead of adding a new entry
-@data.users.upsert({id: 1, status: "inactive"})
+// 'users' doesn't exist yet, but `upsert` will create the array.
+@data.users.upsert({ id: 1, name: "Alice" })
+
+// Now call it again to update Alice's record.
+@data.users.upsert({ id: 1, name: "Alice", status: "active" })
 ```
 
 ##### Creating Custom Output Command Handlers
@@ -828,4 +985,103 @@ account!.withdraw(50)
 
 **Note**: This feature is under development.
 
-Handle runtime errors gracefully with **`try`/`resume`
+Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structure lets you catch errors, define **conditional retry logic** with `resume`, and provide a final fallback. The special `resume.count` variable is **automatically managed by the engine** to track retry attempts.
+
+```javascript
+try
+  // Attempt a fallible operation
+  var image = generateImage(prompt)
+  @data.set(result.imageUrl, image.url)
+resume resume.count < 3
+  // Retry up to 3 times
+  print "Retrying attempt " + resume.count
+except
+  // Handle permanent failure
+  @data.set(result.error, "Image generation failed: " + error.message)
+endtry
+```
+
+### Filters and Global Functions
+
+Cascada Script supports the full range of Nunjucks [built-in filters](https://mozilla.github.io/nunjucks/templating.html#builtin-filters) and [global functions](https://mozilla.github.io/nunjucks/templating.html#global-functions). You can use them just as you would in a template.
+
+#### Filters
+Filters are applied with the pipe `|` operator.
+```javascript
+var title = "a tale of two cities" | title
+print title // "A Tale Of Two Cities"
+
+var users = ["Alice", "Bob"]
+print "Users: " + (users | join(", ")) // "Users: Alice, Bob"
+```
+
+#### Global Functions
+Global functions like `range` can be called directly.
+```javascript
+for i in range(3)
+  print "Item " + i // Prints Item 0, Item 1, Item 2
+endfor
+```
+
+#### Additional Global Functions
+
+##### `cycler(...items)`
+The `cycler` function creates an object that cycles through a set of values each time its `next()` method is called.
+
+```javascript
+var rowClass = cycler("even", "odd")
+for item in items
+  // First item gets "even", second "odd", third "even", etc.
+  @data.push(report.rows, { class: rowClass.next(), value: item })
+endfor
+```
+
+##### `joiner([separator])`
+The `joiner` creates a function that returns the separator (default is `,`) on every call except the first. This is useful for delimiting items in a list.
+
+```javascript
+var comma = joiner(", ")
+var output = ""
+for tag in ["rock", "pop", "jazz"]
+  // The first call to comma() returns "", subsequent calls return ", "
+  output = output + comma() + tag
+endfor
+print output // "rock, pop, jazz"
+```
+
+### Importing Scripts and Templates
+
+In Cascada scripts, use `import` to access standard Nunjucks templates:
+
+```
+import "header.njk" as header
+```
+
+Use `import-script` to load other Cascada scripts. This can be done with the clean script syntax or the traditional tag syntax.
+
+```
+// Clean syntax
+import-script "data.script" as data
+
+// Tag-based syntax
+{% import-script "data.script" as data %}
+```
+
+## API Reference
+
+### Environment Class
+
+```javascript
+environment.renderScript(scriptName, context[, callback])
+environment.renderScriptString(scriptSource, context[, options][, callback])
+```
+
+### AsyncEnvironment Class
+
+```javascript
+// Always returns Promises
+asyncEnvironment.renderScript(scriptName, context[, options])
+asyncEnvironment.renderScriptString(scriptSource, context[, options])
+```
+
+For production environments, you can improve performance by **precompiling** your scripts to JavaScript, which eliminates parsing overhead at runtime...
