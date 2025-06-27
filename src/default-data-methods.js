@@ -224,8 +224,8 @@ module.exports = {
    * @returns {number|string} The result of the addition or concatenation.
    */
   add : function(target, value) {
-    if (target === undefined) {
-      target = 0;
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'add\' cannot be undefined or null.');
     }
     if (typeof target === 'number') {
       return target + Number(value);
@@ -245,8 +245,8 @@ module.exports = {
    * @returns {number} The result of the subtraction.
    */
   subtract : function(target, value) {
-    if (target === undefined) {
-      target = 0;
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'subtract\' cannot be undefined or null.');
     }
     if (typeof target === 'number') {
       return target - Number(value);
@@ -263,8 +263,8 @@ module.exports = {
    * @returns {number} The incremented value.
    */
   increment : function(target) {
-    if (target === undefined) {
-      target = 0;
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'increment\' cannot be undefined or null.');
     }
     if (typeof target === 'number') {
       return target + 1;
@@ -281,8 +281,8 @@ module.exports = {
    * @returns {number} The decremented value.
    */
   decrement : function(target) {
-    if (target === undefined) {
-      target = 0;
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'decrement\' cannot be undefined or null.');
     }
     if (typeof target === 'number') {
       return target - 1;
@@ -300,8 +300,8 @@ module.exports = {
    * @returns {number} The result of the multiplication.
    */
   multiply : function(target, value) {
-    if (target === undefined) {
-      target = 1;
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'multiply\' cannot be undefined or null.');
     }
     if (typeof target === 'number') {
       return target * Number(value);
@@ -319,8 +319,8 @@ module.exports = {
    * @returns {number} The result of the division.
    */
   divide : function(target, value) {
-    if (target === undefined) {
-      target = 0;
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'divide\' cannot be undefined or null.');
     }
     if (typeof target === 'number') {
       const divisor = Number(value);
@@ -342,6 +342,9 @@ module.exports = {
    * @returns {any} The result of the logical AND operation.
    */
   and : function(target, value) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'and\' cannot be undefined or null.');
+    }
     return target && value;
   },
 
@@ -354,6 +357,9 @@ module.exports = {
    * @returns {any} The result of the logical OR operation.
    */
   or : function(target, value) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'or\' cannot be undefined or null.');
+    }
     return target || value;
   },
 
