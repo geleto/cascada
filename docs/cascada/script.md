@@ -338,11 +338,56 @@ var userSettings = { notifications: true, theme: "light" }
 
 #### The Core Concept: Collect, Execute, Assemble
 
-Instead of being executed immediately, `@` commands are handled in a three-step process:
+Instead of being executed immediately, `@` commands are handled in a three-step process that applies at the end of each **execution scope** (the main script, a [macro](#macros-and-reusable-components), or a [`capture` block](#block-assignment-with-capture)):
 
-1.  **Collect:** As your script, macro, or `capture` block runs, Cascada collects `@` commands and places them into a buffer, preserving their source-code order.
-2.  **Execute:** All other logic—like `var` assignments, `async` function calls, and `for` loops—runs to completion. Independent async operations happen concurrently, maximizing performance.
-3.  **Assemble:** Once all data-fetching and logic in the current scope has finished, Cascada dispatches the buffered `@` commands **sequentially** to their corresponding handlers. Each handler is responsible for executing its commands and building its internal state.
+1.  **Collect:** As your script runs, Cascada collects `@` commands into a buffer, preserving their source-code order.
+2.  **Execute:** All other logic—`var` assignments, `async` function calls, `for` loops—runs to completion. Independent async operations happen concurrently, maximizing performance.
+3.  **Assemble:** Once all other logic in the current scope has finished, Cascada dispatches the buffered `@` commands **sequentially** to their handlers to build the final result for that scope.
+
+This model is especially powerful for parallel operations, as shown below. The `for` loop dispatches all `fetchEmployeeDetails` calls in parallel. Only after they have *all* completed does the engine begin executing the buffered `@data.push` commands, using the data that was fetched.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Cascada Script</strong></summary>
+
+```javascript
+:data
+var employeeIds = fetchEmployeeIds()
+
+// Each loop iteration runs in parallel.
+for id in employeeIds
+  var details = fetchEmployeeDetails(id)
+
+  // This command is buffered. It runs after all
+  // fetches are done, using the 'details' variable.
+  @data.company.employees.push({
+    id: details.id,
+    name: details.name
+  })
+endfor
+```
+</details>
+</td>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Final Assembled Data</strong></summary>
+
+```json
+{
+  "company": {
+    "employees": [
+      { "id": 101, "name": "Alice" },
+      { "id": 102, "name": "Bob" }
+    ]
+  }
+}
+```
+</details>
+</td>
+</tr>
+</table>
 
 #### Output Handlers: `@data`, `@text`, and Custom Logic
 
@@ -586,103 +631,6 @@ Paths in `@data` commands are highly flexible.
     @data.users[].permissions.push("read") // Affects "Charlie"
     ```
 
-#### Output Command Scopes: Data Assembly Timing
-
-The "Assemble" step happens at the end of a **scope**. This is key to building modular, reusable code.
-
-##### 1. Main Script Body
-Commands in the main script body are assembled **last**, building the **final return value** of the entire script.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Cascada Script</strong></summary>
-
-```javascript
-:data
-var employeeIds = fetchEmployeeIds()
-
-// Each loop iteration runs in parallel.
-for id in employeeIds
-  var details = fetchEmployeeDetails(id)
-
-  // This command is buffered. It runs after all
-  // fetches are done, using the 'details' variable.
-  @data.company.employees.push({
-    id: details.id,
-    name: details.name
-  })
-endfor
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value</strong></summary>
-
-```json
-{
-  "company": {
-    "employees": [
-      { "id": 101, "name": "Alice" },
-      { "id": 102, "name": "Bob" }
-    ]
-  }
-}
-```
-</details>
-</td>
-</tr>
-</table>
-
-##### 2. Macro Body (`macro ... endmacro`) and `caller` block
-Commands inside a `macro` are assembled when the **macro call completes**. They build a result object that becomes the immediate **return value** of that macro. This lets you create reusable components that perform their own internal, parallel async operations.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Cascada Script</strong></summary>
-
-```javascript
-macro buildDepartment(deptId) : data
-  // These two async calls run in parallel.
-  var manager = fetchManager(deptId)
-  var team = fetchTeamMembers(deptId)
-
-  // Assemble the macro's return value.
-  @data.department.manager = manager.name
-  @data.department.teamSize = team.length
-endmacro
-
-// Call the macro. 'salesDept' becomes the data object.
-var salesDept = buildDepartment("sales")
-
-// Use the returned object in the main script's assembly.
-@data.company.sales = salesDept
-```
-</details>
-</td>
-<td width="50%" valign="top">
-<details open>
-<summary><strong>Final Return Value (`:data` focused)</strong></summary>
-
-```json
-{
-  "company": {
-    "sales": {
-      "manager": "David",
-      "teamSize": 15
-    }
-  }
-}
-```
-</details>
-</td>
-</tr>
-</table>
-
 #### Extending Output Commands
 
 ##### Customizing the `@data` Handler
@@ -854,21 +802,51 @@ Macros implicitly return the structured object built by the [Output Commands](#t
 
 ### Defining and Calling a Macro
 
+A macro can perform its own internal, parallel async operations and then assemble a return value.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Cascada Script</strong></summary>
+
 ```javascript
-// Define a macro to build a user object
-macro buildUser(id) : data // [:data](#focusing-the-output-data-text-handlername) focuses the return value
-  var userData = fetchUserData(id)
-  // These '[@data](#the-handler-system-using--output-commands)' commands operate on the macro's return object
-  @data.user.id = userData.id
-  @data.user.name = userData.name
-  @data.user.tasks.push("Review code")
+macro buildDepartment(deptId) : data
+  // These two async calls run in parallel.
+  var manager = fetchManager(deptId)
+  var team = fetchTeamMembers(deptId)
+
+  // Assemble the macro's return value.
+  @data.department.manager = manager.name
+  @data.department.teamSize = team.length
 endmacro
 
-// Calling the macro
-// The macro returns { user: { id: ..., name: ... } }
-var myUser = buildUser(123)
-@data.result.user = myUser.user
+// Call the macro. 'salesDept' becomes the data object.
+var salesDept = buildDepartment("sales")
+
+// Use the returned object in the main script's assembly.
+@data.company.sales = salesDept
 ```
+</details>
+</td>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Final Return Value (`:data` focused)</strong></summary>
+
+```json
+{
+  "company": {
+    "sales": {
+      "manager": "David",
+      "teamSize": 15
+    }
+  }
+}
+```
+</details>
+</td>
+</tr>
+</table>
 
 ### Keyword Arguments
 Macros support keyword arguments, allowing for more explicit and flexible calls. You can define default values for arguments, and callers can pass arguments by name.
@@ -888,7 +866,7 @@ var passwordField = input("pass", type="password")
 
 ### Output Scopes and Focusing in Macros
 
-Commands inside a `macro` are assembled when the **macro call completes**. They build a structured object that becomes the immediate **return value** of that macro. To get a clean data object instead of the full result object, use an [output focus directive](#focusing-the-output-data-text-handlername).
+Like the main script body, a macro's output can be focused using a directive such as `:data`. This controls the macro's return value, making it easier to consume. The example below shows a macro that returns a clean data object, which is then assigned to a variable.
 
 <table>
 <tr>
@@ -1084,4 +1062,4 @@ asyncEnvironment.renderScript(scriptName, context[, options])
 asyncEnvironment.renderScriptString(scriptSource, context[, options])
 ```
 
-For production environments, you can improve performance by **precompiling** your scripts to JavaScript, which eliminates parsing overhead at runtime...
+For production environments, you can improve performance by **precompiling** your scripts to JavaScript, which eliminates parsing overhead at runtime.
