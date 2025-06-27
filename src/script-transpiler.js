@@ -435,7 +435,7 @@ class ScriptTranspiler {
    * @param {Object} tcom - Parsed command object with path, command, and extra args (ending in ')' unless multiline
    * @return {string} The generic syntax command string
    */
-  _transpileDataCommand(tcom) {
+  _transpileDataCommand(tcom, multiline) {
     // Convert new syntax to generic syntax
     // @data: @data.user.name.set("Alice")
     // generic: @data.set(user.name, "Alice")
@@ -443,9 +443,13 @@ class ScriptTranspiler {
     // generic: @data.merge(null, { version: "1.1" })
 
     const pathArgument = tcom.path || 'null';
-    const args = tcom.args || '';
+    let args = tcom.args || '';
+    let refArgs = args.trim();
+    if (!multiline && tcom.append) {
+      refArgs = refArgs + tcom.append;//append now, otherwise will append at the end of the multiline
+    }
 
-    const addComma = args.trim() !== ')';//this happens with empty args
+    const addComma = refArgs.trim() !== ')';//this happens with empty args or on multiline, where we may not have the ')'
 
     return `@data.${tcom.command}(${pathArgument}${addComma ? ',' : ''}${args}`;
   }
