@@ -2045,7 +2045,7 @@ describe('Cascada Script: Output commands', function () {
         `;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
-          items: [1, 2, 3, 4, "hello"]
+          items: [1, 2, 3, 4, 'hello']
         });
       });
 
@@ -2085,7 +2085,7 @@ describe('Cascada Script: Output commands', function () {
         `;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
-          items: [1, 2, 3, 4, 5, 6, 7, "eight"]
+          items: [1, 2, 3, 4, 5, 6, 7, 'eight']
         });
       });
 
