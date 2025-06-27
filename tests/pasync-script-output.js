@@ -1422,4 +1422,564 @@ describe('Cascada Script: Output commands', function () {
     });
   });
 
+  describe('New Arithmetic and Logical @data Commands', function() {
+    describe('Arithmetic Operations', function() {
+      it('should handle @data.add with numbers', async () => {
+        const script = `
+          :data
+          @data.counter = 10
+          @data.counter += 5
+          @data.counter += 3
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          counter: 18
+        });
+      });
+
+      it('should handle @data.add with strings', async () => {
+        const script = `
+          :data
+          @data.message = "Hello"
+          @data.message += " World"
+          @data.message += "!"
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          message: 'Hello World!'
+        });
+      });
+
+      it('should handle @data.add with undefined target', async () => {
+        const script = `
+          :data
+          @data.counter += 10
+          @data.message += "Hello"
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'add\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle @data.subtract', async () => {
+        const script = `
+          :data
+          @data.counter = 20
+          @data.counter -= 5
+          @data.counter -= 3
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          counter: 12
+        });
+      });
+
+      it('should handle @data.subtract with undefined target', async () => {
+        const script = `
+          :data
+          @data.counter -= 10
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'subtract\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle @data.increment', async () => {
+        const script = `
+          :data
+          @data.counter = 5
+          @data.counter++
+          @data.counter++
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          counter: 7
+        });
+      });
+
+      it('should handle @data.increment with undefined target', async () => {
+        const script = `
+          :data
+          @data.counter++
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'increment\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle @data.decrement', async () => {
+        const script = `
+          :data
+          @data.counter = 10
+          @data.counter--
+          @data.counter--
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          counter: 8
+        });
+      });
+
+      it('should handle @data.decrement with undefined target', async () => {
+        const script = `
+          :data
+          @data.counter--
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'decrement\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle @data.multiply', async () => {
+        const script = `
+          :data
+          @data.counter = 5
+          @data.counter *= 3
+          @data.counter *= 2
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          counter: 30
+        });
+      });
+
+      it('should handle @data.multiply with undefined target', async () => {
+        const script = `
+          :data
+          @data.counter *= 5
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'multiply\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle @data.divide', async () => {
+        const script = `
+          :data
+          @data.counter = 100
+          @data.counter /= 2
+          @data.counter /= 5
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          counter: 10
+        });
+      });
+
+      it('should handle @data.divide with undefined target', async () => {
+        const script = `
+          :data
+          @data.counter /= 2
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'divide\' cannot be undefined or null');
+        }
+      });
+
+      it('should throw error on division by zero', async () => {
+        const script = `
+          :data
+          @data.counter = 10
+          @data.counter /= 0
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Division by zero is not allowed');
+        }
+      });
+
+      it('should handle arithmetic operations with dynamic paths', async () => {
+        const script = `
+          :data
+          @data.company.people = peopleData
+          @data.company.people[0].salary += 100
+          @data.company.people[1].age++
+          @data.company.people[2].bonus *= 1.5
+        `;
+        const context = {
+          peopleData: [
+            { name: 'Alice', salary: 50000 },
+            { name: 'Bob', age: 30 },
+            { name: 'Charlie', bonus: 1000 }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            people: [
+              { name: 'Alice', salary: 50100 },
+              { name: 'Bob', age: 31 },
+              { name: 'Charlie', bonus: 1500 }
+            ]
+          }
+        });
+      });
+
+      it('should handle arithmetic operations with array index []', async () => {
+        const script = `
+          :data
+          @data.company.people.push({ name: 'Alice', salary: 50000 })
+          @data.company.people.push({ name: 'Bob', age: 30, salary: 100 })
+          @data.company.people[].salary += 100
+          @data.company.people[].age++
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          company: {
+            people: [
+              { name: 'Alice', salary: 50000 },
+              { name: 'Bob', age: 31, salary: 200 }
+            ]
+          }
+        });
+      });
+    });
+
+    describe('Logical Operations', function() {
+      it('should handle @data.and with truthy values', async () => {
+        const script = `
+          :data
+          @data.result = true
+          @data.result &= true
+          @data.result &= "hello"
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          result: 'hello'
+        });
+      });
+
+      it('should handle @data.and with falsy values', async () => {
+        const script = `
+          :data
+          @data.result = true
+          @data.result &= false
+          @data.result &= "hello"
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          result: false
+        });
+      });
+
+      it('should handle @data.and with undefined target', async () => {
+        const script = `
+          :data
+          @data.result &= true
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'and\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle @data.or with truthy values', async () => {
+        const script = `
+          :data
+          @data.result = false
+          @data.result |= true
+          @data.result |= "hello"
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          result: true
+        });
+      });
+
+      it('should handle @data.or with falsy values', async () => {
+        const script = `
+          :data
+          @data.result = false
+          @data.result |= false
+          @data.result |= "hello"
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          result: 'hello'
+        });
+      });
+
+      it('should handle @data.or with undefined target', async () => {
+        const script = `
+          :data
+          @data.result |= "hello"
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'or\' cannot be undefined or null');
+        }
+      });
+
+      it('should handle logical operations with complex values', async () => {
+        const script = `
+          :data
+          var permissions = ['read', 'write']
+          var user = { name: 'Alice', active: true }
+          @data.user = user
+          @data.permissions = permissions
+          @data.result = true
+          @data.result &= user.active
+          @data.result |= permissions.length > 0
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          user: { name: 'Alice', active: true },
+          permissions: ['read', 'write'],
+          result: true
+        });
+      });
+    });
+
+    describe('Delete Operation', function() {
+      it('should handle @data.delete to return undefined', async () => {
+        const script = `
+          :data
+          @data.user = { name: 'Alice', oldName: 'Bob' }
+          @data.user.oldName.delete()
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          user: { name: 'Alice' }
+        });
+      });
+
+      it('should handle @data.delete with undefined target', async () => {
+        const script = `
+          :data
+          @data.user.name.delete()
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          user: {}
+        });
+      });
+
+      it('should handle @data.delete with dynamic paths', async () => {
+        const script = `
+          :data
+          @data.company.people = peopleData
+          @data.company.people[0].oldEmail.delete()
+          @data.company.people[1].tempData.delete()
+        `;
+        const context = {
+          peopleData: [
+            { name: 'Alice', email: 'alice@example.com', oldEmail: 'alice@old.com' },
+            { name: 'Bob', email: 'bob@example.com', tempData: 'temp' }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            people: [
+              { name: 'Alice', email: 'alice@example.com' },
+              { name: 'Bob', email: 'bob@example.com' }
+            ]
+          }
+        });
+      });
+    });
+
+    describe('Error Handling', function() {
+      it('should throw error when using arithmetic operations on non-numbers', async () => {
+        const script = `
+          :data
+          @data.value = "hello"
+          @data.value -= 5
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'subtract\' must be a number');
+        }
+      });
+
+      it('should throw error when using increment on non-numbers', async () => {
+        const script = `
+          :data
+          @data.value = "hello"
+          @data.value++
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'increment\' must be a number');
+        }
+      });
+
+      it('should throw error when using decrement on non-numbers', async () => {
+        const script = `
+          :data
+          @data.value = "hello"
+          @data.value--
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'decrement\' must be a number');
+        }
+      });
+
+      it('should throw error when using multiply on non-numbers', async () => {
+        const script = `
+          :data
+          @data.value = "hello"
+          @data.value *= 2
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'multiply\' must be a number');
+        }
+      });
+
+      it('should throw error when using divide on non-numbers', async () => {
+        const script = `
+          :data
+          @data.value = "hello"
+          @data.value /= 2
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'divide\' must be a number');
+        }
+      });
+
+      it('should throw error when using add on non-number and non-string', async () => {
+        const script = `
+          :data
+          @data.value = { name: 'Alice' }
+          @data.value += "hello"
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'add\' must be a number or string');
+        }
+      });
+    });
+
+    describe('Complex Scenarios', function() {
+      it('should handle mixed arithmetic and logical operations', async () => {
+        const script = `
+          :data
+          @data.counter = 10
+          @data.counter += 5
+          @data.counter *= 2
+          @data.counter -= 3
+          @data.counter++
+          @data.counter /= 2
+
+          @data.flag = true
+          @data.flag &= finished
+          @data.flag |= finished
+        `;
+        const result = await env.renderScriptString(script, {finished: true});
+        expect(result).to.eql({
+          counter: 14,
+          flag: true
+        });
+      });
+
+      it('should handle operations in loops', async () => {
+        const script = `
+          :data
+          @data.total = 0
+          @data.count = 0
+          for i in range(5)
+            @data.total += i
+            @data.count++
+          endfor
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          total: 10, // 0+1+2+3+4
+          count: 5
+        });
+      });
+
+      it('should handle operations in macros', async () => {
+        const script = `
+          :data
+          macro processUser(name, salary) : data
+            @data.name = name
+            @data.salary = salary
+            @data.salary += 1000
+            @data.bonus = salary * 0.1
+          endmacro
+
+          var user1 = processUser("Alice", 50000)
+          var user2 = processUser("Bob", 60000)
+
+          @data.users.push(user1)
+          @data.users.push(user2)
+          @data.totalSalary = 0
+          @data.totalSalary += user1.salary
+          @data.totalSalary += user2.salary
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          users: [
+            { name: 'Alice', salary: 51000, bonus: 5000 },
+            { name: 'Bob', salary: 61000, bonus: 6000 }
+          ],
+          totalSalary: 112000
+        });
+      });
+
+      it('should handle operations with async data', async () => {
+        const script = `
+          :data
+          var userData = fetchUser(1)
+          var salaryData = fetchSalary(1)
+
+          @data.user.name = userData.name
+          @data.user.salary = salaryData.base
+          @data.user.salary += salaryData.bonus
+          @data.user.salary *= 1.05
+        `;
+        const context = {
+          fetchUser: async (id) => ({ name: 'Alice' }),
+          fetchSalary: async (id) => ({ base: 50000, bonus: 5000 })
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          user: {
+            name: 'Alice',
+            salary: 57750 // (50000 + 5000) * 1.05
+          }
+        });
+      });
+    });
+  });
 });
