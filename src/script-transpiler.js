@@ -1,94 +1,83 @@
 /**
- * Cascada Script to Template Converter
+ * Cascada Script to Template Transpiler
  *
- * Converts Cascada script syntax to Nunjucks/Cascada template syntax.
- * Uses script-lexer for token extraction and handling.
+ * This module transpiles Cascada Script syntax into the underlying Nunjucks/Cascada
+ * template engine syntax. Uses script-lexer for token extraction and handling.
  *
- * Cascada scripts provide a cleaner syntax for writing Cascada templates with less visual noise.
- * This module converts Cascada script files to standard Nunjucks/Cascada template syntax.
+ * Key Syntax Transformations:
  *
- * Key Differences from Templates:
+ * 1.  **No Tag Delimiters**
+ *     - Logic is written without `{% ... %}` or `{{ ... }}`. The transpiler
+ *       adds them automatically with whitespace control.
  *
- * 1. **No Tag Delimiters**
- *    - Skip `{%` and `%}` around tags
- *    - Skip `{{` and `}}` around expressions
+ * 2.  **Explicit Variable Handling**
+ *     - `var user = ...`      → `{% var user = ... %}`
+ *     - `user = "new name"`   → `{% set user = "new name" %}`
+ *     - `extern config`       → `{% extern config %}`
  *
- * 2. **Output with `text`**
- *    - Use `text expression` instead of `{{ expression }}`
- *    - Example: `text user.name` → `{{ user.name }}`
+ * 3.  **Output Commands with `@`**
+ *     - `@text(...)` is the dedicated command for generating text output.
+ *       `@text("Hello")`      → `{{ "Hello" }}`
+ *     - Data assembly commands build structured objects. The modern path-based
+ *       syntax is converted to a generic handler call.
+ *       `@data.user.id = 1`   → `{% output_command data.set('user.id', 1) %}`
+ *       `@data.tags.push("a")`→ `{% output_command data.push('user.tags', "a") %}`
+ *     - Generic commands are passed through.
+ *       `@db.insert(...)`     → `{% output_command db.insert(...) %}`
  *
- * 3. **Implicit `do` Statements**
- *    - Any code line not starting with a reserved keyword becomes a `do` statement
- *    - Example: `items.push("new")` → `{% do items.push("new") %}`
+ * 4.  **Output Focus Directives with `:`**
+ *     - Script-level directives control the final output format.
+ *       `:data`               → `{% option focus="data" %}`
  *
- * 4. **Multi-line Expressions**
- *    - Expressions can span multiple lines for readability
- *    - Lines are automatically joined when they end with operators, open brackets, etc.
- *    - Empty lines and comments within expressions preserve continuation
- *    - Multi-line expressions are properly converted to template syntax
+ * 5.  **Block Assignment with `capture`**
+ *     - `var user = capture :data ... endcapture` becomes a `var` block.
+ *       → `{% var user :data %}{#...#}{% endvar %}`
  *
- * 5. **Comments**
- *    - Use standard JavaScript comments: `// single line` and `/* multi-line * /`
- *    - These are converted to Cascada comments: `{# comment #}`
- *    - Comments within tags are preserved and attached to the output
+ * 6.  **Implicit `do` Statements**
+ *     - Any standalone expression becomes a `do` statement for executing logic.
+ *       `items.push("new")`   → `{% do items.push("new") %}`
  *
- * 6. **Strings**
- *    - Multi-line strings with backslash continuation are supported
- *    - Backticks are supported, but without string interpolation
- *    - Use single or double quotes for strings
+ * 7.  **Modern Syntax Features**
+ *     - **Multi-line Expressions**: Expressions can span multiple lines based
+ *       on operators or unclosed brackets and are automatically concatenated.
+ *     - **Comments**: Standard `//` and `/* ... * /` comments are converted
+ *       to Nunjucks/Cascada `{# ... #}` comments.
  *
- * 7. **Tags**
- *    - The delimiters are omitted
- *    - Can span multiple lines
- *    - Can break in the middle of expressions
- *    - Can have // comments at the end of a line
- *    - Can have /* comments in the middle of a line
- *    - Block structure is validated (e.g., if/endif, for/endfor)
- *    - Middle tags (else, elif, etc.) are validated against their parent blocks
- *
- * Script syntax example:
+ * Script Syntax Example:
  *
  * ```
- * if user.isLoggedIn
- *   text "Hello, " + user.name
- *   for item in cart.items
- *     items.push(processItem(item))
- *     text item.name
- *   endfor
- * else
- *   text "Please log in"
- * endif
+ * // Assemble a user object from a profile
+ * :data
+ *
+ * var userProfile = fetchProfile(1)
+ *
+ * @data.user.id = userProfile.id
+ * @data.user.name = userProfile.name
+ *
+ * for task in userProfile.tasks
+ *   @data.user.tasks.push(task.title)
+ * endfor
  * ```
  *
  * Converts to:
  *
  * ```
- * {% if user.isLoggedIn %}
- *   {{ "Hello, " + user.name }}
- *   {% for item in cart.items %}
- *     {% do items.push(processItem(item)) %}
- *     {{ item.name }}
- *   {% endfor %}
- * {% else %}
- *   {{ "Please log in" }}
- * {% endif %}
+ * {#- Assemble a user object from a profile -#}
+ * {%- option focus="data" -%}
+ *
+ * {%- var userProfile = fetchProfile(1) -%}
+ *
+ * {%- output_command data.set('user.id', userProfile.id) -%}
+ * {%- output_command data.set('user.name', userProfile.name) -%}
+ *
+ * {%- for task in userProfile.tasks -%}
+ *   {%- output_command data.push('user.tasks', task.title) -%}
+ * {%- endfor -%}
  * ```
  *
- * This implementation uses a line-by-line approach where each input line produces
- * exactly one output line of template code, with special handling for continuation lines.
- *
- * Key features:
- * - Token-based parsing with accurate identification of strings, comments, and code
- * - Modular processing for different line types (text, tag, code, comment)
- * - Intelligent continuation detection for multi-line expressions
- * - Comment preservation within complex expressions
- * - Robust block structure validation with detailed error messages
- * - Middle tag validation against appropriate parent blocks
- * - Clean whitespace control with (-) for optimal output
- * - Proper handling of empty lines and comments in multi-line expressions
- *
- * The implementation leverages a specialized script parser to accurately identify tokens
- * within each line, making it robust against complex syntax patterns and edge cases.
+ * The transpiler uses a line-by-line, token-based approach with a state machine
+ * to handle complex cases like multi-line expressions, nested comments, and
+ * block structure validation, ensuring robust and accurate conversion.
  */
 
 // Import the script parser
