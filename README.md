@@ -1,3 +1,4 @@
+
 # Cascada - async-enabled templating and scripting engine with automatic parallelization
 
 ### Write templates and scripts that look synchronous but execute concurrently under the hood.
@@ -203,7 +204,7 @@ account!.withdraw(50)
 
 ### Consistent Output Commands Assembly
 
-In scripts, **Output Commands**, marked with the `@` sigil, are buffered and assembled in a **predictable, sequential order**. They build a structured data object using a rich set of methods on the `@data` handler: `@data.set` (set/replace), `@data.push`/`@data.unshift` (add to array), `@data.pop`/`@data.shift` (remove from array), `@data.merge` (combine objects), and `@data.reverse`. You can also add your own custom commands.
+In scripts, **Output Commands**, marked with the `@` sigil, follow a **"Collect, Execute, Assemble"** model: they are buffered during parallel execution and then applied sequentially to build a final result, guaranteeing a predictable output order. The built-in `@data` handler uses this to provide a rich set of commands for building structured data, including assignment (`=`), array manipulation (`.push`, `.pop`), object merging (`.merge`), and even direct arithmetic (`+=`, `++`), string (`.append`), and logical (`||=`) operations. You can also add your own custom commands.
 
 Similarly in templates, the final text output is also assembled in source-code order, guaranteeing that the rendered content is always predictable, even when built from multiple async operations that finish at different times.
 
@@ -369,7 +370,7 @@ The custom commands are guaranteed to execute in-order and are much more efficie
 
 ### Macros for Reusable Components
 
-Macros allow you to define reusable chunks of logic. In templates, they're great for repeated UI components. In scripts, they can perform complex, parallel async operations internally and return a clean, structured data object, making them the primary way to build modular, data-generating components.
+Macros allow you to define reusable chunks of logic. In templates, they're great for repeated UI components. In scripts, they can perform complex, parallel async operations internally and return a clean, structured data object, making them the primary way to build modular, data-generating components. For single-use, inline data construction, the `capture` block provides a similar capability for assigning a complex, assembled result directly to a variable.
 
 </td>
 <td valign="top">
