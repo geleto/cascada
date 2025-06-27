@@ -35,8 +35,8 @@ Cascada automatically identifies and executes **independent operations concurren
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// The fetchUser() and fetchConfig() calls are
-// independent and will run in parallel.
+// The fetchUser() and fetchConfig() calls
+// are independent and will run in parallel.
 
 var user = fetchUser(123)
 var config = fetchSiteConfig()
@@ -126,7 +126,7 @@ While independent operations run in parallel, Cascada ensures that **dependent o
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// getUser() and getFooter() run in parallel.
+// getUser(), getFooter() run in parallel.
 // getPosts(user.id) depends on `user`,
 // so it waits for getUser() to complete
 // before starting.
@@ -176,7 +176,7 @@ var account = getBankAccount()
 
 //1. Set initial Deposit:
 account!.deposit(100)
-//2. Get updated status after initial deposit:
+//2. Get new status after the deposit:
 account.getStatus()
 //3. Withdraw money after getStatus()
 account!.withdraw(50)
@@ -221,14 +221,14 @@ var productIds = [101, 205, 302]
 
 // Each loop iteration runs in parallel.
 for id in productIds
-  // fetch details and reviews concurrently.
+  // fetch concurrently:
   var details = fetchProductDetails(id)
   var reviews = fetchProductReviews(id)
 
   // The final `report.products` array is
   // built in the order of `productIds`
-  // [101, 205, 302], not the order in which
-  // the data for each product resolves.
+  // [101, 205, 302], not the order in
+  // which the data resolves.
   @data.report.products.push({
     id: details.id,
     name: details.name,
@@ -350,7 +350,8 @@ The custom commands are guaranteed to execute in-order and are much more efficie
   ```javascript
   // Draw an 8-sided star using canvas
   const env = new AsyncEnvironment();
-  env.addCommandHandlerClass('turtle', CanvasTurtle);
+  env.addCommandHandlerClass('turtle',
+    CanvasTurtle);
   const script = `// Draw an 8-point star
     @turtle.begin()
     for i in range(8)
@@ -359,8 +360,10 @@ The custom commands are guaranteed to execute in-order and are much more efficie
     endfor
     @turtle.stroke('cyan')`;
 
-  env.renderScriptString(script,
-    { canvas: document.querySelector('canvas') });
+  env.renderScriptString(script, {
+    canvas:
+      document.querySelector('canvas')
+  });
   ```
 </details>
 </td>
@@ -378,29 +381,29 @@ Macros allow you to define reusable chunks of logic. In templates, they're great
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// This macro fetches a user's details and recent
-// activity in parallel and builds a summary object.
+// This macro fetches a user's details
+// and recent activity in parallel and
+// builds a summary object.
 macro buildUserSummary(userId) : data
-  // These three async calls run concurrently
-  // inside the macro.
+  // Run three async calls concurrently
   var details = fetchUserDetails(userId)
   var posts = fetchUserPosts(userId)
-  var comments = fetchUserComments(userId)
+  var comments = fetchComments(userId)
 
-  // Assemble the result after all fetches complete.
-  @data.summary.name.set(details.name)
-  @data.summary.postCount.set(posts.length)
-  @data.summary.commentCount.set(comments.length)
+  // Assemble the result:
+  @data.summary.name = details.name
+  @data.summary.postCount = posts.length
+  @data.summary.comCount = comments.length
 endmacro
 
-// Call the macro for two different users. These
-// two macro calls will also run in parallel.
+// Call the macro for two different users,
+// in parallel.
 var user1 = buildUserSummary(101)
 var user2 = buildUserSummary(102)
 
 // Assemble the final report.
-@data.report.user1Summary.set(user1.summary)
-@data.report.user2Summary.set(user2.summary)
+@data.report.user1Summary = user1.summary
+@data.report.user2Summary = user2.summary
 ```
 
 </details>
@@ -418,8 +421,12 @@ var user2 = buildUserSummary(102)
     <h2>{{ user.name }}</h2>
     <ul>
       {# These two fetches run in parallel #}
-      <li>Followers: {{ fetchStats(user.id).followerCount }}</li>
-      <li>Latest Post: "{{ fetchLatestPost(user.id).title }}"</li>
+      <li>Followers:
+        {{ fetchStats(user.id).followerCount }}
+      </li>
+      <li>Latest Post:
+        "{{ fetchLatestPost(user.id).title }}"
+      </li>
     </ul>
   </div>
 {% endmacro %}
@@ -456,13 +463,15 @@ Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structur
 try
   // Attempt a fallible operation
   var image = generateImage(prompt)
-  @data.result.imageUrl.set(image.url)
+  @data.result.imageUrl = image.url
 resume resume.count < 3
   // Retry up to 3 times
   @text("Retrying attempt " + resume.count)
 except
   // Handle permanent failure
-  @data.result.error.set("Image generation failed: " + error.message)
+  @data.result.error =
+    "Image generation failed: " +
+      error.message
 endtry
 ```
 
@@ -478,7 +487,8 @@ endtry
 {% resume resume.count < 3 %}
   <p>Retrying attempt {{ resume.count }}...</p>
 {% except %}
-  <p class="error">Image generation failed: {{ error.message }}</p>
+  <p class="error">Image generation failed:
+  {{ error.message }}</p>
 {% endtry %}
 ```
 
@@ -498,16 +508,16 @@ Build complex, modular templates using **`extends`** for inheritance, **`block`*
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// Import a script defining a 'process' macro
-import-script "utils.script" as utils
+// Import utils from a script
+import "utils.script" as utils
 
 // Fetch data in parallel
 var items = fetchItems()
 var config = fetchConfig()
 
-// Use the imported macro to process the data
-var processedItems = utils.process(items, config)
-@data.result.items = processedItems
+// Use the imported utils.process
+var items = utils.process(items, config)
+@data.result.items = items
 ```
 
 </details>
@@ -523,7 +533,9 @@ var processedItems = utils.process(items, config)
 {% block content %}
   {% include "header.njk" %}
 
-  <h1>{{ macros.page_title("Latest News") }}</h1>
+  <h1>
+    {{ macros.page_title("Latest News") }}
+  </h1>
 
   {% for item in fetchNews() %}
     <article>{{ item.title }}</article>
@@ -591,21 +603,22 @@ For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cl
 
 ```javascript
 // 1. Generate a plan with an LLM call.
-var plan = makePlan("Analyze competitor's new feature")
+var plan = makePlan(
+  "Analyze competitor's new feature")
 @data.result.plan = plan
 
-// 2. Each step of the plan runs in parallel.
+// 2. Each step runs in parallel.
 for step in plan.steps
-  // Each `executeStep` is an independent operation.
-  var stepResult = executeStep(step.instruction)
+  var stepResult =
+    executeStep(step.instruction)
   @data.result.stepResults.push({
     step: step.title,
     result: stepResult
   })
 endfor
 
-// 3. Summarize the results after all are complete.
-var summary = summarizeResults(result.stepResults)
+// 3. Summarize the results once complete
+var summary = summarize(result.stepResults)
 @data.result.summary = summary
 ```
 
@@ -628,11 +641,11 @@ For production, you can improve performance by **precompiling** your templates a
 <summary><strong>Executing a Script</strong></summary>
 
 ```javascript
-import { AsyncEnvironment } from 'cascada-tmpl';
+import {AsyncEnvironment} from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
 const script =
-  '@data.result.greeting.set("Hello, " + user.name)';
+  '@data.result.greet = "Hello "+ user.name';
 const ctx = {
   user: fetchUser(123) // An async function
 };
@@ -641,7 +654,7 @@ const data = await env.renderScriptString(
   script, ctx, { output: 'data' }
 );
 console.log(data);
-// { result: { greeting: 'Hello, Alice' } }
+// { result: { greet: 'Hello, Alice' } }
 ```
 
 </details>
@@ -649,7 +662,7 @@ console.log(data);
 <summary><strong>Rendering a Template</strong></summary>
 
 ```javascript
-import { AsyncEnvironment } from 'cascada-tmpl';
+import {AsyncEnvironment} from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
 const tpl = '<h1>Hello {{ username }}</h1>';
@@ -657,7 +670,10 @@ const context = {
   username: Promise.resolve('World')
 };
 
-const html = await env.renderString(tpl, context);
+const html = await env.renderString(
+  tpl,
+  context
+);
 console.log(html); // <h1>Hello World</h1>
 ```
 </details>
@@ -687,7 +703,7 @@ console.log(html); // <h1>Hello World</h1>
      import { AsyncEnvironment } from 'cascada-tmpl';
      const env = new AsyncEnvironment();
      const script = `// Set initial user object
-       @data.user.set({name: 'Alice', id: 123, log: "User profile created. "})
+       @data.user = {name: 'Alice', id: 123, log: "User profile created. "}
        // Append to a string property within the data object
        @data.user.log.append("Login successful.")`;
 
