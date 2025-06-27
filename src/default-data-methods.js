@@ -162,6 +162,31 @@ module.exports = {
   },
 
   /**
+   * Concatenates arrays together. This is an in-place mutation.
+   * If the target is undefined, it creates a new array with the value.
+   * If the value is not an array, it will be wrapped in an array.
+   * Corresponds to the Cascada command: `@concat path value`
+   *
+   * @param {Array<any>} target The array at the specified `path`.
+   * @param {Array<any>|any} value The array or value to concatenate.
+   */
+  concat : function(target, value) {
+    if (target === undefined) {
+      target = [];
+    }
+    if (Array.isArray(target)) {
+      if (Array.isArray(value)) {
+        target.push(...value);
+      } else {
+        target.push(value);
+      }
+      return target;
+    } else {
+      throw new Error('Error: Target for \'concat\' must be an array.');
+    }
+  },
+
+  /**
    * Replaces target with value
    * @param {Object | Array | string} target The target object at the specified `path`.
    * @param {Object | Array |string} value The source object to replace the target.

@@ -2023,6 +2023,113 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
+    describe('Array Concatenation', function() {
+      it('should handle @data.concat with arrays', async () => {
+        const script = `
+          :data
+          @data.items = [1, 2, 3]
+          @data.items.concat([4, 5, 6])
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          items: [1, 2, 3, 4, 5, 6]
+        });
+      });
+
+      it('should handle @data.concat with single values', async () => {
+        const script = `
+          :data
+          @data.items = [1, 2, 3]
+          @data.items.concat(4)
+          @data.items.concat("hello")
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          items: [1, 2, 3, 4, "hello"]
+        });
+      });
+
+      it('should handle @data.concat with undefined target', async () => {
+        const script = `
+          :data
+          @data.items.concat([1, 2, 3])
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          items: [1, 2, 3]
+        });
+      });
+
+      it('should handle @data.concat with non-array target', async () => {
+        const script = `
+          :data
+          @data.items = "hello"
+          @data.items.concat([1, 2, 3])
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain('Target for \'concat\' must be an array');
+        }
+      });
+
+      it('should handle @data.concat with mixed array and non-array values', async () => {
+        const script = `
+          :data
+          @data.items = [1, 2]
+          @data.items.concat([3, 4])
+          @data.items.concat(5)
+          @data.items.concat([6, 7])
+          @data.items.concat("eight")
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          items: [1, 2, 3, 4, 5, 6, 7, "eight"]
+        });
+      });
+
+      it('should handle @data.concat with dynamic paths', async () => {
+        const script = `
+          :data
+          @data.company.people = peopleData
+          @data.company.people[0].tags.concat(["admin", "active"])
+          @data.company.people[1].skills.concat(["JavaScript", "Python"])
+        `;
+        const context = {
+          peopleData: [
+            { name: 'Alice', tags: ['user'] },
+            { name: 'Bob', skills: ['HTML', 'CSS'] }
+          ]
+        };
+        const result = await env.renderScriptString(script, context);
+        expect(result).to.eql({
+          company: {
+            people: [
+              { name: 'Alice', tags: ['user', 'admin', 'active'] },
+              { name: 'Bob', skills: ['HTML', 'CSS', 'JavaScript', 'Python'] }
+            ]
+          }
+        });
+      });
+
+      it('should handle @data.concat with objects in arrays', async () => {
+        const script = `
+          :data
+          @data.users = [{ name: 'Alice', id: 1 }]
+          @data.users.concat([{ name: 'Bob', id: 2 }, { name: 'Charlie', id: 3 }])
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql({
+          users: [
+            { name: 'Alice', id: 1 },
+            { name: 'Bob', id: 2 },
+            { name: 'Charlie', id: 3 }
+          ]
+        });
+      });
+    });
+
     describe('Error Handling', function() {
       it('should throw error when using arithmetic operations on non-numbers', async () => {
         const script = `
