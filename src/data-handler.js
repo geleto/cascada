@@ -10,16 +10,7 @@ class DataHandler {
    */
   constructor(_context, env) {
     // Initialize empty data store
-    // @todo - add the default methods to the prototype
     this.data = {};
-
-    // Load default data methods
-    const methods = require('./default-data-methods');
-
-    // Register default methods
-    Object.keys(methods).forEach(methodName => {
-      this.addMethod(methodName, methods[methodName]);
-    });
 
     // Register custom methods from the environment
     if (env && env.customDataMethods) {
@@ -138,5 +129,11 @@ class DataHandler {
     return this.data;
   }
 }
+
+// Load and register default data methods on the prototype
+const defaultMethods = require('./default-data-methods');
+Object.keys(defaultMethods).forEach(methodName => {
+  DataHandler.prototype.addMethod(methodName, defaultMethods[methodName]);
+});
 
 module.exports = DataHandler;
