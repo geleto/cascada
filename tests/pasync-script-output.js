@@ -1660,8 +1660,8 @@ describe('Cascada Script: Output commands', function () {
         const script = `
           :data
           @data.result = true
-          @data.result &= true
-          @data.result &= "hello"
+          @data.result &&= true
+          @data.result &&= "hello"
         `;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
@@ -1673,8 +1673,8 @@ describe('Cascada Script: Output commands', function () {
         const script = `
           :data
           @data.result = true
-          @data.result &= false
-          @data.result &= "hello"
+          @data.result &&= false
+          @data.result &&= "hello"
         `;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
@@ -1685,7 +1685,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle @data.and with undefined target', async () => {
         const script = `
           :data
-          @data.result &= true
+          @data.result &&= true
         `;
         try {
           await env.renderScriptString(script);
@@ -1699,8 +1699,8 @@ describe('Cascada Script: Output commands', function () {
         const script = `
           :data
           @data.result = false
-          @data.result |= true
-          @data.result |= "hello"
+          @data.result ||= true
+          @data.result ||= "hello"
         `;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
@@ -1712,8 +1712,8 @@ describe('Cascada Script: Output commands', function () {
         const script = `
           :data
           @data.result = false
-          @data.result |= false
-          @data.result |= "hello"
+          @data.result ||= false
+          @data.result ||= "hello"
         `;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
@@ -1724,7 +1724,7 @@ describe('Cascada Script: Output commands', function () {
       it('should handle @data.or with undefined target', async () => {
         const script = `
           :data
-          @data.result |= "hello"
+          @data.result ||= "hello"
         `;
         try {
           await env.renderScriptString(script);
@@ -1742,8 +1742,8 @@ describe('Cascada Script: Output commands', function () {
           @data.user = user
           @data.permissions = permissions
           @data.result = true
-          @data.result &= user.active
-          @data.result |= permissions.length > 0
+          @data.result &&= user.active
+          @data.result ||= permissions.length > 0
         `;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
@@ -1901,8 +1901,8 @@ describe('Cascada Script: Output commands', function () {
           @data.counter /= 2
 
           @data.flag = true
-          @data.flag &= finished
-          @data.flag |= finished
+          @data.flag &&= finished
+          @data.flag ||= finished
         `;
         const result = await env.renderScriptString(script, {finished: true});
         expect(result).to.eql({

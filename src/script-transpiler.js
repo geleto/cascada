@@ -177,8 +177,12 @@ class ScriptTranspiler {
         '--': '.decrement',
         '*=': '.multiply',
         '/=': '.divide',
-        '&=': '.and',
-        '|=': '.or'
+        '&=': '.bitAnd',
+        '|=': '.bitOr',
+        '&&=': '.and',
+        '||=': '.or',
+        '&&': true,
+        '||': true
       },
       operatorStart: ['=', '+', '-', '*', '/', '&', '|'],
     };
@@ -321,14 +325,22 @@ class ScriptTranspiler {
               remainingBuffer = '(';
               append = ')';//find the last continuation line and ')' at the end of it*/
             } else if (this.DATA_COMMANDS.operatorStart.includes(char) && bracketLevel === 0) {
-              // =, +=, -=, ++, --, *=, /=, &=, |=
+              // =, +=, -=, ++, --, *=, /=, &=, |=, &&=, ||=
               state = finishCurrentSegment(state);
-              const nextChar = token.value[i + 1];
-              const operator = char + nextChar;
-              const operatorCommand = this.DATA_COMMANDS.operators[operator];
+              let operator = char + token.value[i + 1];
+              let operatorCommand = this.DATA_COMMANDS.operators[operator];
               if (operatorCommand) {
-                currentSegment = operatorCommand;
+                if (operatorCommand === true) {
+                  //one more char
+                  operator = operator + token.value[i + 2];
+                  operatorCommand = this.DATA_COMMANDS.operators[operator];
+                  if (!operatorCommand) {
+                    throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${operator} is not a valid operator.`);
+                  }
+                  i++;
+                }
                 i++;
+                currentSegment = operatorCommand;
               } else if (operatorCommand === '==') {
                 throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${operator} is not a valid operator.`);
               } else if (char === '=') {
