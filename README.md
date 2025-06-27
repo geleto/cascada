@@ -2,11 +2,20 @@
 
 ### Write templates and scripts that look synchronous but execute concurrently under the hood.
 
-**Note**: Cascada is under active development. Some features mentioned here may not be fully implemented, and this documentation may not yet reflect the latest changes.
+## Overview
 
-Cascada is a powerful engine designed to dramatically simplify complex, asynchronous workflows. It allows you to write clean, synchronous-looking code that executes with maximum concurrency. The engine **automatically parallelizes** independent operations, **manages data dependencies** and eliminates race conditions while delivering high performance without the boilerplate of manual async handling.
+Cascada is a powerful engine (with both a [template syntax](docs/cascada/template.md) and a [scripting language](docs/cascada/script.md)) designed to dramatically simplify complex, asynchronous workflows by fundamentally inverting the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
 
-It offers both a familiar **template syntax** for generating text-based output and a clean **scripting language** for complex data orchestration, all powered by the same concurrent core. This makes Cascada exceptionally versatile, whether you're building a dynamic website, crafting detailed LLM prompts, or orchestrating parallel multi-step AI agent workflows.
+The engine intelligently analyzes your code, automatically executing independent operations - like API calls, LLM requests, and database queries - concurrently. It guarantees that operations will wait for their required inputs before executing, a smart orchestration that **eliminates race conditions by design** while delivering high performance without the boilerplate of manual async handling.
+
+This parallel-first philosophy is the foundation for both of its powerful modes:
+*   A familiar **[template syntax](docs/cascada/template.md)** for generating text-based output, ideal for dynamic websites or crafting detailed LLM prompts.
+*   A clean **[scripting language](docs/cascada/script.md)** purpose-built for complex data orchestration and multi-step AI agent workflows.
+
+While this approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations, without affecting the parallelism of the rest of your code.** This inversion - parallel by default, sequential by exception - is what makes Cascada so effective and intuitive.
+
+**⚠️ Welcome to the Cutting Edge! ⚠️**
+Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented  (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
 
 ## Core Features
 

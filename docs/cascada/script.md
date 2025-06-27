@@ -4,7 +4,14 @@
 
 ## Overview
 
-Cascada Script is a scripting language built on top of the Cascada templating engine, designed for orchestrating asynchronous workflows and data processing tasks. Unlike traditional templating, which focuses on generating text output, Cascada Script prioritizes logic flow, task coordination, and data assembly.
+Cascada Script is a scripting language purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
+
+In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, **guaranteeing that operations will wait for their required inputs before executing. This orchestration eliminates the possibility of race conditions by design**, ensuring correct execution order while maximizing performance for I/O-bound workflows.
+
+While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database or interacting with a stateful API, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations, without affecting the parallelism of the rest of the script.** This inversion - parallel by default, sequential by exception - makes building complex, high-performance data pipelines feel surprisingly simple and intuitive.
+
+**⚠️ Welcome to the Cutting Edge! ⚠️**
+Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented  (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
 
 ## Table of Contents
 - [Overview](#overview)
@@ -1029,20 +1036,18 @@ print output // "rock, pop, jazz"
 
 ### Importing Scripts and Templates
 
-In Cascada scripts, use `import` to access standard Nunjucks templates:
+**Note** this functionality is under development and this section needs update
+
+In Cascada scripts, use `import-template` to access standard Nunjucks templates:
 
 ```
 import "header.njk" as header
 ```
 
-Use `import-script` to load other Cascada scripts. This can be done with the clean script syntax or the traditional tag syntax.
+Use `import` to load other Cascada scripts. This can be done with the clean script syntax or the traditional tag syntax.
 
 ```
-// Clean syntax
-import-script "data.script" as data
-
-// Tag-based syntax
-{% import-script "data.script" as data %}
+import "data.script" as data
 ```
 
 ## API Reference

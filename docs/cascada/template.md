@@ -2,11 +2,15 @@
 
 ## Write templates and scripts that look synchronous but execute concurrently under the hood.
 
+
+**🚧 Heads Up: This Documentation is a bit Outdated! 🚧**
+While Cascada Template is a stable part of the engine, its documentation has not kept pace with recent developments. Many of the powerful new features are now shared across both the template and script engines.
+For the most accurate and complete information on these modern features, please refer to the **[Cascada Script documentation](script.md)**.
+
+
 Cascada is a fork of the [Nunjucks](https://github.com/mozilla/nunjucks) template engine designed to handle asynchronous operations seamlessly. It provides both templating and scripting capabilities with automatic parallelization of independent components during execution while managing data dependencies, all without requiring special syntax or explicit async handling.
 
 It provides seamless support for implicit concurrency across its entire feature set - programming constructs (variables, loops, conditionals), first-class functions and macros, complex expressions, filters, extensions, and composition through inheritance, includes, and imports.
-
-**Note**: This is an ongoing project under active development. For details on the current progress and remaining tasks, please refer to the [Development Status and Roadmap](#development-status-and-roadmap) section.
 
 ## Table of Contents
 - [Motivation](#motivation)
