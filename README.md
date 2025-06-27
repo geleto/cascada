@@ -1,4 +1,5 @@
 
+
 # Cascada - async-enabled templating and scripting engine with automatic parallelization
 
 ### Write templates and scripts that look synchronous but execute concurrently under the hood.
@@ -217,6 +218,7 @@ Similarly in templates, the final text output is also assembled in source-code o
 // Assume fetchProductDetails for
 // ID 205 is the slowest.
 var productIds = [101, 205, 302]
+@data.report.totalReviews = 0 // Initialize
 
 // Each loop iteration runs in parallel.
 for id in productIds
@@ -233,6 +235,7 @@ for id in productIds
     name: details.name,
     reviewCount: reviews.length
   })
+  @data.report.totalReviews += reviews.length
 endfor
 ```
 
@@ -250,6 +253,30 @@ endfor
 <div class="fast-data">
   {{ fetchFastData() }}
 </div>
+```
+
+</details>
+
+<details>
+<summary><strong>Using `capture` for Inline Data Assembly</strong></summary>
+
+```javascript
+// Use `capture` to run parallel operations
+// and assign the assembled object to a variable.
+var userProfile = capture :data
+  // These run in parallel
+  var details = fetchUserDetails(123)
+  var preferences = fetchUserPrefs(123)
+
+  // Assemble the final object
+  @data.id = details.id
+  @data.name = details.name
+  @data.theme = preferences.theme
+endcapture
+
+// 'userProfile' is now a clean object:
+// { id: 123, name: "Alice", theme: "dark" }
+@data.profile = userProfile
 ```
 
 </details>
@@ -375,7 +402,7 @@ Macros allow you to define reusable chunks of logic. In templates, they're great
 </td>
 <td valign="top">
 <details open>
-<summary><strong>Cascada Script</strong></summary>
+<summary><strong>Cascada Script (Macro)</strong></summary>
 
 ```javascript
 // This macro fetches a user's details
@@ -405,7 +432,7 @@ var user2 = buildUserSummary(102)
 
 </details>
 <details>
-<summary><strong>Cascada Template</strong></summary>
+<summary><strong>Cascada Template (Macro)</strong></summary>
 
 ```njk
 {#
