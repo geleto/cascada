@@ -4,11 +4,19 @@
 
 ## Overview
 
+### ⚡Parallel by default
 Cascada Script is a scripting language purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
 
+### 🚦Data-Driven Flow: Code runs when its inputs are ready.
 In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, **guaranteeing that operations will wait for their required inputs before executing. This orchestration eliminates the possibility of race conditions by design**, ensuring correct execution order while maximizing performance for I/O-bound workflows.
 
-While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database or interacting with a stateful API, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations, without affecting the parallelism of the rest of the script.** This inversion - parallel by default, sequential by exception - makes building complex, high-performance data pipelines feel surprisingly simple and intuitive.
+### 📋Execution is chaotic, but the result is orderly
+While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final arrays and objects are assembled in the exact order written in your script.
+
+### ➡️Parallel by default, sequential by exception
+While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations, without affecting the parallelism of the rest of the script.**.
+
+This inversion - parallel by default, sequential by exception - makes building complex, high-performance data pipelines feel surprisingly simple and intuitive.
 
 **⚠️ Welcome to the Cutting Edge! ⚠️**
 Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented  (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
@@ -867,7 +875,7 @@ macro input(name, value="", type="text") : data
 endmacro
 
 // Calling with mixed and keyword arguments
-var passwordField = input("pass", type="password")
+var passwordField = input("pass", type="text")
 @data.result.password = passwordField.field
 ```
 
