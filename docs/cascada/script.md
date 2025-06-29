@@ -4,16 +4,17 @@
 
 ## Overview
 
-### ⚡Parallel by default
-Cascada Script is a scripting language purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
+### ⚡ Parallel by default
+Cascada Script is a scripting language for **JavaScript** and **TypeScript** applications, purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
+Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable.
 
-### 🚦Data-Driven Flow: Code runs when its inputs are ready.
+### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
 In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, **guaranteeing that operations will wait for their required inputs before executing. This orchestration eliminates the possibility of race conditions by design**, ensuring correct execution order while maximizing performance for I/O-bound workflows.
 
-### 📋Execution is chaotic, but the result is orderly
-While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final arrays and objects are assembled in the exact order written in your script.
+### 📋 Execution is chaotic, but the result is orderly
+While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
 
-### ➡️Parallel by default, sequential by exception
+### ➡️ Parallel by default, sequential by exception
 While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations, without affecting the parallelism of the rest of the script.**.
 
 This inversion - parallel by default, sequential by exception - makes building complex, high-performance data pipelines feel surprisingly simple and intuitive.
