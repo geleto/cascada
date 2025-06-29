@@ -15,7 +15,7 @@ The engine intelligently analyzes your code, automatically executing independent
 ### 🎭 One Engine, Two Modes
 This parallel-first philosophy is the foundation for both of its powerful modes:
 * 🚀   A purpose-built **[scripting language](docs/cascada/script.md)** for orchestrating complex data pipelines. Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable.
-* 📜    A familiar **[template syntax](docs/cascada/template.md)**, Cascada is based on the popular [Nunjucks](https://mozilla.github.io/nunjucks/) template engine, for generating text-based output, ideal for dynamic websites, writing emails or crafting detailed LLM prompts.
+* 📜    A familiar **[template syntax](docs/cascada/template.md)** - Cascada is based on the popular [Nunjucks](https://mozilla.github.io/nunjucks/) template engine, for generating text-based output, ideal for dynamic websites, writing emails or crafting detailed LLM prompts.
 
 ### 📋 Execution is chaotic, but the result is orderly
 While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
@@ -26,9 +26,9 @@ While this "parallel-first" approach is powerful, Cascada recognizes that order 
 This inversion - parallel by default, sequential by exception - is what makes Cascada so effective and intuitive.
 
 **⚠️ Welcome to the Cutting Edge! ⚠️**
-Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented  (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
+Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
 
-## Core Features
+## Core Concepts
 
 At its core, Cascada offers a set of powerful features available in both its templating and scripting modes:
 
@@ -38,7 +38,7 @@ At its core, Cascada offers a set of powerful features available in both its tem
 
 ### Automatic Parallelization
 
-Cascada automatically identifies and executes **independent operations concurrently**, without any special syntax or configuration. Tasks that don't depend on each other run in parallel, dramatically speeding up execution time for I/O-bound workflows.
+Cascada automatically identifies and executes **independent operations concurrently**, without any special syntax or configuration. Tasks that don't depend on each other run in parallel, dramatically speeding up I/O-bound workflows.
 
 </td>
 <td width="50%" valign="top">
@@ -48,13 +48,12 @@ Cascada automatically identifies and executes **independent operations concurren
 ```javascript
 // The fetchUser() and fetchConfig() calls
 // are independent and will run in parallel.
-
 var user = fetchUser(123)
 var config = fetchSiteConfig()
 
-// Waits for both to complete before printing.
-@text("Welcome, " + user.name)
-@text("Theme: " + config.theme)
+// Waits for both to complete before use
+@data.greeting = "Welcome, " + user.name
+@data.theme = "Theme: " + config.theme
 ```
 
 </details>
@@ -64,13 +63,53 @@ var config = fetchSiteConfig()
 ```njk
 {# fetchUser() and fetchConfig() are independent #}
 {# and will run in parallel. #}
-
 {% set user = fetchUser(123) %}
 {% set config = fetchSiteConfig() %}
 
 {# Waits for both to complete. #}
 <p>Welcome, {{ user.name }}</p>
 <p>Theme: {{ config.theme }}</p>
+```
+
+</details>
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### Data-Driven Flow
+
+While independent operations run in parallel, Cascada ensures that **dependent operations wait for their prerequisites**. This guarantees correct execution order and produces results identical to sequential code, giving you the performance of parallelism with the predictability of a synchronous process.
+
+</td>
+<td valign="top">
+<details open>
+<summary><strong>Cascada Script</strong></summary>
+
+```javascript
+// getUser() and getFooter() run in parallel.
+// getPosts(user.id) depends on `user`, so it
+// waits for getUser() to complete before starting.
+var user = getUser()
+var posts = getPosts(user.id)
+var footer = getFooter()
+
+@text("User: " + user.name)
+```
+
+</details>
+<details>
+<summary><strong>Cascada Template</strong></summary>
+
+```njk
+{# getUser() and getFooter() run in parallel. #}
+{# getPosts(user.id) waits for getUser() #}
+{# to complete before starting. #}
+{% set user = getUser() %}
+{% set posts = getPosts(user.id) %}
+{% set footer = getFooter() %}
+
+<div class="user">User: {{ user.name }}</div>
 ```
 
 </details>
@@ -89,9 +128,8 @@ Work with **promises, `async` functions, and `async` iterators** as if they were
 <summary><strong>Cascada Script</strong></summary>
 
 ```javascript
-// fetchPost is an async function
+// fetchPost is an async function.
 // fetchComments is an async iterator.
-
 var post = fetchPost(42)
 
 // Waits for post to resolve, then iterates
@@ -106,9 +144,8 @@ endfor
 <summary><strong>Cascada Template</strong></summary>
 
 ```njk
-{# fetchPost is async function. #}
-{# fetchComments is async iterator. #}
-
+{# fetchPost is an async function. #}
+{# fetchComments is an async iterator. #}
 {% set post = fetchPost(42) %}
 
 <h1>{{ post.title }}</h1>
@@ -119,50 +156,6 @@ endfor
     <li>{{ comment.author }}: {{ comment.body }}</li>
   {% endfor %}
 </ul>
-```
-
-</details>
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### Data-Driven Flow
-
-While independent operations run in parallel, Cascada ensures that **dependent operations wait for their prerequisites**. This guarantees the correct execution order and produces results identical to a sequential process, giving you the best of both worlds: performance and predictability.
-
-</td>
-<td valign="top">
-<details open>
-<summary><strong>Cascada Script</strong></summary>
-
-```javascript
-// getUser(), getFooter() run in parallel.
-// getPosts(user.id) depends on `user`,
-// so it waits for getUser() to complete
-// before starting.
-
-var user = getUser()
-var posts = getPosts(user.id)
-var footer = getFooter()
-
-@text("User: " + user.name)
-```
-
-</details>
-<details>
-<summary><strong>Cascada Template</strong></summary>
-
-```njk
-{# getUser()/getFooter() run in parallel. #}
-{# getPosts(user.id) waits for getUser() #}
-{# to complete before starting. #}
-
-{% set user = getUser() %}
-{% set posts = getPosts(user.id) %}
-{% set footer = getFooter() %}
-
-<div class="user">User: {{ user.name }}</div>
 ```
 
 </details>
@@ -212,11 +205,9 @@ account!.withdraw(50)
 <tr>
 <td valign="top">
 
-### Consistent Output Commands Assembly
+### Declarative Data Assembly (`@` Commands)
 
-In scripts, **Output Commands**, marked with the `@` sigil, follow a **"Collect, Execute, Assemble"** model: they are buffered during parallel execution and then applied sequentially to build a final result, guaranteeing a predictable output order. The built-in `@data` handler uses this to provide a rich set of commands for building structured data, including assignment (`=`), array manipulation (`.push`, `.pop`), object merging (`.merge`), and even direct arithmetic (`+=`, `++`), string (`.append`), and logical (`||=`) operations. You can also add your own custom commands.
-
-Similarly in templates, the final text output is also assembled in source-code order, guaranteeing that the rendered content is always predictable, even when built from multiple async operations that finish at different times.
+In scripts, **Output Commands**, marked with the `@` sigil, follow a **"Collect, Execute, Assemble"** model: they are buffered during parallel execution and then applied sequentially to build a final result, guaranteeing a predictable output order. The built-in `@data` handler provides a rich set of declarative commands for building structured data, including assignment (`=`), array manipulation (`.push`), object merging (`.merge`), and even direct arithmetic (`+=`, `++`) or string (`.append`) operations.
 
 </td>
 <td valign="top">
@@ -247,25 +238,7 @@ for id in productIds
   @data.report.totalReviews += reviews.length
 endfor
 ```
-
 </details>
-<details>
-<summary><strong>Cascada Template</strong></summary>
-
-```njk
-{# The HTML is assembled sequentially. #}
-<div class="slow-data">
-  {{ fetchSlowData() }}
-</div>
-
-{# This div will always render second #}
-<div class="fast-data">
-  {{ fetchFastData() }}
-</div>
-```
-
-</details>
-
 <details>
 <summary><strong>Using `capture` for Inline Data Assembly</strong></summary>
 
@@ -275,79 +248,47 @@ endfor
 var userProfile = capture :data
   // These run in parallel
   var details = fetchUserDetails(123)
-  var preferences = fetchUserPrefs(123)
+  var prefs = fetchUserPrefs(123)
 
   // Assemble the final object
   @data.id = details.id
   @data.name = details.name
-  @data.theme = preferences.theme
+  @data.theme = prefs.theme
 endcapture
 
 // 'userProfile' is now a clean object:
 // { id: 123, name: "Alice", theme: "dark" }
 @data.profile = userProfile
 ```
-
 </details>
-
 <details>
-  <summary><strong>Customizing the Data Object</strong></summary>
+<summary><strong>Cascada Template (Predictable Output)</strong></summary>
 
-  ```javascript
-  const env = new AsyncEnvironment();
-  // You can add your own custom methods to the built-in
-  // @data handler using env.addDataMethods().
-  env.addDataMethods({
-    upsert: (target, data) => {
-      if (!Array.isArray(target)) return;
-      const index = target.findIndex(item => item.id === data.id);
-      if (index > -1) Object.assign(target[index], data);
-      else target.push(data);
-    }
-  });
-
-  const script = `// The built-in @data.push command
-    @data.users.push({id: 1, name: "Alice", active: true})
-    @data.users.push({id: 2, name: "Bob", active: true})
-
-    // The custom @data.upsert command will UPDATE Alice.
-    @data.users.upsert({id: 1, active: false})
-
-    // This will ADD Charlie.
-    @data.users.upsert({id: 3, name: "Charlie", active: true})`;
-
-  console.log( await env.renderScriptString(
-    script, {}, { output: 'data' }
-  ));
-
-  /*
-  {
-    users: [
-      { id: 1, name: 'Alice', active: false },
-      { id: 2, name: 'Bob', active: true },
-      { id: 3, name: 'Charlie', active: true }
-    ]
-  }
-  */
-  ```
+```njk
+{# The final HTML is always assembled sequentially, #}
+{# regardless of which fetch finishes first. #}
+<div class="slow-data">
+  {{ fetchSlowData() }}
+</div>
+{# This div will always render second. #}
+<div class="fast-data">
+  {{ fetchFastData() }}
+</div>
+```
 </details>
-
 </td>
 </tr>
 <tr>
 <td valign="top">
 
-### Command Handlers
+### Custom Command Handlers
 
-For scripts, the **Command Handlers** feature lets you specify classes and objects that execute commands.
-You can add a class that executes custom commands with `addCommandHandlerClass`.
-The custom commands are guaranteed to execute in-order and are much more efficient than the Sequential Execution feature, but they can't be async and the processing happens after rendering.
+For scripts, the **Command Handlers** feature lets you create domain-specific logic by registering classes that receive and process `@` commands. These commands are guaranteed to execute in source order after all other async logic has completed. This is perfect for tasks like logging, database operations, or even drawing to a canvas.
 
 </td>
 <td valign="top">
-
 <details>
-  <summary><strong>Custom Command Handlers - Class Setup</strong></summary>
+  <summary><strong>Custom Handler Class (JavaScript)</strong></summary>
 
   ```javascript
   // Turtle graphics on an HTML5 Canvas
@@ -358,10 +299,7 @@ The custom commands are guaranteed to execute in-order and are much more efficie
       this.y = this.ctx.canvas.height / 2;
       this.angle = -90; // Start pointing up
     }
-    begin() {
-      this.ctx.beginPath();
-      this.ctx.moveTo(this.x, this.y);
-    }
+    begin() { this.ctx.beginPath(); this.ctx.moveTo(this.x, this.y); }
     forward(dist) {
       const rad = this.angle * (Math.PI / 180);
       this.x += dist * Math.cos(rad);
@@ -369,23 +307,20 @@ The custom commands are guaranteed to execute in-order and are much more efficie
       this.ctx.lineTo(this.x, this.y);
     }
     turn(deg) { this.angle = (this.angle + deg) % 360; }
-    stroke(color) {
-      this.ctx.strokeStyle = color ?? 'white';
-      this.ctx.stroke();
-    }
+    stroke(color) { this.ctx.strokeStyle = color ?? 'white'; this.ctx.stroke(); }
   }
   ```
 </details>
-
 <details open>
-  <summary><strong>Custom Command Handlers - Usage</strong></summary>
+  <summary><strong>Using the Custom Handler (Cascada Script)</strong></summary>
 
   ```javascript
   // Draw an 8-sided star using canvas
   const env = new AsyncEnvironment();
-  env.addCommandHandlerClass('turtle',
-    CanvasTurtle);
-  const script = `// Draw an 8-point star
+  env.addCommandHandlerClass('turtle', CanvasTurtle);
+
+  // Use it in your script to draw a star.
+  const script = `
     @turtle.begin()
     for i in range(8)
       @turtle.forward(60)
@@ -393,6 +328,7 @@ The custom commands are guaranteed to execute in-order and are much more efficie
     endfor
     @turtle.stroke('cyan')`;
 
+  // Provide the canvas context when rendering.
   env.renderScriptString(script, {
     canvas:
       document.querySelector('canvas')
@@ -406,42 +342,39 @@ The custom commands are guaranteed to execute in-order and are much more efficie
 
 ### Macros for Reusable Components
 
-Macros allow you to define reusable chunks of logic. In templates, they're great for repeated UI components. In scripts, they can perform complex, parallel async operations internally and return a clean, structured data object, making them the primary way to build modular, data-generating components. For single-use, inline data construction, the `capture` block provides a similar capability for assigning a complex, assembled result directly to a variable.
+Macros allow you to define reusable chunks of logic. In templates, they're great for repeated UI components. In scripts, they can perform complex, parallel async operations internally and return a clean, structured data object, making them the primary way to build modular, data-generating components.
 
 </td>
 <td valign="top">
 <details open>
-<summary><strong>Cascada Script (Macro)</strong></summary>
+<summary><strong>Cascada Script (Data-Building Macro)</strong></summary>
 
 ```javascript
-// This macro fetches a user's details
-// and recent activity in parallel and
-// builds a summary object.
+// This macro fetches a user's details and
+// recent activity in parallel and builds a summary.
 macro buildUserSummary(userId) : data
   // Run three async calls concurrently
   var details = fetchUserDetails(userId)
   var posts = fetchUserPosts(userId)
-  var comments = fetchComments(userId)
+  var comments = fetchUserComments(userId)
 
-  // Assemble the result:
-  @data.summary.name = details.name
-  @data.summary.postCount = posts.length
-  @data.summary.comCount = comments.length
+  // Assemble the result using @data commands
+  @data.name = details.name
+  @data.postCount = posts.length
+  @data.commentCount = comments.length
 endmacro
 
-// Call the macro for two different users,
-// in parallel.
+// Call the macro for two different users in parallel.
 var user1 = buildUserSummary(101)
 var user2 = buildUserSummary(102)
 
 // Assemble the final report.
-@data.report.user1Summary = user1.summary
-@data.report.user2Summary = user2.summary
+@data.report.user1Summary = user1
+@data.report.user2Summary = user2
 ```
-
 </details>
 <details>
-<summary><strong>Cascada Template (Macro)</strong></summary>
+<summary><strong>Cascada Template (UI Macro)</strong></summary>
 
 ```njk
 {#
@@ -454,12 +387,8 @@ var user2 = buildUserSummary(102)
     <h2>{{ user.name }}</h2>
     <ul>
       {# These two fetches run in parallel #}
-      <li>Followers:
-        {{ fetchStats(user.id).followerCount }}
-      </li>
-      <li>Latest Post:
-        "{{ fetchLatestPost(user.id).title }}"
-      </li>
+      <li>Followers: {{ fetchStats(user.id).followerCount }}</li>
+      <li>Latest Post: "{{ fetchLatestPost(user.id).title }}"</li>
     </ul>
   </div>
 {% endmacro %}
@@ -473,13 +402,11 @@ var user2 = buildUserSummary(102)
 {{ profile_widget(userA) }}
 {{ profile_widget(userB) }}
 ```
-
 </details>
 </td>
 </tr>
 <tr>
 <td valign="top">
-
 
 ### Resilient Error Handling
 
@@ -502,12 +429,9 @@ resume resume.count < 3
   @text("Retrying attempt " + resume.count)
 except
   // Handle permanent failure
-  @data.result.error =
-    "Image generation failed: " +
-      error.message
+  @data.result.error = "Failed: " + error.message
 endtry
 ```
-
 </details>
 <details>
 <summary><strong>Cascada Template</strong></summary>
@@ -524,115 +448,28 @@ endtry
   {{ error.message }}</p>
 {% endtry %}
 ```
-
 </details>
 </td>
 </tr>
+</table>
+
+## Two Modes, One Engine
+
+Cascada's parallel-first core powers two distinct syntaxes, each tailored for a different primary purpose.
+
+<table>
 <tr>
-<td valign="top">
+<td width="50%" valign="top">
 
-### Modular Composition
+### Data-First: Cascada Script
 
-**Note**: This feature is under development.
-
-Build complex, modular templates using **`extends`** for inheritance, **`block`** for defining overrideable sections, **`include`** for embedding content, and **`import`** for reusing macros. Included templates and other async operations are processed concurrently.
-
-</td>
-<td valign="top">
-<details open>
-<summary><strong>Cascada Script</strong></summary>
-
-```javascript
-// Import utils from a script
-import "utils.script" as utils
-
-// Fetch data in parallel
-var items = fetchItems()
-var config = fetchConfig()
-
-// Use the imported utils.process
-var items = utils.process(items, config)
-@data.result.items = items
-```
-
-</details>
-<details>
-<summary><strong>Cascada Template (`child.njk`)</strong></summary>
-
-```njk
-{% extends "base.njk" %}
-{% import "macros.njk" as macros %}
-
-{% block title %}My Page{% endblock %}
-
-{% block content %}
-  {% include "header.njk" %}
-
-  <h1>
-    {{ macros.page_title("Latest News") }}
-  </h1>
-
-  {% for item in fetchNews() %}
-    <article>{{ item.title }}</article>
-  {% endfor %}
-{% endblock %}
-```
-
-</details>
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### Rich Templating **[(Cascada Templates)](docs/cascada/template.md)**
-
-As a fork of the Nunjucks engine, Cascada provides a familiar, feature-rich syntax ideal for generating text-based output like HTML or for **crafting complex LLM prompts** by dynamically embedding data.
-- **Full programming constructs**: `if`, `for`, `set`
-- **First-class functions**: `{% macro %}`
-- **Complex expressions** and filters
-
-</td>
-<td valign="top">
-<details open>
-<summary><strong>AI Prompt Generation Example</strong></summary>
-
-```njk
-Analyze the following meeting
-transcript and generate a summary.
-
-MEETING CONTEXT:
-- Topic: {{ fetchMeetingTopic(meetingId) }}
-- Attendees: {{ (fetchAttendees(meetingId) |
-   join(", ")) }}
-
-TRANSCRIPT:
-{{ fetchTranscript(meetingId) }}
-
-KEY DECISIONS TO IDENTIFY:
-{% for objective in ["Product Launch",
-        "Budget Allocation", "Hiring"] %}
-- Decisions related to: {{ objective }}
-{% endfor %}
-
-Based on the transcript, extract
-action items and assign owners.
-```
-
-</details>
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### Powerful Scripting **[(Cascada Script)](docs/cascada/script.md)**
-
-For logic-heavy tasks and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's parallelization capabilities and adds specialized commands for building structured data results.
+For logic-heavy tasks, data pipelines, and **AI agent orchestration**, Cascada Script offers a cleaner, delimiter-free syntax. It maintains all of Cascada's parallelization capabilities and adds specialized `@` commands for declaratively building structured data results.
 - **Clean, delimiter-free syntax**
 - **Data assembly commands**: `@data.set`, `@data.push`, `@data.merge`
 - **Focus on logic and orchestration**
 
 </td>
-<td valign="top">
+<td width="50%" valign="top">
 <details open>
 <summary><strong>AI Orchestration Example</strong></summary>
 
@@ -656,48 +493,85 @@ endfor
 var summary = summarize(result.stepResults)
 @data.result.summary = summary
 ```
-
 </details>
 </td>
 </tr>
 <tr>
 <td valign="top">
 
-### Simple and Powerful API
+### Text-First: Cascada Template
 
-Cascada provides a straightforward, **promise-based API** for rendering templates and scripts. Use the `AsyncEnvironment` class to get started.
-
-For production, you can improve performance by **precompiling** your templates and scripts to JavaScript files, eliminating the parsing overhead at runtime.
+As a superset of the popular Nunjucks engine, Cascada provides a familiar, feature-rich syntax ideal for generating text-based output like HTML, or for **crafting complex LLM prompts** by dynamically embedding data.
+- **Full programming constructs**: `if`, `for`, `set`
+- **Reusable UI components**: `{% macro %}`
+- **Complex expressions** and filters
 
 </td>
 <td valign="top">
 <details open>
+<summary><strong>AI Prompt Generation Example</strong></summary>
 
+```njk
+Analyze the following meeting transcript
+and generate a summary.
+
+MEETING CONTEXT:
+- Topic: {{ fetchMeetingTopic(meetingId) }}
+- Attendees: {{ fetchAttendees(meetingId) | join(", ") }}
+
+TRANSCRIPT:
+{{ fetchTranscript(meetingId) }}
+
+KEY DECISIONS TO IDENTIFY:
+{% for objective in ["Product Launch", "Budget"] %}
+- Decisions related to: {{ objective }}
+{% endfor %}
+
+Based on the transcript, extract action items.
+```
+</details>
+</td>
+</tr>
+</table>
+
+
+## Simple and Powerful API
+
+Cascada provides a straightforward, **promise-based API** for rendering templates and scripts. Use the `AsyncEnvironment` class to get started. For production, you can improve performance by **precompiling** your templates and scripts to JavaScript files, eliminating the parsing overhead at runtime.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<details open>
 <summary><strong>Executing a Script</strong></summary>
 
 ```javascript
-import {AsyncEnvironment} from 'cascada-tmpl';
+import { AsyncEnvironment } from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
-const script =
-  '@data.result.greet = "Hello "+ user.name';
-const ctx = {
-  user: fetchUser(123) // An async function
+const script = `
+  // The 'user' promise resolves automatically
+  @data.result.greet = "Hello, " + user.name
+`;
+const context = {
+  // Pass in an async function or a promise
+  user: fetchUser(123)
 };
 
 const data = await env.renderScriptString(
-  script, ctx, { output: 'data' }
+  script, context, { output: 'data' }
 );
-console.log(data);
 // { result: { greet: 'Hello, Alice' } }
+console.log(data);
 ```
-
 </details>
-<details>
+</td>
+<td width="50%" valign="top">
+<details open>
 <summary><strong>Rendering a Template</strong></summary>
 
 ```javascript
-import {AsyncEnvironment} from 'cascada-tmpl';
+import { AsyncEnvironment } from 'cascada-tmpl';
 
 const env = new AsyncEnvironment();
 const tpl = '<h1>Hello {{ username }}</h1>';
@@ -709,47 +583,43 @@ const html = await env.renderString(
   tpl,
   context
 );
-console.log(html); // <h1>Hello World</h1>
+// <h1>Hello World</h1>
+console.log(html);
 ```
 </details>
 </td>
 </tr>
 </table>
 
-
 ## Quick Start
-  1. Install Cascada:
-     ```bash
-     npm install cascada-tmpl
-     ```
-  2. Create a simple template:
-     ```njk
-     Hello, {{ name }}!
-     ```
-  3. Render a Cascada template
-     ```javascript
-     import { AsyncEnvironment } from 'cascada-tmpl';
-     const env = new AsyncEnvironment();
-     const result = await env.renderString('Hello, {{ name }}!', { name: 'World' });
-     console.log(result); // Hello, World!
-     ```
-  4. Run a Cascada script
-     ```javascript
-     import { AsyncEnvironment } from 'cascada-tmpl';
-     const env = new AsyncEnvironment();
-     const script = `// Set initial user object
-       @data.user = {name: 'Alice', id: 123, log: "User profile created. "}
-       // Append to a string property within the data object
-       @data.user.log.append("Login successful.")`;
+1.  Install Cascada:
+    ```bash
+    npm install cascada-tmpl
+    ```
+2.  Render a Cascada template:
+    ```javascript
+    import { AsyncEnvironment } from 'cascada-tmpl';
+    const env = new AsyncEnvironment();
+    const result = await env.renderString('Hello, {{ name }}!', { name: 'World' });
+    console.log(result); // Hello, World!
+    ```
+3.  Run a Cascada script:
+    ```javascript
+    import { AsyncEnvironment } from 'cascada-tmpl';
+    const env = new AsyncEnvironment();
+    const script = `// Set initial user object
+      @data.user = {name: 'Alice', id: 123, log: "User profile created. "}
+      // Append to a string property within the data object
+      @data.user.log.append(" Login successful.")`;
 
-     // The 'data' output focuses the result on the data object
-     const { user } = await env.renderScriptString(script, {}, { output: 'data' });
-     console.log(user.name);    // Alice
-     console.log(user.log);     // User profile created. Login successful.
-     ```
+    // The 'data' output focuses the result on the data object
+    const { user } = await env.renderScriptString(script, {}, { output: 'data' });
+    console.log(user.name); // Alice
+    console.log(user.log);  // User profile created. Login successful.
+    ```
 
 ## Further Reading
 
-- **Cascada Script:** [docs/cascada/script.md](docs/cascada/script.md)
-- **Cascada Template:** [docs/cascada/template.md](docs/cascada/template.md)
+- **Cascada Script Documentation:** [docs/cascada/script.md](docs/cascada/script.md)
+- **Cascada Template Documentation:** [docs/cascada/template.md](docs/cascada/template.md)
 - **Nunjucks (Original Engine):** [https://mozilla.github.io/nunjucks/](https://mozilla.github.io/nunjucks/)
