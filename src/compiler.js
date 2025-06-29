@@ -1514,7 +1514,7 @@ class Compiler extends Obj {
     this.emit(`return ${funcId};})()`);
   }
 
-  _compileGetTemplate(node, frame, eagerCompile, ignoreMissing, wrapInAsyncBlock) {
+  _compileGetTemplateOrScript(node, frame, eagerCompile, ignoreMissing, wrapInAsyncBlock) {
     const parentTemplateId = this._tmpid();
     const parentName = this._templateName();
     const eagerCompileArg = (eagerCompile) ? 'true' : 'false';
@@ -1526,7 +1526,7 @@ class Compiler extends Obj {
     if (node.isAsync) {
       const getTemplateFunc = this._tmpid();
       //the AsyncEnviuronment.getTemplate returns a Promise
-      this.emit.line(`const ${getTemplateFunc} = env.getTemplate.bind(env);`);
+      this.emit.line(`const ${getTemplateFunc} = env.get${this.scriptMode ? 'Script' : 'Template'}.bind(env);`);
       this.emit(`let ${parentTemplateId} = ${getTemplateFunc}(`);
       /*if (wrapInAsyncBlock) {
         // Wrap the expression evaluation in an async block if needed, use template node position
@@ -1539,7 +1539,7 @@ class Compiler extends Obj {
       this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     } else {
       const cb = this._makeCallback(parentTemplateId);
-      this.emit('env.getTemplate(');
+      this.emit(`env.get${this.scriptMode ? 'Script' : 'Template'}(`);
       this._compileExpression(node.template, frame, false);
       this.emit.line(`, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ${cb}`);
     }
@@ -1549,8 +1549,8 @@ class Compiler extends Obj {
 
   compileImport(node, frame) {
     const target = node.target.value;
-    // Pass node.template for position in _compileGetTemplate
-    const id = this._compileGetTemplate(node, frame, false, false, true);
+    // Pass node.template for position in _compileGetTemplateOrScript
+    const id = this._compileGetTemplateOrScript(node, frame, false, false, true);
 
     if (node.isAsync) {
       const res = this._tmpid();
@@ -1588,8 +1588,8 @@ class Compiler extends Obj {
   }
 
   compileFromImport(node, frame) {
-    // Pass node.template for position in _compileGetTemplate
-    const importedId = this._compileGetTemplate(node, frame, false, false, true);
+    // Pass node.template for position in _compileGetTemplateOrScript
+    const importedId = this._compileGetTemplateOrScript(node, frame, false, false, true);
 
     if (node.isAsync) {
       const res = this._tmpid();
@@ -1603,7 +1603,7 @@ class Compiler extends Obj {
         });`);
       }, res, node);
     } else {
-      this.emit.addScopeLevel();//after _compileGetTemplate
+      this.emit.addScopeLevel();//after _compileGetTemplateOrScript
       this.emit.line(importedId + '.getExported(' +
         (node.withContext ? 'context.getVariables(), frame, ' : '') +
         this._makeCallback(importedId));
@@ -1740,8 +1740,8 @@ class Compiler extends Obj {
       this.emit.line('context.prepareForAsyncBlocks();');
     }
 
-    // Pass node.template for position in _compileGetTemplate
-    const parentTemplateId = this._compileGetTemplate(node, frame, true, false, true);
+    // Pass node.template for position in _compileGetTemplateOrScript
+    const parentTemplateId = this._compileGetTemplateOrScript(node, frame, true, false, true);
 
     // extends is a dynamic tag and can occur within a block like
     // `if`, so if this happens we need to capture the parent
@@ -1799,7 +1799,7 @@ class Compiler extends Obj {
     this.emit.line('tasks.push(');
     this.emit.line('function(callback) {');
 
-    const id = this._compileGetTemplate(node, frame, false, node.ignoreMissing, false);
+    const id = this._compileGetTemplateOrScript(node, frame, false, node.ignoreMissing, false);
     this.emit.line(`callback(null,${id});});`);
 
     this.emit.line('});');
