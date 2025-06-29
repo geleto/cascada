@@ -4,45 +4,21 @@
   var expect;
   var unescape;
   var AsyncEnvironment;
+  var StringLoader;
   //var Environment;
-
-  class StringLoader {
-    constructor() {
-      this.templates = new Map();
-    }
-
-    getSource(name) {
-      if (!this.templates.has(name)) {
-        return null;// return null rather than throw an error so that ignore missing works
-      }
-
-      return {
-        src: this.templates.get(name),
-        path: name,
-        noCache: false
-      };
-    }
-
-    addTemplate(name, content) {
-      this.templates.set(name, content);
-    }
-  }
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../src/environment').AsyncEnvironment;
     //Environment = require('../src/environment').Environment;
     unescape = require('he').unescape;
-
-    if (module.exports) {
-      module.exports = StringLoader;
-    }
+    StringLoader = require('./util').StringLoader;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     //Environment = nunjucks.Environment;
-    window.StringLoader = StringLoader;
+    StringLoader = window.util.StringLoader;
   }
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));

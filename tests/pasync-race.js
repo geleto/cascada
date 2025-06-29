@@ -15,13 +15,13 @@
     //Environment = require('../src/environment').Environment;
     //lexer = require('../src/lexer');
     unescape = require('he').unescape;
-    StringLoader = require('./pasync-loader');
+    StringLoader = require('./util').StringLoader;
     delay = require('./util').delay;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
-    StringLoader = window.StringLoader;
+    StringLoader = window.util.StringLoader;
     //Environment = nunjucks.Environment;
     //lexer = nunjucks.lexer;
     delay = window.util.delay;

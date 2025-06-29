@@ -218,6 +218,47 @@
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+  /**
+   * StringLoader class for testing purposes.
+   * Manages templates in memory for test scenarios.
+   */
+  class StringLoader {
+    constructor() {
+      this.templates = new Map();
+    }
+
+    getSource(name) {
+      if (!this.templates.has(name)) {
+        return null; // return null rather than throw an error so that ignore missing works
+      }
+
+      return {
+        src: this.templates.get(name),
+        path: name,
+        noCache: false
+      };
+    }
+
+    addTemplate(name, content) {
+      this.templates.set(name, content);
+    }
+  }
+
+  // Export for Node.js
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      equal,
+      jinjaEqual,
+      finish,
+      normEOL,
+      randomTemplateName,
+      render,
+      expectAsyncError,
+      delay,
+      StringLoader
+    };
+  }
+
   if (typeof window === 'undefined') {
     module.exports.render = render;
     module.exports.equal = equal;
@@ -238,7 +279,8 @@
       isSlim: isSlim,
       Loader: Loader,
       expectAsyncError: expectAsyncError,
-      delay: delay
+      delay: delay,
+      StringLoader: StringLoader
     };
   }
 }());
