@@ -758,32 +758,78 @@ async function deepResolveArray(arr) {
   return result;
 }
 
-async function deepResolveObject(obj) {
-  const result = {};
-  for (const key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      let value = obj[key];
-      if (value && typeof value.then === 'function') {
-        value = await value;
-      }
-      if (Array.isArray(value)) {
-        value = await deepResolveArray(value);
-      } else if (isPlainObject(value)) {
-        value = await deepResolveObject(value);
-      }
-      result[key] = value;
-    }
+// @todo - use this much more sparringly, only for arguments
+async function deepResolveObject(target) {
+  // Await the primary target if it's a promise.
+  const obj = await target;
+
+  // Primitives and null cannot be resolved further.
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
   }
-  return result;
+
+  if (Array.isArray(obj)) {
+    // --- Array Handling ---
+    // Create an array of promises, where each promise resolves one element.
+    const resolutionPromises = obj.map(
+      (item, index) => deepResolveObject(item)
+        .then(resolvedItem => {
+          // Mutate the original array at the specific index.
+          obj[index] = resolvedItem;
+        })
+    );
+
+    // Wait for all elements to be resolved and mutated.
+    await Promise.all(resolutionPromises);
+  } else if (isPlainObject(obj)) {
+    // --- Plain Object Handling ---
+    // Use getOwnPropertyDescriptors to safely inspect properties without
+    // triggering getters.
+    const descriptors = Object.getOwnPropertyDescriptors(obj);
+    const resolutionPromises = [];
+
+    for (const key in descriptors) {
+      const descriptor = descriptors[key];
+
+      // We only care about simple data properties.
+      // Ignore getters, setters, and non-enumerable properties.
+      if ('value' in descriptor) {
+        // Create a promise that resolves the property and then mutates the object.
+        const promise = deepResolveObject(descriptor.value)
+          .then(resolvedValue => {
+            // Only mutate if the value has actually changed to avoid
+            // triggering unnecessary setter logic if it exists.
+            if (obj[key] !== resolvedValue) {
+              obj[key] = resolvedValue;
+            }
+          });
+
+        resolutionPromises.push(promise);
+      }
+    }
+
+    // Wait for all properties to be resolved and mutated.
+    await Promise.all(resolutionPromises);
+  }
+  // For non-plain objects (class instances, etc.), we don't recurse
+
+  // Return the original, now fully mutated, object.
+  return obj;
 }
 
 function isPlainObject(value) {
-  if (typeof value !== 'object' || value === null || value === undefined) {
+  if (typeof value !== 'object' || value === null) {
     return false;
   }
-  // Add checks to exclude class instances, etc., if necessary
-  // A simple check might be:
-  return Object.prototype.toString.call(value) === '[object Object]' && Object.getPrototypeOf(value) === Object.prototype;
+
+  // Check if it's the right type
+  if (Object.prototype.toString.call(value) !== '[object Object]') {
+    return false;
+  }
+
+  // If it has no prototype (Object.create(null)), it's still a plain object
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === null || prototype === Object.prototype;
 }
 
 async function resolveObjectProperties(obj) {
