@@ -741,10 +741,10 @@ async function resolveAll(args) {
   return resolvedArgs;
 }
 
+//@todo - use this much more sparingly
 async function deepResolveArray(arr) {
-  const result = [];
-  for (const item of arr) {
-    let resolvedItem = item;
+  for (let i = 0; i < arr.length; i++) {
+    let resolvedItem = arr[i];
     if (resolvedItem && typeof resolvedItem.then === 'function') {
       resolvedItem = await resolvedItem;
     }
@@ -753,9 +753,9 @@ async function deepResolveArray(arr) {
     } else if (isPlainObject(resolvedItem)) {
       resolvedItem = await deepResolveObject(resolvedItem);
     }
-    result.push(resolvedItem);
+    arr[i] = resolvedItem;
   }
-  return result;
+  return arr;
 }
 
 // @todo - use this much more sparringly, only for arguments
