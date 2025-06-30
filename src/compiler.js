@@ -360,7 +360,7 @@ class Compiler extends Obj {
       this.async.updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
 
       let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
-      if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
+      if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
         // This node accesses a declared sequence lock path.
         // Register the static path key as variable write so the next lock would wait for it
         // Multiple static path keys can be in the same block
@@ -620,7 +620,7 @@ class Compiler extends Obj {
     if (node.isAsync) {
       // Check if sequenced flag is used inappropriately
       let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
-      if (nodeStaticPathKey && this._isDeclared(frame.sequenceLockFrame, nodeStaticPathKey)) {
+      if (nodeStaticPathKey && this._isDeclared(frame/*.sequenceLockFrame*/, nodeStaticPathKey)) {
         //register the static path key as variable write so the next lock would wait for it
         //multiple static path keys can be in the same block
         this.async.updateFrameWrites(frame, nodeStaticPathKey);
@@ -1953,7 +1953,7 @@ class Compiler extends Obj {
 
     if (this.asyncMode) {
       this.async.propagateIsAsync(node);
-      this.sequential._declareSequentialLocks(node, frame.sequenceLockFrame);
+      this.sequential._declareSequentialLocks(node, frame/*.sequenceLockFrame*/);
     }
 
     this.emit.funcBegin(node, 'root');

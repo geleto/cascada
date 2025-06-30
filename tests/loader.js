@@ -294,7 +294,7 @@
           | include              | Yes               | No                  | Yes (copy)          |
           | import               | No                | No                  | No                  |
           | import with context  | Yes               | Yes                 | Yes (copy)          |
-          | extends/block        | Yes (shared)      | Yes (top-level)     | Yes (shared)        |
+          | extends/block        | Yes (shared)      | Yes(child-top-level)| Yes (shared)        |
           | (inside block)       | Yes (shared)      | No (isolated)       | Yes (shared)        |
       */
 

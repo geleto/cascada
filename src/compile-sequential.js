@@ -14,7 +14,8 @@ module.exports = class CompileSequential {
   }
 
   //@todo - public
-  _declareSequentialLocks(node, sequenceLockFrame) {
+  _declareSequentialLocks(node, frame) {
+    const sequenceLockFrame = frame.getRoot();
     // Get immediate children using the _getImmediateChildren method
     const children = this.compiler._getImmediateChildren(node);
 
@@ -24,7 +25,7 @@ module.exports = class CompileSequential {
     }
 
     if (node.typename === 'FunCall') {
-      const key = this._getSequenceKey(node.name, sequenceLockFrame);
+      const key = this._getSequenceKey(node.name);
       if (key) {
         this.compiler._addDeclaredVar(sequenceLockFrame, key);
       }
@@ -70,7 +71,7 @@ module.exports = class CompileSequential {
       // Still need to identify PATH waiters for nodes that are *not* `node.sequenced` themselves
       // but are on a path that *is* sequenced by a FunCall elsewhere.
       const pathKey = this._extractStaticPathKey(node);
-      if (pathKey && pathKey !== funCallLockKey && this.compiler._isDeclared(frame.sequenceLockFrame, pathKey)) {
+      if (pathKey && pathKey !== funCallLockKey && this.compiler._isDeclared(frame, pathKey)) {
         // this is a path that is static
         // is declared as a sequence lock
         // and is not the lock key being originated by an immediate FunCall parent (funCallLockKey)
@@ -80,7 +81,7 @@ module.exports = class CompileSequential {
       }
     } else if (node instanceof nodes.FunCall) {
       // Identify FunCall LOCK
-      const lockKey = this._getSequenceKey(node.name, frame.sequenceLockFrame);
+      const lockKey = this._getSequenceKey(node.name);
       if (lockKey) {
         node.sequenceOperations.set(lockKey, SequenceOperationType.LOCK);
         funCallLockKey = lockKey;//this wil stop the node.name path from registering as a PATH waiter for the same key
@@ -243,14 +244,14 @@ module.exports = class CompileSequential {
 
 
   //@todo - public
-  _getSequenceKey(node, frame) {
-    let path = this._getSequencedPath(node, frame);
+  _getSequenceKey(node) {
+    let path = this._getSequencedPath(node);
     return path ? '!' + path.join('!') : null;
   }
 
   // @todo - inline in _getSequenceKey
   // @todo - maybe this can be simplified
-  _getSequencedPath(node, frame) {
+  _getSequencedPath(node) {
     let path = [];
     let current = node;
     let sequencedCount = 0;

@@ -64,6 +64,14 @@ class Frame {
     return p && p.lookup(name);
   }
 
+  getRoot() {
+    let root = this;
+    while (root.parent) {
+      root = root.parent;
+    }
+    return root;
+  }
+
   resolve(name, forWrite) {
     var p = (forWrite && this.isolateWrites) ? undefined : this.parent;
     var val = this.variables[name];
@@ -91,7 +99,7 @@ class AsyncFrame extends Frame {
     super(parent, isolateWrites);
     this.createScope = createScope;
 
-    this.sequenceLockFrame = (parent && parent.sequenceLockFrame) ? parent.sequenceLockFrame : this;
+    //this.sequenceLockFrame = (parent && parent.sequenceLockFrame) ? parent.sequenceLockFrame : this;
 
     if (AsyncFrame.inCompilerContext) {
       //holds the names of the variables declared at the frame
@@ -137,7 +145,7 @@ class AsyncFrame extends Frame {
   new() {
     //no parent but keep track of sequenceLockFrame
     const nf = new AsyncFrame();//undefined, this.isolateWrites);
-    nf.sequenceLockFrame = this.sequenceLockFrame;
+    //nf.sequenceLockFrame = this.sequenceLockFrame;
     return nf;
   }
 
@@ -236,10 +244,10 @@ class AsyncFrame extends Frame {
   }
 
   resolve(name, forWrite) {
-    if (name.startsWith('!')) {
+    /*if (name.startsWith('!')) {
       // Sequence keys conceptually resolve to the root frame
       return this.sequenceLockFrame;
-    }
+    }*/
     return super.resolve(name, forWrite);
   }
 
@@ -388,13 +396,16 @@ class AsyncFrame extends Frame {
       let {value, frame} = parent.lookupAndLocate(varName);
       if (!frame) {
         if (!varName.startsWith('!')) {
+          //all non-sequence lock variables should have been declared
           throw new Error(`Promisified variable ${varName} not found`);
         }
         //for sequential keys, create a default value in root if none found
-        frame = this.sequenceLockFrame;
+        //e.g. declare the lock the first time it is used
+        const sequenceLockFrame = this.getRoot();//this.sequenceLockFrame;
         value = undefined;//not yet locked
-        this.sequenceLockFrame.variables = this.sequenceLockFrame.variables || {};
-        this.sequenceLockFrame.variables[varName] = value;
+        sequenceLockFrame.variables = sequenceLockFrame.variables || {};
+        sequenceLockFrame.variables[varName] = value;
+        frame = sequenceLockFrame;
       }
       this.asyncVars[varName] = value;//local snapshot of the value
       //promisify the variable in the frame (parent of the new async frame)

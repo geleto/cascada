@@ -38,12 +38,7 @@ module.exports = class CompileAsync {
     //search for the var in the scope chain
     let vf = frame;
     if (name.startsWith('!')) {
-      // Sequence keys are conceptually declared at the root for propagation purposes.
-      /*vf = frame.sequenceLockFrame;
-      if (!vf.declaredVars) {
-        vf.declaredVars = new Set();
-      }
-      vf.declaredVars.add(name);*/
+      // Sequence keys are conceptually declared at the root
       while (vf.parent) {
         vf = vf.parent;
       }
