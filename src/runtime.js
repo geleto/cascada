@@ -758,7 +758,7 @@ async function deepResolveArray(arr) {
   return arr;
 }
 
-// @todo - use this much more sparringly, only for arguments
+// @todo - use this much more sparringly, only for arguments and output
 async function deepResolveObject(target) {
   // Await the primary target if it's a promise.
   const obj = await target;

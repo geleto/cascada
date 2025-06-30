@@ -895,11 +895,11 @@
       });
 
       //@todo - line numbering
-      it.skip('should provide detailed error message for invalid ! usage', async () => {
+      it('should provide detailed error message for invalid ! usage', async () => {
         const template = `Line 1\n{% do sequencer!.value %}`;
         await expectAsyncError(() => env.renderString(template, context), err => {
           expect(err.message).to.contain('Line 2');
-          expect(err.message).to.contain('side effects');
+          expect(err.message).to.contain('not allowed in non-call paths');
         });
       });
     });
@@ -1157,7 +1157,7 @@
     //End additional macro/caller tests
   });
 
-  describe.skip('Cascada Sequential Operations', () => {
+  describe('Cascada Sequential Operations', () => {
     let cont;
     let env;
 
@@ -1200,13 +1200,13 @@
 
     it('should ensure sequence order for mixed operations on the same sequenced object path', async () => {
       const template = `
-        {% do seqObj!.updateAndGet("k1", "valX", 9) %}
-        {{ seqObj!.simpleLog("after valX update", 5) }}
-        {% set finalVal = seqObj!.updateAndGet("k1", "valY", 3) %}
-        Final: {{ finalVal }}`;
+        {%- do seqObj!.updateAndGet("k1", "valX", 9) -%}
+        {{- seqObj!.simpleLog("after valX update", 5) -}}
+        {%- set finalVal = seqObj!.updateAndGet("k1", "valY", 3) %}
+        Final: {{ finalVal -}}`;
       // Expected: updateAndGet(valX) -> simpleLog -> updateAndGet(valY)
       const result = await env.renderString(template, cont);
-      expect(result.trim()).to.equal('after valX update\n      Final: valY-2');
+      expect(result.trim()).to.equal('after valX update\n        Final: valY-2');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=valX (id: 1)',
         'simpleLog: after valX update',
@@ -1216,7 +1216,7 @@
 
     it('should handle sequence across an output and a set tag', async () => {
       const template = `Output1: {{ seqObj!.updateAndGet("k1", "Out", 9) }}
-  {% set setVal = seqObj!.updateAndGet("k2", "Set", 3) %}
+  {%- set setVal = seqObj!.updateAndGet("k2", "Set", 3) %}
   Output2: {{ setVal }}`;
       // Expected: "Out" (id:1), then "Set" (id:2)
       const result = await env.renderString(template, cont);
@@ -1263,7 +1263,7 @@
   // const expect = require('expect.js'); // or your assertion library
   // async function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-  describe.skip('Cascada Filters with Sequential Operations (!)', () => {
+  describe('Cascada Filters with Sequential Operations (!)', () => {
     let cont;
     let env;
 
@@ -1417,9 +1417,9 @@
       // 3. customAsyncJoin joins "start", "JOIN_PART-1", and "_asyncSuffix".
       const result = await env.renderString(template, cont);
       expect(result).to.equal('start_asyncSuffixJOIN_PART-1'); // Order of async suffix and join part might vary if not explicitly sequenced
-      expect(cont.logs).to.include('getAsyncSuffix');
-      expect(cont.logs).to.include('updateAndGet: k1=JOIN_PART (id: 1)');
-      expect(cont.logs).to.include('customAsyncJoin: joining \'start\', \'JOIN_PART-1\' with \'_asyncSuffix\'');
+      expect(cont.logs).to.contain('getAsyncSuffix');
+      expect(cont.logs).to.contain('updateAndGet: k1=JOIN_PART (id: 1)');
+      expect(cont.logs).to.contain('customAsyncJoin: joining \'start\', \'JOIN_PART-1\' with \'_asyncSuffix\'');
       // To ensure logs order for such a test, one might need to enforce sequence between getAsyncSuffix and updateAndGet too
     });
 
@@ -1467,7 +1467,7 @@
       const template = `
       {% set r1 = seqObj!.updateAndGet("k1", "A", 10) %}
       {{ "ignored" | customSyncSuffix(seqObj!.updateAndGet("k1", "B", 4)) }}
-      {% set r2 = seqObj!.getValue("k1") %},{{ r1 }},{{ r2 }}`;
+      {%- set r2 = seqObj!.getValue("k1") %},{{ r1 }},{{ r2 }}`;
       // Expected:
       // 1. seqObj!.updateAndGet("k1", "A", 40) -> r1 = "A-1"
       // 2. seqObj!.updateAndGet("k1", "B", 10) -> (filter arg, result: "B-2")
