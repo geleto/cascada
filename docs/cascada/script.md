@@ -29,6 +29,7 @@ Cascada is a new project and is evolving quickly! This is exciting, but it also 
 - [Core Syntax and Expressions](#core-syntax-and-expressions)
 - [Macros and Reusable Components](#macros-and-reusable-components)
 - [Advanced Flow Control](#advanced-flow-control)
+- [Modular Scripts](#modular-scripts)
 - [API Reference](#api-reference)
 
 ## Key Features
@@ -1044,16 +1045,36 @@ print output // "rock, pop, jazz"
 ## Modular Scripts
 **Note:** This functionality is under active development.
 
-Cascada provides three primary mechanisms for composing scripts: `import` for namespaced libraries, `include` for embedding content, and `extends`/`block` for script inheritance.
+Cascada provides powerful tools for composing scripts, promoting code reuse and the separation of concerns. This allows you to break down complex workflows into smaller, maintainable files. The three primary mechanisms for this are [`import`](#importing-libraries-with-import) for namespaced libraries, [`include`](#including-scripts-with-include) for embedding content, and [`extends`/`block`](#script-inheritance-with-extends-and-block) for script inheritance.
 
-### Declaring dependent variables
-To enable its powerful parallel execution model, Cascada's compiler must understand all variable dependencies at compile time. When you split your logic across multiple files, you must explicitly declare how these files share variables. This makes dependencies clear and allows the engine to build an accurate execution graph.
+### Declaring Cross-Script Dependencies
+To enable its powerful parallel execution model, Cascada's compiler must understand all variable dependencies at compile time. When you split your logic across multiple files, you must explicitly declare how these files share variables. This creates a clear "contract" between scripts and allows the engine to understand the variable dependencies for concurrent execution.
+
+This contract is formed by three keywords:
+
+*   **`extern`**: Used in the *called* script (the one being included or imported). It declares which variables it **expects** to receive from a parent scope. It is a declaration of need.
+    ```cascada
+    // in component.script
+    extern user, theme // Declares that this script needs 'user' and 'theme'
+    ```
+
+*   **`reads`**: Used in the *calling* script on an `import`, `include`, or `block` statement. It grants **read-only permission** to the specified variables.
+    ```cascada
+    // in main.script
+    include "component.script" reads user, theme
+    ```
+
+*   **`modifies`**: Used in the *calling* script, just like `reads`. It grants **full read and write permission** to the specified variables, allowing the called script to change their values in the parent scope.
+    ```cascada
+    // in main.script
+    include "component.script" reads user modifies theme
+    ```
 
 ### Importing Libraries with `import`
-Use `import` to load a script as a library of reusable, stateless components, primarily macros. By default, an imported script runs in isolation and cannot access the caller's variables or context.
+Use `import` to load a script as a library of reusable, stateless components, primarily macros. By default, an `import` is completely isolated: it does not execute and cannot access the parent's variables or global context.
 
-#### Importing a Namespace
-This is the simplest form, binding all of the script's exported macros and variables to a single namespace object.
+#### Importing a Namespace with `as`
+This is the cleanest way to share utility functions, binding all of a script's exported macros and variables to a single namespace object.
 
 <table>
 <tr>
@@ -1065,7 +1086,6 @@ This is the simplest form, binding all of the script's exported macros and varia
 // Defines a reusable macro for formatting.
 macro formatUser(user) : data
   @data.fullName = user.firstName + " " + user.lastName
-  @data.email = "<" + user.email + ">"
 endmacro
 ```
 </details>
@@ -1089,7 +1109,7 @@ var formatted = utils.formatUser(user)
 </table>
 
 #### Importing Specific Macros with `from`
-Use `from ... import` to pull specific macros into the current script's namespace, allowing you to call them directly. You can also rename them using `as`.
+Use `from ... import` to pull specific macros into the current script's namespace, allowing you to call them directly.
 
 <table>
 <tr>
@@ -1101,10 +1121,6 @@ Use `from ... import` to pull specific macros into the current script's namespac
 macro formatUser(user) : data
   @data.fullName = user.firstName + " " + user.lastName
 endmacro
-
-macro formatEmail(email) : text
-  @text("<" + email + ">")
-endmacro
 ```
 </details>
 </td>
@@ -1113,22 +1129,23 @@ endmacro
 <summary><strong><code>main.script</code></strong></summary>
 
 ```cascada
-from "utils.script" import formatUser, formatEmail as fmt
+from "utils.script" import formatUser
 
 var user = fetchUser(1)
 var formattedUser = formatUser(user)
-var formattedEmail = fmt(user.email)
 
 @data.user = formattedUser
-@data.user.email = formattedEmail
 ```
 </details>
 </td>
 </tr>
 </table>
 
-#### Granting Context Access with `with context`
-For stateful libraries that need to interact with the parent's data, you can use `with context`. This changes `import` to behave like `include`, granting it access to the parent scope. You must explicitly declare which variables it `reads` or `modifies`.
+#### Stateful Imports with `reads` and `modifies`
+To create stateful libraries (e.g., a logging utility) that can interact with the caller's state, an `import` must be explicitly granted permissions. This turns a typically stateless `import` into a powerful tool for modular, state-aware logic.
+
+*   Use `reads` and `modifies` on the `import` statement to grant access to specific script variables from the parent. The imported script must declare these variables using `extern`.
+*   Use the special `context` keyword in **`reads context`** to grant the imported script **read-only access to the global context object** (the data passed in from your JavaScript code). This syntax is unique to the `import` statement.
 
 <table>
 <tr>
@@ -1137,16 +1154,15 @@ For stateful libraries that need to interact with the parent's data, you can use
 <summary><strong><code>logger.script</code></strong></summary>
 
 ```cascada
-// Declare that this script expects 'currentUser' and 'log'
-extern currentUser, log
+// This library declares that it needs a 'log_messages'
+// variable from whatever script imports it.
+extern log_messages
 
-macro addEntry(level, message)
-  // This macro can now access the parent's variables
-  log.push({
-    user: currentUser.name,
-    level: level,
-    msg: message
-  })
+// This macro provides the "function" to be called.
+macro add(message)
+  // It modifies the 'log_messages' variable from the parent scope,
+  // because the parent explicitly granted permission.
+  log_messages.push(message)
 endmacro
 ```
 </details>
@@ -1156,17 +1172,18 @@ endmacro
 <summary><strong><code>main.script</code></strong></summary>
 
 ```cascada
-var currentUser = { name: "Alice" }
-var log = []
+// The main script defines the state to be modified.
+var log_messages = []
 
-// Import the logger, giving it read access to 'currentUser'
-// and read-write access to 'log'.
-from "logger.script" import addEntry with context reads currentUser modifies log
+// Import the 'add' macro and explicitly grant it
+// permission to modify the 'log_messages' variable.
+from "logger.script" import add as log modifies log_messages
 
-addEntry("info", "Process started")
-addEntry("warn", "API limit approaching")
+// Call the imported macro. It can now modify our local state.
+log("Process started.")
+log("User authenticated.")
 
-@data.log = log
+@data.final_log = log_messages
 ```
 </details>
 </td>
@@ -1174,7 +1191,7 @@ addEntry("warn", "API limit approaching")
 </table>
 
 ### Including Scripts with `include`
-Use `include` to execute another script within the current script's scope. This is useful for breaking a large workflow into smaller, stateful components. The `include` statement must grant explicit read-only (`reads`) or read-write (`modifies`) access to variables, and the included script must declare them using `extern`.
+Use `include` to execute another script within the current script's scope. This is useful for breaking a large workflow into smaller, stateful components. An `include` automatically shares the global context. As described above, you must use `reads` and `modifies` to grant access to parent variables, and the included script must declare them with `extern`.
 
 <table>
 <tr>
@@ -1189,7 +1206,6 @@ extern user, usageStats
 
 // Now it can use these variables to build its part of the data.
 @data.widget.user.name = user.name
-@data.widget.user.email = user.email
 
 // It can also modify a variable from the parent scope.
 usageStats.widgetLoads++
@@ -1207,8 +1223,6 @@ var usageStats = { widgetLoads: 0 }
 // Include the component, defining its permissions.
 include "user_widget.script" reads user modifies usageStats
 
-// The @data commands from user_widget.script will be
-// merged into this script's final data object.
 @data.stats = usageStats
 ```
 </details>
@@ -1217,12 +1231,12 @@ include "user_widget.script" reads user modifies usageStats
 </table>
 
 ### Script Inheritance with `extends` and `block`
-Use `extends` for an "inversion of control" pattern, where a "child" script provides specific implementations for placeholder `block`s defined in a "base" script. This is perfect for defining a standard workflow (base) that can be customized (child).
+Use `extends` for an "inversion of control" pattern, where a "child" script provides specific implementations for placeholder `block`s defined in a "base" script.
 
 #### Scoping in `extends` and `block`
 When a child script extends a base script, they effectively merge into a single scope.
 - **Shared State & Contract:** The base script uses `reads` and `modifies` on the `block` definition to declare a "contract" for which variables the child's implementation can access. The child script must use `extern` to declare these variables.
-- **Top-Level `var` in Child:** Variables declared with `var` at the top level of the child script (outside any `block`) are set *before* the base script's layout is executed. The base script can see and use these values.
+- **Top-Level `var` in Child:** Variables declared with `var` at the top level of the child script (outside any `block`) are set *before* the base script's layout is executed, so the base script can see and use them.
 - **`var` Inside a `block`:** Variables declared inside a `block` are **temporary and local** to that block's execution. They cannot be seen by the base script or other blocks, preventing side effects.
 
 <table>
@@ -1273,17 +1287,6 @@ endblock
 </td>
 </tr>
 </table>
-
-### Scoping Rules Summary
-
-The following table summarizes how variables and context are shared across different modular operations. For stateful sharing, the parent script must grant permissions (`reads`/`modifies`) and the child script must declare its dependencies (`extern`).
-
-| Operation | Read Parent State | Modify Parent State | Access Global Context |
-| :--- | :--- | :--- | :--- |
-| `import` | No | No | No |
-| `import ... with context` | Yes (via `reads`) | Yes (via `modifies`) | Yes (shared) |
-| `include` | Yes (via `reads`) | Yes (via `modifies`) | Yes (shared) |
-| `extends` / `block` | Yes (via `reads`) | Yes (via `modifies`) | Yes (shared) |
 
 ## API Reference
 
