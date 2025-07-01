@@ -268,7 +268,9 @@ class AsyncFrame extends Frame {
 
       //optional cleanup:
       delete this.writeCounters[varName];
-      if (Object.keys(this.writeCounters).length === 0) this.writeCounters = undefined;
+      if (Object.keys(this.writeCounters).length === 0) {
+        this.writeCounters = undefined;
+      }
 
       if (!this.sequentialLoopBody && this.parent) {
         // propagate upwards because this frame's work is fully done (counter hit zero)

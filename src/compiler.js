@@ -1130,6 +1130,12 @@ class Compiler extends Obj {
       // these will be capped to 1 when passed to the runtime.iterate() and will be released by finalizeLoopWrites
       const iteratorFuncName = 'while_iterator_' + this._tmpid();
       this.emit.line(`async function* ${iteratorFuncName}(frame) {`);
+
+      // push a frame to trap any writes from the condition expression
+      // by setting sequentialLoopBody, the writes will be released by finalizeLoopWrites
+      this.emit.line('  frame = frame.push();');
+      this.emit.line('  frame.sequentialLoopBody = true;');
+
       this.emit.line('  let iterationCount = 0;');
       this.emit.line('  while (true) {');
       // Inject the pre-compiled code for the condition.
@@ -1141,6 +1147,9 @@ class Compiler extends Obj {
       this.emit.line('    yield iterationCount;');
       this.emit.line('    iterationCount++;');
       this.emit.line('  }');
+
+      this.emit.line('  frame = frame.pop();');
+
       this.emit.line('}');
       this.emit.line('');
       this.emit.line(`let ${arrVarName} = ${iteratorFuncName}(frame);`);
