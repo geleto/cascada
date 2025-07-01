@@ -33,6 +33,7 @@ module.exports = class CompileSequential {
   }
 
   processExpression(node, frame) {
+    frame = frame.getRoot();
     const f = new AsyncFrame();
     // copy declaredVars from frame to f, but only properties that start with `!`
     // these are the keys of the active sequence locks
