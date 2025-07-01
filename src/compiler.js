@@ -710,9 +710,9 @@ class Compiler extends Obj {
         };
         this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
           if (!sequenceLockKey) {
-            this.emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
+            this.emit(`return runtime.callWrap(${result}[0], "${funcName}", context.ctx, ${result}.slice(1));`);
           } else {
-            this.emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}");`);
+            this.emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context.ctx, ${result}.slice(1), frame, "${sequenceLockKey}");`);
           }
         });
       } else {
@@ -725,13 +725,17 @@ class Compiler extends Obj {
         this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
           this.emit(`return runtime.callWrap(`);
           this.compile(node.name, frame);
-          this.emit.line(`, "${funcName}", context, ${result});`);
+          this.emit.line(`, "${funcName}", context.ctx, ${result});`);
         }); // Resolve arguments using _compileAggregate.
       }
     } else {
       // In sync mode, compile as usual.
       this.emit('runtime.callWrap(');
       this.compile(node.name, frame);
+      // Sync mode is different from async mode in that context is the
+      // Context class instance not the render method context object
+      // This is different from non-global objects that pass the parent of
+      // the function as 'this' which is part of the context object
       this.emit(', "' + funcName + '", context, ');
       this._compileAggregate(node.args, frame, '[', ']', false, false);
       this.emit('))');
@@ -1132,6 +1136,7 @@ class Compiler extends Obj {
       // It will execute at runtime within the correctly trapped `loopFrame`.
       this.emit.line(`    const conditionResult = `);
       this._compileAwaitedExpression(node.cond, loopFrame, false);
+      this.emit.line(';');
       this.emit.line('    if (!conditionResult) { break; }');
       this.emit.line('    yield iterationCount;');
       this.emit.line('    iterationCount++;');
