@@ -1293,7 +1293,7 @@ endblock
 
 Cascada builds upon the robust Nunjucks API, extending it with a powerful new execution model for scripts. This reference focuses on the APIs specific to Cascada Script, including the `AsyncEnvironment`, the distinction between `Script` and `Template` objects, and methods for extending the engine's capabilities.
 
-For details on features inherited from Nunjucks, such as loaders and the full range of built-in filters, please consult the official [Nunjucks API documentation](https://mozilla.github.io/nunjucks/api.html).
+For details on features inherited from Nunjucks, such as the full range of built-in filters and advanced loader options, please consult the official [Nunjucks API documentation](https://mozilla.github.io/nunjucks/api.html).
 
 ### Key Distinction: Script vs. Template
 
@@ -1334,13 +1334,16 @@ These methods execute a script or template and return the final result.
 
 
 #### Configuration
-You create an environment instance, optionally passing in loaders and configuration options.
+
+You create an environment instance by calling its constructor, optionally passing in loaders and configuration options.
 
 *   `new AsyncEnvironment([loaders], [opts])`
     Creates a new environment.
-    *   `loaders`: A single loader or an array of loaders (e.g., `FileSystemLoader`) to find script/template files.
+    *   `loaders`: A single loader or an array of loaders to find script/template files.
     *   `opts`: An object with configuration flags:
         *   `autoescape` (default: `true`): If `true`, automatically escapes output from templates to prevent XSS attacks.
+        *   `trimBlocks` (default: `false`): Automatically remove the first newline after a block tag.
+        *   `lstripBlocks` (default: `false`): Automatically strip leading whitespace from a block tag.
         *   For other options, see the Nunjucks documentation.
 
     ```javascript
@@ -1352,19 +1355,16 @@ You create an environment instance, optionally passing in loaders and configurat
     });
     ```
 
-### Loaders
+**Loaders**
 
 Loaders are objects that tell the environment how to find and load your scripts and templates from a source, such as the filesystem, a database, or a network.
 
-#### Built-in Loaders
+*   **Built-in Loaders:** Cascada comes with several useful loaders inherited from Nunjucks:
+    *   **`FileSystemLoader`**: (Node.js only) Loads files from the local filesystem.
+    *   **`WebLoader`**: (Browser only) Loads files over HTTP from a given base URL.
+    *   **`PrecompiledLoader`**: Loads assets from a precompiled JavaScript object, offering the best performance for production.
 
-Cascada comes with several useful loaders inherited from Nunjucks:
-
-*   **`FileSystemLoader`**: (Node.js only) Loads files from the local filesystem.
-*   **`WebLoader`**: (Browser only) Loads files over HTTP from a given base URL.
-*   **`PrecompiledLoader`**: Loads assets from a precompiled JavaScript object, offering the best performance for production.
-
-You can pass a single loader or an array of loaders to the `AsyncEnvironment` constructor. If an array is provided, Cascada will try each loader in order until one successfully finds the requested file.
+    You can pass a single loader or an array of loaders to the `AsyncEnvironment` constructor. If an array is provided, Cascada will try each loader in order until one successfully finds the requested file.
 
 ```javascript
 const env = new AsyncEnvironment([
@@ -1373,36 +1373,30 @@ const env = new AsyncEnvironment([
 ]);
 ```
 
-#### Custom Loaders
+*   **Custom Loaders:** For advanced use cases, you can create a custom loader. The recommended approach is to create a class with an `async: true` property and a `getSource` method that returns a `Promise`. The `getSource` method should resolve with a `LoaderSource` object or `null` if the asset is not found (allowing fallback to the next loader in the chain).
 
-For advanced use cases, you can create a custom loader. The recommended approach is to create a class with an `async: true` property and a `getSource` method that returns a Promise.
+    ```javascript
+    // A custom loader that fetches scripts from a database
+    class DatabaseLoader {
+      async = true;
 
-The `getSource` method should resolve with a `LoaderSource` object or `null` if the asset is not found (allowing fallback to the next loader in the chain).
+      async getSource(name) {
+        const scriptRecord = await db.scripts.findByName(name);
+        if (!scriptRecord) { return null; }
 
-```javascript
-// A custom loader that fetches scripts from a database
-class DatabaseLoader {
-  async = true;
-
-  async getSource(name) {
-    const scriptRecord = await db.scripts.findByName(name);
-
-    if (!scriptRecord) {
-      return null;
+        return {
+          src: scriptRecord.sourceCode, // The script content as a string
+          path: name,                   // The original name/path
+          noCache: false                // Whether to cache this asset
+        };
+      }
     }
 
-    return {
-      src: scriptRecord.sourceCode, // The script content as a string
-      path: name,                   // The original name/path
-      noCache: false                // Whether to cache this asset
-    };
-  }
-}
-
-const env = new AsyncEnvironment(new DatabaseLoader());
-```
+    const env = new AsyncEnvironment(new DatabaseLoader());
+    ```
 
 #### Compilation and Caching
+
 For better performance, the environment can compile and cache assets. Using `get` methods is the recommended way to work with individual scripts or templates, as it leverages this caching mechanism.
 
 *   `asyncEnvironment.getScript(scriptName)`
@@ -1421,10 +1415,11 @@ For better performance, the environment can compile and cache assets. Using `get
     ```
 
 #### Extending the Engine
+
 You can add custom, reusable logic to any environment.
 
 *   `asyncEnvironment.addGlobal(name, value)`
-    Adds a global variable or function that is accessible in all scripts and templates. This is useful for utility functions, constants, or services.
+    Adds a global variable or function that is accessible in all scripts and templates.
 
     ```javascript
     env.addGlobal('utils', {
@@ -1435,10 +1430,10 @@ You can add custom, reusable logic to any environment.
     ```
 
 *   `asyncEnvironment.addFilter(name, func, [isAsync])`
-    Adds a custom filter that can be used in both scripts and templates with the `|` operator. Inherited from Nunjucks.
+    Adds a custom filter that can be used in both scripts and templates with the `|` operator.
 
 *   `asyncEnvironment.addDataMethods(methods)`
-    Extends the built-in `@data` handler with your own methods. This is a powerful way to create domain-specific data manipulation logic.
+    Extends the built-in `@data` handler with your own methods.
 
     ```javascript
     env.addDataMethods({
@@ -1453,17 +1448,19 @@ You can add custom, reusable logic to any environment.
 *   `asyncEnvironment.addCommandHandler(name, handlerInstance)`
     Registers a **singleton** instance of a custom output command handler. The same object is used across all script runs.
 
-### Compiled Objects: `AsyncScript` and `AsyncTemplate`
+### Compiled Objects: `AsyncScript`
 
 When you compile an asset, you get a reusable object that can be rendered efficiently multiple times.
 
 #### `AsyncScript`
+
 Represents a compiled Cascada Script.
 
 *   `asyncScript.render([context])`
     Executes the compiled script with the given `context`, returning a `Promise` that resolves with the result (typically a data object).
 
 #### `AsyncTemplate`
+
 Represents a compiled Nunjucks Template.
 
 *   `asyncTemplate.render([context])`
@@ -1478,8 +1475,6 @@ Cascada provides functions to precompile files or strings directly to JavaScript
 *   `precompileScript(path, [opts])`
 *   `precompileTemplate(path, [opts])`
 
-The resulting JavaScript string can be saved to a `.js` file and loaded in your application. To use these precompiled assets, configure your environment with the `PrecompiledLoader`.
-
-The optional `opts` object allows you to customize the process. A key option is `env`, which you should use to pass your configured `AsyncEnvironment` instance. This ensures that any custom filters, global functions, or command handlers you've added are correctly included in the compiled output.
+The resulting JavaScript string can be saved to a `.js` file and loaded in your application using the `PrecompiledLoader`. A key option is `opts.env`, which ensures that any custom filters, global functions, or command handlers you've added are correctly included in the compiled output.
 
 **For a comprehensive guide on all precompilation options and advanced usage, please refer to the [Nunjucks precompiling documentation](https://mozilla.github.io/nunjucks/api.html#precompiling).**
