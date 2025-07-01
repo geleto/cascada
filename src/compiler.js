@@ -1105,23 +1105,74 @@ class Compiler extends Obj {
     }
   }
 
+  //todo - condition with sequence locks (test 2 identicsal sequence locks in the condition expression)
+  compileWhile(node, frame) {
+    if (!node.isAsync) {
+      // Synchronous case: remains the same, no changes needed.
+      this.emit('while (');
+      this._compileExpression(node.cond, frame, false);
+      this.emit(') {');
+      this.compile(node.body, frame);
+      this.emit('}');
+      return;
+    }
+
+    // Asynchronous case:
+    const iteratorCompiler = (arrNode, loopFrame, arrVarName) => {
+      // the condition expression can write if (!) sequential operations are used
+      // it runs in the same frame as the loop body which writes are isolated with the sequentialLoopBody flag
+
+      // the write counts from the below compilation are saved to the loopFrame (in the compiler)
+      // these will be capped to 1 when passed to the runtime.iterate() and will be released by finalizeLoopWrites
+      const iteratorFuncName = 'while_iterator_' + this._tmpid();
+      this.emit.line(`async function* ${iteratorFuncName}(frame) {`);
+      this.emit.line('  let iterationCount = 0;');
+      this.emit.line('  while (true) {');
+      // Inject the pre-compiled code for the condition.
+      // It will execute at runtime within the correctly trapped `loopFrame`.
+      this.emit.line(`    const conditionResult = `);
+      this._compileAwaitedExpression(node.cond, loopFrame, false);
+      this.emit.line('    if (!conditionResult) { break; }');
+      this.emit.line('    yield iterationCount;');
+      this.emit.line('    iterationCount++;');
+      this.emit.line('  }');
+      this.emit.line('}');
+      this.emit.line('');
+      this.emit.line(`let ${arrVarName} = ${iteratorFuncName}(frame);`);
+    };
+
+    const fakeForNode = new nodes.For(
+      node.lineno, node.colno,
+      new nodes.Symbol(node.lineno, node.colno, 'while_iterator_placeholder'),
+      new nodes.Symbol(node.lineno, node.colno, 'iterationCount'),
+      node.body,
+      null
+    );
+    fakeForNode.isAsync = true;
+
+    // Delegate to the modified `_compileFor`
+    this._compileFor(fakeForNode, frame, false, iteratorCompiler);
+  }
+
   compileFor(node, frame) {
     this._compileFor(node, frame, false);
   }
 
-  _compileFor(node, frame, sequential = false) {
-    // Some of this code is ugly, but it keeps the generated code
-    // as fast as possible. ForAsync also shares some of this, but
-    // not much.
-
+  _compileFor(node, frame, sequential = false, iteratorCompiler = null) {
     // Use node.arr as the position for the outer async block (evaluating the array)
     frame = this.emit.asyncBlockBufferNodeBegin(node, frame, true, node.arr);
 
     // Evaluate the array expression
     const arr = this._tmpid();
-    this.emit(`let ${arr} = `);
-    this._compileAwaitedExpression(node.arr, frame, false);
-    this.emit.line(';');
+
+    if (iteratorCompiler) {
+      // Gets the `{ "var": 1 }` style counts from compileWhile.
+      iteratorCompiler(node.arr, frame, arr);
+    } else {
+      this.emit(`let ${arr} = `);
+      this._compileAwaitedExpression(node.arr, frame, false);
+      this.emit.line(';');
+    }
 
     // Determine loop variable names
     const loopVars = [];
@@ -1254,6 +1305,12 @@ class Compiler extends Obj {
     this.emit(`], ${sequential}, ${node.isAsync});`);
 
     // End buffer block for the node (using node.arr position)
+    if (iteratorCompiler) {
+      // condition and loop body counts are a single unit of work and
+      // are isolated to not affect the outer frame write counts
+      // All writes will be released by finalizeLoopWrites
+      frame.writeCounts = this.async.countsTo1(frame.writeCounts);
+    }// else - all write counts are from the loop body and are 1 anyway (counts are counted inside (>1) and outside (=1))
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
   }
 

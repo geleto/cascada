@@ -203,6 +203,23 @@ class Parser extends Obj {
     return node;
   }
 
+  parseWhile() {
+    const whileTok = this.peekToken();
+
+    if (!this.skipSymbol('while')) {
+      this.fail('parseWhile: expected while', whileTok.lineno, whileTok.colno);
+    }
+
+    const node = new nodes.While(whileTok.lineno, whileTok.colno);
+    node.cond = this.parseExpression();
+    this.advanceAfterBlockEnd(whileTok.value);
+
+    node.body = this.parseUntilBlocks('endwhile');
+    this.advanceAfterBlockEnd();
+
+    return node;
+  }
+
   parseMacro() {
     const macroTok = this.peekToken();
     if (!this.skipSymbol('macro')) {
@@ -791,6 +808,8 @@ class Parser extends Obj {
       case 'asyncEach':
       case 'asyncAll':
         return this.parseFor();
+      case 'while':
+        return this.parseWhile();
       case 'block':
         return this.parseBlock();
       case 'extends':

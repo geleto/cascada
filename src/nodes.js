@@ -96,6 +96,7 @@ const If = Node.extend('If', { fields: ['cond', 'body', 'else_'] });
 const IfAsync = If.extend('IfAsync');
 const InlineIf = Node.extend('InlineIf', { fields: ['cond', 'body', 'else_'] });
 const For = Node.extend('For', { fields: ['arr', 'name', 'body', 'else_'] });
+const While = Node.extend('While', { fields: ['cond', 'body'] });
 const AsyncEach = For.extend('AsyncEach');
 const AsyncAll = For.extend('AsyncAll');
 const Macro = Node.extend('Macro', {
@@ -257,6 +258,7 @@ module.exports = {
   IfAsync: IfAsync,
   InlineIf: InlineIf,
   For: For,
+  While: While,
   AsyncEach: AsyncEach,
   AsyncAll: AsyncAll,
   Macro: Macro,
