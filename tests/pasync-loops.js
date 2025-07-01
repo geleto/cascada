@@ -119,7 +119,7 @@
       });
 
       // @todo - the compileFor sets near _addDeclaredVar
-      it.skip('should support destructured looping in async mode', async () => {
+      it('should support destructured looping in async mode', async () => {
         const context = { arr: [['x', 'y', 'z'], ['1', '2', '3']] };
         const template = '{% for a, b, c in arr %}' +
           '{{ a }},{{ b }},{{ c }}.{% endfor %}';
@@ -990,5 +990,895 @@
     });
 
   }); // End Loops Modifying Outer Scope
+
+  describe.only('While Loops', () => {
+    let env;
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    it('should handle basic while loop with async condition', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(5);
+            this.counter++;
+            return this.counter <= 3;
+          },
+          async getValue() {
+            await delay(3);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {% while state!.shouldContinue() -%}
+          Iteration {{ state.getValue() }}
+        {% endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Iteration 1\n        Iteration 2\n        Iteration 3');
+      // Check context.counter manually after rendering
+      expect(context.state.counter).to.equal(4);
+    });
+
+    it('should handle while loop with sequential execution operator before loop', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async initialize() {
+            await delay(5);
+            this.counter = 10;
+            return true;
+          },
+          async shouldContinue() {
+            await delay(3);
+            this.counter--;
+            return this.counter > 7;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {% set initialized = state!.initialize() %}
+        {% while state!.shouldContinue() -%}
+          Count: {{ state.getValue() }}
+        {% endwhile %}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Count: 9\n        Count: 8');
+      // Check context.counter manually after rendering
+      expect(context.state.counter).to.equal(7);
+    });
+
+    it('should handle while loop with sequential execution operator in condition', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async incrementAndCheck() {
+            await delay(5);
+            this.counter++;
+            return this.counter <= 3;
+          },
+          async getValue() {
+            await delay(3);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {% while state!.incrementAndCheck() %}
+          Value: {{ state.getValue() }}
+        {%- endwhile %}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Value: 1\n          Value: 2\n          Value: 3');
+      // Check context.counter manually after rendering
+      expect(context.state.counter).to.equal(4);
+    });
+
+    it('should handle while loop with sequential execution operator in loop body', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            return this.counter < 3;
+          },
+          async increment() {
+            await delay(5);
+            this.counter++;
+            return this.counter;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {% while state.shouldContinue() %}
+          {%- set newValue = state!.increment() -%}
+          Current: {{ state.getValue() }}
+        {% endwhile %}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Current: 1\n        Current: 2\n        Current: 3');
+      // Check context.counter manually after rendering
+      expect(context.state.counter).to.equal(3);
+    });
+
+    it('should handle while loop with sequential execution operator after loop', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async finalize() {
+            await delay(5);
+            return this.counter * 10;
+          }
+        }
+      };
+
+      const template = `
+        {% while state!.shouldContinue() %}
+          Iteration {{ state.counter }}
+        {%- endwhile -%}
+        {%- set result = state!.finalize() %}
+        Result: {{ result }}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Iteration 1\n          Iteration 2\n        Result: 30');
+      // Check context.counter manually after rendering
+      expect(context.state.counter).to.equal(3);
+    });
+
+    it('should handle while loop with complex sequential operations', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async processValue(val) {
+            await delay(5);
+            return val * 2;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {% set total = 0 %}
+        {%- while state!.shouldContinue() -%}
+          {%- set processed = state.processValue(state.getValue()) -%}
+          {% set total = total + processed %}
+          Current total: {{ total }}
+        {%- endwhile %}
+        Final total: {{ total }}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Current total: 2\n          Current total: 6\n        Final total: 6');
+      // Check context.counter manually after rendering
+      expect(context.state.counter).to.equal(3);
+    });
+
+    it('should handle while loop with async generator condition', async () => {
+      const context = {
+        async *numberGenerator() {
+          yield 1; await delay(5);
+          yield 2; await delay(5);
+          yield 3; await delay(5);
+        },
+        currentValue: null,
+        generator: null,
+        async getNextValue() {
+          if (!this.generator) {
+            this.generator = this.numberGenerator();
+          }
+          this.currentValue = await this.generator.next();
+          return !this.currentValue.done;
+        },
+        async getValue() {
+          await delay(3);
+          return this.currentValue.value;
+        }
+      };
+
+      const template = `
+        {%- while getNextValue() -%}
+          Generated: {{ getValue() }},
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Generated: 1,Generated: 2,Generated: 3,');
+    });
+
+    it('should handle while loop with nested async operations', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async innerOperation(val) {
+            await delay(5);
+            return val * 3;
+          },
+          async outerOperation(val) {
+            await delay(2);
+            const inner = await this.innerOperation(val);
+            return inner + 1;
+          },
+          async getValue() {
+            await delay(1);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while state!.shouldContinue() -%}
+          {%- set result = state.outerOperation(state.getValue()) -%}
+          Processed: {{ result }},
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Processed: 4,Processed: 7,');
+      // Check context.counter manually after rendering
+      expect(context.state.counter).to.equal(3);
+    });
+
+
+    it('should handle while loop with empty body', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 3;
+          }
+        }
+      };
+
+      const template = `
+        {% while state!.shouldContinue() %}
+        {% endwhile %}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('');
+      // Check context.counter manually after rendering
+      expect(context.state.counter).to.equal(4);
+    });
+
+    it('should handle while loop with empty body, no sequence operator', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 3;
+          }
+        }
+      };
+
+      const template = `
+        {% while state.shouldContinue() %}
+        {% endwhile %}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('');
+      // Check context.counter manually after rendering
+      expect(context.state.counter).to.equal(4);
+    });
+
+    it('should handle while loop with immediate false condition', async () => {
+      const context = {
+        async shouldContinue() {
+          await delay(3);
+          return false;
+        },
+        async getValue() {
+          await delay(2);
+          return 'should not execute';
+        }
+      };
+
+      const template = `
+        {% while shouldContinue() %}
+          {{ getValue() }}
+        {% endwhile %}
+        Loop completed
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Loop completed');
+    });
+
+    it('should handle nested while loops without sequential operators', async () => {
+      const context = {
+        async getOuterMax() {
+          await delay(3);
+          return 2;
+        },
+        async getInnerMax() {
+          await delay(2);
+          return 3;
+        },
+        async getOuterValue(iteration) {
+          await delay(2);
+          return iteration;
+        },
+        async getInnerValue(iteration) {
+          await delay(1);
+          return iteration;
+        }
+      };
+
+      const template = `
+        {% set outerMax = getOuterMax() %}
+        {% set innerMax = getInnerMax() %}
+        {% set outerIter = 1 %}
+        {%- while outerIter <= outerMax -%}
+          Outer:{{ getOuterValue(outerIter) }},
+          {%- set innerIter = 1 -%}
+          {%- while innerIter <= innerMax -%}
+            Inner:{{ getInnerValue(innerIter) }},
+            {%- set innerIter = innerIter + 1 -%}
+          {%- endwhile -%}
+          {%- set outerIter = outerIter + 1 -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Inner:3,Outer:2,Inner:1,Inner:2,Inner:3,');
+    });
+
+    it('should handle nested while loops with pure async functions', async () => {
+      const context = {
+        async getOuterCount() {
+          await delay(3);
+          return 2;
+        },
+        async getInnerCount() {
+          await delay(2);
+          return 3;
+        },
+        async getOuterValue(iteration) {
+          await delay(1);
+          return iteration;
+        },
+        async getInnerValue(iteration) {
+          await delay(1);
+          return iteration;
+        }
+      };
+
+      const template = `
+        {% set outerMax = getOuterCount() %}
+        {% set innerMax = getInnerCount() %}
+        {% set outerIter = 1 %}
+        {%- while outerIter <= outerMax -%}
+          Outer:{{ getOuterValue(outerIter) }},
+          {%- set innerIter = 1 -%}
+          {%- while innerIter <= innerMax -%}
+            Inner:{{ getInnerValue(innerIter) }},
+            {%- set innerIter = innerIter + 1 -%}
+          {%- endwhile -%}
+          {%- set outerIter = outerIter + 1 -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Inner:3,Outer:2,Inner:1,Inner:2,Inner:3,');
+    });
+
+    it('should handle nested while loops with async iterators', async () => {
+      const context = {
+        async getOuterValues() {
+          await delay(3);
+          return [1, 2];
+        },
+        async getInnerValues(outerVal) {
+          await delay(2);
+          return [outerVal * 10, outerVal * 20];
+        }
+      };
+
+      const template = `
+        {% set outerValues = getOuterValues() %}
+        {%- set outerIndex = 0 -%}
+        {%- while outerIndex < outerValues.length -%}
+          {%- set outerVal = outerValues[outerIndex] -%}
+          Outer:{{ outerVal }},
+          {%- set innerValues = getInnerValues(outerVal) -%}
+          {%- set innerIndex = 0 -%}
+          {%- while innerIndex < innerValues.length -%}
+            Inner:{{ innerValues[innerIndex] }},
+            {%- set innerIndex = innerIndex + 1 -%}
+          {%- endwhile -%}
+          {%- set outerIndex = outerIndex + 1 -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Outer:1,Inner:10,Inner:20,Outer:2,Inner:20,Inner:40,');
+    });
+
+    it('should handle nested while loops with async data fetching', async () => {
+      const context = {
+        async getUsers() {
+          await delay(3);
+          return [{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }];
+        },
+        async getUserPosts(userId) {
+          await delay(2);
+          if (userId === 1) {
+            return [{ id: 1, title: 'Post 1' }, { id: 2, title: 'Post 2' }];
+          } else {
+            return [{ id: 3, title: 'Post 3' }];
+          }
+        },
+        async getPostComments(postId) {
+          await delay(1);
+          return [{ id: 1, text: 'Comment 1' }, { id: 2, text: 'Comment 2' }];
+        }
+      };
+
+      const template = `
+        {% set users = getUsers() %}
+        {% set userIndex = 0 %}
+        {%- while userIndex < users.length -%}
+          User:{{ users[userIndex].name }},
+          {%- set posts = getUserPosts(users[userIndex].id) -%}
+          {%- set postIndex = 0 -%}
+          {%- while postIndex < posts.length -%}
+            Post:{{ posts[postIndex].title }},
+            {%- set comments = getPostComments(posts[postIndex].id) -%}
+            {%- set commentIndex = 0 -%}
+            {%- while commentIndex < comments.length -%}
+              Comment:{{ comments[commentIndex].text }},
+              {%- set commentIndex = commentIndex + 1 -%}
+            {%- endwhile -%}
+            {%- set postIndex = postIndex + 1 -%}
+          {%- endwhile -%}
+          {%- set userIndex = userIndex + 1 -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('User:Alice,Post:Post 1,Comment:Comment 1,Comment:Comment 2,Post:Post 2,Comment:Comment 1,Comment:Comment 2,User:Bob,Post:Post 3,Comment:Comment 1,Comment:Comment 2,');
+    });
+
+    it('should handle nested while loops with async calculations', async () => {
+      const context = {
+        async calculateOuter(iteration) {
+          await delay(3);
+          return iteration * 10;
+        },
+        async calculateInner(outerVal, iteration) {
+          await delay(2);
+          return outerVal + iteration;
+        },
+        async getOuterMax() {
+          await delay(1);
+          return 2;
+        },
+        async getInnerMax() {
+          await delay(1);
+          return 3;
+        }
+      };
+
+      const template = `
+        {% set outerMax = getOuterMax() %}
+        {% set innerMax = getInnerMax() %}
+        {% set outerIter = 1 %}
+        {%- while outerIter <= outerMax -%}
+          {%- set outerVal = calculateOuter(outerIter) -%}
+          Outer:{{ outerVal }},
+          {%- set innerIter = 1 -%}
+          {%- while innerIter <= innerMax -%}
+            {%- set innerVal = calculateInner(outerVal, innerIter) -%}
+            Inner:{{ innerVal }},
+            {%- set innerIter = innerIter + 1 -%}
+          {%- endwhile -%}
+          {%- set outerIter = outerIter + 1 -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Outer:10,Inner:11,Inner:12,Inner:13,Outer:20,Inner:21,Inner:22,Inner:23,');
+    });
+
+    it.only('should handle nested while loops with async condition checks', async () => {
+      const context = {
+        async checkOuterCondition(iteration) {
+          await delay(3);
+          return iteration <= 2;
+        },
+        async checkInnerCondition(outerIter, innerIter) {
+          await delay(2);
+          return innerIter <= 3;
+        },
+        async getOuterValue(iteration) {
+          await delay(1);
+          return `O${iteration}`;
+        },
+        async getInnerValue(outerIter, innerIter) {
+          await delay(1);
+          return `I${outerIter}_${innerIter}`;
+        }
+      };
+
+      const template = `
+        {% set outerIter = 1 %}
+        {%- while checkOuterCondition(outerIter) -%}
+          {%- set outerVal = getOuterValue(outerIter) -%}
+          {{ outerVal }},
+          {%- set innerIter = 1 -%}
+          {%- while checkInnerCondition(outerIter, innerIter) -%}
+            {%- set innerVal = getInnerValue(outerIter, innerIter) -%}
+            {{ innerVal }},
+            {%- set innerIter = innerIter + 1 -%}
+          {%- endwhile -%}
+          {%- set outerIter = outerIter + 1 -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('O1,I1_1,I1_2,I1_3,O2,I2_1,I2_2,I2_3,');
+    });
+
+    it.only('should handle nested for loops with async condition checks', async () => {
+      const context = {
+        async checkOuterCondition(iteration) {
+          await delay(3);
+          return iteration <= 2;
+        },
+        async checkInnerCondition(outerIter, innerIter) {
+          await delay(2);
+          return innerIter <= 3;
+        },
+        async getOuterValue(iteration) {
+          await delay(1);
+          return `O${iteration}`;
+        },
+        async getInnerValue(outerIter, innerIter) {
+          await delay(1);
+          return `I${outerIter}_${innerIter}`;
+        }
+      };
+
+      const template = `
+        {% set outerIter = 1 %}
+        {%- for _ in range(1, 3) -%}
+          {%- set outerVal = getOuterValue(outerIter) -%}
+          {{ outerVal }},
+          {%- set innerIter = 1 -%}
+          {%- for _ in range(1, 4) -%}
+            {%- set innerVal = getInnerValue(outerIter, innerIter) -%}
+            {{ innerVal }},
+            {%- set innerIter = innerIter + 1 -%}
+          {%- endfor -%}
+          {%- set outerIter = outerIter + 1 -%}
+        {%- endfor -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('O1,I1_1,I1_2,I1_3,O2,I2_1,I2_2,I2_3,');
+    });
+
+    it('should handle nested while loops with async conditions', async () => {
+      const context = {
+        outer: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        },
+        inner: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(2);
+            this.counter++;
+            return this.counter <= 3;
+          },
+          async getValue() {
+            await delay(1);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while outer!.shouldContinue() -%}
+          Outer:{{ outer.getValue() }},
+          {%- while inner!.shouldContinue() -%}
+            Inner:{{ inner.getValue() }},
+          {%- endwhile -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Inner:3,Outer:2,Inner:1,Inner:2,Inner:3,');
+      expect(context.outer.counter).to.equal(3);
+      expect(context.inner.counter).to.equal(6);
+    });
+
+    it('should handle nested while loops with sequential operators in both loops', async () => {
+      const context = {
+        outer: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        },
+        inner: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(2);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(1);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while outer!.shouldContinue() -%}
+          Outer:{{ outer!.getValue() }},
+          {%- while inner!.shouldContinue() -%}
+            Inner:{{ inner!.getValue() }},
+          {%- endwhile -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:1,Inner:2,');
+      expect(context.outer.counter).to.equal(3);
+      expect(context.inner.counter).to.equal(4);
+    });
+
+    it('should handle nested while loops with sequential operator only in inner loop', async () => {
+      const context = {
+        outer: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        },
+        inner: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(2);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(1);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while outer.shouldContinue() -%}
+          Outer:{{ outer.getValue() }},
+          {%- while inner!.shouldContinue() -%}
+            Inner:{{ inner!.getValue() }},
+          {%- endwhile -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:1,Inner:2,');
+      expect(context.outer.counter).to.equal(3);
+      expect(context.inner.counter).to.equal(4);
+    });
+
+    it('should handle nested while loops with sequential operator only in outer loop', async () => {
+      const context = {
+        outer: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        },
+        inner: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(2);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(1);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while outer!.shouldContinue() -%}
+          Outer:{{ outer!.getValue() }},
+          {%- while inner.shouldContinue() -%}
+            Inner:{{ inner.getValue() }},
+          {%- endwhile -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:1,Inner:2,');
+      expect(context.outer.counter).to.equal(3);
+      expect(context.inner.counter).to.equal(4);
+    });
+
+    it('should handle deeply nested while loops with sequential operators', async () => {
+      const context = {
+        level1: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        },
+        level2: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(2);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(1);
+            return this.counter;
+          }
+        },
+        level3: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(1);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(1);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while level1!.shouldContinue() -%}
+          L1:{{ level1!.getValue() }},
+          {%- while level2!.shouldContinue() -%}
+            L2:{{ level2!.getValue() }},
+            {%- while level3!.shouldContinue() -%}
+              L3:{{ level3!.getValue() }},
+            {%- endwhile -%}
+          {%- endwhile -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('L1:1,L2:1,L3:1,L3:2,L2:2,L3:1,L3:2,L1:2,L2:1,L3:1,L3:2,L2:2,L3:1,L3:2,');
+      expect(context.level1.counter).to.equal(3);
+      expect(context.level2.counter).to.equal(4);
+      expect(context.level3.counter).to.equal(8);
+    });
+
+    it('should handle nested while loops with variable modification', async () => {
+      const context = {
+        outer: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        },
+        inner: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(2);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(1);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {% set total = 0 %}
+        {%- while outer!.shouldContinue() -%}
+          {% set outerVal = outer!.getValue() %}
+          Outer:{{ outerVal }},
+          {%- while inner!.shouldContinue() -%}
+            {% set innerVal = inner!.getValue() %}
+            {% set total = total + outerVal + innerVal %}
+            Inner:{{ innerVal }},
+          {%- endwhile -%}
+        {%- endwhile -%}
+        Total:{{ total }}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:1,Inner:2,Total:12');
+      expect(context.outer.counter).to.equal(3);
+      expect(context.inner.counter).to.equal(4);
+    });
+
+  }); // End While Loops
 
 })();

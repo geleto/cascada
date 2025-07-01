@@ -18,7 +18,7 @@
     expectAsyncError = window.util.expectAsyncError;
   }
 
-  describe.only('Sequential Expressions with ! Marker', () => {
+  describe('Sequential Expressions with ! Marker', () => {
     let env;
     let context;
 
