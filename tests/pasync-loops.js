@@ -1014,7 +1014,7 @@
       };
 
       const template = `
-        {% while state!.shouldContinue() -%}
+        {% while state.shouldContinue() -%}
           Iteration {{ state.getValue() }}
         {% endwhile -%}
       `;
@@ -1048,7 +1048,7 @@
 
       const template = `
         {% set initialized = state!.initialize() %}
-        {% while state!.shouldContinue() -%}
+        {% while state.shouldContinue() -%}
           Count: {{ state.getValue() }}
         {% endwhile %}
       `;
@@ -1172,7 +1172,7 @@
 
       const template = `
         {% set total = 0 %}
-        {%- while state!.shouldContinue() -%}
+        {%- while state.shouldContinue() -%}
           {%- set processed = state.processValue(state.getValue()) -%}
           {% set total = total + processed %}
           Current total: {{ total }}
@@ -1244,7 +1244,7 @@
       };
 
       const template = `
-        {%- while state!.shouldContinue() -%}
+        {%- while state.shouldContinue() -%}
           {%- set result = state.outerOperation(state.getValue()) -%}
           Processed: {{ result }},
         {%- endwhile -%}
@@ -1270,7 +1270,7 @@
       };
 
       const template = `
-        {% while state!.shouldContinue() %}
+        {% while state.shouldContinue() %}
         {% endwhile %}
       `;
 
@@ -1879,6 +1879,573 @@
       expect(context.inner.counter).to.equal(6);
     });
 
+    it('should handle while loop with loop.index', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 3;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while state!.shouldContinue() -%}
+          Iteration:{{ loop.index }},Value:{{ state.getValue() }},
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Iteration:1,Value:1,Iteration:2,Value:2,Iteration:3,Value:3,');
+      expect(context.state.counter).to.equal(4);
+    });
+
+    it('should handle while loop with loop.index0', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 3;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while state!.shouldContinue() -%}
+          Index0:{{ loop.index0 }},Value:{{ state.getValue() }},
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Index0:0,Value:1,Index0:1,Value:2,Index0:2,Value:3,');
+      expect(context.state.counter).to.equal(4);
+    });
+
+
+    it('should handle nested while loops with loop variables', async () => {
+      const context = {
+        outer: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 2;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        },
+        inner: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(2);
+            this.counter++;
+            return this.counter % 3 !== 0;
+          },
+          async getValue() {
+            await delay(1);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while outer!.shouldContinue() -%}
+          Outer{{ loop.index }}:{{ outer.getValue() }},
+          {%- while inner!.shouldContinue() -%}
+            Inner{{ loop.index }}:{{ inner.getValue() }},
+          {%- endwhile -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Outer1:1,Inner1:1,Inner2:2,Outer2:2,Inner1:4,Inner2:5,');
+      expect(context.outer.counter).to.equal(3);
+      expect(context.inner.counter).to.equal(6);
+    });
+
+    it('should handle while loop with loop variables and async functions', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 3;
+          },
+          async processWithIndex(index, value) {
+            await delay(2);
+            return `P${index}_${value}`;
+          }
+        }
+      };
+
+      const template = `
+        {%- while state.shouldContinue() -%}
+          {{ state.processWithIndex(loop.index, state.counter) }},
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('P1_1,P2_2,P3_3,');
+      expect(context.state.counter).to.equal(4);
+    });
+
+    it('should handle while loop with loop variables in conditional logic', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 5;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while state.shouldContinue() -%}
+          {%- if loop.index % 2 == 0 -%}
+            Even{{ loop.index }}:{{ state.getValue() }},
+          {%- else -%}
+            Odd{{ loop.index }}:{{ state.getValue() }},
+          {%- endif -%}
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Odd1:1,Even2:2,Odd3:3,Even4:4,Odd5:5,');
+      expect(context.state.counter).to.equal(6);
+    });
+
+    it('should handle while loop with loop variables and arithmetic operations', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          async shouldContinue() {
+            await delay(3);
+            this.counter++;
+            return this.counter <= 3;
+          },
+          async getValue() {
+            await delay(2);
+            return this.counter;
+          }
+        }
+      };
+
+      const template = `
+        {%- while state.shouldContinue() -%}
+          {{ loop.index * 10 + state.getValue() }},
+        {%- endwhile -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('11,22,33,');
+      expect(context.state.counter).to.equal(4);
+    });
+
   }); // End While Loops
+
+  describe('Sequential Each Loops', () => {
+    let env;
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    it('should handle basic each loop with async functions (Sequential)', async () => {
+      const context = {
+        items: [1, 2, 3],
+        async processItem(id) {
+          await delay(10);
+          return `Processed ${id}`;
+        }
+      };
+
+      const template = `
+        {%- asyncEach item in items -%}
+          {{ processItem(item) }}
+        {%- endeach -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Processed 1Processed 2Processed 3');
+    });
+
+    it('should handle each loop with dependent async operations (Sequential)', async () => {
+      const context = {
+        users: ['alice', 'bob', 'charlie'],
+        async createUser(name) {
+          await delay(5);
+          return { id: name.length, name: name };
+        },
+        async createProfile(user) {
+          await delay(3);
+          return { userId: user.id, theme: 'dark' };
+        }
+      };
+
+      const template = `
+        {%- asyncEach user in users -%}
+          {%- set newUser = createUser(user) -%}
+          {%- set profile = createProfile(newUser) -%}
+          User: {{ newUser.name }}, Profile: {{ profile.theme }}
+        {%- endeach -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('User: alice, Profile: darkUser: bob, Profile: darkUser: charlie, Profile: dark');
+    });
+
+    it('should handle each loop with loop variables (Sequential)', async () => {
+      const context = {
+        items: ['a', 'b', 'c'],
+        async processWithIndex(item, index) {
+          await delay(5);
+          return `${item}-${index}`;
+        }
+      };
+
+      const template = `
+        {%- asyncEach item in items -%}
+          {{ processWithIndex(item, loop.index) }}
+        {%- endeach -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('a-1b-2c-3');
+    });
+
+    it('should handle each loop with else block (Sequential)', async () => {
+      const context = {
+        async getItems() {
+          await delay(5);
+          return [];
+        },
+        async getEmptyMessage() {
+          await delay(3);
+          return 'No items found';
+        }
+      };
+
+      const template = `
+        {%- asyncEach item in getItems() -%}
+          {{ item }}
+        {%- else -%}
+          {{ getEmptyMessage() }}
+        {%- endeach -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('No items found');
+    });
+
+    it('should handle nested each loops (Sequential)', async () => {
+      const context = {
+        departments: ['IT', 'HR'],
+        async getEmployees(dept) {
+          await delay(5);
+          return dept === 'IT' ? ['alice', 'bob'] : ['charlie'];
+        },
+        async getEmployeeDetails(name) {
+          await delay(3);
+          return { name: name, role: 'developer' };
+        }
+      };
+
+      const template = `
+        {%- asyncEach dept in departments -%}
+          {{ dept }}:
+          {%- asyncEach emp in getEmployees(dept) -%}
+            {%- set details = getEmployeeDetails(emp) -%}
+            {{ details.name }}
+          {%- endeach -%}
+        {%- endeach -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('IT:alicebobHR:charlie');
+    });
+
+    it('should handle each loop with object iteration (Sequential)', async () => {
+      const context = {
+        config: { theme: 'dark', lang: 'en' },
+        async processConfig(key, value) {
+          await delay(5);
+          return `${key}: ${value}`;
+        }
+      };
+
+      const template = `
+        {%- asyncEach key, value in config -%}
+          {{ processConfig(key, value) }}
+        {%- endeach -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('theme: darklang: en');
+    });
+
+    it('should handle each loop with array unpacking (Sequential)', async () => {
+      const context = {
+        data: [['alice', 25], ['bob', 30]],
+        async processUser(name, age) {
+          await delay(5);
+          return `${name} (${age})`;
+        }
+      };
+
+      const template = `
+        {%- asyncEach name, age in data -%}
+          {{ processUser(name, age) }}
+        {%- endeach -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('alice (25)bob (30)');
+    });
+
+    it('should handle each loop with conditional logic (Sequential)', async () => {
+      const context = {
+        numbers: [1, 2, 3, 4, 5],
+        async processNumber(num) {
+          await delay(3);
+          return num * 2;
+        },
+        async processEven(num) {
+          await delay(2);
+          return `Even: ${num}`;
+        }
+      };
+
+      const template = `
+        {%- asyncEach num in numbers -%}
+          {%- set doubled = processNumber(num) -%}
+          {%- if doubled % 2 == 0 -%}
+            {{ processEven(doubled) }}
+          {%- else -%}
+            Odd: {{ doubled }}
+          {%- endif -%}
+        {%- endeach -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Even: 2Even: 4Even: 6Even: 8Even: 10');
+    });
+
+    it('should handle each loop with variable accumulation (Sequential)', async () => {
+      const context = {
+        items: [10, 20, 30],
+        async getIncrement(val) {
+          await delay(5);
+          return val;
+        }
+      };
+
+      const template = `
+        {% set total = 0 %}
+        {%- asyncEach item in items -%}
+          {%- set increment = getIncrement(item) -%}
+          {%- set total = total + increment -%}
+          Current total: {{ total }},
+        {%- endeach -%}
+        Final total: {{ total }}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Current total: 10,Current total: 30,Current total: 60,Final total: 60');
+    });
+
+    it('should handle each loop with async iterator (Sequential)', async () => {
+      const context = {
+        async *numberGenerator() {
+          yield 1; await delay(5);
+          yield 2; await delay(5);
+          yield 3; await delay(5);
+        },
+        async processNumber(num) {
+          await delay(3);
+          return `Processed ${num}`;
+        }
+      };
+
+      const template = `
+        {%- asyncEach num in numberGenerator() -%}
+          {{ processNumber(num) }}
+        {%- endeach -%}
+      `;
+
+      const result = await env.renderString(template, context);
+      expect(result.trim()).to.equal('Processed 1Processed 2Processed 3');
+    });
+
+  }); // End Sequential Each Loops
+
+  describe('Cascada Script Loops', () => {
+    let env;
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    it('should handle for loop in script format (Parallel)', async () => {
+      const context = {
+        async fetchUser(id) {
+          await delay(5);
+          return { id, name: `User ${id}`, active: id % 2 === 0 };
+        }
+      };
+
+      const script = `
+:data
+
+// Initialize arrays
+@data.users = []
+@data.summary.userNames = []
+
+// For loop - parallel execution
+var userIds = [1, 2, 3, 4]
+for id in userIds
+  var user = fetchUser(id)
+  @data.users.push({ id: user.id, name: user.name, active: user.active })
+endfor
+
+// Summary - simplified to avoid complex filtering
+@data.summary.totalUsers = userIds.length
+for user in userIds
+  @data.summary.userNames.push("User " + user)
+endfor
+      `;
+
+      const result = await env.renderScriptString(script, context);
+
+      expect(result).to.have.property('users');
+      expect(result.users).to.have.length(4);
+      expect(result.users[0]).to.have.property('id', 1);
+      expect(result.users[0]).to.have.property('name', 'User 1');
+      expect(result.users[0]).to.have.property('active', false);
+      expect(result.users[1]).to.have.property('active', true);
+
+      expect(result).to.have.property('summary');
+      expect(result.summary).to.have.property('totalUsers', 4);
+      expect(result.summary).to.have.property('userNames');
+      expect(result.summary.userNames).to.have.length(4);
+      expect(result.summary.userNames).to.contain('User 1');
+      expect(result.summary.userNames).to.contain('User 2');
+    });
+
+    it('should handle while loop in script format (Sequential)', async () => {
+      const context = {
+        async processItem(item) {
+          await delay(3);
+          return `Processed: ${item}`;
+        },
+        async checkCondition(counter) {
+          await delay(2);
+          return counter < 3;
+        },
+        async incrementCounter(counter) {
+          await delay(1);
+          return counter + 1;
+        }
+      };
+
+      const script = `
+:data
+
+// Use capture block to handle the while loop logic
+var result = capture :data
+  var counter = 0
+  var iterations = 0
+  while checkCondition(counter)
+    var processed = processItem("item-" + counter)
+    @data.whileResults.push(processed)
+    iterations = iterations + 1
+    counter = incrementCounter(counter)
+  endwhile
+
+  @data.summary.iterations = iterations
+  @data.summary.finalCounter = counter
+endcapture
+
+// Assign the captured result to our data object
+@data.whileResults = result.whileResults
+@data.summary.iterations = result.summary.iterations
+@data.summary.finalCounter = result.summary.finalCounter
+      `;
+
+      const result = await env.renderScriptString(script, context);
+
+      expect(result).to.have.property('whileResults');
+      expect(result.whileResults).to.have.length(3);
+      expect(result.whileResults[0]).to.equal('Processed: item-0');
+      expect(result.whileResults[1]).to.equal('Processed: item-1');
+      expect(result.whileResults[2]).to.equal('Processed: item-2');
+
+      expect(result).to.have.property('summary');
+      expect(result.summary).to.have.property('iterations', 3);
+      expect(result.summary).to.have.property('finalCounter', 3);
+    });
+
+    it('should handle each loop in script format (Sequential)', async () => {
+      const context = {
+        async processItem(item) {
+          await delay(3);
+          return `Processed: ${item}`;
+        }
+      };
+
+      const script = `
+:data
+
+// Use capture block to handle the each loop logic
+var result = capture :data
+  var items = ["a", "b", "c"]
+  var totalItems = items.length
+  each item in items
+    var processed = processItem(item)
+    @data.eachResults.push(processed)
+  endeach
+
+  @data.summary.totalItems = totalItems
+  @data.summary.items = items | join(", ")
+endcapture
+
+// Assign the captured result to our data object
+@data.eachResults = result.eachResults
+@data.summary.totalItems = result.summary.totalItems
+@data.summary.items = result.summary.items
+      `;
+
+      const result = await env.renderScriptString(script, context);
+
+      expect(result).to.have.property('eachResults');
+      expect(result.eachResults).to.have.length(3);
+      expect(result.eachResults[0]).to.equal('Processed: a');
+      expect(result.eachResults[1]).to.equal('Processed: b');
+      expect(result.eachResults[2]).to.equal('Processed: c');
+
+      expect(result).to.have.property('summary');
+      expect(result.summary).to.have.property('totalItems', 3);
+      expect(result.summary).to.have.property('items', 'a, b, c');
+    });
+
+  }); // End Cascada Script Loops
 
 })();
