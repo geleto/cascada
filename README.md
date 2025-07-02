@@ -7,7 +7,7 @@
 ## Overview
 
 ### ⚡ Parallel by default
-Cascada is a powerful engine for **JavaScript** and **TypeScript** applications, providing both a [template syntax](docs/cascada/template.md) and a [scripting language](docs/cascada/script.md). It is designed to dramatically simplify complex, asynchronous workflows by fundamentally inverting the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
+Cascada is a powerful engine for **JavaScript** and **TypeScript** applications, providing both a [scripting language](docs/cascada/script.md) and a [template syntax](docs/cascada/template.md). It is designed to dramatically simplify complex, asynchronous workflows by fundamentally inverting the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
 
 ### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
 The engine intelligently analyzes your code, automatically executing independent operations - like API calls, LLM requests, and database queries - concurrently. It guarantees that operations will wait for their required inputs before executing, a smart orchestration that **eliminates race conditions by design** while delivering high performance without the complexity and boilerplate of manual async handling.

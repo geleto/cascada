@@ -217,7 +217,7 @@ The runtime (`runtime.js`) provides the classes and helpers that execute the com
 The core mechanisms are applied consistently:
 
 *   **Control Flow (`if`, `for`, `switch`):** Branches are wrapped in async blocks if needed. Compiler generates `writeCounts` for *all* branches; runtime uses `skipBranchWrites` for untaken paths. `for` uses `runtime.iterate` for async iterators, potentially wrapping iterations in async contexts and potentially forcing sequential execution for state consistency.
-*   **Template Composition (`include`, `extends`, `import`, `block`):** Use `_compileGetTemplate` (async) for loading. Rendering/integration logic wrapped in async blocks. State synchronization works across boundaries (with planned `depends` tag for dynamic cases).
+*   **Template Composition (`include`, `extends`, `import`, `block`):** Use `_compileGetTemplateOrScript` (async) for loading. Rendering/integration logic wrapped in async blocks. State synchronization works across boundaries (with planned `depends` tag for dynamic cases).
 *   **Macros, Functions, Filters, Extensions:** Use `resolveAll`/`resolveDuo` etc. for concurrent argument resolution. Async functions/filters/extensions are handled seamlessly. Macros manage their internal async state and use internal `waitAllClosures` before returning.
 *   **Capture (`capture`):** Uses `_emitAsyncBlockValue` and waits for internal closures (`waitAllClosures(1)`) before finalizing the captured string.
 

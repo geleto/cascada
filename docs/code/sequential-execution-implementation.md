@@ -96,7 +96,7 @@ The Implementation leverages Cascada's existing complex asynchronous variable sy
     *   New runtime helpers (`sequencedContextLookup`, `sequencedMemberLookupAsync`) were created. These internally use `awaitSequenceLock`, then perform the lookup, and finally release the lock by updating its state via `frame.set`.
     *   The compiler (for `Symbol` and `LookupVal`) now:
         *   Extracts the `nodeStaticPathKey`.
-        *   Checks if this key is a declared sequence lock (in `frame.sequenceLockFrame.declaredVars`).
+        *   Checks if this key is a declared sequence lock (in the root frame declaredVars`).
         *   If it is, it registers a "write intent" for this key and generates code to call the new sequenced lookup helpers.
         *   Otherwise, it generates standard lookup code.
 
