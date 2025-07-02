@@ -1258,67 +1258,103 @@ async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loop
   let didIterate = false;
   if (arr) {
     if (isAsync && typeof arr[Symbol.asyncIterator] === 'function') {
-      const iterator = arr[Symbol.asyncIterator]();
-      let result;
-      let i = 0;
+      // We must have two separate code paths. The `lenPromise` and `lastPromise`
+      // mechanism is fundamentally incompatible with sequential execution, as it
+      // would create a deadlock.
 
-      let lastPromiseResolve;
-      let lastPromise = new Promise(resolve => {
-        lastPromiseResolve = resolve;
-      });
+      if (sequential) {
+        // Used for `while` and `each` loops and
+        // any `for` loop marked as sequential. It does NOT support `loop.length`
+        // or `loop.last` for async iterators, as that is impossible to know
+        // without first consuming the entire iterator.
+        let i = 0;
+        for await (const value of arr) {
+          didIterate = true;
 
-      let lenPromise = new Promise(resolve => {
-        const values = [];
-        (async () => {
-          try {
-            while ((result = await iterator.next()), !result.done) {
-              values.push(result.value);
-              didIterate = true;
-              const value = result.value;
-
-              // If a new iteration starts, the previous one wasn't the last
-              if (lastPromiseResolve) {
-                lastPromiseResolve(false);
-                // Create a new lastPromise for this iteration
-                lastPromise = new Promise(resolveNew => {
-                  lastPromiseResolve = resolveNew;
-                });
-              }
-
-              let res;
-              if (loopVars.length === 1) {
-                res = loopBody(value, i, lenPromise, lastPromise);
-              } else {
-                if (!Array.isArray(value)) {
-                  throw new Error('Expected an array for destructuring');
-                }
-                res = loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
-              }
-              if (sequential) {
-                await res;
-              }
-              i++;
+          let res;
+          if (loopVars.length === 1) {
+            // `while` loops pass `undefined` for len/last, which is correct.
+            res = loopBody(value, i, undefined, false);
+          } else {
+            if (!Array.isArray(value)) {
+              throw new Error('Expected an array for destructuring');
             }
-
-            // When loop ends, resolve the lastPromise to true if it exists
-            if (lastPromiseResolve) {
-              lastPromiseResolve(true);
-            }
-
-            resolve(values.length);
-          } catch (error) {
-            // Make sure to resolve the lastPromise in case of error
-            if (lastPromiseResolve) {
-              lastPromiseResolve(true);
-            }
-            throw error;
+            res = loopBody(...value.slice(0, loopVars.length), i, undefined, false);
           }
-        })();
-      });
 
-      // Wait for all iterations to complete
-      await lenPromise;//why is this needed, some tests fail without it?
-    } else {
+          // In sequential mode, we MUST await the body before the next iteration.
+          await res;
+          i++;
+        }
+      } else {
+        // PARALLEL PATH
+        // This complex logic allows for `loop.length` and `loop.last` to work
+        // by resolving promises only after the entire iterator is consumed. This
+        // only works when loop bodies are fired in parallel (sequential=false)
+        const iterator = arr[Symbol.asyncIterator]();
+        let result;
+        let i = 0;
+
+        let lastPromiseResolve;
+        let lastPromise = new Promise(resolve => {
+          lastPromiseResolve = resolve;
+        });
+
+        // This promise will be resolved with the total length when the loop is done.
+        const lenPromise = new Promise(resolve => {
+          const values = [];
+          // This IIFE runs "in the background" to exhaust the iterator
+          (async () => {
+            try {
+              while ((result = await iterator.next()), !result.done) {
+                values.push(result.value);
+                didIterate = true;
+                const value = result.value;
+
+                // Resolve the previous iteration's `lastPromise` to `false`.
+                if (lastPromiseResolve) {
+                  lastPromiseResolve(false);
+                  // Create a new promise for the current iteration.
+                  lastPromise = new Promise(resolveNew => {
+                    lastPromiseResolve = resolveNew;
+                  });
+                }
+
+                let res;
+                if (loopVars.length === 1) {
+                  res = loopBody(value, i, lenPromise, lastPromise);
+                } else {
+                  if (!Array.isArray(value)) {
+                    throw new Error('Expected an array for destructuring');
+                  }
+                  // eslint-disable-next-line no-unused-vars
+                  res = loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
+                }
+                // `await res` is NOT here, allowing parallel execution.
+                i++;
+              }
+
+              // The loop has finished, so the last `lastPromise` can be resolved to `true`.
+              if (lastPromiseResolve) {
+                lastPromiseResolve(true);
+              }
+
+              // The loop is done, so we now know the length.
+              resolve(values.length);
+            } catch (error) {
+              if (lastPromiseResolve) {
+                lastPromiseResolve(true); // Resolve on error to prevent deadlocks.
+              }
+              throw error;
+            }
+          })();
+        });
+
+        // The main function waits for the background IIFE to finish.
+        await lenPromise;
+      }
+    }
+    else {
       arr = fromIterator(arr);
 
       if (Array.isArray(arr)) {

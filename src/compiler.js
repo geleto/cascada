@@ -1139,13 +1139,26 @@ class Compiler extends Obj {
 
       this.emit.line('  let iterationCount = 0;');
       this.emit.line('  while (true) {');
-      // Inject the pre-compiled code for the condition.
-      // It will execute at runtime within the correctly trapped `loopFrame`.
+
+      // This structure correctly models a `while` loop.
+      // We check the condition *before* yielding, ensuring that the loop body for a given
+      // iteration runs *before* the condition for the *next* iteration is evaluated.
+
+      // 1. Check the condition for the current prospective iteration.
       this.emit.line(`    const conditionResult = `);
       this._compileAwaitedExpression(node.cond, loopFrame, false);
       this.emit.line(';');
+
+      // 2. If the condition is false, the loop is over.
       this.emit.line('    if (!conditionResult) { break; }');
+
+      // 3. If the condition was true, yield the current iteration number.
+      //    The `for await...of` loop in `runtime.iterate` will now pause the generator
+      //    and execute the loop body for this iteration.
       this.emit.line('    yield iterationCount;');
+
+      // 4. After the loop body has run and `for await` requests the next item,
+      //    the generator will resume here and increment the counter for the next cycle.
       this.emit.line('    iterationCount++;');
       this.emit.line('  }');
 
@@ -1166,7 +1179,7 @@ class Compiler extends Obj {
     fakeForNode.isAsync = true;
 
     // Delegate to the modified `_compileFor`
-    this._compileFor(fakeForNode, frame, false, iteratorCompiler);
+    this._compileFor(fakeForNode, frame, true, iteratorCompiler);
   }
 
   compileFor(node, frame) {
