@@ -118,6 +118,22 @@
         expect(result).to.equal('2');
       });
 
+      it('Should handle a simple nested if race condition', async () => {
+        const template = `
+          {% set x = 1 %}
+          {%- if x -%}
+            {%- if x -%}
+              {{ x }}
+            {%- endif -%}
+            {%- set x = x + 1 -%}
+          {%- endif -%}
+          {%- set x = x + 1 -%}
+        `;
+
+        const result = await env.renderString(template);
+        expect(result.trim()).to.equal('1');
+      });
+
       it('Should write-snapshot (because of idle else branch) current vars before starting async block', async () => {
         const context = {
           slowCondition: (async () => {

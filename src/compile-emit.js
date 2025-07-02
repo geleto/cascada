@@ -345,6 +345,10 @@ module.exports = class CompileEmit {
     }
     return frame;
   }
+  // @todo - optimize this:
+  // if a parent async block has the read and there are no writes
+  // we can use the parent snapshot
+  // similar for writes we can do some optimizations
   getPushAsyncBlockCode(frame) {
     let reads = [];
     if (frame.readVars) {
@@ -355,9 +359,12 @@ module.exports = class CompileEmit {
           return;
         }
         //see if it's read by a parent and not written to there, then the parent snapshot is enough
-        if (frame.parent.readVars && frame.parent.readVars.has(name) && !(frame.parent.writeCounts && !frame.parent.writeCounts[name])) {
+        //but for this to work we have to check only async block frames and it's good to check up the chain
+        //@todo - implement this
+        //@todo - similar for writes!!!!
+        /*if (frame.parent.readVars && frame.parent.readVars.has(name) && !(frame.parent.writeCounts && !frame.parent.writeCounts[name])) {
           return;
-        }
+        }*/
         if (frame.declaredVars && frame.declaredVars.has(name)) {
           // If the variable 'name' is declared in the *current* 'frame'
           throw new Error(`ReadVar ${name} in declaration scope, this indicates mismatch between compiler and runtime frame`);
