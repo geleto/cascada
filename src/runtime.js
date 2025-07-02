@@ -1254,149 +1254,164 @@ function setLoopBindings(frame, index, len, last) {
   }
 }
 
-async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loopVars = [], sequential = false, isAsync = false) {
+async function iterateAsyncSequential(arr, loopBody, loopVars) {
   let didIterate = false;
-  if (arr) {
-    if (isAsync && typeof arr[Symbol.asyncIterator] === 'function') {
-      // We must have two separate code paths. The `lenPromise` and `lastPromise`
-      // mechanism is fundamentally incompatible with sequential execution, as it
-      // would create a deadlock.
+  let i = 0;
+  for await (const value of arr) {
+    didIterate = true;
 
-      if (sequential) {
-        // Used for `while` and `each` loops and
-        // any `for` loop marked as sequential. It does NOT support `loop.length`
-        // or `loop.last` for async iterators, as that is impossible to know
-        // without first consuming the entire iterator.
-        let i = 0;
-        for await (const value of arr) {
+    let res;
+    if (loopVars.length === 1) {
+      // `while` loops pass `undefined` for len/last, which is correct.
+      res = loopBody(value, i, undefined, false);
+    } else {
+      if (!Array.isArray(value)) {
+        throw new Error('Expected an array for destructuring');
+      }
+      res = loopBody(...value.slice(0, loopVars.length), i, undefined, false);
+    }
+
+    // In sequential mode, we MUST await the body before the next iteration.
+    await res;
+    i++;
+  }
+  return didIterate;
+}
+
+async function iterateAsyncParallel(arr, loopBody, loopVars) {
+  let didIterate = false;
+  // PARALLEL PATH
+  // This complex logic allows for `loop.length` and `loop.last` to work
+  // by resolving promises only after the entire iterator is consumed. This
+  // only works when loop bodies are fired in parallel (sequential=false)
+  const iterator = arr[Symbol.asyncIterator]();
+  let result;
+  let i = 0;
+
+  let lastPromiseResolve;
+  let lastPromise = new Promise(resolve => {
+    lastPromiseResolve = resolve;
+  });
+
+  // This promise will be resolved with the total length when the loop is done.
+  const lenPromise = new Promise(resolve => {
+    const values = [];
+    // This IIFE runs "in the background" to exhaust the iterator
+    (async () => {
+      try {
+        while ((result = await iterator.next()), !result.done) {
+          values.push(result.value);
           didIterate = true;
+          const value = result.value;
+
+          // Resolve the previous iteration's `lastPromise` to `false`.
+          if (lastPromiseResolve) {
+            lastPromiseResolve(false);
+            // Create a new promise for the current iteration.
+            lastPromise = new Promise(resolveNew => {
+              lastPromiseResolve = resolveNew;
+            });
+          }
 
           let res;
           if (loopVars.length === 1) {
-            // `while` loops pass `undefined` for len/last, which is correct.
-            res = loopBody(value, i, undefined, false);
+            res = loopBody(value, i, lenPromise, lastPromise);
           } else {
             if (!Array.isArray(value)) {
               throw new Error('Expected an array for destructuring');
             }
-            res = loopBody(...value.slice(0, loopVars.length), i, undefined, false);
+            // eslint-disable-next-line no-unused-vars
+            res = loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
           }
-
-          // In sequential mode, we MUST await the body before the next iteration.
-          await res;
+          // `await res` is NOT here, allowing parallel execution.
           i++;
         }
-      } else {
-        // PARALLEL PATH
-        // This complex logic allows for `loop.length` and `loop.last` to work
-        // by resolving promises only after the entire iterator is consumed. This
-        // only works when loop bodies are fired in parallel (sequential=false)
-        const iterator = arr[Symbol.asyncIterator]();
-        let result;
-        let i = 0;
 
-        let lastPromiseResolve;
-        let lastPromise = new Promise(resolve => {
-          lastPromiseResolve = resolve;
-        });
+        // The loop has finished, so the last `lastPromise` can be resolved to `true`.
+        if (lastPromiseResolve) {
+          lastPromiseResolve(true);
+        }
 
-        // This promise will be resolved with the total length when the loop is done.
-        const lenPromise = new Promise(resolve => {
-          const values = [];
-          // This IIFE runs "in the background" to exhaust the iterator
-          (async () => {
-            try {
-              while ((result = await iterator.next()), !result.done) {
-                values.push(result.value);
-                didIterate = true;
-                const value = result.value;
-
-                // Resolve the previous iteration's `lastPromise` to `false`.
-                if (lastPromiseResolve) {
-                  lastPromiseResolve(false);
-                  // Create a new promise for the current iteration.
-                  lastPromise = new Promise(resolveNew => {
-                    lastPromiseResolve = resolveNew;
-                  });
-                }
-
-                let res;
-                if (loopVars.length === 1) {
-                  res = loopBody(value, i, lenPromise, lastPromise);
-                } else {
-                  if (!Array.isArray(value)) {
-                    throw new Error('Expected an array for destructuring');
-                  }
-                  // eslint-disable-next-line no-unused-vars
-                  res = loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
-                }
-                // `await res` is NOT here, allowing parallel execution.
-                i++;
-              }
-
-              // The loop has finished, so the last `lastPromise` can be resolved to `true`.
-              if (lastPromiseResolve) {
-                lastPromiseResolve(true);
-              }
-
-              // The loop is done, so we now know the length.
-              resolve(values.length);
-            } catch (error) {
-              if (lastPromiseResolve) {
-                lastPromiseResolve(true); // Resolve on error to prevent deadlocks.
-              }
-              throw error;
-            }
-          })();
-        });
-
-        // The main function waits for the background IIFE to finish.
-        await lenPromise;
+        // The loop is done, so we now know the length.
+        resolve(values.length);
+      } catch (error) {
+        if (lastPromiseResolve) {
+          lastPromiseResolve(true); // Resolve on error to prevent deadlocks.
+        }
+        throw error;
       }
+    })();
+  });
+
+  // The main function waits for the background IIFE to finish.
+  await lenPromise;
+  return didIterate;
+}
+
+async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loopVars = [], sequential = false, isAsync = false) {
+  let didIterate = false;
+
+  if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
+    // We must have two separate code paths. The `lenPromise` and `lastPromise`
+    // mechanism is fundamentally incompatible with sequential execution, as it
+    // would create a deadlock.
+
+    if (sequential) {
+      // Used for `while` and `each` loops and
+      // any `for` loop marked as sequential. It does NOT support `loop.length`
+      // or `loop.last` for async iterators, as that is impossible to know
+      // without first consuming the entire iterator.
+      didIterate = await iterateAsyncSequential(arr, loopBody, loopVars);
+    } else {
+      // PARALLEL PATH
+      // This complex logic allows for `loop.length` and `loop.last` to work
+      // by resolving promises only after the entire iterator is consumed. This
+      // only works when loop bodies are fired in parallel (sequential=false)
+      didIterate = await iterateAsyncParallel(arr, loopBody, loopVars);
     }
-    else {
-      arr = fromIterator(arr);
+  }
+  else if (arr) {
+    arr = fromIterator(arr);
 
-      if (Array.isArray(arr)) {
-        const len = arr.length;
+    if (Array.isArray(arr)) {
+      const len = arr.length;
 
-        for (let i = 0; i < arr.length; i++) {
-          didIterate = true;
-          const value = arr[i];
-          const isLast = i === arr.length - 1;
+      for (let i = 0; i < arr.length; i++) {
+        didIterate = true;
+        const value = arr[i];
+        const isLast = i === arr.length - 1;
 
-          let res;
-          if (loopVars.length === 1) {
-            res = loopBody(value, i, len, isLast);
-          } else {
-            if (!Array.isArray(value)) {
-              throw new Error('Expected an array for destructuring');
-            }
-            res = loopBody(...value.slice(0, loopVars.length), i, len, isLast);
+        let res;
+        if (loopVars.length === 1) {
+          res = loopBody(value, i, len, isLast);
+        } else {
+          if (!Array.isArray(value)) {
+            throw new Error('Expected an array for destructuring');
           }
+          res = loopBody(...value.slice(0, loopVars.length), i, len, isLast);
+        }
 
+        if (sequential) {
+          await res;
+        }
+      }
+    } else {
+      const keys = Object.keys(arr);
+      const len = keys.length;
+
+      for (let i = 0; i < keys.length; i++) {
+        didIterate = true;
+        const key = keys[i];
+        const value = arr[key];
+        const isLast = i === keys.length - 1;
+
+        if (loopVars.length === 2) {
+          const res = loopBody(key, value, i, len, isLast);
           if (sequential) {
             await res;
           }
-        }
-      } else {
-        const keys = Object.keys(arr);
-        const len = keys.length;
-
-        for (let i = 0; i < keys.length; i++) {
-          didIterate = true;
-          const key = keys[i];
-          const value = arr[key];
-          const isLast = i === keys.length - 1;
-
-          if (loopVars.length === 2) {
-            const res = loopBody(key, value, i, len, isLast);
-            if (sequential) {
-              await res;
-            }
-          } else {
-            throw new Error('Expected two variables for key/value iteration');
-          }
+        } else {
+          throw new Error('Expected two variables for key/value iteration');
         }
       }
     }
