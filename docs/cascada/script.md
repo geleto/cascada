@@ -96,8 +96,6 @@ console.log(JSON.stringify(result.data, null, 2)); // Focusing on the .data prop
 //     }
 //   }
 // }
-```
-
 ## Core Syntax and Expressions
 
 Cascada Script removes the visual noise of template syntax while preserving Cascada's powerful capabilities.
@@ -211,35 +209,204 @@ endif
 ```
 
 #### Loops
-```
-for item in collection
-  // statements
-endfor
-```
-A `for` loop can have an `else` block that is executed only if the collection is empty:
-```
-for item in []
-  print "This will not be printed."
-else
-  print "The collection was empty."
-endfor
-```
-Inside a loop, you have access to the special `loop` variable:
-*   `loop.index`: The current iteration (1-indexed).
-*   `loop.index0`: The current iteration (0-indexed).
-*   `loop.first`: `true` if this is the first iteration.
-*   `loop.last`: `true` if this is the last iteration.
-*   `loop.length`: The total number of items in the sequence.
+Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
+
+##### `for` Loops
+Use a `for` loop to iterate over arrays, dictionaries (objects), and other iterable data structures. In Cascada, the body of the `for` loop executes **in parallel for each item** in the collection. This is the default and most powerful looping construct for maximizing I/O throughput when performing independent asynchronous operations.
 
 ```javascript
-for item in ["apple", "banana", "cherry"]
-  print loop.index + "/" + loop.length + ": " + item
+// Each iteration runs concurrently, fetching user details in parallel
+for userId in userIds
+  var user = fetchUserDetails(userId)
+  @data.users.push(user)
 endfor
 ```
+
+You can iterate over various collection types:
+
+*   **Arrays**:
+    ```javascript
+    var items = [{ title: "foo", id: 1 }, { title: "bar", id: 2 }];
+    for item in items
+      @data.posts.push({ id: item.id, title: item.title })
+    endfor
+    ```
+*   **Objects/Dictionaries**:
+    ```javascript
+    var food = { ketchup: '5 tbsp', mustard: '1 tbsp' }
+    for ingredient, amount in food
+      @text "Use " + amount + " of " + ingredient
+    endfor
+    ```
+*   **Unpacking Arrays**:
+    ```javascript
+    var points = [[0, 1, 2], [5, 6, 7]]
+    for x, y, z in points
+      @text "Point: " + x + ", " + y + ", " + z
+    endfor
+    ```
+
+A `for` loop can have an `else` block that is executed only if the collection is empty:
+```javascript
+for item in []
+  @text "This will not be printed."
+else
+  @text "The collection was empty."
+endfor
+```
+
+###### Looping over Async Iterators
+`for` loops can iterate seamlessly over **async iterators**. Cascada automatically handles waiting for each item to be yielded from the iterator before starting its parallel processing.
+
+First, you would provide the async iterator function in your context object:
+```javascript
+// Add an async generator to the context
+const context = {
+  fetchComments: async function* (postId) {
+    let page = 0;
+    while(true) {
+      const comments = await fetchPageOfComments(postId, page++);
+      if (comments.length === 0) break;
+      for (const comment of comments) {
+        yield comment;
+      }
+    }
+  }
+};
+```
+Then, use it in your script. Each yielded comment will be processed in a concurrent loop body.
+```javascript
+// The loop processes each comment as it becomes available
+for comment in fetchComments(postId)
+  @data.comments.push({ author: comment.author, body: comment.body })
+endfor
+```
+
+##### `while` Loops
+Use a `while` loop to execute a block of code repeatedly as long as a condition is true. Unlike the parallel `for` loop, the `while` loop's body executes **sequentially**. The condition is re-evaluated only after the body has fully completed its execution for the current iteration.
+
+This makes `while` loops ideal for stateful, iterative workflows where the result of one step is required to decide the next. For example, many AI agent frameworks use a reasoning loop to repeatedly think, act, and observe until a task is complete.
+
+```
+while some_expression
+  // These statements run sequentially in each iteration
+endwhile
+```
+**Example: Polling an API**
+
+```javascript
+var jobStatus = "pending"
+// Poll the job status, but no more than 5 times
+while jobStatus != "complete" and loop.index0 < 5
+  // This async call must complete before the next iteration
+  jobStatus = checkJobStatus(jobId)
+endwhile
+```
+
+##### Sequential `each` Loops
+For cases where you need to iterate over a collection but **preserve a strict sequential order**, use an `each` loop. It has the same syntax as a `for` loop but guarantees that each iteration completes before the next one begins. This is the opposite of the default parallel behavior of `for`.
+
+Use `each` when the operations inside the loop have side effects that depend on the previous iteration, such as a sequence of database writes.
+
+```
+each item in collection
+  // Statements run sequentially for each item
+endeach
+```
+
+**Example: Creating Dependent Records**
+
+```javascript
+// Creates users and their settings one by one to avoid race conditions.
+each user_data in new_users
+  // create_user must finish before create_settings is called
+  var newUser = db.create_user({ name: user_data.name })
+  db.create_settings({ userId: newUser.id, theme: 'dark' })
+endeach
+```
+
+##### The `loop` Variable
+Excellent point. You are absolutely correct. Grouping `asyncEach` into the "fallback" category was a mistake. It is sequential by design, not as a fallback. That's a critical distinction for clarity.
+
+Thank you for the sharp-eyed correction. Let's fix that. Here is the revised, more accurate documentation.
+
+---
+
+### The `loop` Variable
+
+Inside a `for`, `while`, or `each` loop, you have access to the special `loop` variable, which provides metadata about the current iteration.
+
+**Always-Available Properties**
+
+These properties are available in all loop types:
+
+*   `loop.index`: The current iteration of the loop (1-indexed).
+*   `loop.index0`: The current iteration of the loop (0-indexed).
+*   `loop.first`: `true` if this is the first iteration.
+
+**Length-Dependent Properties**
+
+The availability of the following properties depends on the type of loop and its contents:
+
+*   `loop.revindex`: The number of iterations until the end (1-indexed).
+*   `loop.revindex0`: The number of iterations until the end (0-indexed).
+*   `loop.length`: The total number of items in the sequence.
+*   `loop.last`: `true` if this is the last iteration.
+
+Here is when you can use them:
+
+#### 1. `for` loops over standard arrays or objects
+
+This is the simplest case. The loop is iterating over a collection whose size is already known.
+
+*   ✅ **Available**: All `loop` properties work as expected.
+
+#### 2. `while` and `each` loops
+
+`while` and `asyncEach` loops are **always sequential** by design. They process one item at a time, and therefore have no concept of a predetermined length.
+
+*   ❌ **Not Available**: Length-dependent properties are not available because the loop's end point is not known in advance.
+
+#### 3. `for` loops over Asynchronous Iterators (Default Mode)
+
+This applies when you loop over something like an async generator, where items are processed as they arrive.
+
+*   ✅ **Available**: To prioritize speed, Cascada starts processing items without waiting to count the entire collection first. The length-dependent properties are still available, but their final, correct values only become available **after the entire loop has finished processing**. Cascada handles this asynchronously for you, so you can use `loop.last` in a condition as you normally would.
+
+    ```nunjucks
+    {# Cascada handles the async nature of loop.last automatically. #}
+    {% for item in myAsyncGenerator %}
+      {{ item }}
+      {% if loop.last %}
+        {# This content will appear at the very end, after all items are processed. #}
+        <p>Loop complete!</p>
+      {% endif %}
+    {% endfor %}
+    ```
+
+#### 4. `for` loops (in Sequential Fallback Mode)
+
+For safety, Cascada automatically switches an async `for` loop into a "Sequential Fallback" mode when an iteration depends on the result of a previous one.
+
+*   ❌ **Not Available**: In this mode, the `for` loop behaves like an `each` loop, running strictly one iteration at a time. Because it cannot see the end of the sequence in advance, the length-dependent properties are not available.
+
+**When does a `for` loop enter Sequential Fallback?**
+
+A `for` loop will automatically fall back to this safer, sequential mode when you:
+
+*   **Modify a shared variable** with `{% set %}`:
+    ```nunjucks
+    {# This loop enters sequential fallback to prevent a race condition. #}
+    {% set total = 0 %}
+    {% for item in items %}
+      {% set total = total + item.value %}
+    {% endfor %}
+    ```
+*   **Use the sequential execution operator (`!`) on a function call**
 
 #### Output
 ```
-print expression
+@text expression
 ```
 
 ### Literals, Operators, and Expressions
@@ -285,7 +452,7 @@ You can create regular expressions by prefixing the expression with `r`.
 ```javascript
 var emailRegex = r/^[^\s@]+@[^\s@]+\.[^\s@]+$/
 if emailRegex.test(user.email)
-  print "Valid email address."
+  @text "Valid email address."
 endif
 ```
 
@@ -307,7 +474,8 @@ Before diving into the theory, let's look at how a few commands work together to
 
 ```javascript
 // This script builds a user object.
-// The [:data](#focusing-the-output-data-text-handlername) directive focuses the output to get just the data.
+// The :data directive focuses the output to
+// get just the data property.
 :data
 
 var userId = 123
@@ -928,32 +1096,6 @@ var userObject = buildUser("Alice")
 
 ## Advanced Flow Control
 
-### Looping over Async Iterators
-Loops can iterate seamlessly over **async iterators**. First, you would provide the async iterator function in your context object:
-```javascript
-// Add an async generator to the context
-const context = {
-  fetchComments: async function* (postId) {
-    let page = 0;
-    while(true) {
-      const comments = await fetchPageOfComments(postId, page++);
-      if (comments.length === 0) break;
-      for (const comment of comments) {
-        yield comment;
-      }
-    }
-  }
-};
-```
-Then, use it in your script:
-```javascript
-// The loop waits for each comment to resolve
-// before processing the body.
-for comment in fetchComments(postId)
-  print comment.author + ": " + comment.body
-endfor
-```
-
 ### Sequential Execution Control (`!`)
 
 **Note**: This feature is under development.
@@ -986,7 +1128,7 @@ try
   @data.set(result.imageUrl, image.url)
 resume resume.count < 3
   // Retry up to 3 times
-  print "Retrying attempt " + resume.count
+  @text "Retrying attempt " + resume.count
 except
   // Handle permanent failure
   @data.set(result.error, "Image generation failed: " + error.message)
@@ -1001,17 +1143,17 @@ Cascada Script supports the full range of Nunjucks [built-in filters](https://mo
 Filters are applied with the pipe `|` operator.
 ```javascript
 var title = "a tale of two cities" | title
-print title // "A Tale Of Two Cities"
+@text title // "A Tale Of Two Cities"
 
 var users = ["Alice", "Bob"]
-print "Users: " + (users | join(", ")) // "Users: Alice, Bob"
+@text "Users: " + (users | join(", ")) // "Users: Alice, Bob"
 ```
 
 #### Global Functions
 Global functions like `range` can be called directly.
 ```javascript
 for i in range(3)
-  print "Item " + i // Prints Item 0, Item 1, Item 2
+  @text "Item " + i // Prints Item 0, Item 1, Item 2
 endfor
 ```
 
@@ -1038,7 +1180,7 @@ for tag in ["rock", "pop", "jazz"]
   // The first call to comma() returns "", subsequent calls return ", "
   output = output + comma() + tag
 endfor
-print output // "rock, pop, jazz"
+@text output // "rock, pop, jazz"
 ```
 
 
