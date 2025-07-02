@@ -101,7 +101,7 @@ class ScriptTranspiler {
     // Define block-related configuration
     this.SYNTAX = {
       // Block-related tags
-      blockTags: ['for', 'if', 'block', 'macro', 'filter', 'raw', 'verbatim', 'while', 'try'], //asyncEach, asyncAll
+      blockTags: ['for', 'each', 'while', 'if', 'block', 'macro', 'filter', 'raw', 'verbatim', 'try'],
       lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'option', 'var', 'extern'],
 
       // Middle tags with their parent block types
@@ -115,6 +115,8 @@ class ScriptTranspiler {
       // Block pairs define how blocks start and end
       blockPairs: {
         'for': 'endfor',
+        'each': 'endeach',
+        'while': 'endwhile',
         'if': 'endif',
         'block': 'endblock',
         'macro': 'endmacro',
@@ -122,7 +124,6 @@ class ScriptTranspiler {
         'call': 'endcall',
         'raw': 'endraw',
         'verbatim': 'endverbatim',
-        'while': 'endwhile',
         'try': 'endtry',
         'set': 'endset', //only when no = in the set, then the block has to be closed
         'var': 'endvar' //only when no = in the var, then the block has to be closed
@@ -976,9 +977,14 @@ class ScriptTranspiler {
 
     if (!processedLine.isContinuation) {
       switch (processedLine.lineType) {
-        case 'TAG':
-          output += `{%- ${processedLine.tagName}`;
+        case 'TAG':{
+          let tagName = processedLine.tagName;
+          if (tagName === 'each') {
+            tagName = 'asyncEach';
+          }
+          output += `{%- ${tagName}`;
           break;
+        }
         case 'TEXT':
           output += '{{-';
           break;

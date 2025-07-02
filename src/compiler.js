@@ -1113,6 +1113,7 @@ class Compiler extends Obj {
   compileWhile(node, frame) {
     if (!node.isAsync) {
       // Synchronous case: remains the same, no changes needed.
+      // @todo - use compileFor for the loop variable, etc...
       this.emit('while (');
       this._compileExpression(node.cond, frame, false);
       this.emit(') {');
@@ -1346,7 +1347,7 @@ class Compiler extends Obj {
 
   _compileAsyncLoop(node, frame, parallel) {
     if (node.isAsync) {
-      this._compileFor(node, frame, true);
+      this._compileFor(node, frame, !parallel);
       return;
     }
     // This shares some code with the For tag, but not enough to
@@ -1430,7 +1431,7 @@ class Compiler extends Obj {
   }
 
   compileAsyncEach(node, frame) {
-    this._compileAsyncLoop(node, frame);
+    this._compileAsyncLoop(node, frame, false);
   }
 
   compileAsyncAll(node, frame) {
