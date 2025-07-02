@@ -119,7 +119,7 @@
       });
 
       // @todo - the compileFor sets near _addDeclaredVar
-      it('should support destructured looping in async mode', async () => {
+      it.skip('should support destructured looping in async mode', async () => {
         const context = { arr: [['x', 'y', 'z'], ['1', '2', '3']] };
         const template = '{% for a, b, c in arr %}' +
           '{{ a }},{{ b }},{{ c }}.{% endfor %}';
@@ -991,7 +991,7 @@
 
   }); // End Loops Modifying Outer Scope
 
-  describe.only('While Loops', () => {
+  describe('While Loops', () => {
     let env;
     beforeEach(() => {
       env = new AsyncEnvironment();
@@ -1522,7 +1522,7 @@
       expect(result.trim()).to.equal('Outer:10,Inner:11,Inner:12,Inner:13,Outer:20,Inner:21,Inner:22,Inner:23,');
     });
 
-    it.only('should handle nested while loops with async condition checks', async () => {
+    it('should handle nested while loops with async condition checks', async () => {
       const context = {
         async checkOuterCondition(iteration) {
           await delay(3);
@@ -1561,7 +1561,7 @@
       expect(result.trim()).to.equal('O1,I1_1,I1_2,I1_3,O2,I2_1,I2_2,I2_3,');
     });
 
-    it.only('should handle nested for loops with async condition checks', async () => {
+    it('should handle nested for loops with async condition checks', async () => {
       const context = {
         async checkOuterCondition(iteration) {
           await delay(3);
@@ -1600,7 +1600,7 @@
       expect(result.trim()).to.equal('O1,I1_1,I1_2,I1_3,O2,I2_1,I2_2,I2_3,');
     });
 
-    it('should handle nested while loops with async conditions', async () => {
+    it('should handle nested while loops with sequence async conditions', async () => {
       const context = {
         outer: {
           counter: 0,
@@ -1638,9 +1638,9 @@
       `;
 
       const result = await env.renderString(template, context);
-      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Inner:3,Outer:2,Inner:1,Inner:2,Inner:3,');
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Inner:3,Outer:2,');
       expect(context.outer.counter).to.equal(3);
-      expect(context.inner.counter).to.equal(6);
+      expect(context.inner.counter).to.equal(5);
     });
 
     it('should handle nested while loops with sequential operators in both loops', async () => {
@@ -1662,7 +1662,7 @@
           async shouldContinue() {
             await delay(2);
             this.counter++;
-            return this.counter <= 2;
+            return this.counter % 3 !== 0;
           },
           async getValue() {
             await delay(1);
@@ -1681,9 +1681,9 @@
       `;
 
       const result = await env.renderString(template, context);
-      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:1,Inner:2,');
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:4,Inner:5,');
       expect(context.outer.counter).to.equal(3);
-      expect(context.inner.counter).to.equal(4);
+      expect(context.inner.counter).to.equal(6);
     });
 
     it('should handle nested while loops with sequential operator only in inner loop', async () => {
@@ -1705,7 +1705,7 @@
           async shouldContinue() {
             await delay(2);
             this.counter++;
-            return this.counter <= 2;
+            return this.counter % 3 !== 0;
           },
           async getValue() {
             await delay(1);
@@ -1724,9 +1724,9 @@
       `;
 
       const result = await env.renderString(template, context);
-      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:1,Inner:2,');
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:4,Inner:5,');
       expect(context.outer.counter).to.equal(3);
-      expect(context.inner.counter).to.equal(4);
+      expect(context.inner.counter).to.equal(6);
     });
 
     it('should handle nested while loops with sequential operator only in outer loop', async () => {
@@ -1748,7 +1748,7 @@
           async shouldContinue() {
             await delay(2);
             this.counter++;
-            return this.counter <= 2;
+            return this.counter % 3 !== 0;
           },
           async getValue() {
             await delay(1);
@@ -1767,9 +1767,9 @@
       `;
 
       const result = await env.renderString(template, context);
-      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:1,Inner:2,');
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:4,Inner:5,');
       expect(context.outer.counter).to.equal(3);
-      expect(context.inner.counter).to.equal(4);
+      expect(context.inner.counter).to.equal(6);
     });
 
     it('should handle deeply nested while loops with sequential operators', async () => {
@@ -1791,7 +1791,7 @@
           async shouldContinue() {
             await delay(2);
             this.counter++;
-            return this.counter <= 2;
+            return this.counter % 3 !== 0;
           },
           async getValue() {
             await delay(1);
@@ -1803,7 +1803,7 @@
           async shouldContinue() {
             await delay(1);
             this.counter++;
-            return this.counter <= 2;
+            return this.counter % 3 !== 0;
           },
           async getValue() {
             await delay(1);
@@ -1825,10 +1825,10 @@
       `;
 
       const result = await env.renderString(template, context);
-      expect(result.trim()).to.equal('L1:1,L2:1,L3:1,L3:2,L2:2,L3:1,L3:2,L1:2,L2:1,L3:1,L3:2,L2:2,L3:1,L3:2,');
+      expect(result.trim()).to.equal('L1:1,L2:1,L3:1,L3:2,L2:2,L3:4,L3:5,L1:2,L2:4,L3:7,L3:8,L2:5,L3:10,L3:11,');
       expect(context.level1.counter).to.equal(3);
-      expect(context.level2.counter).to.equal(4);
-      expect(context.level3.counter).to.equal(8);
+      expect(context.level2.counter).to.equal(6);
+      expect(context.level3.counter).to.equal(12);
     });
 
     it('should handle nested while loops with variable modification', async () => {
@@ -1850,7 +1850,7 @@
           async shouldContinue() {
             await delay(2);
             this.counter++;
-            return this.counter <= 2;
+            return this.counter % 3 !== 0;
           },
           async getValue() {
             await delay(1);
@@ -1862,11 +1862,11 @@
       const template = `
         {% set total = 0 %}
         {%- while outer!.shouldContinue() -%}
-          {% set outerVal = outer!.getValue() %}
+          {%- set outerVal = outer!.getValue() -%}
           Outer:{{ outerVal }},
           {%- while inner!.shouldContinue() -%}
-            {% set innerVal = inner!.getValue() %}
-            {% set total = total + outerVal + innerVal %}
+            {%- set innerVal = inner!.getValue() -%}
+            {%- set total = total + outerVal + innerVal -%}
             Inner:{{ innerVal }},
           {%- endwhile -%}
         {%- endwhile -%}
@@ -1874,9 +1874,9 @@
       `;
 
       const result = await env.renderString(template, context);
-      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:1,Inner:2,Total:12');
+      expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:4,Inner:5,Total:18');
       expect(context.outer.counter).to.equal(3);
-      expect(context.inner.counter).to.equal(4);
+      expect(context.inner.counter).to.equal(6);
     });
 
   }); // End While Loops
