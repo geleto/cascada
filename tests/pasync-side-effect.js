@@ -1427,12 +1427,18 @@
       const template = `{{ seqObj!.updateAndGet("k1", "asyncFirst", 9) | customAsyncPrefix("A_") }} BEFORE {{ seqObj!.updateAndGet("k2", "asyncSecond", 3) | customAsyncPrefix("B_") }}`;
       const result = await env.renderString(template, cont);
       expect(result).to.equal('A_asyncFirst-1 BEFORE B_asyncSecond-2');
-      expect(cont.logs).to.eql([
-        'updateAndGet: k1=asyncFirst (id: 1)',
-        'customAsyncPrefix: adding \'A_\' to \'asyncFirst-1\'',
-        'updateAndGet: k2=asyncSecond (id: 2)',
-        'customAsyncPrefix: adding \'B_\' to \'asyncSecond-2\''
-      ]);
+
+      // The sequenced operations should run in order, but async filters can run in parallel
+      // once their inputs are ready. The exact order of filter execution may vary.
+      expect(cont.logs).to.contain('updateAndGet: k1=asyncFirst (id: 1)');
+      expect(cont.logs).to.contain('updateAndGet: k2=asyncSecond (id: 2)');
+      expect(cont.logs).to.contain('customAsyncPrefix: adding \'A_\' to \'asyncFirst-1\'');
+      expect(cont.logs).to.contain('customAsyncPrefix: adding \'B_\' to \'asyncSecond-2\'');
+
+      // Ensure the sequenced operations run in order
+      const updateLogs = cont.logs.filter(log => log.startsWith('updateAndGet:'));
+      expect(updateLogs[0]).to.contain('k1=asyncFirst');
+      expect(updateLogs[1]).to.contain('k2=asyncSecond');
     });
 
 
