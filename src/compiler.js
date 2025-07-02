@@ -1171,10 +1171,10 @@ class Compiler extends Obj {
 
     const fakeForNode = new nodes.For(
       node.lineno, node.colno,
-      new nodes.Symbol(node.lineno, node.colno, 'while_iterator_placeholder'),
-      new nodes.Symbol(node.lineno, node.colno, 'iterationCount'),
-      node.body,
-      null
+      new nodes.Symbol(node.lineno, node.colno, 'while_iterator_placeholder'), //arr
+      new nodes.Symbol(node.lineno, node.colno, 'iterationCount'), //name
+      node.body, //body
+      null //else
     );
     fakeForNode.isAsync = true;
 
@@ -1243,9 +1243,14 @@ class Compiler extends Obj {
     this.emit(`, ${loopIndex}, ${loopLength}, ${isLast}) {`);
 
     // Use node.body as the position for the inner buffer block (loop body execution)
+    if (node.isAsync) {
+      // when sequential, the loop body IIFE will await all closures (waitAllClosures)
+      // we return the IIFE promise so that awaiting the loop body will wait for all closures
+      this.emit('return ');
+    }
     frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.body);
 
-    const makeSequentialPos = this.codebuf.length;
+    const makeSequentialPos = this.codebuf.length;// we will know later if it's sequential or not
     this.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
 
     // Handle array unpacking within the loop body
@@ -1297,7 +1302,7 @@ class Compiler extends Obj {
     }
 
     // End buffer block for the loop body (using node.body position)
-    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, true, node.body);
+    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential, node.body);
 
     // Close the loop body function
     this.emit.line('};');
@@ -1308,8 +1313,15 @@ class Compiler extends Obj {
       elseFuncId = this._tmpid();
       this.emit(`let ${elseFuncId} = `);
 
+      const awaitSequentialElse = false;//I think awaiting it like loop body is not needed
+
       if (node.isAsync) {
         this.emit('async function() {');
+        // must return the promise from its async block
+        // which when sequential will wait for all closures
+        if (awaitSequentialElse) {
+          this.emit('return ');
+        }
       } else {
         this.emit('function() {');
       }
@@ -1317,7 +1329,7 @@ class Compiler extends Obj {
       // Use node.else_ as position for the else block buffer
       frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.else_);
       this.compile(node.else_, frame);
-      frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, false, node.else_);
+      frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential && awaitSequentialElse, node.else_);
 
       this.emit.line('};');
     }
