@@ -9,6 +9,10 @@
 ### ⚡ Parallel by default
 Cascada is a powerful engine for **JavaScript** and **TypeScript** applications, providing both a [scripting language](docs/cascada/script.md) and a [template syntax](docs/cascada/template.md). It is designed to dramatically simplify complex, asynchronous workflows by fundamentally inverting the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
 
+### ✨ Transparent Async: The Magic of `await`-free Code
+Forget await. Forget .then(). Forget manually tracking which variables are promises and which are not. Cascada fundamentally changes how you interact with asynchronous operations by making them invisible.
+This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
+
 ### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
 The engine intelligently analyzes your code, automatically executing independent asynchronous operations - like API calls, LLM requests, and database queries - concurrently. It guarantees that **operations will wait for their required inputs** before executing, a smart orchestration that **eliminates race conditions by design** while delivering high performance without the complexity and boilerplate of manual async handling.
 
@@ -623,3 +627,6 @@ console.log(html);
 - **Cascada Script Documentation:** [docs/cascada/script.md](docs/cascada/script.md)
 - **Cascada Template Documentation:** [docs/cascada/template.md](docs/cascada/template.md)
 - **Nunjucks (Original Engine):** [https://mozilla.github.io/nunjucks/](https://mozilla.github.io/nunjucks/)
+
+## Development Status and Roadmap
+See the roadmap section in the Cascada Script docsumentation: [docs/cascada/script.md#development-status-and-roadmap](docs/cascada/script.md#development-status-and-roadmap)

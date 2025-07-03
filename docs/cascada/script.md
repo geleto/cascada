@@ -9,6 +9,10 @@ Use it as the backbone for your data layer to compose complex workflows, wiring 
 ### ⚡ Parallel by default
 Cascada Script is a scripting language for **JavaScript** and **TypeScript** applications, purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
 
+### ✨ Transparent Async: The Magic of `await`-free Code
+Forget await. Forget .then(). Forget manually tracking which variables are promises and which are not. Cascada fundamentally changes how you interact with asynchronous operations by making them invisible.
+This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
+
 ### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
 In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, guaranteeing that **operations will wait for their required inputs** before executing. This orchestration **eliminates the possibility of race conditions** by design, ensuring correct execution order while maximizing performance for I/O-bound workflows.
 
@@ -25,7 +29,6 @@ Cascada is a new project and is evolving quickly! This is exciting, but it also 
 
 ## Table of Contents
 - [Overview](#overview)
-- [Key Features](#key-features)
 - [Getting Started](#getting-started)
 - [Core Syntax and Expressions](#core-syntax-and-expressions)
 - [Macros and Reusable Components](#macros-and-reusable-components)
@@ -33,15 +36,6 @@ Cascada is a new project and is evolving quickly! This is exciting, but it also 
 - [Modular Scripts](#modular-scripts)
 - [API Reference](#api-reference)
 - [Development Status and Roadmap](#development-status-and-roadmap)
-
-## Key Features
-
-- **Automatic Parallelization**: Independent operations run concurrently with no extra effort
-- **Seamless Async Handling**: Work with promises, async functions, and async iterators naturally
-- **Data Assembly**: Build complex data structures with specialized [output commands](#the-handler-system-using--output-commands).
-- **Smart Dependency Management**: While independent operations run in parallel, Cascada ensures that **dependent operations wait for their prerequisites**. This guarantees correct execution order, giving you the performance of parallelism with the predictability of sequential code.
-- **Controlled Sequential Execution**: Use the [`!` marker](#sequential-execution-control-) to enforce a strict execution order for operations with side effects (like database writes) without sacrificing overall parallelism.
-- **Separation of Logic and Presentation**: Promotes a clear separation of logic from presentation—use scripts for coordinating tasks and handling data, and templates for generating text output.
 
 ## Getting Started
 
@@ -1620,13 +1614,16 @@ The resulting JavaScript string can be saved to a `.js` file and loaded in your 
 
 ## Development Status and Roadmap
 
-Cascada is under active development, with a focus on expanding its core capabilities and improving the developer experience. This roadmap outlines key features and enhancements that are planned or currently in progress.
+Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented  (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
 
--   **Full Support for Modular Scripts (`import`, `include`, `extends`)**
-    Implementing the complete vision for modularity, including the `extern`, `reads`, and `modifies` keywords.
+This roadmap outlines key features and enhancements that are planned or currently in progress.
+
 
 -   **Resilient Error Handling (`try`/`resume`/`except`)**
     Introducing a powerful error-handling construct designed for asynchronous workflows. This will allow for conditional retries and graceful failure management, essential for building reliable data pipelines.
+
+-   **Declaring Cross-Script Dependencies for (`import`, `include`, `extends`)**
+    Support declaring variable dependencies wtih the `extern`, `reads`, and `modifies` keywords.
 
 -   **Reading from the `@data` Object**
     Enabling the ability to read from the `@data` object on the right side of `@data` expressions (e.g., `@data.user.name = @data.form.firstName + ' ' + @data.form.lastName`). This will allow for more powerfull data composition.
@@ -1644,7 +1641,7 @@ Cascada is under active development, with a focus on expanding its core capabili
     Allowing the sequential execution operator `!` to be used directly on root-level function calls (e.g., `!.saveToDatabase(data)`), simplifying syntax for global functions with side effects.
 
 -   **Expanded Built-in `@data` Methods**
-    Adding comprehensive support for standard JavaScript array and string methods (e.g., `map`, `filter`, `slice`, `replace`) as first-class operations within the `@data` handler, reducing the need for custom logic.
+    Adding comprehensive support for standard JavaScript array and string methods (e.g., `map`, `filter`, `slice`, `replace`) as first-class operations within the `@data` handler.
 
 -   **Enhanced Error Reporting**
     Improving the debugging experience by providing detailed error messages that include code snippets, file names, and line/column numbers to pinpoint issues quickly.
@@ -1653,4 +1650,4 @@ Cascada is under active development, with a focus on expanding its core capabili
     Creating an advanced logging system, via a dedicated output handler, to capture the entire execution trace. This will allow developers to replay and inspect the sequence of operations and variable states for complex debugging.
 
 -   **Robustness and Concurrency Validation**
-    Continuously expanding the test suite with a focus on complex, high-concurrency scenarios to formally verify the correctness and stability of the parallel execution engine.
+    Continuously expanding the test suite with a focus on complex, high-concurrency scenarios to formally verify the correctness and stability of the parallel.
