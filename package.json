@@ -1,7 +1,7 @@
 {
   "name": "cascada-engine",
   "version": "0.0.8",
-  "description": "The parallel-first scripting & templating engine with automatic, implicit concurrency",
+  "description": "The parallel-first scripting & templating engine with transparent async support and automatic, implicit concurrency.",
   "license": "BSD-2-Clause",
   "author": "Angel Popov<geleto@gmail.com>",
   "main": "./dist/cjs/index.js",
