@@ -1,15 +1,16 @@
 # Cascada Script Documentation
 
-## Write scripts that look synchronous but execute concurrently under the hood.
+## Write synchronous-style scripts that execute concurrently under the hood.
+The core philosophy of Cascada is to let you write asynchronous code with the clarity of synchronous logic. You write your script as a straightforward, top-to-bottom set of instructions, and Cascada's engine handles the complex concurrent execution for you.
+Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable.
 
 ## Overview
 
 ### ⚡ Parallel by default
 Cascada Script is a scripting language for **JavaScript** and **TypeScript** applications, purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
-Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable.
 
 ### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
-In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, **guaranteeing that operations will wait for their required inputs before executing. This orchestration eliminates the possibility of race conditions by design**, ensuring correct execution order while maximizing performance for I/O-bound workflows.
+In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, guaranteeing that **operations will wait for their required inputs** before executing. This orchestration **eliminates the possibility of race conditions** by design, ensuring correct execution order while maximizing performance for I/O-bound workflows.
 
 ### 📋 Execution is chaotic, but the result is orderly
 While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
@@ -25,12 +26,13 @@ Cascada is a new project and is evolving quickly! This is exciting, but it also 
 ## Table of Contents
 - [Overview](#overview)
 - [Key Features](#key-features)
-- [Executing a Script](#executing-a-script)
+- [Getting Started](#getting-started)
 - [Core Syntax and Expressions](#core-syntax-and-expressions)
 - [Macros and Reusable Components](#macros-and-reusable-components)
 - [Advanced Flow Control](#advanced-flow-control)
 - [Modular Scripts](#modular-scripts)
 - [API Reference](#api-reference)
+- [Development Status and Roadmap](#development-status-and-roadmap)
 
 ## Key Features
 
@@ -41,64 +43,38 @@ Cascada is a new project and is evolving quickly! This is exciting, but it also 
 - **Controlled Sequential Execution**: Use the [`!` marker](#sequential-execution-control-) to enforce a strict execution order for operations with side effects (like database writes) without sacrificing overall parallelism.
 - **Separation of Logic and Presentation**: Promotes a clear separation of logic from presentation—use scripts for coordinating tasks and handling data, and templates for generating text output.
 
-## Executing a Script
+## Getting Started
 
-Here's an example of executing a script that defines and uses a [macro](#macros-and-reusable-components) to build a structured data object.
+ Install Cascada (package name will change):
+  ```bash
+  npm install cascada-engine
+  ```
+
+Here's a aimple of executing a script.
 
 ```javascript
-const { AsyncEnvironment } = require('cascada-tmpl');
+import { AsyncEnvironment } from 'cascada-engine';
+
 const env = new AsyncEnvironment();
-
 const script = `
-// The '[:data](#focusing-the-output-data-text-handlername)' directive focuses the macro's output
-macro fetchAndEnhanceUser(id) : data
-  var userData = fetchUser(id)
-  @data.user.id = userData.id
-  @data.user.name = userData.name
-  @data.user.tasks.push("Review code")
-endmacro
-
-// Each macro call runs in parallel
-var user1 = fetchAndEnhanceUser(1)
-var user2 = fetchAndEnhanceUser(2)
-
-// Assemble the final result using the macro outputs
-@data.result.user1 = user1.user
-@data.result.user2 = user2.user
+  // The 'user' promise resolves automatically
+  @data.result.greet = "Hello, " + user.name
 `;
-
 const context = {
-  fetchUser: async (id) => {
-    const users = {
-      1: { id: 1, name: "Alice" },
-      2: { id: 2, name: "Bob" },
-    };
-    return users[id] || null;
-  }
+  // Pass in an async function or a promise
+  user: fetchUser(123)
 };
 
-// Execute the script
-// We will focus the script's output later to get this clean result.
-const result = await env.renderScriptString(script, context);
-console.log(JSON.stringify(result.data, null, 2)); // Focusing on the .data property for clarity
-// Output:
-// {
-//   "result": {
-//     "user1": {
-//       "id": 1,
-//       "name": "Alice",
-//       "tasks": [ "Review code" ]
-//     },
-//     "user2": {
-//       "id": 2,
-//       "name": "Bob",
-//       "tasks": [ "Review code" ]
-//     }
-//   }
-// }
+const data = await env.renderScriptString(
+  script, context, { output: 'data' }
+);
+// { result: { greet: 'Hello, Alice' } }
+console.log(data);
+```
+
 ## Core Syntax and Expressions
 
-Cascada Script removes the visual noise of template syntax while preserving Cascada's powerful capabilities.
+Cascada Script removes the visual noise of the [template syntax](template.md) while preserving Cascada's powerful capabilities.
 
 - **No Tag Delimiters**: Write `if condition` instead of `{% if condition %}`
 - **Multiline Expressions**: Expressions can span multiple lines for readability. The system automatically detects continuation based on syntax (e.g., unclosed operators, brackets, or parentheses). For example:
@@ -707,6 +683,26 @@ Here's a simple example of how it works:
 </tr>
 </table>
 
+Of course. Here is a more concise version:
+
+---
+
+**Note:** Currently, `@data` commands can only be used on the left side of an expression to **write** data. Reading from `@data` on the right side is not yet supported, as the final data object is assembled *after* the main script logic runs.
+
+**Valid:**
+```
+@data.user.name = "George"
+```
+
+**Invalid:**
+```
+// This will cause an error because you cannot read from @data yet.
+@data.user.alias = @data.user.name
+```
+
+This feature is planned for a future release.
+
+###### `@data` Operations
 Below is a detailed list of all available commands and operators.
 
 **Assignment and Deletion**
@@ -1489,7 +1485,7 @@ You create an environment instance by calling its constructor, optionally passin
         *   For other options, see the Nunjucks documentation.
 
     ```javascript
-    const { AsyncEnvironment, FileSystemLoader } = require('cascada-tmpl');
+    const { AsyncEnvironment, FileSystemLoader } = require('cascada-engine');
 
     // Configure the environment to load files from the 'scripts' directory
     const env = new AsyncEnvironment(new FileSystemLoader('scripts'), {
@@ -1620,3 +1616,41 @@ Cascada provides functions to precompile files or strings directly to JavaScript
 The resulting JavaScript string can be saved to a `.js` file and loaded in your application using the `PrecompiledLoader`. A key option is `opts.env`, which ensures that any custom filters, global functions, or command handlers you've added are correctly included in the compiled output.
 
 **For a comprehensive guide on all precompilation options and advanced usage, please refer to the [Nunjucks precompiling documentation](https://mozilla.github.io/nunjucks/api.html#precompiling).**
+
+
+## Development Status and Roadmap
+
+Cascada is under active development, with a focus on expanding its core capabilities and improving the developer experience. This roadmap outlines key features and enhancements that are planned or currently in progress.
+
+-   **Full Support for Modular Scripts (`import`, `include`, `extends`)**
+    Implementing the complete vision for modularity, including the `extern`, `reads`, and `modifies` keywords.
+
+-   **Resilient Error Handling (`try`/`resume`/`except`)**
+    Introducing a powerful error-handling construct designed for asynchronous workflows. This will allow for conditional retries and graceful failure management, essential for building reliable data pipelines.
+
+-   **Reading from the `@data` Object**
+    Enabling the ability to read from the `@data` object on the right side of `@data` expressions (e.g., `@data.user.name = @data.form.firstName + ' ' + @data.form.lastName`). This will allow for more powerfull data composition.
+
+-   **Expanded Sequential Execution (`!`) Support**
+    Enhancing the `!` marker to work on variables and not just objects from the global context. This is especially important for macro arguments as macros don't have access to the context object.
+
+-   **Direct Property Assignment on Variables**
+    Adding support for direct property modification on variables (e.g., `myObject.property = "new value"`). This is currently possible only for `@data` assignments
+
+-   **Compound Assignment for Variables (`+=`, `-=`, etc.)**
+    Extending support for compound assignment operators (`+=`, `*=`, etc.) to regular variables (this is currently supported only for `@data` assignments). Like their `@data` counterparts, the default behavior of each operator will be overridable.
+
+-   **Root-Level Sequential Operator**
+    Allowing the sequential execution operator `!` to be used directly on root-level function calls (e.g., `!.saveToDatabase(data)`), simplifying syntax for global functions with side effects.
+
+-   **Expanded Built-in `@data` Methods**
+    Adding comprehensive support for standard JavaScript array and string methods (e.g., `map`, `filter`, `slice`, `replace`) as first-class operations within the `@data` handler, reducing the need for custom logic.
+
+-   **Enhanced Error Reporting**
+    Improving the debugging experience by providing detailed error messages that include code snippets, file names, and line/column numbers to pinpoint issues quickly.
+
+-   **Execution Replay and Debugging**
+    Creating an advanced logging system, via a dedicated output handler, to capture the entire execution trace. This will allow developers to replay and inspect the sequence of operations and variable states for complex debugging.
+
+-   **Robustness and Concurrency Validation**
+    Continuously expanding the test suite with a focus on complex, high-concurrency scenarios to formally verify the correctness and stability of the parallel execution engine.

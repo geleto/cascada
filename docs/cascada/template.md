@@ -47,12 +47,12 @@ Cascada was developed with AI agent workflows and complex data processing in min
 ## Installation
 
 ```bash
-npm install cascada-tmpl
+npm install cascada-engine
 ```
 
 ## Getting Started
 ```javascript
-import { AsyncEnvironment } from 'cascada-tmpl';
+import { AsyncEnvironment } from 'cascada-engine';
 
 const env = new AsyncEnvironment();
 const context = {

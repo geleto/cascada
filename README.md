@@ -2,7 +2,7 @@
 
 # Cascada: The Parallel-First Scripting & Templating Engine
 
-### Write simple synchronous-style code that runs concurrently
+### Think Sequentially. Execute Concurrently.
 
 ## Overview
 
@@ -10,7 +10,7 @@
 Cascada is a powerful engine for **JavaScript** and **TypeScript** applications, providing both a [scripting language](docs/cascada/script.md) and a [template syntax](docs/cascada/template.md). It is designed to dramatically simplify complex, asynchronous workflows by fundamentally inverting the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
 
 ### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
-The engine intelligently analyzes your code, automatically executing independent operations - like API calls, LLM requests, and database queries - concurrently. It guarantees that operations will wait for their required inputs before executing, a smart orchestration that **eliminates race conditions by design** while delivering high performance without the complexity and boilerplate of manual async handling.
+The engine intelligently analyzes your code, automatically executing independent asynchronous operations - like API calls, LLM requests, and database queries - concurrently. It guarantees that **operations will wait for their required inputs** before executing, a smart orchestration that **eliminates race conditions by design** while delivering high performance without the complexity and boilerplate of manual async handling.
 
 ### 🎭 One Engine, Two Modes
 This parallel-first philosophy is the foundation for both of its powerful modes:
@@ -21,7 +21,7 @@ This parallel-first philosophy is the foundation for both of its powerful modes:
 While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
 
 ### ➡️ Parallel by default, sequential by exception
-While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations, without affecting the parallelism of the rest of the code.**.
+While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations**, without affecting the parallelism of the rest of the code..
 
 This inversion - parallel by default, sequential by exception - is what makes Cascada so effective and intuitive.
 
@@ -546,7 +546,7 @@ Cascada provides a straightforward, **promise-based API** for rendering template
 <summary><strong>Executing a Script</strong></summary>
 
 ```javascript
-import { AsyncEnvironment } from 'cascada-tmpl';
+import { AsyncEnvironment } from 'cascada-engine';
 
 const env = new AsyncEnvironment();
 const script = `
@@ -571,7 +571,7 @@ console.log(data);
 <summary><strong>Rendering a Template</strong></summary>
 
 ```javascript
-import { AsyncEnvironment } from 'cascada-tmpl';
+import { AsyncEnvironment } from 'cascada-engine';
 
 const env = new AsyncEnvironment();
 const tpl = '<h1>Hello {{ username }}</h1>';
@@ -594,18 +594,18 @@ console.log(html);
 ## Quick Start
 1.  Install Cascada:
     ```bash
-    npm install cascada-tmpl
+    npm install cascada-engine
     ```
 2.  Render a Cascada template:
     ```javascript
-    import { AsyncEnvironment } from 'cascada-tmpl';
+    import { AsyncEnvironment } from 'cascada-engine';
     const env = new AsyncEnvironment();
     const result = await env.renderString('Hello, {{ name }}!', { name: 'World' });
     console.log(result); // Hello, World!
     ```
 3.  Run a Cascada script:
     ```javascript
-    import { AsyncEnvironment } from 'cascada-tmpl';
+    import { AsyncEnvironment } from 'cascada-engine';
     const env = new AsyncEnvironment();
     const script = `// Set initial user object
       @data.user = {name: 'Alice', id: 123, log: "User profile created. "}
