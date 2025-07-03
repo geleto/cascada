@@ -1,7 +1,7 @@
 {
-  "name": "cascada-tmpl",
-  "version": "0.0.7",
-  "description": "A template engine with advanced async capabilities with automatic implicit concurrency",
+  "name": "cascada-engine",
+  "version": "0.0.8",
+  "description": "The parallel-first scripting & templating engine with automatic, implicit concurrency",
   "license": "BSD-2-Clause",
   "author": "Angel Popov<geleto@gmail.com>",
   "main": "./dist/cjs/index.js",
@@ -128,11 +128,18 @@
   },
   "keywords": [
     "template",
+    "script",
     "templating",
+    "scripting",
     "template engine",
+    "script engine",
+    "scripting engine",
+    "templating engine",
     "async",
     "parallel",
-    "concurrency"
+    "concurrency",
+    "concurrent",
+    "parallel-first"
   ],
   "bugs": {
     "url": "https://github.com/geleto/cascada/issues"
