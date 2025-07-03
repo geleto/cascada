@@ -1,5 +1,4 @@
 
-
 # Cascada: The Parallel-First Scripting & Templating Engine
 
 ### Think Sequentially. Execute Concurrently.
@@ -31,6 +30,32 @@ This inversion - parallel by default, sequential by exception - is what makes Ca
 
 **⚠️ Welcome to the Cutting Edge! ⚠️**
 Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
+
+## Quick Start
+1.  Install Cascada:
+    ```bash
+    npm install cascada-engine
+    ```
+2.  Render a Cascada template:
+    ```javascript
+    import { AsyncEnvironment } from 'cascada-engine';
+    const env = new AsyncEnvironment();
+    const result = await env.renderString('Hello, {{ name }}!', { name: 'World' });
+    console.log(result); // Hello, World!
+    ```
+3.  Run a Cascada script:
+    ```javascript
+    import { AsyncEnvironment } from 'cascada-engine';
+    const env = new AsyncEnvironment();
+    const script = `// Set initial user object
+      @data.user = {name: 'Alice', id: 123, log: "User profile created. "}
+      // Append to a string property within the data object
+      @data.user.log.append(" Login successful.")`;
+
+    // The 'data' output focuses the result on the data object
+    const { user } = await env.renderScriptString(script, {}, { output: 'data' });
+    console.log(user.name); // Alice
+    console.log(user.log);  // User profile created. Login successful.
 
 ## Core Concepts
 
@@ -595,32 +620,68 @@ console.log(html);
 </tr>
 </table>
 
-## Quick Start
-1.  Install Cascada:
-    ```bash
-    npm install cascada-engine
-    ```
-2.  Render a Cascada template:
-    ```javascript
-    import { AsyncEnvironment } from 'cascada-engine';
-    const env = new AsyncEnvironment();
-    const result = await env.renderString('Hello, {{ name }}!', { name: 'World' });
-    console.log(result); // Hello, World!
-    ```
-3.  Run a Cascada script:
-    ```javascript
-    import { AsyncEnvironment } from 'cascada-engine';
-    const env = new AsyncEnvironment();
-    const script = `// Set initial user object
-      @data.user = {name: 'Alice', id: 123, log: "User profile created. "}
-      // Append to a string property within the data object
-      @data.user.log.append(" Login successful.")`;
 
-    // The 'data' output focuses the result on the data object
-    const { user } = await env.renderScriptString(script, {}, { output: 'data' });
-    console.log(user.name); // Alice
-    console.log(user.log);  // User profile created. Login successful.
-    ```
+## Built for AI Workflows
+
+Cascada's parallel-first engine and data-driven flow make it the ideal foundation for orchestrating complex AI workflows. The **[Cascador-AI](https://github.com/geleto/cascador-ai)** library builds on this power, providing a high-level, intuitive API for wiring together LLMs, APIs, and data transformations. By integrating with the [Vercel AI SDK Core](https://sdk.vercel.ai/docs/ai-sdk-core), Cascador-AI lets you define sophisticated, multi-step agents using Cascada's clean, `await`-free scripting language.
+
+Here's a condensed example of a self-improving agent built with Cascador-AI:
+```javascript
+import { openai } from '@ai-sdk/openai';
+import { create } from 'cascador-ai';
+import { z } from 'zod';
+
+const draftGenerator = create.TextGenerator({
+    model: openai('gpt-4o'),
+    prompt: 'Write a short, engaging blog post about {{ topic }}.',
+});
+
+const critiqueGenerator = create.ObjectGenerator({
+    model: openai('gpt-4o'),
+    schema: z.object({
+        score: z.number().describe('Quality score from 1-10.'),
+        suggestions: z.array(z.string()).describe('Actionable suggestions for improvement.'),
+    }),
+    prompt: 'Critique this blog post: {{ draft }}',
+});
+
+const revisionGenerator = create.TextGenerator({
+    model: openai('gpt-4o'),
+    prompt: 'Rewrite the following post based on these suggestions:\n\nPOST:\n{{ draft }}\n\nSUGGESTIONS:\n- {{ suggestions | join("\n- ") }}',
+});
+
+// Define the orchestration script for the agent
+const contentAgent = create.ScriptRunner({
+    context: {
+      draftGenerator, critiqueGenerator, revisionGenerator,
+      topic: "the future of AI-powered development",
+      qualityThreshold = 8,
+      maxRevisions = 3
+    },
+    script: `
+      :data
+      var revisionCount = 0
+
+      // Generate and critique the initial draft
+      var currentDraft = (draftGenerator({ topic: topic })).text
+      var critique = (critiqueGenerator({ draft: currentDraft })).object
+
+      // Iteratively revise until the quality threshold or maxRevisions is met
+      while critique.score < qualityThreshold and revisionCount < maxRevisions
+        revisionCount++
+        currentDraft = (revisionGenerator({ draft: currentDraft, suggestions: critique.suggestions })).text
+        critique = (critiqueGenerator({ draft: currentDraft })).object
+      endwhile
+
+      // Assemble the final result
+      @data = { finalDraft: currentDraft, finalScore: critique.score, .revisionCount: revisionCount }
+    `,
+});
+
+// Run the agent
+const result = await contentAgent();
+console.log(JSON.stringify(result, null, 2));
+```
 
 ## Further Reading
 
