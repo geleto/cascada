@@ -1257,12 +1257,6 @@
     });
   });
 
-  // Assuming 'delay' and 'env' (Cascada AsyncEnvironment) are already set up.
-  // const { AsyncEnvironment } = require('cascada-tmpl'); // or your import
-  // const env = new AsyncEnvironment();
-  // const expect = require('expect.js'); // or your assertion library
-  // async function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
   describe('Cascada Filters with Sequential Operations (!)', () => {
     let cont;
     let env;

@@ -625,57 +625,50 @@ console.log(html);
 
 Cascada's parallel-first engine and data-driven flow make it the ideal foundation for orchestrating complex AI workflows. The **[Cascador-AI](https://github.com/geleto/cascador-ai)** library builds on this power, providing a high-level, intuitive API for wiring together LLMs, APIs, and data transformations. By integrating with the [Vercel AI SDK Core](https://sdk.vercel.ai/docs/ai-sdk-core), Cascador-AI lets you define sophisticated, multi-step agents using Cascada's clean, `await`-free scripting language.
 
-Here's a condensed example of a self-improving agent built with Cascador-AI:
+Here's a short example of a self-improving agent built with Cascador-AI:
 ```javascript
 import { openai } from '@ai-sdk/openai';
 import { create } from 'cascador-ai';
 import { z } from 'zod';
 
+const baseConfig = create.Config({model: openai('gpt-4o')});
+
 const draftGenerator = create.TextGenerator({
-    model: openai('gpt-4o'),
     prompt: 'Write a short, engaging blog post about {{ topic }}.',
-});
+}, baseConfig );
 
 const critiqueGenerator = create.ObjectGenerator({
-    model: openai('gpt-4o'),
     schema: z.object({
         score: z.number().describe('Quality score from 1-10.'),
         suggestions: z.array(z.string()).describe('Actionable suggestions for improvement.'),
     }),
     prompt: 'Critique this blog post: {{ draft }}',
-});
+}, baseConfig);
 
 const revisionGenerator = create.TextGenerator({
-    model: openai('gpt-4o'),
     prompt: 'Rewrite the following post based on these suggestions:\n\nPOST:\n{{ draft }}\n\nSUGGESTIONS:\n- {{ suggestions | join("\n- ") }}',
-});
+}, baseConfig);
 
 // Define the orchestration script for the agent
 const contentAgent = create.ScriptRunner({
     context: {
       draftGenerator, critiqueGenerator, revisionGenerator,
       topic: "the future of AI-powered development",
-      qualityThreshold = 8,
-      maxRevisions = 3
+      qualityThreshold: 8, maxRevisions: 3, minRevisions: 1
     },
-    script: `
-      :data
+    script: `:data
       var revisionCount = 0
-
-      // Generate and critique the initial draft
-      var currentDraft = (draftGenerator({ topic: topic })).text
-      var critique = (critiqueGenerator({ draft: currentDraft })).object
+      var currentDraft = draftGenerator({ topic: topic }).text
+      var critique = critiqueGenerator({ draft: currentDraft }).object
 
       // Iteratively revise until the quality threshold or maxRevisions is met
-      while critique.score < qualityThreshold and revisionCount < maxRevisions
-        revisionCount++
-        currentDraft = (revisionGenerator({ draft: currentDraft, suggestions: critique.suggestions })).text
-        critique = (critiqueGenerator({ draft: currentDraft })).object
+      while (critique.score < qualityThreshold or revisionCount < minRevisions) and revisionCount < maxRevisions
+        revisionCount = revisionCount + 1
+        currentDraft = revisionGenerator({ draft: currentDraft, suggestions: critique.suggestions }).text
+        critique = critiqueGenerator({ draft: currentDraft }).object
       endwhile
 
-      // Assemble the final result
-      @data = { finalDraft: currentDraft, finalScore: critique.score, .revisionCount: revisionCount }
-    `,
+      @data = { finalDraft: currentDraft, finalScore: critique.score, revisionCount: revisionCount }`,
 });
 
 // Run the agent
