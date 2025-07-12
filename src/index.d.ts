@@ -130,7 +130,7 @@ interface ConfigureOptions {
 
 interface RenderOptions {
   path?: string | undefined;
-};
+}
 
 export class Environment {
   options: {
@@ -158,12 +158,12 @@ export class Environment {
   /** @deprecated Use renderTemplateString instead */
   renderString(src: string, context: object, opts: RenderOptions, callback: TemplateCallback<string>): void;
 
-  renderTemplateString(src: string, context?: object, opts?:RenderOptions): string;
+  renderTemplateString(src: string, context?: object, opts?: RenderOptions): string;
   renderTemplateString(src: string, callback: TemplateCallback<string>): void;
   renderTemplateString(src: string, context: object, callback: TemplateCallback<string>): void;
   renderTemplateString(src: string, context: object, opts: RenderOptions, callback: TemplateCallback<string>): void;
 
-  renderScriptString(src: string, context?: object, opts?:RenderOptions): Record<string, any> | string | null;
+  renderScriptString(src: string, context?: object, opts?: RenderOptions): Record<string, any> | string | null;
   renderScriptString(src: string, callback: TemplateCallback<Record<string, any> | string | null>): void;
   renderScriptString(src: string, context: object, callback: TemplateCallback<Record<string, any> | string | null>): void;
   renderScriptString(src: string, context: object, opts: RenderOptions, callback: TemplateCallback<Record<string, any> | string | null>): void;
@@ -195,19 +195,41 @@ export class Environment {
   ): void;
 }
 
-export class AsyncEnvironment extends Environment {
+export class AsyncEnvironment {
+  options: {
+    autoescape: boolean;
+  };
+
   constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptions);
 
   renderTemplate(name: string, context?: object): Promise<string>;
   renderScript(name: string, context?: object): Promise<string>;
 
-  renderTemplateString(src: string, context?: object, opts?:RenderOptions): Promise<string>;
-  renderScriptString(src: string, context?: object, opts?:RenderOptions): Promise<Record<string, any> | string | null>;
+  renderTemplateString(src: string, context?: object, opts?: RenderOptions): Promise<string>;
+  renderScriptString(src: string, context?: object, opts?: RenderOptions): Promise<Record<string, any> | string | null>;
 
   getTemplate(name: string, eagerCompile?: boolean): Promise<AsyncTemplate>;
   getScript(name: string, eagerCompile?: boolean): Promise<AsyncScript>;
 
+  addFilter(name: string, func: (...args: any[]) => any, async?: boolean): AsyncEnvironment;
+  getFilter(name: string): (...args: any[]) => any;
+
+  addExtension(name: string, ext: Extension): AsyncEnvironment;
+  removeExtension(name: string): void;
+  getExtension(name: string): Extension;
+  hasExtension(name: string): boolean;
+
+  addGlobal(name: string, value: any): AsyncEnvironment;
+  getGlobal(name: string): any;
+
   addFilterAsync(name: string, func: (val: any) => Promise<any>): AsyncEnvironment;
+
+  express(app: object): void;
+
+  on(
+    event: "load",
+    fn: (name: string, source: { src: string; path: string; noCache: boolean }, loader: Loader) => void,
+  ): void;
 
   /**
    * Merges a map of custom methods into the built-in data assembly commands.
@@ -260,13 +282,8 @@ export interface ILoader {
 /** An asynchronous loader. */
 export interface ILoaderAsync {
   async: true;
-  getSource: (name: string, callback: Callback<Error, LoaderSource | null>) => void;
-}
-
-/** An asynchronous loader returning a Promise. */
-export interface ILoaderAsync {
-  async: true;
-  getSource: (name: string) => Promise<LoaderSource | null>;//@todo, wrap ILoaderAsync
+  getSource(name: string, callback: Callback<Error, LoaderSource | null>): void;
+  getSource(name: string): Promise<LoaderSource | null>;
 }
 
 // Needs both Loader and ILoader since nunjucks uses a custom object system
