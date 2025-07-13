@@ -459,6 +459,321 @@ module.exports = {
   },
 
   /**
+   * Converts a string to uppercase.
+   * Corresponds to the Cascada command: `@toUpperCase path`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @returns {string} The uppercase string.
+   */
+  toUpperCase : function(target) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'toUpperCase\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.toUpperCase();
+    } else {
+      throw new Error('Error: Target for \'toUpperCase\' must be a string.');
+    }
+  },
+
+  /**
+   * Converts a string to lowercase.
+   * Corresponds to the Cascada command: `@toLowerCase path`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @returns {string} The lowercase string.
+   */
+  toLowerCase : function(target) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'toLowerCase\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.toLowerCase();
+    } else {
+      throw new Error('Error: Target for \'toLowerCase\' must be a string.');
+    }
+  },
+
+  /**
+   * Extracts a section of a string.
+   * Corresponds to the Cascada command: `@slice path start end`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @param {number} start The start index.
+   * @param {number} end The end index (optional).
+   * @returns {string} The sliced string.
+   */
+  slice : function(target, start, end) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'slice\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.slice(Number(start), end !== undefined ? Number(end) : undefined);
+    } else {
+      throw new Error('Error: Target for \'slice\' must be a string.');
+    }
+  },
+
+  /**
+   * Extracts a section of a string (no negative indices).
+   * Corresponds to the Cascada command: `@substring path start end`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @param {number} start The start index.
+   * @param {number} end The end index (optional).
+   * @returns {string} The substring.
+   */
+  substring : function(target, start, end) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'substring\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.substring(Number(start), end !== undefined ? Number(end) : undefined);
+    } else {
+      throw new Error('Error: Target for \'substring\' must be a string.');
+    }
+  },
+
+
+
+  /**
+   * Removes whitespace from both ends of a string.
+   * Corresponds to the Cascada command: `@trim path`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @returns {string} The trimmed string.
+   */
+  trim : function(target) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'trim\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.trim();
+    } else {
+      throw new Error('Error: Target for \'trim\' must be a string.');
+    }
+  },
+
+  /**
+   * Removes whitespace from the start of a string.
+   * Corresponds to the Cascada command: `@trimStart path`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @returns {string} The string with leading whitespace removed.
+   */
+  trimStart : function(target) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'trimStart\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.trimStart();
+    } else {
+      throw new Error('Error: Target for \'trimStart\' must be a string.');
+    }
+  },
+
+  /**
+   * Removes whitespace from the end of a string.
+   * Corresponds to the Cascada command: `@trimEnd path`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @returns {string} The string with trailing whitespace removed.
+   */
+  trimEnd : function(target) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'trimEnd\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.trimEnd();
+    } else {
+      throw new Error('Error: Target for \'trimEnd\' must be a string.');
+    }
+  },
+
+  /**
+   * Replaces the first occurrence of a substring.
+   * Corresponds to the Cascada command: `@replace path searchValue replaceValue`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @param {string} searchValue The substring to replace.
+   * @param {string} replaceValue The replacement string.
+   * @returns {string} The string with the replacement.
+   */
+  replace : function(target, searchValue, replaceValue) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'replace\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.replace(String(searchValue), String(replaceValue));
+    } else {
+      throw new Error('Error: Target for \'replace\' must be a string.');
+    }
+  },
+
+  /**
+   * Replaces all occurrences of a substring.
+   * Corresponds to the Cascada command: `@replaceAll path searchValue replaceValue`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @param {string} searchValue The substring to replace.
+   * @param {string} replaceValue The replacement string.
+   * @returns {string} The string with all replacements.
+   */
+  replaceAll : function(target, searchValue, replaceValue) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'replaceAll\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.replaceAll(String(searchValue), String(replaceValue));
+    } else {
+      throw new Error('Error: Target for \'replaceAll\' must be a string.');
+    }
+  },
+
+  /**
+   * Splits a string into an array.
+   * Corresponds to the Cascada command: `@split path separator`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @param {string} separator The separator string (optional).
+   * @returns {Array<string>} The array of substrings.
+   */
+  split : function(target, separator) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'split\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.split(separator !== undefined ? String(separator) : undefined);
+    } else {
+      throw new Error('Error: Target for \'split\' must be a string.');
+    }
+  },
+
+  /**
+   * Returns the character at a specified index.
+   * Corresponds to the Cascada command: `@charAt path index`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @param {number} index The character index.
+   * @returns {string} The character at the specified index.
+   */
+  charAt : function(target, index) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'charAt\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.charAt(Number(index));
+    } else {
+      throw new Error('Error: Target for \'charAt\' must be a string.');
+    }
+  },
+
+  /**
+   * Repeats a string a specified number of times.
+   * Corresponds to the Cascada command: `@repeat path count`
+   *
+   * @param {string} target The string at the specified `path`.
+   * @param {number} count The number of times to repeat.
+   * @returns {string} The repeated string.
+   */
+  repeat : function(target, count) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'repeat\' cannot be undefined or null.');
+    }
+    if (typeof target === 'string') {
+      return target.repeat(Number(count));
+    } else {
+      throw new Error('Error: Target for \'repeat\' must be a string.');
+    }
+  },
+
+
+
+  /**
+   * Returns the element at a specified index.
+   * Corresponds to the Cascada command: `@at path index`
+   *
+   * @param {Array<any>} target The array at the specified `path`.
+   * @param {number} index The index of the element.
+   * @returns {any} The element at the specified index.
+   */
+  at : function(target, index) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'at\' cannot be undefined or null.');
+    }
+    if (Array.isArray(target)) {
+      return target.at(Number(index));
+    } else {
+      throw new Error('Error: Target for \'at\' must be an array.');
+    }
+  },
+
+
+
+  /**
+   * Sorts an array in place.
+   * Corresponds to the Cascada command: `@sort path`
+   *
+   * @param {Array<any>} target The array at the specified `path`.
+   * @returns {Array<any>} The sorted array.
+   */
+  sort : function(target) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'sort\' cannot be undefined or null.');
+    }
+    if (Array.isArray(target)) {
+      target.sort();
+      return target;
+    } else {
+      throw new Error('Error: Target for \'sort\' must be an array.');
+    }
+  },
+
+  /**
+   * Sorts an array with a custom comparison function.
+   * Corresponds to the Cascada command: `@sortWith path compareFunction`
+   *
+   * @param {Array<any>} target The array at the specified `path`.
+   * @param {Function} compareFunction The comparison function.
+   * @returns {Array<any>} The sorted array.
+   */
+  sortWith : function(target, compareFunction) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'sortWith\' cannot be undefined or null.');
+    }
+    if (Array.isArray(target)) {
+      target.sort(compareFunction);
+      return target;
+    } else {
+      throw new Error('Error: Target for \'sortWith\' must be an array.');
+    }
+  },
+
+
+
+  /**
+   * Extracts a section of an array.
+   * Corresponds to the Cascada command: `@slice path start end`
+   *
+   * @param {Array<any>} target The array at the specified `path`.
+   * @param {number} start The start index.
+   * @param {number} end The end index (optional).
+   * @returns {Array<any>} The sliced array.
+   */
+  arraySlice : function(target, start, end) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'arraySlice\' cannot be undefined or null.');
+    }
+    if (Array.isArray(target)) {
+      return target.slice(Number(start), end !== undefined ? Number(end) : undefined);
+    } else {
+      throw new Error('Error: Target for \'arraySlice\' must be an array.');
+    }
+  },
+
+
+
+  /**
    * Returns undefined, effectively deleting the target.
    * Corresponds to the Cascada command: `@delete path`
    *
