@@ -52,7 +52,7 @@ const noopTmplSrcAsync = {
   }
 };
 
-class Environment extends EmitterObj {
+class BaseEnvironment extends EmitterObj {
   init(loaders, opts) {
     // The dev flag determines the trace that'll be shown on errors.
     // If set to true, returns the full trace from the error point,
@@ -203,15 +203,6 @@ class Environment extends EmitterObj {
     return (isRelative && loader.resolve) ? loader.resolve(parentName, filename) : filename;
   }
 
-  getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
-    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, false, false, cb);
-  }
-
-  getScript(name, eagerCompile, parentName, ignoreMissing, cb) {
-    // Scripts use the same template loading mechanism, conversion happens at Script class level
-    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, false, true, cb);
-  }
-
   _getCompiled(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode, cb) {
     var that = this;
     var tmpl = null;
@@ -350,6 +341,21 @@ class Environment extends EmitterObj {
     return expressApp(this, app);
   }
 
+  waterfall(tasks, callback, forceAsync) {
+    return waterfall(tasks, callback, forceAsync);
+  }
+}
+
+class Environment extends BaseEnvironment {
+  getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
+    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, false, false, cb);
+  }
+
+  getScript(name, eagerCompile, parentName, ignoreMissing, cb) {
+    // Scripts use the same template loading mechanism, conversion happens at Script class level
+    return this._getCompiled(name, eagerCompile, parentName, ignoreMissing, false, true, cb);
+  }
+
   /** @deprecated Use renderTemplate instead */
   render(name, ctx, cb) {
     if (lib.isFunction(ctx)) {
@@ -363,7 +369,7 @@ class Environment extends EmitterObj {
     // synchronously.
     let syncResult = null;
 
-    this.getTemplate(name, false, (err, tmpl) => {
+    this.getTemplate(name, false, null, false, (err, tmpl) => {
       if (err && cb) {
         callbackAsap(cb, err);
       } else if (err) {
@@ -417,13 +423,9 @@ class Environment extends EmitterObj {
     const tmpl = new Template(template, this, opts.path);
     return tmpl.render(ctx, cb);
   }
-
-  waterfall(tasks, callback, forceAsync) {
-    return waterfall(tasks, callback, forceAsync);
-  }
 }
 
-class AsyncEnvironment extends Environment {
+class AsyncEnvironment extends BaseEnvironment {
   init(loaders, opts) {
     super.init(loaders, opts);
 
