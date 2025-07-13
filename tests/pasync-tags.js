@@ -40,7 +40,7 @@
           sideEffect: () => { called = true; }
         };
         const template = `{% do sideEffect() %}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('');
         expect(called).to.equal(true);
       });
@@ -52,7 +52,7 @@
           incB: async () => { await delay(10); b += 2; }
         };
         const template = `{% do [incA(), incB()] %}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('');
         expect(a).to.equal(1);
         expect(b).to.equal(2);
@@ -63,7 +63,7 @@
           return42: async () => { await delay(10); return 42; }
         };
         const template = `{% do return42() %}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('');
       });
 
@@ -73,7 +73,7 @@
           asyncSideEffect: async () => { await delay(10); called = true; }
         };
         const template = `{% do asyncSideEffect() %}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('');
         expect(called).to.equal(true);
       });
@@ -84,7 +84,7 @@
           sideEffect: () => { called = true; }
         };
         const template = `{% if true %}{% do sideEffect() %}{% endif %}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('');
         expect(called).to.equal(true);
       });

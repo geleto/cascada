@@ -44,7 +44,7 @@
           {{ greeting }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Hello, John!\n            Welcome to our site.');
       });
 
@@ -69,7 +69,7 @@
           {{ userInfo }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('First Name: John\n            Last Name: Doe');
       });
 
@@ -100,7 +100,7 @@
           {{ outer }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Welcome Goodbye');
       });
 
@@ -126,7 +126,7 @@
           {{ userList }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Alice: admin Bob: user Charlie: user');
       });
 
@@ -150,7 +150,7 @@
           {{ pageHeader }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(unescape(result.trim())).to.equal('<h1>Welcome</h1>');
       });
 
@@ -175,7 +175,7 @@
           {{ greeting }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Hello, JOHN!');
       });
 
@@ -196,7 +196,7 @@
         `;
 
         try {
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error.message).to.contain('Failed to get name');
@@ -233,7 +233,7 @@
           {{ userList }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Alice: read write Bob: read');
       });
 
@@ -257,7 +257,7 @@
           Result: {{ calculation }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Result: 20');
       });
     });

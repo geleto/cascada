@@ -40,7 +40,7 @@
           }
         };
         const template = `{% set _dummy = log('hi') %}`;
-        await env.renderString(template, cont);
+        await env.renderTemplateString(template, cont);
         expect(cont.logs).to.eql(['Logged hi']);
       });
 
@@ -57,7 +57,7 @@
           }
         };
         const template = `{{ infoWait(2) }}{% set _dummy = err(5) %}`;
-        await expectAsyncError(() => env.renderString(template, cont), err => {
+        await expectAsyncError(() => env.renderTemplateString(template, cont), err => {
           expect(err.message).to.contain('Dummy error');
         });
       });;
@@ -72,7 +72,7 @@
           }
         };
         const template = `{% set _dummy = run!('exp1-A', 10) %}`;
-        await expectAsyncError(() => env.renderString(template, cont), err => {
+        await expectAsyncError(() => env.renderTemplateString(template, cont), err => {
           expect(err.message).to.contain('Failed to run operation');
         });
       });
@@ -134,7 +134,7 @@
                     {% do sequencer!.runOp('op1', 10) %}
                     {% do sequencer!.runOp('op2', 5) %}
                 `;
-          await env.renderString(template, cont);
+          await env.renderTemplateString(template, cont);
           expect(callOrder).to.eql(['op1', 'op2']); // Verify sequence
           expect(cont.logs).to.eql(['op1 on seq1', 'op2 on seq1']);
         });
@@ -145,7 +145,7 @@
                     {% do sequencer!.runOpOther('op2-other', 5) %}
                     {% do sequencer!.runOp('op3', 2) %}
                 `;
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect(context.logs).to.eql([
             'op1 on seq1',
             'op2-other OTHER on seq1',
@@ -167,7 +167,7 @@
                     {% do logAfterDelay('parallel-op', 5) %}
                     {% do sequencer!.runOp('op2', 2) %}
                 `;
-          await env.renderString(template, cont);
+          await env.renderTemplateString(template, cont);
           expect(cont.logs).to.contain('Log: parallel-op');
           expect(cont.logs).to.contain('op1 on seq1');
           expect(cont.logs).to.contain('op2 on seq1');
@@ -180,7 +180,7 @@
                     {% do sequencer.getStatus('status1', 5) %}
                     {% do sequencer!.runOp('op2', 2) %}
                 `;
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect(context.logs).to.contain('Status status1 on seq1');
           expect(context.logs).to.contain('op1 on seq1');
           expect(context.logs).to.contain('op2 on seq1');
@@ -201,7 +201,7 @@
                     {% do sequencer!.runOp('seq1-op2', 3) %}
                     {% do sequencer2!.runOp('seq2-op2', 2) %}
                 `;
-          await env.renderString(template, cont);
+          await env.renderTemplateString(template, cont);
           expect(cont.logs).to.contain('seq1-op1 on seq1');
           expect(cont.logs).to.contain('seq1-op2 on seq1');
           expect(cont.logs).to.contain('seq2-op1 on seq2');
@@ -212,7 +212,7 @@
 
         it('should handle multiple object path ! operators (same path) within one expression sequentially', async () => {
           const template = `{{ sequencer!.runOp('exp2-A', 10) ~ sequencer!.runOp('exp2-B', 5) }}`;
-          const result = await env.renderString(template, context);
+          const result = await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['exp2-A on seq1', 'exp2-B on seq1']);
           expect(result.trim()).to.equal('exp2-Aexp2-B');
         });
@@ -231,7 +231,7 @@
                     {% do data.nestedSequencer!.runOp('nested1', 10) %}
                     {% do data.nestedSequencer!.runOp('nested2', 5) %}
                 `;
-          await env.renderString(template, cont);
+          await env.renderTemplateString(template, cont);
           expect(cont.logs).to.eql(['nested1 on nested', 'nested2 on nested']);
         });
 
@@ -267,7 +267,7 @@
             {% do worker.resetCounter!() %}
             {% do worker.processTask!('taskC', 2) %}
           `;
-          await env.renderString(template, cont);
+          await env.renderTemplateString(template, cont);
           expect(cont.logs).to.contain('deep1 on deepSeq');
           expect(cont.logs).to.contain('deep2-other OTHER on deepSeq');
           expect(cont.logs).to.contain('deep3 on deepSeq');
@@ -286,7 +286,7 @@
                         {% do sequencer!.runOp('loop' + i, 10 - i*2) %}
                     {% endfor %}
                 `;
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['loop1 on seq1', 'loop2 on seq1', 'loop3 on seq1']);
         });
 
@@ -296,14 +296,14 @@
                     {% set res2 = sequencer!.runOp('set2', 5) %}
                     Results: {{ res1 }}, {{ res2 }}
                 `;
-          const result = await env.renderString(template, context);
+          const result = await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['set1 on seq1', 'set2 on seq1']);
           expect(result.trim()).to.equal('Results: set1, set2');
         });
 
         it('should work with object path ! in {{ }}', async () => {
           const template = `{{ sequencer!.runOp('out1', 10) }} {{ sequencer!.runOp('out2', 5) }}`;
-          const result = await env.renderString(template, context);
+          const result = await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['out1 on seq1', 'out2 on seq1']);
           expect(result.trim()).to.equal('out1 out2');
         });
@@ -316,7 +316,7 @@
                     {%- do sequencer!.runOp('op4', 2) -%}
                     {{ r1 }}
                 `;
-          const result = await env.renderString(template, context);
+          const result = await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['op1 on seq1', 'op2 on seq1', 'op3 on seq1', 'op4 on seq1']);
           expect(result.trim()).to.equal('op3op2');
         });
@@ -337,7 +337,7 @@
             }
           };
           const template = `{{ sequencer!.wrapOp(sequencer!.runOp('inner', 5), 10) }}`;
-          const result = await env.renderString(template, cont);
+          const result = await env.renderTemplateString(template, cont);
           expect(cont.logs).to.eql(['inner on seq1', 'wrapped-inner on seq1']);
           expect(result.trim()).to.equal('wrapped-inner');
         });
@@ -352,7 +352,7 @@
                     {% do sequencer.runOp!('op1', 10) %}
                     {% do sequencer.runOp!('op2', 5) %}
                 `;
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['op1 on seq1', 'op2 on seq1']);
         });
 
@@ -364,7 +364,7 @@
                     {% do sequencer.runOp!('opA2', 3) %}
                     {% do sequencer.runOpOther!('opB2', 2) %}
                 `;
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect(context.logs).to.contain('opA1 on seq1');
           expect(context.logs).to.contain('opA2 on seq1');
           expect(context.logs).to.contain('opB1 OTHER on seq1');
@@ -380,7 +380,7 @@
                     {% do sequencer.getStatus('status1', 5) %}
                     {% do sequencer.runOp!('op2', 2) %}
                 `;
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect(context.logs).to.contain('Status status1 on seq1');
           expect(context.logs).to.contain('op1 on seq1');
           expect(context.logs).to.contain('op2 on seq1');
@@ -395,7 +395,7 @@
             {% do sequencer.runOp!('A2', 3) %}
             {% do sequencer.runOpOther!('B2', 2) %}
           `;
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect(context.logs).to.contain('A1 on seq1');
           expect(context.logs).to.contain('A2 on seq1');
           expect(context.logs).to.contain('B1 OTHER on seq1');
@@ -407,7 +407,7 @@
         it('should handle multiple method ! operators (same method) within one expression sequentially', async () => {
           // Parser does not yet support method!()
           const template = `{{ sequencer.runOp!('expA1', 10) ~ sequencer.runOp!('expA2', 5) }}`;
-          const result = await env.renderString(template, context);
+          const result = await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['expA1 on seq1', 'expA2 on seq1']);
           expect(result.trim()).to.equal('expA1expA2');
         });
@@ -422,7 +422,7 @@
                     {% do data.nestedSequencer.runOp!('nested1', 10) %}
                     {% do data.nestedSequencer.runOp!('nested2', 5) %}
                 `;
-          await env.renderString(template, cont);
+          await env.renderTemplateString(template, cont);
           expect(cont.logs).to.eql(['nested1 on nested', 'nested2 on nested']);
         });
 
@@ -447,7 +447,7 @@
                     {% do data.level1.level2.deepSequencer.runOpOther!('deepB1', 5) %}
                     {% do data.level1.level2.deepSequencer.runOp!('deepA2', 2) %}
                 `;
-          await env.renderString(template, cont);
+          await env.renderTemplateString(template, cont);
           expect(cont.logs).to.contain('deepA1 on deepSeq');
           expect(cont.logs).to.contain('deepA2 on deepSeq');
           expect(cont.logs).to.contain('deepB1 OTHER on deepSeq');
@@ -461,7 +461,7 @@
                         {% do sequencer.runOp!('loop' + i, 10 - i*2) %}
                     {% endfor %}
                 `;
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['loop1 on seq1', 'loop2 on seq1', 'loop3 on seq1']);
         });
 
@@ -472,7 +472,7 @@
                     {% set res2 = sequencer.runOp!('set2', 5) %}
                     Results: {{ res1 }}, {{ res2 }}
                 `;
-          const result = await env.renderString(template, context);
+          const result = await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['set1 on seq1', 'set2 on seq1']);
           expect(result.trim()).to.equal('Results: set1, set2');
         });
@@ -480,7 +480,7 @@
         it('should work with method ! in {{ }}', async () => {
           // Parser does not yet support method!()
           const template = `{{ sequencer.runOp!('out1', 10) }} {{ sequencer.runOp!('out2', 5) }}`;
-          const result = await env.renderString(template, context);
+          const result = await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['out1 on seq1', 'out2 on seq1']);
           expect(result.trim()).to.equal('out1 out2');
         });
@@ -494,7 +494,7 @@
                     {%- do sequencer.runOp!('op4', 2) -%}
                     {{ r1 }}
                 `;
-          const result = await env.renderString(template, context);
+          const result = await env.renderTemplateString(template, context);
           expect(context.logs).to.eql(['op1 on seq1', 'op2 on seq1', 'op3 on seq1', 'op4 on seq1']);
           expect(result.trim()).to.equal('op3op2');
         });
@@ -506,7 +506,7 @@
                     {% do sequencer.runOpOther!('methSpec1', 5) %}
                     {% do sequencer!.runOpOther('objPath2', 2) %}
                 `;
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect(context.logs).to.contain('methSpec1 OTHER on seq1');
           expect(context.logs).to.contain('objPath1 on seq1');
           expect(context.logs).to.contain('objPath2 OTHER on seq1');
@@ -535,35 +535,35 @@
 
         it('should REJECT ! on property access (object.path!.property)', async () => {
           const template = `{{ sequencer!.value }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-call paths');
           });
         });
 
         it('should REJECT ! on dynamic path segment (array index)', async () => {
           const template = `{{ items[i]!.runOp('dyn1', 5) }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain('cannot be used with dynamic key');
           });
         });
 
         it('should REJECT ! on dynamic path segment (function call)', async () => {
           const template = `{{ getObj()!.runOp('dyn2', 5) }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain(`The sequence marker '!' cannot be applied directly to a`);
           });
         });
 
         it('should REJECT ! on dynamic path segment (function call followed by lookup)', async () => {
           const template = `{{ getObj().dynamicKey!.runOp('dyn2', 5) }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain('Sequence Error');
           });
         });
 
         it('should REJECT double ! (path!.method!())', async () => {
           const template = `{{ sequencer!.runOp!('double', 5) }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain('Cannot use more than one sequence marker (!)');
           });
         });
@@ -600,35 +600,35 @@
             {% do nested.sequencer!.runOp('deep1', 10) %} {# Takes longer #}
             {% do nested.sequencer!.runOp('deep2', 5) %}  {# Takes shorter #}
           `;
-          await env.renderString(template, constraintContext);
+          await env.renderTemplateString(template, constraintContext);
           expect(constraintContext.logs).to.eql(['deep1 on nested', 'deep2 on nested']);
         });
 
         //@todo - fix some duplication with Constraint tests
         it('should reject ! on a dynamic property (object[expr]!.method)', async () => {
           const template = `{{ items[i]!.runOp('fail', 5) }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain('cannot be used with dynamic keys');
           });
         });
 
         it('should reject ! on a function call in the path (getObj()!.runOp)', async () => {
           const template = `{{ getObj()!.runOp('fail', 5) }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain(`The sequence marker '!' cannot be applied directly`);
           });
         });
 
         it('should reject ! on property access (object.path!.property)', async () => {
           const template = `{{ sequencer!.value }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-call paths');
           });
         });
 
         it('should reject ! on method call with dynamic method name (object.path![dynamicKey]())', async () => {
           const template = `{{ sequencer![dynamicKey]('fail', 5) }}`;
-          await expectAsyncError(() => env.renderString(template, constraintContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain('requires the entire path preceding it to consist of static string literal segments');
           });
         });
@@ -639,7 +639,7 @@
             {% do sequencer.runOp!('meth1', 10) %} {# Takes longer #}
             {% do sequencer.runOp!('meth2', 5) %}  {# Takes shorter #}
           `;
-          await env.renderString(template, constraintContext);
+          await env.renderTemplateString(template, constraintContext);
           expect(constraintContext.logs).to.eql(['meth1 on seq1', 'meth2 on seq1']);
         });
       });
@@ -669,7 +669,7 @@
                   {% do ctxSequencer!.runOp('ctxA', 10) %}
                   {% do ctxSequencer!.runOp('ctxB', 5) %}
                 `;
-          await env.renderString(template, analysisContext);
+          await env.renderTemplateString(template, analysisContext);
           expect(analysisContext.logs).to.eql(['ctxA on ctxSeq', 'ctxB on ctxSeq']);
         });
 
@@ -679,7 +679,7 @@
                   {% do tplSequencer!.runOp('tplA', 10) %}
                   {% do tplSequencer!.runOp('tplB', 5) %}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
           });
         });
@@ -692,7 +692,7 @@
                   {% endmacro %}
                   {{ testMacro(ctxSequencer) }}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain('not allowed inside macros');
           });
         });
@@ -705,7 +705,7 @@
                   {% endmacro %}
                   {{ testMacro(ctxSequencer) }}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain('not allowed inside macros');
           });
         });
@@ -716,7 +716,7 @@
                   {% do shadowVar!.runOp('shA', 10) %}
                   {% do shadowVar!.runOp('shB', 5) %}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain(`Sequence marker (!) is not allowed in non-context variable paths`);
           });
         });
@@ -727,7 +727,7 @@
                    {% do ctxSequencer.runOp!('mA', 10) %}
                    {% do ctxSequencer.runOp!('mB', 5) %}
                  `;
-          await env.renderString(template, analysisContext);
+          await env.renderTemplateString(template, analysisContext);
           expect(analysisContext.logs).to.eql(['mA on ctxSeq', 'mB on ctxSeq']);
         });
 
@@ -738,7 +738,7 @@
                    {% do ctxSequencer!.runOp('pathOp2', 3) %}
                    {% do ctxSequencer.runOp!('methodOp2', 2) %}
                  `;
-          await env.renderString(template, analysisContext);
+          await env.renderTemplateString(template, analysisContext);
           expect(analysisContext.logs).to.contain('pathOp1 on ctxSeq');
           expect(analysisContext.logs).to.contain('pathOp2 on ctxSeq');
           expect(analysisContext.logs).to.contain('methodOp1 on ctxSeq');
@@ -753,7 +753,7 @@
                   {% do tplSequencer!.runOp('tplA', 10) %}
                   {% do tplSequencer!.runOp('tplB', 5) %}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
           });
         });
@@ -766,7 +766,7 @@
                   {% endmacro %}
                   {{ testMacro(ctxSequencer) }}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain('not allowed inside macros');
           });
         });
@@ -778,7 +778,7 @@
                     {% do loopSequencer!.runOp('loopB', 5) %}
                   {% endfor %}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
           });
         });
@@ -792,14 +792,14 @@
                   {% set actualSequencerExport = ctxSequencer %}
                 `);
           const template = `
-                  {# 'analysisContext' (containing 'ctxSequencer') is provided to this renderString call #}
+                  {# 'analysisContext' (containing 'ctxSequencer') is provided to this renderTemplateString call #}
                   {% import "lib_for_import_as.njk" as myImportedLib %}
                   {# The path is 'myImportedLib.actualSequencerExport'.
                      The compiler should identify 'myImportedLib' as the root of this path.
                      'myImportedLib' is a template-scoped variable. #}
                   {% do myImportedLib.actualSequencerExport!.runOp('importAsA', 10) %}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
           });
         });
@@ -815,7 +815,7 @@
                   {# 'aliasedSequencer' is the template-scoped variable. #}
                   {% do aliasedSequencer!.runOp('fromImportA', 10) %}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
           });
         });
@@ -841,7 +841,7 @@
                     {% do resultFromSuper!.runOp('superA', 10) %}
                   {% endblock %}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
           });
         });
@@ -856,7 +856,7 @@
                   {# 'resultOfFilter' is the template-scoped variable. #}
                   {% do resultOfFilter!.runOp('filterExpA', 10) %}
                 `;
-          await expectAsyncError(() => env.renderString(template, analysisContext), err => {
+          await expectAsyncError(() => env.renderTemplateString(template, analysisContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
           });
         });
@@ -891,13 +891,13 @@
     describe('Error Handling and Edge Cases', () => {
       it('should reject invalid static path segments (object.123!.method())', async () => {
         const template = `{% do sequencer.123!.runOp('op', 10) %}`;
-        await expectAsyncError(() => env.renderString(template, context));
+        await expectAsyncError(() => env.renderTemplateString(template, context));
       });
 
       //@todo - line numbering
       it('should provide detailed error message for invalid ! usage', async () => {
         const template = `Line 1\n{% do sequencer!.value %}`;
-        await expectAsyncError(() => env.renderString(template, context), err => {
+        await expectAsyncError(() => env.renderTemplateString(template, context), err => {
           expect(err.message).to.contain('Line 2');
           expect(err.message).to.contain('not allowed in non-call paths');
         });
@@ -935,8 +935,8 @@
         }
         const template = templateParts.join(''); // e.g., "{% do s0!.runOp('op0') %}{% do s1!.runOp('op1') %}"
 
-        // Render the template - renderString completes after all async ops triggered by 'do' finish
-        await env.renderString(template, cont);
+        // Render the template - renderTemplateString completes after all async ops triggered by 'do' finish
+        await env.renderTemplateString(template, cont);
 
         // Assertions
         expect(cont.logs).to.have.length(numSequences);
@@ -969,7 +969,7 @@
         };
 
         const template = `{% do seq!.runOp('f1', 10) %}{{ seq!.runOp('f2', 2)|delayLog(2) }}`;
-        const result = await env.renderString(template, cont);
+        const result = await env.renderTemplateString(template, cont);
         expect(cont.logs).to.eql(['f1', 'f2']);
         expect(result).to.equal('f2-delayed');
       });
@@ -983,7 +983,7 @@
             {% do seq!.runOp('l2', 4) %}
           {% endfor %}
         `;
-        await expectAsyncError(() => env.renderString(template, cont), err => {
+        await expectAsyncError(() => env.renderTemplateString(template, cont), err => {
           expect(err.message).to.contain('not allowed in non-context variable paths');
         });
       });
@@ -1002,7 +1002,7 @@
         `;
 
         await expectAsyncError(
-          () => env.renderString(template, cont),
+          () => env.renderTemplateString(template, cont),
           err => {
             expect(err.message).to.contain('not allowed in non-context variable paths');
           }
@@ -1025,7 +1025,7 @@
         `;
 
         await expectAsyncError(
-          () => env.renderString(template, cont),
+          () => env.renderTemplateString(template, cont),
           err => {
             expect(err.message).to.contain(`Sequence marker (!) is not allowed in non-context variable paths`);
           }
@@ -1035,7 +1035,7 @@
       it('should handle spaced syntax for !', async () => {
         const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
         const template = `{% do seq ! . runOp('s1', 8) %}{% do seq ! .runOp('s2', 4) %}`;
-        await env.renderString(template, cont);
+        await env.renderTemplateString(template, cont);
         expect(cont.logs).to.eql(['s1', 's2']);
       });
     });
@@ -1085,7 +1085,7 @@
 
       // Expected output isn't the primary focus here, but the order of side effects.
       // We'll check callOrder.
-      const result = await env.renderString(templateString, context);
+      const result = await env.renderTemplateString(templateString, context);
 
       // console.log('Rendered Output:', result);
       // console.log('Call Order:', callOrder);
@@ -1138,7 +1138,7 @@
         {% endcall %}
       `;
 
-      await env.renderString(templateString, context);
+      await env.renderTemplateString(templateString, context);
       // console.log(eventLog);
 
       // Check relative order for dataStore operations
@@ -1190,7 +1190,7 @@
         {% set r2 = seqObj!.updateAndGet("k2", "opB", 3) %}
         {{ r1 }} | {{ r2 }}`;
       // Expected: opA (id:1) completes, then opB (id:2) completes.
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result.trim()).to.equal('opA-1 | opB-2');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=opA (id: 1)',
@@ -1205,7 +1205,7 @@
         {%- set finalVal = seqObj!.updateAndGet("k1", "valY", 3) %}
         Final: {{ finalVal -}}`;
       // Expected: updateAndGet(valX) -> simpleLog -> updateAndGet(valY)
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result.trim()).to.equal('after valX update\n        Final: valY-2');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=valX (id: 1)',
@@ -1219,7 +1219,7 @@
   {%- set setVal = seqObj!.updateAndGet("k2", "Set", 3) %}
   Output2: {{ setVal }}`;
       // Expected: "Out" (id:1), then "Set" (id:2)
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       const lines = result.trim().split('\n').map(s => s.trim());
       expect(lines[0]).to.equal('Output1: Out-1');
       expect(lines[1]).to.equal('Output2: Set-2');
@@ -1239,7 +1239,7 @@
       const template = `{{ seqObj!.updateAndGet("k1", "firstCall", 9) }} | {{ seqObj!.updateAndGet("k2", "secondCall", 3) }}`;
       // Expected if correct: firstCall-1 | secondCall-2
       // Expected if buggy: firstCall-1 | secondCall-1  (due to idGen collision)
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
 
       // WITH THE BUG, THIS WILL LIKELY BE:
       // expect(result.trim()).to.equal('firstCall-1 | secondCall-1');
@@ -1310,7 +1310,7 @@
       // `upper` is sync, but its input comes from a sequenced async op.
       const template = `{{ seqObj!.updateAndGet("k1", "valA", 8) | upper }}`;
       // Expected: updateAndGet runs first, then its result is uppercased.
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('VALA-1');
       expect(cont.logs).to.eql(['updateAndGet: k1=valA (id: 1)']);
     });
@@ -1318,7 +1318,7 @@
     it('should chain sync filters with a sequenced async arg at the start', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "valB", 8) | upper | customSyncSuffix("_chained") }}`;
       // Expected: updateAndGet -> upper -> customSyncSuffix
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('VALB-1_chained');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=valB (id: 1)',
@@ -1334,7 +1334,7 @@
       // 2. seqObj!.updateAndGet("k1", "REP", 20) runs and completes (value: "REP-1").
       // 3. "start" is replaced with "REP-1" => "REP-1tart".
       // 4. customSyncSuffix adds "_asyncSuffix".
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('REP-1tart_asyncSuffix');
       expect(cont.logs).to.eql([
         'getAsyncSuffix', // Could be here or after updateAndGet depending on Promise.all behavior
@@ -1348,7 +1348,7 @@
     it('should ensure sequence order with sync filters and multiple sequenced ops', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "first", 9) | upper }} BEFORE {{ seqObj!.updateAndGet("k2", "second", 3) | lower }}`;
       // Expected: "first" op completes, then "second" op completes.
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('FIRST-1 BEFORE second-2');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=first (id: 1)',
@@ -1363,7 +1363,7 @@
       // 2. "expVal-1" | customSyncSuffix("_sync") -> "expVal-1_sync"
       // 3. getValue("k1") -> "expVal-1" (because updateAndGet ran first due to sequence)
       // 4. Concatenate: "expVal-1_sync" + "expVal-1"
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('Value: expVal-1_syncexpVal-1');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=expVal (id: 1)',
@@ -1378,7 +1378,7 @@
     it('should handle async filter with sequenced async arg', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "valC", 8) | customAsyncPrefix("PREFIX_") }}`;
       // Expected: updateAndGet runs first, then its result is prefixed.
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('PREFIX_valC-1');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=valC (id: 1)',
@@ -1388,7 +1388,7 @@
 
     it('should chain async filters with a sequenced async arg at the start', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "valD", 8) | customAsyncPrefix("P1_") | customAsyncPrefix("P2_") }}`;
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('P2_P1_valD-1');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=valD (id: 1)',
@@ -1409,7 +1409,7 @@
       // 1. getAsyncSuffix can start.
       // 2. seqObj!.updateAndGet("k1", "JOIN_PART", 20) runs (value: "JOIN_PART-1").
       // 3. customAsyncJoin joins "start", "JOIN_PART-1", and "_asyncSuffix".
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('start_asyncSuffixJOIN_PART-1'); // Order of async suffix and join part might vary if not explicitly sequenced
       expect(cont.logs).to.contain('getAsyncSuffix');
       expect(cont.logs).to.contain('updateAndGet: k1=JOIN_PART (id: 1)');
@@ -1419,7 +1419,7 @@
 
     it('should ensure sequence order with async filters and multiple sequenced ops', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "asyncFirst", 9) | customAsyncPrefix("A_") }} BEFORE {{ seqObj!.updateAndGet("k2", "asyncSecond", 3) | customAsyncPrefix("B_") }}`;
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('A_asyncFirst-1 BEFORE B_asyncSecond-2');
 
       // The sequenced operations should run in order, but async filters can run in parallel
@@ -1441,7 +1441,7 @@
     it('should chain mixed sync and async filters with sequenced op', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "mixed", 8) | upper | customAsyncPrefix("ASYNC_") | customSyncSuffix("_SYNC") }}`;
       // Expected: updateAndGet -> upper (sync) -> customAsyncPrefix (async) -> customSyncSuffix (sync)
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('ASYNC_MIXED-1_SYNC');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=mixed (id: 1)',
@@ -1454,7 +1454,7 @@
     it('should handle sequenced op as arg to sync filter, result used by async filter', async () => {
       const template = `{{ "prefix-" | customSyncSuffix(seqObj!.updateAndGet("k1", "valE", 8)) | customAsyncPrefix("FINAL_") }}`;
       // Expected: updateAndGet -> customSyncSuffix -> customAsyncPrefix
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('FINAL_prefix-valE-1');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=valE (id: 1)',
@@ -1474,7 +1474,7 @@
       // 3. seqObj!.getValue("k1") -> r2 = "B-2" (because B was the last update to k1)
       // Output: "ignored_SYNC_SUFFIX_B-2,A-1,B-2"
       // Note: The filter's output is part of the main output string.
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result.trim()).to.equal('ignoredB-2,A-1,B-2');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=A (id: 1)',
@@ -1490,7 +1490,7 @@
       // 1. updateAndGet("k1", "FILTER_IN") -> "FILTER_IN-1" -> "FILTER_IN-1" (upper)
       // 2. updateAndGet("k2", "OTHER_OP") -> "OTHER_OP-2"
       // Concatenate: "FILTER_IN-1" + "---" + "OTHER_OP-2"
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('Result: FILTER_IN-1---OTHER_OP-2');
       expect(cont.logs).to.eql([
         'updateAndGet: k1=FILTER_IN (id: 1)',
@@ -1507,7 +1507,7 @@
       };
       const template = `{{ "input" | erroringSeqArgUser(seqObj!.erroringOp("kErr")) }}`;
       try {
-        await env.renderString(template, cont);
+        await env.renderTemplateString(template, cont);
         expect().fail('Error should have been propagated');
       } catch (e) {
         expect(e.message).to.contain('ErrorFrom!kErr');
@@ -1526,7 +1526,7 @@
       // seqObj is already defined with updateAndGet, using it instead of seq.runOp
       // The key is that updateAndGet logs, so we can see its execution order.
       const template = `{% do seqObj!.updateAndGet('f1', 'op1_result', 10) %}{{ seqObj!.updateAndGet('f2', 'op2_result', 2) | delayLog(2) }}`;
-      const result = await env.renderString(template, cont);
+      const result = await env.renderTemplateString(template, cont);
 
       // Expected logs:
       // 1. updateAndGet for f1

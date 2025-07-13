@@ -160,7 +160,7 @@
     describe('Basic Sequencing', () => {
       it('should sequence operations on the same object path', async () => {
         const template = `{{ data.item!.op("1", 10) + data.item!.op("2", 5) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('result1result2');
         expect(context.logs).to.eql(['op1 on item', 'op2 on item']);
@@ -168,7 +168,7 @@
 
       it('should sequence different operations on the same object path', async () => {
         const template = `{{ data.item!.op("1", 10) + data.item!.op2("2", 5) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('result1result22');
         expect(context.logs).to.eql(['op1 on item', 'op22 on item']);
@@ -176,7 +176,7 @@
 
       it('should sequence all operations on the same object path in complex expressions', async () => {
         const template = `{{ (data.item!.op("1", 10) + data.item!.op2("2", 5)) + data.item!.op3("3", 3) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('result1result22result33');
         expect(context.logs).to.eql(['op1 on item', 'op22 on item', 'op33 on item']);
@@ -184,7 +184,7 @@
 
       it('should allow parallel execution when no sequence markers are used', async () => {
         const template = `{{ data.item.op("1", 10) + data.item.op2("2", 5) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('result1result22');
         expect(context.logs.length).to.equal(2);
@@ -195,7 +195,7 @@
     describe('Path vs Method Sequencing', () => {
       it('should sequence path lookups but allow method calls to run normally', async () => {
         const template = `{{ data.obj!.prop1.opA("1", 10) + data.obj!.prop1.opA("2", 5) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultA1resultA2');
         expect(context.logs).to.eql(['opA1 on obj.prop1', 'opA2 on obj.prop1']);
@@ -204,7 +204,7 @@
       it('should sequence method calls on non-sequenced paths', async () => {
         const template = `{{ data.obj.prop1.opA!("1", 10) + data.obj.prop1.opA!("2", 5) }}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultA1resultA2');
         expect(context.logs).to.eql(['opA1 on obj.prop1', 'opA2 on obj.prop1']);
@@ -213,7 +213,7 @@
       it('should handle mixed object path and method sequencing', async () => {
         const template = `{{ data.item!.op("1", 10) + data.item.op!("2", 5) + data.item!.op("3", 3) }}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('result1result2result3');
         // Only check order for object path sequencing (data.item!)
@@ -228,7 +228,7 @@
     describe('Independent Paths', () => {
       it('should allow parallel execution for different object paths', async () => {
         const template = `{{ data.itemA!.op("1", 10) + data.itemB!.op("2", 5) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultA1resultB2');
         expect(context.logs).to.contain('op1 on itemA');
@@ -238,7 +238,7 @@
 
       it('should allow parallel execution for different properties under same object', async () => {
         const template = `{{ data.obj.prop1!.opA("1", 10) + data.obj.prop2!.opB("2", 5) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultA1resultB2');
         expect(context.logs).to.contain('opA1 on obj.prop1');
@@ -249,7 +249,7 @@
       it('should handle multiple independent sequences correctly', async () => {
         const template = `{{ (data.itemA!.op("1", 10) + data.itemB!.op("2", 5)) + data.itemA!.op("3", 3) }}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultA1resultB2resultA3');
         const idx1 = context.logs.indexOf('op1 on itemA');
@@ -263,7 +263,7 @@
     describe('Mixed Operations', () => {
       it('should allow non-sequenced operations to run in parallel with sequenced ones', async () => {
         const template = `{{ data.item!.op("1", 10) + other.nonSequencedOp("2", 5) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('result1nonSeqResult2');
         expect(context.logs).to.contain('op1 on item');
@@ -273,7 +273,7 @@
 
       it('should sequence operations within grouped expressions', async () => {
         const template = `{{ (data.item!.opA("1", 10) + data.item!.opB("2", 5)) + unrelated.opC("3", 3) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultA1resultB2resultC3');
         // Only check order for sequenced operations (data.item!)
@@ -286,7 +286,7 @@
       it('should handle complex expressions with mixed contention levels', async () => {
         const template = `{{ (data.A!.x("1", 10) + data.A!.y("2", 5)) + (data.B!.z("3", 3) + data.C!.w("4", 2)) }}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('A1A2B3C4');
         expect(context.logs).to.contain('A.x1');
@@ -300,7 +300,7 @@
     describe('Shortest Key Coverage', () => {
       it('should sequence operations when shortest contended key is at object level', async () => {
         const template = `{{ data.obj!.prop1.opA("1", 10) + data.obj!.prop2.opB("2", 5) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultA1resultB2');
         expect(context.logs).to.eql(['opA1 on obj.prop1', 'opB2 on obj.prop2']);
@@ -316,7 +316,7 @@
           return `commonResult${id}`;
         };
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultA1resultB2commonResult3');
         expect(context.logs).to.eql(['opA1 on obj.prop1', 'opB2 on obj.prop2', 'commonOp3 on obj']);
@@ -339,7 +339,7 @@
           }
         };
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultX1resultY2');
         expect(context.logs).to.eql(['opX1 on obj.item', 'opY2 on obj.item']);
@@ -371,7 +371,7 @@
           }
         };
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('result11result22');
         expect(context.logs).to.eql(['op11 on root.mid.leafA', 'op22 on root.mid.leafB']);
@@ -403,7 +403,7 @@
           }
         };
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('A1B2A3B4C5B6');
         // Only check order within each sequence
@@ -421,7 +421,7 @@
       it('should handle deeply nested expressions with sequence contention', async () => {
         const template = `{{ (data.item!.op("1", 10) + (data.item!.op("2", 5) + data.item!.op("3", 3))) + data.item!.op("4", 2) }}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('result1result2result3result4');
         expect(context.logs).to.eql(['op1 on item', 'op2 on item', 'op3 on item', 'op4 on item']);
@@ -430,7 +430,7 @@
       it('should not duplicate wrappers for the same key', async () => {
         const template = `{{ data.item!.op("1", 10) + data.item!.op("2", 5) }}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('result1result2');
         expect(context.logs).to.eql(['op1 on item', 'op2 on item']);
@@ -453,7 +453,7 @@
           }
         };
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultX1resultY2');
         expect(context.logs).to.eql(['opX1 on obj.sub', 'opY2 on obj.sub']);
@@ -477,7 +477,7 @@
           return function() { return 'handler2'; };
         };
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('handler1handler2');
         expect(context.logs).to.eql(['getHandler called', 'getAnotherHandler called']);
@@ -488,7 +488,7 @@
     describe('Single Use Scenarios', () => {
       it('should still sequence single ! marked operations', async () => {
         const template = `{{ data.item!.op("1", 10) + unrelated.opC("2", 5) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('result1resultC2');
         // Only check that both operations completed, not their order
         expect(context.logs).to.contain('op1 on item');
@@ -504,7 +504,7 @@
 
         const template = `{{ data.itemA!.op("1", 50) + data.itemB!.op("2", 50) + unrelated.opC("3", 50) }}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         const endTime = Date.now();
 
         expect(result.trim()).to.equal('resultA1resultB2resultC3');
@@ -521,7 +521,7 @@
     describe('Error Handling', () => {
       it('should error if ! is used on property access', async () => {
         const template = `{{ data.item!.prop + data.item!.op("1", 5) }}`;
-        await expectAsyncError(() => env.renderString(template, context), err => {
+        await expectAsyncError(() => env.renderTemplateString(template, context), err => {
           expect(err.message).to.contain('Sequence marker (!) is not allowed in non-call paths');
         });
       });
@@ -532,7 +532,7 @@
           {{ x!.op("1", 10) + x!.op2("2", 5) }}
         `;
 
-        await expectAsyncError(() => env.renderString(template, context), err => {
+        await expectAsyncError(() => env.renderTemplateString(template, context), err => {
           expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
         });
       });
@@ -540,14 +540,14 @@
       it('should reject sequence markers on dynamic path segments', async () => {
         const template = `{{ data[myKey]!.op("1", 5) }}`;
 
-        await expectAsyncError(() => env.renderString(template, { ...context, myKey: 'item' }), err => {
+        await expectAsyncError(() => env.renderTemplateString(template, { ...context, myKey: 'item' }), err => {
           expect(err.message).to.contain('cannot be used with dynamic keys');
         });
       });
 
       it('should reject multiple sequence markers in the same path', async () => {
         const template = `{{ data.item!!op("1", 5) }}`;
-        await expectAsyncError(() => env.renderString(template, context));
+        await expectAsyncError(() => env.renderTemplateString(template, context));
       });
 
       it('should propagate errors from sequenced operations', async () => {
@@ -558,7 +558,7 @@
 
         const template = `{{ data.item!.errorOp() + data.item!.op("1", 5) }}`;
 
-        await expectAsyncError(() => env.renderString(template, context), err => {
+        await expectAsyncError(() => env.renderTemplateString(template, context), err => {
           expect(err.message).to.contain('Sequenced operation failed');
         });
       });
@@ -569,7 +569,7 @@
           {{ item!.op("1", 5) }}
         `;
 
-        await expectAsyncError(() => env.renderString(template, context), err => {
+        await expectAsyncError(() => env.renderTemplateString(template, context), err => {
           expect(err.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
         });
       });
@@ -582,7 +582,7 @@
           {{ testMacro(data.item) }}
         `;
 
-        await expectAsyncError(() => env.renderString(template, context), err => {
+        await expectAsyncError(() => env.renderTemplateString(template, context), err => {
           expect(err.message).to.contain('not allowed inside macros');
         });
       });

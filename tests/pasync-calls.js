@@ -37,7 +37,7 @@
         };
 
         const template = 'User: {{ fetchUserName() }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('User: John Doe');
       });
 
@@ -52,7 +52,7 @@
         };
 
         const template = 'Current time is: {{ currentTime }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Current time is: 2024-09-12T17:12:123Z');
       });
 
@@ -65,7 +65,7 @@
         };
 
         const template = 'The weather is {{ weatherPromise.temp }}°C and {{ weatherPromise.condition }}.';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('The weather is 22°C and Sunny.');
       });
 
@@ -82,7 +82,7 @@
         };
 
         const template = '{{ dynamicFunction(argPromise) }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Hello, World!');
       });
 
@@ -103,7 +103,7 @@
         };
 
         const template = '{{ add(arg1, arg2) }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('10');
       });
 
@@ -128,7 +128,7 @@
         };
 
         const template = '{{ multiplyAndAdd(arg1, arg2, arg3) }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('13');
       });
 
@@ -141,7 +141,7 @@
         };
 
         const template = 'User: {{ fetchUser(1).name }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('User: John Doe');
       });
 
@@ -154,7 +154,7 @@
         };
 
         const template = '{% set user = fetchUser(1) %}User: {{ user.name }} ({{ user.email }})';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('User: John Doe (john@example.com)');
       });
 
@@ -182,7 +182,7 @@
         };
 
         const template = '{{ processUserData(namePromise, getAge(), getLocation()) }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('John (25) from New York');
       });
 
@@ -194,7 +194,7 @@
           }
         };
         const template = '{{ getUser().name }} is {{ getUser().roles[0] }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('John is admin');
       });
 
@@ -209,7 +209,7 @@
 
         let noError = false;
         try {
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           noError = true;
         } catch (error) {
           expect(error instanceof Error).to.equal(true);
@@ -227,7 +227,7 @@
         };
 
         const template = '{% set myFunc = greet %}{{ myFunc("World") }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Hello, World!');
       });
 
@@ -244,7 +244,7 @@
           {{ greetFunc("World") }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Hello, World!');
       });
 
@@ -283,7 +283,7 @@
           First title: {{ fetchUserPostsFirstTitle(user.id) }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
           User: John Doe
           First title: First post
@@ -314,7 +314,7 @@
           Posts: {{ userPosts | join(', ') }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
           User: John Doe
           Posts: Post 1, Post 2
@@ -352,7 +352,7 @@
           Permissions: {{ permissions | join(', ') }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
           User: John Doe
           Role: Admin
@@ -383,7 +383,7 @@
           {%- set report = generateReport(user, department) -%}
           {{ report }}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`Report for John Doe in IT`);
       });
     });
@@ -404,7 +404,7 @@
           }
         };
         const template = '{{ combine(getFirst(), getSecond()) }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('First and Second');
       });
 
@@ -425,7 +425,7 @@
           {% endmacro %}
           {{ combine(getArg1(), getArg2()) }}
         `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Arg1 and Arg2');
       });
 
@@ -450,7 +450,7 @@
           }
         };
         const template = '{{ "Values: " | append(getFirst(), getSecond(), getThird()) }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Values: FirstSecondThird');
       });
 

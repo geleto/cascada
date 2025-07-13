@@ -178,7 +178,7 @@
         env.addExtension('GreetExtension', greetExtension);
 
         const template = '{% greet "John" %}';
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result).to.equal('Hello, John!');
       });
 
@@ -199,7 +199,7 @@
         });
 
         const template = '{% greet "John" %}';
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result).to.equal('Hello, John!');
       });
 
@@ -218,7 +218,7 @@
         });
 
         const template = '{% greet "John" %}';
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result).to.equal('Hello, John!');
       });
 
@@ -231,7 +231,7 @@
         env.addExtension('AddExtension', addExtension);
 
         const template = '{% add 5, 3 %}';
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result).to.equal('8');
       });
 
@@ -251,7 +251,7 @@
           {%- endfor %}
         </ul>`;
 
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         const expected = `
         <ul>
           <li>Alice</li>
@@ -286,7 +286,7 @@
           {%- endfor %}
         </ul>`;
 
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         const expected = `
         <ul>
           <li>Alice</li>
@@ -324,7 +324,7 @@
           {%- endfor %}
         </ul>`;
 
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         const expected = `
         <ul>
           <li>Alice</li>
@@ -349,7 +349,7 @@
         const template = '{% asyncError %}';
 
         try {
-          await env.renderString(template);
+          await env.renderTemplateString(template);
           // If we reach this point, the test should fail
           expect().fail('Expected an error to be thrown');
         } catch (error) {
@@ -375,7 +375,7 @@
         };
 
         const template = '{% greet getName() %}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Hello, Alice!');
       });
 
@@ -404,7 +404,7 @@
         };
 
         const template = '{% introduce getName(), getRole() %}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('This is Bob, our manager.');
       });
 
@@ -433,7 +433,7 @@
         };
 
         const template = '{% describeUser getName(), 30, getCity() %}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Charlie, aged 30, lives in New York.');
       });
 
@@ -473,7 +473,7 @@
           {% end${extName} %}
         `;
 
-          const result = await env.renderString(template, context);
+          const result = await env.renderTemplateString(template, context);
           const expected = `
           <section>
           This is some content in ${extName}.
@@ -526,7 +526,7 @@
           {% end${extName} %}
         `;
 
-          const result = await env.renderString(template, context);
+          const result = await env.renderTemplateString(template, context);
           const expected = `
           <section>
           This is main content in ${extName}.
@@ -557,13 +557,13 @@
 
       it('should handle standard async filter', async () => {
         const template = '{{ "hello" | asyncUppercase }}';
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result).to.equal('HELLO');
       });
 
       it('should handle chained standard async filters', async () => {
         const template = '{{ "hello" | asyncUppercase | asyncReverse }}';
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result).to.equal('OLLEH');
       });
 
@@ -576,7 +576,7 @@
         };
 
         const template = '{{ getText() | asyncUppercase }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('HELLO');
       });
 
@@ -592,7 +592,7 @@
         // Template that combines async function, string concatenation, and multiple filters
         const template = '{{ getText() | asyncUppercase + " " + suffix | asyncReverse }}';
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('HELLO dlrow');  // Fixed expectation
       });
 
@@ -608,7 +608,7 @@
         // Template that uses parentheses to group the concatenation before applying the reverse filter
         const template = '{{ (getText() | asyncUppercase + " " + suffix) | asyncReverse }}';
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('dlrow OLLEH');
       });
 
@@ -622,7 +622,7 @@
         const template = '{{ "test" | asyncError }}';
 
         try {
-          await env.renderString(template);
+          await env.renderTemplateString(template);
           expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error.message).to.contain('Filter error');
@@ -635,7 +635,7 @@
           {{ result }}
         `;
 
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result.trim()).to.equal('HELLO');
       });
 
@@ -648,7 +648,7 @@
           {% endif %}
         `;
 
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result.trim()).to.equal('correct');
       });
     });
@@ -692,7 +692,7 @@
         }
       };
       const template = '{{ getValue() | capitalize }}'; // capitalize is sync
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.equal('World');
     });
 
@@ -704,7 +704,7 @@
         }
       };
       const template = '{{ "base" | syncConcat(getSuffix()) }}';
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.equal('base-extra');
     });
 
@@ -721,19 +721,19 @@
       };
       // Here, the output of syncConcat (which gets async args) is piped to capitalize
       const template = '{{ getPart1() | syncConcat(getPart2() | capitalize) }}';
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.equal('firstSecond');
     });
 
     it('should handle a sync filter where input is from an async (callback-style) filter', async () => {
       const template = '{{ "hello" | asyncToUpperCb | capitalize }}'; // asyncToUpperCb -> capitalize (sync)
-      const result = await env.renderString(template);
+      const result = await env.renderTemplateString(template);
       expect(result).to.equal('Hello'); // capitalize acts on "HELLO"
     });
 
     it('should handle a sync filter where input is from an async (promise-style) filter', async () => {
       const template = '{{ "flow" | asyncReversePromise | syncConcat("Test") }}'; // asyncReversePromise -> syncConcat
-      const result = await env.renderString(template);
+      const result = await env.renderTemplateString(template);
       expect(result).to.equal('wolfTest');
     });
 
@@ -746,7 +746,7 @@
       };
       // getFullString (async) -> replace (sync) -> capitalize (sync)
       const template = '{{ getFullString() | replace("Middle", "MIDDLE.") | capitalize }}';
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.equal('Start middle. end');
     });
 
@@ -760,7 +760,7 @@
       };
       // (getVerb() (async) + " " + noun (sync)) -> replace (sync)
       const template = '{{ (getVerb() + " " + noun) | replace("run", "walk") }}';
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.equal('walk test');
     });
 
@@ -774,7 +774,7 @@
       // The group (getPrefix() + "foo") is async. Its result is the input to replace.
       // The arguments to replace are synchronous literals.
       const template = '{{ (getPrefix() + "foo") | replace("foo", "bar") }}';
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.equal('pre_bar');
     });
 
@@ -789,7 +789,7 @@
         {% set myString = "old value" | replace("old", getReplacementValue()) %}
         {{ myString }}
       `;
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('NEW value');
     });
 
@@ -817,7 +817,7 @@
           NO MATCH
         {% endif %}
       `;
-      const result = await env.renderString(templateMatch, context);
+      const result = await env.renderTemplateString(templateMatch, context);
       expect(result.trim()).to.equal('MATCH');
     });
 
@@ -827,7 +827,7 @@
       };
       // usernamePromise is a promise. 'replace' is sync.
       const template = '{{ usernamePromise | replace("_", " ") | capitalize }}';
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.equal('John doe');
     });
 
@@ -840,7 +840,7 @@
       };
       const template = '{{ "base" | syncConcat(getWrongTypeSuffix()) }}';
       try {
-        await env.renderString(template, context);
+        await env.renderTemplateString(template, context);
         expect().fail('Expected an error from syncConcat due to wrong argument type');
       } catch (e) {
         expect(e.message).to.contain('syncConcat expects two strings, got: string, number');

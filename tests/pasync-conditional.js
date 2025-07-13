@@ -36,11 +36,11 @@
         };
 
         const template = '{% if isUserAdmin(1) %}Admin{% else %}Not admin{% endif %}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Admin');
 
         const template2 = '{% if isUserAdmin(2) %}Admin{% else %}Not admin{% endif %}';
-        const result2 = await env.renderString(template2, context);
+        const result2 = await env.renderTemplateString(template2, context);
         expect(result2).to.equal('Not admin');
       });
 
@@ -50,7 +50,7 @@
         };
 
         const template = '{% if userStatus == "active" %}User is active{% else %}User is not active{% endif %}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('User is active');
       });
 
@@ -71,7 +71,7 @@
         };
 
         const template = '{% if value1 < value2 < value3 %}Yes{% else %}No{% endif %}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Yes');
       });
 
@@ -91,7 +91,7 @@
 		  {%- else -%}Regular user
 		  {%- endif -%}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Admin user');
 
         const template2 = `
@@ -103,7 +103,7 @@
 			Regular user
 		  {%- endif -%}`;
 
-        const result2 = await env.renderString(template2, context);
+        const result2 = await env.renderTemplateString(template2, context);
         expect(result2).to.equal('Moderator user');
       });
 
@@ -125,7 +125,7 @@
 		  {%- endif -%}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Hello, Admin John!');
 
         const template2 = `
@@ -133,7 +133,7 @@
 		  {%- else -%}Hello, User {{ getUserName(2) }}!
 		  {%- endif -%}`;
 
-        const result2 = await env.renderString(template2, context);
+        const result2 = await env.renderTemplateString(template2, context);
         expect(result2).to.equal('Hello, User Jane!');
       });
 
@@ -158,7 +158,7 @@
 			{%- endif -%}
 			`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Inactive User');
 
         const template2 = `
@@ -170,7 +170,7 @@
 			{%- endif -%}
 			`;
 
-        const result2 = await env.renderString(template2, context);
+        const result2 = await env.renderTemplateString(template2, context);
         expect(result2.trim()).to.equal('Active User');
       });
     });
@@ -199,7 +199,7 @@
 			{% endswitch %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Beta');
       });
 
@@ -229,7 +229,7 @@
 			{% endswitch %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('First B');
       });
 
@@ -253,7 +253,7 @@
 			{% endswitch %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('No match');
       });
 
@@ -278,7 +278,7 @@
 			{% endswitch %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Dynamic Content');
       });
 
@@ -303,7 +303,7 @@
 			{%- endfor -%}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('ABC');
       });
 
@@ -334,7 +334,7 @@
 			{%- endswitch -%}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Outer A:Inner 1');
       });
 
@@ -363,7 +363,7 @@
 			{% endswitch %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Match 1');
       });
 
@@ -383,7 +383,7 @@
 		  `;
 
         try {
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error.message).to.contain('Switch expression error');
@@ -407,7 +407,7 @@
 		  `;
 
         try {
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error.message).to.contain('Case expression error');

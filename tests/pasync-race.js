@@ -42,7 +42,7 @@
 				{%- endif -%}
 				{{ x }}`;
 
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result).to.equal('2');
       });
 
@@ -60,7 +60,7 @@
 				  {%- set value = 2 -%}
 				{%- endif -%}
 				{{ value }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('2');
       });
 
@@ -86,7 +86,7 @@
 				{%- endif -%}
 				{{ value }}
 				{%- set value = 4 -%}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('3');
       });
     });
@@ -114,7 +114,7 @@
 				  {{ value }}
 				{%- endif -%}
 				{%- set value = 3 -%}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('2');
       });
 
@@ -130,7 +130,7 @@
           {%- set x = x + 1 -%}
         `;
 
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result.trim()).to.equal('1');
       });
 
@@ -154,7 +154,7 @@
 				  {%- set value = 100 -%}
 				{%- endif -%}
 				{%- set value = 3 -%}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('1');
       });
 
@@ -176,7 +176,7 @@
 				{{ value }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('2');
       });
 
@@ -203,7 +203,7 @@
 				{{ x }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('20');
       });
 
@@ -234,7 +234,7 @@
 				{{ x }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('20');
       });
 
@@ -268,9 +268,9 @@
           cond2: Promise.resolve(false),
         };
 
-        const resultA = await env.renderString(template, contextA);
-        const resultB = await env.renderString(template, contextB);
-        const resultC = await env.renderString(template, contextC);
+        const resultA = await env.renderTemplateString(template, contextA);
+        const resultB = await env.renderTemplateString(template, contextB);
+        const resultC = await env.renderTemplateString(template, contextC);
 
         expect(resultA.trim()).to.equal('2');
         expect(resultB.trim()).to.equal('3');
@@ -314,7 +314,7 @@
 				{{ value }}
 			  `;
 
-        let result = await env.renderString(template, context);
+        let result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('X');
 
         context.whichCase = (async () => {
@@ -322,7 +322,7 @@
           return 'caseA';
         })();
 
-        result = await env.renderString(template, context);
+        result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('ZQ');
 
         context.extraSlowVar = (async () => {
@@ -330,7 +330,7 @@
           return 'NOT_SLOW';
         })();
 
-        result = await env.renderString(template, context);
+        result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Y');
       });
 
@@ -370,7 +370,7 @@
 				{{ color }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('BLUE_COLOR');
       });
 
@@ -395,7 +395,7 @@
 				{{ val }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('99');
       });
 
@@ -429,7 +429,7 @@
 				{{ value }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('cond3');
       });
 
@@ -456,7 +456,7 @@
 				{%- set value = 3 -%}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('2');
       });
     });
@@ -496,7 +496,7 @@
 				{{ result }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('A1-B0-C1');
       });
 
@@ -539,7 +539,7 @@
 				{{ result }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('case2-true-false');
       });
 
@@ -573,7 +573,7 @@
 				{{ shared }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('condB');
       });
 
@@ -608,7 +608,7 @@
 				{{ result }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('outer-true-caseY');
       });
 
@@ -642,7 +642,7 @@
 				{{ state }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('condition3');
       });
 
@@ -676,7 +676,7 @@
 				{{ result }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('switch-case2');
       });
 
@@ -711,7 +711,7 @@
 				{%- endif -%}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('A-B-not');
       });
     });
@@ -752,7 +752,7 @@
         // - nestedIf => true => x=2
         // - outerIf2 => true => y = x * 10 = 2 * 10 = 20
         // Final => x=2, y=20
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('X=2 Y=20');
       });
 
@@ -783,7 +783,7 @@
 				{{ result }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(unescape(result.trim())).to.equal('start > cond1 > cond2 > cond3 > final');
       });
 
@@ -810,7 +810,7 @@
 			  `;
 
         // Should pick case 'B' => x=20, y=200
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('X=20 Y=200');
       });
 
@@ -849,7 +849,7 @@
 				{%- endswitch -%}
 				{{ color }}
 			  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('lime-green');
       });
 
@@ -876,7 +876,7 @@
 				  {{ varA + varB }}
 				{%- endif -%}
 			  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('15');
       });
 
@@ -903,7 +903,7 @@
 				{{ counter }}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('110');
       });
 
@@ -929,7 +929,7 @@
 				{%- endif -%}
 			  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('default');
       });
     });
@@ -970,7 +970,7 @@
           }
         };
 
-        expect((await env.renderString(template, context)).trim()).to.equal('Macro Start: OuterVal Inner: InnerVal Macro End Final val: OuterVal');
+        expect((await env.renderTemplateString(template, context)).trim()).to.equal('Macro Start: OuterVal Inner: InnerVal Macro End Final val: OuterVal');
       });
 
     });
@@ -991,7 +991,7 @@
         asyncValue: Promise.resolve(42)
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.equal('42');
     });
 
@@ -1006,7 +1006,7 @@
         secondPromise: Promise.resolve('Value 2')
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('First: Value 1');
       expect(result).to.contain('Second: Value 2');
     });
@@ -1024,7 +1024,7 @@
         condition: true
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Original Value');
     });
 
@@ -1045,7 +1045,7 @@
         innerCondition: true
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Final Value: New Value');
     });
 
@@ -1071,7 +1071,7 @@
         condition3: true
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Value 2 (modified)');
     });
 
@@ -1084,7 +1084,7 @@
         asyncFunction: () => Promise.resolve('Function Result')
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Function Result');
     });
 
@@ -1106,12 +1106,12 @@
         condition: true
       };
 
-      let result = await env.renderString(template, context);
+      let result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Value A');
 
       // Test with condition = false
       context.condition = false;
-      result = await env.renderString(template, context);
+      result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Value B');
     });
 
@@ -1126,7 +1126,7 @@
         asyncItems: Promise.resolve(['Item 1', 'Item 2', 'Item 3'])
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('- Item 1');
       expect(result).to.contain('- Item 2');
       expect(result).to.contain('- Item 3');
@@ -1147,7 +1147,7 @@
         makeSecondPromise
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('First: First Value');
       expect(result).to.contain('Second: Based on First Value');
     });
@@ -1175,7 +1175,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Based on Initial Value');
     });
   });
@@ -1211,7 +1211,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Based on Initial Value');
     }); // Increase timeout to demonstrate the issue
 
@@ -1231,7 +1231,7 @@
       };
 
       try {
-        await env.renderString(template, context);
+        await env.renderTemplateString(template, context);
         expect.fail('Should have thrown an error');
       } catch (error) {
         expect(error.message).to.contain('Test Error');
@@ -1276,7 +1276,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       // The debug info should show only one level of promise
       // and the value shouldn't be a promise itself
       const debugValue = result.match(/Debug: (.+)/)[1].trim();
@@ -1325,7 +1325,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Promise type: not-a-promise');
       expect(result).to.contain('Final value: Promise Value');
     });
@@ -1358,7 +1358,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Item 123: Test Item');
     });
 
@@ -1391,7 +1391,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Final: Processed: Outer Promise Value');
     });
   });
@@ -1434,7 +1434,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Based on Initial Value');
     });
 
@@ -1467,7 +1467,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Processed: Value from promise');
     });
 
@@ -1503,7 +1503,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Successfully processed: Promise Content');
     });
 
@@ -1535,7 +1535,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Final value: Transformed: Initial X Value');
     });
 
@@ -1567,7 +1567,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Result: Final: X Promise Value');
     });
 
@@ -1604,7 +1604,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Promise type: Not a promise');
       expect(result).not.to.contain('NESTED PROMISE - BUG DETECTED');
     });
@@ -1649,7 +1649,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('After loop: Success: Promise Value');
     });
 
@@ -1700,7 +1700,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Final: Final value: Original X');
     });
   });
@@ -1760,7 +1760,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('Debug info: https://api.example.com/v2 (v2)');
       expect(result).to.contain('Advanced data: Detailed data from the API that would be truncated in the template');
       expect(result).not.to.contain('Invalid endpoint');
@@ -1818,7 +1818,7 @@
         }
       };
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result).to.contain('- read:content');
       expect(result).to.contain('- edit:own-content');
       expect(result).to.contain('- publish:content');

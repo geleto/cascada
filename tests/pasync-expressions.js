@@ -29,7 +29,7 @@
     describe('Basic Set Expression Tests', () => {
       it('should correctly render a template with no context and non-async expression in async mode', async () => {
         const template = 'Hello World! 1 + 1 = {{ 1 + 1 }}';
-        const result = await env.renderString(template);
+        const result = await env.renderTemplateString(template);
         expect(result).to.equal('Hello World! 1 + 1 = 2');
       });
 
@@ -50,7 +50,7 @@
           {{ x }},{{ y }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('20,20');
       });
 
@@ -71,7 +71,7 @@
           {{ result }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('25');
       });
 
@@ -92,7 +92,7 @@
           {{ greeting }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Hello, World!');
       });
 
@@ -113,7 +113,7 @@
           {{ isGreater }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('false');
       });
 
@@ -138,7 +138,7 @@
         });
 
         const template = '{% if testValue is isGreaterThan(threshold) %}Yes{% else %}No{% endif %}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Yes');
       });
 
@@ -156,7 +156,7 @@
         `;
 
         try {
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error.message).to.contain('Failed to get value');
@@ -174,7 +174,7 @@
         };
 
         const template = '{% set result = 1 + getValue() %}Result = {{ result }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Result = 2');
       });
 
@@ -198,7 +198,7 @@
 			Regular function: {{ regularFunc() }}
 			Inline value: {{ "Inline" }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`
 			Async function (String): Hello
 			Async function (Number): 42
@@ -228,7 +228,7 @@
 			Mixed: {{ addAsync(asyncNum, subtractSync(staticNum, 1)) }}
 			With inline: {{ addAsync(2, 3) + 5 }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`
 			Async function: 5
 			Async getter: 5
@@ -257,7 +257,7 @@
 			Mixed: {{ asyncGreaterThan(asyncX, 3) and syncEqual(staticY, 10) }}
 			With inline: {{ asyncX > 3 and 7 < staticY }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`
 			Async function: true
 			Async getter: true
@@ -286,7 +286,7 @@
 			Mixed: {{ "yes" if (asyncTrue() and not staticFalse) else "no" }}
 			With inline: {{ "yes" if (asyncTrue() and true) else "no" }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`
 			Async function: yes
 			Async getter: no
@@ -319,7 +319,7 @@
 			  {{ user.name }}: {{ ("Adult" if isAdult(user.age) else "Minor") }} (Age: {{ user.age }}, Discount: {{ (asyncDiscount * 100 if user.age > adultAge else 0) }}%)
 			{% endfor %}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`
 			Alice: Adult (Age: 30, Discount: 10%)
 			Bob: Adult (Age: 25, Discount: 10%)
@@ -335,7 +335,7 @@
         const template = `
 			Result: {{ (1 + 2) * fetchNumber() }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`Result: 6`);
       });
 
@@ -352,7 +352,7 @@
         const template = `
 			Result: {{ (fetchA + fetchB) + 1 }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`Result: 4`);
       });
 
@@ -365,7 +365,7 @@
         const template = `
 			Result: {{ (fetchValue() + staticValue) * 2 }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`Result: 30`);
       });
 
@@ -378,7 +378,7 @@
         const template = `
 			Result: {{ (1 + fetchNumber(), staticValue, 5) + 1 }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`Result: 6`);
       });
 
@@ -393,7 +393,7 @@
         const template = `
 			Result: {{ ((fetchA() + fetchB()) * fetchC()) + 1 }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`Result: 10`);
       });
 
@@ -406,7 +406,7 @@
         const template = `
 			Result: {{ ("yes" if (fetchFlag() and staticValue > 3) else "no") }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`Result: yes`);
       });
 
@@ -419,7 +419,7 @@
         const template = `
 			Result: {{ (fetchValue(), staticValue, fetchValue() + staticValue) }}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`Result: 6`);
       });
 
@@ -431,7 +431,7 @@
 
         const template = `Result: {{ (1 + fetchError(), staticValue + 2) }}`;
         try {
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           // If we reach this point, the test should fail
           expect().fail('Expected an error to be thrown');
         } catch (error) {
@@ -458,7 +458,7 @@
 			Result: {{ (val, increment(val), val * 2) }}
 			{%- endfor %}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(`
 			Result: 2
 			Result: 4
@@ -482,7 +482,7 @@
           }
         };
         const template = '{{ "hello" | uppercase }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('HELLO');
       });
 
@@ -494,7 +494,7 @@
           }
         };
         const template = '{{ "Admin" if isAdmin() else "User" }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('Admin');
       });
 
@@ -510,7 +510,7 @@
           })()
         };
 
-        const result = await env.renderString('{{ item in list }}', context);
+        const result = await env.renderTemplateString('{{ item in list }}', context);
         expect(result).to.equal('true');
       });
 
@@ -526,7 +526,7 @@
           })()
         };
 
-        const result = await env.renderString('{{ base ** exp }}', context);
+        const result = await env.renderTemplateString('{{ base ** exp }}', context);
         expect(result).to.equal('8');
       });
 
@@ -542,7 +542,7 @@
           })()
         };
 
-        const result = await env.renderString('{{ dividend // divisor }}', context);
+        const result = await env.renderTemplateString('{{ dividend // divisor }}', context);
         expect(result).to.equal('3');
       });
     });
@@ -560,7 +560,7 @@
           }
         };
         const template = '{{ getNum1() + getNum2() }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('15');
       });
 
@@ -576,7 +576,7 @@
           }
         };
         const template = '{% if getValue1() == getValue2() %}Equal{% else %}Not Equal{% endif %}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Equal');
       });
     });

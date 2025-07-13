@@ -50,7 +50,7 @@
           }
         };
         const template = '{% set myArray = [getItem1(), getItem2()] %}{{ myArray | join(", ") }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Item1, Item2');
       });
 
@@ -66,7 +66,7 @@
           }
         };
         const template = '{% set myDict = {"key1": getValue1(), "key2": getValue2()} %}{{ myDict["key1"] }}, {{ myDict["key2"] }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Value1, Value2');
       });
 
@@ -96,7 +96,7 @@
             } -%}
             List: {{ myData.list | join(", ") }}\nDict: {{ myData.dict.key1 }}, {{ myData.dict.key2 }}, {{ myData.dict.key3 }}
           `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('List: A, B, C\nDict: A, B, C');
       });
 
@@ -113,7 +113,7 @@
         };
 
         const template = '{% set key = getKey() %}{{ (getData())[key] }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('value');
       });
     });
@@ -142,7 +142,7 @@
 			  {{ amount }} of {{ ingredient }}
 			{%- endfor -%}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('5 tbsp of ketchup1 tbsp of mustard0 tbsp of pickle');
       });
 
@@ -167,7 +167,7 @@
 			  {{ item.title }}:{{ item.id }}
 			{%- endfor -%}
 		  `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('foo:1bar:2');
       });
 
@@ -180,7 +180,7 @@
           async getItem2() { await delay(1); return 'Item2'; }
         };
         const template = '{% set myArray = [getItem1(), getItem2()] %}{{ myArray | join(", ") }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Item1, Item2');
       });
 
@@ -190,7 +190,7 @@
           async getValue2() { await delay(1); return 'Value2'; }
         };
         const template = '{% set myDict = {"key1": getValue1(), "key2": getValue2()} %}{{ myDict["key1"] }}, {{ myDict["key2"] }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Value1, Value2');
       });
 
@@ -200,7 +200,7 @@
           async getKey() { await delay(5); return 'theKey'; }
         };
         const template = '{% set key = getKey() %}{{ (getData())[key] }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('value');
       });
 
@@ -219,7 +219,7 @@
             {{ amount }} of {{ ingredient }}
           {% endfor -%}
         `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(normalizeWhitespace(result)).to.equal('5 tbsp of ketchup 1 tbsp of mustard 0 tbsp of pickle');
       });
     });
@@ -232,7 +232,7 @@
         };
         // Default array toString joins with comma
         const template = '{% set myArray = [getItem1(), getItem2(), "Three", null, undefined] %}{{ myArray }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         // Expect deep resolution before output converts array to string (null/undefined become empty string)
         expect(result.trim()).to.equal('One,2,Three,,');
       });
@@ -249,7 +249,7 @@
         };
         // Length should not require resolving the promises inside
         const template = '{% set myArray = [getItem1(), getItem2(), 3] %}{{ myArray | length }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('3');
       });
 
@@ -261,7 +261,7 @@
         };
         // Sort needs the actual values
         const template = '{% set myArray = [getC(), getA(), getB()] %}{{ myArray | sort | join("-") }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('A-B-C');
       });
 
@@ -272,7 +272,7 @@
           async getNum3() { await delay(2); return 3; }
         };
         const template = '{% set myNums = [getNum1(), getNum2(), getNum3(), 2] %}{{ myNums | sum }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         // Sum needs the actual values: 10 + 5 + 3 + 2 = 20
         expect(result.trim()).to.equal('20');
       });
@@ -288,7 +288,7 @@
           }
         };
         const template = '{% set myArray = [getItem1(), getItem2(), 3] %}{{ inspectArray(myArray) }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('First: One, Length: 3');
       });
 
@@ -301,7 +301,7 @@
           }
         };
         const template = '{% set myDict = {keyA: getValA(), keyB: getValB(), keyC: 3} %}{{ inspectDict(myDict) }}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('KeyA: A, KeyB: B');
       });
     });
@@ -322,7 +322,7 @@
             {{ amount }} of {{ ingredient }}.
           {%- endfor -%}
           `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(normalizeWhitespace(result)).to.equal('5 tbsp of ketchup.1 tbsp of mustard.0 tbsp of pickle.');
       });
 
@@ -340,7 +340,7 @@
             {{ item.title }}:{{ item.id }}.
           {%- endfor -%}
           `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(normalizeWhitespace(result)).to.equal('foo:1.bar:2.');
       });
     });
@@ -363,7 +363,7 @@
             } -%}
             List: {{ myData.list | join(", ") }}\nDict: {{ myData.dict.key1 }}, {{ myData.dict.key2 }}, {{ myData.dict.key3 }}
           `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(normalizeWhitespace(result)).to.equal('List: A, B, C Dict: A, B, C');
       });
 
@@ -382,7 +382,7 @@
             User1: {{ data.users[0].profile.name }} ({{ data.users[0].id }})
             User2 Role: {{ data.users[1].profile.role }}
         `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(normalizeWhitespace(result)).to.equal('User1: Alice (1) User2 Role: Admin');
       });
 
@@ -398,7 +398,7 @@
             } -%}
             Tags: {{ item.tags | sort | join(', ') }}
         `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         // Requires sort (and thus join) to handle resolved values
         expect(normalizeWhitespace(result)).to.equal('Tags: async, parallel, test');
       });
@@ -421,7 +421,7 @@
             {# Test filter on outer array (relies on inner array toString) #}
             Outer Join: {{ myMatrix | join(' | ') }}
         `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         // Expected results after deep resolution of promises inside the nested arrays
         const expectedOutput = `
             Access: A1, B2
@@ -447,7 +447,7 @@
             Item 2 Status: {{ items[1].status }}
             Item 2 ID: {{ items[1].id }}
         `;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         const expectedOutput = `
             Item 1 Title: Async Foo
             Item 2 Status: done

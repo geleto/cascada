@@ -42,7 +42,7 @@
         {{ greet(getName()) }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Hello, Alice!');
       });
 
@@ -61,7 +61,7 @@
         {{ greet() }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Hello, Bob!');
       });
 
@@ -84,7 +84,7 @@
         {{ greet() }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Hi, Eve!');
       });
 
@@ -107,7 +107,7 @@
         {{ greet() }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Greetings, Frank!');
       });
     });
@@ -125,7 +125,7 @@
           H:{{ fetchTitle(id) }}
         {%- endmacro -%}
         {{ header(1) }} {{ header(2) }}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`H:Hello H:World`);
       });
 
@@ -152,7 +152,7 @@
         {{ article(fetchTitle(), fetchContent()) }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(unescape(result.trim())).to.equal(`
         <article>
           <h1>Async Title</h1>
@@ -189,7 +189,7 @@
         {{ userProfile(fetchUser(1)) }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(unescape(result.trim())).to.equal(`
         <div class="user-profile">
           <h2>User 1</h2>
@@ -230,7 +230,7 @@
         {{ page(fetchHeader(), fetchContent(), fetchFooter()) }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(unescape(result.trim())).to.equal(`
         <div class="page">
           <header>Async Header</header>
@@ -267,7 +267,7 @@
         {{ userProfile(fetchUser(2)) }}
         `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(unescape(result.trim())).to.equal(`
         <div class="user-profile">
           <h2>User 1</h2>
@@ -299,7 +299,7 @@
             asyncValue: Promise.resolve('async result')
           };
 
-          const rendered = await env.renderString(template, context);
+          const rendered = await env.renderTemplateString(template, context);
           expect(rendered.trim()).to.equal('async result');
         });
 
@@ -314,7 +314,7 @@
           {%- endcall %}
         `;
 
-          const result = await env.renderString(template);
+          const result = await env.renderTemplateString(template);
           expect(result.trim()).to.equal('The result is: 3');
         });
 
@@ -334,7 +334,7 @@
             secondValue: Promise.resolve('second')
           };
 
-          const rendered = await env.renderString(template, context);
+          const rendered = await env.renderTemplateString(template, context);
           expect(rendered.trim()).to.equal('Results: first, second');
         });
       });
@@ -361,7 +361,7 @@
             asyncValue: Promise.resolve('content')
           };
 
-          const rendered = await env.renderString(template, context);
+          const rendered = await env.renderTemplateString(template, context);
           expect(rendered.trim()).to.equal('Outer(Inner(content))');
         });
       });
@@ -385,7 +385,7 @@
             asyncValue: Promise.resolve('shown')
           };
 
-          const rendered = await env.renderString(template, context);
+          const rendered = await env.renderTemplateString(template, context);
           expect(rendered.trim()).to.equal('shown');
         });
 
@@ -406,7 +406,7 @@
             asyncItems: Promise.resolve(['a', 'b', 'c'])
           };
 
-          const rendered = await env.renderString(template, context);
+          const rendered = await env.renderTemplateString(template, context);
           expect(rendered.trim().replace(/\s+/g, ' ')).to.equal('a b c');
         });
       });
@@ -428,7 +428,7 @@
             asyncContent: Promise.resolve('42')
           };
 
-          const rendered = await env.renderString(template, context);
+          const rendered = await env.renderTemplateString(template, context);
           expect(rendered.trim()).to.equal('Result: 42');
         });
       });
@@ -454,7 +454,7 @@
           };
 
           try {
-            await env.renderString(template, context);
+            await env.renderTemplateString(template, context);
           } catch (error) {
             expect(error.message).to.contain('Async error');
           }
@@ -482,7 +482,7 @@
           };
 
           try {
-            await env.renderString(template, context);
+            await env.renderTemplateString(template, context);
           }
           catch (error) {
             expect(error.message).to.contain('Nested async error');

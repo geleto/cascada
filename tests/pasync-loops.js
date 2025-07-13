@@ -44,7 +44,7 @@
 		  {%- endfor %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			- Data for ID 1
 			- Data for ID 2
@@ -86,7 +86,7 @@
 		  {%- endfor %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 		  User: John Doe
 		  Posts:
@@ -110,7 +110,7 @@
 		  {%- endfor %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			- Item 1
 			- Item 2
@@ -123,7 +123,7 @@
         const context = { arr: [['x', 'y', 'z'], ['1', '2', '3']] };
         const template = '{% for a, b, c in arr %}' +
           '{{ a }},{{ b }},{{ c }}.{% endfor %}';
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('x,y,z.1,2,3.');
       });
 
@@ -142,7 +142,7 @@
 		  {%- endfor %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			A-1
 			B-2
@@ -168,7 +168,7 @@
 		  {%- endfor %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			Alice:
 			- Post 1 by User 1
@@ -197,7 +197,7 @@
 		  {%- endfor %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			Alice: Admin
 			Bob: User
@@ -222,7 +222,7 @@
 		  {%- endfor %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			A-1 (First)
 			B-2
@@ -248,7 +248,7 @@
 			{{ processUser(name, age) }}
 		  {%- endfor %}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			John is 30 years old
 			Jane is 25 years old
@@ -274,7 +274,7 @@
 			{{ formatUserAge(name, age) }}
 		  {%- endfor %}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			John: 30 years
 			Jane: 25 years
@@ -305,7 +305,7 @@
 			{{ formatEmployee(name, getTitle(dept)) }}
 		  {%- endfor %}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			John - Engineer
 			Jane - Manager
@@ -342,7 +342,7 @@
 			{%- endif -%}
 		  {%- endfor %}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			John :Can write
 			Jane :Cannot write
@@ -370,7 +370,7 @@
 			{%- endfor %}
 		  {%- endfor %}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			IT:
 			  - John (developer)
@@ -397,7 +397,7 @@
 			{{ data.getDescription(item, price) }}
 		  {%- endfor %}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			milk costs $2.99
 			bread costs $1.99
@@ -425,7 +425,7 @@
 			{{ checkAvailability(item, qty) }}
 		  {%- endfor %}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			milk - 10 in stock
 			bread - 5 in stock
@@ -453,7 +453,7 @@
 			{{ getDeptSummary(dept, staff) }}
 		  {%- endfor %}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			IT: John (senior), Jane (junior)
 			HR: Bob (manager), Alice (intern)`);
@@ -479,7 +479,7 @@
 			{{ format(item, qty) }}
 		  {%- endfor %}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result).to.equal(`
 			milk: 10
 			bread: 5`);
@@ -497,7 +497,7 @@
 
         const template = `{% for fruit in getAsyncFruits() %}{{ fruit }};{% endfor %}`;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('Apple;Banana;');
       });
@@ -516,7 +516,7 @@
         const template = `{% for fruit in getAsyncFruits() %}{{ fruit }};{% endfor %}`;
         // Expected output: "Apple;Banana;"
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('Apple;Banana;');
       });
@@ -540,7 +540,7 @@
 			{% endfor %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('no items');
       });
 
@@ -560,7 +560,7 @@
 			{%- endfor -%}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('abc');
       });
 
@@ -584,7 +584,7 @@
 			{% endfor %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('The list is empty');
       });
 
@@ -613,7 +613,7 @@
 			{% endfor %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('a: 1 2 b: empty');
       });
 
@@ -634,7 +634,7 @@
 		  `;
 
         try {
-          await env.renderString(template, context);
+          await env.renderTemplateString(template, context);
           expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error.message).to.contain('Failed to get items');
@@ -666,7 +666,7 @@
 			{% endif %}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Items hidden');
       });
 
@@ -692,7 +692,7 @@
 			{%- endfor -%}
 		  `;
 
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('34');
       });
     });
@@ -711,7 +711,7 @@
 		  {%- else %}
 			No numbers
 		  {%- endfor %}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(
           '- Number 1 - Number 2 - Number 3'
         );
@@ -728,7 +728,7 @@
 		  {%- else %}
 			No items
 		  {%- endfor %}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('No items');
       });
 
@@ -743,7 +743,7 @@
         };
         const template = `{%- for num in asyncGenerator() %} - Index: {{ loop.index }}, First: {{ loop.first }}, Last: {{ loop.last }}
 		  {%- endfor %}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(
           '- Index: 1, First: true, Last: false' +
           ' - Index: 2, First: false, Last: false' +
@@ -771,7 +771,7 @@
 			>Outer {{ outer }}:
 			{%- for inner in innerGenerator(outer) %} - Inner {{ inner }} {% endfor -%}
 		  {%- endfor %}`;
-        const result = await env.renderString(template, context);
+        const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal(
           `>Outer 1: - Inner 1 >Outer 2: - Inner 1  - Inner 2`
         );
@@ -805,7 +805,7 @@
       // Expected: 0 + getValue(1) -> 10
       //           10 + getValue(2) -> 30
       //           30 + getValue(3) -> 60
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Final Total: 60');
     });
 
@@ -828,7 +828,7 @@
       // Iter 1: update({e:f,c:0}, 1) -> {e:t, c:1}
       // Iter 2: update({e:t,c:1}, 2) -> {e:f, c:3}
       // Iter 3: update({e:f,c:3}, 3) -> {e:t, c:6}
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Final Config: Enabled=true, Count=6');
     });
 
@@ -855,7 +855,7 @@
       // o=1, i='b': 101 + get(1,'b') = 101 + 10 = 111
       // o=2, i='a': 111 + get(2,'a') = 111 + 2 = 113
       // o=2, i='b': 113 + get(2,'b') = 113 + 20 = 133
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Final Counter: 133');
     });
 
@@ -880,7 +880,7 @@
       // item=10 (>7): 0 + process(10) = 0 + 20 = 20
       // item=5 (<=7): score remains 20
       // item=20 (>7): 20 + process(20) = 20 + 40 = 60
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Final Score: 60');
     });
 
@@ -907,7 +907,7 @@
       // num=1: 0 + double(1) = 0 + 2 = 2
       // num=2: 2 + double(2) = 2 + 4 = 6
       // num=3: 6 + double(3) = 6 + 6 = 12
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Sum: 12');
     });
 
@@ -931,7 +931,7 @@
         {% endfor %}
         Value: {{ finalValue }}
         `;
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Value: -1');
     });
 
@@ -955,7 +955,7 @@
       // item=2: transform(1, 2) -> 2
       // item=3: transform(2, 3) -> 6
       // item=4: transform(6, 4) -> 24
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Product: 24');
     });
 
@@ -983,7 +983,7 @@
           {%- endfor -%}
           Sum: {{ sum }}
       `;
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal(`1:true  11:true  Sum: 11`);
       // Verify side effect order confirms sequential execution
       expect(context.logs).to.eql(['Logged a', 'Logged b']);
@@ -1019,7 +1019,7 @@
         {% endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Iteration 1\n        Iteration 2\n        Iteration 3');
       // Check context.counter manually after rendering
       expect(context.state.counter).to.equal(4);
@@ -1053,7 +1053,7 @@
         {% endwhile %}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Count: 9\n        Count: 8');
       // Check context.counter manually after rendering
       expect(context.state.counter).to.equal(7);
@@ -1081,7 +1081,7 @@
         {%- endwhile %}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Value: 1\n          Value: 2\n          Value: 3');
       // Check context.counter manually after rendering
       expect(context.state.counter).to.equal(4);
@@ -1114,7 +1114,7 @@
         {% endwhile %}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Current: 1\n        Current: 2\n        Current: 3');
       // Check context.counter manually after rendering
       expect(context.state.counter).to.equal(3);
@@ -1144,7 +1144,7 @@
         Result: {{ result }}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Iteration 1\n          Iteration 2\n        Result: 30');
       // Check context.counter manually after rendering
       expect(context.state.counter).to.equal(3);
@@ -1180,7 +1180,7 @@
         Final total: {{ total }}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Current total: 2\n          Current total: 6\n        Final total: 6');
       // Check context.counter manually after rendering
       expect(context.state.counter).to.equal(3);
@@ -1214,7 +1214,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Generated: 1,Generated: 2,Generated: 3,');
     });
 
@@ -1250,7 +1250,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Processed: 4,Processed: 7,');
       // Check context.counter manually after rendering
       expect(context.state.counter).to.equal(3);
@@ -1274,7 +1274,7 @@
         {% endwhile %}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('');
       // Check context.counter manually after rendering
       expect(context.state.counter).to.equal(4);
@@ -1297,7 +1297,7 @@
         {% endwhile %}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('');
       // Check context.counter manually after rendering
       expect(context.state.counter).to.equal(4);
@@ -1322,7 +1322,7 @@
         Loop completed
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Loop completed');
     });
 
@@ -1361,7 +1361,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Inner:3,Outer:2,Inner:1,Inner:2,Inner:3,');
     });
 
@@ -1400,7 +1400,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Inner:3,Outer:2,Inner:1,Inner:2,Inner:3,');
     });
 
@@ -1432,7 +1432,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Outer:1,Inner:10,Inner:20,Outer:2,Inner:20,Inner:40,');
     });
 
@@ -1477,7 +1477,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('User:Alice,Post:Post 1,Comment:Comment 1,Comment:Comment 2,Post:Post 2,Comment:Comment 1,Comment:Comment 2,User:Bob,Post:Post 3,Comment:Comment 1,Comment:Comment 2,');
     });
 
@@ -1518,7 +1518,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Outer:10,Inner:11,Inner:12,Inner:13,Outer:20,Inner:21,Inner:22,Inner:23,');
     });
 
@@ -1557,7 +1557,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('O1,I1_1,I1_2,I1_3,O2,I2_1,I2_2,I2_3,');
     });
 
@@ -1596,7 +1596,7 @@
         {%- endfor -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('O1,I1_1,I1_2,I1_3,O2,I2_1,I2_2,I2_3,');
     });
 
@@ -1637,7 +1637,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Inner:3,Outer:2,');
       expect(context.outer.counter).to.equal(3);
       expect(context.inner.counter).to.equal(5);
@@ -1680,7 +1680,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:4,Inner:5,');
       expect(context.outer.counter).to.equal(3);
       expect(context.inner.counter).to.equal(6);
@@ -1723,7 +1723,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:4,Inner:5,');
       expect(context.outer.counter).to.equal(3);
       expect(context.inner.counter).to.equal(6);
@@ -1766,7 +1766,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:4,Inner:5,');
       expect(context.outer.counter).to.equal(3);
       expect(context.inner.counter).to.equal(6);
@@ -1824,7 +1824,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('L1:1,L2:1,L3:1,L3:2,L2:2,L3:4,L3:5,L1:2,L2:4,L3:7,L3:8,L2:5,L3:10,L3:11,');
       expect(context.level1.counter).to.equal(3);
       expect(context.level2.counter).to.equal(6);
@@ -1873,7 +1873,7 @@
         Total:{{ total }}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Outer:1,Inner:1,Inner:2,Outer:2,Inner:4,Inner:5,Total:18');
       expect(context.outer.counter).to.equal(3);
       expect(context.inner.counter).to.equal(6);
@@ -1901,7 +1901,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Iteration:1,Value:1,Iteration:2,Value:2,Iteration:3,Value:3,');
       expect(context.state.counter).to.equal(4);
     });
@@ -1928,7 +1928,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Index0:0,Value:1,Index0:1,Value:2,Index0:2,Value:3,');
       expect(context.state.counter).to.equal(4);
     });
@@ -1971,7 +1971,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Outer1:1,Inner1:1,Inner2:2,Outer2:2,Inner1:4,Inner2:5,');
       expect(context.outer.counter).to.equal(3);
       expect(context.inner.counter).to.equal(6);
@@ -1999,7 +1999,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('P1_1,P2_2,P3_3,');
       expect(context.state.counter).to.equal(4);
     });
@@ -2030,7 +2030,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Odd1:1,Even2:2,Odd3:3,Even4:4,Odd5:5,');
       expect(context.state.counter).to.equal(6);
     });
@@ -2057,7 +2057,7 @@
         {%- endwhile -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('11,22,33,');
       expect(context.state.counter).to.equal(4);
     });
@@ -2085,7 +2085,7 @@
         {%- endeach -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Processed 1Processed 2Processed 3');
     });
 
@@ -2110,7 +2110,7 @@
         {%- endeach -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('User: alice, Profile: darkUser: bob, Profile: darkUser: charlie, Profile: dark');
     });
 
@@ -2129,7 +2129,7 @@
         {%- endeach -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('a-1b-2c-3');
     });
 
@@ -2153,7 +2153,7 @@
         {%- endeach -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('No items found');
     });
 
@@ -2180,7 +2180,7 @@
         {%- endeach -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('IT:alicebobHR:charlie');
     });
 
@@ -2199,7 +2199,7 @@
         {%- endeach -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('theme: darklang: en');
     });
 
@@ -2218,7 +2218,7 @@
         {%- endeach -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('alice (25)bob (30)');
     });
 
@@ -2246,7 +2246,7 @@
         {%- endeach -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Even: 2Even: 4Even: 6Even: 8Even: 10');
     });
 
@@ -2269,7 +2269,7 @@
         Final total: {{ total }}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Current total: 10,Current total: 30,Current total: 60,Final total: 60');
     });
 
@@ -2292,7 +2292,7 @@
         {%- endeach -%}
       `;
 
-      const result = await env.renderString(template, context);
+      const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Processed 1Processed 2Processed 3');
     });
 
