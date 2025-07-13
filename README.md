@@ -623,7 +623,7 @@ console.log(html);
 
 ## Built for AI Workflows
 
-Cascada's parallel-first engine and data-driven flow make it the ideal foundation for orchestrating complex AI workflows. The **[Cascador-AI](https://github.com/geleto/cascador-ai)** library builds on this power, providing a high-level, intuitive API for wiring together LLMs, APIs, and data transformations. By integrating with the [Vercel AI SDK Core](https://sdk.vercel.ai/docs/ai-sdk-core), Cascador-AI lets you define sophisticated, multi-step agents using Cascada's clean, `await`-free scripting language.
+Cascada's parallel-first engine and data-driven flow make it the ideal foundation for orchestrating complex AI workflows. The **[Cascador-AI](https://github.com/geleto/cascador-ai)** library builds on this power, providing a high-level, intuitive API for wiring together LLMs, APIs, and data transformations. By integrating with the [Vercel AI SDK Core](https://sdk.vercel.ai/docs/ai-sdk-core), Cascador-AI lets you define sophisticated, multi-step agents using Cascada's scripting and templating.
 
 Here's a short example of a self-improving agent built with Cascador-AI:
 ```javascript
