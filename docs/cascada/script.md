@@ -24,6 +24,9 @@ While this "parallel-first" approach is powerful, Cascada recognizes that order 
 
 This inversion - parallel by default, sequential by exception - makes building complex, high-performance data pipelines feel surprisingly simple and intuitive.
 
+### 📝 Clean, Expressive Syntax
+Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `macros` that support keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
+
 **⚠️ Welcome to the Cutting Edge! ⚠️**
 Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented  (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
 
@@ -1635,7 +1638,7 @@ This roadmap outlines key features and enhancements that are planned or currentl
     Adding support for direct property modification on variables (e.g., `myObject.property = "new value"`). This is currently possible only for `@data` assignments
 
 -   **Compound Assignment for Variables (`+=`, `-=`, etc.)**
-    Extending support for compound assignment operators (`+=`, `*=`, etc.) to regular variables (this is currently supported only for `@data` assignments). Like their `@data` counterparts, the default behavior of each operator will be overridable.
+    Extending support for compound assignment operators (`+=`, `*=`, etc.) to regular variables (this is currently supported only for `@data` assignments). Like their `@data` counterparts, the default behavior of each operator will be overridable with custom methods.
 
 -   **Root-Level Sequential Operator**
     Allowing the sequential execution operator `!` to be used directly on root-level function calls (e.g., `!.saveToDatabase(data)`), simplifying syntax for global functions with side effects.
