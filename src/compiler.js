@@ -625,7 +625,11 @@ class Compiler extends Obj {
         //multiple static path keys can be in the same block
         this.async.updateFrameWrites(frame, nodeStaticPathKey);
         // This will also release the lock by using `set` on the lock value decrementing writeCount:
-        this.emit(`runtime.sequencedMemberLookupAsync(frame, (`);
+        if (this.scriptMode) {
+          this.emit(`runtime.sequencedMemberLookupScriptAsync(frame, (`);
+        } else {
+          this.emit(`runtime.sequencedMemberLookupAsync(frame, (`);
+        }
         this.compile(node.target, frame); // Mark target as part of a call path
         this.emit('),');
         this.compile(node.val, frame); // Compile key expression
@@ -635,7 +639,11 @@ class Compiler extends Obj {
     }
 
     // Standard member lookup (sync or async without sequence)
-    this.emit(`runtime.memberLookup${node.isAsync ? 'Async' : ''}((`);
+    if (this.scriptMode) {
+      this.emit(`runtime.memberLookupScript${node.isAsync ? 'Async' : ''}((`);
+    } else {
+      this.emit(`runtime.memberLookup${node.isAsync ? 'Async' : ''}((`);
+    }
     this.compile(node.target, frame); // Mark target as part of a call path
     this.emit('),');
     this.compile(node.val, frame);

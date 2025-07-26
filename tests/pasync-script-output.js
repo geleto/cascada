@@ -19,6 +19,19 @@ describe('Cascada Script: Output commands', function () {
     env = new AsyncEnvironment();
   });
 
+  it('scripts throw error when accessing properties of null/undefined (unlike templates)', async () => {
+    const script =  `
+        var obj = none
+        @data.value = obj.prop`;
+
+    try {
+      await env.renderScriptString(script);
+      throw new Error('Expected an error to be thrown');
+    } catch (error) {
+      expect(error.message).to.contain('Cannot read properties of null');
+    }
+  });
+
   /**
    * This test demonstrates the core "Collect, Execute, Assemble" model.
    * - Independent `set` operations (data fetching) run in parallel.

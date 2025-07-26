@@ -24,11 +24,11 @@ While this "parallel-first" approach is powerful, Cascada recognizes that order 
 
 This inversion - parallel by default, sequential by exception - makes building complex, high-performance data pipelines feel surprisingly simple and intuitive.
 
-### 📝 Clean, Expressive Syntax
+### 💡 Clean, Expressive Syntax
 Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `macros` that support keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
 
-**⚠️ Welcome to the Cutting Edge! ⚠️**
-Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented  (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
+**⚠️ Under Development! ⚠️**
+Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
 
 ## Table of Contents
 - [Overview](#overview)
@@ -167,6 +167,9 @@ for i in range(2)
   var item = "child " + i
 endfor
 ```
+
+#### Handling `null` and `undefined` Values
+Unlike Nunjucks/Cascada templates, which silently return `undefined` when accessing properties of `null` or `undefined` values, Cascada Script throws runtime errors. This stricter approach catches potential bugs early and ensures more predictable script execution.
 
 ### Basic Statements
 

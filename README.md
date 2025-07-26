@@ -28,7 +28,7 @@ While this "parallel-first" approach is powerful, Cascada recognizes that order 
 
 This inversion - parallel by default, sequential by exception - is what makes Cascada so effective and intuitive.
 
-**⚠️ Welcome to the Cutting Edge! ⚠️**
+**⚠️ Under Development! ⚠️**
 Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
 
 ## Quick Start
