@@ -1081,9 +1081,27 @@ function memberLookup(obj, val) {
   return obj[val];
 }
 
+function memberLookupScript(obj, val) {
+  if (obj === undefined || obj === null) {
+    //unlike in template mode, in script mode we throw an exception 'Cannot read properties of null'
+  }
+
+  if (typeof obj[val] === 'function') {
+    return (...args) => obj[val](...args);
+  }
+
+  return obj[val];
+}
+
 function memberLookupAsync(obj, val) {
   return resolveDuo(obj, val).then(([resolvedOb, resolvedVal]) => {
     return memberLookup(resolvedOb, resolvedVal);
+  });
+}
+
+function memberLookupScriptAsync(obj, val) {
+  return resolveDuo(obj, val).then(([resolvedOb, resolvedVal]) => {
+    return memberLookupScript(resolvedOb, resolvedVal);
   });
 }
 
@@ -1541,6 +1559,20 @@ async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
   }
 }
 
+// Called in place of memberLookupAsync when the path has a sequence lock on it
+async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey) {
+  await awaitSequenceLock(frame, nodeLockKey);// acquire lock
+  try {
+    let resolvedTarget = target;
+    if (target && typeof target.then === 'function') {
+      resolvedTarget = await target;
+    }
+    return memberLookupScript(resolvedTarget, key);// perform lookup
+  } finally {
+    frame.set(nodeLockKey, true, true);// release lock
+  }
+}
+
 module.exports = {
   Frame,
   AsyncFrame,
@@ -1560,8 +1592,15 @@ module.exports = {
   resolveObjectProperties,
   resolveArguments,
   flattenBuffer,
+
   memberLookup,
   memberLookupAsync,
+  sequencedMemberLookupAsync,
+
+  memberLookupScript,
+  memberLookupScriptAsync,
+  sequencedMemberLookupScriptAsync,
+
   contextOrFrameLookup,
   callWrap,
   sequencedCallWrap,
@@ -1580,6 +1619,5 @@ module.exports = {
   iterate,
   setLoopBindings,
   awaitSequenceLock,
-  sequencedContextLookup,
-  sequencedMemberLookupAsync: sequencedMemberLookupAsync
+  sequencedContextLookup
 };
