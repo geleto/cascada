@@ -213,23 +213,23 @@ You can iterate over various collection types:
     ```javascript
     var food = { ketchup: '5 tbsp', mustard: '1 tbsp' }
     for ingredient, amount in food
-      @text "Use " + amount + " of " + ingredient
+      @text("Use " + amount + " of " + ingredient)
     endfor
     ```
 *   **Unpacking Arrays**:
     ```javascript
     var points = [[0, 1, 2], [5, 6, 7]]
     for x, y, z in points
-      @text "Point: " + x + ", " + y + ", " + z
+      @text("Point: " + x + ", " + y + ", " + z)
     endfor
     ```
 
 A `for` loop can have an `else` block that is executed only if the collection is empty:
 ```javascript
 for item in []
-  @text "This will not be printed."
+  @text("This will not be printed.")
 else
-  @text "The collection was empty."
+  @text("The collection was empty.")
 endfor
 ```
 
@@ -384,7 +384,7 @@ A `for` loop will automatically fall back to this safer, sequential mode when yo
 
 #### Output
 ```
-@text expression
+@text(expression)
 ```
 
 ### Literals, Operators, and Expressions
@@ -430,7 +430,7 @@ You can create regular expressions by prefixing the expression with `r`.
 ```javascript
 var emailRegex = r/^[^\s@]+@[^\s@]+\.[^\s@]+$/
 if emailRegex.test(user.email)
-  @text "Valid email address."
+  @text("Valid email address.")
 endif
 ```
 
@@ -1126,7 +1126,7 @@ try
   @data.set(result.imageUrl, image.url)
 resume resume.count < 3
   // Retry up to 3 times
-  @text "Retrying attempt " + resume.count
+  @text("Retrying attempt " + resume.count)
 except
   // Handle permanent failure
   @data.set(result.error, "Image generation failed: " + error.message)
@@ -1141,17 +1141,17 @@ Cascada Script supports the full range of Nunjucks [built-in filters](https://mo
 Filters are applied with the pipe `|` operator.
 ```javascript
 var title = "a tale of two cities" | title
-@text title // "A Tale Of Two Cities"
+@text(title) // "A Tale Of Two Cities"
 
 var users = ["Alice", "Bob"]
-@text "Users: " + (users | join(", ")) // "Users: Alice, Bob"
+@text("Users: " + (users | join(", "))) // "Users: Alice, Bob"
 ```
 
 #### Global Functions
 Global functions like `range` can be called directly.
 ```javascript
 for i in range(3)
-  @text "Item " + i // Prints Item 0, Item 1, Item 2
+  @text("Item " + i) // Prints Item 0, Item 1, Item 2
 endfor
 ```
 
@@ -1178,7 +1178,7 @@ for tag in ["rock", "pop", "jazz"]
   // The first call to comma() returns "", subsequent calls return ", "
   output = output + comma() + tag
 endfor
-@text output // "rock, pop, jazz"
+@text(output) // "rock, pop, jazz"
 ```
 
 
@@ -1463,7 +1463,9 @@ These methods execute a script or template and return the final result.
     Executes a script from a raw string. This is useful for dynamic or simple scripts. Returns a `Promise` that resolves with the script's output.
 
     ```javascript
-    const script = ':data; @data.user.name = "Alice"';
+    const script =
+    `:data
+    @data.user.name = "Alice"`;
     const result = await env.renderScriptString(script);
     // result is: { user: { name: "Alice" } }
     ```
