@@ -78,6 +78,9 @@ class NodeList extends Node {
 
 class Root extends NodeList {
   get typename() { return 'Root'; }
+  get fields() {
+    return ['children', 'focus'];
+  }
 }
 
 class Literal extends Value {
@@ -86,6 +89,7 @@ class Literal extends Value {
 
 class Symbol extends Value {
   get typename() { return 'Symbol'; }
+  get fields() { return ['value', 'sequenced', 'isCompilerInternal']; }
 
   checkIsAsync(frame) {
     return !!frame.lookup(this.value); // if the name is a frame variable - it can be async
@@ -148,7 +152,7 @@ class AsyncAll extends For {
 
 class Macro extends Node {
   get typename() { return 'Macro'; }
-  get fields() { return ['name', 'args', 'body']; }
+  get fields() { return ['name', 'args', 'body', 'focus']; }
 }
 
 class Caller extends Macro {
@@ -326,7 +330,8 @@ class CompareOperand extends Node {
 
 class CallExtension extends Node {
   get typename() { return 'CallExtension'; }
-  get fields() { return ['extName', 'prop', 'args', 'contentArgs']; }
+  // autoescape was not in the nunjucks fields, a bug?
+  get fields() { return ['extName', 'prop', 'args', 'contentArgs', 'autoescape', 'resolveArgs']; }
 
   init(ext, prop, args, contentArgs, resolveArgs = true) {
     super.init();
