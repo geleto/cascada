@@ -27,6 +27,10 @@ function mapCOW(arr, func) {
 }
 
 function walk(ast, func, depthFirst) {
+  if (Array.isArray(ast)) {
+    return mapCOW(ast, (node) => walk(node, func, depthFirst));
+  }
+
   if (!(ast instanceof nodes.Node)) {
     return ast;
   }
@@ -39,13 +43,14 @@ function walk(ast, func, depthFirst) {
     }
   }
 
-  if (ast instanceof nodes.NodeList) {
+  // The Root node is a NodeList, but it can have a focus property so do not special-case NodeList
+  /*if (ast instanceof nodes.NodeList) {
     const children = mapCOW(ast.children, (node) => walk(node, func, depthFirst));
 
     if (children !== ast.children) {
       ast = new nodes[ast.typename](ast.lineno, ast.colno, children);
     }
-  } else if (ast instanceof nodes.CallExtension) {
+  } else */if (ast instanceof nodes.CallExtension) {
     const args = walk(ast.args, func, depthFirst);
     const contentArgs = mapCOW(ast.contentArgs, (node) => walk(node, func, depthFirst));
 
