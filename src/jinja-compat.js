@@ -61,15 +61,17 @@ function installCompat() {
   }
 
   if (process.env.BUILD_TYPE !== 'SLIM' && nodes && Compiler && Parser) { // i.e., not slim mode
-    const Slice = nodes.Node.extend('Slice', {
-      fields: ['start', 'stop', 'step'],
+    class Slice extends nodes.Node {
+      get typename() { return 'Slice'; }
+      get fields() { return ['start', 'stop', 'step']; }
+
       init(lineno, colno, start, stop, step) {
         start = start || new nodes.Literal(lineno, colno, null);
         stop = stop || new nodes.Literal(lineno, colno, null);
         step = step || new nodes.Literal(lineno, colno, 1);
-        this.parent(lineno, colno, start, stop, step);
+        super.init(lineno, colno, start, stop, step);
       }
-    });
+    }
 
     Compiler.prototype.assertType = function assertType(node) {
       if (node instanceof Slice) {
