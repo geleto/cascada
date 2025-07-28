@@ -2461,7 +2461,7 @@ class Compiler extends Obj {
 
   /**
    * Do nothing for now, currently used only for focus directive
-   * where the logic is handled in the parser
+   * where the logic is handled in the parser. See parseAsRoot
    */
   compileOption(node, frame) {
   }

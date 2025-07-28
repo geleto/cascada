@@ -1557,6 +1557,7 @@ class Parser extends Obj {
     const root = new nodes.Root(start.lineno, start.colno, parsedNodes);
 
     // Process Option nodes and set root properties
+    // For now only the focus option is supported
     parsedNodes.forEach(node => {
       if (node instanceof nodes.Option) {
         if (node.key.value === 'focus') {
