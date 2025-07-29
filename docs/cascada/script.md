@@ -47,7 +47,7 @@ Cascada is a new project and is evolving quickly! This is exciting, but it also 
   npm install cascada-engine
   ```
 
-Here's a aimple of executing a script.
+Here's a simple of executing a script.
 
 ```javascript
 import { AsyncEnvironment } from 'cascada-engine';
@@ -304,13 +304,6 @@ endeach
 ```
 
 ##### The `loop` Variable
-Excellent point. You are absolutely correct. Grouping `asyncEach` into the "fallback" category was a mistake. It is sequential by design, not as a fallback. That's a critical distinction for clarity.
-
-Thank you for the sharp-eyed correction. Let's fix that. Here is the revised, more accurate documentation.
-
----
-
-### The `loop` Variable
 
 Inside a `for`, `while`, or `each` loop, you have access to the special `loop` variable, which provides metadata about the current iteration.
 
@@ -1268,11 +1261,11 @@ This optional block is the final backstop. It runs **once** after all logic in t
 Inside this block, a special `errors` variable is available, containing an array of all **unhandled** Error Objects—those that were not resolved by `error.resolve()`, a successful `error.retry()`, or a `fallback()` call. You can access its properties directly without the `#` peek operator.
 
 ```javascript
-catch finalErrors
+catch errors
   // This runs only if there are errors that were not successfully handled
   // by the 'on error' block.
   @data.status = "FAILED_PERMANENTLY"
-  for err in finalErrors
+  for err in errors
     @data.unhandled_errors.push({
       culprit: err.source.origin,
       message: err.message
@@ -1861,3 +1854,6 @@ This roadmap outlines key features and enhancements that are planned or currentl
 
 -   **Robustness and Concurrency Validation**
     Continuously expanding the test suite with a focus on complex, high-concurrency scenarios to formally verify the correctness and stability of the parallel.
+
+
+
