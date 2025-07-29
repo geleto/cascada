@@ -1478,6 +1478,32 @@ describe('Cascada Script: Output commands', function () {
         }
       });
 
+      it('should handle @data with invalid focus', async () => {
+        const script = `
+          :someInvalidFocus
+          @data.counter = 10
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain(`Data output focus target not found: 'someInvalidFocus'`);
+        }
+      });
+
+      it('should handle @data with invalid data; focus', async () => {
+        const script = `
+          :data;
+          @data.counter = 10
+        `;
+        try {
+          await env.renderScriptString(script);
+          expect().fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.contain(`Data output focus target not found: 'data;'`);
+        }
+      });
+
       it('should handle @data.subtract', async () => {
         const script = `
           :data

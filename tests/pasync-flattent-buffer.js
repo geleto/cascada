@@ -216,9 +216,11 @@ describe('flattenBuffer', function () {
       expect(result.pos).to.equal(10);
     });
 
-    it('should return undefined when focus key does not exist', async function () {
-      const result = await flattenBuffer(fullBuffer, context, 'nonexistent');
-      expect(result).to.be(undefined);
+    it('should throw an error when focus key does not exist', async function () {
+      await expectAsyncError(
+        () => flattenBuffer(fullBuffer, context, 'nonexistent'),
+        (err) => expect(err.message).to.contain(`Data output focus target not found: 'nonexistent'`)
+      );
     });
   });
 

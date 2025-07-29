@@ -931,6 +931,14 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
   const textOutput = [];
   const handlerInstances = {}; // Cache instantiated handlers for this run.
 
+  // Validate focusOutput handler exists if specified
+  if (focusOutput) {
+    const handlerExists = focusOutput === 'text' || env.commandHandlerInstances[focusOutput] || env.commandHandlerClasses[focusOutput];
+    if (!handlerExists) {
+      throw new Error(`Data output focus target not found: '${focusOutput}'`);
+    }
+  }
+
   function getOrInstantiateHandler(handlerName) {
     if (handlerInstances[handlerName]) {
       return handlerInstances[handlerName];
