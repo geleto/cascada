@@ -701,8 +701,7 @@ Of course. Here is a more concise version:
 // This will cause an error because you cannot read from @data yet.
 @data.user.alias = @data.user.name
 ```
-
-This feature is planned for a future release.
+This functionality will be implemented in a future release.
 
 ###### `@data` Operations
 Below is a detailed list of all available commands and operators.
@@ -1096,8 +1095,6 @@ var userObject = buildUser("Alice")
 
 ### Sequential Execution Control (`!`)
 
-**Note**: This feature is under development.
-
 For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
 
 ```javascript
@@ -1113,25 +1110,228 @@ account.getStatus()
 account!.withdraw(50)
 ```
 
-### Resilient Error Handling (`try`/`resume`/`except`)
+### Resilient Error Handling: An Error is Just Data
 
 **Note**: This feature is under development.
 
-Handle runtime errors gracefully with **`try`/`resume`/`except`**. This structure lets you catch errors, define **conditional retry logic** with `resume`, and provide a final fallback. The special `resume.count` variable is **automatically managed by the engine** to track retry attempts.
+Cascada has a simple yet powerful approach to error handling: **an error is just another type of data**. Instead of halting execution with exceptions, failed operations produce a special **Error Value**. Any variable can hold this value, it can be passed to functions, and it can be inspected just like a number or a string.
+
+This model is designed for concurrency. When an operation in one part of your script fails, it produces an Error Value. This has no effect on independent, parallel operations, which continue to run unaffected.
+
+### The Core Mechanism: Error Propagation
+
+Once an Error Value is created, it automatically "poisons" any subsequent operation that depends on it. This is called **error propagation**.
+
+*   **Expressions:** An expression involving an Error Value immediately resolves to that error without evaluating the other parts.
+    ```javascript
+    var x = myError + (2 * 10) // The result is myError, (2 * 10) is not calculated
+    ```
+*   **Function Calls:** A function call with an Error Value as an argument is never actually executed. It returns the Error Value immediately.
+    ```javascript
+    var result = someFunction(arg1, myError) // someFunction is not called
+    ```
+*   **Loops:** A loop over an Error Value will not execute its body.
+    ```javascript
+    for item in myErrorCollection // The loop body is skipped entirely
+      // ...
+    endfor
+    ```
+*   **Conditionals:** For an `if` statement with an Error Value, neither the `if` nor the `else` block is executed.
+
+This propagation happens for both errors returned from functions and for errors caused by expressions, such as dividing by zero or accessing a property on a `none` value.
+
+### Anatomy of an Error Object
+
+Every Error Value in Cascada is a rich object designed for easy debugging.
+
+*   `message`: (string) The human-readable error message.
+*   `name`: (string) A custom name for business-logic errors (e.g., `'ValidationError'`).
+*   `jsError`: (object | null) The underlying JavaScript `Error` object if the failure originated from the JS environment, providing access to the original stack trace.
+*   `source`: (object) A tracer that tells you the error's history:
+    *   `origin`: (string) The string representation of the function call or `@error` command that *first* created the error.
+    *   `variables`: (string[]) An array of all variable names that were subsequently assigned this exact Error Value as it propagated through your script.
+
+### Inspecting, Reporting, and Handling Errors
+
+Cascada provides a complete toolkit for creating, detecting, inspecting, and handling errors.
+
+#### Peeking Inside Errors with `#`
+
+Because of error propagation, a standard property access like `myError.message` would just return `myError`. To inspect the properties of an Error Value itself, use the special **`#` (peek) operator**.
 
 ```javascript
-try
-  // Attempt a fallible operation
-  var image = generateImage(prompt)
-  @data.set(result.imageUrl, image.url)
-resume resume.count < 3
-  // Retry up to 3 times
-  @text("Retrying attempt " + resume.count)
-except
-  // Handle permanent failure
-  @data.set(result.error, "Image generation failed: " + error.message)
-endtry
+var failedUser = fetchUser(999)
+
+if failedUser is error
+  // Use '#' to access properties of the Error Value
+  @text("Operation failed!")
+  @text("Origin: " + failedUser#source.origin)
+  @text("Message: " + failedUser#message)
+endif
 ```
+
+#### Checking for Errors with `is error`
+
+The `is error` test is the fundamental way to check if a variable holds an Error Value.
+```javascript
+var user = fetchUser(123)
+if user is error
+  // Use '#' to get the error message for logging
+  @data.error_message = user#message
+endif
+```
+
+#### Providing Defaults with `fallback()`
+
+To concisely provide a default value for an expression that might fail, use the `fallback()` global function. An error handled this way is considered resolved and will not trigger a `catch` block.
+
+**`fallback(expression, defaultValue)`**
+It evaluates `expression`. If the result is an Error Value, it returns the `defaultValue`.
+
+```javascript
+// Provide a default avatar if the user's preference is missing or invalid.
+@data.avatar = fallback(user.prefs.avatar_url, "default_avatar.png")
+```
+
+#### Reporting Custom Errors with `@error`
+
+You can **report** your own business-logic errors using the `@error()` output command. This is perfect for validation or enforcing rules within your script.
+
+**`@error(message, [error])`**
+*   `message`: (string) The error message.
+*   `error` (optional): A string name (e.g., `'Validation'`) or a raw JavaScript Error object.
+```javascript
+if user.balance < requiredAmount
+  @error("Insufficient funds for transaction.", "BalanceError")
+endif
+```
+
+### Handling Failures with the `try/on error/catch` Block
+
+The `try/on error/catch` construct is designed to handle real-time failures, build in resilience, and provide a final aggregation point, all without sacrificing concurrency.
+
+The block has three parts, each serving a distinct purpose:
+
+| Part | Purpose | Execution Timing |
+| :--- | :--- | :--- |
+| **`try`** | The main logic. | Executed first. |
+| **`on error`** | (Optional) A real-time event handler for each individual failure. | Runs immediately and concurrently each time an error occurs within `try`. |
+| **`catch`** | (Optional) A final aggregation block for all unhandled errors. | Runs once at the end, after all `try` and `on error` logic has completed. |
+
+#### The `try` Block: Defining the Scope
+This is where you place your main logic. All operations inside this block are monitored for failures.
+```javascript
+try
+  // Your main workflow logic goes here.
+  var user = fetchUser(123)
+  var report = generateReportFor(user)
+  db.save(report)
+  // ... on error and catch blocks follow
+```
+
+#### The `on error` Block: Real-time Intervention and Resilience
+This optional block is a powerful, real-time event handler. It is invoked **each time** an operation within the `try` scope fails, allowing you to react to failures as they happen. It is not invoked for Error Objects that were overriden by a `fallback()` call.
+
+*   **It Does Not Block:** The `on error` handler for one failure runs concurrently with other independent operations in the `try` block. It does not create a performance bottleneck.
+*   **Safe Scope:** It has read-only access to variables from the outer scope but can safely use buffered output commands (like `@data` or `@text`).
+*   **The `error` Variable:** Inside this block, a special `error` variable is available, holding the details of the specific failure that triggered it. You can access its properties directly without the `#` peek operator.
+
+The `error` variable provides properties for inspection and methods for taking action:
+*   **Properties for Inspection:**
+    *   `error.message`, `error.name`, `error.jsError`, `error.source`: The same rich properties as a standard Error Value.
+    *   `error.retryCount`: The number of times this specific operation has been retried (1-indexed).
+*   **Methods for Action:**
+    *   **`error.retry()`**: Re-invokes the original function call that failed. This is the primary mechanism for building resilience. The method returns `true` if a retry is possible (it was a function call error), and `false` otherwise (e.g., for a divide-by-zero error).
+    *   **`error.resolve(value)`**: Halts the error propagation and substitutes the given `value` as the successful result of the failed operation. The operation is now considered a success.
+
+Here is a full example demonstrating a retry strategy:
+```javascript
+try
+  var reportData = generateReport()      // Might fail with a 'TransientError'
+  db.saveReport(reportData)              // Might fail with a 'DBConnectionError'
+on error
+  // This logic runs for each failure.
+  if error.retryCount < 3 and error.name == 'TransientError'
+    // Log the attempt and retry for transient errors.
+    @text("Transient error on " + error.source.origin + ". Retrying...")
+    error.retry()
+  else
+    // For permanent errors or too many retries, just log it.
+    // The error will continue to propagate and be caught by the 'catch' block.
+    @text("Permanent failure on " + error.source.origin)
+  endif
+```
+---
+#### The `catch` Block: Final Aggregation
+This optional block is the final backstop. It runs **once** after all logic in the `try` block and all `on error` handlers have completed. Its primary purpose is for final logging, setting a global failure status, reporting on the ultimate outcome of the workflow, or recovering from the errors.
+
+Inside this block, a special `errors` variable is available, containing an array of all **unhandled** Error Objects—those that were not resolved by `error.resolve()`, a successful `error.retry()`, or a `fallback()` call. You can access its properties directly without the `#` peek operator.
+
+```javascript
+catch finalErrors
+  // This runs only if there are errors that were not successfully handled
+  // by the 'on error' block.
+  @data.status = "FAILED_PERMANENTLY"
+  for err in finalErrors
+    @data.unhandled_errors.push({
+      culprit: err.source.origin,
+      message: err.message
+    })
+  endfor
+endtry // This concludes the full try/on error/catch construct.
+```
+
+### Unhandled Errors and the Final Return Value
+
+Cascada provides a crucial safety net to ensure that unhandled errors are never silently ignored, especially when using output focusing. This mechanism applies not just to the entire script, but to any execution scope that produces a result, such as a [macro](#macros-and-reusable-components) or a [`capture` block](#block-assignment-with-capture).
+
+Under the hood, all unhandled errors that are not resolved within a `try/on error/catch` block are collected by a special `@error` output handler. The presence of errors in this handler fundamentally changes the final return value of the scope.
+
+#### Behavior Without Output Focusing
+
+If you do not focus the output (i.e., you do not use `:data`, `:text`, etc.), the result of the scope is the standard result object. The collected errors will be neatly contained within the `error` property.
+
+*   **Result:** A standard object like `{ data: {...}, text: "...", error: <CompoundError> }`.
+*   **Error Propagation:** This return value is **not** an Error Value itself. It does not trigger error propagation. Your calling code is responsible for checking the `result.error` property to see if failures occurred.
+
+```javascript
+// A script without output focusing
+var user = fetchUser(999) // Fails
+
+// Returns: { data: {}, text: "", error: <CompoundError> }
+```
+
+#### Behavior With Output Focusing (`:data`, `:text`, etc.)
+
+This is where the safety net becomes critical. When you focus the output, you are asking for a specific, clean piece of data. If unhandled errors have occurred, returning just the (potentially incomplete) focused data would be misleading and dangerous.
+
+*   **Rule:** If a scope's output is focused (e.g., `:data`) AND the `@error` handler for that scope is not empty, the scope will **ignore the focusing directive**.
+*   **Result:** Instead of returning the focused data, the scope will return a single **Compound Error Value**.
+*   **Error Propagation:** Because the return value is a proper Error Value, it **will trigger error propagation** in the calling scope.
+
+```javascript
+// A macro with output focusing
+macro buildUser() :data
+  var user = fetchUser(999) // Fails, populates the @error handler
+  @data.id = user#id
+endmacro
+
+// Calling the macro
+var report = capture
+  // buildUser() returns a Compound Error Value, not the data object.
+  var userData = buildUser()
+  // Because userData is an error, this line propagates the error.
+  @data.final_user = userData
+endcapture
+
+// The 'report' variable will now hold the Compound Error Value from buildUser().
+```
+
+This design guarantees that you cannot accidentally consume partial or incorrect data from a failed, focused operation. The failure is forced into the data flow, demanding that it be handled.
+
+#### The Compound Error Object
+
+The `CompoundError` is a special type of Error Value that aggregates all unhandled errors from an execution scope. It shares the standard error properties (`message`, `name`, `source`) but also includes an `errors` property containing the array of all the individual Error Objects that were collected. This provides a complete summary of everything that went wrong within that scope.
 
 ### Filters and Global Functions
 
@@ -1183,7 +1383,7 @@ endfor
 
 
 ## Modular Scripts
-**Note:** This functionality is under active development.
+**Note:** This functionality is under active development. Currently you can not safely access mutable fariables from a parent script.
 
 Cascada provides powerful tools for composing scripts, promoting code reuse and the separation of concerns. This allows you to break down complex workflows into smaller, maintainable files. The three primary mechanisms for this are [`import`](#importing-libraries-with-import) for namespaced libraries, [`include`](#including-scripts-with-include) for embedding content, and [`extends`/`block`](#script-inheritance-with-extends-and-block) for script inheritance.
 
@@ -1192,7 +1392,7 @@ To enable its powerful parallel execution model, Cascada's compiler must underst
 
 This contract is formed by three keywords:
 
-*   **`extern`**: Used in the *called* script (the one being included or imported). It declares which variables it **expects** to receive from a parent scope. It is a declaration of need.
+*   **`extern`**: Used in the *called* script (the one being included or imported). It declares which variables it **expects** to receive from a parent script. It is a declaration of need.
     ```cascada
     // in component.script
     extern user, theme // Declares that this script needs 'user' and 'theme'
@@ -1629,8 +1829,8 @@ Cascada is a new project and is evolving quickly! This is exciting, but it also 
 This roadmap outlines key features and enhancements that are planned or currently in progress.
 
 
--   **Resilient Error Handling (`try`/`resume`/`except`)**
-    Introducing a powerful error-handling construct designed for asynchronous workflows. This will allow for conditional retries and graceful failure management, essential for building reliable data pipelines.
+-   **Resilient Error Handling: An Error is Just Data**
+    Introducing a powerful error-handling construct designed for asynchronous workflows. This will allow for conditional retries and graceful failure management.
 
 -   **Declaring Cross-Script Dependencies for (`import`, `include`, `extends`)**
     Support declaring variable dependencies wtih the `extern`, `reads`, and `modifies` keywords.
