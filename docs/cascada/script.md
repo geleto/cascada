@@ -1823,7 +1823,7 @@ This roadmap outlines key features and enhancements that are planned or currentl
 
 
 -   **Resilient Error Handling: An Error is Just Data**
-    Introducing a powerful error-handling construct designed for asynchronous workflows. This will allow for conditional retries and graceful failure management.
+    Tne error-handling construct designed for asynchronous workflows. This will allow for conditional retries and graceful failure management.
 
 -   **Declaring Cross-Script Dependencies for (`import`, `include`, `extends`)**
     Support declaring variable dependencies wtih the `extern`, `reads`, and `modifies` keywords.
@@ -1846,14 +1846,17 @@ This roadmap outlines key features and enhancements that are planned or currentl
 -   **Expanded Built-in `@data` Methods**
     Adding comprehensive support for standard JavaScript array and string methods (e.g., `map`, `filter`, `slice`, `replace`) as first-class operations within the `@data` handler.
 
--   **Enhanced Error Reporting
-    Improving the debugging experience by providing detailed error messages that include code snippets, file names, and line/column numbers to pinpoint issues quickly.
+-   **Enhanced Error Reporting**
+    Improving the debugging experience by providing detailed syntax and runtime error messages that include code snippets, file names, and line/column numbers to pinpoint issues quickly.
 
 -   **Automated Dependency Declaration Tool**
     A command-line tool that analyzes modular scripts (import, include, extends) to infer cross-file variable dependencies. This tool will automatically add the required extern, reads, and modifies declarations to your script files.
 
 -   **Execution Replay and Debugging**
     Creating an advanced logging system, via a dedicated output handler, to capture the entire execution trace. This will allow developers to replay and inspect the sequence of operations and variable states for complex debugging.
+
+-   **OpenTelemetry and MLflow Integration for Observability**
+    Implementing native support for tracing using the OpenTelemetry standard. This will capture the inputs and outputs of scripts and templates, as well as the arguments and return values of individual function calls. This integration is designed for high-level observability, enabling developers to monitor data flow, analyze performance, and track costs (e.g., token usage in LLM calls) with platforms like MLflow's tracing system. It focuses on key I/O points rather than a complete execution trace.
 
 -   **Robustness and Concurrency Validation**
     Continuously expanding the test suite with a focus on complex, high-concurrency scenarios to formally verify the correctness and stability of the parallel.
