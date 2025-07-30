@@ -819,19 +819,32 @@ async function deepResolveObject(target) {
   return obj;
 }
 
+// @todo - instead of this - check for objects or properties created by cascada
+// we shall keep track of them, deep resolve has to be less intrusive
 function isPlainObject(value) {
+  // Basic checks for non-objects and null
   if (typeof value !== 'object' || value === null) {
     return false;
   }
 
-  // Check if it's the right type
-  if (Object.prototype.toString.call(value) !== '[object Object]') {
-    return false;
+  let proto = Object.getPrototypeOf(value);
+
+  // An object with no prototype (e.g., Object.create(null)) is plain.
+  if (proto === null) {
+    return true;
   }
 
-  // If it has no prototype (Object.create(null)), it's still a plain object
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === null || prototype === Object.prototype;
+  // Find the top-most prototype in the chain.
+  let baseProto = proto;
+  while (Object.getPrototypeOf(baseProto) !== null) {
+    baseProto = Object.getPrototypeOf(baseProto);
+  }
+
+  // If the top-most prototype is the one from our original object,
+  // it means it's a direct instance of Object.
+  // This check correctly identifies objects created via `{...}` or `new Object()`
+  // and excludes instances of any other class (e.g., new MyClass(), ReadableStream).
+  return baseProto === proto;
 }
 
 async function resolveObjectProperties(obj) {
@@ -1307,7 +1320,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars) {
 async function iterateAsyncParallel(arr, loopBody, loopVars) {
   let didIterate = false;
   // PARALLEL PATH
-  // This complex logic allows for `loop.length` and `loop.last` to work
+  // This logic allows for `loop.length` and `loop.last` to work
   // by resolving promises only after the entire iterator is consumed. This
   // only works when loop bodies are fired in parallel (sequential=false)
   const iterator = arr[Symbol.asyncIterator]();
@@ -1321,12 +1334,13 @@ async function iterateAsyncParallel(arr, loopBody, loopVars) {
 
   // This promise will be resolved with the total length when the loop is done.
   const lenPromise = new Promise(resolve => {
-    const values = [];
+    let length = 0;
     // This IIFE runs "in the background" to exhaust the iterator
     (async () => {
       try {
         while ((result = await iterator.next()), !result.done) {
-          values.push(result.value);
+          //values.push(result.value);
+          length++;
           didIterate = true;
           const value = result.value;
 
@@ -1359,7 +1373,7 @@ async function iterateAsyncParallel(arr, loopBody, loopVars) {
         }
 
         // The loop is done, so we now know the length.
-        resolve(values.length);
+        resolve(length);
       } catch (error) {
         if (lastPromiseResolve) {
           lastPromiseResolve(true); // Resolve on error to prevent deadlocks.
