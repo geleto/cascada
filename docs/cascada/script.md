@@ -453,7 +453,6 @@ var userId = 123
 var userProfile = { name: "Alice", email: "alice@example.com" }
 var userSettings = { notifications: true, theme: "light" }
 
-// @data.set: Sets or creates a value at a path
 @data.user.id = userId
 @data.user.name = userProfile.name
 
@@ -790,10 +789,13 @@ Paths in `@data` commands are highly flexible.
 *   **Root-Level Modification**: Use the `@data` handler directly to modify the root of the `data` object itself.
     ```javascript
     // Replaces the entire data object with a new one
-    @data.set({ status: "complete", timestamp: now() })
-
-    // Merges properties into the root data object
-    @data.merge({ version: "2.1" })
+    @data = { status: "complete", timestamp: now() }
+    ```
+    While it defaults to an object, you can also re-assign the root to a different type, such as an array or a string. After re-assignment, you can use methods appropriate for that type directly on `@data`.
+    ```javascript
+    // Re-assign the root to be an array before pushing to it.
+    @data = []
+    @data.push("first item")
     ```
 *   **Array Index Targeting**: Target specific array indices with square brackets. The empty bracket notation `[]` always refers to the last item added in the script's sequential order, **not** the most recently pushed item in terms of operation completion. Due to implicit concurrency, the order of completion can vary, but Cascada Script ensures consistency by following the script's logical sequence.
     ```javascript
@@ -973,7 +975,7 @@ It is crucial to understand the difference between these two features, as they s
 
 Macros allow you to define reusable chunks of logic that build and return structured data objects. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
 
-Macros implicitly return the structured object built by the [Output Commands](#the-handler-system-using--output-commands) (`@data =`, `@data.set`, `@data.push`, etc.) within their scope. An explicit `return` statement is not required, but if you include one, its value will override the implicitly built object.
+Macros implicitly return the structured object built by the [Output Commands](#the-handler-system-using--output-commands) (`@data =`, `@data.push`, etc.) within their scope. An explicit `return` statement is not required, but if you include one, its value will override the implicitly built object.
 
 ### Defining and Calling a Macro
 
