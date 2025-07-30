@@ -717,6 +717,35 @@
         );
       });
 
+      it('should correctly handle ReadableStream in a for loop', async () => {
+        const context = {
+          // This context function creates and returns a ReadableStream
+          // that asynchronously yields the numbers 1, 2, and 3.
+          getNumberStream() {
+            return new ReadableStream({
+              async start(controller) {
+                for (let i = 1; i <= 3; i++) {
+                  await delay(5);
+                  // Enqueue the value. Any JS value can be enqueued.
+                  controller.enqueue(i);
+                }
+                // Signal that the stream is finished.
+                controller.close();
+              }
+            });
+          }
+        };
+
+        // The template is identical in structure to the asyncGenerator test,
+        // but calls getNumberStream() instead.
+        const template = `{%- for num in getNumberStream() %} - Number {{ num }}{% else %}No numbers{% endfor %}`;
+
+        // The execution and assertion remain the same.
+        const result = await env.renderTemplateString(template, context);
+        expect(result.trim()).to.equal('- Number 1 - Number 2 - Number 3');
+      });
+
+
       it('should execute else block when async iterator is empty', async () => {
         const context = {
           async *emptyAsyncGenerator() {
