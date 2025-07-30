@@ -1095,11 +1095,12 @@ function memberLookup(obj, val) {
     return undefined;
   }
 
-  if (typeof obj[val] === 'function') {
-    return (...args) => obj[val](...args);
+  const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
+  if (typeof value === 'function') {
+    return (...args) => obj[val](...args);//use obj lookup so that 'this' binds correctly
   }
 
-  return obj[val];
+  return value;
 }
 
 function memberLookupScript(obj, val) {
@@ -1107,11 +1108,12 @@ function memberLookupScript(obj, val) {
     //unlike in template mode, in script mode we throw an exception 'Cannot read properties of null'
   }
 
-  if (typeof obj[val] === 'function') {
-    return (...args) => obj[val](...args);
+  const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
+  if (typeof value === 'function') {
+    return (...args) => obj[val](...args);//use obj lookup so that 'this' binds correctly
   }
 
-  return obj[val];
+  return value;
 }
 
 function memberLookupAsync(obj, val) {
