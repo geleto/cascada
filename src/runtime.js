@@ -1453,7 +1453,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loop
             await res;
           }
         } else {
-          throw new Error('Expected two variables for key/value iteration');
+          throw new Error(`Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`);
         }
       }
     }
