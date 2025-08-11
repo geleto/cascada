@@ -502,6 +502,8 @@ class AsyncEnvironment extends BaseEnvironment {
             throw new Error(`Template not found: ${template}`);
           }
           tmpl.render(ctx, callback);
+        }).catch(err => {
+          reject(err);
         });
       } else {
         // render template string

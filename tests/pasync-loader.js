@@ -31,6 +31,19 @@
       env = new AsyncEnvironment(loader);
     });
 
+    describe('Precompiled templates', () => {
+      it('Should fail to get a non-existent template', async () => {
+        try {
+          await env.getTemplate('non-existent.njk');
+          expect().fail('Expected an error to be thrown');
+        } catch (error) {
+          expect(error instanceof Error).to.equal(true);
+          expect(error.message).to.contain('Template not found');
+        }
+      });
+    });
+
+
     describe('Async Import Tests', () => {
       describe('Basic Import', () => {
         beforeEach(() => {
