@@ -650,7 +650,7 @@ const revisionGenerator = create.TextGenerator({
 }, baseConfig);
 
 // Define the orchestration script for the agent
-const contentAgent = create.ScriptRunner({
+const contentAgent = create.Script({
     context: {
       draftGenerator, critiqueGenerator, revisionGenerator,
       topic: "the future of AI-powered development",
