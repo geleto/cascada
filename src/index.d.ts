@@ -32,6 +32,9 @@ export function renderScriptString(src: string, callback: TemplateCallback<Recor
 export function renderScriptString(src: string, context: object, callback?: TemplateCallback<Record<string, any> | string | null>): void;
 export function renderScriptStringAsync(src: string, context?: object): Promise<Record<string, any> | string | null>;
 
+export function loadString(key: string, loader: ILoaderAny | ILoaderAny[]): Promise<string>;
+export function clearStringCache(loader: ILoaderAny, key?: string): void;
+
 /** @deprecated Use compileTemplate instead */
 export function compile(src: string, env?: Environment, path?: string, eagerCompile?: boolean): Template;
 

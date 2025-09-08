@@ -11,6 +11,7 @@ const lexer = require('./lexer');
 const runtime = require('./runtime');
 const nodes = require('./nodes');
 const installJinjaCompat = require('./jinja-compat');
+const loaderUtils = require('./loader-utils');
 
 // A single instance of an environment, since this is so commonly used
 let e;
@@ -183,4 +184,6 @@ module.exports = {
   precompileTemplateStringAsync: (precompile) ? precompile.precompileTemplateStringAsync : undefined,
   precompileScriptAsync: (precompile) ? precompile.precompileScriptAsync : undefined,
   precompileScriptStringAsync: (precompile) ? precompile.precompileScriptStringAsync : undefined,
+  loadString: loaderUtils.loadString,
+  clearStringCache: loaderUtils.clearStringCache,
 };

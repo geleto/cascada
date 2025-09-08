@@ -9,6 +9,7 @@ import * as lexer from './lexer.js';
 import * as runtime from './runtime.js';
 import * as nodes from './nodes.js';
 import installJinjaCompat from './jinja-compat.js';
+import * as loaderUtils from './loader-utils.js';
 
 // A single instance of an environment, since this is so commonly used
 let e;
@@ -213,6 +214,8 @@ export function renderScriptStringAsync(src, ctx) {
   return asyncE.renderScriptString(src, ctx);
 }
 
+export const { loadString, clearStringCache } = loaderUtils;
+
 // Default export
 export default {
   Environment,
@@ -259,5 +262,7 @@ export default {
   precompileScript,
   precompileScriptString,
   precompileScriptAsync,
-  precompileScriptStringAsync
+  precompileScriptStringAsync,
+  loadString: loaderUtils.loadString,
+  clearStringCache: loaderUtils.clearStringCache
 };

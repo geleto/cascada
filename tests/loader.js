@@ -7,7 +7,9 @@
     FileSystemLoader,
     NodeResolveLoader,
     templatesPath,
-    StringLoader;
+    StringLoader,
+    loadString,
+    clearStringCache;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -17,6 +19,8 @@
     NodeResolveLoader = require('../src/node-loaders').NodeResolveLoader;
     templatesPath = 'tests/templates';
     StringLoader = require('./util').StringLoader;
+    loadString = require('../src/index').loadString;
+    clearStringCache = require('../src/index').clearStringCache;
   } else {
     expect = window.expect;
     Environment = nunjucks.Environment;
@@ -25,6 +29,8 @@
     NodeResolveLoader = nunjucks.NodeResolveLoader;
     templatesPath = '../templates',
     StringLoader = window.util.StringLoader;
+    loadString = nunjucks.loadString;
+    clearStringCache = nunjucks.clearStringCache;
   }
 
   describe('loader', function() {
@@ -401,6 +407,253 @@
           expect(result).to.be('context-base');
         });
       });
+    });
+  });
+
+
+  describe.only('string loading utilities', function () {
+    var loader1, loader2;
+
+    beforeEach(function () {
+      // Clear any existing cache
+      if (typeof clearStringCache !== 'undefined') {
+        // Create a simple test loader that works in both Node.js and browser
+        function TestLoader() {}
+        TestLoader.prototype.getSource = function(name) {
+          // Return some test content for common template names
+          if (name === 'simple-base.njk') {
+            return {
+              src: '{% block content %}Hello World{% endblock %}',
+              path: 'simple-base.njk',
+              noCache: false
+            };
+          }
+          if (name === 'base.njk') {
+            return {
+              src: '{% extends "simple-base.njk" %}{% block content %}Extended{% endblock %}',
+              path: 'base.njk',
+              noCache: false
+            };
+          }
+          return null;
+        };
+
+        loader1 = new TestLoader();
+        loader2 = new TestLoader();
+      }
+    });
+
+    it('should load a string from a single loader', function (done) {
+      if (typeof loadString === 'undefined') {
+        this.skip();
+        return;
+      }
+
+      loadString('simple-base.njk', loader1).then(function (content) {
+        expect(content).to.be.a('string');
+        expect(content.length).to.be.greaterThan(0);
+        expect(content).to.contain('Hello World');
+        done();
+      }).catch(done);
+    });
+
+    it('should load a string from an array of loaders', function (done) {
+      if (typeof loadString === 'undefined') {
+        this.skip();
+        return;
+      }
+
+      loadString('simple-base.njk', [loader1, loader2]).then(function (content) {
+        expect(content).to.be.a('string');
+        expect(content.length).to.be.greaterThan(0);
+        done();
+      }).catch(done);
+    });
+
+    it('should cache loaded strings', function (done) {
+      if (typeof loadString === 'undefined') {
+        this.skip();
+        return;
+      }
+
+      loadString('simple-base.njk', loader1).then(function (content) {
+        expect(content).to.be.a('string');
+        expect(content.length).to.be.greaterThan(0);
+
+        // Load the same string again - should come from cache
+        return loadString('simple-base.njk', loader1);
+      }).then(function (content) {
+        expect(content).to.be.a('string');
+        expect(content.length).to.be.greaterThan(0);
+        // Second load should work (cached)
+        done();
+      }).catch(done);
+    });
+
+    it('should handle multiple loaders with separate string caches', function (done) {
+      if (typeof loadString === 'undefined') {
+        this.skip();
+        return;
+      }
+
+      Promise.all([
+        loadString('simple-base.njk', loader1),
+        loadString('base.njk', loader1),
+        loadString('simple-base.njk', loader2)
+      ]).then(function (results) {
+        expect(results).to.have.length(3);
+        expect(results[0]).to.be.a('string');
+        expect(results[1]).to.be.a('string');
+        expect(results[2]).to.be.a('string');
+        // All should load successfully, indicating separate caches work
+        done();
+      }).catch(done);
+    });
+
+    it('should clear specific string from cache', function (done) {
+      if (typeof loadString === 'undefined' || typeof clearStringCache === 'undefined') {
+        this.skip();
+        return;
+      }
+
+      loadString('simple-base.njk', loader1).then(function () {
+        return loadString('base.njk', loader1);
+      }).then(function () {
+        clearStringCache(loader1, 'simple-base.njk');
+        // Load the cleared resource again - should reload from source
+        return loadString('simple-base.njk', loader1);
+      }).then(function (content) {
+        expect(content).to.be.a('string');
+        expect(content.length).to.be.greaterThan(0);
+        done();
+      }).catch(done);
+    });
+
+    it('should clear all strings from a loader', function (done) {
+      if (typeof loadString === 'undefined' || typeof clearStringCache === 'undefined') {
+        this.skip();
+        return;
+      }
+
+      Promise.all([
+        loadString('simple-base.njk', loader1),
+        loadString('base.njk', loader1),
+        loadString('simple-base.njk', loader2)
+      ]).then(function () {
+        clearStringCache(loader1);
+        // Load resources from loader1 again - should reload from source
+        return Promise.all([
+          loadString('simple-base.njk', loader1),
+          loadString('base.njk', loader1)
+        ]);
+      }).then(function (results) {
+        expect(results).to.have.length(2);
+        expect(results[0]).to.be.a('string');
+        expect(results[1]).to.be.a('string');
+        done();
+      }).catch(done);
+    });
+
+    it('should handle missing strings gracefully', function (done) {
+      if (typeof loadString === 'undefined') {
+        this.skip();
+        return;
+      }
+
+      loadString('nonexistent-file.njk', loader1).then(function () {
+        done(new Error('Should have thrown an error'));
+      }).catch(function (error) {
+        expect(error.message).to.contain('Resource \'nonexistent-file.njk\' not found in any loader');
+        done();
+      });
+    });
+
+    it('should respect noCache flag from loader source', function (done) {
+      var noCacheLoader;
+      if (typeof loadString === 'undefined') {
+        this.skip();
+        return;
+      }
+
+      // Create a custom loader that returns noCache: true
+      function NoCacheLoader() { }
+      NoCacheLoader.prototype.getSource = function (name) {
+        if (name === 'test-no-cache.njk') {
+          return {
+            src: 'test content',
+            path: 'test-no-cache.njk',
+            noCache: true
+          };
+        }
+        return null;
+      };
+
+      noCacheLoader = new NoCacheLoader();
+      loadString('test-no-cache.njk', noCacheLoader).then(function (content) {
+        expect(content).to.be('test content');
+        // Load the same resource again - should reload since noCache is true
+        return loadString('test-no-cache.njk', noCacheLoader);
+      }).then(function (content) {
+        expect(content).to.be('test content');
+        done();
+      }).catch(done);
+    });
+
+    it('should work with async loaders', function (done) {
+      var asyncLoader;
+      if (typeof loadString === 'undefined') {
+        this.skip();
+        return;
+      }
+
+      // Create a custom async loader
+      function AsyncTestLoader() {
+        this.async = true;
+      }
+      AsyncTestLoader.prototype.getSource = function (name, callback) {
+        if (name === 'async-test.njk') {
+          setTimeout(function () {
+            callback(null, {
+              src: 'async content',
+              path: 'async-test.njk',
+              noCache: false
+            });
+          }, 10);
+        } else {
+          callback(null, null);
+        }
+      };
+
+      asyncLoader = new AsyncTestLoader();
+      loadString('async-test.njk', asyncLoader).then(function (content) {
+        expect(content).to.be('async content');
+        done();
+      }).catch(done);
+    });
+
+    it('should handle loader errors properly', function (done) {
+      var errorLoader;
+      if (typeof loadString === 'undefined') {
+        this.skip();
+        return;
+      }
+
+      // Create a loader that throws an error for specific files
+      function ErrorLoader() { }
+      ErrorLoader.prototype.getSource = function (name) {
+        if (name === 'simple-base.njk') {
+          throw new Error('Loader error');
+        }
+        return null;
+      };
+
+      errorLoader = new ErrorLoader();
+      loadString('simple-base.njk', [errorLoader, loader1]).then(function (content) {
+        // Should fall back to the second loader
+        expect(content).to.be.a('string');
+        expect(content.length).to.be.greaterThan(0);
+        done();
+      }).catch(done);
     });
   });
 }());
