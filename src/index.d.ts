@@ -275,12 +275,12 @@ export function reset(): void;
 export type LoaderFunction = (name: string) => Promise<string> | string;
 
 /** The new class-based loader interface */
-export interface BaseLoader {
+export interface LoaderInterface {
   load(name: string): Promise<string> | string;
 }
 
 /** A synchronous or an asynchronous loader. */
-export type ILoaderAny = ILoader | ILoaderAsync | WebLoader | LoaderFunction | BaseLoader;
+export type ILoaderAny = ILoader | ILoaderAsync | WebLoader | LoaderFunction | LoaderInterface;
 // WebLoader is part of the union because it can be both sync or async depending
 // on its constructor arguments, which possibly could only be known on runtime.
 

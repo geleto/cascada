@@ -722,7 +722,7 @@
       });
     });
 
-    describe('Class-based Loaders (BaseLoader)', function() {
+    describe('Class-based Loaders (LoaderInterface)', function() {
       it('should work with synchronous class loader', function() {
         var env, template;
 
