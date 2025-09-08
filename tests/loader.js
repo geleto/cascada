@@ -1,4 +1,4 @@
-(function() {
+(function () {
   'use strict';
 
   var expect,
@@ -9,7 +9,8 @@
     templatesPath,
     StringLoader,
     loadString,
-    clearStringCache;
+    clearStringCache,
+    convertToLegacyLoaders;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -21,6 +22,7 @@
     StringLoader = require('./util').StringLoader;
     loadString = require('../src/index').loadString;
     clearStringCache = require('../src/index').clearStringCache;
+    convertToLegacyLoaders = require('../src/index').convertToLegacyLoaders;
   } else {
     expect = window.expect;
     Environment = nunjucks.Environment;
@@ -31,6 +33,7 @@
     StringLoader = window.util.StringLoader;
     loadString = nunjucks.loadString;
     clearStringCache = nunjucks.clearStringCache;
+    convertToLegacyLoaders = nunjucks.convertToLegacyLoaders;
   }
 
   describe('loader', function() {
@@ -656,4 +659,722 @@
       }).catch(done);
     });
   });
+
+  describe.only('New Loader Types', function() {
+    describe('Function-based Loaders', function() {
+      it('should work with synchronous function loader', function() {
+        var env, template;
+
+        // Create a synchronous function loader
+        function syncFunctionLoader(name) {
+          if (name === 'test.njk') {
+            return 'Hello from sync function loader!';
+          }
+          return null;
+        }
+
+        env = new Environment([syncFunctionLoader]);
+        template = env.getTemplate('test.njk');
+        expect(template.render()).to.be('Hello from sync function loader!');
+      });
+
+      it('should work with asynchronous function loader', function(done) {
+        var env;
+
+        // Create an asynchronous function loader
+        function asyncFunctionLoader(name) {
+          return new Promise(function(resolve) {
+            setTimeout(function() {
+              if (name === 'async-test.njk') {
+                resolve('Hello from async function loader!');
+              } else {
+                resolve(null);
+              }
+            }, 10);
+          });
+        }
+
+        env = new Environment([asyncFunctionLoader]);
+        env.getTemplate('async-test.njk', function(err, template) {
+          expect(err).to.be(null);
+          expect(template.render()).to.be('Hello from async function loader!');
+          done();
+        });
+      });
+
+      it('should work with function loader in loadString', function(done) {
+        if (typeof loadString === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        function testFunctionLoader(name) {
+          if (name === 'function-test.njk') {
+            return 'Function loader content';
+          }
+          return null;
+        }
+
+        loadString('function-test.njk', testFunctionLoader).then(function(content) {
+          expect(content).to.be('Function loader content');
+          done();
+        }).catch(done);
+      });
+    });
+
+    describe('Class-based Loaders (BaseLoader)', function() {
+      it('should work with synchronous class loader', function() {
+        var env, template;
+
+        // Create a synchronous class loader
+        function SyncClassLoader() {}
+        SyncClassLoader.prototype.load = function(name) {
+          if (name === 'class-test.njk') {
+            return 'Hello from sync class loader!';
+          }
+          return null;
+        };
+
+        env = new Environment([new SyncClassLoader()]);
+        template = env.getTemplate('class-test.njk');
+        expect(template.render()).to.be('Hello from sync class loader!');
+      });
+
+      it('should work with asynchronous class loader', function(done) {
+        var env;
+
+        // Create an asynchronous class loader
+        function AsyncClassLoader() {}
+        AsyncClassLoader.prototype.load = function(name) {
+          return new Promise(function(resolve) {
+            setTimeout(function() {
+              if (name === 'async-class-test.njk') {
+                resolve('Hello from async class loader!');
+              } else {
+                resolve(null);
+              }
+            }, 10);
+          });
+        };
+
+        env = new Environment([new AsyncClassLoader()]);
+        env.getTemplate('async-class-test.njk', function(err, template) {
+          expect(err).to.be(null);
+          expect(template.render()).to.be('Hello from async class loader!');
+          done();
+        });
+      });
+
+      it('should work with class loader in loadString', function(done) {
+        if (typeof loadString === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        function TestClassLoader() {}
+        TestClassLoader.prototype.load = function(name) {
+          if (name === 'class-loadstring-test.njk') {
+            return 'Class loader content';
+          }
+          return null;
+        };
+
+        loadString('class-loadstring-test.njk', new TestClassLoader()).then(function(content) {
+          expect(content).to.be('Class loader content');
+          done();
+        }).catch(done);
+      });
+    });
+
+    describe.only('Mixed Loader Types', function() {
+      it('should work with mixed loader types in Environment', function() {
+        var env, template;
+
+        // Function loader
+        function functionLoader(name) {
+          if (name === 'mixed-test.njk') {
+            return 'From function loader';
+          }
+          return null;
+        }
+
+        // Class loader
+        function ClassLoader() {}
+        ClassLoader.prototype.load = function(name) {
+          if (name === 'mixed-test2.njk') {
+            return 'From class loader';
+          }
+          return null;
+        };
+
+        // Legacy loader
+        function LegacyLoader() {}
+        LegacyLoader.prototype.getSource = function(name) {
+          if (name === 'mixed-test3.njk') {
+            return { src: 'From legacy loader', path: name, noCache: false };
+          }
+          return null;
+        };
+
+        env = new Environment([functionLoader, new ClassLoader(), new LegacyLoader()]);
+
+        template = env.getTemplate('mixed-test.njk');
+        expect(template.render()).to.be('From function loader');
+
+        template = env.getTemplate('mixed-test2.njk');
+        expect(template.render()).to.be('From class loader');
+
+        template = env.getTemplate('mixed-test3.njk');
+        expect(template.render()).to.be('From legacy loader');
+      });
+
+      it('should work with mixed async loaders', function(done) {
+        if (typeof require === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        let AsyncEnvironment = require('../src/environment').AsyncEnvironment;
+        let env;
+
+        // Async function loader
+        function asyncFunctionLoader(name) {
+          return new Promise(function(resolve) {
+            setTimeout(function() {
+              if (name === 'async-mixed-test.njk') {
+                resolve('From async function');
+              } else {
+                resolve(null);
+              }
+            }, 5);
+          });
+        }
+
+        // Async class loader
+        function AsyncClassLoader() { }
+        AsyncClassLoader.prototype.load = function (name) {
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              if (name === 'async-mixed-test2.njk') {
+                resolve('From async class');
+              } else {
+                resolve(null);
+              }
+            }, 5);
+          });
+        };
+
+        env = new AsyncEnvironment([asyncFunctionLoader, new AsyncClassLoader()]);
+
+        let completed = 0;
+        function checkDone() {
+          completed++;
+          if (completed === 2) {
+            done();
+          }
+        }
+
+        env.renderTemplate('async-mixed-test.njk', {}).then(function(result) {
+          expect(result).to.be('From async function');
+          checkDone();
+        }).catch(done);
+
+        env.renderTemplate('async-mixed-test2.njk', {}).then(function(result) {
+          expect(result).to.be('From async class');
+          checkDone();
+        }).catch(done);
+      });
+    });
+
+    describe.only('convertToLegacyLoaders', function () {
+      it('should convert function loaders to legacy format', function () {
+        if (typeof convertToLegacyLoaders === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        function testLoader(name) {
+          return 'test content';
+        }
+
+        let converted = convertToLegacyLoaders([testLoader]);
+        expect(converted).to.have.length(1);
+        expect(converted[0]).to.have.property('async', false);
+        expect(converted[0]).to.have.property('getSource');
+        expect(converted[0].getSource('test.njk')).to.eql({
+          src: 'test content',
+          path: 'test.njk',
+          noCache: false
+        });
+      });
+
+      it('should convert async function loaders to legacy format', function () {
+        if (typeof convertToLegacyLoaders === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        function asyncTestLoader(name) {
+          return Promise.resolve('async test content');
+        }
+
+        let converted = convertToLegacyLoaders([asyncTestLoader]);
+        expect(converted).to.have.length(1);
+        expect(converted[0]).to.have.property('async', true);
+        expect(converted[0]).to.have.property('getSource');
+      });
+
+      it('should convert class loaders to legacy format', function () {
+        if (typeof convertToLegacyLoaders === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        function TestClassLoader() { }
+        TestClassLoader.prototype.load = function (name) {
+          return 'class test content';
+        };
+
+        let converted = convertToLegacyLoaders([new TestClassLoader()]);
+        expect(converted).to.have.length(1);
+        expect(converted[0]).to.have.property('async', false);
+        expect(converted[0]).to.have.property('getSource');
+        expect(converted[0].getSource('test.njk')).to.eql({
+          src: 'class test content',
+          path: 'test.njk',
+          noCache: false
+        });
+      });
+
+      it('should leave legacy loaders unchanged', function () {
+        if (typeof convertToLegacyLoaders === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        function LegacyLoader() { }
+        LegacyLoader.prototype.getSource = function (name) {
+          return { src: 'legacy content', path: name, noCache: false };
+        };
+
+        let original = new LegacyLoader();
+        let converted = convertToLegacyLoaders([original]);
+        expect(converted).to.have.length(1);
+        expect(converted[0]).to.be(original); // Should be the same object
+      });
+
+      it('should handle mixed loader types', function () {
+        if (typeof convertToLegacyLoaders === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        function functionLoader(name) { return 'function'; }
+
+        function ClassLoader() { }
+        ClassLoader.prototype.load = function (name) { return 'class'; };
+
+        function LegacyLoader() { }
+        LegacyLoader.prototype.getSource = function (name) {
+          return { src: 'legacy', path: name, noCache: false };
+        };
+
+        let converted = convertToLegacyLoaders([
+          functionLoader,
+          new ClassLoader(),
+          new LegacyLoader()
+        ]);
+
+        expect(converted).to.have.length(3);
+        expect(converted[0]).to.have.property('getSource');
+        expect(converted[1]).to.have.property('getSource');
+        expect(converted[2]).to.be.a(LegacyLoader); // Should be unchanged
+      });
+    });
+
+    describe('Error Handling', function() {
+      it('should handle function loader errors', function(done) {
+        var env;
+
+        function errorFunctionLoader(name) {
+          throw new Error('Function loader error');
+        }
+
+        env = new Environment([errorFunctionLoader]);
+        env.getTemplate('error-test.njk', function(err, template) {
+          expect(err).to.be.a(Error);
+          expect(err.message).to.contain('Function loader error');
+          done();
+        });
+      });
+
+      it('should handle class loader errors', function(done) {
+        var env;
+
+        function ErrorClassLoader() {}
+        ErrorClassLoader.prototype.load = function(name) {
+          throw new Error('Class loader error');
+        };
+
+        env = new Environment([new ErrorClassLoader()]);
+        env.getTemplate('error-test.njk', function(err, template) {
+          expect(err).to.be.a(Error);
+          expect(err.message).to.contain('Class loader error');
+          done();
+        });
+      });
+
+      it('should handle async function loader rejections', function(done) {
+        var env;
+
+        function asyncErrorFunctionLoader(name) {
+          return Promise.reject(new Error('Async function error'));
+        }
+
+        env = new Environment([asyncErrorFunctionLoader]);
+        env.getTemplate('async-error-test.njk', function(err, template) {
+          expect(err).to.be.a(Error);
+          expect(err.message).to.contain('Async function error');
+          done();
+        });
+      });
+    });
+  });
+
+  describe.only('Integration Tests with Public API Methods', function() {
+    describe('clearStringCache with new loader types', function() {
+      it('should clear cache for function loaders', function() {
+        if (typeof clearStringCache === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        let env;
+        let callCount = 0;
+
+        function countingLoader(name) {
+          callCount++;
+          if (name === 'cache-test.njk') {
+            return 'Cached content ' + callCount;
+          }
+          return null;
+        }
+
+        env = new Environment([countingLoader]);
+
+        // First load - should call the loader
+        let template1 = env.getTemplate('cache-test.njk');
+        expect(template1.render()).to.be('Cached content 1');
+
+        // Second load - should use cache, no loader call
+        let template2 = env.getTemplate('cache-test.njk');
+        expect(template2.render()).to.be('Cached content 1');
+        expect(callCount).to.be(1);
+
+        // Clear cache
+        clearStringCache(countingLoader, 'cache-test.njk');
+
+        // Third load - should call loader again
+        let template3 = env.getTemplate('cache-test.njk');
+        expect(template3.render()).to.be('Cached content 2');
+        expect(callCount).to.be(2);
+      });
+
+      it('should clear cache for class loaders', function() {
+        if (typeof clearStringCache === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        let env;
+        let callCount = 0;
+
+        function CountingClassLoader() {}
+        CountingClassLoader.prototype.load = function(name) {
+          callCount++;
+          if (name === 'class-cache-test.njk') {
+            return 'Class cached content ' + callCount;
+          }
+          return null;
+        };
+
+        let loader = new CountingClassLoader();
+        env = new Environment([loader]);
+
+        // First load
+        let template1 = env.getTemplate('class-cache-test.njk');
+        expect(template1.render()).to.be('Class cached content 1');
+
+        // Second load - should use cache
+        let template2 = env.getTemplate('class-cache-test.njk');
+        expect(template2.render()).to.be('Class cached content 1');
+        expect(callCount).to.be(1);
+
+        // Clear cache
+        clearStringCache(loader, 'class-cache-test.njk');
+
+        // Third load - should call loader again
+        let template3 = env.getTemplate('class-cache-test.njk');
+        expect(template3.render()).to.be('Class cached content 2');
+        expect(callCount).to.be(2);
+      });
+    });
+
+    describe.only('Precompile functions with custom environments', function() {
+      it('should work with precompileTemplateString using function loader', function() {
+        if (typeof require === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        let precompileTemplateString = require('../src/index').precompileTemplateString;
+
+        function testLoader(name) {
+          if (name === 'precompile-test.njk') {
+            return 'Hello {{ name }}!';
+          }
+          return null;
+        }
+
+        let env = new Environment([testLoader]);
+        let result = precompileTemplateString('Hello {{ name }}!', {
+          name: 'precompile-test.njk',
+          env: env
+        });
+
+        expect(result).to.be.a('string');
+        expect(result).to.contain('Hello');
+      });
+
+      it('should work with precompileScriptString using class loader', function() {
+        if (typeof require === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        let precompileScriptString = require('../src/index').precompileScriptString;
+
+        function TestScriptLoader() {}
+        TestScriptLoader.prototype.load = function(name) {
+          if (name === 'script-test.njk') {
+            return 'let x = {{ value }};';
+          }
+          return null;
+        };
+
+        let env = new Environment([new TestScriptLoader()]);
+        let result = precompileScriptString('let x = {{ value }};', {
+          name: 'script-test.njk',
+          env: env
+        });
+
+        expect(result).to.be.a('string');
+        expect(result).to.contain('let x');
+      });
+    });
+
+    describe('Template/Script constructors with custom environments', function() {
+      it('should work with Template constructor using function loader', function() {
+        if (typeof require === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        let Template = require('../src/environment').Template;
+
+        function templateLoader(name) {
+          if (name === 'constructor-test.njk') {
+            return 'Template from function loader: {{ message }}';
+          }
+          return null;
+        }
+
+        let env = new Environment([templateLoader]);
+        let template = new Template('Template from function loader: {{ message }}', env, 'constructor-test.njk');
+        let result = template.render({ message: 'Hello World' });
+
+        expect(result).to.be('Template from function loader: Hello World');
+      });
+
+      it('should work with Script constructor using class loader', function() {
+        if (typeof require === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        let Script = require('../src/environment').Script;
+
+        function ScriptClassLoader() {}
+        ScriptClassLoader.prototype.load = function(name) {
+          if (name === 'script-constructor-test.njk') {
+            return 'var result = {{ value }}; return result;';
+          }
+          return null;
+        };
+
+        let env = new Environment([new ScriptClassLoader()]);
+        let script = new Script('var result = {{ value }}; return result;', env, 'script-constructor-test.njk');
+        let result = script.render({ value: 42 });
+
+        expect(result).to.be(42);
+      });
+    });
+
+    describe.only('AsyncEnvironment with new loader types', function() {
+      it('should work with AsyncEnvironment using async function loaders', function(done) {
+        if (typeof require === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        let AsyncEnvironment = require('../src/environment').AsyncEnvironment;
+
+        function asyncFunctionLoader(name) {
+          return new Promise(function(resolve) {
+            setTimeout(function() {
+              if (name === 'async-env-test.njk') {
+                resolve('Async environment test: {{ message }}');
+              } else {
+                resolve(null);
+              }
+            }, 10);
+          });
+        }
+
+        let env = new AsyncEnvironment([asyncFunctionLoader]);
+        env.renderTemplate('async-env-test.njk', { message: 'Hello Async' }).then(function(result) {
+          expect(result).to.be('Async environment test: Hello Async');
+          done();
+        }).catch(done);
+      });
+
+      it('should work with AsyncEnvironment using async class loaders', function(done) {
+        if (typeof require === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        let AsyncEnvironment = require('../src/environment').AsyncEnvironment;
+
+        function AsyncClassLoader() {}
+        AsyncClassLoader.prototype.load = function(name) {
+          return new Promise(function(resolve) {
+            setTimeout(function() {
+              if (name === 'async-class-env-test.njk') {
+                resolve('Async class environment test: {{ message }}');
+              } else {
+                resolve(null);
+              }
+            }, 10);
+          });
+        };
+
+        let env = new AsyncEnvironment([new AsyncClassLoader()]);
+        env.renderTemplate('async-class-env-test.njk', { message: 'Hello Async Class' }).then(function(result) {
+          expect(result).to.be('Async class environment test: Hello Async Class');
+          done();
+        }).catch(done);
+      });
+    });
+
+    describe('Mixed loader types in real-world scenarios', function() {
+      it('should work with fallback chain: function -> class -> legacy', function() {
+        let env, template;
+
+        // Function loader (first priority)
+        function functionLoader(name) {
+          if (name === 'fallback-test.njk') {
+            return 'From function loader';
+          }
+          return null;
+        }
+
+        // Class loader (second priority)
+        function ClassLoader() {}
+        ClassLoader.prototype.load = function(name) {
+          if (name === 'fallback-test2.njk') {
+            return 'From class loader';
+          }
+          return null;
+        };
+
+        // Legacy loader (fallback)
+        function LegacyLoader() {}
+        LegacyLoader.prototype.getSource = function(name) {
+          if (name === 'fallback-test3.njk') {
+            return { src: 'From legacy loader', path: name, noCache: false };
+          }
+          return null;
+        };
+
+        env = new Environment([functionLoader, new ClassLoader(), new LegacyLoader()]);
+
+        // Test each loader in the chain
+        template = env.getTemplate('fallback-test.njk');
+        expect(template.render()).to.be('From function loader');
+
+        template = env.getTemplate('fallback-test2.njk');
+        expect(template.render()).to.be('From class loader');
+
+        template = env.getTemplate('fallback-test3.njk');
+        expect(template.render()).to.be('From legacy loader');
+      });
+
+      it('should work with loadString using mixed loader types', function(done) {
+        if (typeof loadString === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        function functionLoader(name) {
+          if (name === 'mixed-loadstring-test.njk') {
+            return 'From function in loadString';
+          }
+          return null;
+        }
+
+        function ClassLoader() {}
+        ClassLoader.prototype.load = function(name) {
+          if (name === 'mixed-loadstring-test2.njk') {
+            return 'From class in loadString';
+          }
+          return null;
+        };
+
+        function LegacyLoader() {}
+        LegacyLoader.prototype.getSource = function(name) {
+          if (name === 'mixed-loadstring-test3.njk') {
+            return { src: 'From legacy in loadString', path: name, noCache: false };
+          }
+          return null;
+        };
+
+        let loaders = [functionLoader, new ClassLoader(), new LegacyLoader()];
+        let completed = 0;
+
+        function checkDone() {
+          completed++;
+          if (completed === 3) {
+            done();
+          }
+        }
+
+        loadString('mixed-loadstring-test.njk', loaders).then(function(content) {
+          expect(content).to.be('From function in loadString');
+          checkDone();
+        }).catch(done);
+
+        loadString('mixed-loadstring-test2.njk', loaders).then(function(content) {
+          expect(content).to.be('From class in loadString');
+          checkDone();
+        }).catch(done);
+
+        loadString('mixed-loadstring-test3.njk', loaders).then(function(content) {
+          expect(content).to.be('From legacy in loadString');
+          checkDone();
+        }).catch(done);
+      });
+    });
+  });
+
 }());

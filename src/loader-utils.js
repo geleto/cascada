@@ -11,8 +11,9 @@ const resourceCaches = new Map();
  */
 async function loadString(key, loader) {
   const loaders = Array.isArray(loader) ? loader : [loader];
+  const legacyLoaders = convertToLegacyLoaders(loaders);
 
-  for (const currentLoader of loaders) {
+  for (const currentLoader of legacyLoaders) {
     // Get or create resource cache for this loader
     if (!resourceCaches.has(currentLoader)) {
       resourceCaches.set(currentLoader, new Map());
@@ -81,8 +82,129 @@ function clearStringCache(loader, key) {
   }
 }
 
+/**
+ * Detects if a function is async by examining its string representation
+ * @param {Function} fn The function to check
+ * @returns {boolean} True if the function is async
+ * @private
+ */
+function isAsyncFunction(fn) {
+  if (typeof fn !== 'function') return false;
+
+  // Check if it's an async function by looking at the function string
+  const fnString = fn.toString();
+  return fnString.startsWith('async ') ||
+         fnString.includes('async function') ||
+         fnString.includes('return new Promise') ||
+         fnString.includes('Promise.resolve') ||
+         fnString.includes('Promise.reject');
+}
+
+/**
+ * Detects if a class method is async by examining its string representation
+ * @param {Object} obj The object/class instance
+ * @param {string} methodName The method name to check
+ * @returns {boolean} True if the method is async
+ * @private
+ */
+function isAsyncMethod(obj, methodName) {
+  if (!obj || typeof obj[methodName] !== 'function') return false;
+  return isAsyncFunction(obj[methodName]);
+}
+
+/**
+ * Converts modern loaders to legacy ILoader/ILoaderAsync interface
+ * @param {Array} loaders Array of loaders (can be mixed modern/legacy)
+ * @returns {Array} Array of loaders converted to legacy interface
+ * @private
+ */
+function convertToLegacyLoaders(loaders) {
+  return loaders.map(loader => {
+    // If it's already a legacy loader, return as-is
+    if (loader && typeof loader === 'object' && 'getSource' in loader) {
+      return loader;
+    }
+
+    // Function-based loader
+    if (typeof loader === 'function') {
+      const isAsync = isAsyncFunction(loader);
+
+      if (isAsync) {
+        // Convert to ILoaderAsync
+        return {
+          async: true,
+          getSource: (name, callback) => {
+            if (callback) {
+              // Callback version
+              loader(name)
+                .then(result => {
+                  callback(null, result ? { src: result, path: name, noCache: false } : null);
+                })
+                .catch(err => callback(err, null));
+            } else {
+              // Promise version
+              return loader(name).then((result) => {
+                return result ? { src: result, path: name, noCache: false } : null;
+              });
+            }
+          }
+        };
+      } else {
+        // Convert to ILoader (sync)
+        return {
+          async: false,
+          getSource: (name) => {
+            const result = loader(name);
+            return result ? { src: result, path: name, noCache: false } : null;
+          }
+        };
+      }
+    }
+
+    // Class-based loader with load method
+    if (loader && typeof loader === 'object' && typeof loader.load === 'function') {
+      const isAsync = isAsyncMethod(loader, 'load');
+
+      if (isAsync) {
+        // Convert to ILoaderAsync
+        return {
+          async: true,
+          getSource: (name, callback) => {
+            if (callback) {
+              // Callback version
+              loader.load(name)
+                .then(result => {
+                  callback(null, result ? { src: result, path: name, noCache: false } : null);
+                })
+                .catch(err => callback(err, null));
+            } else {
+              // Promise version
+              return loader.load(name).then((result) => {
+                return result ? { src: result, path: name, noCache: false } : null;
+              });
+            }
+          }
+        };
+      } else {
+        // Convert to ILoader (sync)
+        return {
+          async: false,
+          getSource: (name) => {
+            const result = loader.load(name);
+            return result ? { src: result, path: name, noCache: false } : null;
+          }
+        };
+      }
+    }
+
+    // If we can't convert it, return as-is (might be legacy or invalid)
+    return loader;
+  });
+}
+
 
 module.exports = {
   loadString,
-  clearStringCache
+  clearStringCache,
+  convertToLegacyLoaders
 };

@@ -14,6 +14,7 @@ const { handleError, Frame, AsyncFrame, AsyncState } = globalRuntime;
 const expressApp = require('./express-app');
 const scriptTranspiler = require('./script-transpiler');
 const DataHandler = require('./data-handler');
+const { convertToLegacyLoaders } = require('./loader-utils');
 
 // If the user is using the async API, *always* call it
 // asynchronously even if the template was synchronous.
@@ -85,7 +86,8 @@ class BaseEnvironment extends EmitterObj {
         this.loaders = [new WebLoader('/views')];
       }
     } else {
-      this.loaders = lib.isArray(loaders) ? loaders : [loaders];
+      const loaderArray = lib.isArray(loaders) ? loaders : [loaders];
+      this.loaders = convertToLegacyLoaders(loaderArray);
     }
 
     // It's easy to use precompiled templates: just include them

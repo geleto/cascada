@@ -271,8 +271,16 @@ export function installJinjaCompat(): void;
 
 export function reset(): void;
 
+/** The new function-based loader that returns Promise<string> | string */
+export type LoaderFunction = (name: string) => Promise<string> | string;
+
+/** The new class-based loader interface */
+export interface BaseLoader {
+  load(name: string): Promise<string> | string;
+}
+
 /** A synchronous or an asynchronous loader. */
-export type ILoaderAny = ILoader | ILoaderAsync | WebLoader;
+export type ILoaderAny = ILoader | ILoaderAsync | WebLoader | LoaderFunction | BaseLoader;
 // WebLoader is part of the union because it can be both sync or async depending
 // on its constructor arguments, which possibly could only be known on runtime.
 
