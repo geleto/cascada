@@ -32,25 +32,31 @@ function callbackAsap(cb, err, res) {
  */
 function callLoader(loader, name, callback) {
   let result;
-  // Function-based loader
-  if (typeof loader === 'function') {
-    result = loader(name);
-  }
-  // Object-based loader with load method
-  else if (loader && typeof loader === 'object' && typeof loader.load === 'function') {
-    result = loader.load(name);
-  }
-  // Legacy loader with getSource method
-  else if (loader && typeof loader === 'object' && typeof loader.getSource === 'function') {
-    // Check if it's async by looking at the .async property (legacy)
-    if (loader.async) {
-      loader.getSource(name, callback);
-      return;
-    } else {
-      result = loader.getSource(name);
+  try {
+    // Function-based loader
+    if (typeof loader === 'function') {
+      result = loader(name);
     }
-  } else {
-    callback(new Error('Invalid loader: must be a function, object with load method, or legacy loader with getSource method'), null);
+    // Object-based loader with load method
+    else if (loader && typeof loader === 'object' && typeof loader.load === 'function') {
+      result = loader.load(name);
+    }
+    // Legacy loader with getSource method
+    else if (loader && typeof loader === 'object' && typeof loader.getSource === 'function') {
+      // Check if it's async by looking at the .async property (legacy)
+      if (loader.async) {
+        loader.getSource(name, callback);
+        return;
+      } else {
+        result = loader.getSource(name);
+      }
+    } else {
+      callback(new Error('Invalid loader: must be a function, object with load method, or legacy loader with getSource method'), null);
+      return;
+    }
+  } catch (error) {
+    // Handle synchronous errors by passing them to the callback
+    callback(error, null);
     return;
   }
 
