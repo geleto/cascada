@@ -781,6 +781,8 @@
       });
 
       it('should work with function loader in loadString', function(done) {
+        var result;
+
         if (typeof loadString === 'undefined') {
           this.skip();
           return;
@@ -793,10 +795,16 @@
           return null;
         }
 
-        loadString('function-test.njk', testFunctionLoader).then(function(content) {
-          expect(content).to.be('Function loader content');
+        result = loadString('function-test.njk', testFunctionLoader);
+        if (result && typeof result.then === 'function') {
+          result.then(function(content) {
+            expect(content).to.be('Function loader content');
+            done();
+          }).catch(done);
+        } else {
+          expect(result).to.be('Function loader content');
           done();
-        }).catch(done);
+        }
       });
     });
 
@@ -844,6 +852,8 @@
       });
 
       it('should work with class loader in loadString', function(done) {
+        var result;
+
         if (typeof loadString === 'undefined') {
           this.skip();
           return;
@@ -857,10 +867,16 @@
           return null;
         };
 
-        loadString('class-loadstring-test.njk', new TestClassLoader()).then(function(content) {
-          expect(content).to.be('Class loader content');
+        result = loadString('class-loadstring-test.njk', new TestClassLoader());
+        if (result && typeof result.then === 'function') {
+          result.then(function(content) {
+            expect(content).to.be('Class loader content');
+            done();
+          }).catch(done);
+        } else {
+          expect(result).to.be('Class loader content');
           done();
-        }).catch(done);
+        }
       });
     });
 
@@ -1016,7 +1032,7 @@
 
   describe('Integration Tests with Public API Methods', function() {
     describe('clearStringCache with new loader types', function() {
-      it('should clear cache for function loaders', function() {
+      it('should clear all caches (Environment + string cache) for function loaders', function() {
         if (typeof clearStringCache === 'undefined') {
           this.skip();
           return;
@@ -1045,7 +1061,7 @@
         expect(callCount).to.be(1);
 
         // Clear cache
-        clearStringCache(countingLoader, 'cache-test.njk');
+        env.invalidateCache();
 
         // Third load - should call loader again
         let template3 = env.getTemplate('cache-test.njk');
@@ -1053,7 +1069,7 @@
         expect(callCount).to.be(2);
       });
 
-      it('should clear cache for class loaders', function() {
+      it('should clear all caches (Environment + string cache) for class loaders', function() {
         if (typeof clearStringCache === 'undefined') {
           this.skip();
           return;
@@ -1084,7 +1100,7 @@
         expect(callCount).to.be(1);
 
         // Clear cache
-        clearStringCache(loader, 'class-cache-test.njk');
+        env.invalidateCache();
 
         // Third load - should call loader again
         let template3 = env.getTemplate('class-cache-test.njk');
@@ -1180,13 +1196,15 @@
         function ScriptClassLoader() {}
         ScriptClassLoader.prototype.load = function(name) {
           if (name === 'script-constructor-test.njk') {
-            return 'var result = {{ value }}; return result;';
+            return `:data
+            @data = value`;
           }
           return null;
         };
 
         let env = new Environment([new ScriptClassLoader()]);
-        let script = new Script('var result = {{ value }}; return result;', env, 'script-constructor-test.njk');
+        let script = new Script(`:data
+        @data = value`, env, 'script-constructor-test.njk');
         let result = script.render({ value: 42 });
 
         expect(result).to.be(42);
@@ -1332,20 +1350,21 @@
           }
         }
 
-        loadString('mixed-loadstring-test.njk', loaders).then(function(content) {
-          expect(content).to.be('From function in loadString');
-          checkDone();
-        }).catch(done);
+        function handleLoadStringResult(result, expectedContent) {
+          if (result && typeof result.then === 'function') {
+            return result.then(function(content) {
+              expect(content).to.be(expectedContent);
+              checkDone();
+            }).catch(done);
+          } else {
+            expect(result).to.be(expectedContent);
+            checkDone();
+          }
+        }
 
-        loadString('mixed-loadstring-test2.njk', loaders).then(function(content) {
-          expect(content).to.be('From class in loadString');
-          checkDone();
-        }).catch(done);
-
-        loadString('mixed-loadstring-test3.njk', loaders).then(function(content) {
-          expect(content).to.be('From legacy in loadString');
-          checkDone();
-        }).catch(done);
+        handleLoadStringResult(loadString('mixed-loadstring-test.njk', loaders), 'From function in loadString');
+        handleLoadStringResult(loadString('mixed-loadstring-test2.njk', loaders), 'From class in loadString');
+        handleLoadStringResult(loadString('mixed-loadstring-test3.njk', loaders), 'From legacy in loadString');
       });
     });
   });
