@@ -14,7 +14,7 @@ const { handleError, Frame, AsyncFrame, AsyncState } = globalRuntime;
 const expressApp = require('./express-app');
 const scriptTranspiler = require('./script-transpiler');
 const DataHandler = require('./data-handler');
-const { convertToLegacyLoaders } = require('./loader-utils');
+const { isPromise } = require('./loader-utils');
 
 // If the user is using the async API, *always* call it
 // asynchronously even if the template was synchronous.
@@ -22,6 +22,63 @@ function callbackAsap(cb, err, res) {
   asap(() => {
     cb(err, res);
   });
+}
+
+/**
+ * Calls a loader and handles both sync and async cases
+ * @param {Object|Function} loader The loader to call
+ * @param {string} name The resource name to load
+ * @param {Function} callback The callback function (err, result)
+ */
+function callLoader(loader, name, callback) {
+  let result;
+  // Function-based loader
+  if (typeof loader === 'function') {
+    result = loader(name);
+  }
+  // Object-based loader with load method
+  else if (loader && typeof loader === 'object' && typeof loader.load === 'function') {
+    result = loader.load(name);
+  }
+  // Legacy loader with getSource method
+  else if (loader && typeof loader === 'object' && typeof loader.getSource === 'function') {
+    // Check if it's async by looking at the .async property (legacy)
+    if (loader.async) {
+      loader.getSource(name, callback);
+      return;
+    } else {
+      result = loader.getSource(name);
+    }
+  } else {
+    callback(new Error('Invalid loader: must be a function, object with load method, or legacy loader with getSource method'), null);
+    return;
+  }
+
+  // Check if result is a Promise
+  if (isPromise(result)) {
+    result
+      .then((content) => {
+        if (content) {
+          // Handle both {src: string} and string formats
+          const src = typeof content === 'string' ? { src: content, path: name, noCache: false } : content;
+          callback(null, src);
+        } else {
+          callback(null, null);
+        }
+      })
+      .catch((err) => {
+        callback(err, null);
+      });
+  } else {
+    // Synchronous result
+    if (result) {
+      // Handle both {src: string} and string formats
+      const src = typeof result === 'string' ? { src: result, path: name, noCache: false } : result;
+      callback(null, src);
+    } else {
+      callback(null, null);
+    }
+  }
 }
 
 /**
@@ -86,8 +143,7 @@ class BaseEnvironment extends EmitterObj {
         this.loaders = [new WebLoader('/views')];
       }
     } else {
-      const loaderArray = lib.isArray(loaders) ? loaders : [loaders];
-      this.loaders = convertToLegacyLoaders(loaderArray);
+      this.loaders = lib.isArray(loaders) ? loaders : [loaders];
     }
 
     // It's easy to use precompiled templates: just include them
@@ -329,11 +385,8 @@ class BaseEnvironment extends EmitterObj {
       // Resolve name relative to parentName
       name = that.resolveFromLoader(loader, parentName, name);
 
-      if (loader.async) {
-        loader.getSource(name, handle);
-      } else {
-        handle(null, loader.getSource(name));
-      }
+      // Use native loader support instead of checking .async property
+      callLoader(loader, name, handle);
     }, createTemplate);
 
     return syncResult;

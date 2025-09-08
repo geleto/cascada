@@ -9,8 +9,7 @@
     templatesPath,
     StringLoader,
     loadString,
-    clearStringCache,
-    convertToLegacyLoaders;
+    clearStringCache;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -22,7 +21,6 @@
     StringLoader = require('./util').StringLoader;
     loadString = require('../src/index').loadString;
     clearStringCache = require('../src/index').clearStringCache;
-    convertToLegacyLoaders = require('../src/index').convertToLegacyLoaders;
   } else {
     expect = window.expect;
     Environment = nunjucks.Environment;
@@ -33,7 +31,6 @@
     StringLoader = window.util.StringLoader;
     loadString = nunjucks.loadString;
     clearStringCache = nunjucks.clearStringCache;
-    convertToLegacyLoaders = nunjucks.convertToLegacyLoaders;
   }
 
   describe('loader', function() {
@@ -967,111 +964,6 @@
       });
     });
 
-    describe('convertToLegacyLoaders', function () {
-      it('should convert function loaders to legacy format', function () {
-        if (typeof convertToLegacyLoaders === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        function testLoader(name) {
-          return 'test content';
-        }
-
-        let converted = convertToLegacyLoaders([testLoader]);
-        expect(converted).to.have.length(1);
-        expect(converted[0]).to.have.property('async', false);
-        expect(converted[0]).to.have.property('getSource');
-        expect(converted[0].getSource('test.njk')).to.eql({
-          src: 'test content',
-          path: 'test.njk',
-          noCache: false
-        });
-      });
-
-      it('should convert async function loaders to legacy format', function () {
-        if (typeof convertToLegacyLoaders === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        function asyncTestLoader(name) {
-          return Promise.resolve('async test content');
-        }
-
-        let converted = convertToLegacyLoaders([asyncTestLoader]);
-        expect(converted).to.have.length(1);
-        expect(converted[0]).to.have.property('async', true);
-        expect(converted[0]).to.have.property('getSource');
-      });
-
-      it('should convert class loaders to legacy format', function () {
-        if (typeof convertToLegacyLoaders === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        function TestClassLoader() { }
-        TestClassLoader.prototype.load = function (name) {
-          return 'class test content';
-        };
-
-        let converted = convertToLegacyLoaders([new TestClassLoader()]);
-        expect(converted).to.have.length(1);
-        expect(converted[0]).to.have.property('async', false);
-        expect(converted[0]).to.have.property('getSource');
-        expect(converted[0].getSource('test.njk')).to.eql({
-          src: 'class test content',
-          path: 'test.njk',
-          noCache: false
-        });
-      });
-
-      it('should leave legacy loaders unchanged', function () {
-        if (typeof convertToLegacyLoaders === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        function LegacyLoader() { }
-        LegacyLoader.prototype.getSource = function (name) {
-          return { src: 'legacy content', path: name, noCache: false };
-        };
-
-        let original = new LegacyLoader();
-        let converted = convertToLegacyLoaders([original]);
-        expect(converted).to.have.length(1);
-        expect(converted[0]).to.be(original); // Should be the same object
-      });
-
-      it('should handle mixed loader types', function () {
-        if (typeof convertToLegacyLoaders === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        function functionLoader(name) { return 'function'; }
-
-        function ClassLoader() { }
-        ClassLoader.prototype.load = function (name) { return 'class'; };
-
-        function LegacyLoader() { }
-        LegacyLoader.prototype.getSource = function (name) {
-          return { src: 'legacy', path: name, noCache: false };
-        };
-
-        let converted = convertToLegacyLoaders([
-          functionLoader,
-          new ClassLoader(),
-          new LegacyLoader()
-        ]);
-
-        expect(converted).to.have.length(3);
-        expect(converted[0]).to.have.property('getSource');
-        expect(converted[1]).to.have.property('getSource');
-        expect(converted[2]).to.be.a(LegacyLoader); // Should be unchanged
-      });
-    });
 
     describe('Error Handling', function() {
       it('should handle function loader errors', function(done) {
