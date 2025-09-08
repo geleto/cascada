@@ -14,7 +14,7 @@ const { handleError, Frame, AsyncFrame, AsyncState } = globalRuntime;
 const expressApp = require('./express-app');
 const scriptTranspiler = require('./script-transpiler');
 const DataHandler = require('./data-handler');
-const { isPromise } = require('./loader-utils');
+const { isPromise, clearStringCache } = require('./loader-utils');
 
 // If the user is using the async API, *always* call it
 // asynchronously even if the template was synchronous.
@@ -187,6 +187,8 @@ class BaseEnvironment extends EmitterObj {
   invalidateCache() {
     this.loaders.forEach((loader) => {
       loader.cache = {};
+      // Also clear the string cache for this loader
+      clearStringCache(loader);
     });
   }
 
