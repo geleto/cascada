@@ -7,12 +7,84 @@ const resourceCaches = new Map();
  * Loads a string from the specified loader with caching.
  * @param {string} key The resource key/name to load
  * @param {ILoaderAny|ILoaderAny[]} loader The loader instance or array of loaders
- * @returns {Promise<string>} The loaded string content
+ * @returns {Promise<string>|string} The loaded string content - Promise for async loaders, string for sync loaders
  */
-async function loadString(key, loader) {
+function loadString(key, loader) {
   const loaders = Array.isArray(loader) ? loader : [loader];
   const legacyLoaders = convertToLegacyLoaders(loaders);
 
+  // First, try to load using only sync loaders
+  const syncLoaders = legacyLoaders.filter(l => !l.async);
+  if (syncLoaders.length > 0) {
+    try {
+      return loadStringSync(key, syncLoaders);
+    } catch (error) {
+      // If sync loaders fail, we'll fall through to try async loaders
+    }
+  }
+
+  // If no sync loaders or they all failed, check if we have async loaders
+  const hasAsyncLoader = legacyLoaders.some(l => l.async);
+  if (hasAsyncLoader) {
+    // If any loader is async, return a Promise
+    return loadStringAsync(key, legacyLoaders);
+  } else {
+    // If all loaders are sync but failed, throw the error
+    throw new Error(`Resource '${key}' not found in any loader`);
+  }
+}
+
+/**
+ * Synchronous version of loadString
+ * @param {string} key The resource key/name to load
+ * @param {Array} legacyLoaders Array of converted legacy loaders
+ * @returns {string} The loaded string content
+ * @private
+ */
+function loadStringSync(key, legacyLoaders) {
+  for (const currentLoader of legacyLoaders) {
+    // Get or create resource cache for this loader
+    if (!resourceCaches.has(currentLoader)) {
+      resourceCaches.set(currentLoader, new Map());
+    }
+    const loaderResourceCache = resourceCaches.get(currentLoader);
+
+    // Check if already cached
+    if (loaderResourceCache.has(key)) {
+      return loaderResourceCache.get(key);
+    }
+
+    try {
+      // Use Cascada's standard loader pattern (sync)
+      const result = currentLoader.getSource(key);
+
+      if (result) {
+        const content = result.src;
+        // Cache the content in our resource cache Map
+        if (!result.noCache) {
+          loaderResourceCache.set(key, content);
+        }
+        return content;
+      }
+      // If result is null/undefined, continue to next loader
+    } catch (error) {
+      // Try next loader on error
+      continue;
+    }
+  }
+
+  // No loader found the resource
+  throw new Error(`Resource '${key}' not found in any loader`);
+}
+
+/**
+ * Asynchronous version of loadString
+ * @param {string} key The resource key/name to load
+ * @param {Array} legacyLoaders Array of converted legacy loaders
+ * @returns {Promise<string>} The loaded string content
+ * @private
+ */
+async function loadStringAsync(key, legacyLoaders) {
   for (const currentLoader of legacyLoaders) {
     // Get or create resource cache for this loader
     if (!resourceCaches.has(currentLoader)) {
@@ -36,6 +108,7 @@ async function loadString(key, loader) {
           });
         });
       } else {
+        // For sync loaders in async context, we can still call them directly
         result = currentLoader.getSource(key);
       }
 
@@ -88,16 +161,24 @@ function clearStringCache(loader, key) {
  * @returns {boolean} True if the function is async
  * @private
  */
-function isAsyncFunction(fn) {
-  if (typeof fn !== 'function') return false;
 
-  // Check if it's an async function by looking at the function string
-  const fnString = fn.toString();
-  return fnString.startsWith('async ') ||
-         fnString.includes('async function') ||
-         fnString.includes('return new Promise') ||
-         fnString.includes('Promise.resolve') ||
-         fnString.includes('Promise.reject');
+function isAsyncFunction(fn) {
+  if (typeof fn !== 'function') {
+    return false;
+  }
+
+  // Method 1: Most reliable - Object.prototype.toString
+  if (Object.prototype.toString.call(fn) === '[object AsyncFunction]') {
+    return true;
+  }
+
+  // Method 2: Fallback - instanceof check
+  try {
+    const AsyncFunction = (async function() {}).constructor;
+    return fn instanceof AsyncFunction;
+  } catch {
+    return false;
+  }
 }
 
 /**

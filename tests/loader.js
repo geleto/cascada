@@ -414,8 +414,38 @@
   });
 
 
-  describe.only('string loading utilities', function () {
+  describe('string loading utilities', function () {
     var loader1, loader2;
+
+    // Helper function to handle both sync and async loadString results
+    function handleLoadStringResult(result, callback) {
+      if (result instanceof Promise) {
+        result.then(function(content) {
+          callback(null, content);
+        }).catch(function(error) {
+          callback(error, null);
+        });
+      } else {
+        try {
+          callback(null, result);
+        } catch (error) {
+          callback(error, null);
+        }
+      }
+    }
+
+    // Helper function to handle multiple loadString results
+    function handleMultipleLoadStringResults(results, callback) {
+      const promises = results.map(result => {
+        if (result instanceof Promise) {
+          return result;
+        } else {
+          return Promise.resolve(result);
+        }
+      });
+
+      Promise.all(promises).then(callback).catch(callback);
+    }
 
     beforeEach(function () {
       // Clear any existing cache
@@ -452,12 +482,15 @@
         return;
       }
 
-      loadString('simple-base.njk', loader1).then(function (content) {
+      const result = loadString('simple-base.njk', loader1);
+
+      handleLoadStringResult(result, function (err, content) {
+        if (err) return done(err);
         expect(content).to.be.a('string');
         expect(content.length).to.be.greaterThan(0);
         expect(content).to.contain('Hello World');
         done();
-      }).catch(done);
+      });
     });
 
     it('should load a string from an array of loaders', function (done) {
@@ -466,11 +499,14 @@
         return;
       }
 
-      loadString('simple-base.njk', [loader1, loader2]).then(function (content) {
+      const result = loadString('simple-base.njk', [loader1, loader2]);
+
+      handleLoadStringResult(result, function (err, content) {
+        if (err) return done(err);
         expect(content).to.be.a('string');
         expect(content.length).to.be.greaterThan(0);
         done();
-      }).catch(done);
+      });
     });
 
     it('should cache loaded strings', function (done) {
@@ -479,18 +515,23 @@
         return;
       }
 
-      loadString('simple-base.njk', loader1).then(function (content) {
+      const firstResult = loadString('simple-base.njk', loader1);
+
+      handleLoadStringResult(firstResult, function (err, content) {
+        if (err) return done(err);
         expect(content).to.be.a('string');
         expect(content.length).to.be.greaterThan(0);
 
         // Load the same string again - should come from cache
-        return loadString('simple-base.njk', loader1);
-      }).then(function (content) {
-        expect(content).to.be.a('string');
-        expect(content.length).to.be.greaterThan(0);
-        // Second load should work (cached)
-        done();
-      }).catch(done);
+        const secondResult = loadString('simple-base.njk', loader1);
+        handleLoadStringResult(secondResult, function (err2, content2) {
+          if (err2) return done(err2);
+          expect(content2).to.be.a('string');
+          expect(content2.length).to.be.greaterThan(0);
+          // Second load should work (cached)
+          done();
+        });
+      });
     });
 
     it('should handle multiple loaders with separate string caches', function (done) {
@@ -499,18 +540,20 @@
         return;
       }
 
-      Promise.all([
+      const results = [
         loadString('simple-base.njk', loader1),
         loadString('base.njk', loader1),
         loadString('simple-base.njk', loader2)
-      ]).then(function (results) {
-        expect(results).to.have.length(3);
-        expect(results[0]).to.be.a('string');
-        expect(results[1]).to.be.a('string');
-        expect(results[2]).to.be.a('string');
+      ];
+
+      handleMultipleLoadStringResults(results, function (resultsArray) {
+        expect(resultsArray).to.have.length(3);
+        expect(resultsArray[0]).to.be.a('string');
+        expect(resultsArray[1]).to.be.a('string');
+        expect(resultsArray[2]).to.be.a('string');
         // All should load successfully, indicating separate caches work
         done();
-      }).catch(done);
+      });
     });
 
     it('should clear specific string from cache', function (done) {
@@ -519,17 +562,26 @@
         return;
       }
 
-      loadString('simple-base.njk', loader1).then(function () {
-        return loadString('base.njk', loader1);
-      }).then(function () {
-        clearStringCache(loader1, 'simple-base.njk');
-        // Load the cleared resource again - should reload from source
-        return loadString('simple-base.njk', loader1);
-      }).then(function (content) {
-        expect(content).to.be.a('string');
-        expect(content.length).to.be.greaterThan(0);
-        done();
-      }).catch(done);
+      const firstResult = loadString('simple-base.njk', loader1);
+
+      handleLoadStringResult(firstResult, function (err) {
+        if (err) return done(err);
+
+        const secondResult = loadString('base.njk', loader1);
+        handleLoadStringResult(secondResult, function (err2) {
+          if (err2) return done(err2);
+
+          clearStringCache(loader1, 'simple-base.njk');
+          // Load the cleared resource again - should reload from source
+          const thirdResult = loadString('simple-base.njk', loader1);
+          handleLoadStringResult(thirdResult, function (err3, content) {
+            if (err3) return done(err3);
+            expect(content).to.be.a('string');
+            expect(content.length).to.be.greaterThan(0);
+            done();
+          });
+        });
+      });
     });
 
     it('should clear all strings from a loader', function (done) {
@@ -538,23 +590,27 @@
         return;
       }
 
-      Promise.all([
+      const initialResults = [
         loadString('simple-base.njk', loader1),
         loadString('base.njk', loader1),
         loadString('simple-base.njk', loader2)
-      ]).then(function () {
+      ];
+
+      handleMultipleLoadStringResults(initialResults, function () {
         clearStringCache(loader1);
         // Load resources from loader1 again - should reload from source
-        return Promise.all([
+        const reloadResults = [
           loadString('simple-base.njk', loader1),
           loadString('base.njk', loader1)
-        ]);
-      }).then(function (results) {
-        expect(results).to.have.length(2);
-        expect(results[0]).to.be.a('string');
-        expect(results[1]).to.be.a('string');
-        done();
-      }).catch(done);
+        ];
+
+        handleMultipleLoadStringResults(reloadResults, function (results) {
+          expect(results).to.have.length(2);
+          expect(results[0]).to.be.a('string');
+          expect(results[1]).to.be.a('string');
+          done();
+        });
+      });
     });
 
     it('should handle missing strings gracefully', function (done) {
@@ -563,12 +619,26 @@
         return;
       }
 
-      loadString('nonexistent-file.njk', loader1).then(function () {
-        done(new Error('Should have thrown an error'));
-      }).catch(function (error) {
+      try {
+        const result = loadString('nonexistent-file.njk', loader1);
+        // If we get here, it's either a Promise (async) or a successful result (sync)
+        if (result instanceof Promise) {
+          // Async case - handle with Promise
+          result.then(function() {
+            done(new Error('Should have thrown an error'));
+          }).catch(function(err) {
+            expect(err.message).to.contain('Resource \'nonexistent-file.njk\' not found in any loader');
+            done();
+          });
+        } else {
+          // Sync case - if we got a result, it means no error was thrown
+          done(new Error('Should have thrown an error'));
+        }
+      } catch (error) {
+        // Sync case - error was thrown synchronously
         expect(error.message).to.contain('Resource \'nonexistent-file.njk\' not found in any loader');
         done();
-      });
+      }
     });
 
     it('should respect noCache flag from loader source', function (done) {
@@ -592,14 +662,20 @@
       };
 
       noCacheLoader = new NoCacheLoader();
-      loadString('test-no-cache.njk', noCacheLoader).then(function (content) {
+      const firstResult = loadString('test-no-cache.njk', noCacheLoader);
+
+      handleLoadStringResult(firstResult, function (err, content) {
+        if (err) return done(err);
         expect(content).to.be('test content');
+
         // Load the same resource again - should reload since noCache is true
-        return loadString('test-no-cache.njk', noCacheLoader);
-      }).then(function (content) {
-        expect(content).to.be('test content');
-        done();
-      }).catch(done);
+        const secondResult = loadString('test-no-cache.njk', noCacheLoader);
+        handleLoadStringResult(secondResult, function (err2, content2) {
+          if (err2) return done(err2);
+          expect(content2).to.be('test content');
+          done();
+        });
+      });
     });
 
     it('should work with async loaders', function (done) {
@@ -628,10 +704,13 @@
       };
 
       asyncLoader = new AsyncTestLoader();
-      loadString('async-test.njk', asyncLoader).then(function (content) {
+      const result = loadString('async-test.njk', asyncLoader);
+
+      handleLoadStringResult(result, function (err, content) {
+        if (err) return done(err);
         expect(content).to.be('async content');
         done();
-      }).catch(done);
+      });
     });
 
     it('should handle loader errors properly', function (done) {
@@ -651,16 +730,18 @@
       };
 
       errorLoader = new ErrorLoader();
-      loadString('simple-base.njk', [errorLoader, loader1]).then(function (content) {
+      const result = loadString('simple-base.njk', [errorLoader, loader1]);
+      handleLoadStringResult(result, function (err, content) {
+        if (err) return done(err);
         // Should fall back to the second loader
         expect(content).to.be.a('string');
         expect(content.length).to.be.greaterThan(0);
         done();
-      }).catch(done);
+      });
     });
   });
 
-  describe.only('New Loader Types', function() {
+  describe('New Loader Types', function() {
     describe('Function-based Loaders', function() {
       it('should work with synchronous function loader', function() {
         var env, template;
@@ -786,7 +867,7 @@
       });
     });
 
-    describe.only('Mixed Loader Types', function() {
+    describe('Mixed Loader Types', function() {
       it('should work with mixed loader types in Environment', function() {
         var env, template;
 
@@ -886,7 +967,7 @@
       });
     });
 
-    describe.only('convertToLegacyLoaders', function () {
+    describe('convertToLegacyLoaders', function () {
       it('should convert function loaders to legacy format', function () {
         if (typeof convertToLegacyLoaders === 'undefined') {
           this.skip();
@@ -1041,7 +1122,7 @@
     });
   });
 
-  describe.only('Integration Tests with Public API Methods', function() {
+  describe('Integration Tests with Public API Methods', function() {
     describe('clearStringCache with new loader types', function() {
       it('should clear cache for function loaders', function() {
         if (typeof clearStringCache === 'undefined') {
@@ -1120,7 +1201,7 @@
       });
     });
 
-    describe.only('Precompile functions with custom environments', function() {
+    describe('Precompile functions with custom environments', function() {
       it('should work with precompileTemplateString using function loader', function() {
         if (typeof require === 'undefined') {
           this.skip();
@@ -1220,7 +1301,7 @@
       });
     });
 
-    describe.only('AsyncEnvironment with new loader types', function() {
+    describe('AsyncEnvironment with new loader types', function() {
       it('should work with AsyncEnvironment using async function loaders', function(done) {
         if (typeof require === 'undefined') {
           this.skip();
