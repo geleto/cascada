@@ -1710,26 +1710,32 @@ const env = new AsyncEnvironment([
 ]);
 ```
 
-*   **Custom Loaders:** For advanced use cases, you can create a custom loader. The recommended approach is to create a class with an `async: true` property and a `getSource` method that returns a `Promise`. The `getSource` method should resolve with a `LoaderSource` object or `null` if the asset is not found (allowing fallback to the next loader in the chain).
+*   **Custom Loaders:** You can create a custom loader by providing either a simple function or a class. The engine automatically handles both synchronous and asynchronous loaders based on their return value. If a loader can't find an asset, it should return `null` to allow fallback to the next loader in the chain.
+
+    A loader can be a simple function that takes the asset name and returns its content as a string, or a `Promise` that resolves to the content.
+
+    ```javascript
+    // A custom loader that fetches scripts from a network
+    const networkLoader = async (name) => {
+      const response = await fetch(name);
+      return response.ok ? response.text() : null;
+    };
+    ```
+
+    For more structured loaders, you can provide a class with a `load` method.
 
     ```javascript
     // A custom loader that fetches scripts from a database
     class DatabaseLoader {
-      async = true;
+      constructor(db) { this.db = db; }
 
-      async getSource(name) {
-        const scriptRecord = await db.scripts.findByName(name);
-        if (!scriptRecord) { return null; }
-
-        return {
-          src: scriptRecord.sourceCode, // The script content as a string
-          path: name,                   // The original name/path
-          noCache: false                // Whether to cache this asset
-        };
+      async load(name) {
+        const scriptRecord = await this.db.scripts.findByName(name);
+        return scriptRecord?.sourceCode || null;
       }
     }
 
-    const env = new AsyncEnvironment(new DatabaseLoader());
+    const env = new AsyncEnvironment(new DatabaseLoader(myDbConnection));
     ```
 
 #### Compilation and Caching
@@ -1862,7 +1868,3 @@ This roadmap outlines key features and enhancements that are planned or currentl
 
 -   **Robustness and Concurrency Validation**
     Continuously expanding the test suite with a focus on complex, high-concurrency scenarios to formally verify the correctness and stability of the parallel.
-
-
-
-
