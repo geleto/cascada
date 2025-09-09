@@ -3,17 +3,22 @@
 
   var expect,
     Environment,
+    AsyncEnvironment,
     WebLoader,
     FileSystemLoader,
     NodeResolveLoader,
     templatesPath,
     StringLoader,
     loadString,
-    clearStringCache;
+    clearStringCache,
+    precompileTemplateString,
+    precompileScriptString,
+    Template;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     Environment = require('../src/environment').Environment;
+    AsyncEnvironment = require('../src/environment').AsyncEnvironment;
     WebLoader = require('../src/web-loaders').WebLoader;
     FileSystemLoader = require('../src/node-loaders').FileSystemLoader;
     NodeResolveLoader = require('../src/node-loaders').NodeResolveLoader;
@@ -21,9 +26,13 @@
     StringLoader = require('./util').StringLoader;
     loadString = require('../src/index').loadString;
     clearStringCache = require('../src/index').clearStringCache;
+    precompileTemplateString = require('../src/index').precompileTemplateString;
+    precompileScriptString = require('../src/index').precompileScriptString;
+    Template = require('../src/environment').Template;
   } else {
     expect = window.expect;
     Environment = nunjucks.Environment;
+    AsyncEnvironment = nunjucks.AsyncEnvironment;
     WebLoader = nunjucks.WebLoader;
     FileSystemLoader = nunjucks.FileSystemLoader;
     NodeResolveLoader = nunjucks.NodeResolveLoader;
@@ -31,6 +40,9 @@
     StringLoader = window.util.StringLoader;
     loadString = nunjucks.loadString;
     clearStringCache = nunjucks.clearStringCache;
+    precompileTemplateString = nunjucks.precompileTemplateString;
+    precompileScriptString = nunjucks.precompileScriptString;
+    Template = nunjucks.Template;
   }
 
   describe('loader', function() {
@@ -923,12 +935,6 @@
       });
 
       it('should work with mixed async loaders', function(done) {
-        if (typeof require === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        let AsyncEnvironment = require('../src/environment').AsyncEnvironment;
         let env;
 
         // Async function loader
@@ -1111,13 +1117,6 @@
 
     describe('Precompile functions with custom environments', function() {
       it('should work with precompileTemplateString using function loader', function() {
-        if (typeof require === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        let precompileTemplateString = require('../src/index').precompileTemplateString;
-
         function testLoader(name) {
           if (name === 'precompile-test.njk') {
             return 'Hello {{ name }}!';
@@ -1136,13 +1135,6 @@
       });
 
       it('should work with precompileScriptString using class loader', function() {
-        if (typeof require === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        let precompileScriptString = require('../src/index').precompileScriptString;
-
         function TestScriptLoader() {}
         TestScriptLoader.prototype.load = function(name) {
           if (name === 'script-test.njk') {
@@ -1164,12 +1156,6 @@
 
     describe('Template/Script constructors with custom environments', function() {
       it('should work with Template constructor using function loader', function() {
-        if (typeof require === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        let Template = require('../src/environment').Template;
 
         function templateLoader(name) {
           if (name === 'constructor-test.njk') {
@@ -1185,27 +1171,19 @@
         expect(result).to.be('Template from function loader: Hello World');
       });
 
-      it('should work with Script constructor using class loader', function() {
-        if (typeof require === 'undefined') {
-          this.skip();
-          return;
+      it.only('should work with Script constructor using class loader', async function() {
+        class ScriptClassLoader {
+          load(name) {
+            if (name === 'script-constructor-test.njk') {
+              return `:data
+              @data = value`;
+            }
+          }
         }
 
-        let Script = require('../src/environment').Script;
-
-        function ScriptClassLoader() {}
-        ScriptClassLoader.prototype.load = function(name) {
-          if (name === 'script-constructor-test.njk') {
-            return `:data
-            @data = value`;
-          }
-          return null;
-        };
-
-        let env = new Environment([new ScriptClassLoader()]);
-        let script = new Script(`:data
-        @data = value`, env, 'script-constructor-test.njk');
-        let result = script.render({ value: 42 });
+        let env = new AsyncEnvironment([new ScriptClassLoader()]);
+        let script = await env.getScript('script-constructor-test.njk');
+        let result = await script.render({ value: 42 });
 
         expect(result).to.be(42);
       });
@@ -1213,13 +1191,6 @@
 
     describe('AsyncEnvironment with new loader types', function() {
       it('should work with AsyncEnvironment using async function loaders', function(done) {
-        if (typeof require === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        let AsyncEnvironment = require('../src/environment').AsyncEnvironment;
-
         function asyncFunctionLoader(name) {
           return new Promise(function(resolve) {
             setTimeout(function() {
@@ -1240,13 +1211,6 @@
       });
 
       it('should work with AsyncEnvironment using async class loaders', function(done) {
-        if (typeof require === 'undefined') {
-          this.skip();
-          return;
-        }
-
-        let AsyncEnvironment = require('../src/environment').AsyncEnvironment;
-
         function AsyncClassLoader() {}
         AsyncClassLoader.prototype.load = function(name) {
           return new Promise(function(resolve) {
