@@ -13,7 +13,8 @@
     clearStringCache,
     precompileTemplateString,
     precompileScriptString,
-    Template;
+    Template,
+    delay;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -29,6 +30,7 @@
     precompileTemplateString = require('../src/index').precompileTemplateString;
     precompileScriptString = require('../src/index').precompileScriptString;
     Template = require('../src/environment').Template;
+    delay = require('./util').delay;
   } else {
     expect = window.expect;
     Environment = nunjucks.Environment;
@@ -43,6 +45,7 @@
     precompileTemplateString = nunjucks.precompileTemplateString;
     precompileScriptString = nunjucks.precompileScriptString;
     Template = nunjucks.Template;
+    delay = window.util.delay;
   }
 
   describe('loader', function() {
@@ -1339,44 +1342,46 @@
         let startTime = Date.now();
 
         // Create async loaders that simulate different delays
-        function SlowLoader1() {}
-        SlowLoader1.prototype.getSource = function(name, callback) {
-          callOrder.push('loader1-start');
-          setTimeout(() => {
+        class SlowLoader1 {
+          async load(name) {
+            callOrder.push('loader1-start');
+            await delay(9);
             callOrder.push('loader1-end');
-            if (name === 'concurrent-test.njk') {
-              callback(null, { src: 'From slow loader 1', path: name });
+            if (name === 'concurrent-test.njk.njk') {
+              return { src: 'From slow loader 1', path: name };
             } else {
-              callback(null, null);
+              return null;
             }
-          }, 50); // 50ms delay
-        };
+          }
+        }
 
-        function SlowLoader2() {}
-        SlowLoader2.prototype.getSource = function(name, callback) {
-          callOrder.push('loader2-start');
-          setTimeout(() => {
-            callOrder.push('loader2-end');
-            if (name === 'concurrent-test.njk') {
-              callback(null, { src: 'From slow loader 2', path: name });
-            } else {
-              callback(null, null);
-            }
-          }, 30); // 30ms delay - should finish first
-        };
+        class SlowLoader2 {
+          async = true;
+          getSource(name, callback) {
+            callOrder.push('loader2-start');
+            setTimeout(() => {
+              callOrder.push('loader2-end');
+              if (name === 'concurrent-test.njk') {
+                callback(null, { src: 'From slow loader 2', path: name });
+              } else {
+                callback(null, null);
+              }
+            }, 6);
+          }
+        }
 
-        function SlowLoader3() {}
-        SlowLoader3.prototype.getSource = function(name, callback) {
-          callOrder.push('loader3-start');
-          setTimeout(() => {
+        class SlowLoader3 {
+          async load(name) {
+            callOrder.push('loader3-start');
+            await delay(3);
             callOrder.push('loader3-end');
-            if (name === 'concurrent-test.njk') {
-              callback(null, { src: 'From slow loader 3', path: name });
+            if (name === 'some-other-template.njk') {
+              return { src: 'From slow loader 3', path: name };
             } else {
-              callback(null, null);
+              return null;
             }
-          }, 40); // 40ms delay
-        };
+          }
+        }
 
         const env = new AsyncEnvironment([new SlowLoader1(), new SlowLoader2(), new SlowLoader3()]);
 
@@ -1385,11 +1390,12 @@
           const duration = endTime - startTime;
 
           // Verify that all loaders started, and the first completion is from loader2
-          expect(callOrder.slice(0, 4)).to.eql([
+          expect(callOrder).to.eql([
             'loader1-start',
             'loader2-start',
             'loader3-start',
-            'loader2-end' // First to finish (30ms)
+            'loader3-end', // First to finish
+            'loader2-end' // Second to finsh, returns the correct template
           ]);
 
           // Verify that the total time is close to the slowest loader (50ms)
