@@ -1,5 +1,7 @@
 'use strict';
 
+const lib = require('./lib');
+
 // Static Map to store resource caches for each loader
 const resourceCaches = new Map();
 
@@ -225,6 +227,85 @@ function createSourceObject(src, path, noCache = false) {
 }
 
 /**
+ * Calls multiple loaders sequentially and returns the first successful result
+ * @param {Array} loaders Array of loaders to try
+ * @param {string} name The resource name to load
+ * @param {Function} resolveFromLoader Function to resolve name relative to parentName
+ * @param {Function} callback The callback function (err, result)
+ */
+function callLoadersSequential(loaders, name, resolveFromLoader, callback) {
+  // Use the exact same lib.asyncIter call as the original code
+  lib.asyncIter(loaders, (loader, i, next, done) => {
+    function handle(err, src) {
+      if (err) {
+        done(err);
+      } else if (src) {
+        src.loader = loader;
+        done(null, src);
+      } else {
+        next();
+      }
+    }
+
+    // Resolve name relative to parentName
+    const resolvedName = resolveFromLoader(loader, name);
+
+    // Use native loader support instead of checking .async property
+    callLoader(loader, resolvedName, handle);
+  }, callback);
+}
+
+/**
+ * Calls multiple loaders concurrently and returns the first successful result
+ * @param {Array} loaders Array of loaders to try
+ * @param {string} name The resource name to load
+ * @param {Function} resolveFromLoader Function to resolve name relative to parentName
+ * @param {Function} callback The callback function (err, result)
+ */
+function callLoadersConcurrent(loaders, name, resolveFromLoader, callback) {
+  const promises = [];
+
+  // Start all loaders concurrently
+  for (const loader of loaders) {
+    try {
+      const resolvedName = resolveFromLoader(loader, name);
+      const promise = new Promise((resolve, reject) => {
+        callLoader(loader, resolvedName, (err, result) => {
+          if (err) {
+            reject(err);
+          } else if (result) {
+            result.loader = loader;
+            resolve(result);
+          } else {
+            reject(new Error(`Resource '${resolvedName}' not found`));
+          }
+        });
+      });
+
+      promises.push(promise);
+    } catch (error) {
+      // Continue to next loader for sync errors
+      continue;
+    }
+  }
+
+  if (promises.length > 0) {
+    // Use the first successful promise
+    resolveFirstSuccessfulPromise(promises, name)
+      .then((result) => {
+        callback(null, result);
+      })
+      .catch((error) => {
+        // All loaders failed: align with sequential behavior (no error, no result)
+        callback(null, null);
+      });
+  } else {
+    // No loaders to attempt
+    callback(null, null);
+  }
+}
+
+/**
  * Calls a loader and handles both sync and async cases with callback
  * @param {Object|Function} loader The loader to call
  * @param {string} name The resource name to load
@@ -245,13 +326,19 @@ function callLoader(loader, name, callback) {
     }
     // Legacy loader with getSource method
     else if (loader && typeof loader === 'object' && typeof loader.getSource === 'function') {
-      // Check if it's async by looking at the .async property (legacy)
-      if (loader.async) {
-        loader.getSource(name, callback);
-        return;
-      } else {
-        result = loader.getSource(name);
+      // Prefer callback form when available, even if .async is not set
+      const supportsCallback = loader.getSource.length >= 2;
+      if (loader.async || supportsCallback) {
+        try {
+          loader.getSource(name, callback);
+          return;
+        } catch (e) {
+          // Fallback to synchronous usage if calling with a callback throws
+          // (some sync loaders may not accept a callback)
+        }
       }
+      // Synchronous result (no async support or callback form failed)
+      result = loader.getSource(name);
     }
   } catch (error) {
     // Handle synchronous errors by passing them to the callback
@@ -292,4 +379,7 @@ module.exports = {
   clearStringCache,
   loadStringFromNativeLoader,
   callLoader,
+  callLoadersSequential,
+  callLoadersConcurrent,
+  resolveFirstSuccessfulPromise,
 };

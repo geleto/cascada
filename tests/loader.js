@@ -1331,6 +1331,132 @@
         handleLoadStringResult(loadString('mixed-loadstring-test3.njk', loaders), 'From legacy in loadString');
       });
     });
+
+    describe('Concurrent loading', function() {
+      it('should load templates concurrently in async mode', function(done) {
+        if (typeof AsyncEnvironment === 'undefined') {
+          this.skip();
+          return;
+        }
+
+        let callOrder = [];
+        let startTime = Date.now();
+
+        // Create async loaders that simulate different delays
+        function SlowLoader1() {}
+        SlowLoader1.prototype.getSource = function(name, callback) {
+          callOrder.push('loader1-start');
+          setTimeout(() => {
+            callOrder.push('loader1-end');
+            if (name === 'concurrent-test.njk') {
+              callback(null, { src: 'From slow loader 1', path: name });
+            } else {
+              callback(null, null);
+            }
+          }, 50); // 50ms delay
+        };
+
+        function SlowLoader2() {}
+        SlowLoader2.prototype.getSource = function(name, callback) {
+          callOrder.push('loader2-start');
+          setTimeout(() => {
+            callOrder.push('loader2-end');
+            if (name === 'concurrent-test.njk') {
+              callback(null, { src: 'From slow loader 2', path: name });
+            } else {
+              callback(null, null);
+            }
+          }, 30); // 30ms delay - should finish first
+        };
+
+        function SlowLoader3() {}
+        SlowLoader3.prototype.getSource = function(name, callback) {
+          callOrder.push('loader3-start');
+          setTimeout(() => {
+            callOrder.push('loader3-end');
+            if (name === 'concurrent-test.njk') {
+              callback(null, { src: 'From slow loader 3', path: name });
+            } else {
+              callback(null, null);
+            }
+          }, 40); // 40ms delay
+        };
+
+        const env = new AsyncEnvironment([new SlowLoader1(), new SlowLoader2(), new SlowLoader3()]);
+
+        env.getTemplate('concurrent-test.njk').then((template) => {
+          const endTime = Date.now();
+          const duration = endTime - startTime;
+
+          // Verify that all loaders started concurrently
+          expect(callOrder).to.eql([
+            'loader1-start',
+            'loader2-start',
+            'loader3-start',
+            'loader2-end', // Should finish first (30ms)
+            'loader3-end', // Should finish second (40ms)
+            'loader1-end'  // Should finish last (50ms)
+          ]);
+
+          // Verify that the total time is close to the slowest loader (50ms)
+          // Allow some tolerance for test execution overhead
+          expect(duration).to.be.lessThan(100);
+
+          // Verify the template was loaded successfully
+          expect(template).to.be.ok();
+          expect(template.render()).to.be('From slow loader 2'); // First successful result
+
+          done();
+        }).catch(done);
+      });
+
+      it('should load templates sequentially in sync mode', function(done) {
+        let callOrder = [];
+
+        // Create sync loaders that track call order
+        function SyncLoader1() {}
+        SyncLoader1.prototype.getSource = function(name) {
+          callOrder.push('loader1');
+          if (name === 'sequential-test.njk') {
+            return { src: 'From sync loader 1', path: name };
+          }
+          return null;
+        };
+
+        function SyncLoader2() {}
+        SyncLoader2.prototype.getSource = function(name) {
+          callOrder.push('loader2');
+          if (name === 'sequential-test.njk') {
+            return { src: 'From sync loader 2', path: name };
+          }
+          return null;
+        };
+
+        function SyncLoader3() {}
+        SyncLoader3.prototype.getSource = function(name) {
+          callOrder.push('loader3');
+          if (name === 'sequential-test.njk') {
+            return { src: 'From sync loader 3', path: name };
+          }
+          return null;
+        };
+
+        const env = new Environment([new SyncLoader1(), new SyncLoader2(), new SyncLoader3()]);
+
+        env.getTemplate('sequential-test.njk', (err, template) => {
+          if (err) return done(err);
+
+          // Verify that loaders were called sequentially
+          expect(callOrder).to.eql(['loader1']); // Only first loader should be called
+
+          // Verify the template was loaded successfully
+          expect(template).to.be.ok();
+          expect(template.render()).to.be('From sync loader 1');
+
+          done();
+        });
+      });
+    });
   });
 
 }());
