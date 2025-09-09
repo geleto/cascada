@@ -330,7 +330,18 @@ function callLoader(loader, name, callback) {
       const supportsCallback = loader.getSource.length >= 2;
       if (loader.async || supportsCallback) {
         try {
-          loader.getSource(name, callback);
+          loader.getSource(name, (err, src) => {
+            if (err) {
+              // Convert WebLoader 404 errors to the expected format
+              if (typeof err === 'string' && err.includes('404 Not Found')) {
+                callback(new Error(`Template not found: ${name}`), null);
+              } else {
+                callback(err, null);
+              }
+            } else {
+              callback(null, src);
+            }
+          });
           return;
         } catch (e) {
           // Fallback to synchronous usage if calling with a callback throws
@@ -380,6 +391,5 @@ module.exports = {
   loadStringFromNativeLoader,
   callLoader,
   callLoadersSequential,
-  callLoadersConcurrent,
-  resolveFirstSuccessfulPromise,
+  callLoadersConcurrent
 };
