@@ -1171,7 +1171,7 @@
         expect(result).to.be('Template from function loader: Hello World');
       });
 
-      it.only('should work with Script constructor using class loader', async function() {
+      it('should work with Script constructor using class loader', async function() {
         class ScriptClassLoader {
           load(name) {
             if (name === 'script-constructor-test.njk') {

@@ -12,8 +12,32 @@ const resourceCaches = new Map();
 function loadString(key, loader) {
   const loaders = Array.isArray(loader) ? loader : [loader];
 
-  // Use native loader support instead of converting to legacy format
-  return loadStringFromNativeLoaders(key, loaders);
+  const results = [];
+  let hasAsyncLoader = false;
+
+  for (const candidateLoader of loaders) {
+    try {
+      const result = loadStringFromNativeLoader(key, candidateLoader);
+      if (isPromise(result)) {
+        hasAsyncLoader = true;
+        results.push(result);
+      } else {
+        // Found a sync result, return it immediately
+        return result;
+      }
+    } catch (error) {
+      // Continue to next loader
+      continue;
+    }
+  }
+
+  if (hasAsyncLoader) {
+    // Use the already-started promises and resolve the first successful one
+    return resolveFirstSuccessfulPromise(results, key);
+  } else {
+    // All loaders failed
+    throw new Error(`Resource '${key}' not found in any loader`);
+  }
 }
 
 
@@ -131,41 +155,6 @@ function loadStringFromNativeLoader(key, loader) {
   }
 }
 
-/**
- * Loads a string from native loaders with caching, trying each loader in sequence
- * @param {string} key The resource key/name to load
- * @param {Array} loaders Array of native loaders
- * @returns {Promise<string>|string} The loaded string content - Promise if any loader is async, string if all are sync
- * @private
- */
-function loadStringFromNativeLoaders(key, loaders) {
-  const results = [];
-  let hasAsyncLoader = false;
-
-  for (const loader of loaders) {
-    try {
-      const result = loadStringFromNativeLoader(key, loader);
-      if (isPromise(result)) {
-        hasAsyncLoader = true;
-        results.push(result);
-      } else {
-        // Found a sync result, return it immediately
-        return result;
-      }
-    } catch (error) {
-      // Continue to next loader
-      continue;
-    }
-  }
-
-  if (hasAsyncLoader) {
-    // Use the already-started promises and resolve the first successful one
-    return resolveFirstSuccessfulPromise(results, key);
-  } else {
-    // All loaders failed
-    throw new Error(`Resource '${key}' not found in any loader`);
-  }
-}
 
 /**
  * Resolves the first successful Promise from an array of Promises
@@ -207,11 +196,100 @@ function resolveFirstSuccessfulPromise(promises, key) {
   });
 }
 
+/**
+ * Validates that a loader is properly implemented
+ * @param {any} loader The loader to validate
+ * @throws {Error} If the loader is invalid
+ */
+function validateLoader(loader) {
+  if (typeof loader === 'function') return;
+  if (loader && typeof loader === 'object' && typeof loader.load === 'function') return;
+  if (loader && typeof loader === 'object' && typeof loader.getSource === 'function') return;
+
+  throw new Error('Invalid loader: must be a function, object with load method, or legacy loader with getSource method');
+}
+
+/**
+ * Creates a standardized source object for loaders
+ * @param {string|Object} src The template source content or object
+ * @param {string} path The template path/name
+ * @param {boolean} noCache Whether to disable caching
+ * @returns {Object} Standardized source object
+ */
+function createSourceObject(src, path, noCache = false) {
+  return {
+    src: src,
+    path: path,
+    noCache: noCache
+  };
+}
+
+/**
+ * Calls a loader and handles both sync and async cases with callback
+ * @param {Object|Function} loader The loader to call
+ * @param {string} name The resource name to load
+ * @param {Function} callback The callback function (err, result)
+ */
+function callLoader(loader, name, callback) {
+  let result;
+  try {
+    validateLoader(loader);
+
+    // Function-based loader
+    if (typeof loader === 'function') {
+      result = loader(name);
+    }
+    // Object-based loader with load method
+    else if (loader && typeof loader === 'object' && typeof loader.load === 'function') {
+      result = loader.load(name);
+    }
+    // Legacy loader with getSource method
+    else if (loader && typeof loader === 'object' && typeof loader.getSource === 'function') {
+      // Check if it's async by looking at the .async property (legacy)
+      if (loader.async) {
+        loader.getSource(name, callback);
+        return;
+      } else {
+        result = loader.getSource(name);
+      }
+    }
+  } catch (error) {
+    // Handle synchronous errors by passing them to the callback
+    callback(error, null);
+    return;
+  }
+
+  // Check if result is a Promise
+  if (isPromise(result)) {
+    result
+      .then((content) => {
+        if (content) {
+          // Handle both {src: string} and string formats
+          const src = typeof content === 'string' ? createSourceObject(content, name, false) : content;
+          callback(null, src);
+        } else {
+          callback(null, null);
+        }
+      })
+      .catch((err) => {
+        callback(err, null);
+      });
+  } else {
+    // Synchronous result
+    if (result) {
+      // Handle both {src: string} and string formats
+      const src = typeof result === 'string' ? createSourceObject(result, name, false) : result;
+      callback(null, src);
+    } else {
+      callback(null, null);
+    }
+  }
+}
+
 
 module.exports = {
   loadString,
   clearStringCache,
   loadStringFromNativeLoader,
-  loadStringFromNativeLoaders,
-  isPromise,
+  callLoader,
 };
