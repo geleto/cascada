@@ -326,9 +326,9 @@ function callLoader(loader, name, callback) {
     }
     // Legacy loader with getSource method
     else if (loader && typeof loader === 'object' && typeof loader.getSource === 'function') {
-      // Prefer callback form when available, even if .async is not set
-      const supportsCallback = loader.getSource.length >= 2;
-      if (loader.async || supportsCallback) {
+      // Legacy loader with getSource: prefer sync path for sync loaders to preserve sync semantics
+      if (loader.async === true) {
+        // Async loader: use callback form
         try {
           loader.getSource(name, (err, src) => {
             if (err) {
@@ -348,7 +348,7 @@ function callLoader(loader, name, callback) {
           // (some sync loaders may not accept a callback)
         }
       }
-      // Synchronous result (no async support or callback form failed)
+      // Synchronous loader or callback form not desired: call without a callback
       result = loader.getSource(name);
     }
   } catch (error) {
