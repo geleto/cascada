@@ -822,7 +822,7 @@
         }
       });
 
-      it.only('should accept LoaderSource from function loader and respect noCache', function(done) {
+      it('should accept LoaderSource from function loader and respect noCache', function(done) {
         var calls = 0, r1, r2;
         if (typeof loadString === 'undefined') {
           this.skip();
@@ -920,7 +920,7 @@
         }
       });
 
-      it.only('should respect LoaderSource.noCache for class loader', function() {
+      it('should respect LoaderSource.noCache for class loader', function() {
         var env, callCount = 0, t1, t2;
 
         function NoCacheClassLoader() {}
@@ -943,19 +943,27 @@
       });
     });
 
-    describe.only('Resolution and events for LoaderInterface', function() {
+    describe('Resolution and events for LoaderInterface', function() {
       it('should resolve relative includes and emit update events', function() {
-        var EventEmitter = (typeof require !== 'undefined') ? require('events') : window.EventEmitter;
         var loader, parentName, childName, env, updated, tmpl, tmpl2;
         updated = false;
 
         function MapLoader(base) {
           this.base = base || '';
           this.map = {};
-          EventEmitter.call(this);
+          this._listeners = {};
         }
-        MapLoader.prototype = Object.create(EventEmitter.prototype);
-        MapLoader.prototype.constructor = MapLoader;
+        MapLoader.prototype.on = function(event, handler) {
+          (this._listeners[event] = this._listeners[event] || []).push(handler);
+        };
+        MapLoader.prototype.emit = function(event) {
+          var args = Array.prototype.slice.call(arguments, 1);
+          var list = this._listeners[event] || [];
+          var i;
+          for (i = 0; i < list.length; i++) {
+            list[i].apply(this, args);
+          }
+        };
         MapLoader.prototype.isRelative = function(name) {
           return name.indexOf('./') === 0 || name.indexOf('../') === 0;
         };
