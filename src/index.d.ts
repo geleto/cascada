@@ -272,11 +272,22 @@ export function installJinjaCompat(): void;
 export function reset(): void;
 
 /** Function-based loader that returns Promise<string> | string */
-export type LoaderFunction = (name: string) => Promise<string | null> | string | null;
+export type LoaderFunction = (name: string) => Promise<string | LoaderSource | null> | string | LoaderSource | null;
 
 /** Class-based loader interface */
 export interface LoaderInterface {
-  load(name: string): Promise<string | null> | string | null;
+  load(name: string): Promise<string | LoaderSource | null> | string | LoaderSource | null;
+
+  // Optional event hooks for cache invalidation and load notifications
+  on?(
+    event: 'load' | 'update',
+    handler: (...args: any[]) => void
+  ): void;
+  emit?(event: 'load' | 'update', ...args: any[]): void;
+
+  // Optional relative path helpers used by Environment.resolveFromLoader
+  isRelative?(filename: string): boolean;
+  resolve?(from: string, to: string): string;
 }
 
 /** A synchronous or an asynchronous loader. Supports both legacy and native loader types. */

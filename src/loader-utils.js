@@ -2,8 +2,8 @@
 
 const lib = require('./lib');
 
-// Static Map to store resource caches for each loader
-const resourceCaches = new Map();
+// WeakMap to store resource caches for each loader (no mutation of loader objects)
+const resourceCaches = new WeakMap();
 
 /**
  * Loads a string from the specified loader with caching.
@@ -136,23 +136,40 @@ function loadStringFromNativeLoader(key, loader) {
   // Check if result is a Promise
   if (isPromise(result)) {
     return result.then((content) => {
-      if (content) {
-        // Cache the content
-        loaderResourceCache.set(key, content);
-        return content;
-      } else {
+      if (!content) {
         throw new Error(`Resource '${key}' not found`);
+      }
+
+      // content may be a LoaderSource or a string
+      if (typeof content === 'object' && typeof content.src === 'string') {
+        const finalContent = content.src;
+        if (!content.noCache) {
+          loaderResourceCache.set(key, finalContent);
+        }
+        return finalContent;
+      } else {
+        // string
+        const finalContent = content;
+        loaderResourceCache.set(key, finalContent);
+        return finalContent;
       }
     });
   } else {
     // Synchronous result
-    if (result) {
-      const content = result.src || result; // Handle both {src: string} and string formats
-      // Cache the content
-      loaderResourceCache.set(key, content);
+    if (!result) {
+      throw new Error(`Resource '${key}' not found`);
+    }
+
+    if (typeof result === 'object' && typeof result.src === 'string') {
+      const content = result.src;
+      if (!result.noCache) {
+        loaderResourceCache.set(key, content);
+      }
       return content;
     } else {
-      throw new Error(`Resource '${key}' not found`);
+      const content = result; // string
+      loaderResourceCache.set(key, content);
+      return content;
     }
   }
 }

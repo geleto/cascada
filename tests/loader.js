@@ -821,6 +821,32 @@
           done();
         }
       });
+
+      it.only('should accept LoaderSource from function loader and respect noCache', function(done) {
+        var calls = 0, r1, r2;
+        if (typeof loadString === 'undefined') {
+          this.skip();
+          return;
+        }
+        function fn(name) {
+          if (name === 'fn-nocache.njk') {
+            calls++;
+            return { src: 'FN-' + calls, path: name, noCache: true };
+          }
+          return null;
+        }
+
+        r1 = loadString('fn-nocache.njk', fn);
+        r2 = loadString('fn-nocache.njk', fn);
+
+        function toPromise(v) { return (v && typeof v.then === 'function') ? v : Promise.resolve(v); }
+        Promise.all([toPromise(r1), toPromise(r2)]).then(function(res) {
+          expect(res[0]).to.be('FN-1');
+          expect(res[1]).to.be('FN-2');
+          expect(calls).to.be(2);
+          done();
+        }).catch(done);
+      });
     });
 
     describe('Class-based Loaders (LoaderInterface)', function() {
@@ -892,6 +918,91 @@
           expect(result).to.be('Class loader content');
           done();
         }
+      });
+
+      it.only('should respect LoaderSource.noCache for class loader', function() {
+        var env, callCount = 0, t1, t2;
+
+        function NoCacheClassLoader() {}
+        NoCacheClassLoader.prototype.load = function(name) {
+          if (name === 'nocache-class.njk') {
+            callCount++;
+            return { src: 'Class #' + callCount, path: name, noCache: true };
+          }
+          return null;
+        };
+
+        env = new Environment([new NoCacheClassLoader()]);
+        t1 = env.getTemplate('nocache-class.njk');
+        expect(t1.render()).to.be('Class #1');
+
+        // Because noCache is true, the next call should invoke the loader again
+        t2 = env.getTemplate('nocache-class.njk');
+        expect(t2.render()).to.be('Class #2');
+        expect(callCount).to.be(2);
+      });
+    });
+
+    describe.only('Resolution and events for LoaderInterface', function() {
+      it('should resolve relative includes and emit update events', function() {
+        var EventEmitter = (typeof require !== 'undefined') ? require('events') : window.EventEmitter;
+        var loader, parentName, childName, env, updated, tmpl, tmpl2;
+        updated = false;
+
+        function MapLoader(base) {
+          this.base = base || '';
+          this.map = {};
+          EventEmitter.call(this);
+        }
+        MapLoader.prototype = Object.create(EventEmitter.prototype);
+        MapLoader.prototype.constructor = MapLoader;
+        MapLoader.prototype.isRelative = function(name) {
+          return name.indexOf('./') === 0 || name.indexOf('../') === 0;
+        };
+        MapLoader.prototype.resolve = function(from, to) {
+          // Return a normalized relative path like 'dir/child.njk'
+          var base = from.replace(/[^\/]+$/, ''); // strip filename, keep trailing slash
+          var combined = (base + to).replace(/\\/g, '/');
+          var parts = [];
+          combined.split('/').forEach(function(seg) {
+            if (!seg || seg === '.') return;
+            if (seg === '..') parts.pop(); else parts.push(seg);
+          });
+          return parts.join('/');
+        };
+        MapLoader.prototype.load = function(name) {
+          var value, src;
+          if (this.map[name]) {
+            value = this.map[name];
+            src = { src: value, path: name, noCache: false };
+            this.emit('load', name, src);
+            return src;
+          }
+          return null;
+        };
+
+        loader = new MapLoader();
+        parentName = 'dir/parent.njk';
+        childName = 'dir/child.njk';
+        loader.map[parentName] = '{% include "./child.njk" %}';
+        loader.map[childName] = 'CHILD';
+
+        env = new Environment([loader]);
+        env.on('update', function(name) {
+          if (name === parentName) updated = true;
+        });
+
+        tmpl = env.getTemplate(parentName);
+        expect(tmpl.render()).to.be('CHILD');
+
+        // Update the parent; environment should observe the event
+        loader.map[parentName] = 'X{% include "./child.njk" %}';
+        loader.emit('update', parentName, parentName);
+
+        // Re-fetch and render should reflect the update
+        tmpl2 = env.getTemplate(parentName);
+        expect(tmpl2.render()).to.be('XCHILD');
+        expect(updated).to.be(true);
       });
     });
 

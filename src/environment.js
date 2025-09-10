@@ -113,12 +113,21 @@ class BaseEnvironment extends EmitterObj {
   }
 
   _initLoaders() {
+    // Per-loader compiled template caches (internal, non-mutating)
+    if (!this._compiledCaches) {
+      this._compiledCaches = new WeakMap();
+    }
     this.loaders.forEach((loader) => {
-      // Caching and cache busting
-      loader.cache = {};
+      // Initialize compiled cache map for this loader
+      if (!this._compiledCaches.get(loader)) {
+        this._compiledCaches.set(loader, new Map());
+      }
       if (typeof loader.on === 'function') {
         loader.on('update', (name, fullname) => {
-          loader.cache[name] = null;
+          const cache = this._compiledCaches.get(loader);
+          if (cache) {
+            cache.delete(name);
+          }
           this.emit('update', name, fullname, loader);
         });
         loader.on('load', (name, source) => {
@@ -130,7 +139,12 @@ class BaseEnvironment extends EmitterObj {
 
   invalidateCache() {
     this.loaders.forEach((loader) => {
-      loader.cache = {};
+      const cache = this._compiledCaches && this._compiledCaches.get(loader);
+      if (cache) {
+        cache.clear();
+      } else if (this._compiledCaches) {
+        this._compiledCaches.set(loader, new Map());
+      }
       // Also clear the string cache for this loader
       clearStringCache(loader);
     });
@@ -243,7 +257,9 @@ class BaseEnvironment extends EmitterObj {
     } else {
       for (let i = 0; i < this.loaders.length; i++) {
         const loader = this.loaders[i];
-        tmpl = loader.cache[this.resolveFromLoader(loader, parentName, name)];
+        const cache = this._compiledCaches && this._compiledCaches.get(loader);
+        const key = this.resolveFromLoader(loader, parentName, name);
+        tmpl = cache ? cache.get(key) : undefined;
         if (tmpl) {
           if (!!tmpl.asyncMode !== asyncMode) {
             throw new Error('The same template can not be compiled in both async and sync mode');
@@ -291,7 +307,9 @@ class BaseEnvironment extends EmitterObj {
             new AsyncScript(info.src, this, info.path, eagerCompile) :
             new Script(info.src, this, info.path, eagerCompile);
           if (!info.noCache) {
-            info.loader.cache[name] = newCompiled;
+            const compiledCache = this._compiledCaches.get(info.loader) || new Map();
+            compiledCache.set(name, newCompiled);
+            this._compiledCaches.set(info.loader, compiledCache);
           }
         }
       }
@@ -305,7 +323,9 @@ class BaseEnvironment extends EmitterObj {
             new AsyncTemplate(info.src, this, info.path, eagerCompile, asyncMode, scriptMode) :
             new Template(info.src, this, info.path, eagerCompile, asyncMode, scriptMode);
           if (!info.noCache) {
-            info.loader.cache[name] = newCompiled;
+            const compiledCache = this._compiledCaches.get(info.loader) || new Map();
+            compiledCache.set(name, newCompiled);
+            this._compiledCaches.set(info.loader, compiledCache);
           }
         }
       }

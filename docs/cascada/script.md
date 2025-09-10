@@ -1716,22 +1716,29 @@ const env = new AsyncEnvironment([
 
     ```javascript
     // A custom loader that fetches scripts from a network
+    // Function-based loaders can return either a string or a LoaderSource
+    // Returning a LoaderSource lets you control caching and path metadata
     const networkLoader = async (name) => {
       const response = await fetch(name);
-      return response.ok ? response.text() : null;
+      if (!response.ok) return null;
+      const src = await response.text();
+      return { src, path: name, noCache: false };
     };
     ```
 
     For more structured loaders, you can provide a class with a `load` method.
+    In addition, class/function loaders can return a `LoaderSource` object `{ src, path, noCache }` to provide metadata and caching hints. Class loaders may also implement optional hooks `on('load'|'update', ...)`, `isRelative(name)`, and `resolve(from, to)` to enable environment events and relative path resolution for includes.
 
     ```javascript
     // A custom loader that fetches scripts from a database
     class DatabaseLoader {
       constructor(db) { this.db = db; }
 
+      // Class-based loaders can return string or LoaderSource (sync or async)
       async load(name) {
         const scriptRecord = await this.db.scripts.findByName(name);
-        return scriptRecord?.sourceCode || null;
+        if (!scriptRecord) return null;
+        return { src: scriptRecord.sourceCode, path: name, noCache: false };
       }
     }
 
