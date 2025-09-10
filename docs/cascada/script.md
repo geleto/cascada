@@ -1623,7 +1623,6 @@ endblock
 </tr>
 </table>
 
-
 ## API Reference
 
 Cascada builds upon the robust Nunjucks API, extending it with a powerful new execution model for scripts. This reference focuses on the APIs specific to Cascada Script, including the `AsyncEnvironment`, the distinction between `Script` and `Template` objects, and methods for extending the engine's capabilities.
@@ -1710,35 +1709,65 @@ const env = new AsyncEnvironment([
 ]);
 ```
 
-*   **Custom Loaders:** You can create a custom loader by providing either a simple function or a class. The engine automatically handles both synchronous and asynchronous loaders based on their return value. If a loader can't find an asset, it should return `null` to allow fallback to the next loader in the chain.
+*   **Custom Loaders:** You can create a custom loader by providing either a simple function or a more structured class. The engine automatically handles both synchronous and asynchronous loaders. If a loader can't find an asset, it should return `null` to allow fallback to the next loader in the chain.
 
-    A loader can be a simple function that takes the asset name and returns its content as a string, or a `Promise` that resolves to the content.
+    **1. The Simple Way: A Loader Function**
+    For simple cases, a loader can be a function that takes the asset name and returns its content as a string, or a `Promise` that resolves to the content.
+
+    **2. Adding Metadata with `LoaderSource`**
+    For more control, your loader function (or class method) can return a `LoaderSource` object: `{ src, path, noCache }`.
+    *   `src`: The script or template source code.
+    *   `path`: The resolved path, used for error reporting and debugging.
+    *   `noCache`: A boolean that, if `true`, prevents this specific asset from being cached by the environment.
 
     ```javascript
     // A custom loader that fetches scripts from a network
-    // Function-based loaders can return either a string or a LoaderSource
-    // Returning a LoaderSource lets you control caching and path metadata
     const networkLoader = async (name) => {
-      const response = await fetch(name);
+      const response = await fetch(`https://my-cdn.com/scripts/${name}`);
       if (!response.ok) return null;
       const src = await response.text();
+      // Return a LoaderSource object for better debugging and caching control
       return { src, path: name, noCache: false };
     };
     ```
 
-    For more structured loaders, you can provide a class with a `load` method.
-    In addition, class/function loaders can return a `LoaderSource` object `{ src, path, noCache }` to provide metadata and caching hints. Class loaders may also implement optional hooks `on('load'|'update', ...)`, `isRelative(name)`, and `resolve(from, to)` to enable environment events and relative path resolution for includes.
+    **3. The Advanced Way: A Loader Class**
+    For the most power and flexibility, create a class that implements the loader interface. This allows for features like relative path resolution (`import`, `include`) and event-driven cache invalidation.
 
+    A loader class has one required method and several optional ones for advanced functionality:
+
+    | Method | Description | Required? |
+    |---|---|:---:|
+    | `load(name)` | The core method. Loads an asset by name and returns its content (as a string or `LoaderSource` object), or `null` if not found. Can be async. | **Yes** |
+    | `isRelative(name)` | Returns `true` if a filename is relative (e.g., `./component.script`). Used for `include`, `import`, and `extends`. | No |
+    | `resolve(from, to)`| Resolves a relative path (`to`) based on the path of a parent script (`from`). | No |
+    | `on(event, handler)` | Listens for environment events (`'load'`, `'update'`). Useful for advanced caching strategies. | No |
+
+    Here is an example of a class-based loader that supports relative paths:
     ```javascript
-    // A custom loader that fetches scripts from a database
+    // A custom loader that fetches scripts from a database and handles relative paths
     class DatabaseLoader {
       constructor(db) { this.db = db; }
 
-      // Class-based loaders can return string or LoaderSource (sync or async)
+      // The required 'load' method can be synchronous or asynchronous
       async load(name) {
         const scriptRecord = await this.db.scripts.findByName(name);
         if (!scriptRecord) return null;
+        // Return a LoaderSource object with the content and path
         return { src: scriptRecord.sourceCode, path: name, noCache: false };
+      }
+
+      // Optional method to identify relative paths
+      isRelative(filename) {
+        return filename.startsWith('./') || filename.startsWith('../');
+      }
+
+      // Optional method to resolve relative paths
+      resolve(from, to) {
+        // This is a simplified example; a real implementation would use a
+        // library like 'path' or a URL resolver.
+        const fromDir = from.substring(0, from.lastIndexOf('/'));
+        return `${fromDir}/${to}`;
       }
     }
 
@@ -1747,7 +1776,7 @@ const env = new AsyncEnvironment([
 
 #### Compilation and Caching
 
-For better performance, the environment can compile and cache assets. Using `get` methods is the recommended way to work with individual scripts or templates, as it leverages this caching mechanism.
+For better performance, the environment can compile and cache assets.
 
 *   `asyncEnvironment.getScript(scriptName)`
     Retrieves a compiled `AsyncScript` object for the given `scriptName`, loading it via the configured loader if it's not already in the cache. Returns a `Promise` that resolves with the `AsyncScript` instance.
@@ -1828,7 +1857,6 @@ Cascada provides functions to precompile files or strings directly to JavaScript
 The resulting JavaScript string can be saved to a `.js` file and loaded in your application using the `PrecompiledLoader`. A key option is `opts.env`, which ensures that any custom filters, global functions, or command handlers you've added are correctly included in the compiled output.
 
 **For a comprehensive guide on all precompilation options and advanced usage, please refer to the [Nunjucks precompiling documentation](https://mozilla.github.io/nunjucks/api.html#precompiling).**
-
 
 ## Development Status and Roadmap
 
