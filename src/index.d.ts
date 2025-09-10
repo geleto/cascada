@@ -272,11 +272,11 @@ export function installJinjaCompat(): void;
 export function reset(): void;
 
 /** Function-based loader that returns Promise<string> | string */
-export type LoaderFunction = (name: string) => Promise<string> | string;
+export type LoaderFunction = (name: string) => Promise<string | null> | string | null;
 
 /** Class-based loader interface */
 export interface LoaderInterface {
-  load(name: string): Promise<string> | string;
+  load(name: string): Promise<string | null> | string | null;
 }
 
 /** A synchronous or an asynchronous loader. Supports both legacy and native loader types. */
