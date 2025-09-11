@@ -1774,6 +1774,23 @@ const env = new AsyncEnvironment([
     const env = new AsyncEnvironment(new DatabaseLoader(myDbConnection));
     ```
 
+    **4. Running Loaders Concurrently**
+
+The **`raceLoaders(loaders)`** function creates a single, optimized loader that runs multiple loaders concurrently and returns the result from the first one that succeeds. This is ideal for scenarios where you want to implement fallback mechanisms (e.g., try a CDN, then a local cache) or simply load from the fastest available source without waiting for slower ones.
+
+    ```javascript
+    const { raceLoaders, FileSystemLoader, WebLoader } = require('cascada-engine');
+
+    // This loader will try to fetch from the web first, but if that is slow
+    // or fails, it will fall back to the filesystem loader.
+    const fastLoader = raceLoaders([
+      new WebLoader('https://my-cdn.com/scripts/'),
+      new FileSystemLoader('scripts/backup/')
+    ]);
+
+    const env = new AsyncEnvironment(fastLoader);
+    ```
+
 #### Compilation and Caching
 
 For better performance, the environment can compile and cache assets.
