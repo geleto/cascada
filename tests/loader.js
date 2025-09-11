@@ -11,6 +11,7 @@
     StringLoader,
     loadString,
     clearStringCache,
+    raceLoaders,
     precompileTemplateString,
     precompileScriptString,
     Template,
@@ -27,6 +28,7 @@
     StringLoader = require('./util').StringLoader;
     loadString = require('../src/index').loadString;
     clearStringCache = require('../src/index').clearStringCache;
+    raceLoaders = require('../src/index').raceLoaders;
     precompileTemplateString = require('../src/index').precompileTemplateString;
     precompileScriptString = require('../src/index').precompileScriptString;
     Template = require('../src/environment').Template;
@@ -42,6 +44,7 @@
     StringLoader = window.util.StringLoader;
     loadString = nunjucks.loadString;
     clearStringCache = nunjucks.clearStringCache;
+    raceLoaders = nunjucks.raceLoaders;
     precompileTemplateString = nunjucks.precompileTemplateString;
     precompileScriptString = nunjucks.precompileScriptString;
     Template = nunjucks.Template;
@@ -1455,7 +1458,7 @@
     });
 
     describe('Concurrent loading', function() {
-      it('should load templates concurrently in async mode', function(done) {
+      it('should race async templates using raceLoaders function', function(done) {
 
         let callOrder = [];
         let startTime = Date.now();
@@ -1502,7 +1505,7 @@
           }
         }
 
-        const env = new AsyncEnvironment([new SlowLoader1(), new SlowLoader2(), new SlowLoader3()]);
+        const env = new AsyncEnvironment(raceLoaders([new SlowLoader1(), new SlowLoader2(), new SlowLoader3()]));
 
         env.getTemplate('concurrent-test.njk').then((template) => {
           const endTime = Date.now();

@@ -186,4 +186,5 @@ module.exports = {
   precompileScriptStringAsync: (precompile) ? precompile.precompileScriptStringAsync : undefined,
   loadString: loaderUtils.loadString,
   clearStringCache: loaderUtils.clearStringCache,
+  raceLoaders: loaderUtils.raceLoaders,
 };

@@ -214,7 +214,7 @@ export function renderScriptStringAsync(src, ctx) {
   return asyncE.renderScriptString(src, ctx);
 }
 
-export const { loadString, clearStringCache } = loaderUtils;
+export const { loadString, clearStringCache, raceLoaders } = loaderUtils;
 
 // Default export
 export default {
@@ -264,5 +264,6 @@ export default {
   precompileScriptAsync,
   precompileScriptStringAsync,
   loadString: loaderUtils.loadString,
-  clearStringCache: loaderUtils.clearStringCache
+  clearStringCache: loaderUtils.clearStringCache,
+  raceLoaders: loaderUtils.raceLoaders
 };

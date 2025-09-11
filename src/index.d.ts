@@ -34,6 +34,7 @@ export function renderScriptStringAsync(src: string, context?: object): Promise<
 
 export function loadString(key: string, loader: ILoaderAny | ILoaderAny[]): Promise<string> | string;
 export function clearStringCache(loader: ILoaderAny, key?: string): void;
+export function raceLoaders(loaders: ILoaderAny[]): ILoaderAsync;
 
 /** @deprecated Use compileTemplate instead */
 export function compile(src: string, env?: Environment, path?: string, eagerCompile?: boolean): Template;

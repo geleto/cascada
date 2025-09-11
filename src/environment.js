@@ -14,7 +14,7 @@ const { handleError, Frame, AsyncFrame, AsyncState } = globalRuntime;
 const expressApp = require('./express-app');
 const scriptTranspiler = require('./script-transpiler');
 const DataHandler = require('./data-handler');
-const { clearStringCache, callLoadersSequential, callLoadersConcurrent } = require('./loader-utils');
+const { clearStringCache, callLoaders } = require('./loader-utils');
 
 // If the user is using the async API, *always* call it
 // asynchronously even if the template was synchronous.
@@ -336,17 +336,9 @@ class BaseEnvironment extends EmitterObj {
       }
     };
 
-    if (asyncMode) {
-      // Use concurrent loading for async mode
-      callLoadersConcurrent(this.loaders, name, (loader, templateName) => {
-        return that.resolveFromLoader(loader, parentName, templateName);
-      }, createTemplate);
-    } else {
-      // Use sequential loading for sync mode (preserves existing behavior)
-      callLoadersSequential(this.loaders, name, (loader, templateName) => {
-        return that.resolveFromLoader(loader, parentName, templateName);
-      }, createTemplate);
-    }
+    callLoaders(this.loaders, name, (loader, templateName) => {
+      return that.resolveFromLoader(loader, parentName, templateName);
+    }, createTemplate);
 
     return syncResult;
   }

@@ -250,7 +250,7 @@ function createSourceObject(src, path, noCache = false) {
  * @param {Function} resolveFromLoader Function to resolve name relative to parentName
  * @param {Function} callback The callback function (err, result)
  */
-function callLoadersSequential(loaders, name, resolveFromLoader, callback) {
+function callLoaders(loaders, name, resolveFromLoader, callback) {
   // Use the exact same lib.asyncIter call as the original code
   lib.asyncIter(loaders, (loader, i, next, done) => {
     function handle(err, src) {
@@ -273,53 +273,52 @@ function callLoadersSequential(loaders, name, resolveFromLoader, callback) {
 }
 
 /**
- * Calls multiple loaders concurrently and returns the first successful result
- * @param {Array} loaders Array of loaders to try
- * @param {string} name The resource name to load
- * @param {Function} resolveFromLoader Function to resolve name relative to parentName
- * @param {Function} callback The callback function (err, result)
+ * Creates a single loader that runs multiple loaders concurrently and
+ * returns the result from the first one that succeeds. This is the primary
+ * concurrency primitive for Cascada.
+ *
+ * @param {Array<Object|Function>} loaders An array of loader instances.
+ * @returns {Object} A single, standardized loader object with a `load` method.
  */
-function callLoadersConcurrent(loaders, name, resolveFromLoader, callback) {
-  const promises = [];
+function raceLoaders(loaders) {
+  if (!Array.isArray(loaders) || loaders.length === 0) {
+    throw new Error('raceLoaders requires a non-empty array of loaders.');
+  }
 
-  // Start all loaders concurrently
-  for (const loader of loaders) {
-    try {
-      const resolvedName = resolveFromLoader(loader, name);
-      const promise = new Promise((resolve, reject) => {
-        callLoader(loader, resolvedName, (err, result) => {
-          if (err) {
-            reject(err);
-          } else if (result) {
-            result.loader = loader;
-            resolve(result);
-          } else {
-            reject(new Error(`Resource '${resolvedName}' not found`));
-          }
+  // Return a new loader object that encapsulates the race logic.
+  return {
+    // Make it an async loader so it's always handled as a promise.
+    async: true,
+
+    /**
+     * The load method that will be called by the engine.
+     * @param {string} name The name of the resource to load.
+     * @returns {Promise<Object|null>} A promise that resolves with the source
+     * object from the first successful loader.
+     */
+    load: function(name) {
+      const promises = loaders.map(loader => {
+        return new Promise((resolve, reject) => {
+          // Use the existing, robust `callLoader` utility.
+          callLoader(loader, name, (err, result) => {
+            if (err) {
+              // Reject on error to signal failure for this loader.
+              reject(err);
+            } else if (result) {
+              // Resolve with the result on success.
+              resolve(result);
+            } else {
+              // Reject if not found, so Promise.any can skip it.
+              reject(new Error(`Resource '${name}' not found by this loader.`));
+            }
+          });
         });
       });
 
-      promises.push(promise);
-    } catch (error) {
-      // Continue to next loader for sync errors
-      continue;
+      // Race all the promises and return the first one that resolves.
+      return resolveFirstSuccessfulPromise(promises, name);
     }
-  }
-
-  if (promises.length > 0) {
-    // Use the first successful promise
-    resolveFirstSuccessfulPromise(promises, name)
-      .then((result) => {
-        callback(null, result);
-      })
-      .catch((error) => {
-        // All loaders failed: align with sequential behavior (no error, no result)
-        callback(null, null);
-      });
-  } else {
-    // No loaders to attempt
-    callback(null, null);
-  }
+  };
 }
 
 /**
@@ -406,7 +405,6 @@ module.exports = {
   loadString,
   clearStringCache,
   loadStringFromNativeLoader,
-  callLoader,
-  callLoadersSequential,
-  callLoadersConcurrent
+  callLoaders,
+  raceLoaders
 };
