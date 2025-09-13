@@ -5,44 +5,66 @@ const lib = require('./lib');
 // WeakMap to store resource caches for each loader (no mutation of loader objects)
 const resourceCaches = new WeakMap();
 
+// Corrected loadString function for loader-utils.js
+
 /**
- * Loads a string from the specified loader with caching.
+ * Loads a string from the specified loader(s) with caching.
+ * Tries loaders sequentially.
+ * Behaves synchronously and throws on failure if all loaders are synchronous.
+ * Returns a Promise if any loader in the chain is asynchronous.
+ *
  * @param {string} key The resource key/name to load
  * @param {ILoaderAny|ILoaderAny[]} loader The loader instance or array of loaders
- * @returns {Promise<string>|string} The loaded string content - Promise for async loaders, string for sync loaders
+ * @returns {Promise<string>|string} The loaded string content.
  */
 function loadString(key, loader) {
   const loaders = Array.isArray(loader) ? loader : [loader];
 
-  const results = [];
-  let hasAsyncLoader = false;
-
-  for (const candidateLoader of loaders) {
+  for (let i = 0; i < loaders.length; i++) {
+    const candidateLoader = loaders[i];
     try {
       const result = loadStringFromNativeLoader(key, candidateLoader);
+
       if (isPromise(result)) {
-        hasAsyncLoader = true;
-        results.push(result);
-      } else {
-        // Found a sync result, return it immediately
+        // asynchronous mode
+        // We've encountered an async loader. The rest of the chain MUST be handled asynchronously.
+        // We return a promise that starts with the current loader's promise.
+
+        const remainingLoaders = loaders.slice(i + 1);
+        let promiseChain = result;
+
+        // On failure, chain the next loader.
+        for (const nextLoader of remainingLoaders) {
+          promiseChain = promiseChain.catch(() => {
+            // This ensures subsequent loaders are also tried.
+            return loadStringFromNativeLoader(key, nextLoader);
+          });
+        }
+
+        // If the entire chain fails, reject with a final error.
+        return promiseChain.catch(() => {
+          throw new Error(`Resource '${key}' not found in any loader`);
+        });
+      }
+
+      // Synchronous mode:
+      if (result) {
+        // Sync success, return immediately.
         return result;
       }
+      // If result is null/falsy, it's a sync failure; the loop continues.
+
     } catch (error) {
-      // Continue to next loader
+      // A synchronous loader threw an error (e.g., file not found).
+      // We treat this as a failure and continue to the next loader.
       continue;
     }
   }
 
-  if (hasAsyncLoader) {
-    // Use the already-started promises and resolve the first successful one
-    return resolveFirstSuccessfulPromise(results, key);
-  } else {
-    // All loaders failed
-    throw new Error(`Resource '${key}' not found in any loader`);
-  }
+  // If the loop completes without returning, it means all loaders
+  // were synchronous and all of them failed. Throw a synchronous error.
+  throw new Error(`Resource '${key}' not found in any loader`);
 }
-
-
 
 /**
  * Clears the string cache for a specific loader
