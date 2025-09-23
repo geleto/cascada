@@ -1324,7 +1324,7 @@ class Compiler extends Obj {
       const awaitSequentialElse = false;//I think awaiting it like loop body is not needed
 
       if (node.isAsync) {
-        this.emit('async function() {');
+        this.emit('(async function() {');
         // must return the promise from its async block
         // which when sequential will wait for all closures
         if (awaitSequentialElse) {
@@ -1339,7 +1339,7 @@ class Compiler extends Obj {
       this.compile(node.else_, frame);
       frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential && awaitSequentialElse, node.else_);
 
-      this.emit.line('};');
+      this.emit.line(node.isAsync ? '}).bind(context);' : '};');
     }
 
     // Call the runtime iterate loop function

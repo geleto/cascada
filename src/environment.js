@@ -953,13 +953,17 @@ class Template extends Obj {
       } else {
         const exported = context.getExported();
         const boundExported = {};
+        // A new clean context, associating macros with the template where they are defined.
         const macroContext = new Context({}, this.blocks, this.env, this.path);
 
         for (const name in exported) {
-          if (typeof exported[name] === 'function') {
-            boundExported[name] = exported[name].bind(macroContext);
+          const item = exported[name];
+          // Re-bind only macros, preserve `this` for other functions.
+          if (typeof item === 'function' && item.isMacro) {
+            // Bind the macro to the new context, preserving path info for errors.
+            boundExported[name] = item.bind(macroContext);
           } else {
-            boundExported[name] = exported[name];
+            boundExported[name] = item;
           }
         }
         cb(null, boundExported);
