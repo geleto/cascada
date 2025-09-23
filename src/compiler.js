@@ -718,9 +718,9 @@ class Compiler extends Obj {
         };
         this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
           if (!sequenceLockKey) {
-            this.emit(`return runtime.callWrap(${result}[0], "${funcName}", context.ctx, ${result}.slice(1));`);
+            this.emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
           } else {
-            this.emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context.ctx, ${result}.slice(1), frame, "${sequenceLockKey}");`);
+            this.emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}");`);
           }
         });
       } else {
@@ -733,7 +733,7 @@ class Compiler extends Obj {
         this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
           this.emit(`return runtime.callWrap(`);
           this.compile(node.name, frame);
-          this.emit.line(`, "${funcName}", context.ctx, ${result});`);
+          this.emit.line(`, "${funcName}", context, ${result});`);
         }); // Resolve arguments using _compileAggregate.
       }
     } else {
@@ -2099,7 +2099,7 @@ class Compiler extends Obj {
     else {
       this.emit.line('if(parentTemplate) {');
       this.emit.line('let parentContext = context.forkForPath(parentTemplate.path);');
-      this.emit.line(`parentContext.rootRenderFunc(env, parentContext, frame, runtime, ${this.asyncMode ? 'astate, ' : ''}cb);`);
+      this.emit.line(`parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, ${this.asyncMode ? 'astate, ' : ''}cb);`);
       this.emit.line('} else {');
       if (this.asyncMode) {
         // This case (sync root in asyncMode) might be unlikely/problematic,

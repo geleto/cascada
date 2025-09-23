@@ -951,7 +951,18 @@ class Template extends Obj {
       if (err) {
         cb(err, null);
       } else {
-        cb(null, context.getExported());
+        const exported = context.getExported();
+        const boundExported = {};
+        const macroContext = new Context({}, this.blocks, this.env, this.path);
+
+        for (const name in exported) {
+          if (typeof exported[name] === 'function') {
+            boundExported[name] = exported[name].bind(macroContext);
+          } else {
+            boundExported[name] = exported[name];
+          }
+        }
+        cb(null, boundExported);
       }
     };
     if (this.asyncMode) {
