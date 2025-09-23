@@ -35,7 +35,11 @@ const noopTmplSrc = {
       try {
         cb(null, '');
       } catch (e) {
-        cb(handleError(e, null, null));
+        const err = handleError(e, null, null);
+        if (context && context.path) {
+          err.Update(context.path);
+        }
+        cb(err);
       }
     }
   }
@@ -48,7 +52,11 @@ const noopTmplSrcAsync = {
       try {
         cb(null, '');
       } catch (e) {
-        cb(handleError(e, null, null));
+        const err = handleError(e, null, null);
+        if (context && context.path) {
+          err.Update(context.path);
+        }
+        cb(err);
       }
     }
   }
