@@ -1233,7 +1233,7 @@ class Compiler extends Obj {
     this.emit(`let ${loopBodyFunc} = `);
 
     if (node.isAsync) {
-      this.emit('async function(');//@todo - think this over, does it need async block?
+      this.emit('(async function(');//@todo - think this over, does it need async block?
     } else {
       this.emit('function(');
     }
@@ -1313,7 +1313,7 @@ class Compiler extends Obj {
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential, node.body);
 
     // Close the loop body function
-    this.emit.line('};');
+    this.emit.line(node.isAsync ? '}).bind(context);' : '};');
 
     // Define the else function if it exists
     let elseFuncId = 'null';
