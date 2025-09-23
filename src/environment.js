@@ -611,9 +611,10 @@ class AsyncEnvironment extends BaseEnvironment {
 }
 
 class Context extends Obj {
-  init(ctx, blocks, env) {
+  init(ctx, blocks, env, path) {
     // Has to be tied to an environment so we can tap into its globals.
     this.env = env || new Environment();
+    this.path = path || null;
 
     // Make a duplicate of ctx
     this.ctx = lib.extend({}, ctx);
@@ -790,7 +791,7 @@ class Template extends Obj {
       }
     }
 
-    const context = new Context(ctx || {}, this.blocks, this.env);
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path);
     let frame;
     if (parentFrame) {
       frame = parentFrame.push(true);
@@ -917,7 +918,7 @@ class Template extends Obj {
     frame.topLevel = true;
 
     // Run the rootRenderFunc to populate the context with exported vars
-    const context = new Context(ctx || {}, this.blocks, this.env);
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path);
     const callback = (err) => {
       if (err) {
         cb(err, null);

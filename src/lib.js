@@ -67,7 +67,7 @@ function TemplateError(message, lineno, colno, errorContextString = null) {
   }
 
   Object.defineProperty(err, 'name', {
-    value: 'Template render error',
+    value: 'Template/Script render error',
   });
 
   if (Error.captureStackTrace) {
@@ -113,6 +113,9 @@ function TemplateError(message, lineno, colno, errorContextString = null) {
         msg += ` [Line ${this.lineno}, Column ${this.colno}]`;
       } else if (this.lineno) {
         msg += ` [Line ${this.lineno}]`;
+      }
+      if (this.errorContextString) {
+        msg += ` doing '${this.errorContextString}'`;
       }
     }
 

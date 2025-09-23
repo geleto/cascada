@@ -815,7 +815,7 @@
         tmpl.render({}, function(err, res) {
           expect(res).to.be(undefined);
           expect(err.toString()).to.be([
-            'Template render error: (parse-error.njk) [Line 1, Column 26]',
+            'Template/Script render error: (parse-error.njk) [Line 1, Column 26]',
             '  unexpected token: ,',
           ].join('\n'));
           done();
@@ -838,7 +838,7 @@
         tmpl.render({foo: foo}, function(err, res) {
           expect(res).to.be(undefined);
           expect(err.toString()).to.be([
-            'Template render error: (user-error.njk) [Line 1, Column 11]',
+            'Template/Script render error: (user-error.njk) [Line 1, Column 11]',
             '  Error: ERROR',
           ].join('\n'));
           done();
