@@ -838,7 +838,8 @@
         tmpl.render({foo: foo}, function(err, res) {
           expect(res).to.be(undefined);
           expect(err.toString()).to.be([
-            'Template/Script render error: (user-error.njk) [Line 1, Column 11]',
+            'Template/Script render error: ',
+            ' (user-error.njk) [Line 1, Column 11]',
             '  Error: ERROR',
           ].join('\n'));
           done();

@@ -101,11 +101,12 @@ function TemplateError(message, lineno, colno, errorContextString = null) {
   err.firstUpdate = true;
 
   err.Update = function Update(path) {
-    let msg = '(' + (path || 'unknown path') + ')';
+    let msg = '';
 
-    // only show lineno + colno next to path of template
-    // where error occurred
+    // only show path, lineno + colno on first update
     if (this.firstUpdate) {
+      msg = '(' + (path || 'unknown path') + ')';
+
       if (this.errorContext) {
         msg += ` ${this.errorContext}`;
       }

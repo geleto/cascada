@@ -467,7 +467,7 @@ class Compiler extends Obj {
       // Resolve the left-hand side and arguments (if any)
       this._compileAggregate(mergedNode, frame, '[', ']', true, true, function (args) {
         this.emit.line(`  const testFunc = ${testFunc};`);
-        this.emit.line(`  if (!testFunc) { throw runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}"); }`);
+        this.emit.line(`  if (!testFunc) { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}"); err.Update(context.path); throw err; }`);
         this.emit.line(`  const result = await testFunc.call(context, ${args}[0]`);
         if (node.right.args && node.right.args.children.length > 0) {
           this.emit.line(`, ...${args}.slice(1)`);
@@ -482,7 +482,7 @@ class Compiler extends Obj {
         this.emit(', ');
         this.compile(node.right.args, frame);
       }
-      this.emit(`) : (() => { throw runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}"); })())`);
+      this.emit(`) : (() => { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}"); err.Update(context.path); throw err; })())`);
       this.emit(' === true');
     }
   }
@@ -1742,14 +1742,14 @@ class Compiler extends Obj {
         this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
         this.emit.line(`    return exported["${name}"];`);
         this.emit.line(`  } else {`);
-        this.emit.line(`    throw runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}");`);
+        this.emit.line(`    var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}"); err.Update(context.path); throw err;`);
         this.emit.line(`  }`);
-        this.emit.line(`} catch(e) { throw runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}"); } })();`);
+        this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}"); err.Update(context.path); throw err; } })();`);
       } else {
         this.emit.line(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
         this.emit.line(`${id} = ${importedId}.${name};`);
         this.emit.line('} else {');
-        this.emit.line(`cb(runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}")); return;`);
+        this.emit.line(`var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}"); err.Update(context.path); cb(err); return;`);
         this.emit.line('}');
       }
 
@@ -1992,7 +1992,7 @@ class Compiler extends Obj {
         this._compileExpression(child, frame, false);
         if (this.throwOnUndefined) {
           // Use child position for ensureDefined error
-          this.emit(`,${child.lineno},${child.colno})`);
+          this.emit(`,${child.lineno},${child.colno}, context)`);
         }
         // Use child position for suppressValue error
         this.emit(', env.opts.autoescape);\n');
@@ -2074,9 +2074,9 @@ class Compiler extends Obj {
       this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
-      // Use static node position for root catch in async mode
-      // Do NOT pass errorContext here
-      this.emit.line(`cb(runtime.handleError(e, ${node.lineno}, ${node.colno}))`);
+      this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno});`); // Store the handled error
+      this.emit.line('  err.Update(context.path);'); // Use context.path to update the error message
+      this.emit.line('  cb(err);'); // Pass the updated error to the callback
       this.emit.line('});');
       this.emit.line('} else {');
       this.emit.line('if(parentTemplate) {');

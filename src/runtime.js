@@ -675,33 +675,37 @@ function suppressValueAsync(val, autoescape) {
   return suppressValue(val, autoescape);
 }
 
-function ensureDefined(val, lineno, colno) {
+function ensureDefined(val, lineno, colno, context) {
   if (val === null || val === undefined) {
-    throw new lib.TemplateError(
+    const err = new lib.TemplateError(
       'attempted to output null or undefined value',
       lineno + 1,
       colno + 1
     );
+    if (context && context.path) {
+      err.Update(context.path);
+    }
+    throw err;
   }
   return val;
 }
 
-function ensureDefinedAsync(val, lineno, colno) {
+function ensureDefinedAsync(val, lineno, colno, context) {
   if (Array.isArray(val)) {
     // append the function to the array, so it will be
     // called after the elements before it are joined
     val.push((v) => {
-      return ensureDefined(v, lineno, colno);
+      return ensureDefined(v, lineno, colno, context);
     });
     return val;
   }
   if (val && typeof val.then === 'function') {
     // it's a promise, return a promise that suppresses the value when resolved
     return (async (v) => {
-      return ensureDefined(await v, lineno, colno);
+      return ensureDefined(await v, lineno, colno, context);
     })(val);
   }
-  return ensureDefined(val, lineno, colno);
+  return ensureDefined(val, lineno, colno, context);
 }
 
 function promisify(fn) {
@@ -1021,7 +1025,9 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
         const handlerInstance = getOrInstantiateHandler(handlerName);
 
         if (!handlerInstance) {
-          throw handleError(new Error(`Unknown command handler: ${handlerName}`), item.pos.lineno, item.pos.colno);
+          const err1 = handleError(new Error(`Unknown command handler: ${handlerName}`), item.pos.lineno, item.pos.colno);
+          err1.Update(context.path);
+          throw err1;
         }
 
         // Navigate through subpath properties to reach the final target
@@ -1031,7 +1037,9 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
             if (targetObject && typeof targetObject === 'object' && targetObject !== null) {
               targetObject = targetObject[pathSegment];
             } else {
-              throw handleError(new Error(`Cannot access property '${pathSegment}' on ${typeof targetObject} in handler '${handlerName}'`), item.pos.lineno, item.pos.colno);
+              const err2 = handleError(new Error(`Cannot access property '${pathSegment}' on ${typeof targetObject} in handler '${handlerName}'`), item.pos.lineno, item.pos.colno);
+              err2.Update(context.path);
+              throw err2;
             }
           }
         }
@@ -1049,13 +1057,19 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
             commandFunc(...args);
           } catch (e) {
             if (!commandName) {
-              throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable (use Proxy or constructor function return)`), item.pos.lineno, item.pos.colno);
+              const err3 = handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable (use Proxy or constructor function return)`), item.pos.lineno, item.pos.colno);
+              err3.Update(context.path);
+              throw err3;
             } else {
-              throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}' and is not callable`), item.pos.lineno, item.pos.colno);
+              const err4 = handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}' and is not callable`), item.pos.lineno, item.pos.colno);
+              err4.Update(context.path);
+              throw err4;
             }
           }
         } else {
-          throw handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`), item.pos.lineno, item.pos.colno);
+          const err5 = handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`), item.pos.lineno, item.pos.colno);
+          err5.Update(context.path);
+          throw err5;
         }
       }
       return;
