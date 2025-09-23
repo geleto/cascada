@@ -1138,7 +1138,7 @@ class Compiler extends Obj {
       // the write counts from the below compilation are saved to the loopFrame (in the compiler)
       // these will be capped to 1 when passed to the runtime.iterate() and will be released by finalizeLoopWrites
       const iteratorFuncName = 'while_iterator_' + this._tmpid();
-      this.emit.line(`async function* ${iteratorFuncName}(frame) {`);
+      this.emit.line(`let ${iteratorFuncName} = (async function* (frame) {`);
 
       // push a frame to trap any writes from the condition expression
       // by setting sequentialLoopBody, the writes will be released by finalizeLoopWrites
@@ -1172,7 +1172,7 @@ class Compiler extends Obj {
 
       this.emit.line('  frame = frame.pop();');
 
-      this.emit.line('}');
+      this.emit.line('}).bind(context);');
       this.emit.line('');
       this.emit.line(`let ${arrVarName} = ${iteratorFuncName}(frame);`);
     };

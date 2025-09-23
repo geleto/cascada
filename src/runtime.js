@@ -462,7 +462,7 @@ class AsyncFrame extends Frame {
 }
 
 function makeMacro(argNames, kwargNames, func, astate) {
-  return function macro(...macroArgs) {
+  const macro = function macro(...macroArgs) {
     var argCount = numArgs(macroArgs);
     var args;
     var kwargs = getKeywordArgs(macroArgs);
@@ -503,6 +503,8 @@ function makeMacro(argNames, kwargNames, func, astate) {
     }
     return func.apply(this, args);
   };
+  macro.isMacro = true;
+  return macro;
 }
 
 function withPath(context, path, func) {
@@ -1154,7 +1156,13 @@ function callWrap(obj, name, context, args) {
     throw new Error('Unable to call `' + name + '`, which is not a function');
   }
 
-  return obj.apply(context, args);
+  // Check if the function is a macro, or if it's a global function that
+  // doesn't exist on the context, in which case it should be called with
+  // the context as `this`.
+  const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
+                 !Object.prototype.hasOwnProperty.call(context.ctx, name);
+
+  return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
 }
 
 //@todo - deprecate, the sequencedMemberLookupAsync of the FunCall path lookupVal/symbol should handle the frame lock release
