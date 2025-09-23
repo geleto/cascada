@@ -727,6 +727,26 @@ class Context extends Obj {
     });
     return exported;
   }
+
+  forkForPath(newPath) {
+    // Create a new, empty context object.
+    // It will inherit the correct `env` from `this`.
+    const newContext = new Context({}, {}, this.env);
+
+    // Share critical state objects by REFERENCE. Do NOT copy them.
+    newContext.ctx = this.ctx;           // Share the variable store.
+    newContext.blocks = this.blocks;       // Share the block definitions for extends/super.
+    newContext.exported = this.exported;   // Share the list of exported variables for import.
+
+    // Share async state properties by REFERENCE.
+    newContext.asyncBlocksPromise = this.asyncBlocksPromise;
+    newContext.asyncBlocksResolver = this.asyncBlocksResolver;
+
+    // Set the ONLY property that should be different.
+    newContext.path = newPath;
+
+    return newContext;
+  }
 }
 
 //@todo - class Script

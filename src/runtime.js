@@ -505,6 +505,11 @@ function makeMacro(argNames, kwargNames, func, astate) {
   };
 }
 
+function withPath(context, path, func) {
+  const executionContext = (path && context.path !== path) ? context.forkForPath(path) : context;
+  return func.call(executionContext);
+}
+
 function makeKeywordArgs(obj) {
   obj.__keywords = true;
   return obj;
@@ -1630,6 +1635,7 @@ module.exports = {
   resolveObjectProperties,
   resolveArguments,
   flattenBuffer,
+  withPath,
 
   memberLookup,
   memberLookupAsync,

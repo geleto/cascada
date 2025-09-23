@@ -1518,6 +1518,10 @@ class Compiler extends Obj {
       `[${kwargNames.join(', ')}], `,
       `function (${realNames.join(', ')}, astate) {`
     );
+
+    // START CHANGE: Wrap the entire body in withPath to fork the context
+    this.emit.line(`return runtime.withPath(this, "${this.templateName}", function() {`);
+
     if (!keepFrame) {
       this.emit.line('let callerFrame = frame;');
     }
@@ -1572,9 +1576,8 @@ class Compiler extends Obj {
       this.compile(node.body, currFrame);
     });
 
+    // *** THIS IS THE CRITICAL CODE THAT WAS MISSING ***
     this.emit.line('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
-    //return the buffer, in async mode it may not be ready yet
-    //this.emit.line(`return ${node.isAsync?'runtime.newSafeStringAsync':'new runtime.SafeString'}(${bufferId});`);
     this.emit.line('return ' + (
       node.isAsync ?
         `astate.waitAllClosures().then(() => {if (${err}) throw ${err};` +
@@ -1582,11 +1585,16 @@ class Compiler extends Obj {
         `new runtime.SafeString(${bufferId})`
     )
     );
+    // *** END OF CRITICAL CODE ***
 
+    // END CHANGE: Close the withPath wrapper function
+    this.emit.line('});'); // 1. Closes the withPath inner function
+
+    // Now, close the outer function passed to makeMacro
     if (node.isAsync) {
-      this.emit.line('}, astate);');
+      this.emit.line('}, astate);'); // 2a. Closes the main function for async
     } else {
-      this.emit.line('});');
+      this.emit.line('});'); // 2b. Closes the main function for sync
     }
     this._popBuffer();
 
@@ -2069,7 +2077,8 @@ class Compiler extends Obj {
       this.emit.line('if(!isIncluded){');
       this.emit.line('astate.waitAllClosures().then(() => {');
       this.emit.line('  if(parentTemplate) {');
-      this.emit.line('    parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
+      this.emit.line('    let parentContext = context.forkForPath(parentTemplate.path);');
+      this.emit.line('    parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, astate, cb);');
       this.emit.line('  } else {');
       this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
       this.emit.line('  }');
@@ -2080,7 +2089,8 @@ class Compiler extends Obj {
       this.emit.line('});');
       this.emit.line('} else {');
       this.emit.line('if(parentTemplate) {');
-      this.emit.line('parentTemplate.rootRenderFunc(env, context, frame, runtime, astate, cb);');
+      this.emit.line('let parentContext = context.forkForPath(parentTemplate.path);');
+      this.emit.line('parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, astate, cb);');
       this.emit.line('} else {');
       this.emit.line(`cb(null, ${this.buffer});`);
       this.emit.line('}');
@@ -2088,7 +2098,8 @@ class Compiler extends Obj {
     }
     else {
       this.emit.line('if(parentTemplate) {');
-      this.emit.line(`parentTemplate.rootRenderFunc(env, context, frame, runtime, ${this.asyncMode ? 'astate, ' : ''}cb);`);
+      this.emit.line('let parentContext = context.forkForPath(parentTemplate.path);');
+      this.emit.line(`parentContext.rootRenderFunc(env, parentContext, frame, runtime, ${this.asyncMode ? 'astate, ' : ''}cb);`);
       this.emit.line('} else {');
       if (this.asyncMode) {
         // This case (sync root in asyncMode) might be unlikely/problematic,
