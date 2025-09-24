@@ -101,6 +101,9 @@ function TemplateError(message, lineno, colno, errorContextString = null) {
   err.firstUpdate = true;
 
   err.Update = function Update(path) {
+    if (!this.firstUpdate) {
+      return this;
+    }
     let msg = '';
 
     // only show path, lineno + colno on first update

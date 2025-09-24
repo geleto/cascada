@@ -67,7 +67,7 @@
       var loader = new StringLoader();
       var env = new AsyncEnvironment(loader);
       loader.addTemplate('context-export-func-lib.njk', '{% set myExport = myFunc %}');
-      loader.addTemplate('context-export-func-main.njk', '{% import "context-export-func-lib.njk" as lib %}{{ lib.myExport() }}');
+      loader.addTemplate('context-export-func-main.njk', '{% import "context-export-func-lib.njk" as lib with context %}{{ lib.myExport() }}');
 
       const myObj = {
         foo: 'bar',
@@ -96,7 +96,7 @@
           }
         };
         const result = await env.renderTemplateString(
-          '{% for item in items %}{{ this.myMethod() }}{% endfor %}',
+          '{% for item in items %}{{ myMethod() }}{% endfor %}',
           context
         );
         expect(result).to.equal('22');
@@ -114,7 +114,7 @@
           }
         };
         const result = await env.renderTemplateString(
-          '{% while this.shouldContinue() %}{{ this.myMethod() }};{% endwhile %}',
+          '{% while shouldContinue() %}{{ myMethod() }};{% endwhile %}',
           context
         );
         expect(result).to.equal('method called;method called;');
@@ -128,7 +128,7 @@
           }
         };
         const result = await env.renderTemplateString(
-          '{% for item in items %}{{ item }}{% else %}{{ this.myMethod() }}{% endfor %}',
+          '{% for item in items %}{{ item }}{% else %}{{ myMethod() }}{% endfor %}',
           context
         );
         expect(result).to.equal('method called');
