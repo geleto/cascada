@@ -2130,6 +2130,9 @@ class Compiler extends Obj {
 
       this.emit.funcBegin(block, `b_${name}`);
 
+      if (this.asyncMode) {
+        this.emit.line(`context = context.forkForPath(${this._templateName()});`);
+      }
       let tmpFrame = frame.new();//new Frame();
       this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       this.compile(block.body, tmpFrame);

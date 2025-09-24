@@ -132,7 +132,7 @@ module.exports = class CompileEmit {
       this.line('  astate.leaveAsyncBlock();');
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}");`);
+      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
     }
     if (createScope && !node.isAsync) {
       this.line('frame = frame.pop();');
@@ -165,7 +165,7 @@ module.exports = class CompileEmit {
       this.line('  astate.leaveAsyncBlock();');
       this.line('}'); // Close inner finally
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}")`);
+      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
 
       this.asyncClosureDepth--;
       frame = frame.pop();
@@ -217,9 +217,9 @@ module.exports = class CompileEmit {
     this.line('}');
     const errorContext = this.compiler._generateErrorContext(node, positionNode);
     if (callbackName) {
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}")`);
+      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
     } else {
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}")`);
+      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
     }
 
     frame = frame.pop();
@@ -258,7 +258,7 @@ module.exports = class CompileEmit {
       this.line('  astate.leaveAsyncBlock();');
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}");`);
+      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
 
       frame = frame.pop();
 
@@ -298,7 +298,7 @@ module.exports = class CompileEmit {
       this.line('  astate.leaveAsyncBlock();');
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, "${errorContext}");`);
+      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
       return frame.pop();
     }
     return frame;

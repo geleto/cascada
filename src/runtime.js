@@ -1193,12 +1193,15 @@ function handleError(error, lineno, colno, errorContextString = null) {
 
 // Make sure the promise is caught and handled (so we don't get unhandled exception)
 // The error is properly reported to the callback
-function handlePromise(promise, cb, lineno, colno, errorContextString = null) {
+function handlePromise(promise, cb, lineno, colno, context, errorContextString = null) {
   // Attach a catch handler that performs the error handling and callback
   promise.catch(err => {
     // Use the provided arguments to handle and report the error
     try {
       const handledError = handleError(err, lineno, colno, errorContextString);
+      if (context) {
+        handledError.Update(context.path);
+      }
       cb(handledError);
     } catch (cbError) {
       // Uh oh, the callback or error handler itself failed.
