@@ -1069,11 +1069,11 @@ class AsyncTemplate extends Template {
     return new Promise((resolve, reject) => {
       super.render(ctx, parentFrame, astate, (err, res) => {
         if (err) {
-          if (!err.Update) {
-            err = this.env._prettifyError(this.path, this.env.opts.dev, err);
-          }
+          err = this.env._prettifyError(this.path, this.env.opts.dev, err);
+          reject(err);
+        } else {
+          resolve(res);
         }
-        cb(err, res);
       });
     });
   }

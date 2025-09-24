@@ -1196,6 +1196,13 @@ function handleError(error, lineno, colno, errorContextString = null) {
 function handlePromise(promise, cb, lineno, colno, errorContextString = null) {
   // Attach a catch handler that performs the error handling and callback
   promise.catch(err => {
+    // mark the async state chain as having encountered an error, so parents know to propagate failure
+    try {
+      // astate is not directly visible here; infer via callback binding if available
+      // fallback: set a flag on the callback for upstream checks
+      if (cb) cb.__hadAsyncError = true;
+    // eslint-disable-next-line no-empty
+    } catch (_) {}
     // Use the provided arguments to handle and report the error
     try {
       const handledError = handleError(err, lineno, colno, errorContextString);
@@ -1504,6 +1511,7 @@ class AsyncState {
     this.completionPromise = null;
     this.completionResolver = null;
     this.asyncBlockFrame = null;//@todo - remove
+    this.hadError = false;
   }
 
   enterAsyncBlock(asyncBlockFrame) {

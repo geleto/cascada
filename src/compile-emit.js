@@ -70,6 +70,8 @@ module.exports = class CompileEmit {
 
   funcEnd(node, noReturn) { // Added node parameter
     if (!noReturn) {
+      // If any nested async block reported an error via the callback marker, don't emit success
+      this.line('if (cb && cb.__hadAsyncError) { return; }');
       this.line('cb(null, ' + this.compiler.buffer + ');');
     }
 

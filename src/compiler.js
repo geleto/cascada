@@ -2073,6 +2073,8 @@ class Compiler extends Obj {
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
     if (this.asyncMode) {
+      // Ensure we check inclusion status against the root frame to avoid false positives after pushes
+      this.emit.line('frame = frame.getRoot();');
       this.emit.line('let isIncluded = !!(frame.parent || frame.isIncluded);');
       this.emit.line('if(!isIncluded){');
       this.emit.line('astate.waitAllClosures().then(() => {');
@@ -2080,6 +2082,7 @@ class Compiler extends Obj {
       this.emit.line('    let parentContext = context.forkForPath(parentTemplate.path);');
       this.emit.line('    parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, astate, cb);');
       this.emit.line('  } else {');
+      this.emit.line('    if (cb && cb.__hadAsyncError) { return; }');
       this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
@@ -2092,6 +2095,7 @@ class Compiler extends Obj {
       this.emit.line('let parentContext = context.forkForPath(parentTemplate.path);');
       this.emit.line('parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, astate, cb);');
       this.emit.line('} else {');
+      this.emit.line('if (cb && cb.__hadAsyncError) { return; }');
       this.emit.line(`cb(null, ${this.buffer});`);
       this.emit.line('}');
       this.emit.line('}');
