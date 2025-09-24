@@ -1161,7 +1161,7 @@
     });
   });
 
-  describe('Integration Tests with Public API Methods', function() {
+  describe('Loader Integration Tests', function() {
     describe('clearStringCache with new loader types', function() {
       it('should clear all caches (Environment + string cache) for function loaders', function() {
         if (typeof clearStringCache === 'undefined') {

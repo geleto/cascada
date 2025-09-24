@@ -23,7 +23,7 @@
     };
   }
 
-  describe.only('Async mode - error path reporting', function () {
+  describe('Async mode - error path reporting', function () {
     var loader;
     beforeEach(function () {
       loader = new StringLoader();

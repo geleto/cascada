@@ -27,7 +27,7 @@
     util = window.util;
   }
 
-  describe.only('Async mode - context binding', function () {
+  describe('Async mode - context binding', function () {
     it('should maintain correct context for global functions', async () => {
       var env = new AsyncEnvironment(new StringLoader());
       env.addGlobal('myGlobal', function () {

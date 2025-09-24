@@ -1074,7 +1074,6 @@ class AsyncTemplate extends Template {
         } else {
           resolve(res);
         }
-        cb(err, res);
       });
     });
   }
