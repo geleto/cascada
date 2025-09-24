@@ -67,7 +67,7 @@
       var loader = new StringLoader();
       var env = new AsyncEnvironment(loader);
       loader.addTemplate('context-export-func-lib.njk', '{% set myExport = myFunc %}');
-      loader.addTemplate('context-export-func-main.njk', '{% import "context-export-func-lib.njk" as lib with context %}{{ lib.myExport() }}');
+      loader.addTemplate('context-export-func-main.njk', '{% import "context-export-func-lib.njk" as lib %}{{ lib.myExport() }}');
 
       const myObj = {
         foo: 'bar',
