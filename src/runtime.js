@@ -1191,26 +1191,43 @@ function handleError(error, lineno, colno, errorContextString = null) {
   }
 }
 
-// Make sure the promise is caught and handled (so we don't get unhandled exception)
-// The error is properly reported to the callback
-function handlePromise(promise, cb, lineno, colno, context, errorContextString = null) {
-  // Attach a catch handler that performs the error handling and callback
-  promise.catch(err => {
-    // Use the provided arguments to handle and report the error
-    try {
-      const handledError = handleError(err, lineno, colno, errorContextString);
-      if (context) {
-        handledError.Update(context.path);
+function executeAsyncBlock(asyncFunc, astate, frame, cb, lineno, colno, context, errorContextString = null) {
+  try {
+    // 1. Invoke the async function to get the promise.
+    const promise = asyncFunc(astate, frame);
+
+    // 2. Attach our lifecycle handlers.
+    promise.catch(err => {
+      // This .catch() will now reliably run before the .finally() below.
+      try {
+        const handledError = handleError(err, lineno, colno, errorContextString);
+        if (context) {
+          handledError.Update(context.path);
+        }
+        cb(handledError);
+      } catch (cbError) {
+        console.error('FATAL: Error during Nunjucks error handling or callback:', cbError);
+        console.error('Original error was:', err);
+        throw cbError;
       }
-      cb(handledError);
-    } catch (cbError) {
-      // Uh oh, the callback or error handler itself failed.
-      console.error('FATAL: Error during Nunjucks error handling or callback:', cbError);
-      console.error('Original error was:', err);
-      throw cbError;
+      // Re-throw to ensure it propagates to the top-level catch in rootRenderFunc
+      throw err;
+    }).finally(() => {
+      // 3. This is guaranteed to run *after* the .catch() handler has completed.
+      astate.leaveAsyncBlock();
+    });
+
+    return promise;
+  } catch (syncError) {
+    // This catches synchronous errors that might happen before the promise is even created.
+    // This can happen mostly due to compiler error, may remove it in the future
+    const handledError = handleError(syncError, lineno, colno, errorContextString);
+    if (context) {
+      handledError.Update(context.path);
     }
-  });
-  return promise;//the original promise
+    cb(handledError);
+    astate.leaveAsyncBlock(); // Ensure cleanup even on sync failure.
+  }
 }
 
 function asyncEach(arr, dimen, iter, cb) {
@@ -1660,7 +1677,7 @@ module.exports = {
   callWrap,
   sequencedCallWrap,
   handleError,
-  handlePromise,
+  executeAsyncBlock,
   isArray: lib.isArray,
   keys: lib.keys,
   SafeString,

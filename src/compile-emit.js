@@ -106,8 +106,7 @@ module.exports = class CompileEmit {
 
   asyncBlockBegin(node, frame, createScope, positionNode = node) {
     if (node.isAsync) {
-      this.line(`runtime.handlePromise((async (astate, frame) => {`);
-      this.line('try {');
+      this.line(`runtime.executeAsyncBlock(async (astate, frame) => {`);
       this.asyncClosureDepth++;
     }
     if (createScope && !node.isAsync) {
@@ -128,11 +127,9 @@ module.exports = class CompileEmit {
         this.line('await astate.waitAllClosures(1);');
       }
       this.asyncClosureDepth--;
-      this.line('} finally {');
-      this.line('  astate.leaveAsyncBlock();');
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
     }
     if (createScope && !node.isAsync) {
       this.line('frame = frame.pop();');
@@ -146,8 +143,7 @@ module.exports = class CompileEmit {
   asyncBlockValue(node, frame, emitFunc, res, positionNode = node) {
     if (node.isAsync) {
 
-      this.line(`runtime.handlePromise((async (astate, frame) => {`);
-      this.line('try {');
+      this.line(`runtime.executeAsyncBlock(async (astate, frame) => {`);
       this.asyncClosureDepth++;
       frame = frame.push(false, false);
 
@@ -161,11 +157,9 @@ module.exports = class CompileEmit {
       //and to make sure leaveAsyncBlock is called after the promise resolves
       this.line(`return await ${res};`);
 
-      this.line('} finally {');
-      this.line('  astate.leaveAsyncBlock();');
-      this.line('}'); // Close inner finally
+      this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
 
       this.asyncClosureDepth--;
       frame = frame.pop();
@@ -188,8 +182,7 @@ module.exports = class CompileEmit {
     }
 
     frame = frame.push(false, false);//unscoped frame for the async block
-    this.line(`runtime.handlePromise((async (astate, frame) =>{`);
-    this.line('try {');
+    this.line(`runtime.executeAsyncBlock(async (astate, frame) =>{`);
 
     const id = this.compiler._pushBuffer();//@todo - better way to get the buffer, see compileCapture
 
@@ -212,14 +205,12 @@ module.exports = class CompileEmit {
       this.line(`  ${callbackName}(null, ${id});`);
     }
     this.line(`  return ${id};`);
-    this.line('} finally {');
-    this.line('  astate.leaveAsyncBlock();');
     this.line('}');
     const errorContext = this.compiler._generateErrorContext(node, positionNode);
     if (callbackName) {
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
     } else {
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
     }
 
     frame = frame.pop();
@@ -243,8 +234,7 @@ module.exports = class CompileEmit {
       this.asyncClosureDepth++;
       frame = frame.push(false, false);
 
-      this.line(`runtime.handlePromise((async (astate, frame)=>{`);
-      this.line('try {');
+      this.line(`runtime.executeAsyncBlock(async (astate, frame)=>{`);
       this.line(`let index = ${this.compiler.buffer}_index++;`);
 
       this.line(`let ${returnId};`);
@@ -254,11 +244,9 @@ module.exports = class CompileEmit {
       this.emit(`${this.compiler.buffer}[index] = ${returnId};`);
 
       this.asyncClosureDepth--;
-      this.line('} finally {');
-      this.line('  astate.leaveAsyncBlock();');
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
 
       frame = frame.pop();
 
@@ -275,8 +263,7 @@ module.exports = class CompileEmit {
 
   asyncBlockAddToBufferBegin(node, frame, positionNode = node) {
     if (node.isAsync) {
-      this.line(`runtime.handlePromise((async (astate, frame) => {`);
-      this.line('try {');
+      this.line(`runtime.executeAsyncBlock(async (astate, frame) => {`);
       this.line(`let index = ${this.compiler.buffer}_index++;`);
       this.emit(`${this.compiler.buffer}[index] = `);
       this.asyncClosureDepth++;
@@ -294,11 +281,9 @@ module.exports = class CompileEmit {
     this.line(';');
     if (node.isAsync) {
       this.asyncClosureDepth--;
-      this.line('} finally {');
-      this.line('  astate.leaveAsyncBlock();');
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`})(astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}), cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
       return frame.pop();
     }
     return frame;

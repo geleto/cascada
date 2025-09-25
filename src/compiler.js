@@ -1742,9 +1742,9 @@ class Compiler extends Obj {
       const failMsg = `cannot import '${name}'`.replace(/"/g, '\\"');
 
       if (node.isAsync) {
-        //@todo - error handling in the async() function - This manual IIFE still bypasses handlePromise wrapper.
+        //@todo - error handling in the async() function - This manual IIFE still bypasses executeAsyncBlock wrapper.
         // The async IIFE here doesn't use our helpers, error pos comes from JS runtime
-        // @todo This needs refactoring to use handlePromise for proper context reporting via catch handler
+        // @todo This needs refactoring to use executeAsyncBlock for proper context reporting via catch handler
         this.emit.line(`${id} = (async () => { try { `); // Add try
         this.emit.line(`  let exported = await ${importedId};`);
         this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
