@@ -1886,9 +1886,10 @@ class Compiler extends Obj {
       this.compileIncludeSync(node, frame);
       return;
     }
-    // Use node.template for position of getTemplate, node for render
+    // `asyncBlockAddToBuffer` places the final result into the parent buffer.
+    // The block is async because `getTemplate` returns a promise.
     this.emit.asyncBlockAddToBuffer(node, frame, (resultVar, f) => {
-      // Get the template
+      // Get the template object (this part is async)
       const templateVar = this._tmpid();
       const templateNameVar = this._tmpid();
 
@@ -1900,8 +1901,10 @@ class Compiler extends Obj {
       //the AsyncEnviuronment.getTemplate returns a Promise
       this.emit.line(`let ${templateVar} = await env.getTemplate.bind(env)(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
-      // render, @todo - use promise returning version
-      this.emit.line(`${resultVar} = await runtime.promisify(${templateVar}.render.bind(${templateVar}))(context.getVariables(), frame${node.isAsync ? ', astate' : ''});`);
+      // Call the template in composition mode. This is a SYNCHRONOUS call
+      // that returns the incomplete output array immediately. The master `cb` from the
+      // closure is passed for error propagation.
+      this.emit.line(`${resultVar} = ${templateVar}._renderForComposition(context.getVariables(), frame, astate, cb);`);
     }, node);
   }
 
@@ -2073,8 +2076,9 @@ class Compiler extends Obj {
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
     if (this.asyncMode) {
-      this.emit.line('let isIncluded = !!(frame.parent || frame.isIncluded);');
-      this.emit.line('if(!isIncluded){');
+      this.emit.line('if (!compositionMode) {');
+      // If not in composition mode, this is the top-level render. It is responsible
+      // for waiting for all async operations and flattening the buffer.
       this.emit.line('astate.waitAllClosures().then(() => {');
       this.emit.line('  if(parentTemplate) {');
       this.emit.line('    let parentContext = context.forkForPath(parentTemplate.path);');
@@ -2088,12 +2092,9 @@ class Compiler extends Obj {
       this.emit.line('  cb(err);'); // Pass the updated error to the callback
       this.emit.line('});');
       this.emit.line('} else {');
-      this.emit.line('if(parentTemplate) {');
-      this.emit.line('let parentContext = context.forkForPath(parentTemplate.path);');
-      this.emit.line('parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, astate, cb);');
-      this.emit.line('} else {');
-      this.emit.line(`cb(null, ${this.buffer});`);
-      this.emit.line('}');
+      // If in composition mode, synchronously return the output array.
+      // The caller is responsible for the lifecycle.
+      this.emit.line(`  return ${this.buffer};`);
       this.emit.line('}');
     }
     else {
@@ -2136,7 +2137,6 @@ class Compiler extends Obj {
       let tmpFrame = frame.new();//new Frame();
       this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       this.compile(block.body, tmpFrame);
-      // Pass the block node to _emitFuncEnd
       this.emit.funcEnd(block);
     });
 

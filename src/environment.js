@@ -48,9 +48,18 @@ const noopTmplSrc = {
 const noopTmplSrcAsync = {
   type: 'code',
   obj: {
-    root(env, context, frame, runtime, astate, cb) {
+    // The signature must be updated to accept compositionMode.
+    root(env, context, frame, runtime, astate, cb, compositionMode = false) {
       try {
-        cb(null, '');
+        if (!compositionMode) {
+          // Only call the success callback if not in composition mode.
+          cb(null, '');
+        }
+        // In composition mode, we do nothing and let the caller handle success.
+        // We still need to return an empty value, like a real template would.
+        if (compositionMode) {
+          return ''; // A real template would return [], but '' works for flattenBuffer.
+        }
       } catch (e) {
         const err = handleError(e, null, null);
         if (context && context.path) {
@@ -788,8 +797,12 @@ class Template extends Obj {
     }
   }
 
-  // @todo - return promise if isAsync and no callback is provided
   render(ctx, parentFrame, astate, cb) {
+    return this._render(ctx, parentFrame, astate, cb);
+  }
+
+  // @todo - return promise if isAsync and no callback is provided
+  _render(ctx, parentFrame, astate, cb, receivePartialOutput = false) {
     if (typeof ctx === 'function') {
       cb = ctx;
       ctx = {};
@@ -903,6 +916,7 @@ class Template extends Obj {
     return syncResult;
   }
 
+  // @todo - return a value instead of calling a callback
   getExported(ctx, parentFrame, astate, cb) {
     if (typeof ctx === 'function') {
       cb = ctx;
@@ -930,49 +944,69 @@ class Template extends Obj {
       }
     }
 
-    let frame;
-    if (parentFrame) {
-      frame = parentFrame.push();
-    }
-    else {
-      if (this.asyncMode) {
-        frame = new AsyncFrame();
-        frame.isIncluded = true;
-      }
-      else {
-        frame = new Frame();
-      }
-    }
+    const frame = parentFrame
+      ? parentFrame.push()
+      : (this.asyncMode ? new AsyncFrame() : new Frame());
     frame.topLevel = true;
 
-    // Run the rootRenderFunc to populate the context with exported vars
     const context = new Context(ctx || {}, this.blocks, this.env, this.path);
-    const callback = (err) => {
-      if (err) {
-        cb(err, null);
-      } else {
-        const exported = context.getExported();
-        const boundExported = {};
-        // A new clean context, associating macros with the template where they are defined.
-        const macroContext = new Context({}, this.blocks, this.env, this.path);
+    astate = astate || (this.asyncMode ? new AsyncState() : null);
 
-        for (const name in exported) {
-          const item = exported[name];
-          // Re-bind only macros, preserve `this` for other functions.
-          if (typeof item === 'function' && item.isMacro) {
-            // Bind the macro to the new context, preserving path info for errors.
-            boundExported[name] = item.bind(macroContext);
-          } else {
-            boundExported[name] = item;
-          }
-        }
-        cb(null, boundExported);
-      }
-    };
     if (this.asyncMode) {
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate || new AsyncState(), callback);
+      let callbackCalled = false;
+      const finalCallback = (err, result) => {
+        if (callbackCalled) {
+          return;
+        }
+        callbackCalled = true;
+        cb(err, result);
+      };
+
+      // Run the template's synchronous pass in composition mode.
+      // This populates the context and promisifies any variables that will be
+      // modified by async blocks. Async errors will call `finalCallback`.
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate, finalCallback, true);
+
+      // Immediately export the variables. If any variables are pending modification
+      // by an async block, what we export here is the promisified variable, e.g. a Promise.
+      const exported = context.getExported();
+      const boundExported = {};
+      const macroContext = new Context({}, this.blocks, this.env, this.path);
+
+      for (const name in exported) {
+        const item = exported[name];
+        if (typeof item === 'function' && item.isMacro) {
+          boundExported[name] = item.bind(macroContext);
+        } else {
+          boundExported[name] = item;
+        }
+      }
+
+      // Immediately call back with the exported values and promises.
+      // The importing template can now proceed without waiting.
+      finalCallback(null, boundExported);
+
     } else {
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, callback);
+      // Sync mode is straightforward.
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, (err) => {
+        if (err) {
+          cb(err, null);
+        } else {
+          const exported = context.getExported();
+          const boundExported = {};
+          const macroContext = new Context({}, this.blocks, this.env, this.path);
+
+          for (const name in exported) {
+            const item = exported[name];
+            if (typeof item === 'function' && item.isMacro) {
+              boundExported[name] = item.bind(macroContext);
+            } else {
+              boundExported[name] = item;
+            }
+          }
+          cb(null, boundExported);
+        }
+      });
     }
 
     return undefined;
@@ -1061,6 +1095,7 @@ class AsyncTemplate extends Template {
     env = env || new AsyncEnvironment();
     super.init(src, env, path, eagerCompile, true/*async*/, false/*script*/);
   }
+
   render(ctx, parentFrame, astate, cb) {
     if (cb) {
       return super.render(ctx, parentFrame, astate, cb);
@@ -1076,6 +1111,24 @@ class AsyncTemplate extends Template {
         }
       });
     });
+  }
+
+  /**
+   * Renders the template for composition, returning the output array synchronously.
+   * While the output array may not be ready yet, it will be when the astate lifecycle is completed
+   * It sets the compositionMode argument of rootRenderFunc to true
+   */
+  _renderForComposition(ctx, parentFrame, astate, cb) {
+    this.compile();
+
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path);
+    const frame = parentFrame ? parentFrame.push(true) : new AsyncFrame();
+    frame.topLevel = true;
+
+    // Call the root function in composition mode. It will synchronously return
+    // the output array, while any async operations it starts will use the
+    // provided `astate` to link into the parent's lifecycle.
+    return this.rootRenderFunc(this.env, context, frame, globalRuntime, astate, cb, true);
   }
 }
 

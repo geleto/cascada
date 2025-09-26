@@ -52,7 +52,11 @@ module.exports = class CompileEmit {
     this.compiler.buffer = 'output';
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
-      this.line(`function ${name}(env, context, frame, runtime, astate, cb) {`);
+      if (name === 'root') {
+        this.line(`function ${name}(env, context, frame, runtime, astate, cb, compositionMode = false) {`);
+      } else {
+        this.line(`function ${name}(env, context, frame, runtime, astate, cb) {`);
+      }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);
       // Declare lineno/colno vars only in sync mode
