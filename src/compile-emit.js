@@ -74,7 +74,14 @@ module.exports = class CompileEmit {
 
   funcEnd(node, noReturn) { // Added node parameter
     if (!noReturn) {
-      this.line('cb(null, ' + this.compiler.buffer + ');');
+      if (this.compiler.asyncMode) {
+        // In async mode, blocks return output directly (not via callback)
+        // The callback is only used for error propagation
+        this.line('return ' + this.compiler.buffer + ';');
+      } else {
+        // Sync mode blocks use callback for both success and error
+        this.line('cb(null, ' + this.compiler.buffer + ');');
+      }
     }
 
     this.closeScopeLevels();

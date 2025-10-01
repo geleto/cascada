@@ -717,10 +717,11 @@ class Context extends Obj {
     }
 
     if (astate) {
-      //async mode
-      blk(env, context, frame, runtime, astate, cb);
+      // Async mode - block returns output directly, cb is error-only
+      return blk(env, context, frame, runtime, astate, cb);
     }
     else {
+      // Sync mode - block uses callback for result
       blk(env, context, frame, runtime, cb);
     }
   }

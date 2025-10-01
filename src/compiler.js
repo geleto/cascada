@@ -1822,9 +1822,10 @@ class Compiler extends Obj {
           this.emit.line('if (!parent) {');
         }
         const blockFunc = this._tmpid();
+        //this.emit.line(`let ${blockFunc} = await context.getAsyncBlock("${node.name.value}");`);
+        //this.emit.line(`${blockFunc} = runtime.promisify(${blockFunc}.bind(context));`);
         this.emit.line(`let ${blockFunc} = await context.getAsyncBlock("${node.name.value}");`);
-        this.emit.line(`${blockFunc} = runtime.promisify(${blockFunc}.bind(context));`);
-        this.emit.line(`${id} = await ${blockFunc}(env, context, frame, runtime, astate);`);
+        this.emit.line(`${id} = ${blockFunc}(env, context, frame, runtime, astate, cb);`);
         if (needsParentCheck) {
           this.emit.line('}');
         }
@@ -1856,7 +1857,11 @@ class Compiler extends Obj {
     var id = node.symbol.value;
 
     if (node.isAsync) {
-      this.emit.line(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime, astate);`);
+      //this.emit.line(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime, astate);`);
+
+      // Call getSuper directly - it returns the output synchronously
+      // The callback (cb) is passed through for error propagation
+      this.emit.line(`let ${id} = context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, cb);`);
     }
     else {
       const cb = this._makeCallback(id);
