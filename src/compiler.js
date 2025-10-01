@@ -2264,11 +2264,20 @@ class Compiler extends Obj {
       nodes.Compare,
       nodes.NodeList
     );
-    if (node.isAsync && this.emit.asyncClosureDepth === 0 && !forceWrap) {
-      // some expressions compile await (@todo - check if so) so they need be in async context
-      this.fail('All expressions must be wrapped in an async IIFE', node.lineno, node.colno, node);
-    }
+
     if (node.isAsync) {
+
+      if (node instanceof nodes.Symbol && node.isCompilerInternal) {
+        // Don't wrap compiler-internal symbols - they're plain JS variables
+        this.compile(node, frame);
+        return;
+      }
+
+      if (this.emit.asyncClosureDepth === 0 && !forceWrap) {
+        // some expressions compile await (@todo - check if so) so they need be in async context
+        this.fail('All expressions must be wrapped in an async IIFE', node.lineno, node.colno, node);
+      }
+
       this.sequential.processExpression(node, frame);
       if (forceWrap || node.wrapInAsyncBlock) {
         node.wrapInAsyncBlock = false;//so that compile won't wrap it and ignore positionNode
