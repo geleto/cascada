@@ -214,8 +214,69 @@ function cps(ast, asyncFilters) {
   return convertStatements(liftSuper(liftFilters(ast, asyncFilters)));
 }
 
-function transform(ast, asyncFilters) {
+function transform(ast, asyncFilters, name, opts) {
+  if (opts.asyncMode) {
+    ast = addDynamicExtendsSetup(ast, opts);
+  }
+
   return cps(ast, asyncFilters || []);
+}
+
+function addDynamicExtendsSetup(ast, opts) {
+  let hasDynamicExtends = false;
+
+  // First, walk the tree to find all Extends nodes.
+  const allExtends = [];
+  walk(ast, (node) => {
+    if (node instanceof nodes.Extends) {
+      allExtends.push(node);
+    }
+  });
+
+  if (allExtends.length === 0) {
+    return ast;
+  }
+
+  // Check if any are dynamic (not a direct child of Root).
+  for (const extendNode of allExtends) {
+    if (lib.indexOf(ast.children, extendNode) === -1) {
+      hasDynamicExtends = true;
+      break;
+    }
+  }
+
+  if (!hasDynamicExtends) {
+    return ast;
+  }
+
+  // 1. Inject the initial `{% set __parentTemplate = null; %}`
+  const target = new nodes.Symbol(0, 0, '__parentTemplate');
+  const value = new nodes.Literal(0, 0, null);
+  const declarationNode = new nodes.Set(0, 0, [target], value);
+  declarationNode.varType = opts.scriptMode ? 'declaration' : 'assignment';
+  ast.children.unshift(declarationNode);
+
+  // 2. Rewrite every dynamic `Extends` node into a `NodeList` of [Extends, Set].
+  return walk(ast, (node) => {
+    if (node instanceof nodes.Extends && lib.indexOf(ast.children, node) === -1) {
+      const tempVar = gensym();
+
+      // A. Modify the original Extends node to store its result in the temp var.
+      node.asyncStoreIn = tempVar;
+
+      // B. Create the new Set node to assign from the temp var to the frame var.
+      const setTarget = new nodes.Symbol(node.lineno, node.colno, '__parentTemplate');
+      const setValue = new nodes.Symbol(node.lineno, node.colno, tempVar);
+      setValue.isCompilerInternal = true; // This is the crucial link!
+
+      const setNode = new nodes.Set(node.lineno, node.colno, [setTarget], setValue);
+      setNode.varType = 'assignment';
+
+      // C. Replace the original Extends node with a list of the two new nodes.
+      return new nodes.NodeList(node.lineno, node.colno, [node, setNode]);
+    }
+    return undefined;
+  });
 }
 
 // var parser = require('./parser');

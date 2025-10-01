@@ -208,6 +208,7 @@ class TemplateRef extends Node {
 
 class Extends extends TemplateRef {
   get typename() { return 'Extends'; }
+  get fields() { return ['template', 'asyncStoreIn']; }
 }
 
 class Include extends Node {

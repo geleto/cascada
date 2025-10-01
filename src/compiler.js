@@ -30,9 +30,10 @@ class Compiler extends Obj {
     this.lastId = 0;
     this.buffer = null;
     this.bufferStack = [];
+    this.hasExtends = false;
     this.inBlock = false;
     this.throwOnUndefined = options.throwOnUndefined || false;
-    this.asyncMode = options.asyncMode || false;
+    this.asyncMode = options.asyncMode || false;// even in async mode some nodes can be !isAsync
     this.scriptMode = options.scriptMode || false;
     this.sequential = new CompileSequential(this);
     this.emit = new CompileEmit(this);
@@ -1777,6 +1778,16 @@ class Compiler extends Obj {
   compileBlock(node, frame) {
     //var id = this._tmpid();
 
+    // If we are at the top level of a template (`!this.inBlock`) that has a
+    // static `extends` tag, this block is a definition-only. We can safely
+    // skip compiling any rendering code for it, as the parent template is
+    // responsible for its execution. The dynamic extends case is handled later
+    // with a runtime check using the __parentTemplate variable.
+    if (!this.inBlock && this.hasStaticExtends && !this.hasDynamicExtends) {
+      return;
+    }
+
+
     // If we are executing outside a block (creating a top-level
     // block), we really don't want to execute its code because it
     // will execute twice: once when the child template runs and
@@ -1788,17 +1799,33 @@ class Compiler extends Obj {
     // waste of performance to always execute huge top-level
     // blocks twice
 
-    if (node.isAsync) {
-      // Use the block node itself for position
+    if (this.asyncMode) {
       this.emit.asyncBlockAddToBuffer(node, frame, (id, f) => {
-        if (!this.inBlock) {
-          this.emit(`if(parentTemplate) ${id}=""; else {`);
+        // The dynamic check runs when:
+        // 1. We're at top level (!this.inBlock)
+        // 2. There might be a dynamic parent (hasDynamicExtends OR hasStaticExtends)
+        //    - hasDynamicExtends: Need to check frame variable
+        //    - hasStaticExtends with hasDynamicExtends: Dynamic can override static
+        const needsParentCheck = !this.inBlock && (this.hasDynamicExtends || this.hasStaticExtends);
+        if (needsParentCheck) {
+          if (this.hasDynamicExtends) {
+            this.async.updateFrameReads(f, '__parentTemplate');
+            this.emit.line('let parent = await runtime.contextOrFrameLookup(context, frame, "__parentTemplate");');
+            if (this.hasStaticExtends) {
+              // Check both: dynamic can override static
+              this.emit.line('if (!parent) parent = parentTemplate;');
+            }
+          } else {
+            // Only static extends (but in a context where dynamic might exist)
+            this.emit.line('let parent = parentTemplate;');
+          }
+          this.emit.line('if (!parent) {');
         }
         const blockFunc = this._tmpid();
         this.emit.line(`let ${blockFunc} = await context.getAsyncBlock("${node.name.value}");`);
         this.emit.line(`${blockFunc} = runtime.promisify(${blockFunc}.bind(context));`);
         this.emit.line(`${id} = await ${blockFunc}(env, context, frame, runtime, astate);`);
-        if (!this.inBlock) {
+        if (needsParentCheck) {
           this.emit.line('}');
         }
       }, node);
@@ -1849,35 +1876,38 @@ class Compiler extends Obj {
   compileExtends(node, frame) {
     var k = this._tmpid();
 
-    if (node.isAsync) {
+    if (this.asyncMode) {
       this.emit.line('context.prepareForAsyncBlocks();');
     }
 
-    // Pass node.template for position in _compileGetTemplateOrScript
     const parentTemplateId = this._compileGetTemplateOrScript(node, frame, true, false, true);
 
-    // extends is a dynamic tag and can occur within a block like
-    // `if`, so if this happens we need to capture the parent
-    // template in the top-level scope
+    if (this.asyncMode) {
+      if (node.asyncStoreIn) {
+        this.emit.line(`let ${node.asyncStoreIn} = ${parentTemplateId};`);
+      }
 
-    if (node.isAsync) {
-      // Use node.template as position for the block resolving the parent template
       frame = this.emit.asyncBlockBegin(node, frame, false, node.template);
-    }
+      const templateVar = this._tmpid();
+      this.emit.line(`let ${templateVar} = await ${parentTemplateId};`);
 
-    //isAsync: set the global parent template, compileRoot will use it after waitAllClosures
-    this.emit.line(`parentTemplate = ${node.isAsync ? 'await ' : ''}${parentTemplateId};`);
-    this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
-    this.emit.line(`context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
-    this.emit.line('}');
+      // ALWAYS store in parentTemplate for block registration (and static case)
+      this.emit.line(`parentTemplate = ${templateVar};`);
 
-    if (!node.isAsync) {
-      this.emit.addScopeLevel();
-    }
-    else {
-      this.emit.line('context.finsihsAsyncBlocks()');
-      // Use node.template for the end block position
+      // Register blocks while still inside async block
+      this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
+      this.emit.line(`  context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
+      this.emit.line('}');
+
+      this.emit.line('context.finishAsyncBlocks()');
       frame = this.emit.asyncBlockEnd(node, frame, false, false, node.template);
+    } else {
+      // SYNC MODE
+      this.emit.line(`parentTemplate = ${parentTemplateId};`);
+      this.emit.line(`for(let ${k} in parentTemplate.blocks) {`);
+      this.emit.line(`  context.addBlock(${k}, parentTemplate.blocks[${k}]);`);
+      this.emit.line('}');
+      this.emit.addScopeLevel();
     }
   }
 
@@ -2065,29 +2095,47 @@ class Compiler extends Obj {
       this.fail('compileRoot: root node can\'t have frame', node.lineno, node.colno, node);
     }
 
+    // Analyze the final AST for inheritance patterns.
+    this.hasStaticExtends = node.children.some(child => child instanceof nodes.Extends);
+    this.hasDynamicExtends = this.asyncMode && node.children.some(child =>
+      child instanceof nodes.Set &&
+      child.targets[0] &&
+      child.targets[0].value === '__parentTemplate'
+    );
+
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
 
     if (this.asyncMode) {
       this.async.propagateIsAsync(node);
-      this.sequential._declareSequentialLocks(node, frame/*.sequenceLockFrame*/);
+      this.sequential._declareSequentialLocks(node, frame);
     }
 
     this.emit.funcBegin(node, 'root');
+    // Always declare parentTemplate (needed even for dynamic-only extends)
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
     if (this.asyncMode) {
       this.emit.line('if (!compositionMode) {');
-      // If not in composition mode, this is the top-level render. It is responsible
-      // for waiting for all async operations and flattening the buffer.
-      this.emit.line('astate.waitAllClosures().then(() => {');
-      this.emit.line('  if(parentTemplate) {');
-      this.emit.line('    let parentContext = context.forkForPath(parentTemplate.path);');
-      this.emit.line('    parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, astate, cb);');
+      this.emit.line('astate.waitAllClosures().then(async () => {');
+
+      if (this.hasDynamicExtends) {
+        // Dynamic extends: check frame variable
+        this.emit.line('  let finalParent = await runtime.contextOrFrameLookup(context, frame, "__parentTemplate");');
+        if (this.hasStaticExtends) {
+          this.emit.line('  if (!finalParent) finalParent = parentTemplate;');
+        }
+      } else {
+        // Static extends only: use JS variable
+        this.emit.line('  let finalParent = parentTemplate;');
+      }
+
+      this.emit.line('  if(finalParent) {');
+      this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
       this.emit.line('  } else {');
       this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
-      this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno});`); // Store the handled error
+      this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}");`); // Store the handled error
       this.emit.line('  err.Update(context.path);'); // Use context.path to update the error message
       this.emit.line('  cb(err);'); // Pass the updated error to the callback
       this.emit.line('});');
@@ -2098,17 +2146,12 @@ class Compiler extends Obj {
       this.emit.line('}');
     }
     else {
+      // SYNC Handoff Logic
       this.emit.line('if(parentTemplate) {');
-      this.emit.line('let parentContext = context.forkForPath(parentTemplate.path);');
-      this.emit.line(`parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, ${this.asyncMode ? 'astate, ' : ''}cb);`);
+      this.emit.line('  let parentContext = context.forkForPath(parentTemplate.path);');
+      this.emit.line('  parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, cb);');
       this.emit.line('} else {');
-      if (this.asyncMode) {
-        // This case (sync root in asyncMode) might be unlikely/problematic,
-        // but keep flatten for consistency if it somehow occurs.
-        this.emit.line(`cb(null, runtime.flattenBuffer(${this.buffer}${node.focus ? ', "' + node.focus + '"' : ''}));`);
-      } else {
-        this.emit.line(`cb(null, ${this.buffer});`);
-      }
+      this.emit.line(`  cb(null, ${this.buffer});`);
       this.emit.line('}');
     }
 
@@ -2494,7 +2537,8 @@ module.exports = {
     c.compile(transformer.transform(
       parser.parse(processedSrc, extensions, opts),
       asyncFilters,
-      name
+      name,
+      opts
     ));
     AsyncFrame.inCompilerContext = false;
     return c.getCode();

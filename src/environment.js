@@ -696,7 +696,7 @@ class Context extends Obj {
     return this.getBlock(name);
   }
 
-  async finsihsAsyncBlocks() {
+  async finishAsyncBlocks() {
     if (this.asyncBlocksResolver) {
       this.asyncBlocksResolver();
     }
