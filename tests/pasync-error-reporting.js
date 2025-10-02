@@ -376,7 +376,7 @@
       var mainTemplateName = 'error-import-async-main.njk';
       var libTemplateName = 'error-import-async-lib.njk';
 
-      loader.addTemplate(mainTemplateName, '{% import "' + libTemplateName + '" as lib %}{{ lib.value }}');
+      loader.addTemplate(mainTemplateName, `{% import "${libTemplateName}" as lib with context %}{{ lib.value }}`);
       loader.addTemplate(libTemplateName, '{% set value = asyncFunc() %}');
 
       let env = new AsyncEnvironment(loader);
@@ -384,7 +384,7 @@
         await env.renderTemplate(mainTemplateName, {
           asyncFunc: async () => {
             // Simulate async work then error
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise(resolve => setTimeout(resolve, 3));
             throw new Error('Async error during import');
           }
         });
