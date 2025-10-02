@@ -954,22 +954,10 @@ class Template extends Obj {
     astate = astate || (this.asyncMode ? new AsyncState() : null);
 
     if (this.asyncMode) {
-      let callbackCalled = false;
-      const finalCallback = (err, result) => {
-        if (callbackCalled) {
-          return;
-        }
-        callbackCalled = true;
-        cb(err, result);
-      };
+      // Run template in composition mode
+      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate, cb, true);
 
-      // Run the template's synchronous pass in composition mode.
-      // This populates the context and promisifies any variables that will be
-      // modified by async blocks. Async errors will call `finalCallback`.
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate, finalCallback, true);
-
-      // Immediately export the variables. If any variables are pending modification
-      // by an async block, what we export here is the promisified variable, e.g. a Promise.
+      // Immediately export the variables (they may be promises)
       const exported = context.getExported();
       const boundExported = {};
       const macroContext = new Context({}, this.blocks, this.env, this.path);
@@ -983,10 +971,8 @@ class Template extends Obj {
         }
       }
 
-      // Immediately call back with the exported values and promises.
-      // The importing template can now proceed without waiting.
-      finalCallback(null, boundExported);
-
+      // Return immediately - async work tracked by astate, errors via cb
+      return boundExported;
     } else {
       // Sync mode is straightforward.
       this.rootRenderFunc(this.env, context, frame, globalRuntime, (err) => {

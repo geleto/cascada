@@ -442,5 +442,83 @@
         expect(resultWithout.trim()).to.equal('P[child]');
       });
     });
+
+    it('minimal test of import from external template', async () => {
+      loader.addTemplate('exports-simple.njk', '{% set myVar = "hello" %}');
+      loader.addTemplate('main.njk', '{% from "exports-simple.njk" import myVar %}{{ myVar }}');
+
+      env = new AsyncEnvironment(loader);
+      const result = await env.renderTemplate('main.njk', {});
+      // Should work, but currently fails
+      expect(result).to.equal('hello');
+    });
+
+    it('minimal test - import as namespace', async () => {
+      loader.addTemplate('lib.njk', '{% set x = 1 %}');
+      loader.addTemplate('main.njk', '{% import "lib.njk" as lib %}{{ lib.x }}');
+
+      env = new AsyncEnvironment(loader);
+      const result = await env.renderTemplate('main.njk', {});
+      expect(result).to.equal('1');
+    });
+
+    it('From import with async macro and values', async () => {
+      loader.addTemplate('utils.njk', `
+        {% macro formatUser(user) %}
+          <div class="user">{{ user.name }} ({{ user.email }})</div>
+        {% endmacro %}
+        {% set defaultTitle = "Welcome" %}
+        {% set version = "1.0" %}
+      `);
+
+      loader.addTemplate('main.njk', `
+        {% from "utils.njk" import formatUser, defaultTitle, version %}
+        <h1>{{ defaultTitle }}</h1>
+        {{ formatUser(currentUser) }}
+        <footer>v{{ version }}</footer>
+      `);
+
+      env = new AsyncEnvironment(loader);
+      const result = await env.renderTemplate('main.njk', {
+        currentUser: Promise.resolve({ name: 'Alice', email: 'alice@example.com' })
+      });
+
+      expect(result).to.contain('<h1>Welcome</h1>');
+      expect(result).to.contain('Alice (alice@example.com)');
+      expect(result).to.contain('<footer>v1.0</footer>');
+    });
+
+    it('Import namespace with async operations', async () => {
+      loader.addTemplate('api.njk', `
+        {% macro fetchData(id) %}
+          {{ getData(id).result }}
+        {% endmacro %}
+        {% macro formatDate(date) %}
+          {{ date | date("YYYY-MM-DD") }}
+        {% endmacro %}
+        {% set apiVersion = "v2" %}
+      `);
+
+      loader.addTemplate('main.njk', `
+        {% import "api.njk" as api with context %}
+        <div class="api-{{ api.apiVersion }}">
+          {{ api.fetchData(userId) }}
+          {{ api.formatDate(currentDate) }}
+        </div>
+      `);
+
+      env = new AsyncEnvironment(loader);
+      env.addFilter('date', (val, format) => '2024-01-15');
+
+      const result = await env.renderTemplate('main.njk', {
+        userId: Promise.resolve(123),
+        currentDate: new Date(),
+        getData: async (id) => ({ result: `Data for ${id}` })
+      });
+
+      expect(result).to.contain('class="api-v2"');
+      expect(result).to.contain('Data for 123');
+      expect(result).to.contain('2024-01-15');
+    });
   });
 })();
