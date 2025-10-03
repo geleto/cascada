@@ -28,8 +28,12 @@
   }
 
   describe('Async mode - context binding', function () {
+    var env;
+    beforeEach(function () {
+      env = new AsyncEnvironment(new StringLoader());
+    });
+
     it('should maintain correct context for global functions', async () => {
-      var env = new AsyncEnvironment(new StringLoader());
       env.addGlobal('myGlobal', function () {
         return this.lookup('foo');
       });
@@ -38,7 +42,6 @@
     });
 
     it('should maintain correct context for data methods', async () => {
-      var env = new AsyncEnvironment(new StringLoader());
       const context = {
         foo: 'bar',
         myFunc: function () {
@@ -50,7 +53,6 @@
     });
 
     it('should maintain correct context for nested data methods', async () => {
-      var env = new AsyncEnvironment(new StringLoader());
       const context = {
         data: {
           foo: 'bar',
@@ -65,7 +67,7 @@
 
     it('should preserve this context for imported regular functions', async () => {
       var loader = new StringLoader();
-      var env = new AsyncEnvironment(loader);
+      env = new AsyncEnvironment(loader);
       loader.addTemplate('context-export-func-lib.njk', '{% set myExport = myFunc %}');
       loader.addTemplate('context-export-func-main.njk', '{% import "context-export-func-lib.njk" as lib with context %}{{ lib.myExport() }}');
 
@@ -83,7 +85,6 @@
     });
 
     describe('Async Loop Context', function () {
-      let env;
       beforeEach(() => {
         env = new AsyncEnvironment(new StringLoader());
       });

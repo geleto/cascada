@@ -25,14 +25,15 @@
 
   describe('Async mode - error path reporting', function () {
     var loader;
+    var env;
     beforeEach(function () {
       loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
     });
 
     it('should report correct path for basic error', async () => {
       var templateName = 'error-basic.njk';
       loader.addTemplate(templateName, '{{ nonExistentFunction() }}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {});
         expect().fail('Expected an error to be thrown');
@@ -46,7 +47,6 @@
       var childTemplateName = 'error-include-child.njk';
       loader.addTemplate(mainTemplateName, '{% include "' + childTemplateName + '" %}');
       loader.addTemplate(childTemplateName, '{{ nonExistentFunction() }}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(mainTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -60,7 +60,6 @@
       var childTemplateName = 'error-extends-child-parent-error.njk';
       loader.addTemplate(parentTemplateName, '{% block content %}{% endblock %} {{ nonExistentFunction() }}');
       loader.addTemplate(childTemplateName, '{% extends "' + parentTemplateName + '" %}{% block content %}Hello{% endblock %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(childTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -74,7 +73,6 @@
       var childTemplateName = 'error-extends-child.njk';
       loader.addTemplate(parentTemplateName, '{% block content %}{% endblock %}');
       loader.addTemplate(childTemplateName, '{% extends "' + parentTemplateName + '" %}{% block content %}{{ nonExistentFunction() }}{% endblock %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(childTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -88,7 +86,6 @@
       var macroTemplateName = 'error-macro-lib.njk';
       loader.addTemplate(mainTemplateName, '{% import "' + macroTemplateName + '" as lib %}{{ lib.myMacro() }}');
       loader.addTemplate(macroTemplateName, '{% macro myMacro() %}{{ nonExistentFunction() }}{% endmacro %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(mainTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -104,7 +101,6 @@
       loader.addTemplate(mainTemplateName, '{% include "' + templateA + '" %}');
       loader.addTemplate(templateA, '{% include "' + templateB + '" %}');
       loader.addTemplate(templateB, '{{ nonExistentFunction() }}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(mainTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -116,7 +112,7 @@
     it('should report correct path for throwOnUndefined error', async () => {
       var templateName = 'error-throw-on-undefined.njk';
       loader.addTemplate(templateName, '{{ undefinedVar }}');
-      let env = new AsyncEnvironment(loader, {
+      env = new AsyncEnvironment(loader, {
         throwOnUndefined: true
       });
       try {
@@ -128,7 +124,6 @@
     });
 
     it('should report (unknown path) for string templates', async () => {
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplateString('{{ nonExistentFunction() }}', {});
         expect().fail('Expected an error to be thrown');
@@ -142,7 +137,6 @@
       var childTemplateName = 'error-super-child.njk';
       loader.addTemplate(parentTemplateName, '{% block content %}{{ nonExistentFunction() }}{% endblock %}');
       loader.addTemplate(childTemplateName, '{% extends "' + parentTemplateName + '" %}{% block content %}{{ super() }}{% endblock %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(childTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -156,7 +150,6 @@
       var macroTemplateName = 'error-from-import-lib.njk';
       loader.addTemplate(mainTemplateName, '{% from "' + macroTemplateName + '" import myMacro %}{{ myMacro() }}');
       loader.addTemplate(macroTemplateName, '{% macro myMacro() %}{{ nonExistentFunction() }}{% endmacro %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(mainTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -168,7 +161,6 @@
     it('should report correct path for error in local macro', async () => {
       var templateName = 'error-local-macro.njk';
       loader.addTemplate(templateName, '{% macro myMacro() %}{{ nonExistentFunction() }}{% endmacro %}{{ myMacro() }}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {});
         expect().fail('Expected an error to be thrown');
@@ -180,7 +172,6 @@
     it('should report correct path for error in caller block', async () => {
       var templateName = 'error-caller.njk';
       loader.addTemplate(templateName, '{% macro wrapper() %}{{ caller() }}{% endmacro %}{% call wrapper() %}{{ nonExistentFunction() }}{% endcall %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {});
         expect().fail('Expected an error to be thrown');
@@ -192,7 +183,6 @@
     it('should report correct path for error in capture block', async () => {
       var templateName = 'error-capture.njk';
       loader.addTemplate(templateName, '{% set captured %}{{ nonExistentFunction() }}{% endset %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {});
         expect().fail('Expected an error to be thrown');
@@ -208,7 +198,6 @@
       loader.addTemplate(grandparentName, '{% block content %}{% endblock %}');
       loader.addTemplate(parentName, '{% extends "' + grandparentName + '" %}{% block content %}{{ super() }}{% endblock %}');
       loader.addTemplate(childName, '{% extends "' + parentName + '" %}{% block content %}{{ nonExistentFunction() }}{% endblock %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(childName, {});
         expect().fail('Expected an error to be thrown');
@@ -220,7 +209,6 @@
     it('should report correct path for error in for loop body', async () => {
       var templateName = 'error-for-loop.njk';
       loader.addTemplate(templateName, '{% for item in items %}{{ nonExistentFunction() }}{% endfor %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, { items: [1, 2, 3] });
         expect().fail('Expected an error to be thrown');
@@ -232,7 +220,6 @@
     it('should report correct path for error in if block', async () => {
       var templateName = 'error-if-block.njk';
       loader.addTemplate(templateName, '{% if true %}{{ nonExistentFunction() }}{% endif %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {});
         expect().fail('Expected an error to be thrown');
@@ -244,7 +231,6 @@
     it('should report correct path for error in else block', async () => {
       var templateName = 'error-else-block.njk';
       loader.addTemplate(templateName, '{% if false %}ok{% else %}{{ nonExistentFunction() }}{% endif %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {});
         expect().fail('Expected an error to be thrown');
@@ -256,7 +242,6 @@
     it('should report correct path for error with async filter', async () => {
       var templateName = 'error-async-filter.njk';
       loader.addTemplate(templateName, '{{ "test" | asyncFilter }}');
-      let env = new AsyncEnvironment(loader);
       env.addFilterAsync('asyncFilter', async (val) => {
         throw new Error('Filter error');
       });
@@ -271,7 +256,6 @@
     it('should report correct path for error in async extension', async () => {
       var templateName = 'error-async-extension.njk';
       loader.addTemplate(templateName, '{% asyncTag %}');
-      let env = new AsyncEnvironment(loader);
 
       class AsyncTagExtension {
         constructor() {
@@ -303,7 +287,6 @@
     it('should report correct path for error during async function call', async () => {
       var templateName = 'error-async-function.njk';
       loader.addTemplate(templateName, '{{ asyncFunc() }}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {
           asyncFunc: async () => {
@@ -321,7 +304,6 @@
       var childTemplateName = 'error-nested-blocks-child.njk';
       loader.addTemplate(parentTemplateName, '{% block outer %}{% block inner %}{% endblock %}{% endblock %}');
       loader.addTemplate(childTemplateName, '{% extends "' + parentTemplateName + '" %}{% block inner %}{{ nonExistentFunction() }}{% endblock %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(childTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -334,7 +316,6 @@
       var mainTemplateName = 'error-template-load-main.njk';
       var missingTemplate = 'missing-template.njk';
       loader.addTemplate(mainTemplateName, '{% include "' + missingTemplate + '" %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(mainTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -349,7 +330,7 @@
       var macroTemplateName = 'error-macro-context-lib.njk';
       loader.addTemplate(mainTemplateName, '{% import "' + macroTemplateName + '" as lib with context %}{{ lib.myMacro() }}');
       loader.addTemplate(macroTemplateName, '{% macro myMacro() %}{{ nonExistentVar }}{% endmacro %}');
-      let env = new AsyncEnvironment(loader, { throwOnUndefined: true });
+      env = new AsyncEnvironment(loader, { throwOnUndefined: true });
       try {
         await env.renderTemplate(mainTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -363,7 +344,7 @@
       var childTemplateName = 'error-include-context-child.njk';
       loader.addTemplate(mainTemplateName, '{% include "' + childTemplateName + '" %}');
       loader.addTemplate(childTemplateName, '{{ contextVar }}');
-      let env = new AsyncEnvironment(loader, { throwOnUndefined: true });
+      env = new AsyncEnvironment(loader, { throwOnUndefined: true });
       try {
         await env.renderTemplate(mainTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -379,7 +360,6 @@
       loader.addTemplate(mainTemplateName, `{% import "${libTemplateName}" as lib with context %}{{ lib.value }}`);
       loader.addTemplate(libTemplateName, '{% set value = asyncFunc() %}');
 
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(mainTemplateName, {
           asyncFunc: async () => {
@@ -398,7 +378,6 @@
     it('should report correct path for error in second iteration of for loop', async () => {
       var templateName = 'error-for-loop-second-iteration.njk';
       loader.addTemplate(templateName, '{% for item in items %}{% if loop.index > 1 %}{{ nonExistentFunction() }}{% endif %}{% endfor %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, { items: [1, 2, 3] });
         expect().fail('Expected an error to be thrown');
@@ -410,7 +389,6 @@
     it('should report correct path for error in nested for loops', async () => {
       var templateName = 'error-nested-for-loops.njk';
       loader.addTemplate(templateName, '{% for outer in items %}{% for inner in outer %}{{ nonExistentFunction() }}{% endfor %}{% endfor %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, { items: [[1, 2], [3, 4]] });
         expect().fail('Expected an error to be thrown');
@@ -426,7 +404,6 @@
         '{% macro outer() %}{{ inner() }}{% endmacro %}' +
         '{{ outer() }}'
       );
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {});
         expect().fail('Expected an error to be thrown');
@@ -438,7 +415,6 @@
     it('should report correct path for error in filter chain', async () => {
       var templateName = 'error-filter-chain.njk';
       loader.addTemplate(templateName, '{{ value | upper | myFilter }}');
-      let env = new AsyncEnvironment(loader);
       env.addFilterAsync('myFilter', async (val) => {
         throw new Error('Filter chain error');
       });
@@ -453,7 +429,6 @@
     it('should report correct path for error in set with async expression', async () => {
       var templateName = 'error-set-async.njk';
       loader.addTemplate(templateName, '{% set x = asyncFunc() %}{{ x }}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {
           asyncFunc: async () => {
@@ -469,7 +444,6 @@
     it('should report correct path for error in for loop expression', async () => {
       var templateName = 'error-for-expression.njk';
       loader.addTemplate(templateName, '{% for item in asyncFunc() %}{{ item }}{% endfor %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {
           asyncFunc: async () => {
@@ -485,7 +459,6 @@
     it('should report correct path for error in if condition expression', async () => {
       var templateName = 'error-if-condition.njk';
       loader.addTemplate(templateName, '{% if asyncFunc() %}yes{% endif %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {
           asyncFunc: async () => {
@@ -504,7 +477,6 @@
         '{% macro myMacro(x) %}{{ x }}{% endmacro %}' +
         '{{ myMacro(asyncFunc()) }}'
       );
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {
           asyncFunc: async () => {
@@ -520,7 +492,6 @@
     it('should report correct path for error in filter argument', async () => {
       var templateName = 'error-filter-argument.njk';
       loader.addTemplate(templateName, '{{ "test" | default(asyncFunc()) }}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(templateName, {
           asyncFunc: async () => {
@@ -538,7 +509,6 @@
       var childTemplateName = 'error-include-expression-child.njk';
       loader.addTemplate(mainTemplateName, '{% include asyncFunc() %}');
       loader.addTemplate(childTemplateName, 'Child content');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(mainTemplateName, {
           asyncFunc: async () => {
@@ -556,7 +526,6 @@
       var parentTemplateName = 'error-extends-expression-parent.njk';
       loader.addTemplate(childTemplateName, '{% extends asyncFunc() %}');
       loader.addTemplate(parentTemplateName, '{% block content %}{% endblock %}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(childTemplateName, {
           asyncFunc: async () => {
@@ -576,7 +545,6 @@
       loader.addTemplate(parentTemplateName, '{% block content %}{% endblock %}');
       loader.addTemplate(childTemplateName, '{% extends "' + parentTemplateName + '" %}{% block content %}{% include "' + includedTemplateName + '" %}{% endblock %}');
       loader.addTemplate(includedTemplateName, '{{ nonExistentFunction() }}');
-      let env = new AsyncEnvironment(loader);
       try {
         await env.renderTemplate(childTemplateName, {});
         expect().fail('Expected an error to be thrown');
@@ -588,7 +556,6 @@
     it('should report correct path for error in async iterator', async () => {
       var templateName = 'error-async-iterator.njk';
       loader.addTemplate(templateName, '{% for item in asyncIterator %}{{ item }}{% endfor %}');
-      let env = new AsyncEnvironment(loader);
 
       async function* failingIterator() {
         yield 1;
@@ -610,16 +577,17 @@
 
   describe('Async mode - comprehensive loop error handling', () => {
     let loader;
+    let env;
 
     beforeEach(() => {
       loader = new StringLoader();
+      env = new AsyncEnvironment(loader);
     });
 
     describe('For loops with async iterators', () => {
       it('should report error in async iterator body', async () => {
         const templateName = 'error-async-iterator-body.njk';
         loader.addTemplate(templateName, '{% for item in asyncIterator %}{{ item }}{% endfor %}');
-        const env = new AsyncEnvironment(loader);
 
         async function* failingIterator() {
           yield 1;
@@ -641,7 +609,6 @@
       it('should report error in async iterator condition', async () => {
         const templateName = 'error-async-iterator-condition.njk';
         loader.addTemplate(templateName, '{% for item in getIterator() %}{{ item }}{% endfor %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -659,7 +626,6 @@
       it('should report error during iteration value processing', async () => {
         const templateName = 'error-async-iterator-processing.njk';
         loader.addTemplate(templateName, '{% for item in asyncIterator %}{{ failFunc(item) }}{% endfor %}');
-        const env = new AsyncEnvironment(loader);
 
         async function* yieldingIterator() {
           yield 1;
@@ -687,7 +653,6 @@
       it('should report error in array loop body', async () => {
         const templateName = 'error-array-body.njk';
         loader.addTemplate(templateName, '{% for item in items %}{{ failFunc(item) }}{% endfor %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -707,7 +672,6 @@
       it('should report error in array condition', async () => {
         const templateName = 'error-array-condition.njk';
         loader.addTemplate(templateName, '{% for item in getItems() %}{{ item }}{% endfor %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -725,7 +689,6 @@
       it('should report error in parallel array loop', async () => {
         const templateName = 'error-array-parallel.njk';
         loader.addTemplate(templateName, '{% for item in items %}{{ asyncFail(item) }}{% endfor %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -748,7 +711,6 @@
       it('should report error in object loop body', async () => {
         const templateName = 'error-object-body.njk';
         loader.addTemplate(templateName, '{% for key, val in obj %}{{ failFunc(val) }}{% endfor %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -768,7 +730,6 @@
       it('should report error in object condition', async () => {
         const templateName = 'error-object-condition.njk';
         loader.addTemplate(templateName, '{% for key, val in getObj() %}{{ val }}{% endfor %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -788,7 +749,6 @@
       it('should report error in while loop body', async () => {
         const templateName = 'error-while-body.njk';
         loader.addTemplate(templateName, '{% set counter = 0 %}{% while counter < 5 %}{{ failFunc(counter) }}{% set counter = counter + 1 %}{% endwhile %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -807,7 +767,6 @@
       it('should report error in while loop condition', async () => {
         const templateName = 'error-while-condition.njk';
         loader.addTemplate(templateName, '{% set counter = 0 %}{% while checkCondition(counter) %}{{ counter }}{% set counter = counter + 1 %}{% endwhile %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -826,7 +785,6 @@
       it('should report error in while condition on first check', async () => {
         const templateName = 'error-while-first-condition.njk';
         loader.addTemplate(templateName, '{% while getCondition() %}never executed{% endwhile %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -846,7 +804,6 @@
       it('should report error in each loop body with array', async () => {
         const templateName = 'error-each-array.njk';
         loader.addTemplate(templateName, '{% asyncEach item in items %}{{ failFunc(item) }}{% endeach %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -866,7 +823,6 @@
       it('should report error in each loop body with object', async () => {
         const templateName = 'error-each-object.njk';
         loader.addTemplate(templateName, '{% asyncEach key, val in obj %}{{ failFunc(val) }}{% endeach %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -886,7 +842,6 @@
       it('should report error in each loop with async iterator', async () => {
         const templateName = 'error-each-async-iterator.njk';
         loader.addTemplate(templateName, '{% asyncEach item in asyncIterator %}{{ failFunc(item) }}{% endeach %}');
-        const env = new AsyncEnvironment(loader);
 
         async function* yieldingIterator() {
           yield 1;
@@ -914,7 +869,6 @@
       it('should report error from nested for loops', async () => {
         const templateName = 'error-nested-for.njk';
         loader.addTemplate(templateName, '{% for i in outer %}{% for j in inner %}{{ failFunc(j) }}{% endfor %}{% endfor %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
@@ -935,7 +889,6 @@
       it('should report error from for loop inside while loop', async () => {
         const templateName = 'error-for-in-while.njk';
         loader.addTemplate(templateName, '{% set counter = 0 %}{% while counter < 2 %}{% for item in items %}{{ failFunc(item) }}{% endfor %}{% set counter = counter + 1 %}{% endwhile %}');
-        const env = new AsyncEnvironment(loader);
 
         try {
           await env.renderTemplate(templateName, {
