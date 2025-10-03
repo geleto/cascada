@@ -602,8 +602,355 @@
         });
         expect().fail('Expected an error to be thrown');
       } catch (err) {
+        expect(err.message).to.contain('Async iterator error');
         expect(err.message).to.contain(`(${templateName})`);
       }
+    });
+  });
+
+  describe('Async mode - comprehensive loop error handling', () => {
+    let loader;
+
+    beforeEach(() => {
+      loader = new StringLoader();
+    });
+
+    describe('For loops with async iterators', () => {
+      it('should report error in async iterator body', async () => {
+        const templateName = 'error-async-iterator-body.njk';
+        loader.addTemplate(templateName, '{% for item in asyncIterator %}{{ item }}{% endfor %}');
+        const env = new AsyncEnvironment(loader);
+
+        async function* failingIterator() {
+          yield 1;
+          yield 2;
+          throw new Error('Async iterator error in body');
+        }
+
+        try {
+          await env.renderTemplate(templateName, {
+            asyncIterator: failingIterator()
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Async iterator error in body');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+
+      it('should report error in async iterator condition', async () => {
+        const templateName = 'error-async-iterator-condition.njk';
+        loader.addTemplate(templateName, '{% for item in getIterator() %}{{ item }}{% endfor %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            getIterator: async () => {
+              throw new Error('Error getting async iterator');
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Error getting async iterator');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+
+      it('should report error during iteration value processing', async () => {
+        const templateName = 'error-async-iterator-processing.njk';
+        loader.addTemplate(templateName, '{% for item in asyncIterator %}{{ failFunc(item) }}{% endfor %}');
+        const env = new AsyncEnvironment(loader);
+
+        async function* yieldingIterator() {
+          yield 1;
+          yield 2;
+          yield 3;
+        }
+
+        try {
+          await env.renderTemplate(templateName, {
+            asyncIterator: yieldingIterator(),
+            failFunc: (item) => {
+              if (item === 2) throw new Error('Processing failed for item 2');
+              return item;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Processing failed for item 2');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+    });
+
+    describe('For loops with arrays', () => {
+      it('should report error in array loop body', async () => {
+        const templateName = 'error-array-body.njk';
+        loader.addTemplate(templateName, '{% for item in items %}{{ failFunc(item) }}{% endfor %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            items: [1, 2, 3],
+            failFunc: async (item) => {
+              if (item === 2) throw new Error('Array processing error');
+              return item;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Array processing error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+
+      it('should report error in array condition', async () => {
+        const templateName = 'error-array-condition.njk';
+        loader.addTemplate(templateName, '{% for item in getItems() %}{{ item }}{% endfor %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            getItems: async () => {
+              throw new Error('Error fetching array');
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Error fetching array');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+
+      it('should report error in parallel array loop', async () => {
+        const templateName = 'error-array-parallel.njk';
+        loader.addTemplate(templateName, '{% for item in items %}{{ asyncFail(item) }}{% endfor %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            items: [1, 2, 3, 4, 5],
+            asyncFail: async (item) => {
+              await new Promise(resolve => setTimeout(resolve, item * 10));
+              if (item === 3) throw new Error('Parallel array error');
+              return item;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Parallel array error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+    });
+
+    describe('For loops with objects', () => {
+      it('should report error in object loop body', async () => {
+        const templateName = 'error-object-body.njk';
+        loader.addTemplate(templateName, '{% for key, val in obj %}{{ failFunc(val) }}{% endfor %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            obj: { a: 1, b: 2, c: 3 },
+            failFunc: async (val) => {
+              if (val === 2) throw new Error('Object processing error');
+              return val;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Object processing error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+
+      it('should report error in object condition', async () => {
+        const templateName = 'error-object-condition.njk';
+        loader.addTemplate(templateName, '{% for key, val in getObj() %}{{ val }}{% endfor %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            getObj: async () => {
+              throw new Error('Error fetching object');
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Error fetching object');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+    });
+
+    describe('While loops', () => {
+      it('should report error in while loop body', async () => {
+        const templateName = 'error-while-body.njk';
+        loader.addTemplate(templateName, '{% set counter = 0 %}{% while counter < 5 %}{{ failFunc(counter) }}{% set counter = counter + 1 %}{% endwhile %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            failFunc: async (val) => {
+              if (val === 3) throw new Error('While loop body error');
+              return val;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('While loop body error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+
+      it('should report error in while loop condition', async () => {
+        const templateName = 'error-while-condition.njk';
+        loader.addTemplate(templateName, '{% set counter = 0 %}{% while checkCondition(counter) %}{{ counter }}{% set counter = counter + 1 %}{% endwhile %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            checkCondition: async (val) => {
+              if (val === 3) throw new Error('While condition error');
+              return val < 5;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('While condition error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+
+      it('should report error in while condition on first check', async () => {
+        const templateName = 'error-while-first-condition.njk';
+        loader.addTemplate(templateName, '{% while getCondition() %}never executed{% endwhile %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            getCondition: async () => {
+              throw new Error('Initial condition error');
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Initial condition error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+    });
+
+    describe('Each loops (sequential)', () => {
+      it('should report error in each loop body with array', async () => {
+        const templateName = 'error-each-array.njk';
+        loader.addTemplate(templateName, '{% asyncEach item in items %}{{ failFunc(item) }}{% endeach %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            items: [1, 2, 3],
+            failFunc: async (item) => {
+              if (item === 2) throw new Error('Each array error');
+              return item;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Each array error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+
+      it('should report error in each loop body with object', async () => {
+        const templateName = 'error-each-object.njk';
+        loader.addTemplate(templateName, '{% asyncEach key, val in obj %}{{ failFunc(val) }}{% endeach %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            obj: { a: 1, b: 2, c: 3 },
+            failFunc: async (val) => {
+              if (val === 2) throw new Error('Each object error');
+              return val;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Each object error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+
+      it('should report error in each loop with async iterator', async () => {
+        const templateName = 'error-each-async-iterator.njk';
+        loader.addTemplate(templateName, '{% asyncEach item in asyncIterator %}{{ failFunc(item) }}{% endeach %}');
+        const env = new AsyncEnvironment(loader);
+
+        async function* yieldingIterator() {
+          yield 1;
+          yield 2;
+          yield 3;
+        }
+
+        try {
+          await env.renderTemplate(templateName, {
+            asyncIterator: yieldingIterator(),
+            failFunc: async (item) => {
+              if (item === 2) throw new Error('Each iterator error');
+              return item;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Each iterator error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+    });
+
+    describe('Nested loop errors', () => {
+      it('should report error from nested for loops', async () => {
+        const templateName = 'error-nested-for.njk';
+        loader.addTemplate(templateName, '{% for i in outer %}{% for j in inner %}{{ failFunc(j) }}{% endfor %}{% endfor %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            outer: [1, 2],
+            inner: [1, 2, 3],
+            failFunc: async (val) => {
+              if (val === 2) throw new Error('Nested loop error');
+              return val;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('Nested loop error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
+
+      it('should report error from for loop inside while loop', async () => {
+        const templateName = 'error-for-in-while.njk';
+        loader.addTemplate(templateName, '{% set counter = 0 %}{% while counter < 2 %}{% for item in items %}{{ failFunc(item) }}{% endfor %}{% set counter = counter + 1 %}{% endwhile %}');
+        const env = new AsyncEnvironment(loader);
+
+        try {
+          await env.renderTemplate(templateName, {
+            items: [1, 2, 3],
+            failFunc: async (val) => {
+              if (val === 2) throw new Error('For in while error');
+              return val;
+            }
+          });
+          expect().fail('Expected an error to be thrown');
+        } catch (err) {
+          expect(err.message).to.contain('For in while error');
+          expect(err.message).to.contain(`(${templateName})`);
+        }
+      });
     });
   });
 })();
