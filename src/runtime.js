@@ -1210,8 +1210,7 @@ function executeAsyncBlock(asyncFunc, astate, frame, cb, lineno, colno, context,
         console.error('Original error was:', err);
         throw cbError;
       }
-      // Re-throw to ensure it propagates to the top-level catch in rootRenderFunc
-      throw err;
+      throw err;// maybe no need for this, as the return promise is never awaited, it's fire and forget
     }).finally(() => {
       // 3. This is guaranteed to run *after* the .catch() handler has completed.
       astate.leaveAsyncBlock();
@@ -1342,7 +1341,7 @@ function setLoopBindings(frame, index, len, last) {
   }
 }
 
-async function iterateAsyncSequential(arr, loopBody, loopVars) {
+async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
   let didIterate = false;
   let i = 0;
   for await (const value of arr) {
@@ -1351,12 +1350,12 @@ async function iterateAsyncSequential(arr, loopBody, loopVars) {
     let res;
     if (loopVars.length === 1) {
       // `while` loops pass `undefined` for len/last, which is correct.
-      res = loopBody(value, i, undefined, false);
+      res = loopBody(value, i, undefined, false, errorContext);
     } else {
       if (!Array.isArray(value)) {
         throw new Error('Expected an array for destructuring');
       }
-      res = loopBody(...value.slice(0, loopVars.length), i, undefined, false);
+      res = loopBody(...value.slice(0, loopVars.length), i, undefined, false, errorContext);
     }
 
     // In sequential mode, we MUST await the body before the next iteration.
@@ -1366,7 +1365,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars) {
   return didIterate;
 }
 
-async function iterateAsyncParallel(arr, loopBody, loopVars) {
+async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
   let didIterate = false;
   // PARALLEL PATH
   // This logic allows for `loop.length` and `loop.last` to work
@@ -1381,13 +1380,14 @@ async function iterateAsyncParallel(arr, loopBody, loopVars) {
     lastPromiseResolve = resolve;
   });
 
+  let firstError = null;  // Track first error and use as stop flag
   // This promise will be resolved with the total length when the loop is done.
   const lenPromise = new Promise(resolve => {
     let length = 0;
     // This IIFE runs "in the background" to exhaust the iterator
     (async () => {
       try {
-        while ((result = await iterator.next()), !result.done) {
+        while (!firstError && (result = await iterator.next(), !result.done)) {
           //values.push(result.value);
           length++;
           didIterate = true;
@@ -1404,15 +1404,23 @@ async function iterateAsyncParallel(arr, loopBody, loopVars) {
 
           let res;
           if (loopVars.length === 1) {
-            res = loopBody(value, i, lenPromise, lastPromise);
+            res = loopBody(value, i, lenPromise, lastPromise, errorContext);
           } else {
             if (!Array.isArray(value)) {
               throw new Error('Expected an array for destructuring');
             }
-            // eslint-disable-next-line no-unused-vars
             res = loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
           }
+
           // `await res` is NOT here, allowing parallel execution.
+          if (res && typeof res.then === 'function') {
+            res.catch(err => {
+              // Only handle first error
+              if (!firstError) {
+                firstError = err;
+              }
+            });
+          }
           i++;
         }
 
@@ -1423,9 +1431,18 @@ async function iterateAsyncParallel(arr, loopBody, loopVars) {
 
         // The loop is done, so we now know the length.
         resolve(length);
+
+        if (firstError) {
+          throw firstError;
+        }
       } catch (error) {
         if (lastPromiseResolve) {
-          lastPromiseResolve(true); // Resolve on error to prevent deadlocks.
+          if (!firstError) {
+            firstError = error;
+          }
+          // Resolve on error to prevent deadlocks.
+          resolve(length);
+          lastPromiseResolve(true);
         }
         throw error;
       }
@@ -1434,10 +1451,15 @@ async function iterateAsyncParallel(arr, loopBody, loopVars) {
 
   // The main function waits for the background IIFE to finish.
   await lenPromise;
+  if (firstError) {
+    const err = handleError(firstError, errorContext.lineno, errorContext.colno, errorContext.errorContextString);
+    err.Update(errorContext.path);
+    throw err;
+  }
   return didIterate;
 }
 
-async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loopVars = [], sequential = false, isAsync = false) {
+async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loopVars = [], sequential = false, isAsync = false, errorContext) {
   let didIterate = false;
 
   if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
@@ -1450,13 +1472,13 @@ async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loop
       // any `for` loop marked as sequential. It does NOT support `loop.length`
       // or `loop.last` for async iterators, as that is impossible to know
       // without first consuming the entire iterator.
-      didIterate = await iterateAsyncSequential(arr, loopBody, loopVars);
+      didIterate = await iterateAsyncSequential(arr, loopBody, loopVars, errorContext);
     } else {
       // PARALLEL PATH
       // This complex logic allows for `loop.length` and `loop.last` to work
       // by resolving promises only after the entire iterator is consumed. This
       // only works when loop bodies are fired in parallel (sequential=false)
-      didIterate = await iterateAsyncParallel(arr, loopBody, loopVars);
+      didIterate = await iterateAsyncParallel(arr, loopBody, loopVars, errorContext);
     }
   }
   else if (arr) {

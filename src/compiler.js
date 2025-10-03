@@ -1249,7 +1249,8 @@ class Compiler extends Obj {
     const loopIndex = this._tmpid();
     const loopLength = this._tmpid();
     const isLast = this._tmpid();
-    this.emit(`, ${loopIndex}, ${loopLength}, ${isLast}) {`);
+    const errorContext = this._tmpid();
+    this.emit(`, ${loopIndex}, ${loopLength}, ${isLast}, ${errorContext}) {`);
 
     // Use node.body as the position for the inner buffer block (loop body execution)
     if (node.isAsync) {
@@ -1343,6 +1344,9 @@ class Compiler extends Obj {
       this.emit.line(node.isAsync ? '}).bind(context);' : '};');
     }
 
+    // Create error context object
+    const errorContextObj = this._tmpid();
+    this.emit.line(`let ${errorContextObj} = { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this._generateErrorContext(node)}", path: context.path };`);
     // Call the runtime iterate loop function
     this.emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, ${JSON.stringify(bodyWriteCounts)}, [`);
     loopVars.forEach((varName, index) => {
@@ -1351,7 +1355,7 @@ class Compiler extends Obj {
       }
       this.emit(`"${varName}"`);
     });
-    this.emit(`], ${sequential}, ${node.isAsync});`);
+    this.emit(`], ${sequential}, ${node.isAsync}, ${errorContextObj});`);
 
     // End buffer block for the node (using node.arr position)
     if (iteratorCompiler) {
