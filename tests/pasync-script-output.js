@@ -952,6 +952,24 @@ describe('Cascada Script: Output commands', function () {
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { name: 'Heidi' } });
       });
+
+      it('should resolve promises in data handler objects', async () => {
+        const context = {
+          async getData() {
+            return { id: 42, name: 'Test' };
+          }
+        };
+
+        const script = `
+      :data
+      var obj = getData()
+      @data.result = { id: obj.id, name: obj.name }
+        `;
+
+        const result = await env.renderScriptString(script, context);
+        expect(result.result.id).to.equal(42);
+        expect(result.result.name).to.equal('Test');
+      });
     });
 
     describe('Dynamic path commands (function calls and expressions in paths)', () => {
