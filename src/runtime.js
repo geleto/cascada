@@ -6,6 +6,141 @@ var supportsIterators = (
   typeof Symbol === 'function' && Symbol.iterator && typeof arrayFrom === 'function'
 );
 
+// Symbol for poison detection
+const POISON_KEY = typeof Symbol !== 'undefined'
+  ? Symbol.for('cascada.poison')
+  : '__cascadaPoisonError';
+
+/**
+ * Represents a poisoned value containing one or more errors.
+ * Implements thenable protocol to propagate through async chains.
+ */
+class PoisonedValue {
+  constructor(errors) {
+    this.errors = Array.isArray(errors) ? errors : [errors];
+    this[POISON_KEY] = true;
+  }
+
+  then(onFulfilled, onRejected) {
+    const error = new PoisonError(this.errors);
+    if (onRejected) {
+      try {
+        return onRejected(error);
+      } catch (e) {
+        return createPoison(e);
+      }
+    }
+    // If no rejection handler, propagate the poison
+    return this;
+  }
+
+  catch(onRejected) {
+    return this.then(null, onRejected);
+  }
+
+  finally(onFinally) {
+    if (onFinally) {
+      try {
+        onFinally();
+      } catch (e) {
+        // Ignore errors in finally, return original poison
+      }
+    }
+    return this;
+  }
+}
+
+/**
+ * Error thrown when one or more operations are poisoned.
+ * Contains deduplicated array of original errors.
+ */
+class PoisonError extends Error {
+  constructor(errors) {
+    const deduped = deduplicateErrors(errors);
+    const message = deduped.length === 1
+      ? deduped[0].message
+      : `Multiple errors occurred (${deduped.length}):\n` +
+        deduped.map((e, i) => `  ${i + 1}. ${e.message}`).join('\n');
+
+    super(message);
+    this.name = 'PoisonError';
+    this.errors = deduped;
+
+    // Preserve stack from first error if available
+    if (deduped[0] && deduped[0].stack) {
+      this.stack = deduped[0].stack;
+    }
+  }
+}
+
+/**
+ * Deduplicate errors by message.
+ */
+function deduplicateErrors(errors) {
+  const seen = new Map();
+  const result = [];
+
+  for (const err of errors) {
+    const key = err.message || String(err);
+    if (!seen.has(key)) {
+      seen.set(key, true);
+      result.push(err);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Create a poison value from one or more errors.
+ */
+function createPoison(errorOrErrors) {
+  const errors = Array.isArray(errorOrErrors)
+    ? errorOrErrors
+    : [errorOrErrors];
+  return new PoisonedValue(errors);
+}
+
+/**
+ * Check if a value is poisoned.
+ */
+function isPoison(value) {
+  return value != null && value[POISON_KEY] === true;
+}
+
+/**
+ * Collect errors from an array of values.
+ * Awaits all promises (even after finding errors), catches rejections,
+ * extracts poison errors. Returns deduplicated error array.
+ */
+async function collectErrors(values) {
+  const errors = [];
+
+  for (const value of values) {
+    if (isPoison(value)) {
+      errors.push(...value.errors);
+    } else if (value && typeof value.then === 'function') {
+      try {
+        const resolved = await value;
+        // Check if resolved to a poison
+        if (isPoison(resolved)) {
+          errors.push(...resolved.errors);
+        }
+      } catch (err) {
+        // If the error is a PoisonError (from unwrapping a poison),
+        // extract its underlying errors
+        if (err instanceof PoisonError) {
+          errors.push(...err.errors);
+        } else {
+          errors.push(err);
+        }
+      }
+    }
+  }
+
+  return deduplicateErrors(errors);
+}
+
 // Frames keep track of scoping both at compile-time and run-time so
 // we know how to access variables. Block tags can introduce special
 // variables, for example.
@@ -1670,6 +1805,14 @@ module.exports = {
   Frame,
   AsyncFrame,
   AsyncState,
+
+  // Poison value infrastructure
+  PoisonedValue,
+  PoisonError: PoisonError,
+  createPoison,
+  isPoison,
+  collectErrors,
+
   makeMacro,
   makeKeywordArgs,
   numArgs,

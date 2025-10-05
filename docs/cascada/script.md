@@ -1286,14 +1286,14 @@ Under the hood, all unhandled errors that are not resolved within a `try/on erro
 
 If you do not focus the output (i.e., you do not use `:data`, `:text`, etc.), the result of the scope is the standard result object. The collected errors will be neatly contained within the `error` property.
 
-*   **Result:** A standard object like `{ data: {...}, text: "...", error: <CompoundError> }`.
+*   **Result:** A standard object like `{ data: {...}, text: "...", error: <PoisonError> }`.
 *   **Error Propagation:** This return value is **not** an Error Value itself. It does not trigger error propagation. Your calling code is responsible for checking the `result.error` property to see if failures occurred.
 
 ```javascript
 // A script without output focusing
 var user = fetchUser(999) // Fails
 
-// Returns: { data: {}, text: "", error: <CompoundError> }
+// Returns: { data: {}, text: "", error: <PoisonError> }
 ```
 
 #### Behavior With Output Focusing (`:data`, `:text`, etc.)
@@ -1326,7 +1326,7 @@ This design guarantees that you cannot accidentally consume partial or incorrect
 
 #### The Compound Error Object
 
-The `CompoundError` is a special type of Error Value that aggregates all unhandled errors from an execution scope. It shares the standard error properties (`message`, `name`, `source`) but also includes an `errors` property containing the array of all the individual Error Objects that were collected. This provides a complete summary of everything that went wrong within that scope.
+The `PoisonError` is a special type of Error Value that aggregates all unhandled errors from an execution scope. It shares the standard error properties (`message`, `name`, `source`) but also includes an `errors` property containing the array of all the individual Error Objects that were collected. This provides a complete summary of everything that went wrong within that scope.
 
 ### Filters and Global Functions
 
