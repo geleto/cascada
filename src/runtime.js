@@ -1101,7 +1101,35 @@ async function resolveObjectProperties(obj) {
 
   for (const key in obj) {
     if (obj[key] && typeof obj[key].then === 'function') {
-      obj[key] = await obj[key];
+      try {
+        obj[key] = await obj[key];
+      } catch (err) {
+        if (isPoisonError(err)) {
+          return createPoison(err.errors);
+        }
+        throw err;
+      }
+    }
+
+    // Deep resolve if the value is an array or plain object
+    if (Array.isArray(obj[key])) {
+      try {
+        obj[key] = await deepResolveArray(obj[key]);
+      } catch (err) {
+        if (isPoisonError(err)) {
+          return createPoison(err.errors);
+        }
+        throw err;
+      }
+    } else if (isPlainObject(obj[key])) {
+      try {
+        obj[key] = await deepResolveObject(obj[key]);
+      } catch (err) {
+        if (isPoisonError(err)) {
+          return createPoison(err.errors);
+        }
+        throw err;
+      }
     }
   }
 
