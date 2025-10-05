@@ -11,6 +11,11 @@ const POISON_KEY = typeof Symbol !== 'undefined'
   ? Symbol.for('cascada.poison')
   : '__cascadaPoisonError';
 
+// Symbol for PoisonError detection (more reliable than instanceof after transpilation)
+const POISON_ERROR_KEY = typeof Symbol !== 'undefined'
+  ? Symbol.for('cascada.poisonError')
+  : '__cascadaPoisonErrorMarker';
+
 /**
  * Represents a poisoned value containing one or more errors.
  * Implements thenable protocol to propagate through async chains.
@@ -24,13 +29,8 @@ class PoisonedValue {
   then(onFulfilled, onRejected) {
     const error = new PoisonError(this.errors);
     if (onRejected) {
-      try {
-        return onRejected(error);
-      } catch (e) {
-        return createPoison(e);
-      }
+      return onRejected(error); // Let it throw naturally
     }
-    // If no rejection handler, propagate the poison
     return this;
   }
 
@@ -65,6 +65,7 @@ class PoisonError extends Error {
     super(message);
     this.name = 'PoisonError';
     this.errors = deduped;
+    this[POISON_ERROR_KEY] = true; // Marker for reliable detection
 
     // Preserve stack from first error if available
     if (deduped[0] && deduped[0].stack) {
@@ -109,6 +110,14 @@ function isPoison(value) {
 }
 
 /**
+ * Check if an error is a PoisonError.
+ * More reliable than instanceof after transpilation.
+ */
+function isPoisonError(error) {
+  return error != null && error[POISON_ERROR_KEY] === true;
+}
+
+/**
  * Collect errors from an array of values.
  * Awaits all promises (even after finding errors), catches rejections,
  * extracts poison errors. Returns deduplicated error array.
@@ -129,7 +138,7 @@ async function collectErrors(values) {
       } catch (err) {
         // If the error is a PoisonError (from unwrapping a poison),
         // extract its underlying errors
-        if (err instanceof PoisonError) {
+        if (isPoisonError(err)) {
           errors.push(...err.errors);
         } else {
           errors.push(err);
@@ -870,65 +879,146 @@ function promisify(fn) {
 // Thus using sequential await in a loop does not introduce significant delays compared to Promise.all.
 // not so if the promise is cteated right before the await, e.g. await fetch(url)
 async function resolveAll(args) {
+  // Collect all errors first (awaits all promises)
+  const errors = await collectErrors(args);
+
+  if (errors.length > 0) {
+    return createPoison(errors);
+  }
+
+  // No errors - proceed with normal resolution
   const resolvedArgs = [];
   for (let i = 0; i < args.length; i++) {
     let arg = args[i];
+
     if (arg && typeof arg.then === 'function') {
-      arg = await arg;
+      try {
+        arg = await arg;
+      } catch (err) {
+        if (isPoisonError(err)) {
+          return createPoison(err.errors);
+        }
+        throw err;
+      }
     }
-    // Deep resolve if it's an array or object
+
     if (Array.isArray(arg)) {
-      // Recursively resolve elements or use a helper
-      arg = await deepResolveArray(arg);
-    } else if (isPlainObject(arg)) { // Need a robust isPlainObject check
-      // Recursively resolve properties or use a helper
-      arg = await deepResolveObject(arg);
+      try {
+        arg = await deepResolveArray(arg);
+      } catch (err) {
+        if (isPoisonError(err)) {
+          return createPoison(err.errors);
+        }
+        throw err;
+      }
+    } else if (isPlainObject(arg)) {
+      try {
+        arg = await deepResolveObject(arg);
+      } catch (err) {
+        if (isPoisonError(err)) {
+          return createPoison(err.errors);
+        }
+        throw err;
+      }
     }
+
     resolvedArgs.push(arg);
   }
+
   return resolvedArgs;
 }
 
+
 //@todo - use this much more sparingly
 async function deepResolveArray(arr) {
+  const errors = [];
+
   for (let i = 0; i < arr.length; i++) {
     let resolvedItem = arr[i];
+
+    if (isPoison(resolvedItem)) {
+      errors.push(...resolvedItem.errors);
+      continue; // Continue to collect all errors
+    }
+
     if (resolvedItem && typeof resolvedItem.then === 'function') {
-      resolvedItem = await resolvedItem;
+      try {
+        resolvedItem = await resolvedItem;
+      } catch (err) {
+        if (isPoisonError(err)) {
+          errors.push(...err.errors);
+        } else {
+          errors.push(err);
+        }
+        continue;
+      }
     }
+
+    if (isPoison(resolvedItem)) {
+      errors.push(...resolvedItem.errors);
+      continue;
+    }
+
     if (Array.isArray(resolvedItem)) {
-      resolvedItem = await deepResolveArray(resolvedItem);
+      try {
+        resolvedItem = await deepResolveArray(resolvedItem);
+        // If deepResolveArray returns a poison, awaiting it throws PoisonError
+        // So we won't reach this line - the catch below handles it
+      } catch (err) {
+        // If awaiting a poison value, err is PoisonError with errors array
+        if (isPoisonError(err)) {
+          errors.push(...err.errors);
+        } else {
+          errors.push(err);
+        }
+        continue;
+      }
     } else if (isPlainObject(resolvedItem)) {
-      resolvedItem = await deepResolveObject(resolvedItem);
+      try {
+        resolvedItem = await deepResolveObject(resolvedItem);
+        // If deepResolveObject returns a poison, awaiting it throws PoisonError
+        // So we won't reach this line - the catch below handles it
+      } catch (err) {
+        // If awaiting a poison value, err is PoisonError with errors array
+        if (isPoisonError(err)) {
+          errors.push(...err.errors);
+        } else {
+          errors.push(err);
+        }
+        continue;
+      }
     }
+
     arr[i] = resolvedItem;
   }
+
+  if (errors.length > 0) {
+    return createPoison(errors);
+  }
+
   return arr;
 }
 
 // @todo - use this much more sparringly, only for arguments and output
 async function deepResolveObject(target) {
   // Await the primary target if it's a promise.
-  const obj = await target;
-
+  const obj = target && typeof target.then === 'function' ? await target : target;
   // Primitives and null cannot be resolved further.
   if (obj === null || typeof obj !== 'object') {
     return obj;
   }
 
-  if (Array.isArray(obj)) {
-    // --- Array Handling ---
-    // Create an array of promises, where each promise resolves one element.
-    const resolutionPromises = obj.map(
-      (item, index) => deepResolveObject(item)
-        .then(resolvedItem => {
-          // Mutate the original array at the specific index.
-          obj[index] = resolvedItem;
-        })
-    );
+  const errors = [];
 
-    // Wait for all elements to be resolved and mutated.
-    await Promise.all(resolutionPromises);
+  if (Array.isArray(obj)) {
+    try {
+      return await deepResolveArray(obj);
+    } catch (err) {
+      if (isPoisonError(err)) {
+        return createPoison(err.errors);
+      }
+      throw err;
+    }
   } else if (isPlainObject(obj)) {
     // --- Plain Object Handling ---
     // Use getOwnPropertyDescriptors to safely inspect properties without
@@ -941,27 +1031,36 @@ async function deepResolveObject(target) {
 
       // We only care about simple data properties.
       // Ignore getters, setters, and non-enumerable properties.
-      if ('value' in descriptor) {
-        // Create a promise that resolves the property and then mutates the object.
-        const promise = deepResolveObject(descriptor.value)
-          .then(resolvedValue => {
-            // Only mutate if the value has actually changed to avoid
-            // triggering unnecessary setter logic if it exists.
-            if (obj[key] !== resolvedValue) {
-              obj[key] = resolvedValue;
-            }
-          });
+      if ('value' in descriptor) {//@todo - the valie must be an object
+        if (descriptor.value && typeof descriptor.value === 'object') {
+          const promise = (async () => {
+            try {
+              const resolvedValue = await deepResolveObject(descriptor.value);
 
-        resolutionPromises.push(promise);
+              if (obj[key] !== resolvedValue) {
+                obj[key] = resolvedValue;
+              }
+            } catch (err) {
+              if (isPoisonError(err)) {
+                errors.push(...err.errors);
+              } else {
+                errors.push(err);
+              }
+            }
+          })();
+
+          resolutionPromises.push(promise);
+        }
       }
     }
 
-    // Wait for all properties to be resolved and mutated.
     await Promise.all(resolutionPromises);
-  }
-  // For non-plain objects (class instances, etc.), we don't recurse
 
-  // Return the original, now fully mutated, object.
+    if (errors.length > 0) {
+      return createPoison(errors);
+    }
+  }
+
   return obj;
 }
 
@@ -994,21 +1093,31 @@ function isPlainObject(value) {
 }
 
 async function resolveObjectProperties(obj) {
+  const errors = await collectErrors(Object.values(obj));
+
+  if (errors.length > 0) {
+    return createPoison(errors);
+  }
+
   for (const key in obj) {
     if (obj[key] && typeof obj[key].then === 'function') {
       obj[key] = await obj[key];
     }
   }
+
   return obj;
 }
 
-// todo - optimize
 async function resolveDuo(...args) {
   return resolveAll(args);
 }
 
 async function resolveSingle(value) {
-  // Sortcut for non-promise values, return a fake promise
+  // Synchronous shortcuts
+  if (isPoison(value)) {
+    return value; // Propagate poison synchronously
+  }
+
   if (!value || typeof value.then !== 'function') {
     return {
       then(onFulfilled) {
@@ -1017,42 +1126,64 @@ async function resolveSingle(value) {
     };
   }
 
-  // For promises, resolve them like resolveAll does
-  let resolvedValue = value;
-  if (resolvedValue && typeof resolvedValue.then === 'function') {
-    resolvedValue = await resolvedValue; // Resolve promise chain
+  // Await promise, convert rejections to poison
+  let resolvedValue;
+  try {
+    resolvedValue = await value;
+  } catch (err) {
+    if (isPoisonError(err)) {
+      return createPoison(err.errors);
+    }
+    return createPoison(err);
   }
 
-  // Deep resolve if it's an array or object
+  // Check if resolved to poison
+  if (isPoison(resolvedValue)) {
+    return resolvedValue;
+  }
+
+  // Deep resolve arrays/objects, collecting any errors
   if (Array.isArray(resolvedValue)) {
-    resolvedValue = await deepResolveArray(resolvedValue);
+    const errors = await collectErrors(resolvedValue);
+    if (errors.length > 0) {
+      return createPoison(errors);
+    }
+    try {
+      resolvedValue = await deepResolveArray(resolvedValue);
+    } catch (err) {
+      if (isPoisonError(err)) {
+        return createPoison(err.errors);
+      }
+      throw err;
+    }
   } else if (isPlainObject(resolvedValue)) {
-    resolvedValue = await deepResolveObject(resolvedValue);
+    const errors = await collectErrors(Object.values(resolvedValue));
+    if (errors.length > 0) {
+      return createPoison(errors);
+    }
+    try {
+      resolvedValue = await deepResolveObject(resolvedValue);
+    } catch (err) {
+      if (isPoisonError(err)) {
+        return createPoison(err.errors);
+      }
+      throw err;
+    }
   }
 
   return resolvedValue;
 }
 
 async function resolveSingleArr(value) {
-  // Shortcut for non-promise values
-  if (!value || typeof value.then !== 'function') {
-    return [value];
+  try {
+    const resolved = await resolveSingle(value);
+    return [resolved];
+  } catch (err) {
+    if (isPoisonError(err)) {
+      return createPoison(err.errors);
+    }
+    throw err;
   }
-
-  // For promises, resolve them like resolveAll does
-  let resolvedValue = value;
-  if (resolvedValue && typeof resolvedValue.then === 'function') {
-    resolvedValue = await resolvedValue;
-  }
-
-  // Deep resolve if it's an array or object
-  if (Array.isArray(resolvedValue)) {
-    resolvedValue = await deepResolveArray(resolvedValue);
-  } else if (isPlainObject(resolvedValue)) {
-    resolvedValue = await deepResolveObject(resolvedValue);
-  }
-
-  return [resolvedValue];
 }
 
 function resolveArguments(fn, skipArguments = 0) {
@@ -1811,6 +1942,7 @@ module.exports = {
   PoisonError: PoisonError,
   createPoison,
   isPoison,
+  isPoisonError,
   collectErrors,
 
   makeMacro,
@@ -1827,6 +1959,8 @@ module.exports = {
   resolveSingleArr,
   resolveObjectProperties,
   resolveArguments,
+  deepResolveArray,
+  deepResolveObject,
   flattenBuffer,
   withPath,
 
