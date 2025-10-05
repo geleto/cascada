@@ -29,8 +29,15 @@ class PoisonedValue {
   then(onFulfilled, onRejected) {
     const error = new PoisonError(this.errors);
     if (onRejected) {
-      return onRejected(error); // Let it throw naturally
+      try {
+        return onRejected(error);
+      } catch (e) {
+        // Handler threw - return new poison with the thrown error
+        // This matches Promise behavior: replace error, don't accumulate
+        return createPoison(e);
+      }
     }
+    // No rejection handler - propagate the poison
     return this;
   }
 
