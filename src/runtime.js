@@ -1354,7 +1354,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     return arr.reduce((acc, item) => {
       if (Array.isArray(item)) {
         // The `null` context indicates a recursive call for a simple sub-array.
-        return acc + flattenBuffer(item, null, null, null);
+        return acc + flattenBuffer(item, null, null);
       }
       // A post-processing function, e.g. for SafeString
       if (typeof item === 'function') {
@@ -1364,14 +1364,17 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     }, '');
   }
 
-  // Script processing path
+  // Script processing path with poison detection
   const env = context.env;
   const textOutput = [];
-  const handlerInstances = {}; // Cache instantiated handlers for this run.
+  const handlerInstances = {};
+  const collectedErrors = []; // Collect ALL errors from poison values
 
   // Validate focusOutput handler exists if specified
   if (focusOutput) {
-    const handlerExists = focusOutput === 'text' || env.commandHandlerInstances[focusOutput] || env.commandHandlerClasses[focusOutput];
+    const handlerExists = focusOutput === 'text' ||
+                         env.commandHandlerInstances[focusOutput] ||
+                         env.commandHandlerClasses[focusOutput];
     if (!handlerExists) {
       throw new Error(`Data output focus target not found: '${focusOutput}'`);
     }
@@ -1399,8 +1402,23 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     return null;
   }
 
+  // Helper to safely get position info
+  function getPosition(item) {
+    if (item && item.pos) {
+      return { lineno: item.pos.lineno || 0, colno: item.pos.colno || 0 };
+    }
+    return { lineno: 0, colno: 0 };
+  }
+
   function processItem(item) {
     if (item === null || item === undefined) return;
+
+    // Check for poison - collect errors and continue processing
+    if (isPoison(item)) {
+      collectedErrors.push(...item.errors);
+      return; // Continue to find all errors
+    }
+
     if (Array.isArray(item)) {
       const last = item.length > 0 ? item[item.length - 1] : null;
 
@@ -1412,17 +1430,28 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
         // It's a simplified version of the main buffer flattening and assumes
         // no command objects are present in such arrays.
         function _flattenStringifiable(subArr) {
-          return subArr.reduce((acc, current) => {
+          const subErrors = [];
+          const result = subArr.reduce((acc, current) => {
+            // Check for poison in sub-arrays
+            if (isPoison(current)) {
+              subErrors.push(...current.errors);
+              return acc;
+            }
             if (Array.isArray(current)) {
               return acc + _flattenStringifiable(current);
             }
             return acc + ((current !== null && current !== undefined) ? current : '');
           }, '');
+
+          if (subErrors.length > 0) {
+            collectedErrors.push(...subErrors);
+          }
+
+          return result;
         }
 
         const subResult = _flattenStringifiable(subArray);
         const finalResult = last(subResult);
-
         // The result of the function (e.g., a SafeString) needs to be processed.
         processItem(finalResult);
       } else {
@@ -1432,74 +1461,126 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
       return;
     }
 
-    // Process a command object from the compiler
+    // Process command object from compiler
     if (typeof item === 'object' && (item.method || item.handler !== undefined)) {
       // Function Command: @handler.cmd(), @callableHandler()
       const handlerName = item.handler;
       const commandName = item.command;
       const subpath = item.subpath;
       const args = item.arguments;
+      const pos = getPosition(item);
 
       if (!handlerName || handlerName === 'text') {
+        // Check args for poison before adding to output
+        for (const arg of args) {
+          if (isPoison(arg)) {
+            collectedErrors.push(...arg.errors);
+            return; // Don't add poisoned output
+          }
+        }
         textOutput.push(...args);
       } else {
-        const handlerInstance = getOrInstantiateHandler(handlerName);
-
-        if (!handlerInstance) {
-          const err1 = handleError(new Error(`Unknown command handler: ${handlerName}`), item.pos.lineno, item.pos.colno);
-          err1.Update(context.path);
-          throw err1;
-        }
-
-        // Navigate through subpath properties to reach the final target
-        let targetObject = handlerInstance;
-        if (subpath && subpath.length > 0) {
-          for (const pathSegment of subpath) {
-            if (targetObject && typeof targetObject === 'object' && targetObject !== null) {
-              targetObject = targetObject[pathSegment];
-            } else {
-              const err2 = handleError(new Error(`Cannot access property '${pathSegment}' on ${typeof targetObject} in handler '${handlerName}'`), item.pos.lineno, item.pos.colno);
-              err2.Update(context.path);
-              throw err2;
-            }
+        // Check args for poison
+        for (const arg of args) {
+          if (isPoison(arg)) {
+            collectedErrors.push(...arg.errors);
+            return; // Don't call handler with poisoned args
           }
         }
 
-        const commandFunc = commandName ? targetObject[commandName] : targetObject;
+        try {
+          const handlerInstance = getOrInstantiateHandler(handlerName);
 
-        // if no command name is provided, use the handler itself as the command
-        if (typeof commandFunc === 'function') {
-          // Found a method on the handler: @turtle.forward() or the handler itself is a function @log()
-          commandFunc.apply(targetObject, args);
-        } else if (!commandName) {
-          // The handler may be a proxy
-          try {
-            //the handler may be a Proxy
-            commandFunc(...args);
-          } catch (e) {
-            if (!commandName) {
-              const err3 = handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable (use Proxy or constructor function return)`), item.pos.lineno, item.pos.colno);
-              err3.Update(context.path);
-              throw err3;
-            } else {
-              const err4 = handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}' and is not callable`), item.pos.lineno, item.pos.colno);
-              err4.Update(context.path);
-              throw err4;
+          if (!handlerInstance) {
+            const err1 = handleError(
+              new Error(`Unknown command handler: ${handlerName}`),
+              pos.lineno,
+              pos.colno
+            );
+            if (context && context.path) {
+              err1.Update(context.path);
+            }
+            collectedErrors.push(err1);
+            return;
+          }
+
+          // Navigate through subpath properties to reach the final target
+          let targetObject = handlerInstance;
+          if (subpath && subpath.length > 0) {
+            for (const pathSegment of subpath) {
+              if (targetObject && typeof targetObject === 'object' && targetObject !== null) {
+                targetObject = targetObject[pathSegment];
+              } else {
+                const err2 = handleError(
+                  new Error(`Cannot access property '${pathSegment}' on ${typeof targetObject} in handler '${handlerName}'`),
+                  pos.lineno,
+                  pos.colno
+                );
+                if (context && context.path) {
+                  err2.Update(context.path);
+                }
+                collectedErrors.push(err2);
+                return;
+              }
             }
           }
-        } else {
-          const err5 = handleError(new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`), item.pos.lineno, item.pos.colno);
-          err5.Update(context.path);
-          throw err5;
+
+          const commandFunc = commandName ? targetObject[commandName] : targetObject;
+
+          // if no command name is provided, use the handler itself as the command
+          if (typeof commandFunc === 'function') {
+            // Found a method on the handler: @turtle.forward() or the handler itself is a function @log()
+            commandFunc.apply(targetObject, args);
+          } else if (!commandName) {
+            // The handler may be a Proxy
+            try {
+              //the handler may be a Proxy
+              commandFunc(...args);
+            } catch (e) {
+              const err3 = handleError(
+                new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable`),
+                pos.lineno,
+                pos.colno
+              );
+              if (context && context.path) {
+                err3.Update(context.path);
+              }
+              collectedErrors.push(err3);
+            }
+          } else {
+            const err5 = handleError(
+              new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`),
+              pos.lineno,
+              pos.colno
+            );
+            if (context && context.path) {
+              err5.Update(context.path);
+            }
+            collectedErrors.push(err5);
+          }
+        } catch (err) {
+          const wrappedErr = handleError(err, pos.lineno, pos.colno);
+          if (context && context.path) {
+            wrappedErr.Update(context.path);
+          }
+          collectedErrors.push(wrappedErr);
         }
       }
       return;
     }
-    // Default: treat as literal value for text output.
+
+    // Default: literal value for text output
     textOutput.push(item);
   }
 
+  // Process all items (don't short-circuit on errors)
   arr.forEach(processItem);
+
+  // Check if any errors were collected
+  if (collectedErrors.length > 0) {
+    const deduped = deduplicateErrors(collectedErrors);
+    throw new PoisonError(deduped);
+  }
 
   // Assemble the final result object
   const finalResult = {};

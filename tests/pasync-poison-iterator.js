@@ -22,7 +22,7 @@
     isPoisonError = nunjucks.runtime.isPoisonError;
     AsyncFrame = nunjucks.runtime.AsyncFrame;
   }
-  describe('Step 5: Iterator Functions Poison Handling', () => {
+  describe('Iterator Functions Poison Handling', () => {
 
     describe('iterate - poisoned iterable', () => {
       it('should poison branch writes when array is poisoned', async () => {

@@ -7,6 +7,7 @@
   let runtime;
   let createPoison;
   let isPoison;
+  let isPoisonError;
   let PoisonError;
   let collectErrors;
 
@@ -15,12 +16,14 @@
     runtime = require('../src/runtime');
     createPoison = runtime.createPoison;
     isPoison = runtime.isPoison;
+    isPoisonError = runtime.isPoisonError;
     PoisonError = runtime.PoisonError;
     collectErrors = runtime.collectErrors;
   } else {
     expect = window.expect;
     createPoison = nunjucks.runtime.createPoison;
     isPoison = nunjucks.runtime.isPoison;
+    isPoisonError = nunjucks.runtime.isPoisonError;
     PoisonError = nunjucks.runtime.PoisonError;
     collectErrors = nunjucks.runtime.collectErrors;
   }
@@ -704,6 +707,390 @@
           expect(err.errors[i].message).to.equal(`Error ${i}`);
         }
       }
+    });
+  });
+
+  describe('Buffer Flattening Poison Handling', () => {
+
+    describe('flattenBuffer with simple templates', () => {
+      it('should concatenate simple values', () => {
+        const arr = ['Hello', ' ', 'World'];
+        const result = runtime.flattenBuffer(arr);
+
+        expect(result).to.equal('Hello World');
+      });
+
+      it('should handle nested arrays', () => {
+        const arr = ['A', ['B', 'C'], 'D'];
+        const result = runtime.flattenBuffer(arr);
+
+        expect(result).to.equal('ABCD');
+      });
+
+      it('should handle functions in arrays', () => {
+        const arr = ['Test', (val) => val.toUpperCase()];
+        const result = runtime.flattenBuffer(arr);
+
+        expect(result).to.equal('TEST');
+      });
+    });
+
+    describe('flattenBuffer with script context - poison detection', () => {
+      let context, env;
+
+      beforeEach(() => {
+        env = {
+          commandHandlerInstances: {},
+          commandHandlerClasses: {}
+        };
+        context = {
+          env,
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should collect poison from text output', () => {
+        const poison = createPoison(new Error('Output error'));
+        const arr = ['Valid text', poison, 'More text'];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be.true;
+          expect(err.errors[0].message).to.equal('Output error');
+        }
+      });
+
+      it('should collect multiple poisons', () => {
+        const poison1 = createPoison(new Error('Error 1'));
+        const poison2 = createPoison(new Error('Error 2'));
+        const arr = [poison1, 'text', poison2];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be.true;
+          expect(err.errors).to.have.length(2);
+        }
+      });
+
+      it('should continue processing after finding poison', () => {
+        const poison = createPoison(new Error('Early error'));
+        const arr = [poison, 'Valid', 'Text'];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be.true;
+          // Verify it didn't stop early (error collected)
+          expect(err.errors).to.have.length(1);
+        }
+      });
+
+      it('should collect poison from nested arrays', () => {
+        const poison = createPoison(new Error('Nested error'));
+        const arr = [
+          'text',
+          ['nested', poison, 'more'],
+          'end'
+        ];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be.true;
+        }
+      });
+
+      it('should collect poison from arrays with functions', () => {
+        const poison = createPoison(new Error('Func array error'));
+        const arr = [
+          ['prefix', poison, (val) => val.toUpperCase()]
+        ];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be.true;
+        }
+      });
+
+      it('should handle command objects with poisoned args', () => {
+        const poison = createPoison(new Error('Arg error'));
+        const arr = [{
+          handler: 'text',
+          command: null,
+          subpath: [],
+          arguments: ['valid', poison],
+          pos: { lineno: 1, colno: 1 }
+        }];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be.true;
+        }
+      });
+
+      it('should collect errors from handler instantiation failures', () => {
+        const arr = [{
+          handler: 'nonexistent',
+          command: 'method',
+          subpath: [],
+          arguments: ['arg'],
+          pos: { lineno: 5, colno: 10 }
+        }];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be.true;
+          expect(err.errors[0].message).to.contain('Unknown command handler');
+        }
+      });
+
+      it('should return valid output when no poison found', () => {
+        const arr = ['Hello', ' ', 'World'];
+        const result = runtime.flattenBuffer(arr, context);
+
+        expect(result.text).to.equal('Hello World');
+      });
+    });
+
+    describe('Error deduplication in flattenBuffer', () => {
+      let context;
+
+      beforeEach(() => {
+        context = {
+          env: { commandHandlerInstances: {}, commandHandlerClasses: {} },
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should deduplicate identical errors', () => {
+        const err = new Error('Duplicate');
+        const poison1 = createPoison(err);
+        const poison2 = createPoison(err);
+        const arr = [poison1, poison2];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be.true;
+          // Should be deduplicated to 1
+          expect(thrown.errors).to.have.length(1);
+        }
+      });
+
+      it('should keep distinct errors', () => {
+        const poison1 = createPoison(new Error('Error A'));
+        const poison2 = createPoison(new Error('Error B'));
+        const arr = [poison1, poison2];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be.true;
+          expect(thrown.errors).to.have.length(2);
+        }
+      });
+    });
+
+    describe('Complete error collection', () => {
+      let context;
+
+      beforeEach(() => {
+        context = {
+          env: { commandHandlerInstances: {}, commandHandlerClasses: {} },
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should process entire buffer even with early errors', () => {
+        const errors = [
+          createPoison(new Error('Error 1')),
+          'valid',
+          createPoison(new Error('Error 2')),
+          'more valid',
+          createPoison(new Error('Error 3'))
+        ];
+
+        try {
+          runtime.flattenBuffer(errors, context);
+          expect.fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be.true;
+          // All 3 errors should be collected
+          expect(thrown.errors).to.have.length(3);
+        }
+      });
+
+      it('should collect errors from multiple nested levels', () => {
+        const arr = [
+          createPoison(new Error('Level 0')),
+          [
+            'text',
+            createPoison(new Error('Level 1')),
+            [
+              createPoison(new Error('Level 2'))
+            ]
+          ]
+        ];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be.true;
+          expect(thrown.errors).to.have.length(3);
+        }
+      });
+    });
+
+    describe('Handler error collection', () => {
+      let context;
+
+      beforeEach(() => {
+        context = {
+          env: { commandHandlerInstances: {}, commandHandlerClasses: {} },
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should collect handler property access errors', () => {
+        const mockHandler = {
+          getReturnValue: () => 'test'
+        };
+        context.env.commandHandlerInstances = { testHandler: mockHandler };
+
+        const arr = [{
+          handler: 'testHandler',
+          command: 'nonexistentMethod',
+          subpath: [],
+          arguments: [],
+          pos: { lineno: 1, colno: 1 }
+        }];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be.true;
+          expect(thrown.errors[0].message).to.contain('has no method');
+        }
+      });
+
+      it('should collect handler instantiation errors', () => {
+        const arr = [{
+          handler: 'badHandler',
+          command: 'method',
+          subpath: ['nested', 'path'],
+          arguments: [],
+          pos: { lineno: 2, colno: 5 }
+        }];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be.true;
+          expect(thrown.errors[0].message).to.contain('Unknown command handler');
+        }
+      });
+    });
+
+    describe('Complex nested poison scenarios', () => {
+      let context;
+
+      beforeEach(() => {
+        context = {
+          env: { commandHandlerInstances: {}, commandHandlerClasses: {} },
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should handle poison in deeply nested structures', () => {
+        const arr = [
+          'start',
+          [
+            'level1',
+            [
+              'level2',
+              createPoison(new Error('Deep poison')),
+              'more level2'
+            ],
+            'more level1'
+          ],
+          'end'
+        ];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be.true;
+          expect(thrown.errors).to.have.length(1);
+        }
+      });
+
+      it('should collect poison from function arrays with nested poison', () => {
+        const poison = createPoison(new Error('Function array poison'));
+        const arr = [
+          ['text', poison, (val) => val.toUpperCase()]
+        ];
+
+        try {
+          runtime.flattenBuffer(arr, context);
+          expect.fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be.true;
+        }
+      });
+    });
+
+    describe('Focus output handling', () => {
+      let context;
+
+      beforeEach(() => {
+        context = {
+          env: { commandHandlerInstances: {}, commandHandlerClasses: {} },
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should handle focus output with poison', () => {
+        const poison = createPoison(new Error('Focus poison'));
+        const arr = [poison, 'text'];
+
+        try {
+          runtime.flattenBuffer(arr, context, 'text');
+          expect.fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be.true;
+        }
+      });
+
+      it('should return focused output when no poison', () => {
+        const arr = ['Hello', ' ', 'World'];
+        const result = runtime.flattenBuffer(arr, context, 'text');
+
+        expect(result).to.equal('Hello World');
+      });
     });
   });
 

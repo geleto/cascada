@@ -20,7 +20,7 @@
     AsyncFrame = nunjucks.runtime.AsyncFrame;
   }
 
-  describe('Step 4: Frame Poison Handling', () => {
+  describe('Frame Poison Handling', () => {
 
     describe('AsyncFrame.set and lookup', () => {
       it('should store poison values correctly', () => {
