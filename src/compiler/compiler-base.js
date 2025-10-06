@@ -1,9 +1,9 @@
 'use strict';
 
-const nodes = require('./nodes');
-const { TemplateError } = require('./lib');
+const nodes = require('../nodes');
+const { TemplateError } = require('../lib');
 // const { Frame, AsyncFrame } = require('./runtime'); // Not used in base class
-const { Obj } = require('./object');
+const { Obj } = require('../object');
 
 // Moved from the main compiler as it's used by compileCompare (expression)
 const compareOps = {

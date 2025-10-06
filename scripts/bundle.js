@@ -62,7 +62,7 @@ function runWebpack(opts) {
                             return 'node-libs-browser/mock/empty';
                           }
                           if (opts.slim) {
-                            if (sourcePath.match(/(nodes|lexer|parser|precompile|transformer|compiler)(\.js)?$/)) {
+                            if (sourcePath.match(/^(nodes|lexer|parser|precompile|transformer|compiler)(\.js)?$/)) {
                               return 'node-libs-browser/mock/empty';
                             }
                           }

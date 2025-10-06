@@ -3,7 +3,7 @@
 const asap = require('asap');
 const waterfall = require('a-sync-waterfall');
 const lib = require('./lib');
-const compiler = require('./compiler');
+const compiler = require('./compiler/compiler');
 const filters = require('./filters');
 const { FileSystemLoader, WebLoader, PrecompiledLoader } = require('./loaders');
 const tests = require('./tests');

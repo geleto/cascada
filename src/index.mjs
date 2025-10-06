@@ -3,7 +3,7 @@ import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScr
 import Loader from './loader.js';
 import * as loaders from './loaders.js';
 import * as precompileModule from './precompile.js';
-import * as compiler from './compiler.js';
+import * as compiler from './compiler/compiler.js';
 import * as parser from './parser.js';
 import * as lexer from './lexer.js';
 import * as runtime from './runtime.js';

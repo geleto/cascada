@@ -1,9 +1,9 @@
 'use strict';
 
-const parser = require('./parser');
-const transformer = require('./transformer');
-const nodes = require('./nodes');
-const { Frame, AsyncFrame } = require('./runtime');
+const parser = require('../parser');
+const transformer = require('../transformer');
+const nodes = require('../nodes');
+const { Frame, AsyncFrame } = require('../runtime');
 const CompileSequential = require('./compile-sequential');
 const CompileEmit = require('./compile-emit');
 const CompileAsync = require('./compile-async');
