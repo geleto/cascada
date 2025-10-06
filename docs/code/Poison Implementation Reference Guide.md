@@ -2,6 +2,142 @@
 
 ## Part 1: Foundational Concepts
 
+### The Core Principle: Never Miss Any Error
+
+**FUNDAMENTAL DESIGN PRINCIPLE:**
+> When processing multiple async operations in parallel, we MUST await ALL promises and collect ALL errors before making any decisions. No error shall be lost, even if we've already found other errors.
+
+#### Why This Principle Exists
+
+**Traditional Eager Failure (what we DON'T want):**
+```javascript
+// Traditional async code - STOPS at first error
+async function processItems(items) {
+  for (const item of items) {
+    const result = await process(item);  // If this throws, we stop
+    if (isError(result)) {
+      return result;  // Return immediately, ignoring remaining items
+    }
+  }
+}
+
+// Result: User only sees FIRST error
+// Problem: Items 2-5 might also have errors, but user never knows
+```
+
+**Cascada's Complete Error Collection (what we DO want):**
+```javascript
+// Cascada approach - COLLECTS ALL errors
+async function processItems(items) {
+  const errors = [];
+
+  for (const item of items) {
+    try {
+      const result = await process(item);
+      if (isError(result)) {
+        errors.push(result);
+        continue;  // KEEP GOING to find more errors
+      }
+    } catch (err) {
+      errors.push(err);
+      continue;  // KEEP GOING to find more errors
+    }
+  }
+
+  if (errors.length > 0) {
+    return createPoison(errors);  // Return ALL errors at once
+  }
+}
+
+// Result: User sees ALL errors at once
+// Benefit: Fix all problems in one iteration
+```
+
+#### Real-World Impact
+
+**Template Example:**
+```html
+{{ asyncFunc1() }} + {{ asyncFunc2() }} + {{ asyncFunc3() }}
+```
+
+**Without "Never Miss Any Error":**
+- First render: see error from `asyncFunc1()` → fix it
+- Second render: see error from `asyncFunc2()` → fix it
+- Third render: see error from `asyncFunc3()` → fix it
+- **Result:** 3 debug cycles to fix 3 errors
+
+**With "Never Miss Any Error":**
+- First render: see ALL errors from `asyncFunc1()`, `asyncFunc2()`, AND `asyncFunc3()`
+- **Result:** 1 debug cycle to fix all 3 errors
+
+#### How It's Implemented
+
+**1. Always Await ALL Promises Before Deciding:**
+```javascript
+async function callWrapAsync(obj, name, context, args) {
+  // Even if obj is poison, MUST await all arg promises
+  const errors = [];
+
+  if (isPoison(obj)) {
+    errors.push(...obj.errors);  // Collect, but DON'T return yet
+  }
+
+  // MUST await ALL args to find their errors too
+  const argErrors = await collectErrors(args);
+  errors.push(...argErrors);
+
+  // NOW we have ALL errors
+  if (errors.length > 0) {
+    return createPoison(errors);
+  }
+}
+```
+
+**2. Use `continue` Not `return` in Loops:**
+```javascript
+for (const item of items) {
+  if (isPoison(item)) {
+    errors.push(...item.errors);
+    continue;  // ✅ KEEP GOING
+    // NOT: return createPoison(...)  ❌ Would stop here
+  }
+
+  if (item && typeof item.then === 'function') {
+    try {
+      item = await item;
+    } catch (err) {
+      errors.push(...(isPoisonError(err) ? err.errors : [err]));
+      continue;  // ✅ KEEP GOING
+    }
+  }
+}
+```
+
+**3. Deterministic Order:**
+- Errors are collected in the order they appear in the code
+- Parallel operations wait for ALL to complete before reporting
+- User sees consistent error messages across runs
+
+#### Benefits of This Principle
+
+✅ **Better Developer Experience:** See all problems at once, not one-at-a-time
+✅ **Faster Debugging:** Fix multiple issues in one iteration
+✅ **Deterministic Behavior:** Same errors every time, not race-dependent
+✅ **Complete Information:** No hidden errors waiting to surprise you
+✅ **Parallel-Safe:** Works correctly even with Promise.all or parallel execution
+
+#### The Contract
+
+When you see `collectErrors()`, `callWrapAsync()`, or `deepResolveArray()`:
+- **Contract:** They will find and collect EVERY error in their inputs
+- **Guarantee:** No promise will be ignored, no error will be lost
+- **Behavior:** ALL async operations complete before returning
+- **Result:** Complete error information or complete success
+
+This principle is why error collection code looks "verbose" - we're being thorough, not paranoid.
+
+---
+
 ### The Two Types of Poison
 
 **PoisonedValue** - A thenable object that contains errors:
@@ -381,7 +517,7 @@ catch (err) {
 }
 ```
 
-### Bug #6: Short-Circuiting Error Collection
+### Bug #6: Short-Circuiting Error Collection (Violates "Never Miss Any Error")
 
 **❌ WRONG:**
 ```javascript
@@ -389,10 +525,17 @@ for (const item of items) {
   try {
     await processItem(item);
   } catch (err) {
-    return createPoison(err); // STOPS HERE
+    return createPoison(err); // ❌ STOPS HERE - misses remaining items
   }
 }
 ```
+
+**Why it's wrong:**
+- Returns immediately on first error
+- Remaining items never processed
+- User only sees ONE error, even if items 2-5 also have errors
+- Violates "never miss any error" principle
+- Forces user to fix errors one-at-a-time
 
 **✅ CORRECT:**
 ```javascript
@@ -406,14 +549,21 @@ for (const item of items) {
     } else {
       errors.push(err);
     }
-    continue; // KEEP GOING
+    continue; // ✅ KEEP GOING - find ALL errors
   }
 }
 
 if (errors.length > 0) {
-  return createPoison(errors);
+  return createPoison(errors);  // Return ALL errors at once
 }
 ```
+
+**Why it's correct:**
+- Processes ALL items even after finding errors
+- Collects every single error
+- User sees complete error information
+- Follows "never miss any error" principle
+- User can fix all problems in one iteration
 
 ### Bug #7: Forgetting to Extract .errors Array
 
@@ -846,14 +996,17 @@ async function deepResolveArray(arr) {
 - [ ] Test Promise.resolve([...]) with nested errors
 - [ ] Test deeply nested Promise chains
 
-### Error Collection
+### Error Collection ("Never Miss Any Error" Principle)
 - [ ] Verify ALL errors are collected (count them)
 - [ ] Verify errors collected in deterministic order
-- [ ] Test that processing continues after finding error
-- [ ] Test multiple errors from different sources
+- [ ] Test that processing continues after finding error (no early return)
+- [ ] Test multiple errors from different sources collected simultaneously
 - [ ] Test error deduplication across sources
-- [ ] Test no short-circuiting (all items processed)
+- [ ] Test no short-circuiting (all items processed even after finding errors)
 - [ ] Test parallel error collection is deterministic
+- [ ] Test poison value + rejecting promise in args = both errors collected
+- [ ] Test multiple rejecting promises in parallel = all collected
+- [ ] Verify no errors are lost even if first input is poison
 
 ### Recursive Calls
 - [ ] Test deepResolveArray with poison at various depths
@@ -946,7 +1099,15 @@ Pattern 3: Pure Async
 - Delegate to async helper for complex cases
 - Captures 30-40% fast path without Promise overhead
 
-**Rule 4: Check poison:**
+**Rule 4: Never Miss Any Error**
+- Await ALL promises before making decisions
+- Use `continue` not `return` in error collection loops
+- Collect errors from ALL sources (obj + all args, all array items, etc.)
+- Process ALL items even after finding errors
+- Return/throw only AFTER collecting everything
+- Benefits: see all problems at once, deterministic behavior, complete information
+
+**Rule 5: Check poison:**
 - BEFORE await: `if (isPoison(value))`
 - AFTER await in catch: `if (isPoisonError(err))`
 - On sync function results: `if (isPoison(result))`
