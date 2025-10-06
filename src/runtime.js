@@ -2016,8 +2016,17 @@ function setLoopBindings(frame, index, len, last) {
 async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
   let didIterate = false;
   let i = 0;
+  const errors = []; // Collect all errors, don't stop on first
+
   for await (const value of arr) {
     didIterate = true;
+
+    // Check if yielded value is poison
+    if (isPoison(value)) {
+      errors.push(...value.errors);
+      i++;
+      continue; // Continue to collect all errors
+    }
 
     let res;
     if (loopVars.length === 1) {
@@ -2030,10 +2039,32 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
       res = loopBody(...value.slice(0, loopVars.length), i, undefined, false, errorContext);
     }
 
-    // In sequential mode, we MUST await the body before the next iteration.
-    await res;
+    // In sequential mode, we MUST await the body before the next iteration
+    try {
+      await res;
+
+      // Check if result is poison (loop body may have returned poison)
+      if (isPoison(res)) {
+        errors.push(...res.errors);
+      }
+    } catch (err) {
+      // Collect error and continue
+      if (isPoisonError(err)) {
+        errors.push(...err.errors);
+      } else {
+        errors.push(err);
+      }
+    }
+
     i++;
   }
+
+  // If any errors collected, throw them all
+  if (errors.length > 0) {
+    const deduped = deduplicateErrors(errors);
+    throw new PoisonError(deduped);
+  }
+
   return didIterate;
 }
 
@@ -2052,23 +2083,42 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
     lastPromiseResolve = resolve;
   });
 
-  let firstError = null;  // Track first error and use as stop flag
-  // This promise will be resolved with the total length when the loop is done.
+  const allErrors = []; // Collect ALL errors, not just first
+  let firstError = null; // Track first for early stopping of iterator consumption
+
   const lenPromise = new Promise(resolve => {
     let length = 0;
     // This IIFE runs "in the background" to exhaust the iterator
     (async () => {
       try {
-        while (!firstError && (result = await iterator.next(), !result.done)) {
-          //values.push(result.value);
+        // Continue iterating even after finding errors to collect ALL
+        while (result = await iterator.next(), !result.done) {
           length++;
           didIterate = true;
           const value = result.value;
 
-          // Resolve the previous iteration's `lastPromise` to `false`.
+          // Check if yielded value is poison
+          if (isPoison(value)) {
+            allErrors.push(...value.errors);
+            if (!firstError) {
+              firstError = new PoisonError(value.errors);
+            }
+            i++;
+
+            // Still resolve promises for loop variables
+            if (lastPromiseResolve) {
+              lastPromiseResolve(false);
+              lastPromise = new Promise(resolveNew => {
+                lastPromiseResolve = resolveNew;
+              });
+            }
+
+            continue; // Continue to collect all errors
+          }
+
+          // Resolve the previous iteration's lastPromise
           if (lastPromiseResolve) {
             lastPromiseResolve(false);
-            // Create a new promise for the current iteration.
             lastPromise = new Promise(resolveNew => {
               lastPromiseResolve = resolveNew;
             });
@@ -2084,35 +2134,40 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
             res = loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
           }
 
-          // `await res` is NOT here, allowing parallel execution.
+          // Attach error handler (don't await - parallel execution)
           if (res && typeof res.then === 'function') {
             res.catch(err => {
-              // Only handle first error
+              if (isPoisonError(err)) {
+                allErrors.push(...err.errors);
+              } else {
+                allErrors.push(err);
+              }
               if (!firstError) {
                 firstError = err;
               }
             });
           }
+
           i++;
         }
 
-        // The loop has finished, so the last `lastPromise` can be resolved to `true`.
+        // Resolve final lastPromise
         if (lastPromiseResolve) {
           lastPromiseResolve(true);
         }
 
-        // The loop is done, so we now know the length.
         resolve(length);
 
-        if (firstError) {
-          throw firstError;
+        // Throw if any errors collected
+        if (allErrors.length > 0) {
+          const deduped = deduplicateErrors(allErrors);
+          throw new PoisonError(deduped);
         }
       } catch (error) {
         if (lastPromiseResolve) {
           if (!firstError) {
             firstError = error;
           }
-          // Resolve on error to prevent deadlocks.
           resolve(length);
           lastPromiseResolve(true);
         }
@@ -2121,18 +2176,35 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
     })();
   });
 
-  // The main function waits for the background IIFE to finish.
+  // Wait for iteration to complete
   await lenPromise;
+
   if (firstError) {
     const err = handleError(firstError, errorContext.lineno, errorContext.colno, errorContext.errorContextString);
     err.Update(errorContext.path);
     throw err;
   }
+
   return didIterate;
 }
 
 async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loopVars = [], sequential = false, isAsync = false, errorContext) {
   let didIterate = false;
+
+  // Check if iterable itself is poisoned
+  if (isPoison(arr)) {
+    // Poison all variables that would be written by the loop body
+    if (bodyWriteCounts && loopFrame) {
+      loopFrame.poisonBranchWrites(arr, bodyWriteCounts);
+    }
+
+    // Execute else branch if provided
+    if (loopElse) {
+      await loopElse();
+    }
+
+    return false;
+  }
 
   if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
     // We must have two separate code paths. The `lenPromise` and `lastPromise`
