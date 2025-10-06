@@ -200,7 +200,7 @@
       });
     });
 
-    describe.only('callWrapAsync - Never Miss Any Error Principle', () => {
+    describe('callWrapAsync - Never Miss Any Error Principle', () => {
       let mockContext;
 
       beforeEach(() => {
