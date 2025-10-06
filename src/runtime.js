@@ -1504,15 +1504,89 @@ function memberLookupScript(obj, val) {
 }
 
 function memberLookupAsync(obj, val) {
-  return resolveDuo(obj, val).then(([resolvedOb, resolvedVal]) => {
-    return memberLookup(resolvedOb, resolvedVal);
-  });
+  // Check for poison in inputs - return poison directly (it's a thenable)
+  if (isPoison(obj)) {
+    return obj;
+  }
+  if (isPoison(val)) {
+    return val;
+  }
+
+  // Check if we have any promises
+  const objIsPromise = obj && typeof obj.then === 'function';
+  const valIsPromise = val && typeof val.then === 'function';
+
+  if (!objIsPromise && !valIsPromise) {
+    // Synchronous path - no promises to await
+    return memberLookup(obj, val);
+  }
+
+  // Has promises - delegate to async helper
+  return _memberLookupAsyncComplex(obj, val);
+}
+
+async function _memberLookupAsyncComplex(obj, val) {
+  // Collect errors from both inputs (await all promises)
+  const errors = await collectErrors([obj, val]);
+  if (errors.length > 0) {
+    return createPoison(errors);
+  }
+
+  // Resolve the values
+  const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
+
+  // Check if resolved values are poison
+  if (isPoison(resolvedObj)) {
+    return resolvedObj;
+  }
+  if (isPoison(resolvedVal)) {
+    return resolvedVal;
+  }
+
+  return memberLookup(resolvedObj, resolvedVal);
 }
 
 function memberLookupScriptAsync(obj, val) {
-  return resolveDuo(obj, val).then(([resolvedOb, resolvedVal]) => {
-    return memberLookupScript(resolvedOb, resolvedVal);
-  });
+  // Check for poison in inputs
+  if (isPoison(obj)) {
+    return obj;
+  }
+  if (isPoison(val)) {
+    return val;
+  }
+
+  // Check if we have any promises
+  const objIsPromise = obj && typeof obj.then === 'function';
+  const valIsPromise = val && typeof val.then === 'function';
+
+  if (!objIsPromise && !valIsPromise) {
+    // Synchronous path
+    return memberLookupScript(obj, val);
+  }
+
+  // Has promises - delegate to async helper
+  return _memberLookupScriptAsyncComplex(obj, val);
+}
+
+async function _memberLookupScriptAsyncComplex(obj, val) {
+  // Collect errors from both inputs
+  const errors = await collectErrors([obj, val]);
+  if (errors.length > 0) {
+    return createPoison(errors);
+  }
+
+  // Resolve the values
+  const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
+
+  // Check if resolved values are poison
+  if (isPoison(resolvedObj)) {
+    return resolvedObj;
+  }
+  if (isPoison(resolvedVal)) {
+    return resolvedVal;
+  }
+
+  return memberLookupScript(resolvedObj, resolvedVal);
 }
 
 function callWrap(obj, name, context, args) {
@@ -2180,39 +2254,164 @@ function awaitSequenceLock(frame, lockKeyToAwait) {
 
 // Called in place of contextOrFrameLookup when the path has a sequence lock on it
 async function sequencedContextLookup(context, frame, name, nodeLockKey) {
-  await awaitSequenceLock(frame, nodeLockKey);// acquire lock
+  const lockValue = await awaitSequenceLock(frame, nodeLockKey);
+
+  // Check if lock is poisoned
+  if (isPoison(lockValue)) {
+    throw new PoisonError(lockValue.errors);
+  }
+
   try {
-    return contextOrFrameLookup(context, frame, name);// perform lookup
+    // Perform lookup
+    const result = contextOrFrameLookup(context, frame, name);
+
+    // Check if result is poison
+    if (isPoison(result)) {
+      frame.set(nodeLockKey, result, true);
+      throw new PoisonError(result.errors);
+    }
+
+    return result;
+  } catch (err) {
+    // Ensure lock is poisoned on any error
+    if (!isPoisonError(err)) {
+      const poison = createPoison(err);
+      frame.set(nodeLockKey, poison, true);
+      throw new PoisonError([err]);
+    }
+    const poison = createPoison(err.errors);
+    frame.set(nodeLockKey, poison, true);
+    throw err;
   } finally {
-    frame.set(nodeLockKey, true, true);// release lock
+    // Only release lock if not poisoned
+    const currentLock = frame.lookup(nodeLockKey);
+    if (!isPoison(currentLock)) {
+      frame.set(nodeLockKey, true, true);
+    }
   }
 }
 
 // Called in place of memberLookupAsync when the path has a sequence lock on it
 async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
-  await awaitSequenceLock(frame, nodeLockKey);// acquire lock
+  const lockValue = await awaitSequenceLock(frame, nodeLockKey);
+
+  // Check if lock is poisoned
+  if (isPoison(lockValue)) {
+    throw new PoisonError(lockValue.errors);
+  }
+
   try {
+    // Check target for poison before resolving
+    if (isPoison(target)) {
+      throw new PoisonError(target.errors);
+    }
+
+    // Resolve target if it's a promise
     let resolvedTarget = target;
     if (target && typeof target.then === 'function') {
-      resolvedTarget = await target;
+      try {
+        resolvedTarget = await target;
+      } catch (err) {
+        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+        frame.set(nodeLockKey, poison, true);
+        throw err;
+      }
+
+      // Check if resolved to poison
+      if (isPoison(resolvedTarget)) {
+        frame.set(nodeLockKey, resolvedTarget, true);
+        throw new PoisonError(resolvedTarget.errors);
+      }
     }
-    return memberLookup(resolvedTarget, key);// perform lookup
+
+    // Perform lookup
+    const result = memberLookup(resolvedTarget, key);
+
+    // Check if result is poison
+    if (isPoison(result)) {
+      frame.set(nodeLockKey, result, true);
+      throw new PoisonError(result.errors);
+    }
+
+    return result;
+  } catch (err) {
+    // Ensure lock is poisoned on any error
+    if (!isPoisonError(err)) {
+      const poison = createPoison(err);
+      frame.set(nodeLockKey, poison, true);
+      throw new PoisonError([err]);
+    }
+    const poison = createPoison(err.errors);
+    frame.set(nodeLockKey, poison, true);
+    throw err;
   } finally {
-    frame.set(nodeLockKey, true, true);// release lock
+    // Only release lock if not poisoned
+    const currentLock = frame.lookup(nodeLockKey);
+    if (!isPoison(currentLock)) {
+      frame.set(nodeLockKey, true, true);
+    }
   }
 }
 
 // Called in place of memberLookupAsync when the path has a sequence lock on it
 async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey) {
-  await awaitSequenceLock(frame, nodeLockKey);// acquire lock
+  const lockValue = await awaitSequenceLock(frame, nodeLockKey);
+
+  // Check if lock is poisoned
+  if (isPoison(lockValue)) {
+    throw new PoisonError(lockValue.errors);
+  }
+
   try {
+    // Check target for poison
+    if (isPoison(target)) {
+      throw new PoisonError(target.errors);
+    }
+
+    // Resolve target if it's a promise
     let resolvedTarget = target;
     if (target && typeof target.then === 'function') {
-      resolvedTarget = await target;
+      try {
+        resolvedTarget = await target;
+      } catch (err) {
+        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+        frame.set(nodeLockKey, poison, true);
+        throw err;
+      }
+
+      // Check if resolved to poison
+      if (isPoison(resolvedTarget)) {
+        frame.set(nodeLockKey, resolvedTarget, true);
+        throw new PoisonError(resolvedTarget.errors);
+      }
     }
-    return memberLookupScript(resolvedTarget, key);// perform lookup
+
+    // Perform lookup
+    const result = memberLookupScript(resolvedTarget, key);
+
+    // Check if result is poison
+    if (isPoison(result)) {
+      frame.set(nodeLockKey, result, true);
+      throw new PoisonError(result.errors);
+    }
+
+    return result;
+  } catch (err) {
+    // Ensure lock is poisoned on any error
+    if (!isPoisonError(err)) {
+      const poison = createPoison(err);
+      frame.set(nodeLockKey, poison, true);
+      throw new PoisonError([err]);
+    }
+    const poison = createPoison(err.errors);
+    frame.set(nodeLockKey, poison, true);
+    throw err;
   } finally {
-    frame.set(nodeLockKey, true, true);// release lock
+    // Only release lock if not poisoned
+    const currentLock = frame.lookup(nodeLockKey);
+    if (!isPoison(currentLock)) {
+      frame.set(nodeLockKey, true, true);
+    }
   }
 }
 
