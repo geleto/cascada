@@ -695,7 +695,7 @@ class Compiler extends Obj {
 
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
-    if (node.isAsync) {
+    if (this.asyncMode) {
 
       const sequenceLockKey = node.lockKey;//this.sequential._getSequenceKey(node.name, frame);
       if (sequenceLockKey) {
@@ -719,7 +719,7 @@ class Compiler extends Obj {
         };
         this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
           if (!sequenceLockKey) {
-            this.emit(`return runtime.callWrap(${result}[0], "${funcName}", context, ${result}.slice(1));`);
+            this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1));`);
           } else {
             this.emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}");`);
           }
@@ -732,7 +732,7 @@ class Compiler extends Obj {
         // {{ asyncFunc(arg1, arg2) }}
         // Function name is not async, so resolve only the arguments.
         this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
-          this.emit(`return runtime.callWrap(`);
+          this.emit(`return runtime.callWrapAsync(`);
           this.compile(node.name, frame);
           this.emit.line(`, "${funcName}", context, ${result});`);
         }); // Resolve arguments using _compileAggregate.

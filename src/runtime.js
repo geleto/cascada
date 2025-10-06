@@ -784,52 +784,91 @@ function suppressValue(val, autoescape) {
 }
 
 function suppressValueAsync(val, autoescape) {
-  if (val && typeof val.then === 'function') {
-    return val.then((v) => {
-      return suppressValueAsync(v, autoescape);
-    });
+  // Poison check - return rejected promise synchronously
+  if (isPoison(val)) {
+    return val;
   }
+
+  // Simple literal value (not array, not promise) - return synchronously
+  if (!val || (typeof val.then !== 'function' && !Array.isArray(val))) {
+    return suppressValue(val, autoescape);
+  }
+
+  // Arrays without promises - handle synchronously
   if (Array.isArray(val)) {
-    // Check if the array contains any promises
+    const hasPoison = val.some(isPoison);
     const hasPromises = val.some(item => item && typeof item.then === 'function');
 
-    if (hasPromises) {
-      // If the array contains promises, use deepResolveArray to resolve them
-      return (async () => {
-        let resolvedArray = await deepResolveArray(val);
-        if (resolvedArray.length > 0) {
-          resolvedArray = [resolvedArray.join(',')];
-        }
-        if (autoescape) {
-          // append the function to the array, so it will be
-          // called after the elements before it are joined
-          resolvedArray.push((value) => {
-            return suppressValue(value, true);
-          });
-        }
-        return resolvedArray;
-      })();
-    } else {
-      // No promises in the array, handle as before
+    // If array has no promises and no poison, handle synchronously
+    if (!hasPromises && !hasPoison) {
       if (val.length > 0) {
         val = [val.join(',')];
       }
       if (autoescape) {
-        // append the function to the array, so it will be
-        // called after the elements before it are joined
-        val.push((value) => {
-          return suppressValue(value, true);
-        });
+        val.push((value) => suppressValue(value, true));
+      }
+      return val;
+    }
+
+    // Has promises or poison - delegate to async helper
+    return _suppressValueAsyncComplex(val, autoescape);
+  }
+
+  // Promise - delegate to async helper
+  return _suppressValueAsyncComplex(val, autoescape);
+}
+
+async function _suppressValueAsyncComplex(val, autoescape) {
+  // Handle promise values
+  if (val && typeof val.then === 'function') {
+    try {
+      val = await val;
+    } catch (err) {
+      throw isPoisonError(err) ? err : new PoisonError([err]);
+    }
+
+    // Check if resolved to poison
+    if (isPoison(val)) {
+      throw new PoisonError(val.errors);
+    }
+  }
+
+  // Handle arrays
+  if (Array.isArray(val)) {
+    // Collect errors from all items (deterministic)
+    const errors = await collectErrors(val);
+    if (errors.length > 0) {
+      throw new PoisonError(errors);
+    }
+
+    const hasPromises = val.some(item => item && typeof item.then === 'function');
+
+    if (hasPromises) {
+      try {
+        let resolvedArray = await deepResolveArray(val);
+
+        if (resolvedArray.length > 0) {
+          resolvedArray = [resolvedArray.join(',')];
+        }
+        if (autoescape) {
+          resolvedArray.push((value) => suppressValue(value, true));
+        }
+        return resolvedArray;
+      } catch (err) {
+        throw isPoisonError(err) ? err : new PoisonError([err]);
+      }
+    } else {
+      // No promises in array
+      if (val.length > 0) {
+        val = [val.join(',')];
+      }
+      if (autoescape) {
+        val.push((value) => suppressValue(value, true));
       }
       return val;
     }
   }
-  if (val && typeof val.then === 'function') {
-    // it's a promise, return a promise that suppresses the value when resolved
-    return (async (v) => {
-      return suppressValue(await v, autoescape);
-    })(val);
-  }
+
   return suppressValue(val, autoescape);
 }
 
@@ -849,20 +888,46 @@ function ensureDefined(val, lineno, colno, context) {
 }
 
 function ensureDefinedAsync(val, lineno, colno, context) {
-  if (Array.isArray(val)) {
-    // append the function to the array, so it will be
-    // called after the elements before it are joined
-    val.push((v) => {
-      return ensureDefined(v, lineno, colno, context);
-    });
+  // Poison check - return rejected promise synchronously
+  if (isPoison(val)) {
     return val;
   }
-  if (val && typeof val.then === 'function') {
-    // it's a promise, return a promise that suppresses the value when resolved
-    return (async (v) => {
-      return ensureDefined(await v, lineno, colno, context);
-    })(val);
+
+  // Simple literal value - validate and return synchronously
+  if (!val || (typeof val.then !== 'function' && !Array.isArray(val))) {
+    return ensureDefined(val, lineno, colno, context);
   }
+
+  // Complex cases - delegate to async helper
+  return _ensureDefinedAsyncComplex(val, lineno, colno, context);
+}
+
+async function _ensureDefinedAsyncComplex(val, lineno, colno, context) {
+  // Handle arrays with possible poison values
+  if (Array.isArray(val)) {
+    const errors = await collectErrors(val);
+    if (errors.length > 0) {
+      throw new PoisonError(errors);
+    }
+
+    // Append validation function
+    val.push((v) => ensureDefined(v, lineno, colno, context));
+    return val;
+  }
+
+  // Handle promises
+  if (val && typeof val.then === 'function') {
+    try {
+      val = await val;
+    } catch (err) {
+      throw isPoisonError(err) ? err : new PoisonError([err]);
+    }
+
+    if (isPoison(val)) {
+      throw new PoisonError(val.errors);
+    }
+  }
+
   return ensureDefined(val, lineno, colno, context);
 }
 
@@ -1457,23 +1522,207 @@ function callWrap(obj, name, context, args) {
     throw new Error('Unable to call `' + name + '`, which is not a function');
   }
 
-  // Check if the function is a macro, or if it's a global function that
-  // doesn't exist on the context, in which case it should be called with
-  // the context as `this`.
   const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
                  !Object.prototype.hasOwnProperty.call(context.ctx, name);
 
   return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
 }
 
+function callWrapAsync(obj, name, context, args) {
+  // Check if we need async path: obj or any arg is a promise
+  const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
+  const hasArgPromises = args.some(arg => arg && typeof arg.then === 'function' && !isPoison(arg));
+
+  if (objIsPromise || hasArgPromises) {
+    // Must use async path to await all promises before making decisions
+    // _callWrapAsyncComplex is async and returns poison when errors occur
+    // When awaited, poison values throw PoisonError due to thenable protocol (by design)
+    return _callWrapAsyncComplex(obj, name, context, args);
+  }
+
+  // All values are non-promises - collect all errors synchronously
+  const errors = [];
+
+  if (isPoison(obj)) {
+    errors.push(...obj.errors);
+  }
+
+  // Collect errors from all poisoned args
+  for (const arg of args) {
+    if (isPoison(arg)) {
+      errors.push(...arg.errors);
+    }
+  }
+
+  if (errors.length > 0) {
+    return createPoison(errors);
+  }
+
+  // No errors - validate and call
+  if (!obj) {
+    return createPoison(
+      new Error('Unable to call `' + name + '`, which is undefined or falsey')
+    );
+  } else if (typeof obj !== 'function') {
+    return createPoison(
+      new Error('Unable to call `' + name + '`, which is not a function')
+    );
+  }
+
+  try {
+    const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
+                   !Object.prototype.hasOwnProperty.call(context.ctx, name);
+
+    return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
+  } catch (err) {
+    return createPoison(err);
+  }
+}
+
+async function _callWrapAsyncComplex(obj, name, context, args) {
+  const errors = [];
+
+  // Await obj if it's a promise and check for poison
+  if (obj && typeof obj.then === 'function' && !isPoison(obj)) {
+    try {
+      obj = await obj;
+      if (isPoison(obj)) {
+        errors.push(...obj.errors);
+      }
+    } catch (err) {
+      if (isPoisonError(err)) {
+        errors.push(...err.errors);
+      } else {
+        errors.push(err);
+      }
+    }
+  } else if (isPoison(obj)) {
+    errors.push(...obj.errors);
+  }
+
+  // Await ALL args to collect all errors (never miss any error principle)
+  const argErrors = await collectErrors(args);
+  errors.push(...argErrors);
+
+  if (errors.length > 0) {
+    return createPoison(errors);
+  }
+
+  // Resolve all arg promises
+  const resolvedArgs = [];
+  for (const arg of args) {
+    if (arg && typeof arg.then === 'function') {
+      try {
+        resolvedArgs.push(await arg);
+      } catch (err) {
+        // Should not happen as collectErrors already caught errors
+        return createPoison(isPoisonError(err) ? err.errors : [err]);
+      }
+    } else {
+      resolvedArgs.push(arg);
+    }
+  }
+
+  // All resolved successfully - validate and call the function
+  if (!obj) {
+    return createPoison(
+      new Error('Unable to call `' + name + '`, which is undefined or falsey')
+    );
+  } else if (typeof obj !== 'function') {
+    return createPoison(
+      new Error('Unable to call `' + name + '`, which is not a function')
+    );
+  }
+
+  try {
+    const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
+                   !Object.prototype.hasOwnProperty.call(context.ctx, name);
+
+    return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, resolvedArgs);
+  } catch (err) {
+    return createPoison(err);
+  }
+}
+
 //@todo - deprecate, the sequencedMemberLookupAsync of the FunCall path lookupVal/symbol should handle the frame lock release
 async function sequencedCallWrap(func, funcName, context, args, frame, sequenceLockKey) {
-  await awaitSequenceLock(frame, sequenceLockKey);// acquire lock
+  const lockValue = await awaitSequenceLock(frame, sequenceLockKey);
+
+  // Check if lock itself is poisoned
+  if (isPoison(lockValue)) {
+    throw new PoisonError(lockValue.errors);
+  }
+
   try {
-    return await callWrap(func, funcName, context, args);
+    // Collect ALL errors from func and args (never miss any error principle)
+    const errors = [];
+
+    // Check func for poison or await if promise
+    if (isPoison(func)) {
+      errors.push(...func.errors);
+    } else if (func && typeof func.then === 'function') {
+      try {
+        func = await func;
+        if (isPoison(func)) {
+          errors.push(...func.errors);
+        }
+      } catch (err) {
+        if (isPoisonError(err)) {
+          errors.push(...err.errors);
+        } else {
+          errors.push(err);
+        }
+      }
+    }
+
+    // Collect errors from args (await all promises for determinism)
+    const argErrors = await collectErrors(args);
+    errors.push(...argErrors);
+
+    if (errors.length > 0) {
+      const poison = createPoison(errors);
+      frame.set(sequenceLockKey, poison, true);
+      throw new PoisonError(errors);
+    }
+
+    // Call the function (callWrapAsync may return poison synchronously or a promise)
+    const result = callWrapAsync(func, funcName, context, args);
+
+    // Check if result is poison (from callWrapAsync's return)
+    if (isPoison(result)) {
+      frame.set(sequenceLockKey, result, true);
+      throw new PoisonError(result.errors);
+    }
+
+    // If result is a promise, await it
+    if (result && typeof result.then === 'function') {
+      try {
+        const resolved = await result;
+        return resolved;
+      } catch (err) {
+        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+        frame.set(sequenceLockKey, poison, true);
+        throw err; // Re-throw original error
+      }
+    }
+
+    return result;
+  } catch (err) {
+    // Ensure lock is poisoned on any error
+    if (!isPoisonError(err)) {
+      const poison = createPoison(err);
+      frame.set(sequenceLockKey, poison, true);
+      throw new PoisonError([err]);
+    }
+    const poison = createPoison(err.errors);
+    frame.set(sequenceLockKey, poison, true);
+    throw err;
   } finally {
-    //release the lock associated with this specific sequence key
-    frame.set(sequenceLockKey, true, true); // This will set the lock writeCount to 0 and release the lock
+    // Only release lock if not poisoned
+    const currentLock = frame.lookup(sequenceLockKey);
+    if (!isPoison(currentLock)) {
+      frame.set(sequenceLockKey, true, true);
+    }
   }
 }
 
@@ -2009,6 +2258,7 @@ module.exports = {
 
   contextOrFrameLookup,
   callWrap,
+  callWrapAsync,
   sequencedCallWrap,
   handleError,
   executeAsyncBlock,
