@@ -51,6 +51,68 @@ class PoisonError extends Error {
 }
 ```
 
+### Three Function Return Patterns
+
+**Pattern 1: Pure Synchronous Functions**
+- Never declared with `async`
+- Can return PoisonedValue directly
+- Example: `callWrap()`, `memberLookup()`
+
+```javascript
+function callWrap(obj, name, context, args) {
+  if (isPoison(obj)) {
+    return obj; // Returns PoisonedValue directly
+  }
+  // ... rest of logic
+}
+```
+
+**Pattern 2: Sync-First Hybrid Functions**
+- NOT declared with `async` keyword
+- Return literal values synchronously when possible
+- Return `Promise.reject(new PoisonError(...))` for poison
+- Delegate to async helper for complex cases
+- Example: `suppressValueAsync()`, `ensureDefinedAsync()`
+
+```javascript
+function suppressValueAsync(val, autoescape) {
+  // Sync poison check - return rejected promise
+  if (isPoison(val)) {
+    return Promise.reject(new PoisonError(val.errors));
+  }
+
+  // Sync literal - return value directly
+  if (!val || (typeof val.then !== 'function' && !Array.isArray(val))) {
+    return suppressValue(val, autoescape);
+  }
+
+  // Complex - delegate to async
+  return _suppressValueAsyncComplex(val, autoescape);
+}
+
+async function _suppressValueAsyncComplex(val, autoescape) {
+  // This MUST throw PoisonError, not return poison
+  if (isPoison(val)) {
+    throw new PoisonError(val.errors);
+  }
+  // ...
+}
+```
+
+**Pattern 3: Pure Async Functions**
+- Declared with `async` keyword
+- MUST throw PoisonError, cannot return PoisonedValue
+- Example: `sequencedCallWrap()`, all `_complex` helpers
+
+```javascript
+async function sequencedCallWrap(...) {
+  if (isPoison(val)) {
+    throw new PoisonError(val.errors); // MUST throw
+  }
+  // ...
+}
+```
+
 ### Critical Execution Flow: Why await Cannot Return PoisonedValue
 
 **FUNDAMENTAL RULE: `await` CANNOT return a PoisonedValue.**
@@ -65,16 +127,12 @@ Why? Because PoisonedValue is a thenable (Promise-like object), and JavaScript's
 
 // Our PoisonedValue.then() immediately throws:
 then(onFulfilled, onRejected) {
-  return onRejected(new PoisonError(this.errors)); // THROWS
+  throw new PoisonError(this.errors);
 }
 
 // Therefore:
 const result = await poisonValue; // Throws PoisonError
 // The assignment NEVER happens
-
-// This is also impossible:
-const result = await Promise.resolve(poisonValue); // Also throws
-if (isPoison(result)) { // Never reached
 ```
 
 **The Only Two Outcomes of await:**
@@ -103,6 +161,7 @@ function isPoisonError(err) {
 **Usage:**
 - Use `isPoison()` on values you haven't awaited yet
 - Use `isPoison()` on return values from NON-async functions
+- Use `isPoison()` on return values from sync-first hybrid functions (before awaiting)
 - Use `isPoisonError()` on errors caught in catch blocks
 - **Never** use `isPoison()` on the result of await
 - **Never** use `isPoison()` directly on return value of async function
@@ -111,75 +170,87 @@ function isPoisonError(err) {
 
 ## Part 2: Critical Bugs to Avoid
 
-### Bug #1: Checking isPoison() on Promise or Async Function Result
+### Bug #1: Returning PoisonedValue from Async Function
 
 **❌ WRONG:**
 ```javascript
-const promise = asyncFunction(); // Returns Promise<PoisonedValue>
-if (isPoison(promise)) {  // Always false!
-  // Never executed - promise is a Promise, not a PoisonedValue
+async function process(val) {
+  if (isPoison(val)) {
+    return val; // BUG! Wraps in Promise<PoisonedValue>
+  }
+  return await doWork(val);
 }
 
-// Also wrong:
-async function getPoison() {
-  return createPoison(err); // Even this returns Promise<PoisonedValue>
+// Caller:
+try {
+  const result = await process(poison);
+  // Never reaches here - throws PoisonError
+  if (isPoison(result)) { // Never true!
+    // ...
+  }
+} catch (err) {
+  // PoisonError ends up here
 }
-const result = getPoison();
-if (isPoison(result)) { // Always false!
 ```
 
 **Why it fails:**
-- Async functions ALWAYS wrap return values in Promises
-- Even `return poison` before any await becomes `Promise.resolve(poison)`
-- `Promise.resolve(poison)` wraps poison in a Promise
-- The poison is INSIDE the promise, not the promise itself
-- `isPoison(Promise<PoisonedValue>)` → false
+- `async` keyword wraps ALL returns in Promise
+- `return poison` becomes `Promise.resolve(poison)`
+- When caller awaits, poison's `.then()` throws PoisonError
+- Result assignment never happens
 
-**✅ CORRECT - Synchronous Functions:**
+**✅ CORRECT:**
 ```javascript
-// NON-async function CAN return poison synchronously
-function mayReturnPoison(value) {
-  if (isPoison(value)) {
-    return value; // Returns PoisonedValue directly
+async function process(val) {
+  if (isPoison(val)) {
+    throw new PoisonError(val.errors); // Throw directly
   }
-  return processValue(value);
-}
-
-const result = mayReturnPoison(input);
-if (isPoison(result)) { // CAN be true!
-  return result;
+  return await doWork(val);
 }
 ```
 
-**✅ CORRECT - Async Functions:**
-```javascript
-// Async function - must await
-async function mayReturnPoison(value) {
-  if (isPoison(value)) {
-    return value; // Returns Promise<PoisonedValue>
-  }
-  return await processValue(value);
-}
+### Bug #2: Forgetting Sync-First Hybrid Pattern
 
-try {
-  const result = await mayReturnPoison(input);
-  // Only reached if NOT poison
-} catch (err) {
-  if (isPoisonError(err)) {
-    return createPoison(err.errors);
+**❌ WRONG:**
+```javascript
+async function suppressValueAsync(val, autoescape) {
+  if (isPoison(val)) {
+    throw new PoisonError(val.errors);
   }
-  throw err;
+  // Even for literal "hello", we create a Promise!
+  return suppressValue(val, autoescape);
 }
 ```
 
-**Key distinction:**
-- **Synchronous function**: Can return PoisonedValue → check `isPoison(result)`
-- **Async function**: Returns Promise<PoisonedValue> → must await + try-catch
-- **Already a Promise**: Must await + try-catch
+**Why suboptimal:**
+- Creates Promise wrapper for every literal value
+- Template `{{ "hello" }}` pays async overhead unnecessarily
+- Loses 30-40% of fast path cases
 
----
+**✅ CORRECT - Sync-First Pattern:**
+```javascript
+function suppressValueAsync(val, autoescape) {
+  // NOT async keyword!
+  if (isPoison(val)) {
+    return Promise.reject(new PoisonError(val.errors));
+  }
 
-### Bug #2: Expecting await to Return PoisonedValue
+  // Fast path for literals
+  if (!val || (typeof val.then !== 'function' && !Array.isArray(val))) {
+    return suppressValue(val, autoescape); // Direct return
+  }
+
+  // Only complex cases use async
+  return _suppressValueAsyncComplex(val, autoescape);
+}
+
+async function _suppressValueAsyncComplex(val, autoescape) {
+  // Helper IS async, so must throw
+  // ...
+}
+```
+
+### Bug #3: Checking isPoison() After Await
 
 **❌ WRONG:**
 ```javascript
@@ -190,9 +261,9 @@ if (isPoison(result)) {  // IMPOSSIBLE - never true
 ```
 
 **Why this is impossible:**
-- PoisonedValue is a thenable (Promise-like object)
-- `await` unwraps ALL thenables by calling `.then()`
-- Our `.then()` method throws PoisonError
+- PoisonedValue is a thenable
+- `await` unwraps all thenables by calling `.then()`
+- Our `.then()` throws PoisonError
 - Therefore `await poisonValue` always throws, never returns
 
 **What actually happens:**
@@ -207,10 +278,10 @@ if (isPoison(result)) {               // This line NEVER executes
 
 **✅ CORRECT:**
 ```javascript
-// Check BEFORE await (on non-async function results):
-const value = syncFunction();
+// Check BEFORE await (sync-first hybrid):
+const value = hybridFunction();
 if (isPoison(value)) {
-  return value; // Propagate synchronously
+  return value;
 }
 
 // After await, handle in catch:
@@ -226,9 +297,7 @@ try {
 }
 ```
 
----
-
-### Bug #3: Wrong Check Order in Resolution Functions
+### Bug #4: Wrong Check Order in Resolution Functions
 
 **❌ WRONG:**
 ```javascript
@@ -246,17 +315,16 @@ if (Array.isArray(value)) {
 
 **✅ CORRECT ORDER:**
 ```javascript
-// 1. Check if already poison (synchronous check on actual value)
+// 1. Check if already poison
 if (isPoison(item)) {
   errors.push(...item.errors);
   continue;
 }
 
-// 2. Check if promise/thenable FIRST (before any structure checks)
+// 2. Check if promise/thenable FIRST
 if (item && typeof item.then === 'function') {
   try {
     item = await item;
-    // If we reach here, item is NOT poison (would have thrown)
   } catch (err) {
     if (isPoisonError(err)) {
       errors.push(...err.errors);
@@ -267,17 +335,13 @@ if (item && typeof item.then === 'function') {
   }
 }
 
-// 3. NOW check structure (item is unwrapped)
+// 3. NOW check structure
 if (Array.isArray(item)) {
-  // Recurse
-} else if (isPlainObject(item)) {
   // Recurse
 }
 ```
 
----
-
-### Bug #4: Using instanceof for Detection
+### Bug #5: Using instanceof for Detection
 
 **❌ WRONG:**
 ```javascript
@@ -296,15 +360,7 @@ catch (err) {
 
 **✅ CORRECT:**
 ```javascript
-const POISON_KEY = Symbol.for('cascada.poison');
 const POISON_ERROR_KEY = Symbol.for('cascada.poisonError');
-
-class PoisonedValue {
-  constructor(errors) {
-    super();
-    this[POISON_KEY] = true;
-  }
-}
 
 class PoisonError extends Error {
   constructor(errors) {
@@ -313,15 +369,10 @@ class PoisonError extends Error {
   }
 }
 
-function isPoison(value) {
-  return value != null && value[POISON_KEY] === true;
-}
-
 function isPoisonError(err) {
   return err != null && err[POISON_ERROR_KEY] === true;
 }
 
-// Usage:
 catch (err) {
   if (isPoisonError(err)) {
     errors.push(...err.errors);
@@ -329,9 +380,7 @@ catch (err) {
 }
 ```
 
----
-
-### Bug #5: Short-Circuiting Error Collection
+### Bug #6: Short-Circuiting Error Collection
 
 **❌ WRONG:**
 ```javascript
@@ -343,12 +392,6 @@ for (const item of items) {
   }
 }
 ```
-
-**Why it fails:**
-- If items[0] and items[3] both error
-- Returning after items[0] means items[3] error never discovered
-- Results become non-deterministic (depends on execution order)
-- Violates the "collect ALL errors" principle
 
 **✅ CORRECT:**
 ```javascript
@@ -371,9 +414,7 @@ if (errors.length > 0) {
 }
 ```
 
----
-
-### Bug #6: Forgetting to Extract .errors Array
+### Bug #7: Forgetting to Extract .errors Array
 
 **❌ WRONG:**
 ```javascript
@@ -406,331 +447,188 @@ catch (err) {
 
 ---
 
-### Bug #7: Consuming Rejections in Tests
-
-**❌ WRONG:**
-```javascript
-// In test setup:
-const p = Promise.reject(new Error('test'));
-p.catch(() => {}); // Silence unhandled rejection warning
-
-// In code being tested:
-try {
-  await p; // Returns undefined, doesn't throw!
-} catch (err) {
-  // Never executed
-}
-```
-
-**Why it fails:**
-- `.catch()` handler marks rejection as "handled"
-- Subsequent awaits see promise as resolved to undefined
-- The error is swallowed
-
-**✅ CORRECT:**
-```javascript
-// Let the resolution function catch it
-const items = [
-  Promise.reject(new Error('test')), // No .catch()
-  Promise.resolve(123)
-];
-
-// deepResolveArray's try-catch will handle rejection
-try {
-  const result = await deepResolveArray(items);
-} catch (err) {
-  if (isPoisonError(err)) {
-    // Contains the test error
-  }
-}
-```
-
----
-
-### Bug #8: Race Conditions from Promise.race()
-
-**❌ WRONG:**
-```javascript
-const result = await Promise.race(promises); // Nondeterministic
-
-// Also wrong:
-let foundError = false;
-await Promise.all(promises.map(async p => {
-  if (foundError) return; // Race on foundError
-  try {
-    await p;
-  } catch (err) {
-    foundError = true;
-  }
-}));
-```
-
-**Why it fails:**
-- Promise.race() depends on which promise resolves first
-- Timing varies between runs
-- Same input can produce different error sets
-- Violates deterministic error collection
-
-**✅ CORRECT:**
-```javascript
-// Sequential - deterministic order
-const errors = [];
-for (const promise of promises) {
-  try {
-    await promise;
-  } catch (err) {
-    if (isPoisonError(err)) {
-      errors.push(...err.errors);
-    } else {
-      errors.push(err);
-    }
-  }
-}
-
-// Or Promise.all with proper error capture:
-const results = await Promise.all(
-  promises.map(p => p.catch(err => createPoison(err)))
-);
-const errors = results
-  .filter(isPoison)
-  .flatMap(p => p.errors);
-```
-
----
-
-### Bug #9: Mixing Sync and Async Without Type Awareness
-
-**❌ WRONG:**
-```javascript
-function processValue(value) {
-  // Don't know if value is from sync or async function
-  if (isPoison(value)) {
-    return value; // Might be Promise<PoisonedValue>!
-  }
-  return value * 2;
-}
-
-// Calling code:
-const result = processValue(asyncFunc()); // Promise passed in!
-```
-
-**Why it fails:**
-- Can't tell if value is PoisonedValue or Promise<PoisonedValue>
-- Type confusion leads to incorrect checks
-- Must be consistent about sync vs async
-
-**✅ CORRECT - Separate Functions:**
-```javascript
-// For synchronous values
-function processSyncValue(value) {
-  if (isPoison(value)) {
-    return value;
-  }
-  return value * 2;
-}
-
-// For async values
-async function processAsyncValue(value) {
-  try {
-    const resolved = await value;
-    return resolved * 2;
-  } catch (err) {
-    if (isPoisonError(err)) {
-      return createPoison(err.errors);
-    }
-    throw err;
-  }
-}
-```
-
-**✅ CORRECT - Duck Typing:**
-```javascript
-function processValue(value) {
-  // Check if promise first
-  if (value && typeof value.then === 'function') {
-    // It's async, can't check isPoison
-    return processAsyncValue(value);
-  }
-
-  // It's sync, can check isPoison
-  if (isPoison(value)) {
-    return value;
-  }
-  return value * 2;
-}
-```
-
----
-
-### Bug #10: Not Wrapping Rejected Promises in Try-Catch
-
-**❌ WRONG:**
-```javascript
-const items = [
-  Promise.reject(new Error('fail')),
-  123
-];
-
-for (const item of items) {
-  if (item && typeof item.then === 'function') {
-    const resolved = await item; // Throws, crashes
-  }
-}
-```
-
-**Why it fails:**
-- Rejected promise throws when awaited
-- Without try-catch, error propagates up
-- Crashes instead of collecting error
-
-**✅ CORRECT:**
-```javascript
-for (const item of items) {
-  if (item && typeof item.then === 'function') {
-    try {
-      const resolved = await item;
-      // Process resolved value
-    } catch (err) {
-      if (isPoisonError(err)) {
-        errors.push(...err.errors);
-      } else {
-        errors.push(err);
-      }
-      continue;
-    }
-  }
-}
-```
-
----
-
-### Bug #11: Recursive Calls Can Throw PoisonError
-
-**❌ WRONG:**
-```javascript
-if (Array.isArray(item)) {
-  const resolved = await deepResolveArray(item);
-  if (isPoison(resolved)) { // Never reached if poison
-    errors.push(...resolved.errors);
-  }
-}
-```
-
-**Why it fails:**
-- `deepResolveArray()` returns PoisonedValue
-- `await PoisonedValue` throws PoisonError
-- Never reaches the `if` check
-
-**✅ CORRECT:**
-```javascript
-if (Array.isArray(item)) {
-  try {
-    const resolved = await deepResolveArray(item);
-    items[i] = resolved;
-  } catch (err) {
-    if (isPoisonError(err)) {
-      errors.push(...err.errors);
-    } else {
-      errors.push(err);
-    }
-    continue;
-  }
-}
-```
-
----
-
-### Bug #12: Returning Poison from Wrong Scope
-
-**❌ WRONG:**
-```javascript
-async function processItems(items) {
-  const errors = [];
-
-  for (const item of items) {
-    if (isPoison(item)) {
-      // Returning from function, not continuing loop
-      return createPoison(item.errors); // BUG!
-    }
-  }
-
-  if (errors.length > 0) {
-    return createPoison(errors);
-  }
-}
-```
-
-**Why it fails:**
-- Returns from function on first poison, not collecting rest
-- Should collect error and continue loop
-- Similar to Bug #5 but at different scope level
-
-**✅ CORRECT:**
-```javascript
-async function processItems(items) {
-  const errors = [];
-
-  for (const item of items) {
-    if (isPoison(item)) {
-      errors.push(...item.errors); // Collect, don't return
-      continue; // Keep processing
-    }
-  }
-
-  if (errors.length > 0) {
-    return createPoison(errors);
-  }
-}
-```
-
----
-
 ## Part 3: When CAN You Use Synchronous Propagation?
 
-You can check `isPoison()` and return synchronously when:
+### Pattern 1: Pure Synchronous Functions
 
-1. **The value IS already a PoisonedValue** (not wrapped in Promise)
-2. **The value came from a NON-async function** (or you checked for thenable first)
-3. **You haven't awaited it yet**
+You can check `isPoison()` and return PoisonedValue when:
+- Function is NOT declared with `async`
+- Function returns immediately without await
+- Example: `callWrap()`, `memberLookup()`
 
 ```javascript
-// ✅ Synchronous propagation - NON-async function
-function syncProcess(value) {
-  if (isPoison(value)) {
-    return value; // Immediate return
+function callWrap(obj, name, context, args) {
+  if (isPoison(obj)) {
+    return obj; // Direct return of PoisonedValue
   }
 
-  // If we see a promise, can't check synchronously
+  const poisonedArgs = args.filter(isPoison);
+  if (poisonedArgs.length > 0) {
+    return createPoison(poisonedArgs.flatMap(p => p.errors));
+  }
+
+  // ... rest of sync logic
+}
+```
+
+### Pattern 2: Sync-First Hybrid Functions
+
+You can return values OR rejected promises synchronously when:
+- Function is NOT declared with `async`
+- You check for simple cases first
+- Delegate complex cases to async helper
+- Example: `suppressValueAsync()`, `ensureDefinedAsync()`
+
+```javascript
+function suppressValueAsync(val, autoescape) {
+  // Poison → return rejected promise
+  if (isPoison(val)) {
+    return Promise.reject(new PoisonError(val.errors));
+  }
+
+  // Literal → return value directly (NO promise wrapper)
+  if (!val || (typeof val.then !== 'function' && !Array.isArray(val))) {
+    return suppressValue(val, autoescape);
+  }
+
+  // Complex → delegate to async helper
+  return _suppressValueAsyncComplex(val, autoescape);
+}
+```
+
+**Benefits:**
+- 30-40% of calls return immediately
+- No Promise allocation for literals
+- Template `{{ "hello" }}` is fast
+- Poison rejection is still synchronous
+
+### Pattern 3: Pure Async Functions
+
+You CANNOT return PoisonedValue, MUST throw:
+- Function IS declared with `async`
+- All returns are wrapped in Promise
+- Must throw PoisonError for poison
+- Example: `sequencedCallWrap()`, `_suppressValueAsyncComplex()`
+
+```javascript
+async function sequencedCallWrap(...) {
+  if (isPoison(val)) {
+    throw new PoisonError(val.errors); // MUST throw
+  }
+
+  const result = await doWork();
+  return result; // OK - non-poison value
+}
+```
+
+**Why you MUST throw:**
+- `return createPoison(err)` becomes `Promise.resolve(poison)`
+- Caller awaits → poison's `.then()` → throws PoisonError
+- Caller never sees the return value
+- So just throw directly
+
+---
+
+## Part 4: The Complete Correct Patterns
+
+### Template for Pure Sync Functions
+
+```javascript
+function syncProcess(value) {
+  // Can check and return poison directly
+  if (isPoison(value)) {
+    return value;
+  }
+
+  // Can check for thenable, but can't handle it
   if (value && typeof value.then === 'function') {
     throw new Error('Cannot process promises synchronously');
   }
 
-  return value * 2;
-}
-
-// ❌ Async function - always returns Promise
-async function asyncProcess(value) {
-  if (isPoison(value)) {
-    return value; // Returns Promise<PoisonedValue>!
-  }
-  // Even early return is wrapped
-}
-
-// ✅ Check before await in async function
-async function asyncProcess(value) {
-  // Check on raw input before any await
-  if (isPoison(value)) {
-    return value; // OK - returns Promise<PoisonedValue>
-  }
-
-  const result = await someOperation();
-  // Can't check isPoison(result) here - would have thrown
+  return processValue(value);
 }
 ```
 
----
+### Template for Sync-First Hybrid Functions
 
-## Part 4: The Complete Correct Pattern
+```javascript
+function hybridAsync(value, options) {
+  // NOT declared with async!
+
+  // 1. Poison check - return rejected promise
+  if (isPoison(value)) {
+    return Promise.reject(new PoisonError(value.errors));
+  }
+
+  // 2. Simple case - return value directly (no Promise!)
+  if (!value || (typeof value.then !== 'function' && !Array.isArray(value))) {
+    return processSimple(value, options);
+  }
+
+  // 3. Complex case - delegate to async helper
+  return _hybridAsyncComplex(value, options);
+}
+
+async function _hybridAsyncComplex(value, options) {
+  // This IS async, so must throw not return
+
+  // Check after await
+  if (value && typeof value.then === 'function') {
+    try {
+      value = await value;
+    } catch (err) {
+      throw isPoisonError(err) ? err : new PoisonError([err]);
+    }
+
+    if (isPoison(value)) {
+      throw new PoisonError(value.errors);
+    }
+  }
+
+  // Handle arrays
+  if (Array.isArray(value)) {
+    const errors = await collectErrors(value);
+    if (errors.length > 0) {
+      throw new PoisonError(errors);
+    }
+    // ... process array
+  }
+
+  return processComplex(value, options);
+}
+```
+
+### Template for Pure Async Functions
+
+```javascript
+async function pureAsync(value) {
+  // 1. Sync poison check - throw immediately
+  if (isPoison(value)) {
+    throw new PoisonError(value.errors);
+  }
+
+  // 2. Await and catch
+  if (value && typeof value.then === 'function') {
+    try {
+      value = await value;
+    } catch (err) {
+      throw isPoisonError(err) ? err : new PoisonError([err]);
+    }
+  }
+
+  // 3. Deep resolution with error collection
+  if (Array.isArray(value)) {
+    try {
+      const resolved = await deepResolveArray(value);
+      return resolved;
+    } catch (err) {
+      throw isPoisonError(err) ? err : new PoisonError([err]);
+    }
+  }
+
+  return processValue(value);
+}
+```
 
 ### Template for Deep Resolution Functions
 
@@ -741,17 +639,16 @@ async function deepResolveArray(arr) {
   for (let i = 0; i < arr.length; i++) {
     let item = arr[i];
 
-    // Step 1: Check if already poison (before await)
+    // 1. Check if already poison (before await)
     if (isPoison(item)) {
       errors.push(...item.errors);
       continue;
     }
 
-    // Step 2: Check if promise/thenable (BEFORE structure checks)
+    // 2. Check if promise/thenable (BEFORE structure checks)
     if (item && typeof item.then === 'function') {
       try {
         item = await item;
-        // If we reach here, item is NOT poison (would have thrown)
       } catch (err) {
         if (isPoisonError(err)) {
           errors.push(...err.errors);
@@ -762,7 +659,7 @@ async function deepResolveArray(arr) {
       }
     }
 
-    // Step 3: Check structure and recurse WITH try-catch
+    // 3. Check structure and recurse WITH try-catch
     if (Array.isArray(item)) {
       try {
         const resolved = await deepResolveArray(item);
@@ -788,12 +685,11 @@ async function deepResolveArray(arr) {
         continue;
       }
     } else {
-      // Primitive value, already resolved
       arr[i] = item;
     }
   }
 
-  // Step 4: Return poison if ANY errors collected
+  // 4. Return poison if ANY errors collected
   if (errors.length > 0) {
     return createPoison(errors);
   }
@@ -802,87 +698,6 @@ async function deepResolveArray(arr) {
 }
 ```
 
-### Template for Simple Resolution Functions
-
-```javascript
-async function resolveSingle(value) {
-  // Step 1: Synchronous poison check (before await)
-  if (isPoison(value)) {
-    return value;
-  }
-
-  // Step 2: Non-thenable shortcut
-  if (!value || typeof value.then !== 'function') {
-    return value;
-  }
-
-  // Step 3: Resolve thenable with error handling
-  let resolvedValue;
-  try {
-    resolvedValue = await value;
-    // If we reach here, resolvedValue is NOT poison
-  } catch (err) {
-    if (isPoisonError(err)) {
-      return createPoison(err.errors);
-    }
-    return createPoison(err);
-  }
-
-  // Step 4: Deep resolve if needed
-  if (Array.isArray(resolvedValue)) {
-    try {
-      return await deepResolveArray(resolvedValue);
-    } catch (err) {
-      if (isPoisonError(err)) {
-        return createPoison(err.errors);
-      }
-      return createPoison(err);
-    }
-  } else if (isPlainObject(resolvedValue)) {
-    try {
-      return await deepResolveObject(resolvedValue);
-    } catch (err) {
-      if (isPoisonError(err)) {
-        return createPoison(err.errors);
-      }
-      return createPoison(err);
-    }
-  }
-
-  return resolvedValue;
-}
-```
-
-### Template for Mixed Sync/Async Handling
-
-```javascript
-function handleValue(value) {
-  // First check: is it a thenable?
-  if (value && typeof value.then === 'function') {
-    // It's async - delegate to async handler
-    return handleAsyncValue(value);
-  }
-
-  // It's sync - can check isPoison directly
-  if (isPoison(value)) {
-    return value;
-  }
-
-  return processSync(value);
-}
-
-async function handleAsyncValue(value) {
-  try {
-    const resolved = await value;
-    return processSync(resolved);
-  } catch (err) {
-    if (isPoisonError(err)) {
-      return createPoison(err.errors);
-    }
-    return createPoison(err);
-  }
-}
-```
 
 ---
 
@@ -899,10 +714,21 @@ async function handleAsyncValue(value) {
 - [ ] Test error deduplication works
 
 ### Function Return Type Handling
-- [ ] Test non-async function returning poison (can check with isPoison)
-- [ ] Test async function returning poison (must await + try-catch)
-- [ ] Test async function with early return of poison
+- [ ] Test pure sync function returning poison (can check with isPoison)
+- [ ] Test sync-first hybrid returning literal (no Promise wrapper)
+- [ ] Test sync-first hybrid returning rejected promise for poison
+- [ ] Test sync-first hybrid delegating to async helper for complex cases
+- [ ] Test pure async function throwing PoisonError (not returning poison)
+- [ ] Test async helper function throws PoisonError (not returns)
 - [ ] Test mixed sync/async function calls
+
+### Sync-First Hybrid Pattern
+- [ ] Test literal values return synchronously (no Promise wrapper)
+- [ ] Test poison returns rejected Promise synchronously
+- [ ] Test complex values (arrays/promises) delegate to async helper
+- [ ] Verify helper throws PoisonError not returns poison
+- [ ] Verify no Promise allocation for simple literals
+- [ ] Test performance: sync returns are faster than async
 
 ### Promise Interactions
 - [ ] Test Promise.resolve(poison) throws when awaited
@@ -910,12 +736,14 @@ async function handleAsyncValue(value) {
 - [ ] Test awaiting promise that rejects with error
 - [ ] Test mixed promises and poison values
 - [ ] Verify `isPoison(await something)` is never true
+- [ ] Test promise that resolves to poison (throws when awaited)
 
 ### Deep Resolution
 - [ ] Test nested arrays with errors at multiple levels
 - [ ] Test nested objects with errors at multiple levels
 - [ ] Test mixed nested structures (arrays in objects, etc.)
 - [ ] Test Promise.resolve([...]) with nested errors
+- [ ] Test deeply nested Promise chains
 
 ### Error Collection
 - [ ] Verify ALL errors are collected (count them)
@@ -924,27 +752,34 @@ async function handleAsyncValue(value) {
 - [ ] Test multiple errors from different sources
 - [ ] Test error deduplication across sources
 - [ ] Test no short-circuiting (all items processed)
+- [ ] Test parallel error collection is deterministic
 
 ### Recursive Calls
 - [ ] Test deepResolveArray with poison at various depths
 - [ ] Test deepResolveObject with poison in properties
 - [ ] Verify recursive calls wrapped in try-catch
 - [ ] Test error propagation through recursion
+- [ ] Test that recursive poison returns throw when awaited
 
 ### Edge Cases
 - [ ] Test empty arrays
 - [ ] Test null/undefined values
-- [ ] Test primitive values
-- [ ] Test functions that return poison
-- [ ] Test async functions that return poison
-- [ ] Test Symbol.for() key works across modules
+- [ ] Test primitive values (strings, numbers, booleans)
+- [ ] Test functions that return poison (sync functions)
+- [ ] Test async functions that throw PoisonError
+- [ ] Test Symbol.for() key works across modules (after transpilation)
+- [ ] Test very deeply nested structures
+- [ ] Test circular references (if applicable)
 
 ### Integration
 - [ ] Test with actual Cascada template rendering
-- [ ] Test with async function calls
+- [ ] Test with async function calls in templates
 - [ ] Test with property lookups
 - [ ] Test with conditional expressions
+- [ ] Test with loops
 - [ ] Verify no unhandled rejection warnings
+- [ ] Test error messages are user-friendly
+- [ ] Test stack traces are preserved from original errors
 
 ---
 
@@ -952,54 +787,68 @@ async function handleAsyncValue(value) {
 
 ### What to Check When
 
-| Situation | What to Check | How |
-|-----------|---------------|-----|
-| Non-async function result | Is value poison? | `if (isPoison(value))` |
-| Async function result | Can't check - must await | Wrap in try-catch |
-| Before await | Is value poison? | `if (isPoison(value))` |
-| After await | **Cannot be poison** | Never check - impossible |
-| In catch block | Is error a PoisonError? | `if (isPoisonError(err))` |
-| Unknown if sync/async | Check for thenable first | `typeof value.then === 'function'` |
-| Extracting errors | From PoisonError | `err.errors` (spread it) |
-| Extracting errors | From PoisonedValue | `value.errors` (spread it) |
+| Situation | Pattern | What to Check | How |
+|-----------|---------|---------------|-----|
+| Pure sync function result | Pattern 1 | Is value poison? | `if (isPoison(value))` → return value |
+| Sync-first hybrid result | Pattern 2 | Check before delegating | `if (isPoison(value))` → `Promise.reject(PoisonError)` |
+| Sync-first hybrid literal | Pattern 2 | Return directly | Return value (no Promise) |
+| Async function result | Pattern 3 | Can't check - will throw | Wrap in try-catch |
+| Before await | All | Is value poison? | `if (isPoison(value))` |
+| After await | All | **Cannot be poison** | Never check - impossible |
+| In catch block | All | Is error PoisonError? | `if (isPoisonError(err))` |
+| Extracting errors | All | From PoisonError | `err.errors` (spread it) |
+| Extracting errors | All | From PoisonedValue | `value.errors` (spread it) |
 
-### Decision Tree for Function Results
+### The Three Function Patterns
 
 ```
-What type of function returned the value?
-├─ Non-async function
-│   └─ Can check isPoison() directly
-│       ├─ isPoison(value) === true → Propagate
-│       └─ isPoison(value) === false → Process
-│
-├─ Async function
-│   └─ Result is Promise - must await
-│       └─ Wrap in try-catch
-│           ├─ Success: value is NOT poison
-│           └─ Catch: Check isPoisonError(err)
-│
-└─ Unknown (check for thenable)
-    ├─ typeof value.then === 'function' → Treat as async
-    └─ Otherwise → Treat as sync
+Pattern 1: Pure Sync
+├─ NOT declared with async
+├─ Can return PoisonedValue directly
+├─ Example: callWrap(), memberLookup()
+└─ Usage: if (isPoison(val)) return val;
+
+Pattern 2: Sync-First Hybrid
+├─ NOT declared with async
+├─ Returns: literal values OR Promise.reject(PoisonError) OR delegated async
+├─ Fast path for 30-40% of calls
+├─ Example: suppressValueAsync(), ensureDefinedAsync()
+└─ Usage:
+    if (isPoison(val)) return Promise.reject(new PoisonError(...));
+    if (literal) return processedValue;
+    return _asyncHelper(val);
+
+Pattern 3: Pure Async
+├─ IS declared with async
+├─ MUST throw PoisonError, never return PoisonedValue
+├─ Example: sequencedCallWrap(), _asyncHelper()
+└─ Usage: if (isPoison(val)) throw new PoisonError(...);
 ```
 
 ### The Fundamental Rules
 
-**Rule 1: await CANNOT return PoisonedValue** because:
-1. PoisonedValue is a thenable
-2. await unwraps all thenables
-3. Our .then() throws PoisonError
-4. Therefore: await either returns non-poison OR throws
+**Rule 1: await CANNOT return PoisonedValue**
+- PoisonedValue is a thenable
+- await unwraps all thenables
+- Our .then() throws PoisonError
+- Therefore: await either returns non-poison OR throws
 
-**Rule 2: async functions CANNOT return PoisonedValue synchronously** because:
-1. async keyword wraps ALL returns in Promise
-2. Even `return poison` becomes `Promise.resolve(poison)`
-3. Result is Promise<PoisonedValue>, not PoisonedValue
-4. Must await the Promise to trigger the poison
+**Rule 2: async functions CANNOT return PoisonedValue synchronously**
+- async keyword wraps ALL returns in Promise
+- Even `return poison` becomes `Promise.resolve(poison)`
+- Result is Promise<PoisonedValue>, not PoisonedValue
+- Must await the Promise to trigger the poison
 
-**Rule 3: Check poison:**
+**Rule 3: Sync-first hybrid functions are the performance sweet spot**
+- NOT async, so can return values directly
+- Return Promise.reject() for poison (synchronous rejection)
+- Delegate to async helper for complex cases
+- Captures 30-40% fast path without Promise overhead
+
+**Rule 4: Check poison:**
 - BEFORE await: `if (isPoison(value))`
 - AFTER await in catch: `if (isPoisonError(err))`
-- On non-async function results: `if (isPoison(result))`
+- On sync function results: `if (isPoison(result))`
+- On hybrid function results (before delegating): `if (isPoison(result))`
 - NEVER after await in success path: impossible
-- NEVER on async function results without await: wrong type
+- NEVER on async function results without try-catch: will throw
