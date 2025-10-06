@@ -328,15 +328,15 @@ class AsyncFrame extends Frame {
       }
 
       //go up the chain until we reach the scope frame or an asyncVar with the same name
-      //and store the value there
+      //and store the value there (poison values are stored just like any other value)
       let frame = this;
       while (true) {
         if (frame.asyncVars && name in frame.asyncVars) {
-          frame.asyncVars[name] = val;
+          frame.asyncVars[name] = val; // Store poison if val is poison
           break;
         }
         if (frame === scopeFrame) {
-          scopeFrame.variables[name] = val;
+          scopeFrame.variables[name] = val; // Store poison if val is poison
           break;
         }
         frame = frame.parent;
@@ -451,12 +451,47 @@ class AsyncFrame extends Frame {
     }
   }
 
+  /**
+   * Poison all variables that would be written in branches when condition is poisoned.
+   * Used by if/switch/while when the condition evaluation results in poison.
+   *
+   * @param {PoisonedValue|Error} error - The poison value or error to propagate
+   * @param {Object} varCounts - Map of variable names to write counts
+   */
+  poisonBranchWrites(error, varCounts) {
+    const poison = isPoison(error) ? error : createPoison(error);
+
+    for (let varName in varCounts) {
+      // Set poison value in the appropriate location
+      if (this.asyncVars && varName in this.asyncVars) {
+        this.asyncVars[varName] = poison;
+      } else {
+        // Find the scope frame and set poison there
+        const scopeFrame = this.resolve(varName, true);
+        if (scopeFrame) {
+          if (scopeFrame.asyncVars && varName in scopeFrame.asyncVars) {
+            scopeFrame.asyncVars[varName] = poison;
+          } else {
+            scopeFrame.variables[varName] = poison;
+          }
+        } else {
+          // Variable doesn't exist yet - create it as poisoned
+          this.variables[varName] = poison;
+        }
+      }
+
+      // Trigger countdown with the write count for this variable
+      this._countdownAndResolveAsyncWrites(varName, varCounts[varName]);
+    }
+  }
+
   _resolveAsyncVar(varName) {
     let value = this.asyncVars[varName];
     let resolveFunc = this.promiseResolves[varName];
+    // Resolve with the value (which may be poison - that's ok, it will propagate)
     resolveFunc(value);
-    //@todo - if the var is the same promise - set it to the value
-    //this cleanup may not be needed:
+
+    // Cleanup
     delete this.promiseResolves[varName];
     if (Object.keys(this.promiseResolves).length === 0) {
       this.promiseResolves = undefined;
@@ -586,26 +621,39 @@ class AsyncFrame extends Frame {
     parent[containerName][varName] = currentPromiseToAwait;
 
     while (true) {
-      let awaitedValue = await currentPromiseToAwait; // Await the tracked promise
+      try {
+        let awaitedValue = await currentPromiseToAwait; // Await the tracked promise
 
-      // Now, check the parent slot state *after* the await
-      if (parent[containerName][varName] === currentPromiseToAwait) {
-        // The promise we awaited is still in the slot.
-        // Update the slot with the resolved value.
-        parent[containerName][varName] = awaitedValue;
+        // Check if awaitedValue is poison - STOP LOOP
+        if (isPoison(awaitedValue)) {
+          parent[containerName][varName] = awaitedValue;
+          break; // Stop loop on poison
+        }
 
-        // Is the value we just placed ALSO a promise?
-        if (awaitedValue && typeof awaitedValue.then === 'function') {
-          // Yes, track this new promise and loop again
-          currentPromiseToAwait = awaitedValue;
-          continue;
+        // Now, check the parent slot state *after* the await
+        if (parent[containerName][varName] === currentPromiseToAwait) {
+          // The promise we awaited is still in the slot.
+          // Update the slot with the resolved value.
+          parent[containerName][varName] = awaitedValue;
+
+          // Is the value we just placed ALSO a promise?
+          if (awaitedValue && typeof awaitedValue.then === 'function') {
+            // Yes, track this new promise and loop again
+            currentPromiseToAwait = awaitedValue;
+            continue;
+          } else {
+            // Not a promise, we are done
+            break;
+          }
         } else {
-          // Not a promise, we are done
+          // The slot was overwritten while we awaited.
+          // Give up responsibility. The block that overwrote it is now in charge.
           break;
         }
-      } else {
-        // The slot was overwritten while we awaited.
-        // Give up responsibility. The block that overwrote it is now in charge.
+      } catch (err) {
+        // Promise was rejected - convert to poison
+        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+        parent[containerName][varName] = poison;
         break;
       }
     }
