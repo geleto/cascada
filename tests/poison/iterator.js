@@ -10,7 +10,7 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    runtime = require('../src/runtime');
+    runtime = require('../../src/runtime');
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
     isPoison = runtime.isPoison;

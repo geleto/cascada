@@ -9,10 +9,10 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../src/environment').AsyncEnvironment;
-    StringLoader = require('./util').StringLoader;
-    delay = require('./util').delay;
-    expectAsyncError = require('./util').expectAsyncError;
+    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+    StringLoader = require('../util').StringLoader;
+    delay = require('../util').delay;
+    expectAsyncError = require('../util').expectAsyncError;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;

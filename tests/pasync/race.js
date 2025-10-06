@@ -11,12 +11,12 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../src/environment').AsyncEnvironment;
-    //Environment = require('../src/environment').Environment;
-    //lexer = require('../src/lexer');
+    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+    //Environment = require('../../src/environment').Environment;
+    //lexer = require('../../src/lexer');
     unescape = require('he').unescape;
-    StringLoader = require('./util').StringLoader;
-    delay = require('./util').delay;
+    StringLoader = require('../util').StringLoader;
+    delay = require('../util').delay;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
