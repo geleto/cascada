@@ -12,7 +12,7 @@
     expect = require('expect.js');
     util = require('./util');
     Environment = require('../src/environment').Environment;
-    Loader = require('../src/node-loaders').FileSystemLoader;
+    Loader = require('../src/loader/node-loaders').FileSystemLoader;
     templatesPath = 'tests/templates';
     path = require('path');
   } else {

@@ -1,7 +1,7 @@
 import lib from './lib.js';
 import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScript} from './environment.js';
-import Loader from './loader.js';
-import * as loaders from './loaders.js';
+import Loader from './loader/loader.js';
+import * as loaders from './loader/loaders.js';
 import * as precompileModule from './precompile.js';
 import * as compiler from './compiler/compiler.js';
 import * as parser from './parser.js';
@@ -9,7 +9,7 @@ import * as lexer from './lexer.js';
 import * as runtime from './runtime.js';
 import * as nodes from './nodes.js';
 import installJinjaCompat from './jinja-compat.js';
-import * as loaderUtils from './loader-utils.js';
+import * as loaderUtils from './loader/loader-utils.js';
 
 // A single instance of an environment, since this is so commonly used
 let e;

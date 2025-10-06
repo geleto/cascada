@@ -1,6 +1,6 @@
 'use strict';
 
-const lib = require('./lib');
+const lib = require('../lib');
 
 // WeakMap to store resource caches for each loader (no mutation of loader objects)
 const resourceCaches = new WeakMap();

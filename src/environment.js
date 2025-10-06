@@ -5,7 +5,7 @@ const waterfall = require('a-sync-waterfall');
 const lib = require('./lib');
 const compiler = require('./compiler/compiler');
 const filters = require('./filters');
-const { FileSystemLoader, WebLoader, PrecompiledLoader } = require('./loaders');
+const { FileSystemLoader, WebLoader, PrecompiledLoader } = require('./loader/loaders');
 const tests = require('./tests');
 const globals = require('./globals');
 const { Obj, EmitterObj } = require('./object');
@@ -14,7 +14,7 @@ const { handleError, Frame, AsyncFrame, AsyncState } = globalRuntime;
 const expressApp = require('./express-app');
 const scriptTranspiler = require('./script-transpiler');
 const DataHandler = require('./data-handler');
-const { clearStringCache, callLoaders } = require('./loader-utils');
+const { clearStringCache, callLoaders } = require('./loader/loader-utils');
 
 // If the user is using the async API, *always* call it
 // asynchronously even if the template was synchronous.

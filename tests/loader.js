@@ -21,9 +21,9 @@
     expect = require('expect.js');
     Environment = require('../src/environment').Environment;
     AsyncEnvironment = require('../src/environment').AsyncEnvironment;
-    WebLoader = require('../src/web-loaders').WebLoader;
-    FileSystemLoader = require('../src/node-loaders').FileSystemLoader;
-    NodeResolveLoader = require('../src/node-loaders').NodeResolveLoader;
+    WebLoader = require('../src/loader/web-loaders').WebLoader;
+    FileSystemLoader = require('../src/loader/node-loaders').FileSystemLoader;
+    NodeResolveLoader = require('../src/loader/node-loaders').NodeResolveLoader;
     templatesPath = 'tests/templates';
     StringLoader = require('./util').StringLoader;
     loadString = require('../src/index').loadString;

@@ -2,16 +2,16 @@
 
 const lib = require('./lib');
 const {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScript} = require('./environment');
-const Loader = require('./loader');
-const loaders = require('./loaders');
+const Loader = require('./loader/loader');
+const loaders = require('./loader/loaders');
 const precompile = require('./precompile');
-const compiler = require('./compiler');
+const compiler = require('./compiler/compiler');
 const parser = require('./parser');
 const lexer = require('./lexer');
 const runtime = require('./runtime');
 const nodes = require('./nodes');
 const installJinjaCompat = require('./jinja-compat');
-const loaderUtils = require('./loader-utils');
+const loaderUtils = require('./loader/loader-utils');
 
 // A single instance of an environment, since this is so commonly used
 let e;
