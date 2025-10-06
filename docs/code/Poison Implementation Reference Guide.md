@@ -70,15 +70,16 @@ function callWrap(obj, name, context, args) {
 **Pattern 2: Sync-First Hybrid Functions**
 - NOT declared with `async` keyword
 - Return literal values synchronously when possible
-- Return `Promise.reject(new PoisonError(...))` for poison
+- Return poison values directly (thenable protocol handles conversion)
 - Delegate to async helper for complex cases
 - Example: `suppressValueAsync()`, `ensureDefinedAsync()`
 
 ```javascript
 function suppressValueAsync(val, autoescape) {
-  // Sync poison check - return rejected promise
+  // Sync poison check - return poison directly
+  // When awaited, thenable protocol converts to PoisonError automatically
   if (isPoison(val)) {
-    return Promise.reject(new PoisonError(val.errors));
+    return val;
   }
 
   // Sync literal - return value directly
@@ -232,7 +233,7 @@ async function suppressValueAsync(val, autoescape) {
 function suppressValueAsync(val, autoescape) {
   // NOT async keyword!
   if (isPoison(val)) {
-    return Promise.reject(new PoisonError(val.errors));
+    return val;  // Return poison directly - thenable protocol handles it
   }
 
   // Fast path for literals
@@ -473,17 +474,17 @@ function callWrap(obj, name, context, args) {
 
 ### Pattern 2: Sync-First Hybrid Functions
 
-You can return values OR rejected promises synchronously when:
+You can return values OR poison values synchronously when:
 - Function is NOT declared with `async`
 - You check for simple cases first
 - Delegate complex cases to async helper
-- Example: `suppressValueAsync()`, `ensureDefinedAsync()`
+- Example: `suppressValueAsync()`, `ensureDefinedAsync()`, `callWrapAsync()`
 
 ```javascript
 function suppressValueAsync(val, autoescape) {
-  // Poison → return rejected promise
+  // Poison → return poison directly (thenable protocol converts when awaited)
   if (isPoison(val)) {
-    return Promise.reject(new PoisonError(val.errors));
+    return val;
   }
 
   // Literal → return value directly (NO promise wrapper)
@@ -498,9 +499,9 @@ function suppressValueAsync(val, autoescape) {
 
 **Benefits:**
 - 30-40% of calls return immediately
-- No Promise allocation for literals
+- No Promise allocation for literals or poison values
 - Template `{{ "hello" }}` is fast
-- Poison rejection is still synchronous
+- Poison values are returned synchronously, converted via thenable protocol when awaited
 
 ### Pattern 3: Pure Async Functions
 
@@ -555,9 +556,10 @@ function syncProcess(value) {
 function hybridAsync(value, options) {
   // NOT declared with async!
 
-  // 1. Poison check - return rejected promise
+  // 1. Poison check - return poison directly
+  // Thenable protocol converts to PoisonError when awaited
   if (isPoison(value)) {
-    return Promise.reject(new PoisonError(value.errors));
+    return value;
   }
 
   // 2. Simple case - return value directly (no Promise!)
@@ -597,6 +599,105 @@ async function _hybridAsyncComplex(value, options) {
   return processComplex(value, options);
 }
 ```
+
+### Template for Sync-First Hybrid with Multi-Source Error Collection
+
+When you need to collect errors from multiple sources before proceeding:
+
+```javascript
+function callWrapAsync(obj, name, context, args) {
+  // NOT declared with async!
+
+  // Check if ANY input requires async processing
+  const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
+  const hasArgPromises = args.some(arg => arg && typeof arg.then === 'function' && !isPoison(arg));
+
+  if (objIsPromise || hasArgPromises) {
+    // Delegate to async helper
+    return _callWrapAsyncComplex(obj, name, context, args);
+  }
+
+  // Sync path: Collect ALL errors from all sources
+  const errors = [];
+  if (isPoison(obj)) {
+    errors.push(...obj.errors);
+  }
+  for (const arg of args) {
+    if (isPoison(arg)) {
+      errors.push(...arg.errors);
+    }
+  }
+
+  if (errors.length > 0) {
+    return createPoison(errors);
+  }
+
+  // Validate and call
+  if (!obj) {
+    return createPoison(new Error('Unable to call `' + name + '`, which is undefined'));
+  } else if (typeof obj !== 'function') {
+    return createPoison(new Error('Unable to call `' + name + '`, which is not a function'));
+  }
+
+  return obj.apply(context, args);
+}
+
+async function _callWrapAsyncComplex(obj, name, context, args) {
+  // Collect ALL errors from ALL sources (never miss any error principle)
+  const errors = [];
+
+  // Await and check obj
+  if (obj && typeof obj.then === 'function' && !isPoison(obj)) {
+    try {
+      obj = await obj;
+      if (isPoison(obj)) {
+        errors.push(...obj.errors);
+      }
+    } catch (err) {
+      if (isPoisonError(err)) {
+        errors.push(...err.errors);
+      } else {
+        errors.push(err);
+      }
+    }
+  } else if (isPoison(obj)) {
+    errors.push(...obj.errors);
+  }
+
+  // Await ALL args to collect all errors
+  const argErrors = await collectErrors(args);
+  errors.push(...argErrors);
+
+  if (errors.length > 0) {
+    return createPoison(errors);  // Returns poison - throws when awaited
+  }
+
+  // Resolve all arg promises
+  const resolvedArgs = [];
+  for (const arg of args) {
+    if (arg && typeof arg.then === 'function') {
+      resolvedArgs.push(await arg);
+    } else {
+      resolvedArgs.push(arg);
+    }
+  }
+
+  // Validate and call with resolved args
+  if (!obj) {
+    return createPoison(new Error('Unable to call `' + name + '`, which is undefined'));
+  } else if (typeof obj !== 'function') {
+    return createPoison(new Error('Unable to call `' + name + '`, which is not a function'));
+  }
+
+  return obj.apply(context, resolvedArgs);
+}
+```
+
+**Key Points:**
+- Must check ALL sources for errors/promises before deciding path
+- Sync path collects all poison errors from all sources
+- Async path awaits ALL promises (never miss any error principle)
+- Returns poison directly (thenable protocol handles conversion)
 
 ### Template for Pure Async Functions
 
@@ -790,7 +891,7 @@ async function deepResolveArray(arr) {
 | Situation | Pattern | What to Check | How |
 |-----------|---------|---------------|-----|
 | Pure sync function result | Pattern 1 | Is value poison? | `if (isPoison(value))` → return value |
-| Sync-first hybrid result | Pattern 2 | Check before delegating | `if (isPoison(value))` → `Promise.reject(PoisonError)` |
+| Sync-first hybrid result | Pattern 2 | Check before delegating | `if (isPoison(value))` → return value |
 | Sync-first hybrid literal | Pattern 2 | Return directly | Return value (no Promise) |
 | Async function result | Pattern 3 | Can't check - will throw | Wrap in try-catch |
 | Before await | All | Is value poison? | `if (isPoison(value))` |
@@ -810,11 +911,11 @@ Pattern 1: Pure Sync
 
 Pattern 2: Sync-First Hybrid
 ├─ NOT declared with async
-├─ Returns: literal values OR Promise.reject(PoisonError) OR delegated async
+├─ Returns: literal values OR poison values (thenables) OR delegated promises
 ├─ Fast path for 30-40% of calls
-├─ Example: suppressValueAsync(), ensureDefinedAsync()
+├─ Example: suppressValueAsync(), ensureDefinedAsync(), callWrapAsync()
 └─ Usage:
-    if (isPoison(val)) return Promise.reject(new PoisonError(...));
+    if (isPoison(val)) return val;  // Thenable protocol handles conversion
     if (literal) return processedValue;
     return _asyncHelper(val);
 
@@ -841,7 +942,7 @@ Pattern 3: Pure Async
 
 **Rule 3: Sync-first hybrid functions are the performance sweet spot**
 - NOT async, so can return values directly
-- Return Promise.reject() for poison (synchronous rejection)
+- Return poison values directly (thenable protocol converts on await)
 - Delegate to async helper for complex cases
 - Captures 30-40% fast path without Promise overhead
 
