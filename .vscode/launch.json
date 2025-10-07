@@ -10,7 +10,9 @@
 			"--check-leaks",
 			"-R",
 			"spec",
-			"${workspaceFolder}/tests"
+			"${workspaceFolder}/tests/*.js",
+			"${workspaceFolder}/tests/pasync/**/*.js",
+			"${workspaceFolder}/tests/poison/**/*.js"
 		],
 		"env": {
 			"NODE_ENV": "test",
@@ -33,7 +35,9 @@
 			"--check-leaks",
 			"-R",
 			"spec",
-			"${workspaceFolder}/tests"
+			"${workspaceFolder}/tests/*.js",
+			"${workspaceFolder}/tests/pasync/**/*.js",
+			"${workspaceFolder}/tests/poison/**/*.js"
 		],
 		"env": {
 			"NODE_ENV": "test",
