@@ -133,7 +133,7 @@
     let env;
 
     beforeEach(() => {
-      env = new runtime.Environment();
+      env = new runtime.AsyncEnvironment();
     });
 
     it('should catch poison in output', async () => {
@@ -369,4 +369,123 @@
     });
   });
 
+  describe('Function call poison propagation tests', () => {
+    let env;
+    beforeEach(() => {
+      env = new runtime.AsyncEnvironment();
+    });
+
+    it('should propagate poison through function calls', async () => {
+      const template = `{{ myFunc(failingValue) }}`;
+
+      const context = {
+        failingValue: async () => {
+          throw new Error('Value fetch failed');
+        },
+        myFunc: (val) => val * 2
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect.fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.include('Value fetch failed');
+      }
+    });
+
+    it('should collect errors from all poisoned arguments', async () => {
+      const template = `{{ myFunc(val1, val2, val3) }}`;
+
+      const context = {
+        val1: async () => { throw new Error('Error 1'); },
+        val2: async () => { throw new Error('Error 2'); },
+        val3: 'ok',
+        myFunc: (a, b, c) => a + b + c
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect.fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.include('Error 1');
+        expect(err.message).to.include('Error 2');
+        // Verify both errors collected (not short-circuited)
+      }
+    });
+
+    it('should handle function call on poisoned object', async () => {
+      const template = `{{ obj.method(123) }}`;
+
+      const context = {
+        obj: async () => {
+          throw new Error('Object fetch failed');
+        }
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect.fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.include('Object fetch failed');
+      }
+    });
+
+    it('should propagate poison through nested function calls', async () => {
+      const template = `{{ outer(inner(failingValue)) }}`;
+
+      const context = {
+        failingValue: async () => {
+          throw new Error('Inner failed');
+        },
+        inner: (x) => x * 2,
+        outer: (x) => x + 10
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect.fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.include('Inner failed');
+      }
+    });
+
+    it('should handle function call with multiple poison arguments', async () => {
+      const template = `{{ processData(data1, data2, data3) }}`;
+
+      const context = {
+        data1: async () => { throw new Error('Data 1 failed'); },
+        data2: async () => { throw new Error('Data 2 failed'); },
+        data3: async () => { throw new Error('Data 3 failed'); },
+        processData: (a, b, c) => `Processed: ${a}, ${b}, ${c}`
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect.fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.include('Data 1 failed');
+        expect(err.message).to.include('Data 2 failed');
+        expect(err.message).to.include('Data 3 failed');
+        // Verify all three errors collected
+      }
+    });
+
+    it('should handle function call with mixed poison and valid arguments', async () => {
+      const template = `{{ combine(validValue, poisonValue, anotherValid) }}`;
+
+      const context = {
+        validValue: 'Hello',
+        anotherValid: 'World',
+        poisonValue: async () => { throw new Error('Poison value failed'); },
+        combine: (a, b, c) => `${a} ${b} ${c}`
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect.fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.include('Poison value failed');
+      }
+    });
+  });
 });
