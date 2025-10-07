@@ -91,7 +91,7 @@
   },
   "scripts": {
     "postinstall": "node -e \"try { require('./scripts/dev-install.js') } catch (e) { console.log('Skipping dev install (script not found)') }\"",
-    "mocha": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs mocha --check-leaks -R spec tests",
+    "mocha": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs mocha --check-leaks -R spec tests 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
     "lint": "eslint src scripts tests",
     "prepare": "npm run build",
     "clean": "node -e \"require('fs').rmSync('dist', {recursive: true, force: true})\"",
@@ -102,7 +102,7 @@
     "build:esm": "npx rollup -c rollup.config.mjs",
     "test:quick": "npm run mocha",
     "test:prep": "cross-env NODE_ENV=test npm run build && node scripts/runprecompile.js",
-    "test:node-no-prep": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --require @babel/register tests",
+    "test:node-no-prep": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --require @babel/register tests 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
     "test:node": "cross-env NODE_ENV=test npm run test:prep && npm run test:node-no-prep",
     "test:browser-no-prep": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/testrunner.js",
     "test:browser": "cross-env NODE_ENV=test npm run test:prep && npm run test:browser-no-prep",
