@@ -256,7 +256,13 @@
         frame.promiseResolves = { testVar: () => { } };
 
         // Should not throw when resolving poison
-        expect(() => frame._resolveAsyncVar('testVar')).to.not.throw();
+        let thrown = false;
+        try {
+          frame._resolveAsyncVar('testVar');
+        } catch (e) {
+          thrown = true;
+        }
+        expect(thrown).to.be(false);
       });
 
       it('should handle poison in nested frame resolution', () => {
@@ -358,5 +364,5 @@
       });
     });
   });
-});
+})();
 

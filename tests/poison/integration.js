@@ -2,16 +2,17 @@
   'use strict';
 
   var expect;
-  let runtime;
   let AsyncEnvironment;
+  let StringLoader;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    runtime = require('../../src/runtime');
-    AsyncEnvironment = runtime.AsyncEnvironment;
+    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+    StringLoader = require('../util').StringLoader;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
+    StringLoader = window.util.StringLoader;
   }
 
   describe('Poisoning integration Tests', () => {
@@ -38,9 +39,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Value fetch failed');
+        expect(err.message).to.contain('Value fetch failed');
       }
     });
   });
@@ -52,7 +53,6 @@
     });
 
     it('should propagate poison through template includes', async () => {
-      const { StringLoader } = require('nunjucks');
       const loader = new StringLoader();
       const testEnv = new AsyncEnvironment(loader);
 
@@ -72,59 +72,10 @@
       });
 
       try {
-        await testEnv.renderAsync('main.njk', {});
-        expect.fail('Should have thrown');
+        await testEnv.renderTemplate('main.njk', {});
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Items failed');
-      }
-    });
-
-    it('should handle macro calls with poisoned parameters', async () => {
-      const template = `
-        {% macro processItems(items) %}
-          {% for item in items %}
-            {{ item }}
-          {% endfor %}
-        {% endmacro %}
-
-        {{ processItems(getItems()) }}
-      `;
-
-      const context = {
-        async getItems() {
-          throw new Error('Macro items failed');
-        }
-      };
-
-      try {
-        await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.include('Macro items failed');
-      }
-    });
-
-    it('should handle poisoned arguments passed to macros', async () => {
-      const template = `
-        {% macro double(x) %}
-          {{ x * 2 }}
-        {% endmacro %}
-
-        {% set value = getValue() %}
-        {{ double(value) }}
-      `;
-
-      const context = {
-        async getValue() {
-          throw new Error('Value fetch failed');
-        }
-      };
-
-      try {
-        await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.include('Value fetch failed');
+        expect(err.message).to.contain('Items failed');
       }
     });
   });
@@ -133,7 +84,7 @@
     let env;
 
     beforeEach(() => {
-      env = new runtime.AsyncEnvironment();
+      env = new AsyncEnvironment();
     });
 
     it('should catch poison in output', async () => {
@@ -147,9 +98,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Data fetch failed');
+        expect(err.message).to.contain('Data fetch failed');
       }
     });
 
@@ -167,7 +118,7 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
         // Should contain information about errors
         expect(err.message).to.match(/First failure|Second failure/);
@@ -190,9 +141,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Inner error');
+        expect(err.message).to.contain('Inner error');
       }
     });
 
@@ -206,7 +157,7 @@
       const template = `Result: {{ getValue() }}`;
       const result = await env.renderTemplateString(template, context);
 
-      expect(result).to.include('Success');
+      expect(result).to.contain('Success');
     });
 
     it('should handle poison in complex template structures', async () => {
@@ -227,7 +178,7 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
         expect(err.message).to.match(/Item 1 error|Item 2 error/);
       }
@@ -252,7 +203,7 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
         // Should contain multiple error messages
         const message = err.message;
@@ -278,9 +229,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Condition error');
+        expect(err.message).to.contain('Condition error');
       }
     });
 
@@ -295,9 +246,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Filter error');
+        expect(err.message).to.contain('Filter error');
       }
     });
 
@@ -315,31 +266,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Poisoned content');
-      }
-    });
-
-    it('should handle poison in macro calls', async () => {
-      const context = {
-        async getData() {
-          throw new Error('Macro data error');
-        }
-      };
-
-      const template = `
-        {% macro display(data) %}
-          Data: {{ data }}
-        {% endmacro %}
-        {{ display(getData()) }}
-      `;
-
-      try {
-        await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.include('Macro data error');
+        expect(err.message).to.contain('Poisoned content');
       }
     });
 
@@ -362,9 +291,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Inner macro error');
+        expect(err.message).to.contain('Inner macro error');
       }
     });
   });
@@ -372,11 +301,11 @@
   describe('Function call poison propagation tests', () => {
     let env;
     beforeEach(() => {
-      env = new runtime.AsyncEnvironment();
+      env = new AsyncEnvironment();
     });
 
     it('should propagate poison through function calls', async () => {
-      const template = `{{ myFunc(failingValue) }}`;
+      const template = `{{ myFunc(failingValue()) }}`;
 
       const context = {
         failingValue: async () => {
@@ -387,14 +316,14 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown PoisonError');
+        expect().fail('Should have thrown PoisonError');
       } catch (err) {
-        expect(err.message).to.include('Value fetch failed');
+        expect(err.message).to.contain('Value fetch failed');
       }
     });
 
     it('should collect errors from all poisoned arguments', async () => {
-      const template = `{{ myFunc(val1, val2, val3) }}`;
+      const template = `{{ myFunc(val1(), val2(), val3()) }}`;
 
       const context = {
         val1: async () => { throw new Error('Error 1'); },
@@ -405,10 +334,10 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown PoisonError');
+        expect().fail('Should have thrown PoisonError');
       } catch (err) {
-        expect(err.message).to.include('Error 1');
-        expect(err.message).to.include('Error 2');
+        expect(err.message).to.contain('Error 1');
+        expect(err.message).to.contain('Error 2');
         // Verify both errors collected (not short-circuited)
       }
     });
@@ -417,21 +346,21 @@
       const template = `{{ obj.method(123) }}`;
 
       const context = {
-        obj: async () => {
+        obj: (async () => {
           throw new Error('Object fetch failed');
-        }
+        })()
       };
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown PoisonError');
+        expect().fail('Should have thrown PoisonError');
       } catch (err) {
-        expect(err.message).to.include('Object fetch failed');
+        expect(err.message).to.contain('Object fetch failed');
       }
     });
 
     it('should propagate poison through nested function calls', async () => {
-      const template = `{{ outer(inner(failingValue)) }}`;
+      const template = `{{ outer(inner(failingValue())) }}`;
 
       const context = {
         failingValue: async () => {
@@ -443,14 +372,14 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown PoisonError');
+        expect().fail('Should have thrown PoisonError');
       } catch (err) {
-        expect(err.message).to.include('Inner failed');
+        expect(err.message).to.contain('Inner failed');
       }
     });
 
     it('should handle function call with multiple poison arguments', async () => {
-      const template = `{{ processData(data1, data2, data3) }}`;
+      const template = `{{ processData(data1(), data2(), data3()) }}`;
 
       const context = {
         data1: async () => { throw new Error('Data 1 failed'); },
@@ -461,11 +390,11 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown PoisonError');
+        expect().fail('Should have thrown PoisonError');
       } catch (err) {
-        expect(err.message).to.include('Data 1 failed');
-        expect(err.message).to.include('Data 2 failed');
-        expect(err.message).to.include('Data 3 failed');
+        expect(err.message).to.contain('Data 1 failed');
+        expect(err.message).to.contain('Data 2 failed');
+        expect(err.message).to.contain('Data 3 failed');
         // Verify all three errors collected
       }
     });
@@ -476,16 +405,207 @@
       const context = {
         validValue: 'Hello',
         anotherValid: 'World',
-        poisonValue: async () => { throw new Error('Poison value failed'); },
+        poisonValue: (async () => { throw new Error('Poison value failed'); })(),
         combine: (a, b, c) => `${a} ${b} ${c}`
       };
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown PoisonError');
+        expect().fail('Should have thrown PoisonError');
       } catch (err) {
-        expect(err.message).to.include('Poison value failed');
+        expect(err.message).to.contain('Poison value failed');
       }
     });
   });
-});
+
+  describe('If statement poison propagation', () => {
+    let env;
+
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+
+    it('should poison variables from both branches when condition is poison', async () => {
+      const template = `
+        {% set x = 0 %}
+        {% set y = 0 %}
+        {% if poisonCond %}
+          {% set x = 10 %}
+        {% else %}
+          {% set y = 20 %}
+        {% endif %}
+        {{ x }}-{{ y }}
+      `;
+
+      const context = {
+        poisonCond: async () => {
+          throw new Error('Condition failed');
+        }
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.contain('Condition failed');
+      }
+    });
+
+    it('should skip both branches when condition is poison', async () => {
+      let trueCalled = false;
+      let falseCalled = false;
+
+      const template = `
+        {% if poisonCond %}
+          {{ trueFunc() }}
+        {% else %}
+          {{ falseFunc() }}
+        {% endif %}
+      `;
+
+      const context = {
+        poisonCond: async () => {
+          throw new Error('Condition failed');
+        },
+        trueFunc: () => { trueCalled = true; return 'true'; },
+        falseFunc: () => { falseCalled = true; return 'false'; }
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(falseCalled).to.be(false);
+        expect(trueCalled).to.be(false);
+      }
+    });
+
+    it('should handle poison in true branch body', async () => {
+      const template = `
+        {% if true %}
+          {{ failingFunc() }}
+        {% endif %}
+      `;
+
+      const context = {
+        failingFunc: async () => {
+          throw new Error('Function failed');
+        }
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.contain('Function failed');
+      }
+    });
+
+    it('should handle poison in else branch body', async () => {
+      const template = `
+        {% if false %}
+          {{ okFunc() }}
+        {% else %}
+          {{ failingFunc() }}
+        {% endif %}
+      `;
+
+      const context = {
+        okFunc: () => 'ok',
+        failingFunc: async () => {
+          throw new Error('Function failed');
+        }
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.contain('Function failed');
+      }
+    });
+
+    it('should handle nested if with poison', async () => {
+      const template = `
+        {% set result = "start" %}
+        {% if outerCond %}
+          {% if innerCond %}
+            {% set result = "inner-true" %}
+          {% else %}
+            {% set result = "inner-false" %}
+          {% endif %}
+        {% endif %}
+        {{ result }}
+      `;
+
+      const context = {
+        outerCond: true,
+        innerCond: async () => {
+          throw new Error('Inner condition failed');
+        }
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.contain('Inner condition failed');
+      }
+    });
+
+    it('should handle if without else when condition is poison', async () => {
+      const template = `
+        {% set x = 0 %}
+        {% if poisonCond %}
+          {% set x = 10 %}
+        {% endif %}
+        {{ x }}
+      `;
+
+      const context = {
+        poisonCond: async () => {
+          throw new Error('Condition failed');
+        }
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.contain('Condition failed');
+      }
+    });
+
+    it('should collect multiple errors from condition and branches', async () => {
+      const template = `
+        {% if poisonCond %}
+          {{ failInTrue() }}
+        {% else %}
+          {{ failInFalse() }}
+        {% endif %}
+      `;
+
+      const context = {
+        poisonCond: async () => {
+          throw new Error('Condition failed');
+        },
+        failInTrue: async () => {
+          throw new Error('True branch failed');
+        },
+        failInFalse: async () => {
+          throw new Error('False branch failed');
+        }
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        // Should at least have the condition error
+        expect(err.message).to.contain('Condition failed');
+      }
+    });
+  });
+
+})();

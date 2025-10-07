@@ -588,7 +588,7 @@
 
       try {
         await poison; // This throws PoisonError
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
         expect(runtime.isPoisonError(err)).to.be(true);
         expect(err.errors).to.be.an('array');
@@ -621,7 +621,7 @@
 
       try {
         await runtime.deepResolveArray(arr);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
         expect(runtime.isPoisonError(err)).to.be(true);
         expect(err.errors[0].message).to.equal('Inner error');
@@ -638,7 +638,7 @@
 
       try {
         await runtime.deepResolveObject(obj);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
         expect(runtime.isPoisonError(err)).to.be(true);
         // Should have deduplicated the same poison
@@ -670,7 +670,7 @@
           Promise.reject(new Error('Promise error')),
           poison2
         ]);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
         expect(runtime.isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(3);
@@ -698,7 +698,7 @@
 
       try {
         await runtime.resolveAll(promises);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
         expect(runtime.isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(5);
@@ -756,7 +756,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors[0].message).to.equal('Output error');
@@ -770,7 +770,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors).to.have.length(2);
@@ -783,7 +783,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           // Verify it didn't stop early (error collected)
@@ -801,7 +801,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
         }
@@ -815,7 +815,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
         }
@@ -833,7 +833,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
         }
@@ -850,7 +850,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors[0].message).to.contain('Unknown command handler');
@@ -884,7 +884,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be.true;
           // Should be deduplicated to 1
@@ -899,7 +899,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be.true;
           expect(thrown.errors).to.have.length(2);
@@ -929,7 +929,7 @@
 
         try {
           runtime.flattenBuffer(errors, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be.true;
           // All 3 errors should be collected
@@ -951,7 +951,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be.true;
           expect(thrown.errors).to.have.length(3);
@@ -986,7 +986,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be.true;
           expect(thrown.errors[0].message).to.contain('has no method');
@@ -1004,7 +1004,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be.true;
           expect(thrown.errors[0].message).to.contain('Unknown command handler');
@@ -1040,7 +1040,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be.true;
           expect(thrown.errors).to.have.length(1);
@@ -1055,7 +1055,7 @@
 
         try {
           runtime.flattenBuffer(arr, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be.true;
         }
@@ -1079,7 +1079,7 @@
 
         try {
           runtime.flattenBuffer(arr, context, 'text');
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be.true;
         }

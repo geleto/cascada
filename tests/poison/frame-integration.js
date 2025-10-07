@@ -3,104 +3,19 @@
 
   var expect;
   let runtime;
-  let createPoison;
-  let isPoisonError;
-  let isPoison;
-  let AsyncFrame;
+  let AsyncEnvironment;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     runtime = require('../../src/runtime');
-    createPoison = runtime.createPoison;
-    isPoison = runtime.isPoison;
-    isPoisonError = runtime.isPoisonError;
-    AsyncFrame = runtime.AsyncFrame;
+    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
   } else {
     expect = window.expect;
-    createPoison = nunjucks.runtime.createPoison;
-    isPoison = nunjucks.runtime.isPoison;
-    isPoisonError = nunjucks.runtime.isPoisonError;
-    AsyncFrame = nunjucks.runtime.AsyncFrame;
+    AsyncEnvironment = nunjucks.AsyncEnvironment;
   }
 
 
-  // Mock Environment for integration tests
-  class MockEnvironment {
-    constructor() {
-      this.frames = [];
-    }
 
-    renderTemplateString(template, context) {
-      // Mock template rendering that would use AsyncFrame
-      const frame = new AsyncFrame();
-
-      // Set up context variables
-      for (const [key, value] of Object.entries(context)) {
-        frame.set(key, value, true);
-      }
-
-      // Mock template processing that would trigger poison handling
-      return this.processTemplate(template, frame);
-    }
-
-    async processTemplate(template, frame) {
-      // Mock processing that simulates template rendering
-      if (template.includes('fetchData()')) {
-        const data = frame.lookup('fetchData');
-        if (typeof data === 'function') {
-          try {
-            const result = await data();
-            frame.set('data', result, true);
-          } catch (err) {
-            const poison = createPoison(err);
-            frame.set('data', poison, true);
-            throw new PoisonError(poison.errors);
-          }
-        }
-      }
-
-      if (template.includes('getCondition()')) {
-        const condition = frame.lookup('getCondition');
-        if (typeof condition === 'function') {
-          try {
-            const result = await condition();
-            if (isPoison(result)) {
-              // Poison the branch variables
-              frame.poisonBranchWrites(result, { x: 1 });
-              throw new PoisonError(result.errors);
-            }
-          } catch (err) {
-            if (isPoisonError(err)) {
-              frame.poisonBranchWrites(err, { x: 1 });
-              throw err;
-            }
-            throw err;
-          }
-        }
-      }
-
-      if (template.includes('outer()') && template.includes('inner()')) {
-        const outer = frame.lookup('outer');
-        const inner = frame.lookup('inner');
-
-        if (typeof outer === 'function' && typeof inner === 'function') {
-          try {
-            const a = await outer();
-            frame.set('a', a, true);
-
-            const b = await inner();
-            frame.set('b', b, true);
-          } catch (err) {
-            const poison = createPoison(err);
-            frame.set('b', poison, true);
-            throw new PoisonError(poison.errors);
-          }
-        }
-      }
-
-      return 'Template rendered successfully';
-    }
-  }
 
   // Mock PoisonError for testing
   class PoisonError extends Error {
@@ -115,7 +30,7 @@
     let env;
 
     beforeEach(() => {
-      env = new MockEnvironment();
+      env = new AsyncEnvironment();
     });
 
     it('should poison variable when async function fails', async () => {
@@ -132,9 +47,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Fetch failed');
+        expect(err.message).to.contain('Fetch failed');
       }
     });
 
@@ -156,9 +71,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Condition failed');
+        expect(err.message).to.contain('Condition failed');
       }
     });
 
@@ -180,9 +95,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Inner failed');
+        expect(err.message).to.contain('Inner failed');
       }
     });
 
@@ -208,9 +123,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Operation failed');
+        expect(err.message).to.contain('Operation failed');
       }
     });
 
@@ -229,9 +144,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Cannot fetch items');
+        expect(err.message).to.contain('Cannot fetch items');
       }
     });
 
@@ -252,9 +167,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Data fetch failed');
+        expect(err.message).to.contain('Data fetch failed');
       }
     });
 
@@ -271,9 +186,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Value fetch failed');
+        expect(err.message).to.contain('Value fetch failed');
       }
     });
 
@@ -295,9 +210,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Nested failure');
+        expect(err.message).to.contain('Nested failure');
       }
     });
 
@@ -320,9 +235,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Condition evaluation failed');
+        expect(err.message).to.contain('Condition evaluation failed');
       }
     });
 
@@ -339,9 +254,9 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Number fetch failed');
+        expect(err.message).to.contain('Number fetch failed');
       }
     });
 
@@ -358,12 +273,12 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown');
+        expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.include('Object fetch failed');
+        expect(err.message).to.contain('Object fetch failed');
       }
     });
   });
 
-});
+})();
 

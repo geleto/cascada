@@ -223,7 +223,7 @@
             mockContext,
             [argPromise, 'normalArg']
           );
-          expect.fail('Should have thrown PoisonError');
+          expect().fail('Should have thrown PoisonError');
         } catch (err) {
           // Must collect BOTH errors
           expect(runtime.isPoisonError(err)).to.be(true);
@@ -304,7 +304,7 @@
             mockContext,
             [argPromise1, argPromise2, 'normalArg']
           );
-          expect.fail('Should have thrown PoisonError');
+          expect().fail('Should have thrown PoisonError');
         } catch (err) {
           expect(runtime.isPoisonError(err)).to.be(true);
           expect(err.errors).to.have.length(3);
@@ -326,7 +326,7 @@
             mockContext,
             [poisonArg, rejectingArg, 'normalArg']
           );
-          expect.fail('Should have thrown PoisonError');
+          expect().fail('Should have thrown PoisonError');
         } catch (err) {
           expect(runtime.isPoisonError(err)).to.be(true);
           expect(err.errors).to.have.length(3);
@@ -346,7 +346,7 @@
             mockContext,
             [argPromise]
           );
-          expect.fail('Should have thrown PoisonError');
+          expect().fail('Should have thrown PoisonError');
         } catch (err) {
           expect(runtime.isPoisonError(err)).to.be(true);
           expect(err.errors).to.have.length(1);
@@ -380,7 +380,7 @@
             frame,
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0]).to.equal(err);
@@ -401,7 +401,7 @@
             frame,
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
 
@@ -422,7 +422,7 @@
             frame,
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
 
@@ -444,7 +444,7 @@
             frame,
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
         }
@@ -464,7 +464,7 @@
             frame,
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
 
@@ -485,7 +485,7 @@
             frame,
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
 
@@ -550,7 +550,7 @@
 
         try {
           await result;
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0].message).to.equal('Test');
@@ -563,7 +563,7 @@
 
         try {
           await runtime.suppressValueAsync(promise, false);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0].message).to.equal('Async error');
@@ -580,7 +580,7 @@
 
         try {
           await runtime.suppressValueAsync(arr, false);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors).to.have.length(2);
@@ -598,7 +598,7 @@
 
         try {
           await runtime.suppressValueAsync(arr, false);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0].message).to.equal('Rejected');
@@ -611,7 +611,7 @@
 
         try {
           await runtime.suppressValueAsync(promise, false);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0].message).to.equal('Resolved poison');
@@ -669,7 +669,7 @@
 
         try {
           await result;
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0].message).to.equal('Test');
@@ -679,7 +679,7 @@
       it('should throw for null values', () => {
         try {
           runtime.ensureDefinedAsync(null, 1, 1, mockContext);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(err.message).to.contain('null or undefined');
         }
@@ -688,7 +688,7 @@
       it('should throw for undefined values', () => {
         try {
           runtime.ensureDefinedAsync(undefined, 1, 1, mockContext);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(err.message).to.contain('null or undefined');
         }
@@ -700,7 +700,7 @@
 
         try {
           await runtime.ensureDefinedAsync(promise, 1, 1, mockContext);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0].message).to.equal('Async');
@@ -715,7 +715,7 @@
 
         try {
           await runtime.ensureDefinedAsync(arr, 1, 1, mockContext);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors).to.have.length(2);
@@ -739,7 +739,7 @@
 
         try {
           await runtime.ensureDefinedAsync(promise, 1, 1, mockContext);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(err.message).to.contain('null or undefined');
         }
@@ -757,7 +757,7 @@
 
         try {
           await runtime.ensureDefinedAsync(promise, 1, 1, mockContext);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0].message).to.equal('Promise rejection');
@@ -816,7 +816,7 @@
 
         try {
           await runtime.suppressValueAsync(arr, false);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors).to.have.length(3);
@@ -840,7 +840,7 @@
 
         try {
           await runtime.suppressValueAsync(arr, false);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors).to.have.length(3);

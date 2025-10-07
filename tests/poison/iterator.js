@@ -146,7 +146,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors).to.have.length(2);
@@ -177,7 +177,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors[0].message).to.equal('Body failed at iteration 2');
@@ -204,7 +204,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           // Should have processed all 3 items
           expect(iterationCount).to.equal(2); // Poison skipped body execution
@@ -231,7 +231,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           // Should have both errors
@@ -259,7 +259,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors[0].message).to.equal('Body returned poison');
@@ -284,7 +284,7 @@
             ['a', 'b'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors[0].message).to.equal('Array poisoned');
@@ -309,9 +309,9 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Error 1');
+          expect(err.message).to.contain('Error 1');
         }
       });
 
@@ -335,9 +335,9 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Failed at index 1');
+          expect(err.message).to.contain('Failed at index 1');
         }
       });
 
@@ -363,11 +363,11 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           // Should have processed valid values
-          expect(processed).to.include(1);
-          expect(processed).to.include(3);
+          expect(processed).to.contain(1);
+          expect(processed).to.contain(3);
           expect(isPoisonError(err) || err.message.includes('Middle error')).to.be.true;
         }
       });
@@ -393,7 +393,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           // Should have collected multiple errors
           expect(err.message).to.match(/Failed at index (1|3)/);
@@ -420,7 +420,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(err.message).to.match(/(Poison error|Async error)/);
         }
@@ -488,7 +488,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors).to.have.length(1);
@@ -512,7 +512,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors).to.have.length(3);
@@ -540,7 +540,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors).to.have.length(1);
@@ -564,7 +564,7 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors).to.have.length(3);
@@ -684,12 +684,12 @@
             ['item'],
             { lineno: 1, colno: 1 }
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Iterator failed');
+          expect(err.message).to.contain('Iterator failed');
         }
       });
     });
   });
-});
+})();
 

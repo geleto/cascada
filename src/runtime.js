@@ -2673,6 +2673,8 @@ module.exports = {
   inOperator: lib.inOperator,
   fromIterator,
   iterate,
+  iterateAsyncSequential,
+  iterateAsyncParallel,
   setLoopBindings,
   awaitSequenceLock,
   sequencedContextLookup

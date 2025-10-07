@@ -63,7 +63,7 @@
 
         try {
           await runtime.memberLookupAsync(promise, 'prop');
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
         }
@@ -77,7 +77,7 @@
 
         try {
           await runtime.memberLookupAsync(promise1, promise2);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors).to.have.length(2);
@@ -89,7 +89,7 @@
 
         try {
           await runtime.memberLookupAsync(promise, 'prop');
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           expect(err.errors[0].message).to.equal('Rejected');
@@ -146,7 +146,7 @@
             'prop',
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
         }
@@ -162,7 +162,7 @@
             'prop',
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
 
@@ -182,7 +182,7 @@
             'prop',
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
 
@@ -201,7 +201,7 @@
             'prop',
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
 
@@ -250,7 +250,7 @@
             'myVar',
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
         }
@@ -267,7 +267,7 @@
             'myVar',
             '!lockKey'
           );
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
 
@@ -315,7 +315,7 @@
 
         try {
           await runtime.memberLookupAsync(objPromise, valPromise);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be.true;
           // Should contain both errors
@@ -326,4 +326,4 @@
       });
     });
   });
-});
+})();

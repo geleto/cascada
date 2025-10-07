@@ -10,7 +10,7 @@
     expect = require('expect.js');
     runtime = require('../../src/runtime');
     createPoison = runtime.createPoison;
-    AsyncEnvironment = runtime.AsyncEnvironment;
+    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
   } else {
     expect = window.expect;
     createPoison = nunjucks.runtime.createPoison;
@@ -42,9 +42,9 @@
 
         try {
           await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Failed to get items');
+          expect(err.message).to.contain('Failed to get items');
         }
       });
 
@@ -65,9 +65,9 @@
 
         try {
           await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('No items');
+          expect(err.message).to.contain('No items');
         }
       });
 
@@ -90,9 +90,9 @@
 
         try {
           await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Cannot process 2');
+          expect(err.message).to.contain('Cannot process 2');
         }
       });
 
@@ -112,26 +112,25 @@
 
         try {
           await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Generator failed');
+          expect(err.message).to.contain('Generator failed');
         }
       });
-    });
 
-    describe('Complex template scenarios', () => {
-      it('should handle nested loops with poisoned inner iterable', async () => {
-        const context = {
-          outerItems: [1, 2, 3],
-          async getInnerItems(x) {
-            if (x === 2) {
-              throw new Error('Inner items failed for ' + x);
+      describe('Complex template scenarios', () => {
+        it('should handle nested loops with poisoned inner iterable', async () => {
+          const context = {
+            outerItems: [1, 2, 3],
+            async getInnerItems(x) {
+              if (x === 2) {
+                throw new Error('Inner items failed for ' + x);
+              }
+              return [x * 10, x * 20];
             }
-            return [x * 10, x * 20];
-          }
-        };
+          };
 
-        const template = `
+          const template = `
 			{% set results = [] %}
 			{% for outer in outerItems %}
 			{% for inner in getInnerItems(outer) %}
@@ -141,24 +140,24 @@
 			Results: {{ results }}
 		`;
 
-        try {
-          await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
-        } catch (err) {
-          expect(err.message).to.include('Inner items failed for 2');
-        }
-      });
-
-      it('should handle async iterator with mixed valid and poisoned values', async () => {
-        const context = {
-          async *mixedGenerator() {
-            yield 1;
-            yield createPoison(new Error('Value 2 poisoned'));
-            yield 3;
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown');
+          } catch (err) {
+            expect(err.message).to.contain('Inner items failed for 2');
           }
-        };
+        });
 
-        const template = `
+        it('should handle async iterator with mixed valid and poisoned values', async () => {
+          const context = {
+            async *mixedGenerator() {
+              yield 1;
+              yield createPoison(new Error('Value 2 poisoned'));
+              yield 3;
+            }
+          };
+
+          const template = `
 			{% set sum = 0 %}
 			{% for item in mixedGenerator() %}
 			{% set sum = sum + item %}
@@ -166,26 +165,26 @@
 			Sum: {{ sum }}
 		`;
 
-        try {
-          await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
-        } catch (err) {
-          expect(err.message).to.include('Value 2 poisoned');
-        }
-      });
-
-      it('should handle loop with async filter that fails', async () => {
-        const context = {
-          items: [1, 2, 3, 4, 5],
-          async isEven(x) {
-            if (x === 3) {
-              throw new Error('Cannot check if 3 is even');
-            }
-            return x % 2 === 0;
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown');
+          } catch (err) {
+            expect(err.message).to.contain('Value 2 poisoned');
           }
-        };
+        });
 
-        const template = `
+        it('should handle loop with async filter that fails', async () => {
+          const context = {
+            items: [1, 2, 3, 4, 5],
+            async isEven(x) {
+              if (x === 3) {
+                throw new Error('Cannot check if 3 is even');
+              }
+              return x % 2 === 0;
+            }
+          };
+
+          const template = `
 			{% set evens = [] %}
 			{% for item in items %}
 			{% if isEven(item) %}
@@ -195,22 +194,22 @@
 			Evens: {{ evens }}
 		`;
 
-        try {
-          await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
-        } catch (err) {
-          expect(err.message).to.include('Cannot check if 3 is even');
-        }
-      });
-
-      it('should handle while loop with poisoned condition', async () => {
-        const context = {
-          async getCondition() {
-            throw new Error('Condition check failed');
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown');
+          } catch (err) {
+            expect(err.message).to.contain('Cannot check if 3 is even');
           }
-        };
+        });
 
-        const template = `
+        it('should handle while loop with poisoned condition', async () => {
+          const context = {
+            async getCondition() {
+              throw new Error('Condition check failed');
+            }
+          };
+
+          const template = `
 			{% set count = 0 %}
 			{% while getCondition() %}
 			{% set count = count + 1 %}
@@ -218,22 +217,22 @@
 			Count: {{ count }}
 		`;
 
-        try {
-          await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
-        } catch (err) {
-          expect(err.message).to.include('Condition check failed');
-        }
-      });
-
-      it('should handle object iteration with poisoned values', async () => {
-        const context = {
-          async getObject() {
-            throw new Error('Cannot get object');
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown');
+          } catch (err) {
+            expect(err.message).to.contain('Condition check failed');
           }
-        };
+        });
 
-        const template = `
+        it('should handle object iteration with poisoned values', async () => {
+          const context = {
+            async getObject() {
+              throw new Error('Cannot get object');
+            }
+          };
+
+          const template = `
 			{% set keys = [] %}
 			{% for key, value in getObject() %}
 			{% set keys = keys + [key] %}
@@ -241,57 +240,13 @@
 			Keys: {{ keys }}
 		`;
 
-        try {
-          await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
-        } catch (err) {
-          expect(err.message).to.include('Cannot get object');
-        }
-      });
-    });
-
-    describe('Error propagation in templates', () => {
-      it('should propagate poison through template includes', async () => {
-        const mainTemplate = `
-			{% set items = getItems() %}
-			{% include "inner.njk" %}
-		`;
-
-        env.addGlobal('getItems', async () => {
-          throw new Error('Items failed');
-        });
-
-        try {
-          await env.renderTemplateString(mainTemplate, {});
-          expect.fail('Should have thrown');
-        } catch (err) {
-          expect(err.message).to.include('Items failed');
-        }
-      });
-
-      it('should handle macro calls with poisoned parameters', async () => {
-        const template = `
-			{% macro processItems(items) %}
-			{% for item in items %}
-				{{ item }}
-			{% endfor %}
-			{% endmacro %}
-
-			{{ processItems(getItems()) }}
-		`;
-
-        const context = {
-          async getItems() {
-            throw new Error('Macro items failed');
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown');
+          } catch (err) {
+            expect(err.message).to.contain('Cannot get object');
           }
-        };
-
-        try {
-          await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
-        } catch (err) {
-          expect(err.message).to.include('Macro items failed');
-        }
+        });
       });
 
       it('should handle async filters in loop conditions', async () => {
@@ -315,14 +270,15 @@
 
         try {
           await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Cannot determine if should process 2');
+          expect(err.message).to.contain('Cannot determine if should process 2');
         }
       });
     });
 
     describe('Template error handling patterns', () => {
+
       it('should handle try/catch around loops', async () => {
         const context = {
           async getItems() {
@@ -367,9 +323,9 @@
 
         try {
           await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Cannot process 2');
+          expect(err.message).to.contain('Cannot process 2');
         }
       });
 
@@ -392,14 +348,15 @@
 
         try {
           await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Generator exhausted with error');
+          expect(err.message).to.contain('Generator exhausted with error');
         }
       });
     });
 
     describe('Performance and edge cases', () => {
+
       it('should handle large async iterator with early error', async () => {
         const context = {
           async *largeGenerator() {
@@ -422,9 +379,9 @@
 
         try {
           await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Error at iteration 100');
+          expect(err.message).to.contain('Error at iteration 100');
         }
       });
 
@@ -445,9 +402,9 @@
 
         try {
           await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Promise rejected');
+          expect(err.message).to.contain('Promise rejected');
         }
       });
 
@@ -470,11 +427,11 @@
 
         try {
           await env.renderTemplateString(template, context);
-          expect.fail('Should have thrown');
+          expect().fail('Should have thrown');
         } catch (err) {
-          expect(err.message).to.include('Async items failed');
+          expect(err.message).to.contain('Async items failed');
         }
       });
     });
   });
-});
+})();

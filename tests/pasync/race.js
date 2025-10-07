@@ -1232,7 +1232,7 @@
 
       try {
         await env.renderTemplateString(template, context);
-        expect.fail('Should have thrown an error');
+        expect().fail('Should have thrown an error');
       } catch (error) {
         expect(error.message).to.contain('Test Error');
       }
