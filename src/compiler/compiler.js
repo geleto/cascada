@@ -807,7 +807,7 @@ class Compiler extends CompilerBase {
     this.emit(`], ${sequential}, ${node.isAsync}, ${errorContextObj});`);
 
     // End buffer block for the node (using node.arr position)
-    if (iteratorCompiler) {
+    if (iteratorCompiler || bodyWriteCounts) {
       // condition and loop body counts are a single unit of work and
       // are isolated to not affect the outer frame write counts
       // All writes will be released by finalizeLoopWrites
