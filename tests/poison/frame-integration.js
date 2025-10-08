@@ -2,29 +2,16 @@
   'use strict';
 
   var expect;
-  let runtime;
   let AsyncEnvironment;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    runtime = require('../../src/runtime');
     AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
   }
 
-
-
-
-  // Mock PoisonError for testing
-  class PoisonError extends Error {
-    constructor(errors) {
-      super('PoisonError');
-      this.errors = errors;
-      this[Symbol.for('cascada.poisonError')] = true;
-    }
-  }
 
   describe('Frame Poison Integration with Templates', () => {
     let env;
