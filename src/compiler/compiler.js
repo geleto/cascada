@@ -461,10 +461,25 @@ class Compiler extends CompilerBase {
 
     let trueBranchWriteCounts, falseBranchWriteCounts;
     let trueBranchCodePos;
+    let poisonCheckPos, catchPoisonPos;
 
-    this.emit('if(');
-    this._compileAwaitedExpression(node.cond, frame, false);
-    this.emit('){');
+    if (this.asyncMode) {
+      // Async mode: Add try-catch wrapper for poison condition handling
+      this.emit('try {');
+      this.emit('const condResult = ');
+      this._compileAwaitedExpression(node.cond, frame, false);
+      this.emit(';');
+      this.emit('');
+      this.emit('if (runtime.isPoison(condResult)) {');
+      poisonCheckPos = this.codebuf.length;
+      this.emit('');
+      this.emit('} else if (condResult) {');
+    } else {
+      // Sync mode: unchanged
+      this.emit('if(');
+      this._compileAwaitedExpression(node.cond, frame, false);
+      this.emit('){');
+    }
 
     if (this.asyncMode) {
       trueBranchCodePos = this.codebuf.length;
@@ -518,6 +533,23 @@ class Compiler extends CompilerBase {
     if (falseBranchWriteCounts) {
       //skip the false branch writes in the true branch code
       this.emit.insertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
+    }
+
+    if (this.asyncMode) {
+      // Add catch block to poison variables when condition fails
+      this.emit('} catch (e) {');
+      catchPoisonPos = this.codebuf.length;
+      this.emit('');
+      this.emit('}');  // No re-throw - execution continues with poisoned vars
+
+      // Fill in the poison handling code now that we have write counts
+      const combinedCounts = Object.assign({}, trueBranchWriteCounts || {}, falseBranchWriteCounts || {});
+
+      if (Object.keys(combinedCounts).length > 0) {
+        // Insert poison handling at the saved positions
+        this.emit.insertLine(poisonCheckPos, `  frame.poisonBranchWrites(condResult, ${JSON.stringify(combinedCounts)});`);
+        this.emit.insertLine(catchPoisonPos, `    frame.poisonBranchWrites(e, ${JSON.stringify(combinedCounts)});`);
+      }
     }
 
     // Use node.cond (passed earlier) for the end block
@@ -779,8 +811,12 @@ class Compiler extends CompilerBase {
       // condition and loop body counts are a single unit of work and
       // are isolated to not affect the outer frame write counts
       // All writes will be released by finalizeLoopWrites
+      // Cap the outer frame's writeCounts to 1 per variable
+      // The loop as a whole counts as 1 write to the parent, regardless of iterations
+      // The capping happens per loop frame before popping, and the parent naturally accumulates these capped counts.
       frame.writeCounts = this.async.countsTo1(frame.writeCounts);
-    }// else - all write counts are from the loop body and are 1 anyway (counts are counted inside (>1) and outside (=1))
+    }
+    // else - all write counts are from the loop body and are 1 anyway (counts are counted inside (>1) and outside (=1))
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
   }
 
