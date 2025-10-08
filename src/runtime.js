@@ -542,13 +542,24 @@ class AsyncFrame extends Frame {
     if (!finalWriteCounts) {
       return; // No parent or nothing to finalize
     }
+
+    // When a sequential loop finishes, it's considered a single unit of work.
+    // We must decrement the counter on its *own frame* to signal its completion.
+    // This, in turn, will trigger the resolution of its promise and propagate the
+    // completion signal upwards to its parent frame via _countdownAndResolveAsyncWrites.
     for (const varName in finalWriteCounts) {
+      // The value in finalWriteCounts doesn't matter, just the variable name.
+      // We signal that the loop's entire influence on this variable is now complete.
       if (this.writeCounters && varName in this.writeCounters) {
         // Use the standard countdown on the parent.
         // This will trigger promise resolution if it hits zero there.
         this._countdownAndResolveAsyncWrites(varName, 1);
       } else {
-        throw new Error(`Loop finalized write for ${varName}, but parent has no counter.`);
+        // This path indicates a compiler bug. The compiler generated
+        // `bodyWriteCounts` with a variable that it failed to register on the
+        // loop's own async frame. We must throw an error, because silently
+        // ignoring this would lead to a deadlock.
+        throw new Error(`Loop finalized write for "${varName}", but the loop's own frame has no counter for it.`);
       }
     }
   }
@@ -2353,13 +2364,16 @@ async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loop
     }
   }
 
-  if (bodyWriteCounts && sequential) {
-    // for nested loops, only the outer loop should finalize the writes
-    loopFrame.finalizeLoopWrites(bodyWriteCounts);
-  }
-
   if (!didIterate && loopElse) {
     await loopElse();//just in case
+  }
+
+  if (bodyWriteCounts && sequential) {
+    // For any sequential loop with writes, we must finalize it. This decrements
+    // the loop's own frame counter, signaling its completion as a single
+    // unit of work. This must happen regardless of whether the loop iterated
+    // or the else block ran, to prevent deadlocks.
+    loopFrame.finalizeLoopWrites(bodyWriteCounts);
   }
 }
 
