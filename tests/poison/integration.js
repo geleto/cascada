@@ -47,10 +47,6 @@
   });
 
   describe('Error propagation in templates', () => {
-    let env;
-    beforeEach(() => {
-      env = new AsyncEnvironment();
-    });
 
     it('should propagate poison through template includes', async () => {
       const loader = new StringLoader();
@@ -430,7 +426,7 @@
       const template = `
         {% set x = 0 %}
         {% set y = 0 %}
-        {% if poisonCond %}
+        {% if poisonCond() %}
           {% set x = 10 %}
         {% else %}
           {% set y = 20 %}
