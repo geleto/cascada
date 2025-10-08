@@ -110,6 +110,42 @@ class Compiler extends CompilerBase {
     return null;
   }
 
+  /**
+   * Recursively collect all output handlers written to within a node's subtree.
+   * Used to determine which handlers need poison markers when branch is skipped.
+   *
+   * @param {Node} node - AST node to analyze
+   * @returns {Set<string>} Set of handler names ('text', 'data', etc.)
+   */
+  _collectBranchHandlers(node) {
+    const handlers = new Set();
+
+    const traverse = (n) => {
+      if (!n) return;
+
+      // Case 1: Regular output {{ ... }} uses implicit 'text' handler
+      if (n instanceof nodes.Output) {
+        handlers.add('text');
+      }
+
+      // Case 2: OutputCommand @handler.method() or @handler()
+      if (n instanceof nodes.OutputCommand) {
+        const staticPath = this._extractStaticPath(n.call.name);
+        if (staticPath && staticPath.length > 0) {
+          const handlerName = staticPath[0]; // First segment is always handler name
+          handlers.add(handlerName);
+        }
+      }
+
+      // Recurse into all children
+      const children = this._getImmediateChildren(n);
+      children.forEach(child => traverse(child));
+    };
+
+    traverse(node);
+    return handlers;
+  }
+
   _compileChildren(node, frame) {
     node.children.forEach((child) => {
       this.compile(child, frame);
@@ -530,6 +566,18 @@ class Compiler extends CompilerBase {
 
     this.emit('}');
 
+    // Collect output handlers from both branches (for async mode poison handling)
+    let trueBranchHandlers, falseBranchHandlers, allHandlers;
+    if (this.asyncMode) {
+      trueBranchHandlers = this._collectBranchHandlers(node.body);
+      falseBranchHandlers = node.else_ ?
+        this._collectBranchHandlers(node.else_) :
+        new Set();
+
+      // Combine handlers - both branches might write to same handlers
+      allHandlers = new Set([...trueBranchHandlers, ...falseBranchHandlers]);
+    }
+
     if (falseBranchWriteCounts) {
       //skip the false branch writes in the true branch code
       this.emit.insertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
@@ -542,13 +590,30 @@ class Compiler extends CompilerBase {
       this.emit('');
       this.emit('}');  // No re-throw - execution continues with poisoned vars
 
-      // Fill in the poison handling code now that we have write counts
+      // Fill in the poison handling code now that we have write counts and handlers
       const combinedCounts = Object.assign({}, trueBranchWriteCounts || {}, falseBranchWriteCounts || {});
 
-      if (Object.keys(combinedCounts).length > 0) {
-        // Insert poison handling at the saved positions
-        this.emit.insertLine(poisonCheckPos, `  frame.poisonBranchWrites(condResult, ${JSON.stringify(combinedCounts)});`);
-        this.emit.insertLine(catchPoisonPos, `    frame.poisonBranchWrites(e, ${JSON.stringify(combinedCounts)});`);
+      // Poison both variables and handlers when condition fails
+      const hasVariables = Object.keys(combinedCounts).length > 0;
+      const hasHandlers = allHandlers.size > 0;
+
+      if (hasVariables || hasHandlers) {
+        // Variable poisoning
+        if (hasVariables) {
+          this.emit.insertLine(poisonCheckPos,
+            `  frame.poisonBranchWrites(condResult, ${JSON.stringify(combinedCounts)});`);
+          this.emit.insertLine(catchPoisonPos,
+            `    frame.poisonBranchWrites(e, ${JSON.stringify(combinedCounts)});`);
+        }
+
+        // Handler (buffer) poisoning
+        if (hasHandlers) {
+          const handlerArray = Array.from(allHandlers);
+          this.emit.insertLine(poisonCheckPos,
+            `  runtime.addPoisonMarkersToBuffer(${this.buffer}, condResult, ${JSON.stringify(handlerArray)});`);
+          this.emit.insertLine(catchPoisonPos,
+            `    runtime.addPoisonMarkersToBuffer(${this.buffer}, e, ${JSON.stringify(handlerArray)});`);
+        }
       }
     }
 

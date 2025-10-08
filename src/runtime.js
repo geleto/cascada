@@ -157,6 +157,33 @@ async function collectErrors(values) {
   return deduplicateErrors(errors);
 }
 
+/**
+ * Add poison markers to output buffer for handlers that would have been written
+ * in a branch that wasn't executed due to poisoned condition.
+ *
+ * When a condition evaluates to poison (error), branches aren't executed but would
+ * have written to output handlers. This function adds markers to the buffer so that
+ * flattenBuffer can collect these errors.
+ *
+ * @param {Array} buffer - The output buffer array to add markers to
+ * @param {PoisonedValue|Error} error - The poison value or error from failed condition
+ * @param {Array<string>} handlerNames - Names of handlers (e.g., ['text', 'data'])
+ */
+function addPoisonMarkersToBuffer(buffer, error, handlerNames) {
+  const poison = isPoison(error) ? error : createPoison(error);
+
+  // Add one marker per handler that would have been written to
+  for (const handlerName of handlerNames) {
+    const marker = {
+      __cascadaPoisonMarker: true,  // Flag for detection in flattenBuffer
+      errors: poison.errors,         // Array of Error objects to collect
+      handler: handlerName,          // Which handler was intended (for debugging)
+    };
+
+    buffer.push(marker);
+  }
+}
+
 // Frames keep track of scoping both at compile-time and run-time so
 // we know how to access variables. Block tags can introduce special
 // variables, for example.
@@ -1422,9 +1449,20 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
   }
 
   function processItem(item) {
+    // Check for poison marker FIRST (before any other processing)
+    // Markers are objects with a special flag indicating poisoned handler output
+    if (item && typeof item === 'object' && item.__cascadaPoisonMarker === true) {
+      // This marker indicates a handler would have been written to if condition succeeded
+      // Collect the errors from the marker
+      if (item.errors && Array.isArray(item.errors)) {
+        collectedErrors.push(...item.errors);
+      }
+      return; // Marker is consumed, don't process further
+    }
+
     if (item === null || item === undefined) return;
 
-    // Check for poison - collect errors and continue processing
+    // Check for regular poison value
     if (isPoison(item)) {
       collectedErrors.push(...item.errors);
       return; // Continue to find all errors
@@ -2642,6 +2680,7 @@ module.exports = {
   isPoison,
   isPoisonError,
   collectErrors,
+  addPoisonMarkersToBuffer,
 
   makeMacro,
   makeKeywordArgs,
