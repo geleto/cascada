@@ -892,24 +892,6 @@ class CompilerBase extends Obj {
         return;
       }
 
-      // "Let it Throw" strategy for LookupVal in scriptMode
-      if (node instanceof nodes.LookupVal && this.scriptMode) {
-        const resultId = this._tmpid();
-        const errorContextJson = JSON.stringify(this._createErrorContext(node));
-        this.emit.line(`let ${resultId};`);
-        this.emit.line(`try {`);
-        this.emit.line(`  ${resultId} = `);
-        this.compile(node, frame); // This will emit runtime.memberLookupScriptAsync(...)
-        this.emit.line(';');
-        this.emit.line(`} catch (e) {`);
-        this.emit.line(`  const ctx = ${errorContextJson};`);
-        this.emit.line(`  const err = runtime.handleError(e, ctx.lineno, ctx.colno, ctx.errorContextString, context.path);`);
-        this.emit.line(`  ${resultId} = runtime.createPoison(err);`);
-        this.emit.line(`}`);
-        this.emit(resultId); // Emit the temporary variable as the expression's result
-        return; // Stop further processing for this node
-      }
-
       if (this.emit.asyncClosureDepth === 0 && !forceWrap) {
         // some expressions compile await (@todo - check if so) so they need be in async context
         this.fail('All expressions must be wrapped in an async IIFE', node.lineno, node.colno, node);
