@@ -1251,9 +1251,9 @@ class Compiler extends CompilerBase {
         this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${name}")) {`);
         this.emit.line(`    return exported["${name}"];`);
         this.emit.line(`  } else {`);
-        this.emit.line(`    var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}"); err.Update(context.path); throw err;`);
+        this.emit.line(`    var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err;`);
         this.emit.line(`  }`);
-        this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}"); err.Update(context.path); throw err; } })();`);
+        this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err; } })();`);
 
         frame.set(alias, id);
         this._addDeclaredVar(frame, alias);
@@ -1293,7 +1293,7 @@ class Compiler extends CompilerBase {
         this.emit.line(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
         this.emit.line(`${id} = ${importedId}.${name};`);
         this.emit.line('} else {');
-        this.emit.line(`var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}"); err.Update(context.path); cb(err); return;`);
+        this.emit.line(`var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); cb(err); return;`);
         this.emit.line('}');
 
         frame.set(alias, id);
@@ -1676,8 +1676,7 @@ class Compiler extends CompilerBase {
       this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
-      this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}");`); // Store the handled error
-      this.emit.line('  err.Update(context.path);'); // Use context.path to update the error message
+      this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`); // Store and update the handled error
       this.emit.line('  cb(err);'); // Pass the updated error to the callback
       this.emit.line('});');
       this.emit.line('} else {');

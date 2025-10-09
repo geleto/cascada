@@ -404,7 +404,7 @@ class CompilerBase extends Obj {
       // Resolve the left-hand side and arguments (if any)
       this._compileAggregate(mergedNode, frame, '[', ']', true, true, function (args) {
         this.emit.line(`  const testFunc = ${testFunc};`);
-        this.emit.line(`  if (!testFunc) { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}"); err.Update(context.path); throw err; }`);
+        this.emit.line(`  if (!testFunc) { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}", context.path); throw err; }`);
         this.emit.line(`  const result = await testFunc.call(context, ${args}[0]`);
         if (node.right.args && node.right.args.children.length > 0) {
           this.emit.line(`, ...${args}.slice(1)`);
@@ -419,7 +419,7 @@ class CompilerBase extends Obj {
         this.emit(', ');
         this.compile(node.right.args, frame);
       }
-      this.emit(`) : (() => { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}"); err.Update(context.path); throw err; })())`);
+      this.emit(`) : (() => { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}", context.path); throw err; })())`);
       this.emit(' === true');
     }
   }

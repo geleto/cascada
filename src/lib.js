@@ -27,6 +27,32 @@ function lookupEscape(ch) {
 }
 
 function _prettifyError(path, withInternals, err) {
+  // Symbol for PoisonError detection
+  const POISON_ERROR_KEY = typeof Symbol !== 'undefined'
+    ? Symbol.for('cascada.poisonError')
+    : '__cascadaPoisonErrorMarker';
+
+  // Check if this is a PoisonError (contains multiple errors)
+  const isPoisonError = err != null && err[POISON_ERROR_KEY] === true;
+
+  if (isPoisonError) {
+    // For PoisonError, update path on all contained errors
+    if (err.errors && Array.isArray(err.errors)) {
+      err.errors = err.errors.map(e => {
+        if (e instanceof exports.TemplateError) {
+          e.Update(path);
+          return e;
+        } else {
+          const wrappedErr = new exports.TemplateError(e);
+          wrappedErr.Update(path);
+          return wrappedErr;
+        }
+      });
+    }
+    return err; // Return PoisonError with updated errors
+  }
+
+  // Regular error handling
   if (!err.Update) {
     // not one of ours, cast it
     err = new exports.TemplateError(err);

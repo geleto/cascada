@@ -960,14 +960,13 @@ async function _suppressValueAsyncComplex(val, autoescape) {
 
 function ensureDefined(val, lineno, colno, context) {
   if (val === null || val === undefined) {
-    const err = new lib.TemplateError(
-      'attempted to output null or undefined value',
+    const err = handleError(
+      new Error('attempted to output null or undefined value'),
       lineno + 1,
-      colno + 1
+      colno + 1,
+      null,
+      context ? context.path : null
     );
-    if (context && context.path) {
-      err.Update(context.path);
-    }
     throw err;
   }
   return val;
@@ -1389,17 +1388,56 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     if (!Array.isArray(arr)) {
       return arr || '';
     }
-    return arr.reduce((acc, item) => {
-      if (Array.isArray(item)) {
-        // The `null` context indicates a recursive call for a simple sub-array.
-        return acc + flattenBuffer(item, null, null);
+
+    // Collect errors during fast path processing
+    const errors = [];
+
+    const result = arr.reduce((acc, item) => {
+      // Check for poison marker first
+      if (item && typeof item === 'object' && item.__cascadaPoisonMarker === true) {
+        if (item.errors && Array.isArray(item.errors)) {
+          errors.push(...item.errors);
+        }
+        return acc; // Marker consumed, don't add to output
       }
-      // A post-processing function, e.g. for SafeString
+
+      // Check for regular PoisonedValue
+      if (isPoison(item)) {
+        errors.push(...item.errors);
+        return acc; // Don't add poison to output
+      }
+
+      // Handle nested arrays (recursive call)
+      if (Array.isArray(item)) {
+        try {
+          return acc + flattenBuffer(item, null, null);
+        } catch (err) {
+          // Child array had poison errors
+          if (isPoisonError(err)) {
+            errors.push(...err.errors);
+          } else {
+            errors.push(err);
+          }
+          return acc;
+        }
+      }
+
+      // Handle post-processing functions (e.g., SafeString wrapper)
       if (typeof item === 'function') {
         return (item(acc) || '');
       }
+
+      // Regular value
       return acc + ((item !== null && item !== undefined) ? item : '');
     }, '');
+
+    // If any errors collected, throw them
+    if (errors.length > 0) {
+      const deduped = deduplicateErrors(errors);
+      throw new PoisonError(deduped);
+    }
+
+    return result;
   }
 
   // Script processing path with poison detection
@@ -1544,11 +1582,10 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
             const err1 = handleError(
               new Error(`Unknown command handler: ${handlerName}`),
               pos.lineno,
-              pos.colno
+              pos.colno,
+              null,
+              context ? context.path : null
             );
-            if (context && context.path) {
-              err1.Update(context.path);
-            }
             collectedErrors.push(err1);
             return;
           }
@@ -1563,11 +1600,10 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
                 const err2 = handleError(
                   new Error(`Cannot access property '${pathSegment}' on ${typeof targetObject} in handler '${handlerName}'`),
                   pos.lineno,
-                  pos.colno
+                  pos.colno,
+                  null,
+                  context ? context.path : null
                 );
-                if (context && context.path) {
-                  err2.Update(context.path);
-                }
                 collectedErrors.push(err2);
                 return;
               }
@@ -1589,29 +1625,24 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
               const err3 = handleError(
                 new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable`),
                 pos.lineno,
-                pos.colno
+                pos.colno,
+                null,
+                context ? context.path : null
               );
-              if (context && context.path) {
-                err3.Update(context.path);
-              }
               collectedErrors.push(err3);
             }
           } else {
             const err5 = handleError(
               new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`),
               pos.lineno,
-              pos.colno
+              pos.colno,
+              null,
+              context ? context.path : null
             );
-            if (context && context.path) {
-              err5.Update(context.path);
-            }
             collectedErrors.push(err5);
           }
         } catch (err) {
-          const wrappedErr = handleError(err, pos.lineno, pos.colno);
-          if (context && context.path) {
-            wrappedErr.Update(context.path);
-          }
+          const wrappedErr = handleError(err, pos.lineno, pos.colno, null, context ? context.path : null);
           collectedErrors.push(wrappedErr);
         }
       }
@@ -1985,11 +2016,52 @@ function contextOrFrameLookup(context, frame, name) {
     context.lookup(name);
 }
 
-function handleError(error, lineno, colno, errorContextString = null) {
+/**
+ * Handle errors by adding template position information and path context.
+ * Preserves PoisonError with multiple errors, adding path to each contained error.
+ *
+ * @param {Error} error - The error to handle
+ * @param {number} lineno - Line number where error occurred
+ * @param {number} colno - Column number where error occurred
+ * @param {string} errorContextString - Context string for error message
+ * @param {string} path - Template path (e.g., 'template.njk')
+ * @returns {Error} Processed error with position and path information
+ */
+function handleError(error, lineno, colno, errorContextString = null, path = null) {
+  // Special handling for PoisonError - preserve multiple errors
+  if (isPoisonError(error)) {
+    // Add path information to each contained error
+    if (path) {
+      error.errors = error.errors.map(err => {
+        if (err instanceof lib.TemplateError) {
+          // Already a TemplateError, just update path
+          err.Update(path);
+          return err;
+        } else {
+          // Wrap in TemplateError with position info
+          const wrappedErr = new lib.TemplateError(err, lineno, colno, errorContextString);
+          wrappedErr.Update(path);
+          return wrappedErr;
+        }
+      });
+    }
+    return error; // Return PoisonError with updated errors
+  }
+
+  // Regular error handling
   if (error.lineno) {
+    // Already has position info
+    if (path && typeof error.Update === 'function') {
+      error.Update(path);
+    }
     return error;
   } else {
-    return new lib.TemplateError(error, lineno, colno, errorContextString);
+    // Wrap in TemplateError
+    const wrappedError = new lib.TemplateError(error, lineno, colno, errorContextString);
+    if (path && typeof wrappedError.Update === 'function') {
+      wrappedError.Update(path);
+    }
+    return wrappedError;
   }
 }
 
@@ -2002,10 +2074,7 @@ function executeAsyncBlock(asyncFunc, astate, frame, cb, lineno, colno, context,
     promise.catch(err => {
       // This .catch() will now reliably run before the .finally() below.
       try {
-        const handledError = handleError(err, lineno, colno, errorContextString);
-        if (context) {
-          handledError.Update(context.path);
-        }
+        const handledError = handleError(err, lineno, colno, errorContextString, context ? context.path : null);
         cb(handledError);
       } catch (cbError) {
         console.error('FATAL: Error during Nunjucks error handling or callback:', cbError);
@@ -2022,10 +2091,7 @@ function executeAsyncBlock(asyncFunc, astate, frame, cb, lineno, colno, context,
   } catch (syncError) {
     // This catches synchronous errors that might happen before the promise is even created.
     // This can happen mostly due to compiler error, may remove it in the future
-    const handledError = handleError(syncError, lineno, colno, errorContextString);
-    if (context) {
-      handledError.Update(context.path);
-    }
+    const handledError = handleError(syncError, lineno, colno, errorContextString, context ? context.path : null);
     cb(handledError);
     astate.leaveAsyncBlock(); // Ensure cleanup even on sync failure.
   }
@@ -2310,8 +2376,7 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
   await lenPromise;
 
   if (firstError) {
-    const err = handleError(firstError, errorContext.lineno, errorContext.colno, errorContext.errorContextString);
-    err.Update(errorContext.path);
+    const err = handleError(firstError, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
     throw err;
   }
 

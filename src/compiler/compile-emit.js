@@ -89,12 +89,10 @@ module.exports = class CompileEmit {
     if (this.compiler.asyncMode) {
       // In async mode, use the static position from the node and handlePromise for internal errors
       // The top-level catch uses the function's start position as a fallback.
-      this.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}${node ? `, "${this.compiler._generateErrorContext(node)}"` : ''});`); // Store the handled error
-      this.line('  err.Update(context.path);'); // Use context.path to update the error message
+      this.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}${node ? `, "${this.compiler._generateErrorContext(node)}"` : ''}, context.path);`); // Store and update the handled error
       this.line('  cb(err);'); // Pass the updated error to the callback
     } else {
-      this.line(`  var err = runtime.handleError(e, lineno, colno${node ? `, "${this.compiler._generateErrorContext(node)}"` : ''});`); // Store the handled error
-      this.line('  err.Update(context.path);'); // Use context.path to update the error message
+      this.line(`  var err = runtime.handleError(e, lineno, colno${node ? `, "${this.compiler._generateErrorContext(node)}"` : ''}, context.path);`); // Store and update the handled error
       this.line('  cb(err);'); // Pass the updated error to the callback
     }
     //this.Line('  throw e;');//the returned promise should not resolve

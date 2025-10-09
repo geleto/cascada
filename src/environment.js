@@ -35,10 +35,7 @@ const noopTmplSrc = {
       try {
         cb(null, '');
       } catch (e) {
-        const err = handleError(e, null, null);
-        if (context && context.path) {
-          err.Update(context.path);
-        }
+        const err = handleError(e, null, null, null, context ? context.path : null);
         cb(err);
       }
     }
@@ -61,10 +58,7 @@ const noopTmplSrcAsync = {
           return ''; // A real template would return [], but '' works for flattenBuffer.
         }
       } catch (e) {
-        const err = handleError(e, null, null);
-        if (context && context.path) {
-          err.Update(context.path);
-        }
+        const err = handleError(e, null, null, null, context ? context.path : null);
         cb(err);
       }
     }
