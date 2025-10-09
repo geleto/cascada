@@ -65,20 +65,35 @@ class PoisonedValue {
 class PoisonError extends Error {
   constructor(errors) {
     const deduped = deduplicateErrors(errors);
-    const message = deduped.length === 1
-      ? deduped[0].message
-      : `Multiple errors occurred (${deduped.length}):\n` +
-        deduped.map((e, i) => `  ${i + 1}. ${e.message}`).join('\n');
 
-    super(message);
+    super();
     this.name = 'PoisonError';
     this.errors = deduped;
     this[POISON_ERROR_KEY] = true; // Marker for reliable detection
+  }
 
-    // Preserve stack from first error if available
-    if (deduped[0] && deduped[0].stack) {
-      this.stack = deduped[0].stack;
+  get message() {
+    const deduped = this.errors;
+    return deduped.length === 1
+      ? deduped[0].message
+      : `Multiple errors occurred (${deduped.length}):\n` +
+        deduped.map((e, i) => `  ${i + 1}. ${e.message}`).join('\n');
+  }
+
+  get stack() {
+    // Return stack only if all errors have the same stack
+    const stacks = this.errors
+      .map(e => e.stack)
+      .filter(Boolean); // Remove undefined/null stacks
+
+    if (stacks.length === 0) {
+      return super.stack; // Fallback to default Error stack
     }
+
+    const firstStack = stacks[0];
+    const allSame = stacks.every(stack => stack === firstStack);
+
+    return allSame ? firstStack : super.stack;
   }
 }
 
