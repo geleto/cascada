@@ -49,13 +49,59 @@ class CompilerBase extends Obj {
   // --- Core Utilities (Needed by Expressions) ---
 
   _generateErrorContext(node, positionNode) {
-    if (!node || !positionNode) return 'UnknownContext'; // Basic fallback
+    if (!node) return 'UnknownContext';
+    // Special case for OutputCommand for more descriptive errors
+    if (node.typename === 'OutputCommand' && node.call && node.call.name) {
+      const staticPath = this._extractStaticPath(node.call.name);
+      if (staticPath) {
+        return '@' + staticPath.join('.');
+      }
+    }
     const nodeType = node.typename || 'Node';
-    const posType = positionNode.typename || 'PosNode';
+    const posType = (positionNode && positionNode.typename) || 'PosNode';
     if (node === positionNode || nodeType === posType) {
       return nodeType;
     }
     return `${nodeType}(${posType})`;
+  }
+
+  _extractStaticPath(node) {
+    // Extract a static path from a node tree (e.g., Symbol -> LookupVal -> LookupVal)
+    // Returns array like ['handler', 'method'] or null if path is not static
+    if (!node) return null;
+
+    if (node.typename === 'Symbol') {
+      return [node.value];
+    }
+
+    if (node.typename === 'LookupVal') {
+      const targetPath = this._extractStaticPath(node.target);
+      if (!targetPath) return null;
+
+      // Only support static string lookups
+      if (node.val && node.val.typename === 'Literal' && typeof node.val.value === 'string') {
+        return [...targetPath, node.val.value];
+      }
+
+      // Symbol lookups
+      if (node.val && node.val.typename === 'Symbol') {
+        return [...targetPath, node.val.value];
+      }
+
+      return null;
+    }
+
+    return null;
+  }
+
+  _createErrorContext(node, positionNode) {
+    positionNode = positionNode || node;
+    return {
+      lineno: positionNode.lineno,
+      colno: positionNode.colno,
+      errorContextString: this._generateErrorContext(node, positionNode),
+      path: this.templateName // At runtime, context.path will be used
+    };
   }
 
   fail(msg, lineno, colno, node, positionNode) { // Added node and positionNode
@@ -515,6 +561,7 @@ class CompilerBase extends Obj {
         //multiple static path keys can be in the same block
         this.async.updateFrameWrites(frame, nodeStaticPathKey);
         // This will also release the lock by using `set` on the lock value decrementing writeCount:
+        const errorContextJson = JSON.stringify(this._createErrorContext(node));
         if (this.scriptMode) {
           this.emit(`runtime.sequencedMemberLookupScriptAsync(frame, (`);
         } else {
@@ -523,7 +570,7 @@ class CompilerBase extends Obj {
         this.compile(node.target, frame); // Mark target as part of a call path
         this.emit('),');
         this.compile(node.val, frame); // Compile key expression
-        this.emit(`, ${JSON.stringify(nodeStaticPathKey)})`); // Pass the key
+        this.emit(`, ${JSON.stringify(nodeStaticPathKey)}, ${errorContextJson})`); // Pass the key and errorContext
         return;
       }
     }
@@ -532,7 +579,16 @@ class CompilerBase extends Obj {
     if (this.scriptMode) {
       this.emit(`runtime.memberLookupScript${node.isAsync ? 'Async' : ''}((`);
     } else {
-      this.emit(`runtime.memberLookup${node.isAsync ? 'Async' : ''}((`);
+      if (node.isAsync) {
+        const errorContextJson = JSON.stringify(this._createErrorContext(node));
+        this.emit(`runtime.memberLookupAsync((`);
+        this.compile(node.target, frame); // Mark target as part of a call path
+        this.emit('),');
+        this.compile(node.val, frame);
+        this.emit(`, ${errorContextJson})`);
+        return;
+      }
+      this.emit(`runtime.memberLookup((`);
     }
     this.compile(node.target, frame); // Mark target as part of a call path
     this.emit('),');
@@ -572,10 +628,11 @@ class CompilerBase extends Obj {
           children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
         };
         this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
+          const errorContextJson = JSON.stringify(this._createErrorContext(node));
           if (!sequenceLockKey) {
-            this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1));`);
+            this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson});`);
           } else {
-            this.emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}");`);
+            this.emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}", ${errorContextJson});`);
           }
         });
       } else {
@@ -586,9 +643,10 @@ class CompilerBase extends Obj {
         // {{ asyncFunc(arg1, arg2) }}
         // Function name is not async, so resolve only the arguments.
         this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
+          const errorContextJson = JSON.stringify(this._createErrorContext(node));
           this.emit(`return runtime.callWrapAsync(`);
           this.compile(node.name, frame);
-          this.emit.line(`, "${funcName}", context, ${result});`);
+          this.emit.line(`, "${funcName}", context, ${result}, ${errorContextJson});`);
         }); // Resolve arguments using _compileAggregate.
       }
     } else {
@@ -820,6 +878,24 @@ class CompilerBase extends Obj {
         // Don't wrap compiler-internal symbols - they're plain JS variables
         this.compile(node, frame);
         return;
+      }
+
+      // "Let it Throw" strategy for LookupVal in scriptMode
+      if (node instanceof nodes.LookupVal && this.scriptMode) {
+        const resultId = this._tmpid();
+        const errorContextJson = JSON.stringify(this._createErrorContext(node));
+        this.emit.line(`let ${resultId};`);
+        this.emit.line(`try {`);
+        this.emit.line(`  ${resultId} = `);
+        this.compile(node, frame); // This will emit runtime.memberLookupScriptAsync(...)
+        this.emit.line(';');
+        this.emit.line(`} catch (e) {`);
+        this.emit.line(`  const ctx = ${errorContextJson};`);
+        this.emit.line(`  const err = runtime.handleError(e, ctx.lineno, ctx.colno, ctx.errorContextString, context.path);`);
+        this.emit.line(`  ${resultId} = runtime.createPoison(err);`);
+        this.emit.line(`}`);
+        this.emit(resultId); // Emit the temporary variable as the expression's result
+        return; // Stop further processing for this node
       }
 
       if (this.emit.asyncClosureDepth === 0 && !forceWrap) {

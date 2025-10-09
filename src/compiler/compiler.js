@@ -172,11 +172,13 @@ class Compiler extends CompilerBase {
     var resolveArgs = node.resolveArgs && node.isAsync;
     const positionNode = args || node; // Prefer args position if available
 
+    let errorContextJson;
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
 
       frame = this.emit.asyncBlockAddToBufferBegin(node, frame, positionNode);
+      errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
       this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
       if (noExtensionCallback) {
         //the extension returns a value directly
@@ -258,13 +260,22 @@ class Compiler extends CompilerBase {
 
     if (noExtensionCallback || node.isAsync) {
       this.emit(`)`);//close the extension call
-      this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
+      if (node.isAsync) {
+        this.emit(`, ${autoescape} && env.opts.autoescape, ${errorContextJson});`);//end of suppressValue
+      } else {
+        this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
+      }
       frame = this.emit.asyncBlockAddToBufferEnd(node, frame, positionNode);
     } else {
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
       frame = this.emit.asyncBlockAddToBufferBegin(node, frame, positionNode);
-      this.emit(`${node.isAsync ? 'await runtime.suppressValueAsync' : 'runtime.suppressValue'}(${res}, ${autoescape} && env.opts.autoescape);`);
+      const errorContextJson2 = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
+      if (node.isAsync) {
+        this.emit(`await runtime.suppressValueAsync(${res}, ${autoescape} && env.opts.autoescape, ${errorContextJson2});`);
+      } else {
+        this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
+      }
       frame = this.emit.asyncBlockAddToBufferEnd(node, frame, positionNode);
 
       this.emit.addScopeLevel();
@@ -585,7 +596,9 @@ class Compiler extends CompilerBase {
 
     if (this.asyncMode) {
       // Add catch block to poison variables when condition fails
+      const errorContextJson = JSON.stringify(this._createErrorContext(node, node.cond));
       this.emit('} catch (e) {');
+      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContextJson}.lineno, ${errorContextJson}.colno, ${errorContextJson}.errorContextString, context.path);`);
       catchPoisonPos = this.codebuf.length;
       this.emit('');
       this.emit('}');  // No re-throw - execution continues with poisoned vars
@@ -603,7 +616,7 @@ class Compiler extends CompilerBase {
           this.emit.insertLine(poisonCheckPos,
             `  frame.poisonBranchWrites(condResult, ${JSON.stringify(combinedCounts)});`);
           this.emit.insertLine(catchPoisonPos,
-            `    frame.poisonBranchWrites(e, ${JSON.stringify(combinedCounts)});`);
+            `    frame.poisonBranchWrites(contextualError, ${JSON.stringify(combinedCounts)});`);
         }
 
         // Handler (buffer) poisoning
@@ -612,7 +625,7 @@ class Compiler extends CompilerBase {
           this.emit.insertLine(poisonCheckPos,
             `  runtime.addPoisonMarkersToBuffer(${this.buffer}, condResult, ${JSON.stringify(handlerArray)});`);
           this.emit.insertLine(catchPoisonPos,
-            `    runtime.addPoisonMarkersToBuffer(${this.buffer}, e, ${JSON.stringify(handlerArray)});`);
+            `    runtime.addPoisonMarkersToBuffer(${this.buffer}, contextualError, ${JSON.stringify(handlerArray)});`);
         }
       }
     }
@@ -1562,6 +1575,7 @@ class Compiler extends CompilerBase {
       } else {
         // Use the specific child expression node for position
         frame = this.emit.asyncBlockAddToBufferBegin(node, frame, child);
+        const errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, child)) : '';
         this.emit(`${node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
 
         if (this.throwOnUndefined) {
@@ -1570,10 +1584,18 @@ class Compiler extends CompilerBase {
         this._compileExpression(child, frame, false);
         if (this.throwOnUndefined) {
           // Use child position for ensureDefined error
-          this.emit(`,${child.lineno},${child.colno}, context)`);
+          if (node.isAsync) {
+            this.emit(`,${child.lineno},${child.colno}, context, ${errorContextJson})`);
+          } else {
+            this.emit(`,${child.lineno},${child.colno}, context)`);
+          }
         }
         // Use child position for suppressValue error
-        this.emit(', env.opts.autoescape);\n');
+        if (node.isAsync) {
+          this.emit(`, env.opts.autoescape, ${errorContextJson});\n`);
+        } else {
+          this.emit(', env.opts.autoescape);\n');
+        }
         frame = this.emit.asyncBlockAddToBufferEnd(node, frame, child); // Pass Output node as op, child as pos
       }
     });

@@ -904,7 +904,7 @@ function suppressValue(val, autoescape) {
   return val;
 }
 
-function suppressValueAsync(val, autoescape) {
+function suppressValueAsync(val, autoescape, errorContext) {
   // Poison check - return rejected promise synchronously
   if (isPoison(val)) {
     return val;
@@ -932,20 +932,25 @@ function suppressValueAsync(val, autoescape) {
     }
 
     // Has promises or poison - delegate to async helper
-    return _suppressValueAsyncComplex(val, autoescape);
+    return _suppressValueAsyncComplex(val, autoescape, errorContext);
   }
 
   // Promise - delegate to async helper
-  return _suppressValueAsyncComplex(val, autoescape);
+  return _suppressValueAsyncComplex(val, autoescape, errorContext);
 }
 
-async function _suppressValueAsyncComplex(val, autoescape) {
+async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
   // Handle promise values
   if (val && typeof val.then === 'function') {
     try {
       val = await val;
     } catch (err) {
-      throw isPoisonError(err) ? err : new PoisonError([err]);
+      if (isPoisonError(err)) {
+        throw err;
+      } else {
+        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        throw new PoisonError([contextualError]);
+      }
     }
 
     // Check if resolved to poison
@@ -976,7 +981,12 @@ async function _suppressValueAsyncComplex(val, autoescape) {
         }
         return resolvedArray;
       } catch (err) {
-        throw isPoisonError(err) ? err : new PoisonError([err]);
+        if (isPoisonError(err)) {
+          throw err;
+        } else {
+          const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+          throw new PoisonError([contextualError]);
+        }
       }
     } else {
       // No promises in array
@@ -1007,7 +1017,7 @@ function ensureDefined(val, lineno, colno, context) {
   return val;
 }
 
-function ensureDefinedAsync(val, lineno, colno, context) {
+function ensureDefinedAsync(val, lineno, colno, context, errorContext) {
   // Poison check - return rejected promise synchronously
   if (isPoison(val)) {
     return val;
@@ -1019,10 +1029,10 @@ function ensureDefinedAsync(val, lineno, colno, context) {
   }
 
   // Complex cases - delegate to async helper
-  return _ensureDefinedAsyncComplex(val, lineno, colno, context);
+  return _ensureDefinedAsyncComplex(val, lineno, colno, context, errorContext);
 }
 
-async function _ensureDefinedAsyncComplex(val, lineno, colno, context) {
+async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorContext) {
   // Handle arrays with possible poison values
   if (Array.isArray(val)) {
     const errors = await collectErrors(val);
@@ -1040,7 +1050,12 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context) {
     try {
       val = await val;
     } catch (err) {
-      throw isPoisonError(err) ? err : new PoisonError([err]);
+      if (isPoisonError(err)) {
+        throw err;
+      } else {
+        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        throw new PoisonError([contextualError]);
+      }
     }
 
     if (isPoison(val)) {
@@ -1619,7 +1634,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
               new Error(`Unknown command handler: ${handlerName}`),
               pos.lineno,
               pos.colno,
-              null,
+              `@${handlerName}`,
               context ? context.path : null
             );
             collectedErrors.push(err1);
@@ -1637,7 +1652,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
                   new Error(`Cannot access property '${pathSegment}' on ${typeof targetObject} in handler '${handlerName}'`),
                   pos.lineno,
                   pos.colno,
-                  null,
+                  `@${handlerName}${subpath ? '.' + subpath.slice(0, subpath.indexOf(pathSegment) + 1).join('.') : ''}`,
                   context ? context.path : null
                 );
                 collectedErrors.push(err2);
@@ -1662,7 +1677,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
                 new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable`),
                 pos.lineno,
                 pos.colno,
-                null,
+                `@${handlerName}${subpath ? '.' + subpath.join('.') : ''}`,
                 context ? context.path : null
               );
               collectedErrors.push(err3);
@@ -1672,13 +1687,13 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
               new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`),
               pos.lineno,
               pos.colno,
-              null,
+              `@${handlerName}${subpath ? '.' + subpath.join('.') : ''}${commandName ? '.' + commandName : ''}`,
               context ? context.path : null
             );
             collectedErrors.push(err5);
           }
         } catch (err) {
-          const wrappedErr = handleError(err, pos.lineno, pos.colno, null, context ? context.path : null);
+          const wrappedErr = handleError(err, pos.lineno, pos.colno, `@${handlerName}${subpath ? '.' + subpath.join('.') : ''}${commandName ? '.' + commandName : ''}`, context ? context.path : null);
           collectedErrors.push(wrappedErr);
         }
       }
@@ -1748,7 +1763,7 @@ function memberLookupScript(obj, val) {
   return value;
 }
 
-function memberLookupAsync(obj, val) {
+function memberLookupAsync(obj, val, errorContext) {
   // Check for poison in inputs - return poison directly (it's a thenable)
   if (isPoison(obj)) {
     return obj;
@@ -1767,10 +1782,10 @@ function memberLookupAsync(obj, val) {
   }
 
   // Has promises - delegate to async helper
-  return _memberLookupAsyncComplex(obj, val);
+  return _memberLookupAsyncComplex(obj, val, errorContext);
 }
 
-async function _memberLookupAsyncComplex(obj, val) {
+async function _memberLookupAsyncComplex(obj, val, errorContext) {
   // Collect errors from both inputs (await all promises)
   const errors = await collectErrors([obj, val]);
   if (errors.length > 0) {
@@ -1778,17 +1793,26 @@ async function _memberLookupAsyncComplex(obj, val) {
   }
 
   // Resolve the values
-  const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
+  try {
+    const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
 
-  // Check if resolved values are poison
-  if (isPoison(resolvedObj)) {
-    return resolvedObj;
-  }
-  if (isPoison(resolvedVal)) {
-    return resolvedVal;
-  }
+    // Check if resolved values are poison
+    if (isPoison(resolvedObj)) {
+      return resolvedObj;
+    }
+    if (isPoison(resolvedVal)) {
+      return resolvedVal;
+    }
 
-  return memberLookup(resolvedObj, resolvedVal);
+    return memberLookup(resolvedObj, resolvedVal);
+  } catch (err) {
+    if (isPoisonError(err)) {
+      return createPoison(err.errors);
+    } else {
+      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      return createPoison(contextualError);
+    }
+  }
 }
 
 function memberLookupScriptAsync(obj, val) {
@@ -1847,7 +1871,7 @@ function callWrap(obj, name, context, args) {
   return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
 }
 
-function callWrapAsync(obj, name, context, args) {
+function callWrapAsync(obj, name, context, args, errorContext) {
   // Check if we need async path: obj or any arg is a promise
   const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
   const hasArgPromises = args.some(arg => arg && typeof arg.then === 'function' && !isPoison(arg));
@@ -1856,7 +1880,7 @@ function callWrapAsync(obj, name, context, args) {
     // Must use async path to await all promises before making decisions
     // _callWrapAsyncComplex is async and returns poison when errors occur
     // When awaited, poison values throw PoisonError due to thenable protocol (by design)
-    return _callWrapAsyncComplex(obj, name, context, args);
+    return _callWrapAsyncComplex(obj, name, context, args, errorContext);
   }
 
   // All values are non-promises - collect all errors synchronously
@@ -1881,12 +1905,12 @@ function callWrapAsync(obj, name, context, args) {
   if (!obj) {
     return createPoison(
       new Error('Unable to call `' + name + '`, which is undefined or falsey'),
-      null, null, null, context.path // No lineno/colno available in runtime, but add path
+      errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path
     );
   } else if (typeof obj !== 'function') {
     return createPoison(
       new Error('Unable to call `' + name + '`, which is not a function'),
-      null, null, null, context.path // No lineno/colno available in runtime, but add path
+      errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path
     );
   }
 
@@ -1896,11 +1920,11 @@ function callWrapAsync(obj, name, context, args) {
 
     return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
   } catch (err) {
-    return createPoison(err, null, null, null, context.path); // Add path to caught errors
+    return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
   }
 }
 
-async function _callWrapAsyncComplex(obj, name, context, args) {
+async function _callWrapAsyncComplex(obj, name, context, args, errorContext) {
   const errors = [];
 
   // Await obj if it's a promise and check for poison
@@ -1914,7 +1938,9 @@ async function _callWrapAsyncComplex(obj, name, context, args) {
       if (isPoisonError(err)) {
         errors.push(...err.errors);
       } else {
-        errors.push(err);
+        // Add context to the error when catching from await
+        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        errors.push(contextualError);
       }
     }
   } else if (isPoison(obj)) {
@@ -1937,7 +1963,8 @@ async function _callWrapAsyncComplex(obj, name, context, args) {
         resolvedArgs.push(await arg);
       } catch (err) {
         // Should not happen as collectErrors already caught errors
-        return createPoison(isPoisonError(err) ? err.errors : [err], null, null, null, context.path);
+        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        return createPoison(isPoisonError(err) ? err.errors : [contextualError]);
       }
     } else {
       resolvedArgs.push(arg);
@@ -1948,12 +1975,12 @@ async function _callWrapAsyncComplex(obj, name, context, args) {
   if (!obj) {
     return createPoison(
       new Error('Unable to call `' + name + '`, which is undefined or falsey'),
-      null, null, null, context.path // No lineno/colno available in runtime, but add path
+      errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path
     );
   } else if (typeof obj !== 'function') {
     return createPoison(
       new Error('Unable to call `' + name + '`, which is not a function'),
-      null, null, null, context.path // No lineno/colno available in runtime, but add path
+      errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path
     );
   }
 
@@ -1963,12 +1990,12 @@ async function _callWrapAsyncComplex(obj, name, context, args) {
 
     return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, resolvedArgs);
   } catch (err) {
-    return createPoison(err, null, null, null, context.path); // Add path to caught errors
+    return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
   }
 }
 
 //@todo - deprecate, the sequencedMemberLookupAsync of the FunCall path lookupVal/symbol should handle the frame lock release
-async function sequencedCallWrap(func, funcName, context, args, frame, sequenceLockKey) {
+async function sequencedCallWrap(func, funcName, context, args, frame, sequenceLockKey, errorContext) {
   const lockValue = await awaitSequenceLock(frame, sequenceLockKey);
 
   // Check if lock itself is poisoned
@@ -1993,7 +2020,8 @@ async function sequencedCallWrap(func, funcName, context, args, frame, sequenceL
         if (isPoisonError(err)) {
           errors.push(...err.errors);
         } else {
-          errors.push(err);
+          const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+          errors.push(contextualError);
         }
       }
     }
@@ -2003,13 +2031,13 @@ async function sequencedCallWrap(func, funcName, context, args, frame, sequenceL
     errors.push(...argErrors);
 
     if (errors.length > 0) {
-      const poison = createPoison(errors, null, null, null, context.path); // Errors already have position info, add path
+      const poison = createPoison(errors);
       frame.set(sequenceLockKey, poison, true);
       throw new PoisonError(errors);
     }
 
     // Call the function (callWrapAsync may return poison synchronously or a promise)
-    const result = callWrapAsync(func, funcName, context, args);
+    const result = callWrapAsync(func, funcName, context, args, errorContext);
 
     // Check if result is poison (from callWrapAsync's return)
     if (isPoison(result)) {
@@ -2023,7 +2051,7 @@ async function sequencedCallWrap(func, funcName, context, args, frame, sequenceL
         const resolved = await result;
         return resolved;
       } catch (err) {
-        const poison = isPoisonError(err) ? createPoison(err.errors, null, null, null, context.path) : createPoison(err, null, null, null, context.path);
+        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path));
         frame.set(sequenceLockKey, poison, true);
         throw err; // Re-throw original error
       }
@@ -2033,11 +2061,12 @@ async function sequencedCallWrap(func, funcName, context, args, frame, sequenceL
   } catch (err) {
     // Ensure lock is poisoned on any error
     if (!isPoisonError(err)) {
-      const poison = createPoison(err, null, null, null, context.path);
+      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      const poison = createPoison(contextualError);
       frame.set(sequenceLockKey, poison, true);
-      throw new PoisonError([err]);
+      throw new PoisonError([contextualError]);
     }
-    const poison = createPoison(err.errors, null, null, null, context.path);
+    const poison = createPoison(err.errors);
     frame.set(sequenceLockKey, poison, true);
     throw err;
   } finally {
@@ -2072,7 +2101,7 @@ function handleError(error, lineno, colno, errorContextString = null, path = nul
   // Special handling for PoisonError - preserve multiple errors
   if (isPoisonError(error)) {
     // Add path information to each contained error
-    if (path) {
+    if (lineno || path) {
       // @todo - we probably shall not do this if there are multiple errors
       error.errors = error.errors.map(err => {
         return handleError(err, lineno, colno, errorContextString, path);
@@ -2092,7 +2121,7 @@ function handleError(error, lineno, colno, errorContextString = null, path = nul
   } else {
     // Wrap in TemplateError
     const wrappedError = new lib.TemplateError(error, lineno, colno, errorContextString);
-    if (path && typeof wrappedError.Update === 'function') {
+    if (/*path && */typeof wrappedError.Update === 'function') {
       wrappedError.Update(path);
     }
     return wrappedError;
@@ -2645,7 +2674,7 @@ async function sequencedContextLookup(context, frame, name, nodeLockKey) {
 }
 
 // Called in place of memberLookupAsync when the path has a sequence lock on it
-async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
+async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey, errorContext) {
   const lockValue = await awaitSequenceLock(frame, nodeLockKey);
 
   // Check if lock is poisoned
@@ -2665,10 +2694,10 @@ async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
       try {
         resolvedTarget = await target;
       } catch (err) {
-        // Note: context not available, cannot add path to poison
-        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+        const contextualError = isPoisonError(err) ? err : handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(contextualError);
         frame.set(nodeLockKey, poison, true);
-        throw err;
+        throw isPoisonError(err) ? err : new PoisonError([contextualError]);
       }
 
       // Check if resolved to poison
@@ -2690,11 +2719,11 @@ async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
     return result;
   } catch (err) {
     // Ensure lock is poisoned on any error
-    // Note: context not available in this function signature, so path cannot be added
     if (!isPoisonError(err)) {
-      const poison = createPoison(err);
+      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      const poison = createPoison(contextualError);
       frame.set(nodeLockKey, poison, true);
-      throw new PoisonError([err]);
+      throw new PoisonError([contextualError]);
     }
     const poison = createPoison(err.errors);
     frame.set(nodeLockKey, poison, true);
@@ -2709,7 +2738,7 @@ async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
 }
 
 // Called in place of memberLookupAsync when the path has a sequence lock on it
-async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey) {
+async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey, errorContext) {
   const lockValue = await awaitSequenceLock(frame, nodeLockKey);
 
   // Check if lock is poisoned
@@ -2729,10 +2758,10 @@ async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey)
       try {
         resolvedTarget = await target;
       } catch (err) {
-        // Note: context not available, cannot add path to poison
-        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+        const contextualError = isPoisonError(err) ? err : handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(contextualError);
         frame.set(nodeLockKey, poison, true);
-        throw err;
+        throw isPoisonError(err) ? err : new PoisonError([contextualError]);
       }
 
       // Check if resolved to poison
@@ -2754,11 +2783,11 @@ async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey)
     return result;
   } catch (err) {
     // Ensure lock is poisoned on any error
-    // Note: context not available in this function signature, so path cannot be added
     if (!isPoisonError(err)) {
-      const poison = createPoison(err);
+      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      const poison = createPoison(contextualError);
       frame.set(nodeLockKey, poison, true);
-      throw new PoisonError([err]);
+      throw new PoisonError([contextualError]);
     }
     const poison = createPoison(err.errors);
     frame.set(nodeLockKey, poison, true);

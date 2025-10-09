@@ -123,7 +123,8 @@ function TemplateError(message, lineno, colno, errorContextString = null) {
 
   err.lineno = lineno;
   err.colno = colno;
-  err.contextString = errorContextString;
+  //@todo - rename errorContextString to contextString
+  err.errorContextString = errorContextString;
   err.firstUpdate = true;
 
   err.Update = function Update(path) {
