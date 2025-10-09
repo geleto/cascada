@@ -34,6 +34,7 @@ class PoisonedValue {
       } catch (e) {
         // Handler threw - return new poison with the thrown error
         // This matches Promise behavior: replace error, don't accumulate
+        // Note: Handler errors don't have position info (not from template)
         return createPoison(e);
       }
     }
@@ -100,12 +101,43 @@ function deduplicateErrors(errors) {
 }
 
 /**
- * Create a poison value from one or more errors.
+ * Create a poison value from one or more errors, optionally adding position and path info.
+ * Preserves existing position info in errors - never overwrites lineno, colno, or path.
+ * Only adds position/path to errors that don't already have it.
+ *
+ * @param {Error|Error[]} errorOrErrors - Single error or array of errors
+ * @param {number} lineno - Line number where error occurred (optional)
+ * @param {number} colno - Column number where error occurred (optional)
+ * @param {string} errorContextString - Context string for error message (optional)
+ * @param {string} path - Template path (optional)
+ * @returns {PoisonedValue} Poison value containing the error(s)
  */
-function createPoison(errorOrErrors) {
-  const errors = Array.isArray(errorOrErrors)
-    ? errorOrErrors
-    : [errorOrErrors];
+function createPoison(errorOrErrors, lineno = null, colno = null, errorContextString = null, path = null) {
+  let errors = Array.isArray(errorOrErrors) ? errorOrErrors : [errorOrErrors];
+
+  // If position or path info provided, add it to errors that don't already have it
+  if (lineno !== null || colno !== null || errorContextString !== null || path !== null) {
+    errors = errors.map(err => {
+      // If it's a PoisonError, extract its errors and process each one
+      if (isPoisonError(err)) {
+        return err.errors.map(e => {
+          // If error already has position info, preserve it completely (don't update lineno, colno, or path)
+          if (e.lineno) {
+            return e;
+          }
+          // Error lacks position info - add it via handleError
+          return handleError(e, lineno || 0, colno || 0, errorContextString, path);
+        });
+      }
+      // If error already has position info, preserve it completely
+      if (err.lineno) {
+        return err;
+      }
+      // Error lacks position info - add it via handleError
+      return handleError(err, lineno || 0, colno || 0, errorContextString, path);
+    }).flat();
+  }
+
   return new PoisonedValue(errors);
 }
 
@@ -166,10 +198,12 @@ async function collectErrors(values) {
  * flattenBuffer can collect these errors.
  *
  * @param {Array} buffer - The output buffer array to add markers to
- * @param {PoisonedValue|Error} error - The poison value or error from failed condition
+ * @param {PoisonedValue|Error} error - The poison value or error from failed condition (should already have position info)
  * @param {Array<string>} handlerNames - Names of handlers (e.g., ['text', 'data'])
  */
 function addPoisonMarkersToBuffer(buffer, error, handlerNames) {
+  // Note: error parameter should already have position info from condition evaluation
+  // No additional position info available in this function's scope
   const poison = isPoison(error) ? error : createPoison(error);
 
   // Add one marker per handler that would have been written to
@@ -690,6 +724,7 @@ class AsyncFrame extends Frame {
         }
       } catch (err) {
         // Promise was rejected - convert to poison
+        // Note: error from async variable resolution, position info added upstream if available
         const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
         parent[containerName][varName] = poison;
         break;
@@ -1040,7 +1075,7 @@ async function resolveAll(args) {
   const errors = await collectErrors(args);
 
   if (errors.length > 0) {
-    return createPoison(errors);
+    return createPoison(errors); // Errors already have position info from collectErrors
   }
 
   // No errors - proceed with normal resolution
@@ -1253,7 +1288,7 @@ async function resolveObjectProperties(obj) {
   const errors = await collectErrors(Object.values(obj));
 
   if (errors.length > 0) {
-    return createPoison(errors);
+    return createPoison(errors); // Errors already have position info from collectErrors
   }
 
   for (const key in obj) {
@@ -1316,6 +1351,7 @@ async function resolveSingle(value) {
   try {
     resolvedValue = await value;
   } catch (err) {
+    // Note: This is called from various contexts; error position added upstream
     if (isPoisonError(err)) {
       return createPoison(err.errors);
     }
@@ -1331,26 +1367,26 @@ async function resolveSingle(value) {
   if (Array.isArray(resolvedValue)) {
     const errors = await collectErrors(resolvedValue);
     if (errors.length > 0) {
-      return createPoison(errors);
+      return createPoison(errors); // Errors already have position info from collectErrors
     }
     try {
       resolvedValue = await deepResolveArray(resolvedValue);
     } catch (err) {
       if (isPoisonError(err)) {
-        return createPoison(err.errors);
+        return createPoison(err.errors); // Errors already have position info
       }
       throw err;
     }
   } else if (isPlainObject(resolvedValue)) {
     const errors = await collectErrors(Object.values(resolvedValue));
     if (errors.length > 0) {
-      return createPoison(errors);
+      return createPoison(errors); // Errors already have position info from collectErrors
     }
     try {
       resolvedValue = await deepResolveObject(resolvedValue);
     } catch (err) {
       if (isPoisonError(err)) {
-        return createPoison(err.errors);
+        return createPoison(err.errors); // Errors already have position info
       }
       throw err;
     }
@@ -1738,7 +1774,7 @@ async function _memberLookupAsyncComplex(obj, val) {
   // Collect errors from both inputs (await all promises)
   const errors = await collectErrors([obj, val]);
   if (errors.length > 0) {
-    return createPoison(errors);
+    return createPoison(errors); // Errors already have position info from collectErrors
   }
 
   // Resolve the values
@@ -1781,7 +1817,7 @@ async function _memberLookupScriptAsyncComplex(obj, val) {
   // Collect errors from both inputs
   const errors = await collectErrors([obj, val]);
   if (errors.length > 0) {
-    return createPoison(errors);
+    return createPoison(errors); // Errors already have position info from collectErrors
   }
 
   // Resolve the values
@@ -1838,17 +1874,19 @@ function callWrapAsync(obj, name, context, args) {
   }
 
   if (errors.length > 0) {
-    return createPoison(errors);
+    return createPoison(errors); // Errors already have position info from collectErrors
   }
 
   // No errors - validate and call
   if (!obj) {
     return createPoison(
-      new Error('Unable to call `' + name + '`, which is undefined or falsey')
+      new Error('Unable to call `' + name + '`, which is undefined or falsey'),
+      null, null, null, context.path // No lineno/colno available in runtime, but add path
     );
   } else if (typeof obj !== 'function') {
     return createPoison(
-      new Error('Unable to call `' + name + '`, which is not a function')
+      new Error('Unable to call `' + name + '`, which is not a function'),
+      null, null, null, context.path // No lineno/colno available in runtime, but add path
     );
   }
 
@@ -1858,7 +1896,7 @@ function callWrapAsync(obj, name, context, args) {
 
     return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
   } catch (err) {
-    return createPoison(err);
+    return createPoison(err, null, null, null, context.path); // Add path to caught errors
   }
 }
 
@@ -1888,7 +1926,7 @@ async function _callWrapAsyncComplex(obj, name, context, args) {
   errors.push(...argErrors);
 
   if (errors.length > 0) {
-    return createPoison(errors);
+    return createPoison(errors); // Errors already have position info from collectErrors
   }
 
   // Resolve all arg promises
@@ -1899,7 +1937,7 @@ async function _callWrapAsyncComplex(obj, name, context, args) {
         resolvedArgs.push(await arg);
       } catch (err) {
         // Should not happen as collectErrors already caught errors
-        return createPoison(isPoisonError(err) ? err.errors : [err]);
+        return createPoison(isPoisonError(err) ? err.errors : [err], null, null, null, context.path);
       }
     } else {
       resolvedArgs.push(arg);
@@ -1909,11 +1947,13 @@ async function _callWrapAsyncComplex(obj, name, context, args) {
   // All resolved successfully - validate and call the function
   if (!obj) {
     return createPoison(
-      new Error('Unable to call `' + name + '`, which is undefined or falsey')
+      new Error('Unable to call `' + name + '`, which is undefined or falsey'),
+      null, null, null, context.path // No lineno/colno available in runtime, but add path
     );
   } else if (typeof obj !== 'function') {
     return createPoison(
-      new Error('Unable to call `' + name + '`, which is not a function')
+      new Error('Unable to call `' + name + '`, which is not a function'),
+      null, null, null, context.path // No lineno/colno available in runtime, but add path
     );
   }
 
@@ -1923,7 +1963,7 @@ async function _callWrapAsyncComplex(obj, name, context, args) {
 
     return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, resolvedArgs);
   } catch (err) {
-    return createPoison(err);
+    return createPoison(err, null, null, null, context.path); // Add path to caught errors
   }
 }
 
@@ -1963,7 +2003,7 @@ async function sequencedCallWrap(func, funcName, context, args, frame, sequenceL
     errors.push(...argErrors);
 
     if (errors.length > 0) {
-      const poison = createPoison(errors);
+      const poison = createPoison(errors, null, null, null, context.path); // Errors already have position info, add path
       frame.set(sequenceLockKey, poison, true);
       throw new PoisonError(errors);
     }
@@ -1983,7 +2023,7 @@ async function sequencedCallWrap(func, funcName, context, args, frame, sequenceL
         const resolved = await result;
         return resolved;
       } catch (err) {
-        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+        const poison = isPoisonError(err) ? createPoison(err.errors, null, null, null, context.path) : createPoison(err, null, null, null, context.path);
         frame.set(sequenceLockKey, poison, true);
         throw err; // Re-throw original error
       }
@@ -1993,11 +2033,11 @@ async function sequencedCallWrap(func, funcName, context, args, frame, sequenceL
   } catch (err) {
     // Ensure lock is poisoned on any error
     if (!isPoisonError(err)) {
-      const poison = createPoison(err);
+      const poison = createPoison(err, null, null, null, context.path);
       frame.set(sequenceLockKey, poison, true);
       throw new PoisonError([err]);
     }
-    const poison = createPoison(err.errors);
+    const poison = createPoison(err.errors, null, null, null, context.path);
     frame.set(sequenceLockKey, poison, true);
     throw err;
   } finally {
@@ -2026,34 +2066,28 @@ function contextOrFrameLookup(context, frame, name) {
  * @param {string} errorContextString - Context string for error message
  * @param {string} path - Template path (e.g., 'template.njk')
  * @returns {Error} Processed error with position and path information
+ * @todo - merge TemplateError and PoisonError
  */
 function handleError(error, lineno, colno, errorContextString = null, path = null) {
   // Special handling for PoisonError - preserve multiple errors
   if (isPoisonError(error)) {
     // Add path information to each contained error
     if (path) {
+      // @todo - we probably shall not do this if there are multiple errors
       error.errors = error.errors.map(err => {
-        if (err instanceof lib.TemplateError) {
-          // Already a TemplateError, just update path
-          err.Update(path);
-          return err;
-        } else {
-          // Wrap in TemplateError with position info
-          const wrappedErr = new lib.TemplateError(err, lineno, colno, errorContextString);
-          wrappedErr.Update(path);
-          return wrappedErr;
-        }
+        return handleError(err, lineno, colno, errorContextString, path);
       });
     }
     return error; // Return PoisonError with updated errors
   }
 
   // Regular error handling
-  if (error.lineno) {
+  if ('lineno' in error && error.lineno !== undefined) {
     // Already has position info
-    if (path && typeof error.Update === 'function') {
+    /*if (path && !error.path && typeof error.Update === 'function') {
+      //does this happen?
       error.Update(path);
-    }
+    }*/
     return error;
   } else {
     // Wrap in TemplateError
@@ -2592,6 +2626,7 @@ async function sequencedContextLookup(context, frame, name, nodeLockKey) {
     return result;
   } catch (err) {
     // Ensure lock is poisoned on any error
+    // Note: context not available in this function signature, so path cannot be added
     if (!isPoisonError(err)) {
       const poison = createPoison(err);
       frame.set(nodeLockKey, poison, true);
@@ -2630,6 +2665,7 @@ async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
       try {
         resolvedTarget = await target;
       } catch (err) {
+        // Note: context not available, cannot add path to poison
         const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
         frame.set(nodeLockKey, poison, true);
         throw err;
@@ -2654,6 +2690,7 @@ async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey) {
     return result;
   } catch (err) {
     // Ensure lock is poisoned on any error
+    // Note: context not available in this function signature, so path cannot be added
     if (!isPoisonError(err)) {
       const poison = createPoison(err);
       frame.set(nodeLockKey, poison, true);
@@ -2692,6 +2729,7 @@ async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey)
       try {
         resolvedTarget = await target;
       } catch (err) {
+        // Note: context not available, cannot add path to poison
         const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
         frame.set(nodeLockKey, poison, true);
         throw err;
@@ -2716,6 +2754,7 @@ async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey)
     return result;
   } catch (err) {
     // Ensure lock is poisoned on any error
+    // Note: context not available in this function signature, so path cannot be added
     if (!isPoisonError(err)) {
       const poison = createPoison(err);
       frame.set(nodeLockKey, poison, true);
