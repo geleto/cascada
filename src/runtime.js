@@ -1830,7 +1830,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext) {
   }
 }
 
-function memberLookupScriptAsync(obj, val) {
+function memberLookupScriptAsync(obj, val, errorContext) {
   // Check for poison in inputs
   if (isPoison(obj)) {
     return obj;
@@ -1845,14 +1845,15 @@ function memberLookupScriptAsync(obj, val) {
 
   if (!objIsPromise && !valIsPromise) {
     // Synchronous path
+    // Let native error throw; it will be caught by the top-level sync try/catch.
     return memberLookupScript(obj, val);
   }
 
-  // Has promises - delegate to async helper
-  return _memberLookupScriptAsyncComplex(obj, val);
+  // Has promises - delegate to async helper, passing the context along.
+  return _memberLookupScriptAsyncComplex(obj, val, errorContext);
 }
 
-async function _memberLookupScriptAsyncComplex(obj, val) {
+async function _memberLookupScriptAsyncComplex(obj, val, errorContext) {
   // Collect errors from both inputs
   const errors = await collectErrors([obj, val]);
   if (errors.length > 0) {
@@ -1860,17 +1861,30 @@ async function _memberLookupScriptAsyncComplex(obj, val) {
   }
 
   // Resolve the values
-  const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
+  try {
+    const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
 
-  // Check if resolved values are poison
-  if (isPoison(resolvedObj)) {
-    return resolvedObj;
-  }
-  if (isPoison(resolvedVal)) {
-    return resolvedVal;
-  }
+    // Check if resolved values are poison
+    if (isPoison(resolvedObj)) {
+      return resolvedObj;
+    }
+    if (isPoison(resolvedVal)) {
+      return resolvedVal;
+    }
 
-  return memberLookupScript(resolvedObj, resolvedVal);
+    // The call to memberLookupScript can throw a native TypeError if resolvedObj is null/undefined.
+    // This try/catch block will handle it and enrich the error with context.
+    return memberLookupScript(resolvedObj, resolvedVal);
+  } catch (err) {
+    // If the error is already a PoisonError, propagate it.
+    if (isPoisonError(err)) {
+      return createPoison(err.errors);
+    } else {
+      // Otherwise, it's a native error. Enrich it with template context.
+      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      return createPoison(contextualError);
+    }
+  }
 }
 
 function callWrap(obj, name, context, args) {

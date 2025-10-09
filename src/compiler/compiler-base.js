@@ -554,40 +554,52 @@ class CompilerBase extends Obj {
 
   compileLookupVal(node, frame) {
     if (node.isAsync) {
-      // Check if sequenced flag is used inappropriately
-      let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
-      if (nodeStaticPathKey && this._isDeclared(frame/*.sequenceLockFrame*/, nodeStaticPathKey)) {
-        //register the static path key as variable write so the next lock would wait for it
-        //multiple static path keys can be in the same block
+      // Handle both sequenced and standard lookups.
+
+      // Check if this is a sequenced lookup (marked with `!`).
+      let nodeStaticPathKey = node.lockKey; // this.sequential._extractStaticPathKey(node);
+      if (nodeStaticPathKey && this._isDeclared(frame /*.sequenceLockFrame*/, nodeStaticPathKey)) {
+        // This is a sequenced lookup.
+        // Register the static path key as a variable write so the next lock waits for it.
+        // Multiple static path keys can be in the same block.
         this.async.updateFrameWrites(frame, nodeStaticPathKey);
-        // This will also release the lock by using `set` on the lock value decrementing writeCount:
+
+        // Create the error context and pass it to the runtime function.
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
         if (this.scriptMode) {
           this.emit(`runtime.sequencedMemberLookupScriptAsync(frame, (`);
         } else {
           this.emit(`runtime.sequencedMemberLookupAsync(frame, (`);
         }
-        this.compile(node.target, frame); // Mark target as part of a call path
+        this.compile(node.target, frame); // Compile the object being accessed.
         this.emit('),');
-        this.compile(node.val, frame); // Compile key expression
-        this.emit(`, ${JSON.stringify(nodeStaticPathKey)}, ${errorContextJson})`); // Pass the key and errorContext
+        this.compile(node.val, frame); // Compile the property/key expression.
+        // Pass the static path key and the error context.
+        // The runtime function will also release the lock.
+        this.emit(`, ${JSON.stringify(nodeStaticPathKey)}, ${errorContextJson})`);
         return;
       }
+
+      // This is a standard (non-sequenced) async member lookup.
+      // Pass the error context directly to the runtime function.
+      const errorContextJson = JSON.stringify(this._createErrorContext(node));
+      if (this.scriptMode) {
+        this.emit(`runtime.memberLookupScriptAsync((`);
+      } else {
+        this.emit(`runtime.memberLookupAsync((`);
+      }
+      this.compile(node.target, frame);
+      this.emit('),');
+      this.compile(node.val, frame);
+      this.emit(`, ${errorContextJson})`);
+      return; // IMPORTANT: End of all async logic.
     }
 
-    // Standard member lookup (sync or async without sequence)
+    // Sync path, this is for standard, synchronous member lookups.
+    // Error handling is managed by the top-level try/catch of the compiled template.
     if (this.scriptMode) {
-      this.emit(`runtime.memberLookupScript${node.isAsync ? 'Async' : ''}((`);
+      this.emit(`runtime.memberLookupScript((`);
     } else {
-      if (node.isAsync) {
-        const errorContextJson = JSON.stringify(this._createErrorContext(node));
-        this.emit(`runtime.memberLookupAsync((`);
-        this.compile(node.target, frame); // Mark target as part of a call path
-        this.emit('),');
-        this.compile(node.val, frame);
-        this.emit(`, ${errorContextJson})`);
-        return;
-      }
       this.emit(`runtime.memberLookup((`);
     }
     this.compile(node.target, frame); // Mark target as part of a call path
