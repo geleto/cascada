@@ -17,8 +17,17 @@ const POISON_ERROR_KEY = typeof Symbol !== 'undefined'
   : '__cascadaPoisonErrorMarker';
 
 /**
- * Represents a poisoned value containing one or more errors.
- * Implements thenable protocol to propagate through async chains.
+ * PoisonedValue: An inspectable error container that can be detected synchronously
+ * and automatically rejects when awaited.
+ *
+ * Purpose: Enables sync-first error detection (isPoison()) while maintaining
+ * compatibility with await/promises. Avoids async overhead for error propagation
+ *
+ * NOT FULLY PROMISE A+ COMPLIANT
+ * - Rejection handlers execute synchronously (not on microtask queue)
+ * - Returns `this` when no handler provided (doesn't create new promise)
+ *
+ * Trade-off: faster for sync-first patterns, but may break code expecting strict async behavior.
  */
 class PoisonedValue {
   constructor(errors) {
@@ -27,19 +36,23 @@ class PoisonedValue {
   }
 
   then(onFulfilled, onRejected) {
-    const error = new PoisonError(this.errors);
-    if (onRejected) {
-      try {
-        return onRejected(error);
-      } catch (e) {
-        // Handler threw - return new poison with the thrown error
-        // This matches Promise behavior: replace error, don't accumulate
-        // Note: Handler errors don't have position info (not from template)
-        return createPoison(e);
-      }
+    // Optimization: if no rejection handler, propagate poison directly
+    if (!onRejected) {
+      return this;
     }
-    // No rejection handler - propagate the poison
-    return this;
+
+    const error = new PoisonError(this.errors);
+
+    // Call the rejection handler
+    try {
+      const result = onRejected(error);
+      // Handler succeeded - need Promise for fulfillment
+      // Use Promise.resolve to handle case where result is itself a thenable
+      return Promise.resolve(result);
+    } catch (err) {
+      // Handler threw - return new PoisonedValue (no Promise needed!)
+      return createPoison(isPoisonError(err) ? err.errors : [err]);
+    }
   }
 
   catch(onRejected) {
