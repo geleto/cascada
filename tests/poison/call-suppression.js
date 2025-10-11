@@ -29,6 +29,8 @@
     AsyncFrame = nunjucks.runtime.AsyncFrame;
   }
 
+  const mockErrorContext = { lineno: 1, colno: 1, errorContextString: 'test', path: 'test' };
+
   describe('Call and Suppression Function Poison Handling', () => {
 
     describe('callWrap - Sync Function (original behavior)', () => {
@@ -94,7 +96,8 @@
           (x) => x * 2,
           'double',
           mockContext,
-          [poison]
+          [poison],
+          mockErrorContext
         );
 
         expect(isPoison(result)).to.be(true);
@@ -112,7 +115,8 @@
           (x, y) => x + y,
           'add',
           mockContext,
-          [poison1, poison2]
+          [poison1, poison2],
+          mockErrorContext
         );
 
         expect(isPoison(result)).to.be(true);
@@ -129,7 +133,8 @@
           poison,
           'poisonedFunc',
           mockContext,
-          [5, 3]
+          [5, 3],
+          mockErrorContext
         );
 
         expect(isPoison(result)).to.be(true);
@@ -141,11 +146,12 @@
           () => { throw new Error('Function error'); },
           'throwingFunc',
           mockContext,
-          []
+          [],
+          mockErrorContext
         );
 
         expect(isPoison(result)).to.be(true);
-        expect(result.errors[0].message).to.equal('Function error');
+        expect(result.errors[0].message).to.contain('Function error');
       });
 
       it('should return poison for undefined function', () => {
@@ -153,7 +159,8 @@
           undefined,
           'missing',
           mockContext,
-          []
+          [],
+          mockErrorContext
         );
 
         expect(isPoison(result)).to.be(true);
@@ -165,7 +172,8 @@
           'not a function',
           'notFunc',
           mockContext,
-          []
+          [],
+          mockErrorContext
         );
 
         expect(isPoison(result)).to.be(true);
@@ -177,7 +185,8 @@
           (x, y) => x + y,
           'add',
           mockContext,
-          [5, 3]
+          [5, 3],
+          mockErrorContext
         );
 
         expect(result).to.equal(8);
@@ -192,7 +201,8 @@
           (x, y, z) => x + y + z,
           'addThree',
           mockContext,
-          [5, poison, 3]
+          [5, poison, 3],
+          mockErrorContext
         );
 
         expect(isPoison(result)).to.be(true);
@@ -302,15 +312,16 @@
             funcPromise,
             'func',
             mockContext,
-            [argPromise1, argPromise2, 'normalArg']
+            [argPromise1, argPromise2, 'normalArg'],
+            mockErrorContext
           );
           expect().fail('Should have thrown PoisonError');
         } catch (err) {
           expect(runtime.isPoisonError(err)).to.be(true);
           expect(err.errors).to.have.length(3);
-          expect(err.errors.some(e => e.message === 'Func promise error')).to.be(true);
-          expect(err.errors.some(e => e.message === 'Arg1 promise error')).to.be(true);
-          expect(err.errors.some(e => e.message === 'Arg2 promise error')).to.be(true);
+          expect(err.errors.some(e => e.message.includes('Func promise error'))).to.be(true);
+          expect(err.errors.some(e => e.message.includes('Arg1 promise error'))).to.be(true);
+          expect(err.errors.some(e => e.message.includes('Arg2 promise error'))).to.be(true);
         }
       });
 
@@ -324,15 +335,16 @@
             poisonFunc,
             'func',
             mockContext,
-            [poisonArg, rejectingArg, 'normalArg']
+            [poisonArg, rejectingArg, 'normalArg'],
+            mockErrorContext
           );
           expect().fail('Should have thrown PoisonError');
         } catch (err) {
           expect(runtime.isPoisonError(err)).to.be(true);
           expect(err.errors).to.have.length(3);
-          expect(err.errors.some(e => e.message === 'Func poison')).to.be(true);
-          expect(err.errors.some(e => e.message === 'Arg1 poison')).to.be(true);
-          expect(err.errors.some(e => e.message === 'Arg2 promise error')).to.be(true);
+          expect(err.errors.some(e => e.message.includes('Func poison'))).to.be(true);
+          expect(err.errors.some(e => e.message.includes('Arg1 poison'))).to.be(true);
+          expect(err.errors.some(e => e.message.includes('Arg2 promise error'))).to.be(true);
         }
       });
 
@@ -344,13 +356,14 @@
             (x) => x * 2,
             'double',
             mockContext,
-            [argPromise]
+            [argPromise],
+            mockErrorContext
           );
           expect().fail('Should have thrown PoisonError');
         } catch (err) {
           expect(runtime.isPoisonError(err)).to.be(true);
           expect(err.errors).to.have.length(1);
-          expect(err.errors[0].message).to.equal('Resolved to poison');
+          expect(err.errors[0].message).to.contain('Resolved to poison');
         }
       });
     });
@@ -378,7 +391,8 @@
             mockContext,
             [poison],
             frame,
-            '!lockKey'
+            '!lockKey',
+            mockErrorContext
           );
           expect().fail('Should have thrown');
         } catch (thrown) {
@@ -399,7 +413,8 @@
             mockContext,
             [],
             frame,
-            '!lockKey'
+            '!lockKey',
+            mockErrorContext
           );
           expect().fail('Should have thrown');
         } catch (thrown) {
@@ -420,7 +435,8 @@
             mockContext,
             [],
             frame,
-            '!lockKey'
+            '!lockKey',
+            mockErrorContext
           );
           expect().fail('Should have thrown');
         } catch (thrown) {
@@ -442,7 +458,8 @@
             mockContext,
             [5],
             frame,
-            '!lockKey'
+            '!lockKey',
+            mockErrorContext
           );
           expect().fail('Should have thrown');
         } catch (thrown) {
@@ -462,7 +479,8 @@
             mockContext,
             [],
             frame,
-            '!lockKey'
+            '!lockKey',
+            mockErrorContext
           );
           expect().fail('Should have thrown');
         } catch (thrown) {
@@ -483,7 +501,8 @@
             mockContext,
             [rejectingPromise],
             frame,
-            '!lockKey'
+            '!lockKey',
+            mockErrorContext
           );
           expect().fail('Should have thrown');
         } catch (thrown) {
@@ -501,7 +520,8 @@
           mockContext,
           [5, 3],
           frame,
-          '!lockKey'
+          '!lockKey',
+          mockErrorContext
         );
 
         expect(result).to.equal(8);
@@ -522,7 +542,8 @@
           mockContext,
           [],
           frame,
-          '!lockKey'
+          '!lockKey',
+          mockErrorContext
         );
 
         expect(result).to.equal(42);
@@ -534,7 +555,7 @@
 
     describe('suppressValueAsync - Sync-First Hybrid', () => {
       it('should return literal values synchronously (no Promise)', () => {
-        const result = runtime.suppressValueAsync('hello', false);
+        const result = runtime.suppressValueAsync('hello', false, mockErrorContext);
 
         // Should be the value itself, not a Promise
         expect(result).to.equal('hello');
@@ -543,7 +564,7 @@
 
       it('should return rejected Promise for poison synchronously', async () => {
         const poison = createPoison(new Error('Test'));
-        const result = runtime.suppressValueAsync(poison, false);
+        const result = runtime.suppressValueAsync(poison, false, mockErrorContext);
 
         // Should be a Promise
         expect(typeof result.then).to.equal('function');
@@ -562,7 +583,7 @@
         const promise = Promise.resolve(poison);
 
         try {
-          await runtime.suppressValueAsync(promise, false);
+          await runtime.suppressValueAsync(promise, false, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -579,7 +600,7 @@
         const arr = [poison1, 'text', poison2];
 
         try {
-          await runtime.suppressValueAsync(arr, false);
+          await runtime.suppressValueAsync(arr, false, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -597,7 +618,7 @@
         ];
 
         try {
-          await runtime.suppressValueAsync(arr, false);
+          await runtime.suppressValueAsync(arr, false, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -610,7 +631,7 @@
         const promise = Promise.resolve(poison);
 
         try {
-          await runtime.suppressValueAsync(promise, false);
+          await runtime.suppressValueAsync(promise, false, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -620,21 +641,21 @@
 
       it('should suppress valid values correctly', () => {
         // suppressValue doesn't convert to string unless autoescape is true
-        expect(runtime.suppressValueAsync(123, false)).to.equal(123);
-        expect(runtime.suppressValueAsync('hello', false)).to.equal('hello');
-        expect(runtime.suppressValueAsync(true, false)).to.equal(true);
-        expect(runtime.suppressValueAsync(null, false)).to.equal('');
-        expect(runtime.suppressValueAsync(undefined, false)).to.equal('');
+        expect(runtime.suppressValueAsync(123, false, mockErrorContext)).to.equal(123);
+        expect(runtime.suppressValueAsync('hello', false, mockErrorContext)).to.equal('hello');
+        expect(runtime.suppressValueAsync(true, false, mockErrorContext)).to.equal(true);
+        expect(runtime.suppressValueAsync(null, false, mockErrorContext)).to.equal('');
+        expect(runtime.suppressValueAsync(undefined, false, mockErrorContext)).to.equal('');
       });
 
       it('should handle autoescape correctly for literals', () => {
-        const result = runtime.suppressValueAsync('<script>', true);
+        const result = runtime.suppressValueAsync('<script>', true, mockErrorContext);
         expect(result).to.equal('&lt;script&gt;');
       });
 
       it('should handle array without promises synchronously', () => {
         const arr = ['hello', 'world'];
-        const result = runtime.suppressValueAsync(arr, false);
+        const result = runtime.suppressValueAsync(arr, false, mockErrorContext);
 
         // Should be an array, not a Promise
         expect(Array.isArray(result)).to.be(true);
@@ -644,7 +665,7 @@
 
       it('should handle array with promises asynchronously', async () => {
         const arr = ['hello', Promise.resolve('world')];
-        const result = await runtime.suppressValueAsync(arr, false);
+        const result = await runtime.suppressValueAsync(arr, false, mockErrorContext);
 
         expect(Array.isArray(result)).to.be(true);
         expect(result[0]).to.equal('hello,world');
@@ -655,7 +676,7 @@
       const mockContext = { path: '/test.html' };
 
       it('should return literal values synchronously', () => {
-        const result = runtime.ensureDefinedAsync('hello', 1, 1, mockContext);
+        const result = runtime.ensureDefinedAsync('hello', 1, 1, mockContext, mockErrorContext);
 
         expect(result).to.equal('hello');
         expect(typeof result.then).to.equal('undefined');
@@ -663,7 +684,7 @@
 
       it('should return rejected Promise for poison synchronously', async () => {
         const poison = createPoison(new Error('Test'));
-        const result = runtime.ensureDefinedAsync(poison, 1, 1, mockContext);
+        const result = runtime.ensureDefinedAsync(poison, 1, 1, mockContext, mockErrorContext);
 
         expect(typeof result.then).to.equal('function');
 
@@ -678,7 +699,7 @@
 
       it('should throw for null values', () => {
         try {
-          runtime.ensureDefinedAsync(null, 1, 1, mockContext);
+          runtime.ensureDefinedAsync(null, 1, 1, mockContext, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (err) {
           expect(err.message).to.contain('null or undefined');
@@ -687,7 +708,7 @@
 
       it('should throw for undefined values', () => {
         try {
-          runtime.ensureDefinedAsync(undefined, 1, 1, mockContext);
+          runtime.ensureDefinedAsync(undefined, 1, 1, mockContext, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (err) {
           expect(err.message).to.contain('null or undefined');
@@ -699,7 +720,7 @@
         const promise = Promise.resolve(poison);
 
         try {
-          await runtime.ensureDefinedAsync(promise, 1, 1, mockContext);
+          await runtime.ensureDefinedAsync(promise, 1, 1, mockContext, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -714,7 +735,7 @@
         const arr = [poison1, poison2];
 
         try {
-          await runtime.ensureDefinedAsync(arr, 1, 1, mockContext);
+          await runtime.ensureDefinedAsync(arr, 1, 1, mockContext, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -726,7 +747,7 @@
 
       it('should append validation function to valid array', async () => {
         const arr = ['valid'];
-        const result = await runtime.ensureDefinedAsync(arr, 1, 1, mockContext);
+        const result = await runtime.ensureDefinedAsync(arr, 1, 1, mockContext, mockErrorContext);
 
         expect(Array.isArray(result)).to.be(true);
         expect(result.length).to.equal(2);
@@ -738,7 +759,7 @@
         const promise = Promise.resolve(null);
 
         try {
-          await runtime.ensureDefinedAsync(promise, 1, 1, mockContext);
+          await runtime.ensureDefinedAsync(promise, 1, 1, mockContext, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (err) {
           expect(err.message).to.contain('null or undefined');
@@ -747,7 +768,7 @@
 
       it('should handle promise that resolves to valid value', async () => {
         const promise = Promise.resolve('valid');
-        const result = await runtime.ensureDefinedAsync(promise, 1, 1, mockContext);
+        const result = await runtime.ensureDefinedAsync(promise, 1, 1, mockContext, mockErrorContext);
 
         expect(result).to.equal('valid');
       });
@@ -756,11 +777,11 @@
         const promise = Promise.reject(new Error('Promise rejection'));
 
         try {
-          await runtime.ensureDefinedAsync(promise, 1, 1, mockContext);
+          await runtime.ensureDefinedAsync(promise, 1, 1, mockContext, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-          expect(thrown.errors[0].message).to.equal('Promise rejection');
+          expect(thrown.errors[0].message).to.contain('Promise rejection');
         }
       });
     });
@@ -769,7 +790,7 @@
       it('should not allocate Promise for literal in suppressValueAsync', () => {
         const results = [];
         for (let i = 0; i < 100; i++) {
-          results.push(runtime.suppressValueAsync('test', false));
+          results.push(runtime.suppressValueAsync('test', false, mockErrorContext));
         }
 
         // All should be strings, not Promises
@@ -781,7 +802,7 @@
       it('should not allocate Promise for literal in ensureDefinedAsync', () => {
         const results = [];
         for (let i = 0; i < 100; i++) {
-          results.push(runtime.ensureDefinedAsync('test', 1, 1, null));
+          results.push(runtime.ensureDefinedAsync('test', 1, 1, null, mockErrorContext));
         }
 
         results.forEach(r => {
@@ -791,7 +812,7 @@
 
       it('should return rejected Promise for poison without async overhead', () => {
         const poison = createPoison(new Error('Test'));
-        const result = runtime.suppressValueAsync(poison, false);
+        const result = runtime.suppressValueAsync(poison, false, mockErrorContext);
 
         // Should be a Promise (specifically a rejected one)
         expect(result && typeof result.then === 'function').to.be(true);
@@ -815,7 +836,7 @@
         const arr = [poison1, 'valid', poison2, poison3];
 
         try {
-          await runtime.suppressValueAsync(arr, false);
+          await runtime.suppressValueAsync(arr, false, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -839,7 +860,7 @@
         const arr = [poison1, rejectingPromise, 'valid', poison2];
 
         try {
-          await runtime.suppressValueAsync(arr, false);
+          await runtime.suppressValueAsync(arr, false, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -870,7 +891,7 @@
         originalError.stack = 'Error: Original error\n    at test (test.js:1:1)';
 
         const poison = createPoison(originalError);
-        const result = runtime.callWrapAsync(poison, 'test', { env: { globals: {} }, ctx: {} }, []);
+        const result = runtime.callWrapAsync(poison, 'test', { env: { globals: {} }, ctx: {} }, [], mockErrorContext);
 
         expect(isPoison(result)).to.be(true);
         expect(result.errors[0]).to.equal(originalError);
@@ -890,7 +911,8 @@
           (x) => x * 2,
           'double',
           mockContext,
-          [innerPoison]
+          [innerPoison],
+          mockErrorContext
         );
 
         expect(isPoison(result)).to.be(true);

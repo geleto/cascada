@@ -453,7 +453,7 @@
       let falseCalled = false;
 
       const template = `
-        {% if poisonCond %}
+        {% if poisonCond() %}
           {{ trueFunc() }}
         {% else %}
           {{ falseFunc() }}
@@ -526,7 +526,7 @@
       const template = `
         {% set result = "start" %}
         {% if outerCond %}
-          {% if innerCond %}
+          {% if innerCond() %}
             {% set result = "inner-true" %}
           {% else %}
             {% set result = "inner-false" %}
@@ -553,7 +553,7 @@
     it('should handle if without else when condition is poison', async () => {
       const template = `
         {% set x = 0 %}
-        {% if poisonCond %}
+        {% if poisonCond() %}
           {% set x = 10 %}
         {% endif %}
         {{ x }}
@@ -575,7 +575,7 @@
 
     it('should collect multiple errors from condition and branches', async () => {
       const template = `
-        {% if poisonCond %}
+        {% if poisonCond() %}
           {{ failInTrue() }}
         {% else %}
           {{ failInFalse() }}

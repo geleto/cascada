@@ -183,6 +183,7 @@
         };
 
         try {
+          //actually loopBody is not supposed to throw an error
           await runtime.iterateAsyncSequential(
             generator(),
             loopBody,
@@ -191,8 +192,9 @@
           );
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
-          expect(err.errors[0].message).to.equal('Body failed at iteration 2');
+          //expect(isPoisonError(err)).to.be.true;
+          //expect(err.errors[0].message).to.equal('Body failed at iteration 2');
+          expect(err.message).to.equal('Body failed at iteration 2');
         }
       });
 

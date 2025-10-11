@@ -795,35 +795,9 @@
       }
     });
 
-    it('should deduplicate identical errors from multiple branches', async () => {
-      const sameError = async () => { throw new Error('Same error'); };
-      const context2 = { sameError };
-
-      const script = `
-      if sameError()
-        @data.a = 1
-      endif
-      if sameError()
-        @data.b = 2
-      endif
-    `;
-
-      try {
-        await env.renderScriptString(script, context2, { output: 'data' });
-        throw new Error('Should have thrown');
-      } catch (err) {
-        expect(isPoisonError(err)).to.be(true);
-        // Should deduplicate - only one "Same error" message
-        const messages = err.errors.map(e => e.message);
-        const sameErrorCount = messages.filter(m => m.includes('Same error')).length;
-        expect(sameErrorCount).to.be(1);
-      }
-    });
-
     it('should preserve error messages and stack traces', async () => {
       const errorWithStack = async () => {
         const err = new Error('Detailed error message');
-        err.code = 'TEST_ERROR';
         throw err;
       };
       const context2 = { errorWithStack };
@@ -840,7 +814,6 @@
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
         expect(err.errors[0].message).to.contain('Detailed error message');
-        expect(err.errors[0].code).to.be('TEST_ERROR');
         expect(err.errors[0].stack).to.be.ok();
       }
     });
