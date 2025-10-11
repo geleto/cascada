@@ -28,688 +28,67 @@
 
   describe('Iterator Functions Poison Handling - Unit tests', () => {
 
-    describe('iterate - poisoned iterable', () => {
-      it('should poison branch writes when array is poisoned', async () => {
-        const frame = new AsyncFrame();
-        frame.set('sum', 0, true);
+    it('should handle normal iteration when array is valid', async () => {
+      // Root frame
+      const rootFrame = new AsyncFrame();
+      rootFrame.set('count', 0, true);
 
-        const poison = createPoison(new Error('Array poisoned'));
+      // Outer async block frame (simulates the compiler's outer async block for the for loop)
+      // This is the parent that will track the loop's writes
+      const outerFrame = rootFrame.pushAsyncBlock(null, { count: 1 });
 
-        const loopBody = (item, i) => {
-          frame.set('sum', frame.lookup('sum') + item, true);
-        };
+      // Inner loop frame created from the outer frame
+      const loopFrame = outerFrame.pushAsyncBlock(null, { count: 3 });
+      loopFrame.sequentialLoopBody = true;
 
-        const didIterate = await runtime.iterate(
-          poison,
-          loopBody,
-          null,
-          frame,
-          { sum: 3 }, // Would write 3 times if not poisoned
-          ['item'],
-          false,
-          false,
-          { lineno: 1, colno: 1, path: '/test.html' }
-        );
+      const arr = [1, 2, 3];
+      const loopBody = () => {
+        const current = loopFrame.lookup('count');
+        loopFrame.set('count', current + 1, true);
+      };
 
-        expect(didIterate).to.be.false;
-        expect(isPoison(frame.lookup('sum'))).to.be.true;
-      });
+      await runtime.iterate(
+        arr,
+        loopBody,
+        null,
+        loopFrame,
+        { count: 3 },
+        ['item'],
+        true, // sequential
+        false,
+        { lineno: 1, colno: 1 }
+      );
 
-      it('should execute else branch when iterable is poisoned', async () => {
-        let elseCalled = false;
-        const poison = createPoison(new Error('No data'));
+      expect(loopFrame.lookup('count')).to.equal(3);
+    });
 
-        const loopBody = () => { };
-        const loopElse = async () => {
-          elseCalled = true;
-        };
+    it('should handle normal iterateAsyncParallel iteration when array is valid', async () => {
+      const parentFrame = new AsyncFrame();
+      parentFrame.set('count', 0, true);
+      const outerFrame = parentFrame.pushAsyncBlock(null, { count: 1 });
+      const loopFrame = outerFrame.pushAsyncBlock(null, { count: 3 });
 
-        await runtime.iterate(
-          poison,
-          loopBody,
-          loopElse,
-          null,
-          null,
-          ['item'],
-          false,
-          false,
-          { lineno: 1, colno: 1 }
-        );
-
-        expect(elseCalled).to.be.true;
-      });
-
-      it('should handle normal iteration when array is valid', async () => {
-        // Root frame
-        const rootFrame = new AsyncFrame();
-        rootFrame.set('count', 0, true);
-
-        // Outer async block frame (simulates the compiler's outer async block for the for loop)
-        // This is the parent that will track the loop's writes
-        const outerFrame = rootFrame.pushAsyncBlock(null, { count: 1 });
-
-        // Inner loop frame created from the outer frame
-        const loopFrame = outerFrame.pushAsyncBlock(null, { count: 3 });
+      const arr = [1, 2, 3];
+      const loopBody = () => {
+        // Set sequentialLoopBody INSIDE the loop body function, like the compiler does
         loopFrame.sequentialLoopBody = true;
-
-        const arr = [1, 2, 3];
-        const loopBody = () => {
-          const current = loopFrame.lookup('count');
-          loopFrame.set('count', current + 1, true);
-        };
-
-        await runtime.iterate(
-          arr,
-          loopBody,
-          null,
-          loopFrame,
-          { count: 3 },
-          ['item'],
-          true, // sequential
-          false,
-          { lineno: 1, colno: 1 }
-        );
-
-        expect(loopFrame.lookup('count')).to.equal(3);
-      });
-
-      it('should handle object iteration when object is poisoned', async () => {
-        const frame = new AsyncFrame();
-        frame.set('keys', [], true);
-
-        const poison = createPoison(new Error('Object poisoned'));
-
-        const loopBody = (key, value) => {
-          const current = frame.lookup('keys');
-          frame.set('keys', [...current, key], true);
-        };
-
-        const didIterate = await runtime.iterate(
-          poison,
-          loopBody,
-          null,
-          frame,
-          { keys: 2 }, // Would write 2 times if not poisoned
-          ['key', 'value'],
-          false,
-          false,
-          { lineno: 1, colno: 1 }
-        );
-
-        expect(didIterate).to.be.false;
-        expect(isPoison(frame.lookup('keys'))).to.be.true;
-      });
-    });
-
-    describe('iterateAsyncSequential - error collection', () => {
-      it('should collect all errors from poisoned values', async () => {
-        async function* generator() {
-          yield createPoison(new Error('Error 1'));
-          yield 'valid';
-          yield createPoison(new Error('Error 2'));
-        }
-
-        const loopBody = (value) => { };
-
-        try {
-          await runtime.iterateAsyncSequential(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
-          expect(err.errors).to.have.length(2);
-          expect(err.errors[0].message).to.equal('Error 1');
-          expect(err.errors[1].message).to.equal('Error 2');
-        }
-      });
-
-      it('should collect errors from loop body execution', async () => {
-        async function* generator() {
-          yield 1;
-          yield 2;
-          yield 3;
-        }
-
-        let iteration = 0;
-        const loopBody = (value) => {
-          iteration++;
-          if (iteration === 2) {
-            throw new Error('Body failed at iteration 2');
-          }
-        };
-
-        try {
-          //actually loopBody is not supposed to throw an error
-          await runtime.iterateAsyncSequential(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          //expect(isPoisonError(err)).to.be.true;
-          //expect(err.errors[0].message).to.equal('Body failed at iteration 2');
-          expect(err.message).to.equal('Body failed at iteration 2');
-        }
-      });
-
-      it('should continue iteration after finding error', async () => {
-        let iterationCount = 0;
-
-        async function* generator() {
-          yield 1;
-          yield createPoison(new Error('Middle error'));
-          yield 3;
-        }
-
-        const loopBody = (value) => {
-          iterationCount++;
-        };
-
-        try {
-          await runtime.iterateAsyncSequential(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          // Should have processed all 3 items
-          expect(iterationCount).to.equal(2); // Poison skipped body execution
-          expect(isPoisonError(err)).to.be.true;
-        }
-      });
-
-      it('should handle mixed poison and promise rejections', async () => {
-        async function* generator() {
-          yield createPoison(new Error('Poison error'));
-          yield 'valid';
-          yield Promise.reject(new Error('Promise error'));
-        }
-
-        const loopBody = async (value) => {
-          if (typeof value === 'string') return;
-          await value; // This will throw for rejected promise
-        };
-
-        try {
-          await runtime.iterateAsyncSequential(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
-          // Should have both errors
-          expect(err.errors.length).to.be.at.least(1);
-        }
-      });
-
-      it('should handle loop body returning poison', async () => {
-        async function* generator() {
-          yield 1;
-          yield 2;
-        }
-
-        const loopBody = (value) => {
-          if (value === 2) {
-            return createPoison(new Error('Body returned poison'));
-          }
-          return value;
-        };
-
-        try {
-          await runtime.iterateAsyncSequential(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
-          expect(err.errors[0].message).to.equal('Body returned poison');
-        }
-      });
-
-      it('should handle destructuring with poisoned values', async () => {
-        async function* generator() {
-          yield [1, 2];
-          yield createPoison(new Error('Array poisoned'));
-          yield [3, 4];
-        }
-
-        const loopBody = (a, b) => {
-          return a + b;
-        };
-
-        try {
-          await runtime.iterateAsyncSequential(
-            generator(),
-            loopBody,
-            ['a', 'b'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
-          expect(err.errors[0].message).to.equal('Array poisoned');
-        }
-      });
-    });
-
-    describe('iterateAsyncParallel - error collection', () => {
-      it('should handle normal iteration when array is valid', async () => {
-        const parentFrame = new AsyncFrame();
-        parentFrame.set('count', 0, true);
-        const outerFrame = parentFrame.pushAsyncBlock(null, { count: 1 });
-        const loopFrame = outerFrame.pushAsyncBlock(null, { count: 3 });
-
-        const arr = [1, 2, 3];
-        const loopBody = () => {
-          // Set sequentialLoopBody INSIDE the loop body function, like the compiler does
-          loopFrame.sequentialLoopBody = true;
-          const current = loopFrame.lookup('count');
-          loopFrame.set('count', current + 1, true);
-        };
-
-        await runtime.iterate(
-          arr,
-          loopBody,
-          null,
-          loopFrame,
-          { count: 3 },
-          ['item'],
-          true, // sequential
-          false,
-          { lineno: 1, colno: 1 }
-        );
-
-        expect(loopFrame.lookup('count')).to.equal(3);
-      });
-
-      it('should collect errors from parallel body execution', async () => {
-        async function* generator() {
-          yield 1;
-          yield 2;
-          yield 3;
-        }
-
-        const loopBody = async (value, i) => {
-          if (i === 1) {
-            throw new Error('Failed at index 1');
-          }
-        };
-
-        try {
-          await runtime.iterateAsyncParallel(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(err.message).to.contain('Failed at index 1');
-        }
-      });
-
-      it('should process all iterations even after error', async () => {
-        const processed = [];
-
-        async function* generator() {
-          yield 1;
-          yield createPoison(new Error('Middle error'));
-          yield 3;
-        }
-
-        const loopBody = (value) => {
-          if (!isPoison(value)) {
-            processed.push(value);
-          }
-        };
-
-        try {
-          await runtime.iterateAsyncParallel(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          // Should have processed valid values
-          expect(processed).to.contain(1);
-          expect(processed).to.contain(3);
-          expect(isPoisonError(err) || err.message.includes('Middle error')).to.be.true;
-        }
-      });
-
-      it('should handle multiple parallel errors', async () => {
-        async function* generator() {
-          yield 1;
-          yield 2;
-          yield 3;
-          yield 4;
-        }
-
-        const loopBody = async (value, i) => {
-          if (i === 1 || i === 3) {
-            throw new Error(`Failed at index ${i}`);
-          }
-        };
-
-        try {
-          await runtime.iterateAsyncParallel(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          // Should have collected multiple errors
-          expect(err.message).to.match(/Failed at index (1|3)/);
-        }
-      });
-
-      it('should handle mixed poison and async errors', async () => {
-        async function* generator() {
-          yield createPoison(new Error('Poison error'));
-          yield 2;
-          yield 3;
-        }
-
-        const loopBody = async (value, i) => {
-          if (i === 2) {
-            throw new Error('Async error');
-          }
-        };
-
-        try {
-          await runtime.iterateAsyncParallel(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(err.message).to.match(/(Poison error|Async error)/);
-        }
-      });
-    });
-
-    describe('Deterministic error collection', () => {
-      it('should collect same errors regardless of timing', async () => {
-        // Run the same scenario multiple times
-        const runs = [];
-
-        for (let run = 0; run < 3; run++) {
-          async function* generator() {
-            yield createPoison(new Error('Error A'));
-            await new Promise(resolve => setTimeout(resolve, Math.random() * 10));
-            yield createPoison(new Error('Error B'));
-            await new Promise(resolve => setTimeout(resolve, Math.random() * 10));
-            yield createPoison(new Error('Error C'));
-          }
-
-          try {
-            await runtime.iterateAsyncSequential(
-              generator(),
-              () => { },
-              ['item'],
-              { lineno: 1, colno: 1 }
-            );
-          } catch (err) {
-            runs.push(err.errors.map(e => e.message).sort());
-          }
-        }
-
-        // All runs should have same errors
-        expect(runs[0]).to.deep.equal(runs[1]);
-        expect(runs[1]).to.deep.equal(runs[2]);
-      });
-
-      it('should handle empty async iterator', async () => {
-        async function* emptyGenerator() {
-          // Empty generator
-        }
-
-        const loopBody = () => { };
-        const didIterate = await runtime.iterateAsyncSequential(
-          emptyGenerator(),
-          loopBody,
-          ['item'],
-          { lineno: 1, colno: 1 }
-        );
-
-        expect(didIterate).to.be.false;
-      });
-
-      it('should handle single poisoned value', async () => {
-        async function* singleGenerator() {
-          yield createPoison(new Error('Single error'));
-        }
-
-        const loopBody = () => { };
-
-        try {
-          await runtime.iterateAsyncSequential(
-            singleGenerator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
-          expect(err.errors).to.have.length(1);
-          expect(err.errors[0].message).to.equal('Single error');
-        }
-      });
-
-      it('should handle all values being poisoned', async () => {
-        async function* allPoisonGenerator() {
-          yield createPoison(new Error('Error 1'));
-          yield createPoison(new Error('Error 2'));
-          yield createPoison(new Error('Error 3'));
-        }
-
-        const loopBody = () => { };
-
-        try {
-          await runtime.iterateAsyncSequential(
-            allPoisonGenerator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
-          expect(err.errors).to.have.length(3);
-          expect(err.errors.map(e => e.message)).to.include.members(['Error 1', 'Error 2', 'Error 3']);
-        }
-      });
-    });
-
-    describe('Error deduplication', () => {
-      it('should deduplicate identical errors', async () => {
-        const sameError = new Error('Same error');
-
-        async function* generator() {
-          yield createPoison(sameError);
-          yield createPoison(sameError);
-          yield createPoison(sameError);
-        }
-
-        const loopBody = () => { };
-
-        try {
-          await runtime.iterateAsyncSequential(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
-          expect(err.errors).to.have.length(1);
-          expect(err.errors[0].message).to.equal('Same error');
-        }
-      });
-
-      it('should preserve different errors', async () => {
-        async function* generator() {
-          yield createPoison(new Error('Error A'));
-          yield createPoison(new Error('Error B'));
-          yield createPoison(new Error('Error C'));
-        }
-
-        const loopBody = () => { };
-
-        try {
-          await runtime.iterateAsyncSequential(
-            generator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
-          expect(err.errors).to.have.length(3);
-        }
-      });
-    });
-
-    describe('Edge cases', () => {
-      it('should handle null/undefined iterable', async () => {
-        const loopBody = () => { };
-        const loopElse = async () => { };
-
-        // Test null
-        const didIterateNull = await runtime.iterate(
-          null,
-          loopBody,
-          loopElse,
-          null,
-          null,
-          ['item'],
-          false,
-          false,
-          { lineno: 1, colno: 1 }
-        );
-        expect(didIterateNull).to.be.false;
-
-        // Test undefined
-        const didIterateUndefined = await runtime.iterate(
-          undefined,
-          loopBody,
-          loopElse,
-          null,
-          null,
-          ['item'],
-          false,
-          false,
-          { lineno: 1, colno: 1 }
-        );
-        expect(didIterateUndefined).to.be.false;
-      });
-
-      it('should handle empty array', async () => {
-        const frame = new AsyncFrame();
-        frame.set('count', 0, true);
-
-        const loopBody = () => {
-          const current = frame.lookup('count');
-          frame.set('count', current + 1, true);
-        };
-
-        let elseCalled = false;
-        const loopElse = async () => {
-          elseCalled = true;
-        };
-
-        const didIterate = await runtime.iterate(
-          [],
-          loopBody,
-          loopElse,
-          frame,
-          { count: 0 },
-          ['item'],
-          true,
-          false,
-          { lineno: 1, colno: 1 }
-        );
-
-        expect(didIterate).to.be.false;
-        expect(elseCalled).to.be.true;
-        expect(frame.lookup('count')).to.equal(0);
-      });
-
-      it('should handle empty object', async () => {
-        const frame = new AsyncFrame();
-        frame.set('keys', [], true);
-
-        const loopBody = (key, value) => {
-          const current = frame.lookup('keys');
-          frame.set('keys', [...current, key], true);
-        };
-
-        let elseCalled = false;
-        const loopElse = async () => {
-          elseCalled = true;
-        };
-
-        const didIterate = await runtime.iterate(
-          {},
-          loopBody,
-          loopElse,
-          frame,
-          { keys: 0 },
-          ['key', 'value'],
-          true,
-          false,
-          { lineno: 1, colno: 1 }
-        );
-
-        expect(didIterate).to.be.false;
-        expect(elseCalled).to.be.true;
-        expect(frame.lookup('keys')).to.deep.equal([]);
-      });
-
-      it('should handle async iterator that throws during iteration', async () => {
-        async function* throwingGenerator() {
-          yield 1;
-          yield 2;
-          throw new Error('Iterator failed');
-        }
-
-        const loopBody = () => { };
-
-        try {
-          await runtime.iterateAsyncSequential(
-            throwingGenerator(),
-            loopBody,
-            ['item'],
-            { lineno: 1, colno: 1 }
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(err.message).to.contain('Iterator failed');
-        }
-      });
+        const current = loopFrame.lookup('count');
+        loopFrame.set('count', current + 1, true);
+      };
+
+      await runtime.iterate(
+        arr,
+        loopBody,
+        null,
+        loopFrame,
+        { count: 3 },
+        ['item'],
+        true, // sequential
+        false,
+        { lineno: 1, colno: 1 }
+      );
+
+      expect(loopFrame.lookup('count')).to.equal(3);
     });
   });
 
@@ -739,6 +118,538 @@
 
       const result = await env.renderTemplateString(template, context);
       expect(result.trim()).to.equal('Total: 12');
+    });
+  });
+
+  describe('Integration: For Loops with Poison Handling', () => {
+    let env;
+
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    // Replaces: 'iterate - poisoned iterable' -> 'should poison branch writes when array is poisoned'
+    it('should poison variables written inside a loop over a poisoned iterable', async () => {
+      const context = {
+        poisonedItems: createPoison(new Error('Iterable is poisoned'))
+      };
+      const template = `
+        {% set total = 0 %}
+        {% for item in poisonedItems %}
+          {% set total = total + item %}
+        {% endfor %}
+        {{ total }}
+      `;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(1);
+        expect(err.errors[0].message).to.contain('Iterable is poisoned');
+      }
+    });
+
+    // Replaces: 'iterate - poisoned iterable' -> 'should execute else branch when iterable is poisoned'
+    it('should execute the else block for a loop over a poisoned iterable', async () => {
+      const context = {
+        poisonedItems: createPoison(new Error('Iterable is poisoned'))
+      };
+      const template = `
+        {% for item in poisonedItems %}
+          NEVER SEEN
+        {% else %}
+          Else block was executed
+        {% endfor %}
+      `;
+      const result = await env.renderTemplateString(template, context);
+      expect(result.trim()).to.equal('Else block was executed');
+    });
+
+    // Replaces: 'iterateAsyncSequential - error collection' -> 'should collect all errors from poisoned values'
+    it('should collect all errors from an async generator yielding poison', async () => {
+      const context = {
+        async *myGenerator() {
+          yield 1;
+          yield createPoison(new Error('First failure'));
+          yield 2;
+          yield createPoison(new Error('Second failure'));
+        }
+      };
+      const template = `{% for item in myGenerator() %}{{ item }}{% endfor %}`;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(2);
+        expect(err.errors[0].message).to.contain('First failure');
+        expect(err.errors[1].message).to.contain('Second failure');
+      }
+    });
+
+    // Replaces: 'iterateAsyncSequential - error collection' -> 'should continue iteration after finding error'
+    it('should continue processing valid items after a poison value is yielded', async () => {
+      const context = {
+        processed: [],
+        async *myGenerator() {
+          yield 'A';
+          yield createPoison(new Error('Transient error'));
+          yield 'B';
+        }
+      };
+      const template = `{% for item in myGenerator() %}{{ processed.push(item) }}{% endfor %}`;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(context.processed).to.eql(['A', 'B']);
+      }
+    });
+
+    // Replaces: 'iterateAsyncParallel - error collection' -> 'should process all iterations even after error'
+    // Also covers 'should handle multiple parallel errors'
+    it('should process all parallel iterations and collect multiple errors', async () => {
+      const context = {
+        processed: [],
+        async *myGenerator() {
+          yield 1;
+          yield 2;
+          yield 3;
+          yield 4;
+        },
+        async failingFunc(val) {
+          if (val === 2 || val === 4) {
+            throw new Error(`Failure on ${val}`);
+          }
+          return val;
+        }
+      };
+      const template = `
+        {% for item in myGenerator() %}
+          {% set result = failingFunc(item) %}
+          {{ processed.push(result) }}
+        {% endfor %}
+      `;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(2);
+        const messages = err.errors.map(e => e.message).sort();
+        expect(messages).to.eql(['Failure on 2', 'Failure on 4']);
+
+        const successfulResults = await Promise.all(
+          context.processed.filter(p => !isPoison(p))
+        );
+        expect(successfulResults).to.eql([1, 3]);
+      }
+    });
+
+    // Replaces: 'Deterministic error collection'
+    it('should collect errors deterministically regardless of async timing', async () => {
+      const expectedErrors = ['Error A', 'Error B', 'Error C'].sort();
+
+      for (let i = 0; i < 5; i++) {
+        const context = {
+          async *myGenerator() {
+            await new Promise(res => setTimeout(res, Math.random() * 5));
+            yield createPoison(new Error('Error A'));
+            await new Promise(res => setTimeout(res, Math.random() * 5));
+            yield createPoison(new Error('Error B'));
+            await new Promise(res => setTimeout(res, Math.random() * 5));
+            yield createPoison(new Error('Error C'));
+          }
+        };
+        const template = `{% for item in myGenerator() %}{% endfor %}`;
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail(`Run ${i + 1} should have thrown`);
+        } catch (err) {
+          expect(isPoisonError(err)).to.be.true;
+          const messages = err.errors.map(e => e.message).sort();
+          expect(messages).to.eql(expectedErrors);
+        }
+      }
+    });
+  });
+
+  //
+  // -----------------------------------------------------------
+  // Part 2: Advanced cases + dedup + edge cases (fixed)
+  // -----------------------------------------------------------
+  describe('Integration: For Loops with Poison Handling (Advanced Cases)', () => {
+    let env;
+
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    // Replaces: 'iterate - poisoned iterable' -> 'should handle object iteration when object is poisoned'
+    it('should execute the else block for a loop over a poisoned object', async () => {
+      const context = {
+        poisonedObject: createPoison(new Error('Object is poisoned'))
+      };
+      const template = `
+        {% for key, value in poisonedObject %}
+          NEVER SEEN: {{ key }} -> {{ value }}
+        {% else %}
+          Object else block executed
+        {% endfor %}
+      `;
+      const result = await env.renderTemplateString(template, context);
+      expect(result.trim()).to.equal('Object else block executed');
+    });
+
+    // Replaces: 'iterateAsyncSequential - error collection' -> 'should collect errors from loop body execution'
+    it('should catch and propagate errors thrown from an async function in a loop body', async () => {
+      const context = {
+        async *items() {
+          yield 1;
+          yield 2; // This one will cause the function to throw
+          yield 3;
+        },
+        async processItem(item) {
+          if (item === 2) {
+            throw new Error('Processing failed for item 2');
+          }
+          return item;
+        }
+      };
+      const template = `
+        {% for item in items() %}
+          {% set result = processItem(item) %}
+          {{ result }}
+        {% endfor %}
+      `;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(1);
+        expect(err.errors[0].message).to.contain('Processing failed for item 2');
+        expect(err.errors[0].lineno).to.be.a('number');
+      }
+    });
+
+    // Replaces: 'iterateAsyncSequential - error collection' -> 'should handle mixed poison and promise rejections'
+    it('should collect errors from both yielded poison and rejected promises in an async generator', async () => {
+      const context = {
+        async *myGenerator() {
+          yield 'good';
+          yield createPoison(new Error('Yielded poison error'));
+          yield Promise.reject(new Error('Rejected promise error'));
+          yield 'also good';
+        }
+      };
+      const template = `{% for item in myGenerator() %}{{ item }}{% endfor %}`;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(2);
+        const messages = err.errors.map(e => e.message).sort();
+        expect(messages).to.eql(['Rejected promise error', 'Yielded poison error']);
+      }
+    });
+
+    // Replaces: 'iterateAsyncSequential - error collection' -> 'should handle loop body returning poison'
+    it('should handle functions in a loop body that return poison values', async () => {
+      const context = {
+        items: ['A', 'B', 'C'],
+        processItem(item) {
+          if (item === 'B') {
+            return createPoison(new Error('Item B is invalid'));
+          }
+          return item;
+        }
+      };
+      const template = `
+        {% for item in items %}
+          {% set result = processItem(item) %}
+          {{ result }}
+        {% endfor %}
+      `;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(1);
+        expect(err.errors[0].message).to.contain('Item B is invalid');
+      }
+    });
+
+    // Replaces: 'iterateAsyncSequential - error collection' -> 'should handle destructuring with poisoned values'
+    it('should handle destructuring loops where an item is a poison value', async () => {
+      const context = {
+        processed: [],
+        async *myGenerator() {
+          yield ['good', 1];
+          yield createPoison(new Error('This item is poisoned'));
+          yield ['also good', 2];
+        }
+      };
+      const template = `
+        {% for name, id in myGenerator() %}
+          {{ processed.push(name) }}
+        {% endfor %}
+      `;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(1);
+        expect(err.errors[0].message).to.contain('This item is poisoned');
+        expect(context.processed).to.eql(['good', 'also good']);
+      }
+    });
+  });
+
+  describe('Integration: Advanced Error Collection and Deduplication', () => {
+    let env;
+
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    // Replaces: 'iterateAsyncParallel - error collection' -> 'should handle mixed poison and async errors'
+    it('should collect errors from both yielded poison and parallel async function errors', async () => {
+      const context = {
+        async *myGenerator() {
+          yield createPoison(new Error('Poison from generator'));
+          yield 'item-to-process';
+          yield 'another-good-item';
+        },
+        async processItem(item) {
+          if (item === 'item-to-process') {
+            throw new Error('Async processing error');
+          }
+          return item;
+        }
+      };
+      const template = `
+        {% for item in myGenerator() %}
+          {% set result = processItem(item) %}
+        {% endfor %}
+      `;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(2);
+        const messages = err.errors.map(e => e.message).sort();
+        expect(messages).to.eql(['Async processing error', 'Poison from generator']);
+      }
+    });
+
+    // Replaces: 'Deterministic error collection' -> single poisoned value
+    it('should deterministically catch a single poisoned value from a delayed generator', async () => {
+      for (let i = 0; i < 3; i++) {
+        const context = {
+          async *myGenerator() {
+            await new Promise(res => setTimeout(res, Math.random() * 5));
+            yield createPoison(new Error('Single deterministic error'));
+          }
+        };
+        const template = `{% for item in myGenerator() %}{% endfor %}`;
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail(`Run ${i + 1} should have thrown`);
+        } catch (err) {
+          expect(isPoisonError(err)).to.be.true;
+          expect(err.errors).to.have.length(1);
+          expect(err.errors[0].message).to.contain('Single deterministic error');
+        }
+      }
+    });
+
+    // Replaces: 'Deterministic error collection' -> all poisoned values
+    it('should deterministically catch all poisoned values from a delayed generator', async () => {
+      const expectedMessages = ['Error 1', 'Error 2', 'Error 3'].sort();
+
+      for (let i = 0; i < 3; i++) {
+        const context = {
+          async *myGenerator() {
+            yield createPoison(new Error('Error 1'));
+            await new Promise(res => setTimeout(res, Math.random() * 5));
+            yield createPoison(new Error('Error 2'));
+            await new Promise(res => setTimeout(res, Math.random() * 5));
+            yield createPoison(new Error('Error 3'));
+          }
+        };
+        const template = `{% for item in myGenerator() %}{% endfor %}`;
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail(`Run ${i + 1} should have thrown`);
+        } catch (err) {
+          expect(isPoisonError(err)).to.be.true;
+          const messages = err.errors.map(e => e.message).sort();
+          expect(messages).to.eql(expectedMessages);
+        }
+      }
+    });
+
+    // Replaces: 'Error deduplication' -> identical instance should be deduped
+    it('should deduplicate errors when the exact same error instance is yielded multiple times', async () => {
+      const sameError = new Error('This error should only appear once');
+      const context = {
+        items: [
+          createPoison(sameError),
+          'good item',
+          createPoison(sameError)
+        ]
+      };
+      const template = `{% for item in items %}{% endfor %}`;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(1);
+        expect(err.errors[0].message).to.contain('This error should only appear once');
+      }
+    });
+
+    // Replaces: 'Error deduplication' -> distinct instances are separate
+    it('should treat distinct error instances as separate entries', async () => {
+      const context = {
+        items: [
+          createPoison(new Error('Same message')),
+          createPoison(new Error('Same message'))
+        ]
+      };
+      const template = `{% for item in items %}{% endfor %}`;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(2); // two distinct instances retained
+        expect(err.errors[0].message).to.contain('Same message');
+        expect(err.errors[1].message).to.contain('Same message');
+      }
+    });
+
+    // Replaces: 'Error deduplication' -> preserve order while deduplicating
+    it('should preserve the encounter order of unique errors during deduplication', async () => {
+      const context = {
+        items: [
+          createPoison(new Error('Error A')),
+          createPoison(new Error('Error B')),
+          createPoison(new Error('Error A')), // Duplicate
+          createPoison(new Error('Error C')),
+          createPoison(new Error('Error B'))  // Duplicate
+        ]
+      };
+      const template = `{% for item in items %}{% endfor %}`;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(3);
+        const messages = err.errors.map(e => e.message);
+        expect(messages).to.eql(['Error A', 'Error B', 'Error C']);
+      }
+    });
+  });
+
+  describe('Integration: Loop Edge Cases', () => {
+    let env;
+
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    // Replaces: 'Edge cases' -> null iterable
+    it('should handle a null iterable without throwing and execute the else block', async () => {
+      const context = { items: null };
+      const template = `
+        {% for item in items %}
+          This should not render.
+        {% else %}
+          Else block for null iterable.
+        {% endfor %}
+      `;
+
+      const result = await env.renderTemplateString(template, context);
+      expect(result.trim()).to.equal('Else block for null iterable.');
+    });
+
+    // Replaces: 'Edge cases' -> empty iterable (array & object)
+    it('should handle empty iterables (array and object) and execute the else block', async () => {
+      // Empty array
+      const contextArray = { items: [] };
+      const templateArray = `
+        {% for item in items %}
+          This should not render.
+        {% else %}
+          Empty array handled.
+        {% endfor %}
+      `;
+      const resultArray = await env.renderTemplateString(templateArray, contextArray);
+      expect(resultArray.trim()).to.equal('Empty array handled.');
+
+      // Empty object
+      const contextObject = { data: {} };
+      const templateObject = `
+        {% for key, value in data %}
+          This should not render.
+        {% else %}
+          Empty object handled.
+        {% endfor %}
+      `;
+      const resultObject = await env.renderTemplateString(templateObject, contextObject);
+      expect(resultObject.trim()).to.equal('Empty object handled.');
+    });
+
+    // Replaces: 'Edge cases' -> iterable throws during iteration
+    it('should catch and propagate an error thrown from within an async generator', async () => {
+      const context = {
+        async *throwingGenerator() {
+          yield 'first item';
+          yield 'second item';
+          // Native JS error (not a yielded PoisonValue)
+          throw new Error('The generator itself has failed');
+        }
+      };
+      const template = `
+        {% for item in throwingGenerator() %}
+          {{ item }}
+        {% endfor %}
+      `;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        // Runtime should wrap the thrown error into a PoisonError
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(1);
+        expect(err.errors[0].message).to.contain('The generator itself has failed');
+      }
     });
   });
 })();
