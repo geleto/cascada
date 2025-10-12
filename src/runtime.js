@@ -173,7 +173,7 @@ function createPoison(errorOrErrors, lineno = null, colno = null, errorContextSt
  * Check if a value is poisoned.
  */
 function isPoison(value) {
-  return value != null && value[POISON_KEY] === true;
+  return value && value[POISON_KEY] === true;
 }
 
 /**
@@ -181,7 +181,7 @@ function isPoison(value) {
  * More reliable than instanceof after transpilation.
  */
 function isPoisonError(error) {
-  return error != null && error[POISON_ERROR_KEY] === true;
+  return error && error[POISON_ERROR_KEY] === true;
 }
 
 /**
@@ -1045,6 +1045,7 @@ function ensureDefined(val, lineno, colno, context) {
   return val;
 }
 
+//@todo - remove lineno, colno
 function ensureDefinedAsync(val, lineno, colno, context, errorContext) {
   // Poison check - return rejected promise synchronously
   if (isPoison(val)) {
@@ -1060,6 +1061,7 @@ function ensureDefinedAsync(val, lineno, colno, context, errorContext) {
   return _ensureDefinedAsyncComplex(val, lineno, colno, context, errorContext);
 }
 
+//@todo - remove lineno, colno
 async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorContext) {
   // Handle arrays with possible poison values
   if (Array.isArray(val)) {
@@ -1781,6 +1783,7 @@ function memberLookup(obj, val) {
 function memberLookupScript(obj, val) {
   if (obj === undefined || obj === null) {
     //unlike in template mode, in script mode we throw an exception 'Cannot read properties of null'
+    throw new Error('Cannot read properties of null');
   }
 
   const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
@@ -1792,25 +1795,32 @@ function memberLookupScript(obj, val) {
 }
 
 function memberLookupAsync(obj, val, errorContext) {
-  // Check for poison in inputs - return poison directly (it's a thenable)
-  if (isPoison(obj)) {
-    return obj;
+  // Check if ANY input requires async processing
+  const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
+  const valIsPromise = val && typeof val.then === 'function' && !isPoison(val);
+
+  if (objIsPromise || valIsPromise) {
+    // Must delegate to async helper to await all promises
+    return _memberLookupAsyncComplex(obj, val, errorContext);
   }
-  if (isPoison(val)) {
+
+  // Sync path - collect ALL errors from both sources (never miss any error principle)
+  const objPoison = isPoison(obj);
+  const valPoison = isPoison(val);
+
+  if (objPoison && valPoison) {
+    // Both poisoned - merge errors
+    return createPoison([...obj.errors, ...val.errors]);
+  } else if (objPoison) {
+    // Only obj poisoned - return it directly
+    return obj;
+  } else if (valPoison) {
+    // Only val poisoned - return it directly
     return val;
   }
 
-  // Check if we have any promises
-  const objIsPromise = obj && typeof obj.then === 'function';
-  const valIsPromise = val && typeof val.then === 'function';
-
-  if (!objIsPromise && !valIsPromise) {
-    // Synchronous path - no promises to await
-    return memberLookup(obj, val);
-  }
-
-  // Has promises - delegate to async helper
-  return _memberLookupAsyncComplex(obj, val, errorContext);
+  // No errors - proceed with lookup
+  return memberLookup(obj, val);
 }
 
 async function _memberLookupAsyncComplex(obj, val, errorContext) {
@@ -1824,11 +1834,18 @@ async function _memberLookupAsyncComplex(obj, val, errorContext) {
   try {
     const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
 
-    // Check if resolved values are poison
-    if (isPoison(resolvedObj)) {
+    // Collect errors from BOTH resolved values (never miss any error principle)
+    const objPoison = isPoison(resolvedObj);
+    const valPoison = isPoison(resolvedVal);
+
+    if (objPoison && valPoison) {
+      // Both poisoned - merge errors
+      return createPoison([...resolvedObj.errors, ...resolvedVal.errors]);
+    } else if (objPoison) {
+      // Only obj poisoned - return it directly
       return resolvedObj;
-    }
-    if (isPoison(resolvedVal)) {
+    } else if (valPoison) {
+      // Only val poisoned - return it directly
       return resolvedVal;
     }
 
@@ -1844,26 +1861,33 @@ async function _memberLookupAsyncComplex(obj, val, errorContext) {
 }
 
 function memberLookupScriptAsync(obj, val, errorContext) {
-  // Check for poison in inputs
-  if (isPoison(obj)) {
-    return obj;
+  // Check if ANY input requires async processing
+  const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
+  const valIsPromise = val && typeof val.then === 'function' && !isPoison(val);
+
+  if (objIsPromise || valIsPromise) {
+    // Must delegate to async helper to await all promises
+    return _memberLookupScriptAsyncComplex(obj, val, errorContext);
   }
-  if (isPoison(val)) {
+
+  // Sync path - collect ALL errors from both sources (never miss any error principle)
+  const objPoison = isPoison(obj);
+  const valPoison = isPoison(val);
+
+  if (objPoison && valPoison) {
+    // Both poisoned - merge errors
+    return createPoison([...obj.errors, ...val.errors]);
+  } else if (objPoison) {
+    // Only obj poisoned - return it directly
+    return obj;
+  } else if (valPoison) {
+    // Only val poisoned - return it directly
     return val;
   }
 
-  // Check if we have any promises
-  const objIsPromise = obj && typeof obj.then === 'function';
-  const valIsPromise = val && typeof val.then === 'function';
-
-  if (!objIsPromise && !valIsPromise) {
-    // Synchronous path
-    // Let native error throw; it will be caught by the top-level sync try/catch.
-    return memberLookupScript(obj, val);
-  }
-
-  // Has promises - delegate to async helper, passing the context along.
-  return _memberLookupScriptAsyncComplex(obj, val, errorContext);
+  // No errors - proceed with lookup
+  // Let native error throw; it will be caught by the top-level sync try/catch.
+  return memberLookupScript(obj, val);
 }
 
 async function _memberLookupScriptAsyncComplex(obj, val, errorContext) {
@@ -1877,11 +1901,18 @@ async function _memberLookupScriptAsyncComplex(obj, val, errorContext) {
   try {
     const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
 
-    // Check if resolved values are poison
-    if (isPoison(resolvedObj)) {
+    // Collect errors from BOTH resolved values (never miss any error principle)
+    const objPoison = isPoison(resolvedObj);
+    const valPoison = isPoison(resolvedVal);
+
+    if (objPoison && valPoison) {
+      // Both poisoned - merge errors
+      return createPoison([...resolvedObj.errors, ...resolvedVal.errors]);
+    } else if (objPoison) {
+      // Only obj poisoned - return it directly
       return resolvedObj;
-    }
-    if (isPoison(resolvedVal)) {
+    } else if (valPoison) {
+      // Only val poisoned - return it directly
       return resolvedVal;
     }
 
@@ -1926,20 +1957,20 @@ function callWrapAsync(obj, name, context, args, errorContext) {
   }
 
   // All values are non-promises - collect all errors synchronously
-  const errors = [];
+  const objPoison = isPoison(obj);
+  const poisonedArgs = args.filter(isPoison);
 
-  if (isPoison(obj)) {
-    errors.push(...obj.errors);
-  }
-
-  // Collect errors from all poisoned args
-  for (const arg of args) {
-    if (isPoison(arg)) {
-      errors.push(...arg.errors);
-    }
-  }
-
-  if (errors.length > 0) {
+  // Optimize: avoid creating new poison if only one source is poisoned
+  if (objPoison && poisonedArgs.length === 0) {
+    return obj; // Only obj is poisoned - return it directly
+  } else if (!objPoison && poisonedArgs.length === 1) {
+    return poisonedArgs[0]; // Only one arg is poisoned - return it directly
+  } else if (objPoison || poisonedArgs.length > 0) {
+    // Multiple sources poisoned - merge all errors
+    const errors = [
+      ...(objPoison ? obj.errors : []),
+      ...poisonedArgs.flatMap(p => p.errors)
+    ];
     return createPoison(errors); // Errors already have position info from collectErrors
   }
 
@@ -2725,32 +2756,39 @@ async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey, error
   }
 
   try {
-    // Check target for poison before resolving
-    if (isPoison(target)) {
-      throw new PoisonError(target.errors);
+    // Collect errors from BOTH target and key (never miss any error principle)
+    const errors = await collectErrors([target, key]);
+    if (errors.length > 0) {
+      const poison = createPoison(errors);
+      frame.set(nodeLockKey, poison, true);
+      throw new PoisonError(errors);
     }
 
-    // Resolve target if it's a promise
-    let resolvedTarget = target;
-    if (target && typeof target.then === 'function') {
-      try {
-        resolvedTarget = await target;
-      } catch (err) {
-        const contextualError = isPoisonError(err) ? err : handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(contextualError);
-        frame.set(nodeLockKey, poison, true);
-        throw isPoisonError(err) ? err : new PoisonError([contextualError]);
-      }
+    // Resolve both if needed
+    const [resolvedTarget, resolvedKey] = await resolveDuo(target, key);
 
-      // Check if resolved to poison
-      if (isPoison(resolvedTarget)) {
-        frame.set(nodeLockKey, resolvedTarget, true);
-        throw new PoisonError(resolvedTarget.errors);
+    // Check if BOTH resolved values are poison (collect all errors)
+    const targetPoison = isPoison(resolvedTarget);
+    const keyPoison = isPoison(resolvedKey);
+
+    if (targetPoison || keyPoison) {
+      let poison;
+      if (targetPoison && keyPoison) {
+        // Both poisoned - merge errors
+        poison = createPoison([...resolvedTarget.errors, ...resolvedKey.errors]);
+      } else if (targetPoison) {
+        // Only target poisoned - use it directly
+        poison = resolvedTarget;
+      } else {
+        // Only key poisoned - use it directly
+        poison = resolvedKey;
       }
+      frame.set(nodeLockKey, poison, true);
+      throw new PoisonError(poison.errors);
     }
 
     // Perform lookup
-    const result = memberLookup(resolvedTarget, key);
+    const result = memberLookup(resolvedTarget, resolvedKey);
 
     // Check if result is poison
     if (isPoison(result)) {
@@ -2789,32 +2827,39 @@ async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey,
   }
 
   try {
-    // Check target for poison
-    if (isPoison(target)) {
-      throw new PoisonError(target.errors);
+    // Collect errors from BOTH target and key (never miss any error principle)
+    const errors = await collectErrors([target, key]);
+    if (errors.length > 0) {
+      const poison = createPoison(errors);
+      frame.set(nodeLockKey, poison, true);
+      throw new PoisonError(errors);
     }
 
-    // Resolve target if it's a promise
-    let resolvedTarget = target;
-    if (target && typeof target.then === 'function') {
-      try {
-        resolvedTarget = await target;
-      } catch (err) {
-        const contextualError = isPoisonError(err) ? err : handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(contextualError);
-        frame.set(nodeLockKey, poison, true);
-        throw isPoisonError(err) ? err : new PoisonError([contextualError]);
-      }
+    // Resolve both if needed
+    const [resolvedTarget, resolvedKey] = await resolveDuo(target, key);
 
-      // Check if resolved to poison
-      if (isPoison(resolvedTarget)) {
-        frame.set(nodeLockKey, resolvedTarget, true);
-        throw new PoisonError(resolvedTarget.errors);
+    // Check if BOTH resolved values are poison (collect all errors)
+    const targetPoison = isPoison(resolvedTarget);
+    const keyPoison = isPoison(resolvedKey);
+
+    if (targetPoison || keyPoison) {
+      let poison;
+      if (targetPoison && keyPoison) {
+        // Both poisoned - merge errors
+        poison = createPoison([...resolvedTarget.errors, ...resolvedKey.errors]);
+      } else if (targetPoison) {
+        // Only target poisoned - use it directly
+        poison = resolvedTarget;
+      } else {
+        // Only key poisoned - use it directly
+        poison = resolvedKey;
       }
+      frame.set(nodeLockKey, poison, true);
+      throw new PoisonError(poison.errors);
     }
 
     // Perform lookup
-    const result = memberLookupScript(resolvedTarget, key);
+    const result = memberLookupScript(resolvedTarget, resolvedKey);
 
     // Check if result is poison
     if (isPoison(result)) {
