@@ -173,7 +173,7 @@ function createPoison(errorOrErrors, lineno = null, colno = null, errorContextSt
  * Check if a value is poisoned.
  */
 function isPoison(value) {
-  return value && value[POISON_KEY] === true;
+  return value != null/*and undefined*/ && value[POISON_KEY] === true;
 }
 
 /**
@@ -181,7 +181,7 @@ function isPoison(value) {
  * More reliable than instanceof after transpilation.
  */
 function isPoisonError(error) {
-  return error && error[POISON_ERROR_KEY] === true;
+  return error != null/*and undefined*/ && error[POISON_ERROR_KEY] === true;
 }
 
 /**
