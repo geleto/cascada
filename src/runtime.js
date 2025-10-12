@@ -80,9 +80,22 @@ class PoisonError extends Error {
     const deduped = deduplicateErrors(errors);
 
     super();
+
     this.name = 'PoisonError';
     this.errors = deduped;
-    this[POISON_ERROR_KEY] = true; // Marker for reliable detection
+    this[POISON_ERROR_KEY] = true;
+
+    // Determine the appropriate stack trace
+    const stacks = deduped.map(e => e.stack).filter(Boolean);
+    const allSame = stacks.length > 0 && stacks.every(s => s === stacks[0]);
+
+    if (allSame) {
+      // Use the shared stack if all are identical
+      this.stack = stacks[0];
+    }
+
+    // Ensure correct prototype chain (for Babel/older environments)
+    Object.setPrototypeOf?.(this, new.target.prototype);
   }
 
   get message() {
@@ -92,23 +105,8 @@ class PoisonError extends Error {
       : `Multiple errors occurred (${deduped.length}):\n` +
         deduped.map((e, i) => `  ${i + 1}. ${e.message}`).join('\n');
   }
-
-  get stack() {
-    // Return stack only if all errors have the same stack
-    const stacks = this.errors
-      .map(e => e.stack)
-      .filter(Boolean); // Remove undefined/null stacks
-
-    if (stacks.length === 0) {
-      return super.stack; // Fallback to default Error stack
-    }
-
-    const firstStack = stacks[0];
-    const allSame = stacks.every(stack => stack === firstStack);
-
-    return allSame ? firstStack : super.stack;
-  }
 }
+
 
 /**
  * Deduplicate errors by message.
