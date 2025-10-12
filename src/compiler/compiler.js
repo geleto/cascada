@@ -414,34 +414,6 @@ class Compiler extends CompilerBase {
     const branchPositions = [];
     const branchWriteCounts = [];
 
-    // Helper to combine all write counts
-    const combineWriteCounts = (counts) => {
-      const combined = {};
-      counts.forEach((count) => {
-        if (!count) return;
-        Object.entries(count).forEach(([key, value]) => {
-          combined[key] = (combined[key] || 0) + value;
-        });
-      });
-      return combined;
-    };
-
-    // Helper to exclude current branch writes from combined writes
-    const excludeCurrentWrites = (combined, current) => {
-      const filtered = { ...combined };
-      if (current) {
-        Object.keys(current).forEach((key) => {
-          if (filtered[key]) {
-            filtered[key] -= current[key];
-            if (filtered[key] <= 0) {
-              delete filtered[key];
-            }
-          }
-        });
-      }
-      return filtered;
-    };
-
     // Emit switch statement
     this.emit('switch (');
     this._compileAwaitedExpression(node.expr, frame, false);
@@ -483,7 +455,23 @@ class Compiler extends CompilerBase {
     this.emit('}');
 
     // Combine writes from all branches
-    const totalWrites = combineWriteCounts(branchWriteCounts);
+    const totalWrites = this._combineWriteCounts(branchWriteCounts);
+
+    // Helper to exclude current branch writes from combined writes
+    const excludeCurrentWrites = (combined, current) => {
+      const filtered = { ...combined };
+      if (current) {
+        Object.keys(current).forEach((key) => {
+          if (filtered[key]) {
+            filtered[key] -= current[key];
+            if (filtered[key] <= 0) {
+              delete filtered[key];
+            }
+          }
+        });
+      }
+      return filtered;
+    };
 
     // Insert skip statements for each case, including default
     branchPositions.forEach((pos, i) => {
@@ -495,6 +483,26 @@ class Compiler extends CompilerBase {
 
     // Use node.expr (passed earlier) for the end block
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, false, node.expr);
+  }
+
+  /**
+ * Combine multiple write count objects by adding values for each variable.
+ * Used to calculate total potential writes across all branches (if/else, switch cases).
+ *
+ * @param {Array<Object>} counts - Array of write count objects
+ * @returns {Object} Combined write counts with summed values
+ */
+  _combineWriteCounts(counts) {
+    const combined = {};
+
+    counts.forEach((count) => {
+      if (!count) return;
+      Object.entries(count).forEach(([key, value]) => {
+        combined[key] = (combined[key] || 0) + value;
+      });
+    });
+
+    return combined;
   }
 
   //todo! - get rid of the callback
@@ -604,7 +612,7 @@ class Compiler extends CompilerBase {
       this.emit('}');  // No re-throw - execution continues with poisoned vars
 
       // Fill in the poison handling code now that we have write counts and handlers
-      const combinedCounts = Object.assign({}, trueBranchWriteCounts || {}, falseBranchWriteCounts || {});
+      const combinedCounts = this._combineWriteCounts([trueBranchWriteCounts, falseBranchWriteCounts]);
 
       // Poison both variables and handlers when condition fails
       const hasVariables = Object.keys(combinedCounts).length > 0;

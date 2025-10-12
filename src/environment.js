@@ -1016,6 +1016,7 @@ class Template extends Obj {
       try {
         func = new Function(source);
       } catch (e) {
+        // @todo - CompileError
         /*console.error('Error compiling:\n' + source);
 
         console.error('Error creating function:');
