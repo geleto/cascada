@@ -522,6 +522,31 @@
       }
     });
 
+    it('should handle if with poison', async () => {
+      const template = `
+        {% set result = "start" %}
+        {% if innerCond() %}
+          {% set result = "inner-true" %}
+        {% else %}
+          {% set result = "inner-false" %}
+        {% endif %}
+        {{ result }}
+      `;
+
+      const context = {
+        innerCond: async () => {
+          throw new Error('Inner condition failed');
+        }
+      };
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(err.message).to.contain('Inner condition failed');
+      }
+    });
+
     it('should handle nested if with poison', async () => {
       const template = `
         {% set result = "start" %}

@@ -152,7 +152,7 @@
     });
 
     // Replaces: 'iterate - poisoned iterable' -> 'should execute else branch when iterable is poisoned'
-    it('should execute the else block for a loop over a poisoned iterable', async () => {
+    it('should not execute the else block for a loop over a poisoned iterable', async () => {
       const context = {
         poisonedItems: createPoison(new Error('Iterable is poisoned'))
       };
@@ -162,9 +162,16 @@
         {% else %}
           Else block was executed
         {% endfor %}
+        END
       `;
-      const result = await env.renderTemplateString(template, context);
-      expect(result.trim()).to.equal('Else block was executed');
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be.true;
+        expect(err.errors).to.have.length(1);
+        expect(err.errors[0].message).to.contain('Iterable is poisoned');
+      }
     });
 
     // Replaces: 'iterateAsyncSequential - error collection' -> 'should collect all errors from poisoned values'
@@ -191,6 +198,8 @@
     });
 
     // Replaces: 'iterateAsyncSequential - error collection' -> 'should continue iteration after finding error'
+    // @todo - convert to script and use @data for a separate test
+    // @todo - in this test processed shall be poisoned (convert to script)
     it('should continue processing valid items after a poison value is yielded', async () => {
       const context = {
         processed: [],
@@ -200,7 +209,7 @@
           yield 'B';
         }
       };
-      const template = `{% for item in myGenerator() %}{{ processed.push(item) }}{% endfor %}`;
+      const template = `{% for item in myGenerator() %}{% do processed!.push(item) }}{% endfor %}`;
 
       try {
         await env.renderTemplateString(template, context);
@@ -232,7 +241,7 @@
       const template = `
         {% for item in myGenerator() %}
           {% set result = failingFunc(item) %}
-          {{ processed.push(result) }}
+          {% do processed!.push(result) %}
         {% endfor %}
       `;
 
@@ -420,7 +429,7 @@
     });
   });
 
-  describe('Integration: Advanced Error Collection and Deduplication', () => {
+  describe('Integration: Advanced Loop Error Collection and Deduplication', () => {
     let env;
 
     beforeEach(() => {

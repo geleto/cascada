@@ -166,7 +166,7 @@
         expect(compound.errors).to.have.length(2);
       });
 
-      it('should preserve stack from first error', () => {
+      it('should return stack from only error', () => {
         const err = new Error('Test error');
         const compound = new PoisonError([err]);
 
