@@ -18,9 +18,9 @@ const compareOps = {
 };
 
 /**
- * CompilerBase - Base class for template expression compilation
+ * CompilerBase - Base class for expression compilation
  *
- * Handles the compilation of template expressions - nodes that evaluate to JavaScript values.
+ * Handles the compilation of expressions - nodes that evaluate to JavaScript values.
  * Provides the foundation for expression compilation
  * The main Compiler extends this class and provides full
  * template compilation including statements and control flow.
