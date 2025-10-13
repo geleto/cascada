@@ -1,5 +1,47 @@
 # Cascada AI Agent Guide
 
+This guide provides the necessary context for developing the Cascada engine. Your primary role is to assist in writing, refactoring, and testing code under supervision, adhering to the architecture and patterns outlined below.
+
+## Table of Contents
+
+- [Primary Agent Directives & Rules](#primary-agent-directives--rules)
+- [Project Overview](#project-overview)
+- [Language & Features](#language--features)
+- [Implementation Architecture](#implementation-architecture)
+- [Development & Testing Guide](#development--testing-guide)
+- [API & File Reference](#api--file-reference)
+
+## Primary Agent Directives & Rules
+
+**This is the most important section. Adhere to these rules in all development tasks.**
+
+### Your Core Task
+
+Your goal is to write and modify TypeScript/JavaScript code for the `cascada-engine` package. This includes implementing new features, fixing bugs, and writing tests. All work must align with Cascada's core philosophy: **Parallel by Default, Sequential by Exception.**
+
+### Golden Rules (DOs and DON'Ts)
+
+#### ✅ **DO:**
+
+-   **Focus Tests with `.only()`**: When debugging or developing, always use `it.only()` or `describe.only()` in test files to isolate the tests you are working on. This is critical for rapid development.
+-   **Follow the Poison Protocol**:
+    -   Check for poison with `isPoison(value)` **BEFORE** an `await`.
+    -   Check for thrown poison errors with `isPoisonError(err)` **INSIDE** a `catch` block.
+    -   When collecting errors from a `PoisonError`, always spread the `.errors` array: `errors.push(...err.errors)`.
+-   **Enforce Sequential Side Effects**: Use the `!` marker on **static context paths** (e.g., `db.users!.create()`) to enforce strict execution order for operations with side effects.
+-   **Use Output Focusing**: For scripts and macros that produce a single type of result, use `:data` or `:text` to ensure a clean return value.
+-   **Refer to Implementation Docs**: For deep architectural questions, refer to the detailed guides in `docs/code/`.
+
+#### ❌ **DON'T:**
+
+-   **Never Check `isPoison()` After `await`**: It's impossible for `await somePromise` to return a `PoisonedValue`. It will either return a resolved value or throw an error.
+-   **Never `return` a `PoisonedValue` from an `async` function**: `async` functions must `throw new PoisonError(...)`. Only non-`async` functions can `return` a `PoisonedValue`.
+-   **Don't Use `!` on Dynamic Paths**: The sequential marker (`!`) is not supported on template variables (`{% set x = ... %}{{ x!.method() }}`) or dynamic lookups (`items[i]!.method()`). It only works on static paths from the initial context.
+-   **Don't Short-Circuit Error Collection**: Adhere to the "Never Miss Any Error" principle. Await ALL promises and collect ALL errors before deciding to throw.
+-   **Don't Use `instanceof` for Poison Detection**: Always use the `isPoison()` and `isPoisonError()` helper functions, as `instanceof` can fail in bundled environments.
+
+---
+
 ## Project Overview
 
 **Cascada** is a parallel-first scripting & templating engine for JavaScript/TypeScript that fundamentally inverts the traditional programming model: **parallel by default, sequential by exception**. Based on Nunjucks, it provides both a scripting language and template syntax with automatic, implicit concurrency.
@@ -8,23 +50,31 @@
 
 **Think Sequentially. Execute Concurrently.**
 
-Write code that looks synchronous, and Cascada's engine handles complex concurrent execution automatically. Any variable can be a promise under the hood - pass it into functions, use it in expressions, assign it - all without thinking about async state.
+Write code that looks synchronous, and Cascada's engine handles complex concurrent execution automatically. Any variable can be a promise under the hood—pass it into functions, use it in expressions, assign it—all without thinking about its async state.
 
 ### Key Differentiators
 
-- ⚡ **Parallel by Default**: Independent operations run concurrently without special syntax
-- 🚦 **Data-Driven Flow**: Code runs when inputs are ready, eliminating race conditions by design
-- ✨ **Transparent Async**: Promises/async functions work seamlessly - no `await` needed in templates/scripts
-- 📋 **Ordered Output**: Parallel execution, but results assembled in source-code order
-- 🎭 **Two Modes**: Script (data orchestration) + Template (text generation)
+-   ⚡ **Parallel by Default**: Independent operations run concurrently without special syntax.
+-   🚦 **Data-Driven Flow**: Code runs when inputs are ready, eliminating race conditions by design.
+-   ✨ **Transparent Async**: Promises/async functions work seamlessly; no `await` needed in templates/scripts.
+-   📋 **Ordered Output**: Parallel execution, but results are assembled in source-code order.
+-   🎭 **Two Modes**: Script (data orchestration) + Template (text generation).
 
-## Two Execution Modes
+---
 
-### Cascada Script (Data-First)
-- Clean, delimiter-free syntax (`var`, `if`, `for`, no `{% %}`)
-- **Output Commands** (`@data`, `@text`, custom handlers) for declarative data assembly
-- Focus on logic and orchestration (AI agents, data pipelines)
-- Returns structured data objects
+## Language & Features
+
+<details>
+<summary><strong>Click to expand Language & Features documentation...</strong></summary>
+
+### Two Execution Modes
+
+#### Cascada Script (Data-First)
+
+-   Clean, delimiter-free syntax (`var`, `if`, `for`, no `{% %}`).
+-   **Output Commands** (`@data`, `@text`) for declarative data assembly.
+-   Focus on logic and orchestration (AI agents, data pipelines).
+-   Returns structured data objects.
 
 ```javascript
 // Example: AI orchestration
@@ -37,11 +87,12 @@ var summary = summarize(result.stepResults)
 @data.summary = summary
 ```
 
-### Cascada Template (Text-First)
-- Familiar Nunjucks syntax (`{% %}`, `{{ }}`)
-- Template composition (extends, include, import)
-- Best for HTML, emails, LLM prompts
-- Returns rendered text
+#### Cascada Template (Text-First)
+
+-   Familiar Nunjucks syntax (`{% %}`, `{{ }}`).
+-   Template composition (extends, include, import).
+-   Best for HTML, emails, LLM prompts.
+-   Returns rendered text.
 
 ```njk
 {% set user = getUser() %}
@@ -52,22 +103,11 @@ var summary = summarize(result.stepResults)
 {% endfor %}
 ```
 
-## Core Features
+### Core Features
 
-### 1. Automatic Parallelization
+#### 1. Automatic Parallelization
 
-**Independent operations run concurrently without configuration:**
-
-```javascript
-// Both calls execute in parallel
-var user = fetchUser(123)
-var config = fetchSiteConfig()
-
-// Wait for both before use
-@data.greeting = "Welcome, " + user.name
-```
-
-**Data dependencies are automatically respected:**
+Independent operations run concurrently. Data dependencies are automatically respected.
 
 ```javascript
 var user = getUser()          // Runs immediately
@@ -75,68 +115,36 @@ var posts = getPosts(user.id) // Waits for user
 var footer = getFooter()      // Runs in parallel with getUser
 ```
 
-### 2. Sequential Execution Control (`!`)
+#### 2. Sequential Execution Control (`!`)
 
-For side effects that need strict ordering, use the `!` marker:
+Use the `!` marker for side effects that need strict ordering. **Crucially, this only works on static paths from context variables.**
 
 ```javascript
 var account = getBankAccount()
-account!.deposit(100)    // 1. Deposit first
-account.getStatus()      // 2. Get status (waits for deposit)
-account!.withdraw(50)    // 3. Withdraw (waits for getStatus)
+account!.deposit(100)    // 1. Runs first.
+account!.withdraw(50)    // 2. Waits for deposit to finish.
 ```
 
-**Important constraints:**
-- Only works on **static paths from context variables**
-- Cannot use with template variables: `{% set x = ctx %}{{ x!.method() }}` ❌
-- Cannot use with dynamic lookups: `items[i]!.method()` ❌
+#### 3. Output Commands (`@` - Scripts Only)
 
-### 3. Output Commands (`@` - Scripts Only)
+Scripts use **Output Commands** to build results via a "Collect, Execute, Assemble" model.
 
-Scripts use **Output Commands** to build results via "Collect, Execute, Assemble" model:
-
-**Built-in handlers:**
-- `@data` - Build structured data (objects/arrays)
-- `@text` - Generate text output
-- Custom handlers - Domain-specific logic
-
-**The `@data` handler:**
+-   `@data`: Build structured data (objects/arrays).
+-   `@text`: Generate text output.
+-   **Output focusing**: Use `:data` or `:text` at the top of a scope (script, macro, capture) to return just that specific output.
 
 ```javascript
-// Assignment & manipulation
+:data  // Returns just the data object, not { data: {...}, text: "..." }
+
 @data.user.name = "Alice"
-@data.user.logins = 0
-@data.user.logins++
-
-// Arrays
 @data.user.roles.push("editor")
-@data.users.concat([newUser])
-
-// Objects
-@data.settings.merge({theme: "dark"})
-
-// Arithmetic
-@data.counter += 5
-@data.total *= 1.05
-
-// Strings
-@data.log.append(" Login successful")
-```
-
-**Output focusing:**
-Use `:data` or `:text` to return just that output:
-
-```javascript
-:data  // Returns just the data object
-
-@data.result = processData()
 @text("Processing complete")
-// Returns: {result: {...}} instead of {data: {result: {...}}, text: "..."}
 ```
 
-### 4. Macros & Reusable Components
+#### 4. Macros & Reusable Components
 
-**Scripts:**
+Macros in scripts are powerful tools for creating reusable, data-producing components.
+
 ```javascript
 macro buildUserSummary(userId) : data
   var details = fetchUserDetails(userId)
@@ -150,393 +158,275 @@ var user1 = buildUserSummary(101)
 @data.users.push(user1)
 ```
 
-**Templates:**
-```njk
-{% macro profile_widget(user) %}
-  <div>
-    <h2>{{ user.name }}</h2>
-    <p>Followers: {{ fetchStats(user.id).followers }}</p>
-  </div>
-{% endmacro %}
+#### 5. Error Handling (`try/resume/except`)
 
-{{ profile_widget(currentUser) }}
-```
+A resilient error handling system is under development.
 
-### 5. Error Handling (Under Development)
-
-**Resilient error handling with retry logic:**
-
-```javascript
-try
-  var image = generateImage(prompt)
-  @data.imageUrl = image.url
-resume resume.count < 3
-  @text("Retrying attempt " + resume.count)
-except
-  @data.error = "Failed: " + error.message
-endtry
-```
-
-## API Quick Reference
-
-### AsyncEnvironment (Main API)
-
-```javascript
-import { AsyncEnvironment } from 'cascada-engine';
-
-const env = new AsyncEnvironment();
-
-// Render template from string (returns text)
-const html = await env.renderTemplateString(template, context);
-
-// Render template from file (returns text)
-const html = await env.renderTemplate('template.njk', context);
-
-// Execute script from string (returns data/result object)
-const result = await env.renderScriptString(script, context, {output: 'data'});
-
-// Execute script from file (returns data/result object)
-const result = await env.renderScript('script.casc', context);
-
-// Add globals
-env.addGlobal('utils', myUtils);
-
-// Add filters
-env.addFilter('myFilter', async (val) => transform(val));
-
-// Extend @data handler
-env.addDataMethods({
-  incrementBy: (target, amount) => (target || 0) + amount
-});
-
-// Add custom output handler
-env.addCommandHandlerClass('myHandler', MyHandlerClass);
-```
-
-### Loaders
-
-```javascript
-import { FileSystemLoader, PrecompiledLoader } from 'cascada-engine';
-
-const env = new AsyncEnvironment([
-  new FileSystemLoader('templates'),
-  new PrecompiledLoader(precompiledData)
-]);
-```
-
-## Testing & Development
-
-### Test Commands
-
-```bash
-# Quick tests (no build)
-npm run test:quick
-npm run mocha
-
-# Full test suite
-npm test                    # All tests (node + browser)
-npm run test:node          # Node tests only
-npm run test:browser       # Browser tests only
-npm run test:pasync        # Async/poison tests
-
-# Specific test debugging - USE .only()
-# In test file, add .only() to focus on specific tests:
-it.only('should handle async operations', async () => {
-  // Your test
-});
-
-describe.only('Async features', () => {
-  // Only this suite runs
-});
-```
-
-**Important:** When debugging, use `.only()` on `it()` or `describe()` to run specific tests, not the entire suite.
-
-### Build Commands
-
-```bash
-npm run build              # Full build (lint + transpile + bundle)
-npm run lint              # ESLint check
-npm run test:prep         # Build + precompile for tests
-```
-
-### Test Assertions (expect.js)
-
-The test suite uses **expect.js** (not Chai). Key assertion methods:
-
-```javascript
-// Basic assertions
-expect(value).to.be(expected)           // === equality
-expect(value).to.eql(expected)          // Deep equality (objects/arrays)
-expect(value).to.be.ok()                // Truthy
-expect(value).to.be.a('string')         // Type checking
-expect(value).to.be.an(Array)           // instanceof
-
-// Collections
-expect(arr).to.have.length(3)
-expect(arr).to.contain(item)
-expect(arr).to.be.empty()
-expect(obj).to.have.property('key')
-expect(obj).to.have.key('key')
-expect(obj).to.only.have.keys('a', 'b')
-
-// Strings
-expect(str).to.match(/pattern/)
-expect(str).to.contain('substring')
-
-// Functions & Errors
-expect(fn).to.throwException()
-expect(fn).to.throwException(/error message/)
-expect(fn).withArgs(arg1, arg2).to.throwException()
-
-// Ranges
-expect(num).to.be.within(0, 100)
-expect(num).to.be.above(5)
-expect(num).to.be.below(10)
-
-// Negation
-expect(value).to.not.be(other)
-expect(value).to.not.eql(other)
-```
-
-**Async Testing Patterns:**
-
-```javascript
-// Testing for errors in async functions
-it('should throw error', async () => {
-  try {
-    await env.renderTemplateString(badTemplate, context);
-    expect().fail('Should have thrown');
-  } catch (err) {
-    expect(err).to.be.a(TemplateError);
-    expect(err.message).to.contain('expected error');
-  }
-});
-
-// Testing PoisonError (multiple errors collected)
-it('should collect all errors', async () => {
-  try {
-    await env.renderTemplateString(template, context);
-    expect().fail('Should have thrown');
-  } catch (err) {
-    expect(isPoisonError(err)).to.be(true);
-    expect(err.errors).to.be.an('array');
-    expect(err.errors).to.have.length(2);
-    expect(err.errors[0].message).to.contain('first error');
-  }
-});
-```
-
-### Key Files
-
-```
-src/compiler/
-  ├── compiler.js        # Main compiler - AST traversal, code generation
-  ├── compile-async.js   # Async block compilation
-  ├── compile-emit.js    # Code emission helpers
-  ├── compile-sequential.js  # Sequential execution (`!`) analysis
-  └── compiler-base.js   # Base class - expression compilation, basic helpers
-
-src/
-  ├── runtime.js         # Runtime helpers (resolveAll, flattenBuffer, etc.)
-  ├── environment.js     # AsyncEnvironment class
-  ├── transformer.js     # AST transformations
-  ├── data-handler.js    # @data implementation
-  ├── parser.js          # Nunjucks parser
-  ├── lexer.js           # Template lexer
-  └── script-*.js        # Script-specific features
-
-tests/
-  ├── *.js               # Main test suites
-  ├── pasync/            # Async execution tests
-  └── poison/            # Error handling tests
-
-docs/
-  ├── cascada/           # User documentation
-  └── code/              # Implementation guides
-```
-
-## Implementation Architecture
-
-### Async Execution Model
-
-**Core Principles:**
-1. **Transparent Asynchronicity**: Promises as first-class values
-2. **Non-Blocking Execution**: Wrap operations in async IIFEs
-3. **Deferred Resolution**: Resolve promises only when values needed
-4. **State Synchronization**: Variable snapshots + promise-based locking
-5. **Ordered Output**: Hierarchical buffer preserves source order
-
-**Key Runtime Components:**
-- `AsyncFrame`: Manages async variable state (snapshots, writeCounters, promiseResolves)
-- `AsyncState`: Tracks active blocks, completion waiting
-- `runtime.resolveAll/resolveDuo/resolveSingle`: Concurrent promise resolution
-- `runtime.flattenBuffer`: Assembles final output in correct order
-
-### Variable Synchronization
-
-**Two-level tracking system:**
-1. **Frame Snapshots**: Capture variable state at async block creation
-2. **Promise Locks**: Variables modified concurrently replaced with promises
-3. **Write Counting**: Track potential writes across all code paths
-4. **Completion Signaling**: Child blocks signal parent when done
-
-```javascript
-// Compiler calculates writeCounters for all possible paths
-// Runtime uses these to create promise locks
-frame.pushAsyncBlock(reads, writeCounters)
-frame._promisifyParentVariables() // Creates locks
-// After writes complete:
-frame._countdownAndResolveAsyncWrites() // Releases locks
-```
-
-### Sequential Operations (`!`)
-
-**Implementation:**
-- **Sequence Keys**: Unique identifiers for execution lanes (e.g., `!account!deposit`)
-- **Compiler Analysis**: `_declareSequentialLocks` pass identifies all `!` markers
-- **Runtime Helpers**: `sequencedCallWrap`, `sequencedMemberLookupAsync`
-  - Acquire: `await runtime.awaitSequenceLock(sequenceKey)`
-  - Operate: Execute the actual function/lookup
-  - Release: `frame.set(sequenceKey, ...)` resolves promise
-- **AsyncFrame Integration**: Sequence keys use same promise-locking as variables
-
-### Error Handling (Poison Values)
-
-**Core Principle: "Never Miss Any Error"**
-- Always await ALL promises and collect ALL errors before deciding
-- Use `continue` not `return` in error collection loops
-
-**Two Types:**
-1. **PoisonedValue**: Thenable with `.errors[]` array (before await)
-2. **PoisonError**: Error thrown when awaiting PoisonedValue
-
-**Detection:**
-```javascript
-// Check BEFORE await
-if (isPoison(value)) { ... }
-
-// Check in catch block
-catch (err) {
-  if (isPoisonError(err)) {
-    errors.push(...err.errors); // Extract array!
-  }
-}
-
-// NEVER check after await - impossible
-const result = await asyncFunc();
-if (isPoison(result)) { } // ❌ Never true
-```
-
-**Function Patterns:**
-1. **Pure Sync**: Can return PoisonedValue directly
-2. **Sync-First Hybrid**: Return values OR poison, delegate complex to async helper
-3. **Pure Async**: MUST throw PoisonError, cannot return PoisonedValue
-
-### Output Handler System
-
-**Collect, Execute, Assemble:**
-1. **Collect**: Buffer `@` commands during execution
-2. **Execute**: All logic runs (parallel where possible)
-3. **Assemble**: Buffered commands execute sequentially in source order
-
-**Implementation:**
-- Commands are objects: `{handler: 'data', command: 'push', arguments: [...], pos: {...}}`
-- `flattenBuffer` processes commands after all async work completes
-- Custom handlers: Implement `getReturnValue()` to contribute to result
-
-## Common Patterns & Best Practices
-
-### Parallel Data Fetching
-```javascript
-// All fetches run concurrently
-for userId in userIds
-  var user = fetchUser(userId)
-  @data.users.push({id: userId, name: user.name})
-endfor
-```
-
-### Conditional Data Assembly
-```javascript
-var user = getUser()
-if user.isPremium
-  @data.features = fetchPremiumFeatures()
-else
-  @data.features = getBasicFeatures()
-endif
-```
-
-### Using Capture for Inline Assembly
-```javascript
-var profile = capture :data
-  var details = fetchDetails(userId)
-  var stats = fetchStats(userId)
-
-  @data.name = details.name
-  @data.posts = stats.postCount
-endcapture
-
-@data.userProfile = profile
-```
-
-### Sequential DB Operations
-```javascript
-each record in records
-  var newRecord = db!.create(record)
-  db!.addMetadata(newRecord.id, metadata)
-endeach
-```
-
-## Important Notes for AI Agents
-
-### DO:
-- ✅ Use `.only()` to focus tests when debugging
-- ✅ Check `isPoison()` BEFORE await, `isPoisonError()` in catch
-- ✅ Spread `.errors` array when collecting: `errors.push(...err.errors)`
-- ✅ Use `!` on static context paths for side effects
-- ✅ Focus output with `:data` or `:text` for clean returns
-- ✅ Use macros with output focus for reusable data components
-
-### DON'T:
-- ❌ Check `isPoison()` after await (impossible)
-- ❌ Return PoisonedValue from async functions (must throw)
-- ❌ Use `!` on template variables or dynamic lookups
-- ❌ Short-circuit error collection (await ALL promises)
-- ❌ Use `instanceof` for poison detection (use `isPoison()`)
-- ❌ Modify sync error handling (async mode only)
-
-### Documentation References
-
-**User Docs:**
-- `docs/cascada/script.md` - Complete script language guide
-- `docs/cascada/template.md` - Template syntax (somewhat outdated)
-- `README.md` - High-level overview
-
-**Implementation Docs:**
-- `docs/code/Async - Implementation.md` - Async execution architecture
-- `docs/code/Error Handling Guide.md` - Error system design
-- `docs/code/Poisoning - Output Handler Implementation.md` - Poison value details
-- `docs/code/Sequential Operations - Execution.md` - `!` marker implementation
-- `docs/code/Sequential Operations - In Expressions.md` - Expression-level sequencing
-
-### Current Development Status
-
-**Under Development:**
-- Error handling (`try/resume/except`) - Partially implemented
-- Cross-script dependencies (`extern`, `reads`, `modifies`) - Planned
-- Reading from `@data` (right-side @ access - @data.people[0].company = @data.company) - Not implemented
-- Enhanced error reporting with code snippets - In progress
-
-**Stable:**
-- Core async execution model
-- Output command system
-- Sequential execution (`!`)
-- Template/Script rendering
-- Macros and composition
+</details>
 
 ---
 
+## Implementation Architecture
+
+<details>
+<summary><strong>Click to expand detailed architecture notes...</strong></summary>
+
+### Async Execution Model
+
+-   **Core Principle**: Transparently handle promises as first-class values, resolving them only when needed.
+-   **Mechanism**: Potentially async operations are wrapped in `async` IIFEs, allowing non-blocking execution. A runtime state manager (`astate`) tracks completion.
+-   **Key Components**: `AsyncFrame`, `runtime.resolveAll`, `runtime.flattenBuffer`.
+-   **Reference**: `docs/code/Async - Implementation.md`
+
+### Variable Synchronization
+
+-   **Problem**: How to ensure variable state is consistent when concurrent operations read and write to the same variables.
+-   **Mechanism**: A two-level system using **frame snapshots** (capturing state at block creation) and **promise-based locks**. The compiler calculates `writeCounters` for all potential paths, which the runtime uses to manage these locks.
+-   **Key Functions**: `frame.pushAsyncBlock`, `frame._promisifyParentVariables`, `frame._countdownAndResolveAsyncWrites`.
+
+### Sequential Operations (`!`)
+
+-   **Mechanism**: Uses **Sequence Keys** (e.g., `!account!deposit`) which are treated like special variables. The same promise-locking mechanism used for variables is applied to these keys.
+-   **Compiler Pass**: `_declareSequentialLocks` pass identifies all `!` markers to register the keys.
+-   **Runtime Helpers**: `runtime.sequencedCallWrap` and `runtime.sequencedMemberLookupAsync` acquire and release the lock.
+-   **Reference**: `docs/code/Sequential Operations - Execution.md`
+
+### Error Handling (Poison System)
+
+-   **Core Principle**: "Never Miss Any Error." Await all promises and collect all errors before throwing.
+-   **`PoisonedValue`**: A *thenable* object that carries an `.errors[]` array. It can be passed around synchronously.
+-   **`PoisonError`**: The `Error` that is *thrown* when a `PoisonedValue` is awaited.
+-   **Detection**:
+    -   `isPoison(value)` -> Use **before** `await`.
+    -   `isPoisonError(err)` -> Use **in a `catch` block**.
+-   **Reference**: `docs/code/Error Handling Guide.md` and `docs/code/Poisoning - Implementation Principles.md`
+
+</details>
+
+---
+
+## Development & Testing Guide
+
+This section provides practical instructions for writing and testing code.
+
+### Common Development Scenarios
+
+#### How to Add a New `@data` Method (e.g., `incrementBy`)
+
+1.  **Locate the API**: Go to `src/environment.js`.
+2.  **Find `AsyncEnvironment.addDataMethods`**: This is the public API for adding methods.
+3.  **Implement the Logic**: The method receives `(target, ...args)` and should return the new value.
+    -   `target` is the current value at the path (e.g., `data.counter`). It could be `undefined`.
+    -   `...args` are the arguments from the script (e.g., `10` from `incrementBy(10)`).
+4.  **Add the Method**: Add your new method to the `env.addDataMethods` call in the testing setup or user-facing API.
+    ```javascript
+    // In environment.js or a test setup file
+    env.addDataMethods({
+      incrementBy: (target, amount) => (target || 0) + amount
+    });
+    ```
+5.  **Write a Test**: Add a new `it.only(...)` block in a relevant test file (e.g., `tests/script.js`) to verify the new method works correctly, including edge cases like `undefined` targets.
+
+#### How to Fix a Bug in a Compiler Pass
+
+1.  **Isolate the Bug**: Write a small, failing test case using `it.only()`. The test should use `env.renderScriptString` with the simplest possible script that demonstrates the bug.
+2.  **Identify the Compiler Pass**: Look at the `Key Files` reference below. The bug is likely in `src/compiler/compiler.js` (for statements like `if`, `for`), `src/compiler/compiler-base.js` (for expressions), or `src/compiler/compile-sequential.js` (for `!` logic).
+3.  **Trace the Compilation**: The entry point is `Compiler.compile()`. Follow the `compileNodeType` methods (e.g., `compileIf`, `compileFunCall`) to trace how the AST node is converted to JavaScript.
+4.  **Inspect Generated Code**: The `compile` function returns the generated JS string. You can log this string in your test to see the incorrect output from the compiler.
+5.  **Modify and Re-run**: Modify the compiler logic and re-run the test with `npm run mocha`. Repeat until the isolated test passes.
+6.  **Remove `.only()`** and run the full test suite (`npm test`) to check for regressions.
+
+### Running Tests
+
+-   **Quick Test (No Build)**: `npm run mocha`
+-   **Full Suite (Node + Browser)**: `npm test`
+-   **Node Only**: `npm run test:node`
+-   **Isolate Specific Tests**: Use `.only()` on `it()` or `describe()` blocks in the test files. This is the standard workflow for focused development.
+
+```javascript
+// In a test file like tests/script.js
+describe.only('My New Feature', () => {
+  it.only('should handle the primary use case', async () => {
+    // Your test here. Only this test will run.
+  });
+});
+```
+
+### Test Assertions (`expect.js`)
+
+<details>
+<summary><strong>Click to expand common assertions...</strong></summary>
+
+The test suite uses **expect.js**.
+
+```javascript
+// Equality
+expect(value).to.be(expected);           // Strict equality (===)
+expect(value).to.eql(expected);          // Deep equality (objects/arrays)
+
+// Truthiness & Type
+expect(value).to.be.ok();                // Truthy
+expect(value).to.be.a('string');         // Type check
+expect(value).to.be.an(Array);           // instanceof check
+
+// Collections
+expect(arr).to.have.length(3);
+expect(arr).to.contain(item);
+expect(obj).to.have.property('key');
+
+// Errors
+expect(fn).to.throwException(/message/);
+
+// Async Error Testing
+it('should throw an error', async () => {
+  try {
+    await env.renderScriptString(badScript);
+    expect().fail('Should have thrown'); // Fail if it doesn't throw
+  } catch (err) {
+    expect(isPoisonError(err)).to.be(true); // Check for PoisonError
+    expect(err.errors[0].message).to.contain('expected error');
+  }
+});
+```
+
+</details>
+
+### Advanced Testing Techniques
+
+<details>
+<summary><strong>Click to expand advanced testing examples...</strong></summary>
+
+#### Using `StringLoader` for In-Memory Templates
+
+Use `StringLoader` from `tests/util.js` to manage templates in memory for tests:
+
+```javascript
+const { StringLoader } = require('./util');
+const loader = new StringLoader();
+const env = new AsyncEnvironment(loader);
+
+loader.addTemplate('header.njk', '<h1>{{ title }}</h1>');
+loader.addTemplate('main.njk', '{% include "header.njk" %}');
+
+const result = await env.renderTemplate('main.njk', { title: 'Hello' });
+```
+
+#### Inspecting Compiled Code with `_compileSource()`
+
+For debugging compiler issues, use `_compileSource()` to examine generated JavaScript:
+
+```javascript
+const { AsyncTemplate, AsyncScript } = require('../src/environment');
+
+const template = new AsyncTemplate('{% set x = asyncFunc() %}{{ x }}', env);
+const source = template._compileSource();
+expect(source).to.contain('await');
+
+const script = new AsyncScript(':data\n@data.count = 5', env);
+const compiledCode = script._compileSource();
+expect(compiledCode).to.contain('output_command');
+```
+
+#### Transpiling Script to Template with `scriptTranspiler.scriptToTemplate()`
+
+Use `scriptTranspiler.scriptToTemplate()` to verify script-to-template conversion:
+
+```javascript
+const scriptTranspiler = require('../src/script-transpiler');
+
+const script = ':data\nvar user = getUser()\n@data.userName = user.name';
+const template = scriptTranspiler.scriptToTemplate(script);
+
+expect(template).to.contain('{% option focus="data" %}');
+expect(template).to.contain('{% var user = getUser() %}');
+expect(template).to.contain('output_command data.set(userName, user.name)');
+```
+
+</details>
+
+---
+
+## API & File Reference
+
+### Main API (`AsyncEnvironment`)
+
+```javascript
+import { AsyncEnvironment } from 'cascada-engine';
+const env = new AsyncEnvironment();
+
+// Execute a script and get focused data output
+const result = await env.renderScriptString(script, context, {output: 'data'});
+
+// Render a template to text
+const html = await env.renderTemplateString(template, context);
+
+// Add custom logic
+env.addGlobal('utils', myUtils);
+env.addFilter('myFilter', myFilterFunc);
+env.addDataMethods({ myMethod: myDataMethodFunc });
+env.addCommandHandlerClass('myHandler', MyHandlerClass);
+```
+
+### Compiled Template/Script Classes
+
+#### `AsyncTemplate`
+
+Represents a compiled async Nunjucks template. Created internally by `AsyncEnvironment` or can be instantiated directly.
+
+```javascript
+import { AsyncTemplate, AsyncEnvironment } from 'cascada-engine';
+
+const env = new AsyncEnvironment();
+const tmpl = new AsyncTemplate(templateSource, env, 'path/to/template.njk');
+
+// Render returns a Promise
+const html = await tmpl.render(context);
+```
+
+**Key Methods:**
+- `render(context)` - Returns a `Promise<string>` with the rendered output
+- `compile()` - Compiles the template (called automatically on first render)
+- `_compileSource()` - Returns the generated JavaScript source code (useful for debugging)
+
+#### `AsyncScript`
+
+Represents a compiled async Cascada script. Automatically transpiles script syntax to template syntax.
+
+```javascript
+import { AsyncScript, AsyncEnvironment } from 'cascada-engine';
+
+const env = new AsyncEnvironment();
+const script = new AsyncScript(scriptSource, env, 'path/to/script.casc');
+
+// Render returns a Promise with the script result (data object or string)
+const result = await script.render(context);
+```
+
+**Key Methods:**
+- `render(context)` - Returns a `Promise` with the script output (object/string based on output focus)
+- `compile()` - Compiles the script (called automatically on first render)
+- `_compileSource()` - Returns the generated JavaScript source code (useful for debugging)
+
+### Key Files and Directories
+
+-   `src/environment.js`: **User-facing API & Test Setup**. This is the entry point for users. Tests will instantiate `AsyncEnvironment` from here. Contains `AsyncTemplate` and `AsyncScript` classes.
+-   `src/runtime.js`: **Runtime helpers.** Contains `resolveAll`, `flattenBuffer`, `isPoison`, `PoisonError`, and all functions called by the compiled code.
+-   `src/compiler/compiler.js`: **Main compiler.** Handles statements (`if`, `for`, `block`, etc.) and orchestrates code generation.
+-   `src/compiler/compiler-base.js`: **Expression compiler.** Handles expressions (`+`, `*`, `myVar.prop`, `myFunc()`).
+-   `src/compiler/compile-async.js`: **Async analysis.** Contains `propagateIsAsync` and logic for calculating `readVars` and `writeCounters`.
+-   `src/compiler/compile-sequential.js`: **Sequential (`!`) analysis.** Logic for identifying and managing sequential operation paths.
+-   `src/data-handler.js`: **`@data` handler implementation.** The logic for all `@data` commands resides here.
+-   `src/script-*.js`: **Script-specific features,** including the script-to-template transpiler.
+-   `tests/`: **Test suites.**
+    -   `tests/pasync/`: Tests for advanced asynchronous execution and parallelism.
+    -   `tests/poison/`: Tests for the error handling (Poison) system.
+    -   `tests/util.js`: Test utilities including `StringLoader` class.
+
+### Documentation
+
+-   **User Docs**: `docs/cascada/` (e.g., `script.md`)
+-   **Implementation Guides**: `docs/code/` (e.g., `Async - Implementation.md`)
+
+---
 **Package**: `cascada-engine`
 **Repository**: https://github.com/geleto/cascada
-**Related**: [Cascador-AI](https://github.com/geleto/cascador-ai) - AI framework built on Cascada
-
