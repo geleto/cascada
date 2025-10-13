@@ -1005,12 +1005,7 @@ class Template extends Obj {
     if (this.tmplProps) {
       props = this.tmplProps;
     } else {
-      const source = compiler.compile(this.tmplStr,
-        this.env.asyncFilters,
-        this.env.extensionsList,
-        this.path,
-        Object.assign({scriptMode: this.scriptMode, asyncMode: this.asyncMode}, this.env.opts)
-      );
+      const source = this._compileSource();
 
       let func;
       try {
@@ -1057,6 +1052,15 @@ class Template extends Obj {
     this.blocks = this._getBlocks(props);
     this.rootRenderFunc = props.root;
     this.compiled = true;
+  }
+
+  _compileSource() {
+    return compiler.compile(this.tmplStr,
+      this.env.asyncFilters,
+      this.env.extensionsList,
+      this.path,
+      Object.assign({scriptMode: this.scriptMode, asyncMode: this.asyncMode}, this.env.opts)
+    );
   }
 
   _getBlocks(props) {
