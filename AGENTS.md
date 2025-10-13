@@ -21,24 +21,49 @@ Your goal is to write and modify TypeScript/JavaScript code for the `cascada-eng
 
 ### Golden Rules (DOs and DON'Ts)
 
-#### ✅ **DO:**
+**Follow these rules strictly. They are designed to align with Cascada's core architecture, prevent common bugs, and ensure high performance.**
 
--   **Focus Tests with `.only()`**: When debugging or developing, always use `it.only()` or `describe.only()` in test files to isolate the tests you are working on. This is critical for rapid development.
--   **Follow the Poison Protocol**:
-    -   Check for poison with `isPoison(value)` **BEFORE** an `await`.
-    -   Check for thrown poison errors with `isPoisonError(err)` **INSIDE** a `catch` block.
-    -   When collecting errors from a `PoisonError`, always spread the `.errors` array: `errors.push(...err.errors)`.
--   **Enforce Sequential Side Effects**: Use the `!` marker on **static context paths** (e.g., `db.users!.create()`) to enforce strict execution order for operations with side effects.
--   **Use Output Focusing**: For scripts and macros that produce a single type of result, use `:data` or `:text` to ensure a clean return value.
--   **Refer to Implementation Docs**: For deep architectural questions, refer to the detailed guides in `docs/code/`.
+#### **Language & Scripting (Writing Cascada Code)**
 
-#### ❌ **DON'T:**
+*   ✅ **DO:** Use the `!` marker on **static context paths** (e.g., `db.users!.create()`) to enforce strict execution order for operations with side effects.
+*   ✅ **DO:** Use output focusing (`:data`, `:text`) in scripts and macros to ensure a clean, predictable return value.
+*   ✅ **DO:** Use `var result = capture :data ...` to build complex intermediate objects. This leverages the power and guaranteed order of the `@data` assembly system for more than just the final output.
 
--   **Never Check `isPoison()` After `await`**: It's impossible for `await somePromise` to return a `PoisonedValue`. It will either return a resolved value or throw an error.
--   **Never `return` a `PoisonedValue` from an `async` function**: `async` functions must `throw new PoisonError(...)`. Only non-`async` functions can `return` a `PoisonedValue`.
--   **Don't Use `!` on Dynamic Paths**: The sequential marker (`!`) is not supported on template variables (`{% set x = ... %}{{ x!.method() }}`) or dynamic lookups (`items[i]!.method()`). It only works on static paths from the initial context.
--   **Don't Short-Circuit Error Collection**: Adhere to the "Never Miss Any Error" principle. Await ALL promises and collect ALL errors before deciding to throw.
--   **Don't Use `instanceof` for Poison Detection**: Always use the `isPoison()` and `isPoisonError()` helper functions, as `instanceof` can fail in bundled environments.
+*   ❌ **DON'T:** Use the `!` marker on template variables (`{% set x = ... %}{{ x!.method() }}`) or dynamic lookups (`items[i]!.method()`). The compiler only supports this for static paths from the initial context.
+*   ❌ **DON'T:** Manually collect results from parallel loops into temporary arrays (e.g., `var temp = []; for ... temp.push(...)`) if the final order is important. The `@data` system is specifically designed to handle this, guaranteeing ordered assembly despite concurrent execution.
+
+#### **Testing**
+
+*   ✅ **DO:** Use `it.only()` or `describe.only()` to isolate tests during development. This is the standard workflow and is critical for speed.
+*   ✅ **DO:** Write tests for both the success path and the `PoisonError` failure path for every new async feature. A feature is not complete until its error handling is verified.
+
+*   ❌ **DON'T:** Write tests that depend on the completion order of concurrent operations when verifying correctness. **Test the final, deterministic *output*, not the intermediate race.**
+    *   **Exception:** This rule does not apply when you are *specifically testing the concurrency mechanism itself* (e.g., using mocks with delays to prove that `for` runs in parallel while `each` runs sequentially).
+
+#### **Compiler Implementation (Modifying `src/compiler/*.js`)**
+
+*   ✅ **DO:** Trust the runtime to handle synchronization. Your primary job in the compiler is to provide the correct `readVars` and `writeCounters` to `frame.pushAsyncBlock`.
+*   ❌ **DON'T:** Write raw `(async () => { ... })()` blocks. Always use the `emit.asyncBlock*` helpers. They are essential for correct frame management, `astate` tracking, and error context propagation.
+*   ❌ **DON'T:** Modify the legacy synchronous error handling model (the one using top-level `lineno`/`colno` variables). All new error handling work must target the async model (`errorContext` objects and per-block `try/catch`).
+
+#### **Runtime & Performance**
+
+*   ✅ **DO:** Prioritize the **"Sync-First Hybrid" pattern** to maximize performance. For any runtime function that might handle promises, structure it like this:
+    1.  Create a main, **non-`async`** function (e.g., `memberLookupAsync`).
+    2.  Inside it, handle the fast paths synchronously:
+        *   Check for poison: `if (isPoison(value)) return value;`
+        *   Check for simple literals (not promises/arrays): `if (!val || typeof val.then !== 'function') return processSync(val);`
+    3.  Delegate all other complex cases (actual promises, arrays of promises) to a separate **`async`** helper function (e.g., `_memberLookupAsyncComplex`).
+    *   **Reasoning:** This avoids creating a Promise and paying the async overhead for the 30-40% of cases that are synchronous, which is a major performance win.
+
+*   ✅ **DO:** Check if a value is a promise (`if (val && typeof val.then === 'function')`) before attempting to `await` it. This is cheaper than a blind `await` on a value that might be a literal.
+
+*   ❌ **DON'T:** Reflexively make runtime functions `async`. An `async` function *always* returns a `Promise`, which adds overhead. Only use the `async` keyword on the helper functions that actually need `await`, as described in the hybrid pattern above.
+*   ❌ **DON'T:** Check `isPoison()` **AFTER** an `await`. It is architecturally impossible for `await somePromise` to return a `PoisonedValue`. Check for poison *before* awaiting, and catch `PoisonError` *after* awaiting.
+*   ❌ **DON'T:** `return` a `PoisonedValue` from an `async` function. You **MUST** `throw new PoisonError(...)`. Only non-`async` (or sync-first hybrid) functions can return a `PoisonedValue` directly.
+*   ❌ **DON'T:** Short-circuit error collection. Always await ALL promises and collect ALL errors before returning or throwing, adhering to the **"Never Miss Any Error"** principle.
+*   ❌ **DON'T:** Use `instanceof` for poison detection. Always use the `isPoison()` and `isPoisonError()` helpers.
+*   ❌ **DON'T:** Construct `TemplateError` directly in `catch` blocks. Always use the idempotent `runtime.handleError(e, ...)` function.
 
 ---
 
@@ -180,8 +205,23 @@ A resilient error handling system is under development.
 
 ### Variable Synchronization
 
--   **Problem**: How to ensure variable state is consistent when concurrent operations read and write to the same variables.
--   **Mechanism**: A two-level system using **frame snapshots** (capturing state at block creation) and **promise-based locks**. The compiler calculates `writeCounters` for all potential paths, which the runtime uses to manage these locks.
+**Goal:** To prevent race conditions and ensure sequential equivalence when concurrent blocks read from and write to the same outer-scope variables.
+
+**Mechanism:** A compile-time analysis + runtime locking system.
+
+1.  **Compile-Time Analysis:**
+    *   The compiler statically analyzes each potential async block to determine which variables it might read (`readVars`) and write to (`writeCounts`).
+    *   The `writeCounters` are a **conservative count** of all *potential* writes, including those in conditional branches that may not be executed.
+
+2.  **Runtime Locking (`pushAsyncBlock`):**
+    *   When an async block starts, its frame is initialized.
+    *   **Snapshots:** Variables needed for *reading* are snapshotted from the parent frame, capturing their state at the moment the block was initiated.
+    *   **Promisification (Locking):** Variables identified for *writing* are **promisified** in the parent frame. Their value is temporarily replaced with a `Promise`, which acts as a **lock**, forcing other operations to wait for it.
+
+3.  **Runtime Unlocking (Write Counting):**
+    *   Writes inside the async block update a local copy of the variable and decrement the block's internal `writeCounter`.
+    *   When a block's `writeCounter` for a variable hits zero (meaning all its potential writes are accounted for), it resolves the parent's **lock promise** with the final, correct value. This "unlocks" the variable for other parts of the script to use.
+
 -   **Key Functions**: `frame.pushAsyncBlock`, `frame._promisifyParentVariables`, `frame._countdownAndResolveAsyncWrites`.
 
 ### Sequential Operations (`!`)
