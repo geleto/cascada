@@ -60,6 +60,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
         yield 2;
         iterationCount++;
         throw new Error('Hard error - generator exhausted');
+        // eslint-disable-next-line no-unreachable
         yield 3; // Unreachable
       }
     };
