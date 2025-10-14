@@ -676,45 +676,20 @@ class Compiler extends CompilerBase {
 
       // the write counts from the below compilation are saved to the loopFrame (in the compiler)
       // these will be capped to 1 when passed to the runtime.iterate() and will be released by finalizeLoopWrites
-      const iteratorFuncName = 'while_iterator_' + this._tmpid();
-      this.emit.line(`let ${iteratorFuncName} = (async function* (frame) {`);
 
-      // push a frame to trap any writes from the condition expression
-      // by setting sequentialLoopBody, the writes will be released by finalizeLoopWrites
-      this.emit.line('  frame = frame.push();');
-      this.emit.line('  frame.sequentialLoopBody = true;');
+      // Create a condition evaluator function that will be passed to runtime
+      const conditionEvaluatorName = 'while_condition_evaluator_' + this._tmpid();
 
-      this.emit.line('  let iterationCount = 0;');
-      this.emit.line('  while (true) {');
-
-      // This structure correctly models a `while` loop.
-      // We check the condition *before* yielding, ensuring that the loop body for a given
-      // iteration runs *before* the condition for the *next* iteration is evaluated.
-
-      // 1. Check the condition for the current prospective iteration.
-      // Metadata collection: Condition compilation may track writes from sequential operations
-      this.emit.line(`    const conditionResult = `);
+      // Generate the condition evaluator function
+      this.emit.line(`let ${conditionEvaluatorName} = async (frame) => {`);
+      this.emit('  return ');
       this._compileAwaitedExpression(node.cond, loopFrame, false);
       this.emit.line(';');
-
-      // 2. If the condition is false, the loop is over.
-      this.emit.line('    if (!conditionResult) { break; }');
-
-      // 3. If the condition was true, yield the current iteration number.
-      //    The `for await...of` loop in `runtime.iterate` will now pause the generator
-      //    and execute the loop body for this iteration.
-      this.emit.line('    yield iterationCount;');
-
-      // 4. After the loop body has run and `for await` requests the next item,
-      //    the generator will resume here and increment the counter for the next cycle.
-      this.emit.line('    iterationCount++;');
-      this.emit.line('  }');
-
-      this.emit.line('  frame = frame.pop();');
-
-      this.emit.line('}).bind(context);');
+      this.emit.line('};');
       this.emit.line('');
-      this.emit.line(`let ${arrVarName} = ${iteratorFuncName}(frame);`);
+
+      // Use runtime helper to create the iterator
+      this.emit.line(`let ${arrVarName} = runtime.whileConditionIterator(frame, ${conditionEvaluatorName});`);
     };
 
     const fakeForNode = new nodes.For(

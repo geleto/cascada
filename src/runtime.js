@@ -2983,6 +2983,55 @@ async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey,
   }
 }
 
+/**
+ * Create an async iterator for while loop conditions that handles poison and errors gracefully.
+ * Yields Error/PoisonError objects instead of PoisonedValue to keep generator alive.
+ *
+ * @param {AsyncFrame} frame - The loop frame
+ * @param {Function} conditionEvaluator - Async function that evaluates the condition
+ * @returns {AsyncGenerator} Async generator that yields iteration counts or errors
+ */
+async function* whileConditionIterator(frame, conditionEvaluator) {
+  // Push a frame to trap any writes from the condition expression
+  frame = frame.push();
+  frame.sequentialLoopBody = true;
+
+  let iterationCount = 0;
+
+  while (true) {
+    try {
+      // Evaluate the condition
+      const conditionResult = await conditionEvaluator(frame);
+
+      // Check if condition evaluated to poison (soft error)
+      if (isPoison(conditionResult)) {
+        yield new PoisonError(conditionResult.errors);
+        frame.pop();
+        return;
+      }
+
+      // Normal condition evaluation - check if we should continue
+      if (!conditionResult) {
+        break;
+      }
+
+      // Yield the iteration count for this iteration
+      yield iterationCount;
+      iterationCount++;
+
+    } catch (err) {
+      // Condition threw an error (soft error)
+      // Yield the error as-is (Error or PoisonError)
+      // Don't yield PoisonedValue - it's thenable and would terminate the generator
+      yield (isPoisonError(err) ? err : err);
+      frame.pop();
+      return;
+    }
+  }
+
+  frame.pop();
+}
+
 module.exports = {
   Frame,
   AsyncFrame,
@@ -3043,6 +3092,7 @@ module.exports = {
   iterate,
   iterateAsyncSequential,
   iterateAsyncParallel,
+  whileConditionIterator,
   setLoopBindings,
   awaitSequenceLock,
   sequencedContextLookup
