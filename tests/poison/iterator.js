@@ -449,7 +449,7 @@
             yield createPoison(new Error('Single deterministic error'));
           }
         };
-        const template = `{% for item in myGenerator() %}{% endfor %}`;
+        const template = `{% for item in myGenerator() %}{{item}}{% endfor %}`;
 
         try {
           await env.renderTemplateString(template, context);
