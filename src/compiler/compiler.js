@@ -742,6 +742,15 @@ class Compiler extends CompilerBase {
     // Evaluate the array expression
     const arr = this._tmpid();
 
+    // Declare variables for poison handling positions
+    let poisonCheckPos;
+    let catchPoisonPos;
+
+    // Add try-catch wrapper for poison detection (async mode only)
+    if (node.isAsync) {
+      this.emit.line('try {');
+    }
+
     if (iteratorCompiler) {
       // Gets the `{ "var": 1 }` style counts from compileWhile.
       iteratorCompiler(node.arr, frame, arr);
@@ -898,30 +907,18 @@ class Compiler extends CompilerBase {
 
       // Collect metadata from else compilation
       _elseWriteCounts = this.async.countsTo1(frame.writeCounts); // eslint-disable-line no-unused-vars
-      elseHandlers = node.isAsync ? this._collectBranchHandlers(node.else_) : null;
+      elseHandlers = node.isAsync ? this._collectBranchHandlers(node.else_) : null; // eslint-disable-line no-unused-vars
 
       frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential && awaitSequentialElse, node.else_);
 
       this.emit.line(node.isAsync ? '}).bind(context);' : '};');
     }
 
-    // Combine handlers from both body and else (needed for future poison handling)
-    const _allHandlers = node.isAsync ? new Set([ // eslint-disable-line no-unused-vars
-      ...(bodyHandlers || []),
-      ...(elseHandlers || [])
-    ]) : null;
+    // Only body handlers need poison markers when iterable is poisoned
+    // (else block will execute normally and produce its own output)
+    const poisonMarkerHandlers = node.isAsync ? bodyHandlers : null;
 
-    // ===== PASS 2: MARK POSITIONS FOR FUTURE POISON HANDLING =====
-    // Phase 1: Just mark positions, don't insert actual poison handling yet
-
-    const _poisonCheckPos = this.codebuf.length; // eslint-disable-line no-unused-vars
-    this.emit(''); // Phase 2+: Insert poison check for iterable here
-
-    const _catchPoisonPos = this.codebuf.length; // eslint-disable-line no-unused-vars
-    this.emit(''); // Phase 2+: Insert catch block poison handling here
-
-    const _skipCheckPos = this.codebuf.length; // eslint-disable-line no-unused-vars
-    this.emit(''); // Phase 2+: Insert skip handling here
+    // ===== PASS 2: INSERT ACTUAL ITERATION CODE =====
 
     // Create error context object
     const errorContextObj = this._tmpid();
@@ -935,6 +932,52 @@ class Compiler extends CompilerBase {
       this.emit(`"${varName}"`);
     });
     this.emit(`], ${sequential}, ${node.isAsync}, ${errorContextObj});`);
+
+    // Close the else block and add catch block for poison handling
+    if (node.isAsync) {
+      this.emit.line('}'); // Close else
+      this.emit.line('} catch (e) {');
+      const errorContextJson = JSON.stringify(this._createErrorContext(node, node.arr));
+      this.emit.line(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContextJson}.lineno, ${errorContextJson}.colno, ${errorContextJson}.errorContextString, context.path);`);
+      catchPoisonPos = this.codebuf.length;
+      this.emit('');
+      this.emit.line('}'); // Close catch
+    }
+
+    // ===== PASS 3: INSERT POISON HANDLING CODE =====
+    // Fill in the poison handling code now that we have write counts and handlers
+    if (node.isAsync && (bodyWriteCounts || poisonMarkerHandlers)) {
+      const poisonHandling = [];
+
+      // Variable poisoning (only if sequential and has writes)
+      if (bodyWriteCounts && sequential) {
+        poisonHandling.push(`  frame.poisonBranchWrites(${arr}, ${JSON.stringify(bodyWriteCounts)});`);
+      }
+
+      // Handler (buffer) poisoning (only if has handlers)
+      if (poisonMarkerHandlers && poisonMarkerHandlers.size > 0) {
+        const handlerArray = Array.from(poisonMarkerHandlers);
+        poisonHandling.push(`  runtime.addPoisonMarkersToBuffer(${this.buffer}, ${arr}, ${JSON.stringify(handlerArray)});`);
+      }
+
+      // Execute else block if it exists
+      if (node.else_) {
+        poisonHandling.push(`  await ${elseFuncId}();`);
+      }
+
+      // Insert at poison check position
+      poisonHandling.forEach(line => {
+        this.emit.insertLine(poisonCheckPos, line);
+      });
+
+      // Insert at catch position (with contextualError instead of arr)
+      const catchHandling = poisonHandling.map(line =>
+        line.replace(arr, 'contextualError').replace('  ', '    ')
+      );
+      catchHandling.forEach(line => {
+        this.emit.insertLine(catchPoisonPos, line);
+      });
+    }
 
     // End buffer block for the node (using node.arr position)
     if (iteratorCompiler || bodyWriteCounts) {
@@ -1068,23 +1111,17 @@ class Compiler extends CompilerBase {
       this.emit.line('}');
     }
 
-    // Combine handlers from both body and else (needed for future poison handling)
-    const _allHandlers2 = node.isAsync ? new Set([ // eslint-disable-line no-unused-vars
+    // Combine handlers from both body and else (for consistency with _compileFor)
+    // Note: Legacy callback-based loops (asyncEach/asyncAll) are deprecated
+    // Modern async loops use _compileFor via the delegation at line 1007
+    const allHandlers2 = node.isAsync ? new Set([ // eslint-disable-line no-unused-vars
       ...(bodyHandlers || []),
       ...(elseHandlers || [])
     ]) : null;
 
-    // ===== PASS 2: MARK POSITIONS FOR FUTURE POISON HANDLING =====
-    // Phase 1: Just mark positions, don't insert actual poison handling yet
-
-    const _poisonCheckPos2 = this.codebuf.length; // eslint-disable-line no-unused-vars
-    this.emit(''); // Phase 2+: Insert poison check for iterable here
-
-    const _catchPoisonPos2 = this.codebuf.length; // eslint-disable-line no-unused-vars
-    this.emit(''); // Phase 2+: Insert catch block poison handling here
-
-    const _skipCheckPos2 = this.codebuf.length; // eslint-disable-line no-unused-vars
-    this.emit(''); // Phase 2+: Insert skip handling here
+    // Phase 2: No poison handling needed for legacy callback-based loops
+    // They delegate to _compileFor when node.isAsync is true (line 1007)
+    // This path only executes for old-style callback loops which don't use promises
 
     this.emit.line('frame = frame.pop();');
     //frame = frame.pop();// - not in nunjucks (a bug?)
