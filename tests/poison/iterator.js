@@ -6,7 +6,6 @@
   let createPoison;
   let isPoison;
   let isPoisonError;
-  let AsyncFrame;
   let AsyncEnvironment;
 
   if (typeof require !== 'undefined') {
@@ -15,80 +14,53 @@
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
     isPoison = runtime.isPoison;
-    AsyncFrame = runtime.AsyncFrame;
     AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
   } else {
     expect = window.expect;
     createPoison = nunjucks.runtime.createPoison;
     isPoison = nunjucks.runtime.isPoison;
     isPoisonError = nunjucks.runtime.isPoisonError;
-    AsyncFrame = nunjucks.runtime.AsyncFrame;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
   }
 
-  describe('Iterator Functions Poison Handling - Unit tests', () => {
+  describe('Iterator Functions Poison Handling - Integration tests (basic)', () => {
+    let env;
 
-    it('should handle normal iteration when array is valid', async () => {
-      // Root frame
-      const rootFrame = new AsyncFrame();
-      rootFrame.set('count', 0, true);
-
-      // Outer async block frame (simulates the compiler's outer async block for the for loop)
-      // This is the parent that will track the loop's writes
-      const outerFrame = rootFrame.pushAsyncBlock(null, { count: 1 });
-
-      // Inner loop frame created from the outer frame
-      const loopFrame = outerFrame.pushAsyncBlock(null, { count: 3 });
-      loopFrame.sequentialLoopBody = true;
-
-      const arr = [1, 2, 3];
-      const loopBody = () => {
-        const current = loopFrame.lookup('count');
-        loopFrame.set('count', current + 1, true);
-      };
-
-      await runtime.iterate(
-        arr,
-        loopBody,
-        null,
-        loopFrame,
-        { count: 3 },
-        ['item'],
-        true, // sequential
-        false,
-        { lineno: 1, colno: 1 }
-      );
-
-      expect(loopFrame.lookup('count')).to.equal(3);
+    beforeEach(() => {
+      env = new AsyncEnvironment();
     });
 
-    it('should handle normal iterateAsyncParallel iteration when array is valid', async () => {
-      const parentFrame = new AsyncFrame();
-      parentFrame.set('count', 0, true);
-      const outerFrame = parentFrame.pushAsyncBlock(null, { count: 1 });
-      const loopFrame = outerFrame.pushAsyncBlock(null, { count: 3 });
+    it('should handle normal iteration when array is valid', async () => {
+      const template = `
+        {% set count = 0 %}
+        {% for item in [1, 2, 3] %}
+          {% set count = count + 1 %}
+        {% endfor %}
+        Count: {{ count }}
+      `;
 
-      const arr = [1, 2, 3];
-      const loopBody = () => {
-        // Set sequentialLoopBody INSIDE the loop body function, like the compiler does
-        loopFrame.sequentialLoopBody = true;
-        const current = loopFrame.lookup('count');
-        loopFrame.set('count', current + 1, true);
+      const result = await env.renderTemplateString(template);
+      expect(result.trim()).to.equal('Count: 3');
+    });
+
+    it('should handle normal iteration with async operations', async () => {
+      const context = {
+        items: [1, 2, 3],
+        async increment(val) {
+          return val;
+        }
       };
 
-      await runtime.iterate(
-        arr,
-        loopBody,
-        null,
-        loopFrame,
-        { count: 3 },
-        ['item'],
-        true, // sequential
-        false,
-        { lineno: 1, colno: 1 }
-      );
+      const template = `
+        {% set count = 0 %}
+        {% for item in items %}
+          {% set count = count + increment(item) %}
+        {% endfor %}
+        Count: {{ count }}
+      `;
 
-      expect(loopFrame.lookup('count')).to.equal(3);
+      const result = await env.renderTemplateString(template, context);
+      expect(result.trim()).to.equal('Count: 6');
     });
   });
 
