@@ -745,6 +745,7 @@ class Compiler extends CompilerBase {
     // Declare variables for poison handling positions
     let poisonCheckPos;
     let catchPoisonPos;
+    let skipCheckPos;
 
     // Add try-catch wrapper for poison detection (async mode only)
     if (node.isAsync) {
@@ -923,8 +924,10 @@ class Compiler extends CompilerBase {
     // Create error context object
     const errorContextObj = this._tmpid();
     this.emit.line(`let ${errorContextObj} = { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this._generateErrorContext(node)}", path: context.path };`);
-    // Call the runtime iterate loop function
-    this.emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, ${JSON.stringify(bodyWriteCounts)}, [`);
+
+    // Call the runtime iterate loop function and capture didIterate return value
+    const didIterateVar = this._tmpid();
+    this.emit(`const ${didIterateVar} = ${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, ${JSON.stringify(bodyWriteCounts)}, [`);
     loopVars.forEach((varName, index) => {
       if (index > 0) {
         this.emit(', ');
@@ -932,6 +935,14 @@ class Compiler extends CompilerBase {
       this.emit(`"${varName}"`);
     });
     this.emit(`], ${sequential}, ${node.isAsync}, ${errorContextObj});`);
+
+    // Add skip handling for empty loops (still inside else block)
+    if (node.isAsync) {
+      this.emit.line(`if (!${didIterateVar}) {`);
+      skipCheckPos = this.codebuf.length;
+      this.emit('');
+      this.emit.line('}');
+    }
 
     // Close the else block and add catch block for poison handling
     if (node.isAsync) {
@@ -978,6 +989,15 @@ class Compiler extends CompilerBase {
       catchHandling.forEach(line => {
         this.emit.insertLine(catchPoisonPos, line);
       });
+    }
+
+    // ===== PASS 4: INSERT SKIP HANDLING CODE FOR EMPTY LOOPS =====
+    // When a loop has zero iterations, we need to skip (finalize) any writes
+    // that would have been made by the loop body
+    if (node.isAsync && bodyWriteCounts && sequential && skipCheckPos) {
+      this.emit.insertLine(skipCheckPos,
+        `  frame.skipBranchWrites(${JSON.stringify(bodyWriteCounts)});`
+      );
     }
 
     // End buffer block for the node (using node.arr position)
