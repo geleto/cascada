@@ -667,6 +667,9 @@ class Compiler extends CompilerBase {
     }
 
     // Asynchronous case:
+    // Two-pass approach: The iterator compiler evaluates the condition,
+    // which can have writes from sequential operations. These are tracked
+    // during compilation and passed through to _compileFor.
     const iteratorCompiler = (arrNode, loopFrame, arrVarName) => {
       // the condition expression can write if (!) sequential operations are used
       // it runs in the same frame as the loop body which writes are isolated with the sequentialLoopBody flag
@@ -689,6 +692,7 @@ class Compiler extends CompilerBase {
       // iteration runs *before* the condition for the *next* iteration is evaluated.
 
       // 1. Check the condition for the current prospective iteration.
+      // Metadata collection: Condition compilation may track writes from sequential operations
       this.emit.line(`    const conditionResult = `);
       this._compileAwaitedExpression(node.cond, loopFrame, false);
       this.emit.line(';');
@@ -722,7 +726,8 @@ class Compiler extends CompilerBase {
     );
     fakeForNode.isAsync = true;
 
-    // Delegate to the modified `_compileFor`
+    // Delegate to the modified `_compileFor`, which now uses two-pass compilation
+    // and collects metadata from both the iterator (condition) and body
     this._compileFor(fakeForNode, frame, true, iteratorCompiler);
   }
 
@@ -745,6 +750,16 @@ class Compiler extends CompilerBase {
       this._compileAwaitedExpression(node.arr, frame, false);
       this.emit.line(';');
     }
+
+    // Check for synchronous poison in array expression
+    if (node.isAsync) {
+      this.emit.line(`if (runtime.isPoison(${arr})) {`);
+      poisonCheckPos = this.codebuf.length;
+      this.emit('');
+      this.emit.line('} else {');
+    }
+
+    // ===== PASS 1: COMPILE BODY AND ELSE, COLLECT METADATA =====
 
     // Determine loop variable names
     const loopVars = [];
@@ -838,7 +853,10 @@ class Compiler extends CompilerBase {
       this.compile(node.body, frame);
     });
 
+    // Collect metadata from body compilation
     const bodyWriteCounts = frame.writeCounts;
+    const bodyHandlers = node.isAsync ? this._collectBranchHandlers(node.body) : null;
+
     if (bodyWriteCounts) {
       sequential = true;//should be sequential to avoid write race conditions and long promise chains
     }
@@ -852,8 +870,11 @@ class Compiler extends CompilerBase {
     // Close the loop body function
     this.emit.line(node.isAsync ? '}).bind(context);' : '};');
 
-    // Define the else function if it exists
+    // Compile else block and collect metadata
     let elseFuncId = 'null';
+    let _elseWriteCounts;
+    let elseHandlers = null;
+
     if (node.else_) {
       elseFuncId = this._tmpid();
       this.emit(`let ${elseFuncId} = `);
@@ -874,10 +895,33 @@ class Compiler extends CompilerBase {
       // Use node.else_ as position for the else block buffer
       frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.else_);
       this.compile(node.else_, frame);
+
+      // Collect metadata from else compilation
+      _elseWriteCounts = this.async.countsTo1(frame.writeCounts); // eslint-disable-line no-unused-vars
+      elseHandlers = node.isAsync ? this._collectBranchHandlers(node.else_) : null;
+
       frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential && awaitSequentialElse, node.else_);
 
       this.emit.line(node.isAsync ? '}).bind(context);' : '};');
     }
+
+    // Combine handlers from both body and else (needed for future poison handling)
+    const _allHandlers = node.isAsync ? new Set([ // eslint-disable-line no-unused-vars
+      ...(bodyHandlers || []),
+      ...(elseHandlers || [])
+    ]) : null;
+
+    // ===== PASS 2: MARK POSITIONS FOR FUTURE POISON HANDLING =====
+    // Phase 1: Just mark positions, don't insert actual poison handling yet
+
+    const _poisonCheckPos = this.codebuf.length; // eslint-disable-line no-unused-vars
+    this.emit(''); // Phase 2+: Insert poison check for iterable here
+
+    const _catchPoisonPos = this.codebuf.length; // eslint-disable-line no-unused-vars
+    this.emit(''); // Phase 2+: Insert catch block poison handling here
+
+    const _skipCheckPos = this.codebuf.length; // eslint-disable-line no-unused-vars
+    this.emit(''); // Phase 2+: Insert skip handling here
 
     // Create error context object
     const errorContextObj = this._tmpid();
@@ -929,7 +973,10 @@ class Compiler extends CompilerBase {
     }
     // This shares some code with the For tag, but not enough to
     // worry about. This iterates across an object asynchronously,
-    // but not in parallel.
+    // but not in parallel. (Legacy callback-based async loops)
+
+    // ===== PASS 1: COMPILE BODY AND ELSE, COLLECT METADATA =====
+
     let i, len, arr, asyncMethod;
 
     i = this._tmpid();
@@ -970,6 +1017,10 @@ class Compiler extends CompilerBase {
 
     this._compileAsyncLoopBindings(node, arr, i, len);
 
+    // Compile loop body and collect metadata
+    let _bodyWriteCounts; // eslint-disable-line no-unused-vars
+    let bodyHandlers = null;
+
     this.emit.withScopedSyntax(() => {
       let buf;
       if (parallel) {
@@ -977,6 +1028,11 @@ class Compiler extends CompilerBase {
       }
 
       this.compile(node.body, frame);
+
+      // Collect metadata from body compilation
+      _bodyWriteCounts = frame.writeCounts;
+      bodyHandlers = node.isAsync ? this._collectBranchHandlers(node.body) : null;
+
       this.emit.line('next(' + i + (buf ? ',' + buf : '') + ');');
 
       if (parallel) {
@@ -997,11 +1053,38 @@ class Compiler extends CompilerBase {
       }
     }
 
+    // Compile else block and collect metadata
+    let _elseWriteCounts2;
+    let elseHandlers = null;
+
     if (node.else_) {
       this.emit.line('if (!' + arr + '.length) {');
       this.compile(node.else_, frame);
+
+      // Collect metadata from else compilation
+      _elseWriteCounts2 = frame.writeCounts; // eslint-disable-line no-unused-vars
+      elseHandlers = node.isAsync ? this._collectBranchHandlers(node.else_) : null;
+
       this.emit.line('}');
     }
+
+    // Combine handlers from both body and else (needed for future poison handling)
+    const _allHandlers2 = node.isAsync ? new Set([ // eslint-disable-line no-unused-vars
+      ...(bodyHandlers || []),
+      ...(elseHandlers || [])
+    ]) : null;
+
+    // ===== PASS 2: MARK POSITIONS FOR FUTURE POISON HANDLING =====
+    // Phase 1: Just mark positions, don't insert actual poison handling yet
+
+    const _poisonCheckPos2 = this.codebuf.length; // eslint-disable-line no-unused-vars
+    this.emit(''); // Phase 2+: Insert poison check for iterable here
+
+    const _catchPoisonPos2 = this.codebuf.length; // eslint-disable-line no-unused-vars
+    this.emit(''); // Phase 2+: Insert catch block poison handling here
+
+    const _skipCheckPos2 = this.codebuf.length; // eslint-disable-line no-unused-vars
+    this.emit(''); // Phase 2+: Insert skip handling here
 
     this.emit.line('frame = frame.pop();');
     //frame = frame.pop();// - not in nunjucks (a bug?)
