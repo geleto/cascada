@@ -960,10 +960,11 @@ class Compiler extends CompilerBase {
         poisonHandling.push(`  runtime.addPoisonMarkersToBuffer(${this.buffer}, ${arr}, ${JSON.stringify(handlerArray)});`);
       }
 
-      // Execute else block if it exists
-      if (node.else_) {
+      // // DO NOT call else function here - runtime.iterate will handle it
+      // when it detects the poisoned array
+      /*if (node.else_) {
         poisonHandling.push(`  await ${elseFuncId}();`);
-      }
+      }*/
 
       // Insert at poison check position
       poisonHandling.forEach(line => {
