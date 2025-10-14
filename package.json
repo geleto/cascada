@@ -107,7 +107,8 @@
     "test:browser-no-prep": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/testrunner.js",
     "test:browser": "cross-env NODE_ENV=test npm run test:prep && npm run test:browser-no-prep",
     "test:pasync": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
-    "test": "npm run test:prep && npm run test:node-no-prep && npm run test:browser-no-prep -- fullTest"
+    "test": "npm run test:prep && npm run test:node-no-prep && npm run test:browser-no-prep -- fullTest",
+    "mocha:single": "mocha --check-leaks -R spec"
   },
   "nyc": {
     "extends": "@istanbuljs/nyc-config-babel",
