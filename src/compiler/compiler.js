@@ -525,18 +525,13 @@ class Compiler extends CompilerBase {
       this._compileAwaitedExpression(node.cond, frame, false);
       this.emit(';');
       this.emit('');
-      this.emit('if (runtime.isPoison(condResult)) {');
+      // awaited result can not be a resolved poison value
+      /*this.emit('if (runtime.isPoison(condResult)) {');
       poisonCheckPos = this.codebuf.length;
       this.emit('');
-      this.emit('} else if (condResult) {');
-    } else {
-      // Sync mode: unchanged
-      this.emit('if(');
-      this._compileAwaitedExpression(node.cond, frame, false);
-      this.emit('){');
-    }
+      this.emit('} else if (condResult) {');*/
+      this.emit('if (condResult) {');
 
-    if (this.asyncMode) {
       trueBranchCodePos = this.codebuf.length;
       this.emit('');
       // Use node.body as the position node for the true branch block
@@ -544,65 +539,40 @@ class Compiler extends CompilerBase {
         this.compile(node.body, f);
         trueBranchWriteCounts = this.async.countsTo1(f.writeCounts);
       }, node.body); // Pass body as code position
-    }
-    else {
-      this.emit.withScopedSyntax(() => {
-        this.compile(node.body, frame);
-        if (async) {
-          this.emit('cb()');
-        }
-      });
-    }
 
-    this.emit('} else {');
+      this.emit('} else {');
 
-    if (trueBranchWriteCounts) {
-      //skip the true branch writes in the false branch
-      this.emit('frame.skipBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
-    }
+      if (trueBranchWriteCounts) {
+        //skip the true branch writes in the false branch
+        this.emit('frame.skipBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
+      }
 
-    if (node.else_) {
-      if (this.asyncMode) {
+      if (node.else_) {
         // Use node.else_ as the position node for the false branch block
         this.emit.asyncBlock(node, frame, false, (f) => {
           this.compile(node.else_, f);
           falseBranchWriteCounts = this.async.countsTo1(f.writeCounts);
         }, node.else_); // Pass else as code position
       }
-      else {
-        this.emit.withScopedSyntax(() => {
-          this.compile(node.else_, frame);
-          if (async) {
-            this.emit('cb()');
-          }
-        });
+      this.emit('}');
+
+      // Collect output handlers from both branches (for async mode poison handling)
+      let trueBranchHandlers, falseBranchHandlers, allHandlers;
+      if (this.asyncMode) {
+        trueBranchHandlers = this._collectBranchHandlers(node.body);
+        falseBranchHandlers = node.else_ ?
+          this._collectBranchHandlers(node.else_) :
+          new Set();
+
+        // Combine handlers - both branches might write to same handlers
+        allHandlers = new Set([...trueBranchHandlers, ...falseBranchHandlers]);
       }
-    } else {
-      if (async && !this.asyncMode) {
-        this.emit('cb()');
+
+      if (falseBranchWriteCounts) {
+        //skip the false branch writes in the true branch code
+        this.emit.insertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
       }
-    }
 
-    this.emit('}');
-
-    // Collect output handlers from both branches (for async mode poison handling)
-    let trueBranchHandlers, falseBranchHandlers, allHandlers;
-    if (this.asyncMode) {
-      trueBranchHandlers = this._collectBranchHandlers(node.body);
-      falseBranchHandlers = node.else_ ?
-        this._collectBranchHandlers(node.else_) :
-        new Set();
-
-      // Combine handlers - both branches might write to same handlers
-      allHandlers = new Set([...trueBranchHandlers, ...falseBranchHandlers]);
-    }
-
-    if (falseBranchWriteCounts) {
-      //skip the false branch writes in the true branch code
-      this.emit.insertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
-    }
-
-    if (this.asyncMode) {
       // Add catch block to poison variables when condition fails
       const errorContextJson = JSON.stringify(this._createErrorContext(node, node.cond));
       this.emit('} catch (e) {');
@@ -636,6 +606,34 @@ class Compiler extends CompilerBase {
             `    runtime.addPoisonMarkersToBuffer(${this.buffer}, contextualError, ${JSON.stringify(handlerArray)});`);
         }
       }
+    } else {
+      // Sync mode
+      this.emit('if(');
+      this._compileAwaitedExpression(node.cond, frame, false);
+      this.emit('){');
+
+      this.emit.withScopedSyntax(() => {
+        this.compile(node.body, frame);
+        if (async) {
+          this.emit('cb()');
+        }
+      });
+
+      this.emit('} else {');
+
+      if (node.else_) {
+        this.emit.withScopedSyntax(() => {
+          this.compile(node.else_, frame);
+          if (async) {
+            this.emit('cb()');
+          }
+        });
+      } else {
+        if (async) {//not asyncMode
+          this.emit('cb()');
+        }
+      }
+      this.emit('}');
     }
 
     // Use node.cond (passed earlier) for the end block
