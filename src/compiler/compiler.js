@@ -715,27 +715,14 @@ class Compiler extends CompilerBase {
     // Evaluate the array expression
     const arr = this._tmpid();
 
-    // Declare variables for poison handling positions
-    let poisonCheckPos;
-    let catchPoisonPos;
-    let skipCheckPos;
-
-    // Add try-catch wrapper for poison detection (async mode only)
-    if (node.isAsync) {
-      this.emit.line('try {');
-    }
-
     if (iteratorCompiler) {
       // Gets the `{ "var": 1 }` style counts from compileWhile.
       iteratorCompiler(node.arr, frame, arr);
     } else {
-      //@todo - try/catch for handling poison
       this.emit(`let ${arr} = `);
-      this._compileAwaitedExpression(node.arr, frame, false);
+      this._compileExpression(node.arr, frame, false);
       this.emit.line(';');
     }
-
-    // Check for synchronous poison in array expression, optimization
 
     // Determine loop variable names
     const loopVars = [];
@@ -755,7 +742,7 @@ class Compiler extends CompilerBase {
       }
     }
 
-    // Define the loop body function
+    // Compile the loop body function and collect metadata
     const loopBodyFuncId = this._tmpid();
     this.emit(`let ${loopBodyFuncId} = `);
 
@@ -767,11 +754,13 @@ class Compiler extends CompilerBase {
       // update _compileLoopBody too as it handles sequential differently
       sequential = true;
     }
+
+    // Collect body handlers for poison handling
     const bodyHandlers = node.isAsync ? this._collectBranchHandlers(node.body) : null;
 
     // Compile else block and collect metadata
     let elseFuncId = 'null';
-    let elseWriteCounts;
+    let elseWriteCounts = null;
     let elseHandlers = null;
 
     if (node.else_) {
@@ -781,96 +770,35 @@ class Compiler extends CompilerBase {
       const elseFrame = this._compileLoopElse(node, frame, sequential);
 
       // Collect metadata from else compilation
-      elseWriteCounts = this.async.countsTo1(elseFrame.writeCounts); // eslint-disable-line no-unused-vars
-      elseHandlers = node.isAsync ? this._collectBranchHandlers(elseFrame.else_) : null; // eslint-disable-line no-unused-vars
+      elseWriteCounts = this.async.countsTo1(elseFrame.writeCounts);
+      elseHandlers = node.isAsync ? this._collectBranchHandlers(node.else_) : null;
     }
 
-    // Only body handlers need poison markers when iterable is poisoned
-    // (else block will execute normally and produce its own output)
-    const poisonMarkerHandlers = node.isAsync ? bodyHandlers : null;
+    // Build asyncOptions code string if in async mode
+    let asyncOptionsCode = 'null';
+    if (node.isAsync) {
+      asyncOptionsCode = `{
+        sequential: ${sequential},
+        bodyWriteCounts: ${JSON.stringify(bodyWriteCounts || {})},
+        bodyHandlers: ${JSON.stringify(bodyHandlers ? Array.from(bodyHandlers) : [])},
+        elseWriteCounts: ${JSON.stringify(elseWriteCounts || {})},
+        elseHandlers: ${JSON.stringify(elseHandlers ? Array.from(elseHandlers) : [])},
+        errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }
+      }`;
+    }
 
-    // ===== PASS 2: INSERT ACTUAL ITERATION CODE =====
-
-    // Create error context object
-    const errorContextObj = this._tmpid();
-    this.emit.line(`let ${errorContextObj} = { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this._generateErrorContext(node)}", path: context.path };`);
-
-    // Call the runtime iterate loop function and capture didIterate return value
-    const didIterateVar = this._tmpid();
-    this.emit(`const ${didIterateVar} = ${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${JSON.stringify(bodyWriteCounts)}, [`);
+    // Call the runtime iterate loop function
+    this.emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${node.isAsync ? this.buffer : 'null'}, [`);
     loopVars.forEach((varName, index) => {
       if (index > 0) {
         this.emit(', ');
       }
       this.emit(`"${varName}"`);
     });
-    this.emit(`], ${sequential}, ${node.isAsync}, ${errorContextObj});`);
-
-    // Add skip handling for empty loops (still inside else block)
-    if (node.isAsync) {
-      this.emit.line(`if (!${didIterateVar}) {`);
-      skipCheckPos = this.codebuf.length;
-      this.emit('');
-      this.emit.line('}');
-    }
-
-    // Close the else block and add catch block for poison handling
-    if (node.isAsync) {
-      this.emit.line('} catch (e) {');
-      const errorContextJson = JSON.stringify(this._createErrorContext(node, node.arr));
-      this.emit.line(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContextJson}.lineno, ${errorContextJson}.colno, ${errorContextJson}.errorContextString, context.path);`);
-      catchPoisonPos = this.codebuf.length;
-      this.emit('');
-      this.emit.line('}'); // Close catch
-    }
-
-    // ===== PASS 3: INSERT POISON HANDLING CODE =====
-    // Fill in the poison handling code now that we have write counts and handlers
-    if (node.isAsync && (bodyWriteCounts || poisonMarkerHandlers)) {
-      const poisonHandling = [];
-
-      // Variable poisoning (only if sequential and has writes)
-      if (bodyWriteCounts && sequential) {
-        poisonHandling.push(`  frame.poisonBranchWrites(${arr}, ${JSON.stringify(bodyWriteCounts)});`);
-      }
-
-      // Handler (buffer) poisoning (only if has handlers)
-      if (poisonMarkerHandlers && poisonMarkerHandlers.size > 0) {
-        const handlerArray = Array.from(poisonMarkerHandlers);
-        poisonHandling.push(`  runtime.addPoisonMarkersToBuffer(${this.buffer}, ${arr}, ${JSON.stringify(handlerArray)});`);
-      }
-
-      // // DO NOT call else function here - runtime.iterate will handle it
-      // when it detects the poisoned array
-      /*if (node.else_) {
-        poisonHandling.push(`  await ${elseFuncId}();`);
-      }*/
-
-      // Insert at poison check position
-      poisonHandling.forEach(line => {
-        this.emit.insertLine(poisonCheckPos, line);
-      });
-
-      // Insert at catch position (with contextualError instead of arr)
-      const catchHandling = poisonHandling.map(line =>
-        line.replace(arr, 'contextualError').replace('  ', '    ')
-      );
-      catchHandling.forEach(line => {
-        this.emit.insertLine(catchPoisonPos, line);
-      });
-    }
-
-    // ===== PASS 4: INSERT SKIP HANDLING CODE FOR EMPTY LOOPS =====
-    // When a loop has zero iterations, we need to skip (finalize) any writes
-    // that would have been made by the loop body
-    if (node.isAsync && bodyWriteCounts && sequential && skipCheckPos) {
-      this.emit.insertLine(skipCheckPos,
-        `  frame.skipBranchWrites(${JSON.stringify(bodyWriteCounts)});`
-      );
-    }
+    this.emit(`], ${asyncOptionsCode});`);
 
     // End buffer block for the node (using node.arr position)
-    if (iteratorCompiler || bodyWriteCounts) {
+    if (iteratorCompiler || frame.writeCounts) {
       // condition and loop body counts are a single unit of work and
       // are isolated to not affect the outer frame write counts
       // All writes will be released by finalizeLoopWrites

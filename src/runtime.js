@@ -2618,13 +2618,37 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
   return didIterate;
 }
 
-async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loopVars = [], sequential = false, isAsync = false, errorContext) {
+async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = [], asyncOptions = null) {
   let didIterate = false;
 
-  // Check if iterable itself is poisoned
-  if (isPoison(arr)) {
-    return false;
+  // Handle poison detection if in async mode
+  if (asyncOptions) {
+    // Check for synchronous poison first
+    if (isPoison(arr)) {
+      // Array expression evaluated to poison - poison both body and else
+      poisonLoopEffects(loopFrame, buffer, asyncOptions, arr);
+      return; // Early return, else doesn't run
+    }
+
+    // Check for promise that might reject with poison
+    if (arr && typeof arr.then === 'function') {
+      try {
+        arr = await arr;
+      } catch (err) {
+        // Promise rejected - poison both body and else
+        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+        poisonLoopEffects(loopFrame, buffer, asyncOptions, poison);
+        throw err; // Re-throw for upstream handling
+      }
+    }
+
+    // Note: After await, arr cannot be poison (await converts poison to PoisonError)
   }
+
+  const sequential = asyncOptions ? asyncOptions.sequential : false;
+  const isAsync = asyncOptions !== null;
+  const bodyWriteCounts = asyncOptions ? asyncOptions.bodyWriteCounts : null;
+  const errorContext = asyncOptions ? asyncOptions.errorContext : null;
 
   if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
     // We must have two separate code paths. The `lenPromise` and `lastPromise`
@@ -2702,6 +2726,36 @@ async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loop
     // unit of work. This must happen regardless of whether the loop iterated
     // or the else block ran, to prevent deadlocks.
     loopFrame.finalizeLoopWrites(bodyWriteCounts);
+  }
+}
+
+/**
+ * Poison both body and else effects when loop array is poisoned before iteration.
+ * We poison both branches because we don't know if the underlying value would have
+ * been empty (else runs) or non-empty (body runs).
+ *
+ * @param {AsyncFrame} frame - The loop frame
+ * @param {Array} buffer - The output buffer array
+ * @param {Object} asyncOptions - Options containing write counts and handlers
+ * @param {PoisonedValue|Error} poisonValue - The poison value to propagate
+ */
+function poisonLoopEffects(frame, buffer, asyncOptions, poisonValue) {
+  const poison = isPoison(poisonValue) ? poisonValue : createPoison(poisonValue);
+
+  // Poison body effects
+  if (asyncOptions.bodyWriteCounts && Object.keys(asyncOptions.bodyWriteCounts).length > 0) {
+    frame.poisonBranchWrites(poison, asyncOptions.bodyWriteCounts);
+  }
+  if (asyncOptions.bodyHandlers && asyncOptions.bodyHandlers.length > 0) {
+    addPoisonMarkersToBuffer(buffer, poison, asyncOptions.bodyHandlers);
+  }
+
+  // Poison else effects
+  if (asyncOptions.elseWriteCounts && Object.keys(asyncOptions.elseWriteCounts).length > 0) {
+    frame.poisonBranchWrites(poison, asyncOptions.elseWriteCounts);
+  }
+  if (asyncOptions.elseHandlers && asyncOptions.elseHandlers.length > 0) {
+    addPoisonMarkersToBuffer(buffer, poison, asyncOptions.elseHandlers);
   }
 }
 
