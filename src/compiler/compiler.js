@@ -729,6 +729,7 @@ class Compiler extends CompilerBase {
       // Gets the `{ "var": 1 }` style counts from compileWhile.
       iteratorCompiler(node.arr, frame, arr);
     } else {
+      //@todo - try/catch for handling poison
       this.emit(`let ${arr} = `);
       this._compileAwaitedExpression(node.arr, frame, false);
       this.emit.line(';');
@@ -758,92 +759,15 @@ class Compiler extends CompilerBase {
     const loopBodyFunc = this._tmpid();
     this.emit(`let ${loopBodyFunc} = `);
 
-    if (node.isAsync) {
-      this.emit('(async function(');//@todo - think this over, does it need async block?
-    } else {
-      this.emit('function(');
-    }
-
-    // Function parameters
-    loopVars.forEach((varName, index) => {
-      if (index > 0) {
-        this.emit(', ');
-      }
-      this.emit(varName);
-    });
-    const loopIndex = this._tmpid();
-    const loopLength = this._tmpid();
-    const isLast = this._tmpid();
-    const errorContext = this._tmpid();
-    this.emit(`, ${loopIndex}, ${loopLength}, ${isLast}, ${errorContext}) {`);
-
-    // Use node.body as the position for the inner buffer block (loop body execution)
-    if (node.isAsync) {
-      // when sequential, the loop body IIFE will await all closures (waitAllClosures)
-      // we return the IIFE promise so that awaiting the loop body will wait for all closures
-      this.emit('return ');
-    }
-    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.body);
-
-    const makeSequentialPos = this.codebuf.length;// we will know later if it's sequential or not
-    this.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
-
-    // Handle array unpacking within the loop body
-    if (loopVars.length === 2 && !Array.isArray(arr)) {
-      // Object key/value iteration
-      const [keyVar, valueVar] = loopVars;
-      this.emit.line(`frame.set("${keyVar}", ${keyVar});`);
-      this.emit.line(`frame.set("${valueVar}", ${valueVar});`);
-
-      if (node.isAsync) {
-        frame.set(keyVar, keyVar);
-        frame.set(valueVar, valueVar);
-        this._addDeclaredVar(frame, keyVar);
-        this._addDeclaredVar(frame, valueVar);
-      }
-    } else if (node.name instanceof nodes.Array) {
-      // Array destructuring
-      node.name.children.forEach((child, index) => {
-        const varName = child.value;
-        const tid = this._tmpid();
-        this.emit.line(`let ${tid} = Array.isArray(${varName}) ? ${varName}[${index}] : undefined;`);
-        this.emit.line(`frame.set("${varName}", ${tid});`);
-        if (node.isAsync) {
-          frame.set(varName, tid);
-          this._addDeclaredVar(frame, varName);
-        }
-      });
-    } else {
-      // Single variable loop
-      const varName = node.name.value;
-      this.emit.line(`frame.set("${varName}", ${varName});`);
-      if (node.isAsync) {
-        frame.set(varName, varName);
-        this._addDeclaredVar(frame, varName);
-      }
-    }
-
-    // Compile the loop body with the updated frame
-    this.emit.withScopedSyntax(() => {
-      this.compile(node.body, frame);
-    });
-
-    // Collect metadata from body compilation
-    const bodyWriteCounts = frame.writeCounts;
-    const bodyHandlers = node.isAsync ? this._collectBranchHandlers(node.body) : null;
-
+    //compile the loop body function
+    const bodyFrame = this._compileLoopBody(node, frame, arr, loopVars, sequential);
+    const bodyWriteCounts = bodyFrame.writeCounts;
     if (bodyWriteCounts) {
-      sequential = true;//should be sequential to avoid write race conditions and long promise chains
+      // @todo - in the future will require writes+reads to be sequential,
+      // update _compileLoopBody too as it handles sequential differently
+      sequential = true;
     }
-    if (sequential) {
-      this.emit.insertLine(makeSequentialPos, 'frame.sequentialLoopBody = true;');
-    }
-
-    // End buffer block for the loop body (using node.body position)
-    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential, node.body);
-
-    // Close the loop body function
-    this.emit.line(node.isAsync ? '}).bind(context);' : '};');
+    const bodyHandlers = node.isAsync ? this._collectBranchHandlers(node.body) : null;
 
     // Compile else block and collect metadata
     let elseFuncId = 'null';
@@ -976,6 +900,94 @@ class Compiler extends CompilerBase {
     }
     // else - all write counts are from the loop body and are 1 anyway (counts are counted inside (>1) and outside (=1))
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
+  }
+
+  _compileLoopBody(node, frame, arr, loopVars, sequential) {
+    if (node.isAsync) {
+      this.emit('(async function(');//@todo - think this over, does it need async block?
+    } else {
+      this.emit('function(');
+    }
+
+    // Function parameters
+    loopVars.forEach((varName, index) => {
+      if (index > 0) {
+        this.emit(', ');
+      }
+      this.emit(varName);
+    });
+    const loopIndex = this._tmpid();
+    const loopLength = this._tmpid();
+    const isLast = this._tmpid();
+    const errorContext = this._tmpid();
+    this.emit(`, ${loopIndex}, ${loopLength}, ${isLast}, ${errorContext}) {`);
+
+    // Use node.body as the position for the inner buffer block (loop body execution)
+    if (node.isAsync) {
+      // when sequential, the loop body IIFE will await all closures (waitAllClosures)
+      // we return the IIFE promise so that awaiting the loop body will wait for all closures
+      this.emit('return ');
+    }
+    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.body);
+
+    const makeSequentialPos = this.codebuf.length;// we will know later if it's sequential or not
+    this.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+
+    // Handle array unpacking within the loop body
+    if (loopVars.length === 2 && !Array.isArray(arr)) {
+      // Object key/value iteration
+      const [keyVar, valueVar] = loopVars;
+      this.emit.line(`frame.set("${keyVar}", ${keyVar});`);
+      this.emit.line(`frame.set("${valueVar}", ${valueVar});`);
+
+      if (node.isAsync) {
+        frame.set(keyVar, keyVar);
+        frame.set(valueVar, valueVar);
+        this._addDeclaredVar(frame, keyVar);
+        this._addDeclaredVar(frame, valueVar);
+      }
+    } else if (node.name instanceof nodes.Array) {
+      // Array destructuring
+      node.name.children.forEach((child, index) => {
+        const varName = child.value;
+        const tid = this._tmpid();
+        this.emit.line(`let ${tid} = Array.isArray(${varName}) ? ${varName}[${index}] : undefined;`);
+        this.emit.line(`frame.set("${varName}", ${tid});`);
+        if (node.isAsync) {
+          frame.set(varName, tid);
+          this._addDeclaredVar(frame, varName);
+        }
+      });
+    } else {
+      // Single variable loop
+      const varName = node.name.value;
+      this.emit.line(`frame.set("${varName}", ${varName});`);
+      if (node.isAsync) {
+        frame.set(varName, varName);
+        this._addDeclaredVar(frame, varName);
+      }
+    }
+
+    // Compile the loop body with the updated frame
+    this.emit.withScopedSyntax(() => {
+      this.compile(node.body, frame);
+    });
+
+    // Collect metadata from body compilation
+    if (frame.writeCounts || sequential) {
+      //@todo - in the future will require writes+reads to be sequential
+      //only writes - will save the last write to the loop frame
+      this.emit.insertLine(makeSequentialPos, 'frame.sequentialLoopBody = true;');
+    }
+
+    // End buffer block for the loop body (using node.body position)
+    let bodyFrame = frame;
+    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential, node.body);
+
+    // Close the loop body function
+    this.emit.line(node.isAsync ? '}).bind(context);' : '};');
+
+    return bodyFrame;
   }
 
   _compileAsyncLoopBindings(node, arr, i, len) {
