@@ -124,7 +124,7 @@
     });
 
     // Replaces: 'iterate - poisoned iterable' -> 'should execute else branch when iterable is poisoned'
-    it('should not execute the else block for a loop over a poisoned iterable', async () => {
+    it('should execute the else block for a loop over a poisoned iterable', async () => {
       const context = {
         poisonedItems: createPoison(new Error('Iterable is poisoned'))
       };

@@ -2,7 +2,7 @@
 
 const expect = require('expect.js');
 const { AsyncEnvironment } = require('../src/environment');
-const { createPoison, isPoison, isPoisonError } = require('../src/runtime');
+const { createPoison, isPoisonError } = require('../src/runtime');
 
 describe('Phase 5: While Loop Generator Error Handling', () => {
   let env;
@@ -268,7 +268,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       `;
 
       try {
-        const result = await env.renderScriptString(script, context);
+        await env.renderScriptString(script, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);

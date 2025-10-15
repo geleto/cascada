@@ -2,7 +2,6 @@
 
 const expect = require('expect.js');
 const { AsyncEnvironment } = require('../src/environment');
-const { isPoisonError } = require('../src/runtime');
 
 describe('Phase 3: Empty Loop Handling', () => {
   let env;
