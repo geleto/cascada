@@ -60,6 +60,7 @@ Your goal is to write and modify TypeScript/JavaScript code for the `cascada-eng
 
 *   ❌ **DON'T:** Reflexively make runtime functions `async`. An `async` function *always* returns a `Promise`, which adds overhead. Only use the `async` keyword on the helper functions that actually need `await`, as described in the hybrid pattern above.
 *   ❌ **DON'T:** Check `isPoison()` **AFTER** an `await`. It is architecturally impossible for `await somePromise` to return a `PoisonedValue`. Check for poison *before* awaiting, and catch `PoisonError` *after* awaiting.
+*   ❌ **DON'T:** Treat `isPoison()` as a definitive test for all errors. It is a synchronous check for an *existing* `PoisonedValue`, not a check for whether a `Promise` will reject. For promises, you must use `try/catch`.
 *   ❌ **DON'T:** `return` a `PoisonedValue` from an `async` function. You **MUST** `throw new PoisonError(...)`. Only non-`async` (or sync-first hybrid) functions can return a `PoisonedValue` directly.
 *   ❌ **DON'T:** Short-circuit error collection. Always await ALL promises and collect ALL errors before returning or throwing, adhering to the **"Never Miss Any Error"** principle.
 *   ❌ **DON'T:** Use `instanceof` for poison detection. Always use the `isPoison()` and `isPoisonError()` helpers.
@@ -237,7 +238,7 @@ A resilient error handling system is under development.
 -   **`PoisonedValue`**: A *thenable* object that carries an `.errors[]` array. It can be passed around synchronously.
 -   **`PoisonError`**: The `Error` that is *thrown* when a `PoisonedValue` is awaited.
 -   **Detection**:
-    -   `isPoison(value)` -> Use **before** `await`.
+    -   `isPoison(value)` -> Use **before** `await`. `isPoison` is a fast, synchronous check. It identifies existing `PoisonedValue` objects, but it will not `await` a promise to see if it will reject with a `PoisonError`. This makes it ideal for the fast-path check in the Sync-First Hybrid pattern.
     -   `isPoisonError(err)` -> Use **in a `catch` block**.
 -   **Reference**: `docs/code/Error Handling Guide.md` and `docs/code/Poisoning - Implementation Principles.md`
 

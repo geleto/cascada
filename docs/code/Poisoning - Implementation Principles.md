@@ -300,7 +300,7 @@ function isPoisonError(err) {
 - Use `isPoison()` on return values from NON-async functions
 - Use `isPoison()` on return values from sync-first hybrid functions (before awaiting)
 - Use `isPoisonError()` on errors caught in catch blocks
-- **Never** use `isPoison()` on the result of await
+- **Never** use `isPoison()` on the result of await (as it will just throw if poison)
 - **Never** use `isPoison()` directly on return value of async function
 
 ---
