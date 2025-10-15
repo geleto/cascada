@@ -2622,7 +2622,6 @@ async function iterate(arr, loopBody, loopElse, loopFrame, bodyWriteCounts, loop
   let didIterate = false;
 
   // Check if iterable itself is poisoned
-  // Compiler's poison handler will execute else block - runtime just returns false
   if (isPoison(arr)) {
     return false;
   }

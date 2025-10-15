@@ -734,15 +734,7 @@ class Compiler extends CompilerBase {
       this.emit.line(';');
     }
 
-    // Check for synchronous poison in array expression
-    if (node.isAsync) {
-      this.emit.line(`if (runtime.isPoison(${arr})) {`);
-      poisonCheckPos = this.codebuf.length;
-      this.emit('');
-      this.emit.line('} else {');
-    }
-
-    // ===== PASS 1: COMPILE BODY AND ELSE, COLLECT METADATA =====
+    // Check for synchronous poison in array expression, optimization
 
     // Determine loop variable names
     const loopVars = [];
@@ -919,7 +911,6 @@ class Compiler extends CompilerBase {
 
     // Close the else block and add catch block for poison handling
     if (node.isAsync) {
-      this.emit.line('}'); // Close else
       this.emit.line('} catch (e) {');
       const errorContextJson = JSON.stringify(this._createErrorContext(node, node.arr));
       this.emit.line(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContextJson}.lineno, ${errorContextJson}.colno, ${errorContextJson}.errorContextString, context.path);`);
