@@ -756,8 +756,8 @@ class Compiler extends CompilerBase {
     }
 
     // Define the loop body function
-    const loopBodyFunc = this._tmpid();
-    this.emit(`let ${loopBodyFunc} = `);
+    const loopBodyFuncId = this._tmpid();
+    this.emit(`let ${loopBodyFuncId} = `);
 
     //compile the loop body function
     const bodyFrame = this._compileLoopBody(node, frame, arr, loopVars, sequential);
@@ -771,37 +771,18 @@ class Compiler extends CompilerBase {
 
     // Compile else block and collect metadata
     let elseFuncId = 'null';
-    let _elseWriteCounts;
+    let elseWriteCounts;
     let elseHandlers = null;
 
     if (node.else_) {
       elseFuncId = this._tmpid();
       this.emit(`let ${elseFuncId} = `);
 
-      const awaitSequentialElse = false;//I think awaiting it like loop body is not needed
-
-      if (node.isAsync) {
-        this.emit('(async function() {');
-        // must return the promise from its async block
-        // which when sequential will wait for all closures
-        if (awaitSequentialElse) {
-          this.emit('return ');
-        }
-      } else {
-        this.emit('function() {');
-      }
-
-      // Use node.else_ as position for the else block buffer
-      frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.else_);
-      this.compile(node.else_, frame);
+      const elseFrame = this._compileLoopElse(node, frame, sequential);
 
       // Collect metadata from else compilation
-      _elseWriteCounts = this.async.countsTo1(frame.writeCounts); // eslint-disable-line no-unused-vars
-      elseHandlers = node.isAsync ? this._collectBranchHandlers(node.else_) : null; // eslint-disable-line no-unused-vars
-
-      frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential && awaitSequentialElse, node.else_);
-
-      this.emit.line(node.isAsync ? '}).bind(context);' : '};');
+      elseWriteCounts = this.async.countsTo1(elseFrame.writeCounts); // eslint-disable-line no-unused-vars
+      elseHandlers = node.isAsync ? this._collectBranchHandlers(elseFrame.else_) : null; // eslint-disable-line no-unused-vars
     }
 
     // Only body handlers need poison markers when iterable is poisoned
@@ -816,7 +797,7 @@ class Compiler extends CompilerBase {
 
     // Call the runtime iterate loop function and capture didIterate return value
     const didIterateVar = this._tmpid();
-    this.emit(`const ${didIterateVar} = ${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFunc}, ${elseFuncId}, frame, ${JSON.stringify(bodyWriteCounts)}, [`);
+    this.emit(`const ${didIterateVar} = ${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${JSON.stringify(bodyWriteCounts)}, [`);
     loopVars.forEach((varName, index) => {
       if (index > 0) {
         this.emit(', ');
@@ -988,6 +969,32 @@ class Compiler extends CompilerBase {
     this.emit.line(node.isAsync ? '}).bind(context);' : '};');
 
     return bodyFrame;
+  }
+
+  _compileLoopElse(node, frame, sequential) {
+    const awaitSequentialElse = false;//I think awaiting it like loop body is not needed
+
+    if (node.isAsync) {
+      this.emit('(async function() {');
+      // must return the promise from its async block
+      // which when sequential will wait for all closures
+      if (awaitSequentialElse) {
+        this.emit('return ');
+      }
+    } else {
+      this.emit('function() {');
+    }
+
+    // Use node.else_ as position for the else block buffer
+    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.else_);
+    this.compile(node.else_, frame);
+
+    const elseFrame = frame;
+
+    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential && awaitSequentialElse, node.else_);
+
+    this.emit.line(node.isAsync ? '}).bind(context);' : '};');
+    return elseFrame;
   }
 
   _compileAsyncLoopBindings(node, arr, i, len) {
