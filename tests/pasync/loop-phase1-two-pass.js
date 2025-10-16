@@ -55,6 +55,56 @@
       });
     });
 
+    describe('Test 1.X: Loop write tracking in Both blocks', () => {
+
+      it('should track writes in both blocks', async () => {
+        // @todo - soft and hard iterator error
+        // @todo - separate test with output poisoning
+        const script = `
+          :data
+          var sum = 0 // two writes in body, one write in else
+          var body = 0 // one write in body
+          var els = 0 // one write in else
+          var body2 = 2 // two writes in body
+          var els2 = 2 // two writes in else
+          for i in items
+            sum = sum + i // 0+1=1, 1+2=3, 3+3=6
+            body = body + sum // 0+1=1, 1+4=5, 5+9=14
+            sum = sum + i // 6+1=7, 7+2=9, 9+3=12
+            body2 = i+1 // 1+1=2, 2+1=3, 3+1=4
+            body2 = body2 + i // 2+1=3, 3+2=5, 4+3=7
+          else
+            sum = 100
+            els = 50
+            els2 = sum
+            els2 = els2 + 1
+          endfor
+          @data.sum = sum
+          @data.body = body
+          @data.els = els
+          @data.body2 = body2
+          @data.els2 = els2
+        `;
+
+        // test body
+        const result = await env.renderScriptString(script, {items: [1, 2, 3]});
+        expect(result.sum).to.be(12);
+        expect(result.body).to.be(14);
+        expect(result.els).to.be(0);
+        expect(result.body2).to.be(7);
+        expect(result.els2).to.be(2);
+
+        // test else
+        const result2 = await env.renderScriptString(script, {items: []});
+        expect(result2.sum).to.be(100);
+        expect(result2.body).to.be(0);
+        expect(result2.els).to.be(50);
+        expect(result2.body2).to.be(2);
+        expect(result2.els2).to.be(101);
+        // Verifies: elseWriteCounts collected, else executes when empty
+      });
+    });
+
     describe('Test 1.3: Handler collection from body', () => {
       it('should collect handlers from loop body', async () => {
         const script = `
