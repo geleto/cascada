@@ -386,6 +386,50 @@
       }
     });
 
+    it('shoukld report correct path when accessing unknown variable in script', async () => {
+      var scriptName = 'error-script-unknown-variable.scr';
+      loader.addTemplate(scriptName, 'var x = nonExistentVar');
+      try {
+        await env.renderScript(scriptName, {});
+        expect().fail('Expected an error to be thrown');
+      } catch (err) {
+        expect(err.message).to.contain(`(${scriptName})`).and.contain('nonExistentVar').and.contain('Can not look up unknown variable');
+      }
+    });
+
+    it('shoukld report correct path when outputing unknown variable in script', async () => {
+      var scriptName = 'error-script-output-unknown-variable.scr';
+      loader.addTemplate(scriptName, ':text\n@text( nonExistentVar )');
+      try {
+        await env.renderScript(scriptName, {});
+        expect().fail('Expected an error to be thrown');
+      } catch (err) {
+        expect(err.message).to.contain(`(${scriptName})`).and.contain('nonExistentVar').and.contain('Can not look up unknown variable');
+      }
+    });
+
+    it('shoukld report correct path when modifying unknown variable in script', async () => {
+      var scriptName = 'error-script-modify-unknown-variable.scr';
+      loader.addTemplate(scriptName, 'nonExistentVar = 1');
+      try {
+        await env.renderScript(scriptName, {});
+        expect().fail('Expected an error to be thrown');
+      } catch (err) {
+        expect(err.message).to.contain(`(${scriptName})`).and.contain('nonExistentVar').and.contain('Cannot assign to undeclared variable');
+      }
+    });
+
+    it('shoukld report correct path when using unknown handler in script', async () => {
+      var scriptName = 'error-script-unknown-handler.scr';
+      loader.addTemplate(scriptName, '@nonExistentHandler("Hi")');
+      try {
+        await env.renderScript(scriptName, {});
+        expect().fail('Expected an error to be thrown');
+      } catch (err) {
+        expect(err.message).to.contain(`(${scriptName})`).and.contain('Unknown command handler').and.contain('nonExistentHandler');
+      }
+    });
+
     it('should report correct path for error in nested for loops', async () => {
       var templateName = 'error-nested-for-loops.njk';
       loader.addTemplate(templateName, '{% for outer in items %}{% for inner in outer %}{{ nonExistentFunction() }}{% endfor %}{% endfor %}');
