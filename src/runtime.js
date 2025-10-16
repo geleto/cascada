@@ -1781,7 +1781,7 @@ function memberLookup(obj, val) {
 function memberLookupScript(obj, val) {
   if (obj === undefined || obj === null) {
     //unlike in template mode, in script mode we throw an exception 'Cannot read properties of null'
-    throw new Error('Cannot read properties of null');
+    throw new Error('Cannot read properties of null');//@todo - null/undefined
   }
 
   const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
@@ -1885,7 +1885,20 @@ function memberLookupScriptAsync(obj, val, errorContext) {
 
   // No errors - proceed with lookup
   // Let native error throw; it will be caught by the top-level sync try/catch.
-  return memberLookupScript(obj, val);
+  //return memberLookupScript(obj, val);
+
+  // The same implementation as memberLookupScript, but returns a poison value instead of throwing an exception
+  if (obj === undefined || obj === null) {
+    //unlike in template mode, in script mode we throw an exception 'Cannot read properties of null'
+    return createPoison(new Error('Cannot read properties of null'));//@todo - null/undefined
+  }
+
+  const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
+  if (typeof value === 'function') {
+    return (...args) => obj[val](...args);//use obj lookup so that 'this' binds correctly
+  }
+
+  return value;
 }
 
 async function _memberLookupScriptAsyncComplex(obj, val, errorContext) {
@@ -2155,6 +2168,22 @@ function contextOrFrameLookup(context, frame, name) {
   return (val !== undefined) ?
     val :
     context.lookup(name);
+}
+
+//throws an error if the variable is not found
+function contextOrFrameLookupScript(context, frame, name) {
+  var val = frame.lookup(name);
+  return (val !== undefined) ?
+    val :
+    context.lookupScriptMode(name);
+}
+
+//returns a poison error if the variable is not found
+function contextOrFrameLookupScriptAsync(context, frame, name) {
+  var val = frame.lookup(name);
+  return (val !== undefined) ?
+    val :
+    context.lookupScriptModeAsync(name);
 }
 
 /**
@@ -3134,6 +3163,8 @@ module.exports = {
   sequencedMemberLookupScriptAsync,
 
   contextOrFrameLookup,
+  contextOrFrameLookupScript,
+  contextOrFrameLookupScriptAsync,
 
   callWrap,
   callWrapAsync,

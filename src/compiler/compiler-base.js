@@ -366,7 +366,15 @@ class CompilerBase extends Obj {
         return;
       }
     }
-    this.emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
+    if (this.scriptMode) {
+      if (this.asyncMode) {
+        this.emit('runtime.contextOrFrameLookupScriptAsync(' + 'context, frame, "' + name + '")');
+      } else {
+        this.emit('runtime.contextOrFrameLookupScript(' + 'context, frame, "' + name + '")');
+      }
+    } else {
+      this.emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
+    }
   }
 
   //todo - do not resolve, instead resolve it at the point of use: output or argument to functions, filters. Add tests
