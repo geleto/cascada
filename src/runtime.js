@@ -455,6 +455,16 @@ class AsyncFrame extends Frame {
     return this.parent && this.parent.lookup(name);
   }*/
 
+  has(name) {
+    if (this.asyncVars && name in this.asyncVars) {
+      return true;
+    }
+    if (this.variables && name in this.variables) {
+      return true;
+    }
+    return this.parent && this.parent.has(name);
+  }
+
   lookup(name) {
     if (this.asyncVars && name in this.asyncVars) {
       return this.asyncVars[name];
@@ -2172,18 +2182,18 @@ function contextOrFrameLookup(context, frame, name) {
 
 //throws an error if the variable is not found
 function contextOrFrameLookupScript(context, frame, name) {
-  var val = frame.lookup(name);
-  return (val !== undefined) ?
-    val :
-    context.lookupScriptMode(name);
+  let {value: val, frame: f} = frame.lookupAndLocate(name);
+  // use the above to avoid variable set to undefined triggering an error
+  // scripts, unlike temlates throw at non-existing variables
+  return f ? val : context.lookupScriptMode(name);
 }
 
 //returns a poison error if the variable is not found
 function contextOrFrameLookupScriptAsync(context, frame, name) {
-  var val = frame.lookup(name);
-  return (val !== undefined) ?
-    val :
-    context.lookupScriptModeAsync(name);
+  let {value: val, frame: f} = frame.lookupAndLocate(name);
+  // use the above to avoid variable set to undefined triggering an error
+  // scripts, unlike temlates throw at non-existing variables
+  return f ? val : context.lookupScriptModeAsync(name);
 }
 
 /**

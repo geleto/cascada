@@ -659,7 +659,7 @@ class Context extends Obj {
       if (name in this.ctx) {
         return this.ctx[name];
       } else {
-        throw new Error(`Can not look up unknown variable: ${name}`);
+        throw new Error(`Can not look up unknown variable/function: ${name}`);
       }
     }
   }
@@ -674,7 +674,7 @@ class Context extends Obj {
       if (name in this.ctx) {
         return this.ctx[name];
       } else {
-        return globalRuntime.createPoison(new Error(`Can not look up unknown variable: ${name}`));
+        return globalRuntime.createPoison(new Error(`Can not look up unknown variable/function: ${name}`));
       }
     }
   }

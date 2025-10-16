@@ -39,15 +39,18 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         var report
-        @data.result.hasReport = report !== undefined
-		@data.result.hasReportValue = report !== none
+        var value = 1
+		    @data.result.hasReportValue = report !== none
+        @data.result.hasValue = value !== none
+        @data.result.value = value
         @data.result.reportValue = report
       `;
 
       const result = await env.renderScriptString(script, {});
-      expect(result.result.hasReport).to.be(true);
-	  expect(result.result.hasReportValue).to.be(false);
+	    expect(result.result.hasReportValue).to.be(false);
       expect(result.result.reportValue).to.be(null);
+      expect(result.result.value).to.be(1);
+      expect(result.result.hasValue).to.be(true);
     });
 
     it('should declare multiple variables and assign them a single value', async function () {
@@ -380,7 +383,7 @@ describe('Cascada Script: Variables', function () {
         await env.renderScriptString(script, {});
         expect().fail('Should have thrown an error');
       } catch (error) {
-        expect(error.message).to.contain('Unable to call `someUndefinedFunction`');
+        expect(error.message).to.contain('Can not look up unknown variable/function: someUndefinedFunction');
       }
     });
 
