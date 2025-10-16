@@ -625,7 +625,7 @@ class AsyncFrame extends Frame {
    * Called after a loop finishes to decrement parent counters
    * During the loop (this.sequentialLoopBody = true), writes are not propagated upwards, so we need to do it here after the loop.
    */
-  finalizeLoopWrites(finalWriteCounts) {
+  /*finalizeLoopWrites(finalWriteCounts) {
     if (!finalWriteCounts) {
       return; // No parent or nothing to finalize
     }
@@ -649,7 +649,7 @@ class AsyncFrame extends Frame {
         throw new Error(`Loop finalized write for "${varName}", but the loop's own frame has no counter for it.`);
       }
     }
-  }
+  }*/
 
   pushAsyncBlock(reads, writeCounters) {
     let asyncBlockFrame = new AsyncFrame(this, false);//this.isolateWrites);//@todo - should isolateWrites be passed here?
@@ -2149,6 +2149,7 @@ async function sequencedCallWrap(func, funcName, context, args, frame, sequenceL
   }
 }
 
+//returns undefined if the variable is not found
 function contextOrFrameLookup(context, frame, name) {
   var val = frame.lookup(name);
   return (val !== undefined) ?
@@ -2648,6 +2649,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
   const sequential = asyncOptions ? asyncOptions.sequential : false;
   const isAsync = asyncOptions !== null;
   const bodyWriteCounts = asyncOptions ? asyncOptions.bodyWriteCounts : null;
+  const elseWriteCounts = asyncOptions ? asyncOptions.elseWriteCounts : null;
   const errorContext = asyncOptions ? asyncOptions.errorContext : null;
 
   if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
@@ -2716,17 +2718,27 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
     }
   }
 
-  if (!didIterate && loopElse) {
-    await loopElse();//just in case
+  // Implement mutual exclusion between body and else execution
+  // This follows our plan: always skip body, conditionally handle else
+
+  // Step 3: Always skip body write counters (regardless of didIterate)
+  // Body writes are suppressed during execution via sequentialLoopBody,
+  // this skip signals their completion to the loop frame
+  if (bodyWriteCounts && Object.keys(bodyWriteCounts).length > 0) {
+    loopFrame.skipBranchWrites(bodyWriteCounts);
   }
 
-  if (bodyWriteCounts && sequential) {
-    // For any sequential loop with writes, we must finalize it. This decrements
-    // the loop's own frame counter, signaling its completion as a single
-    // unit of work. This must happen regardless of whether the loop iterated
-    // or the else block ran, to prevent deadlocks.
-    loopFrame.finalizeLoopWrites(bodyWriteCounts);
+  // Step 4-5: Handle else execution and write counting
+  if (!didIterate && loopElse) {
+    // Step 4: Else block runs - let it propagate normally to loop frame
+    await loopElse();
+  } else if (elseWriteCounts && Object.keys(elseWriteCounts).length > 0) {
+    // Step 5: Else block doesn't run - skip its write counters
+    loopFrame.skipBranchWrites(elseWriteCounts);
   }
+
+  // Note: No finalizeLoopWrites needed - the skipBranchWrites calls above
+  // handle the completion signaling for the mutual exclusion pattern
 }
 
 /**
@@ -3122,6 +3134,7 @@ module.exports = {
   sequencedMemberLookupScriptAsync,
 
   contextOrFrameLookup,
+
   callWrap,
   callWrapAsync,
   sequencedCallWrap,

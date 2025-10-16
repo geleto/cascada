@@ -774,12 +774,25 @@ class Compiler extends CompilerBase {
       elseHandlers = node.isAsync ? this._collectBranchHandlers(node.else_) : null;
     }
 
+    // Set up loop frame with combined write counts for mutual exclusion
+    // This ensures the loop frame expects writes from either body OR else, not both
+    if (node.isAsync) {
+      const combinedWriteCounts = this._combineWriteCounts([
+        bodyWriteCounts ? this.async.countsTo1(bodyWriteCounts) : null,
+        elseWriteCounts
+      ].filter(Boolean));
+
+      if (combinedWriteCounts && Object.keys(combinedWriteCounts).length > 0) {
+        frame.writeCounts = combinedWriteCounts;
+      }
+    }
+
     // Build asyncOptions code string if in async mode
     let asyncOptionsCode = 'null';
     if (node.isAsync) {
       asyncOptionsCode = `{
         sequential: ${sequential},
-        bodyWriteCounts: ${JSON.stringify(bodyWriteCounts || {})},
+        bodyWriteCounts: ${JSON.stringify(this.async.countsTo1(bodyWriteCounts) || {})},
         bodyHandlers: ${JSON.stringify(bodyHandlers ? Array.from(bodyHandlers) : [])},
         elseWriteCounts: ${JSON.stringify(elseWriteCounts || {})},
         elseHandlers: ${JSON.stringify(elseHandlers ? Array.from(elseHandlers) : [])},
@@ -798,7 +811,7 @@ class Compiler extends CompilerBase {
     this.emit(`], ${asyncOptionsCode});`);
 
     // End buffer block for the node (using node.arr position)
-    if (iteratorCompiler || frame.writeCounts) {
+    /*if (iteratorCompiler || frame.writeCounts) {
       // condition and loop body counts are a single unit of work and
       // are isolated to not affect the outer frame write counts
       // All writes will be released by finalizeLoopWrites
@@ -806,7 +819,7 @@ class Compiler extends CompilerBase {
       // The loop as a whole counts as 1 write to the parent, regardless of iterations
       // The capping happens per loop frame before popping, and the parent naturally accumulates these capped counts.
       frame.writeCounts = this.async.countsTo1(frame.writeCounts);
-    }
+    }*/
     // else - all write counts are from the loop body and are 1 anyway (counts are counted inside (>1) and outside (=1))
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
   }
