@@ -521,7 +521,7 @@ class Compiler extends CompilerBase {
     if (this.asyncMode) {
       // Async mode: Add try-catch wrapper for poison condition handling
       this.emit('try {');
-      this.emit('const condResult = ');
+      this.emit('const condResult = ');//@todo - use a temporary variable for the condition result
       this._compileAwaitedExpression(node.cond, frame, false);
       this.emit(';');
       this.emit('');

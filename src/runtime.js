@@ -239,16 +239,17 @@ async function collectErrors(values) {
  * @param {PoisonedValue|Error} error - The poison value or error from failed condition (should already have position info)
  * @param {Array<string>} handlerNames - Names of handlers (e.g., ['text', 'data'])
  */
-function addPoisonMarkersToBuffer(buffer, error, handlerNames) {
+function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames) {
   // Note: error parameter should already have position info from condition evaluation
   // No additional position info available in this function's scope
-  const poison = isPoison(error) ? error : createPoison(error);
+  //const poison = isPoison(errorOrPoison) ? errorOrPoison : createPoison(errorOrPoison);
+  const errors = (Array.isArray(errorOrErrors) ? errorOrErrors : [errorOrErrors]);
 
   // Add one marker per handler that would have been written to
   for (const handlerName of handlerNames) {
     const marker = {
       __cascadaPoisonMarker: true,  // Flag for detection in flattenBuffer
-      errors: poison.errors,         // Array of Error objects to collect
+      errors,         // Array of Error objects to collect
       handler: handlerName,          // Which handler was intended (for debugging)
     };
 
@@ -2554,7 +2555,7 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
         contextualError.didIterate = didIterate;
 
         //resolve(length);//Ensure length is resolved even on error
-        reject(createPoison(new PoisonError(contextualError)));//the length is a poison
+        reject(new PoisonError(new PoisonError(contextualError)));//the length is a poison
 
 
         //throw contextualError;//re-thrown by iterationComplete
@@ -2578,7 +2579,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
     // Check for synchronous poison first
     if (isPoison(arr)) {
       // Array expression evaluated to poison - poison both body and else
-      poisonLoopEffects(loopFrame, buffer, asyncOptions, arr);
+      poisonLoopEffects(loopFrame, buffer, asyncOptions, arr.errors);
       return; // Early return, else doesn't run
     }
 
@@ -2588,8 +2589,9 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
         arr = await arr;
       } catch (err) {
         // Promise rejected - poison both body and else
-        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
-        poisonLoopEffects(loopFrame, buffer, asyncOptions, poison);
+        //const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+        const errors = isPoisonError(err) ? err.errors : [err];
+        poisonLoopEffects(loopFrame, buffer, asyncOptions, errors);
         throw err; // Re-throw for upstream handling
       }
     }
@@ -2623,8 +2625,8 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
         didIterate = await iterateAsyncParallel(arr, loopBody, loopVars, errorContext);
       }
     } catch (err) {
-      const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
-      poisonLoopEffects(loopFrame, buffer, asyncOptions, poison);
+      const errors = isPoisonError(err) ? err.errors : [err];
+      poisonLoopEffects(loopFrame, buffer, asyncOptions, errors);
       throw err;//re-thrown by iterateAsyncParallel or iterateAsyncSequential
     }
   }
@@ -2708,23 +2710,23 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
  * @param {Object} asyncOptions - Options containing write counts and handlers
  * @param {PoisonedValue|Error} poisonValue - The poison value to propagate
  */
-function poisonLoopEffects(frame, buffer, asyncOptions, poisonValue) {
-  const poison = isPoison(poisonValue) ? poisonValue : createPoison(poisonValue);
+function poisonLoopEffects(frame, buffer, asyncOptions, errors) {
+  //const poison = isPoison(poisonValue) ? poisonValue : createPoison(poisonValue);
 
   // Poison body effects
   if (asyncOptions.bodyWriteCounts && Object.keys(asyncOptions.bodyWriteCounts).length > 0) {
-    frame.poisonBranchWrites(poison, asyncOptions.bodyWriteCounts);
+    frame.poisonBranchWrites(errors, asyncOptions.bodyWriteCounts);
   }
   if (asyncOptions.bodyHandlers && asyncOptions.bodyHandlers.length > 0) {
-    addPoisonMarkersToBuffer(buffer, poison, asyncOptions.bodyHandlers);
+    addPoisonMarkersToBuffer(buffer, errors, asyncOptions.bodyHandlers);
   }
 
   // Poison else effects
   if (asyncOptions.elseWriteCounts && Object.keys(asyncOptions.elseWriteCounts).length > 0) {
-    frame.poisonBranchWrites(poison, asyncOptions.elseWriteCounts);
+    frame.poisonBranchWrites(errors, asyncOptions.elseWriteCounts);
   }
   if (asyncOptions.elseHandlers && asyncOptions.elseHandlers.length > 0) {
-    addPoisonMarkersToBuffer(buffer, poison, asyncOptions.elseHandlers);
+    addPoisonMarkersToBuffer(buffer, errors, asyncOptions.elseHandlers);
   }
 }
 

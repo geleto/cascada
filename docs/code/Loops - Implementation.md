@@ -324,7 +324,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars, asy
   if (asyncOptions) {
     // Check for synchronous poison first
     if (isPoison(arr)) {
-      poisonLoopEffects(loopFrame, buffer, asyncOptions, arr);
+      poisonLoopEffects(loopFrame, buffer, asyncOptions, arr.errors);
       return;
     }
 
@@ -334,7 +334,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars, asy
         arr = await arr;
       } catch (err) {
         const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
-        poisonLoopEffects(loopFrame, buffer, asyncOptions, poison);
+        poisonLoopEffects(loopFrame, buffer, asyncOptions, poison.errors);
         throw err;
       }
     }
