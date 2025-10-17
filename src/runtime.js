@@ -78,7 +78,7 @@ class PoisonedValue {
 class PoisonError extends Error {
   constructor(errors) {
     errors = Array.isArray(errors) ? errors : [errors];
-    const deduped = deduplicateErrors(errors);
+    const deduped = deduplicateAndFlattenErrors(errors);
 
     super();
 
@@ -110,17 +110,28 @@ class PoisonError extends Error {
 
 
 /**
- * Deduplicate errors by message.
+ * Deduplicate errors by message and flatten any PoisonError objects.
  */
-function deduplicateErrors(errors) {
+function deduplicateAndFlattenErrors(errors) {
   const seen = new Map();
   const result = [];
 
   for (const err of errors) {
-    const key = err.message || String(err);
-    if (!seen.has(key)) {
-      seen.set(key, true);
-      result.push(err);
+    // If it's a PoisonError, flatten its underlying errors
+    if (isPoisonError(err)) {
+      for (const flattenedErr of err.errors) {
+        const key = flattenedErr.message || String(flattenedErr);
+        if (!seen.has(key)) {
+          seen.set(key, true);
+          result.push(flattenedErr);
+        }
+      }
+    } else {
+      const key = err.message || String(err);
+      if (!seen.has(key)) {
+        seen.set(key, true);
+        result.push(err);
+      }
     }
   }
 
@@ -213,7 +224,7 @@ async function collectErrors(values) {
     }
   }
 
-  return deduplicateErrors(errors);
+  return deduplicateAndFlattenErrors(errors);
 }
 
 /**
@@ -1523,8 +1534,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
     // If any errors collected, throw them
     if (errors.length > 0) {
-      const deduped = deduplicateErrors(errors);
-      throw new PoisonError(deduped);
+      throw new PoisonError(errors);
     }
 
     return result;
@@ -1748,8 +1758,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
   // Check if any errors were collected
   if (collectedErrors.length > 0) {
-    const deduped = deduplicateErrors(collectedErrors);
-    throw new PoisonError(deduped);
+    throw new PoisonError(collectedErrors);
   }
 
   // Assemble the final result object
@@ -2453,8 +2462,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
 
   // If any soft errors collected, throw them all
   if (errors.length > 0) {
-    const deduped = deduplicateErrors(errors);
-    throw new PoisonError(deduped);
+    throw new PoisonError(errors);
   }
 
   return didIterate;
