@@ -77,6 +77,7 @@ class PoisonedValue {
  */
 class PoisonError extends Error {
   constructor(errors) {
+    errors = Array.isArray(errors) ? errors : [errors];
     const deduped = deduplicateErrors(errors);
 
     super();
@@ -2474,46 +2475,20 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
     lastPromiseResolve = resolve;
   });
 
-  const allErrors = []; // Collect ALL errors, not just first
-  let firstError = null; // Track first for early stopping of iterator consumption
   const loopBodyPromises = []; // Track all loop body promises
 
   // This promise is used for the completion and error propagation
   let iterationComplete;
-  const lenPromise = new Promise((resolve) => {
+  const lenPromise = new Promise((resolve, reject) => {
     let length = 0;
     // This IIFE runs "in the background" to exhaust the iterator
     iterationComplete = (async () => {
       try {
-        // Continue iterating even after finding errors to collect ALL
         while (true) {
           // Async generators await yielded values. If a generator yields a thenable that rejects,
           // iterator.next() will throw. We catch PoisonErrors as soft errors and continue iteration.
           // Non-PoisonErrors from the generator are treated as hard errors.
-          try {
-            result = await iterator.next();
-          } catch (err) {
-            // Soft error: generator yielded a poison value (thenable) which was awaited by iterator.next()
-            if (isPoisonError(err)) {
-              allErrors.push(...err.errors);
-              if (!firstError) {
-                firstError = err;
-              }
-              i++;
-
-              // Resolve promises for loop variables
-              if (lastPromiseResolve) {
-                lastPromiseResolve(false);
-                lastPromise = new Promise(resolveNew => {
-                  lastPromiseResolve = resolveNew;
-                });
-              }
-
-              continue; // Continue to collect all errors
-            }
-            // Hard error: generator threw an error - re-throw to outer catch
-            throw err;
-          }
+          result = await iterator.next();
 
           // Check if iterator is done
           if (result.done) {
@@ -2522,63 +2497,11 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
 
           length++;
           didIterate = true;
-          const value = result.value;
-
-          // Check if yielded value is an Error (soft error)
-          if (value instanceof Error && !isPoisonError(value)) {
-            allErrors.push(value);
-            if (!firstError) {
-              firstError = new PoisonError([value]);
-            }
-            i++;
-
-            // Still resolve promises for loop variables
-            if (lastPromiseResolve) {
-              lastPromiseResolve(false);
-              lastPromise = new Promise(resolveNew => {
-                lastPromiseResolve = resolveNew;
-              });
-            }
-
-            continue; // Continue to collect all errors
-          }
-
-          // Check if yielded value is a PoisonError (multiple soft errors)
-          if (isPoisonError(value)) {
-            allErrors.push(...value.errors);
-            if (!firstError) {
-              firstError = value;
-            }
-            i++;
-
-            // Still resolve promises for loop variables
-            if (lastPromiseResolve) {
-              lastPromiseResolve(false);
-              lastPromise = new Promise(resolveNew => {
-                lastPromiseResolve = resolveNew;
-              });
-            }
-
-            continue; // Continue to collect all errors
-          }
-
-          // Check if yielded value is poison (PoisonedValue - soft error)
-          if (isPoison(value)) {
-            allErrors.push(...value.errors);
-            if (!firstError) {
-              firstError = new PoisonError(value.errors);
-            }
-            i++;
-
-            // Still resolve promises for loop variables
-            if (lastPromiseResolve) {
-              lastPromiseResolve(false);
-              lastPromise = new Promise(resolveNew => {
-                lastPromiseResolve = resolveNew;
-              });
-            }
-
-            continue; // Continue to collect all errors
+          let value = result.value;
+          if (value instanceof Error) {
+            // Soft error: generator yielded an error
+            value = handleError(value, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+            value = createPoison(value);
           }
 
           // Resolve the previous iteration's lastPromise
@@ -2589,31 +2512,14 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
             });
           }
 
-          let res;
           if (loopVars.length === 1) {
-            res = loopBody(value, i, lenPromise, lastPromise, errorContext);
+            loopBody(value, i, lenPromise, lastPromise, errorContext);
           } else {
             if (!Array.isArray(value)) {
               throw new Error('Expected an array for destructuring');
             }
-            res = loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
+            loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
           }
-
-          // Track loop body promise and attach error handler (don't await - parallel execution)
-          if (res && typeof res.then === 'function') {
-            loopBodyPromises.push(res);
-            res.catch(err => {
-              if (isPoisonError(err)) {
-                allErrors.push(...err.errors);
-              } else {
-                allErrors.push(err);
-              }
-              if (!firstError) {
-                firstError = err;
-              }
-            });
-          }
-
           i++;
         }
 
@@ -2628,24 +2534,22 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
         // Wait for all loop body promises to complete before checking errors
         await Promise.allSettled(loopBodyPromises);
 
-        // Throw if any soft errors collected
-        if (allErrors.length > 0) {
-          const deduped = deduplicateErrors(allErrors);
-          throw new PoisonError(deduped);
-        }
       } catch (error) {
-        // Hard error from iterator or loop body
+        // Hard error from iterator.next() or loop body
         if (lastPromiseResolve) {
           lastPromiseResolve(true);
         }
-        // Ensure length is resolved even on error
-        resolve(length);
-        if (!firstError) {
-          firstError = error;
-        }
-        // Add error context and re-throw
-        const contextualError = handleError(error, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-        throw contextualError;
+
+        // Add error context and re-throw, it will be caught by the outer catch block
+        // where all write variables and handlers are poisoned
+        const contextualError =  handleError(error, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        contextualError.didIterate = didIterate;
+
+        //resolve(length);//Ensure length is resolved even on error
+        reject(createPoison(new PoisonError(contextualError)));//the length is a poison
+
+
+        //throw contextualError;//re-thrown by iterationComplete
       }
     })();
   });
@@ -2696,18 +2600,24 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
     // mechanism is fundamentally incompatible with sequential execution, as it
     // would create a deadlock.
 
-    if (sequential) {
-      // Used for `while` and `each` loops and
-      // any `for` loop marked as sequential. It does NOT support `loop.length`
-      // or `loop.last` for async iterators, as that is impossible to know
-      // without first consuming the entire iterator.
-      didIterate = await iterateAsyncSequential(arr, loopBody, loopVars, errorContext);
-    } else {
-      // PARALLEL PATH
-      // This complex logic allows for `loop.length` and `loop.last` to work
-      // by resolving promises only after the entire iterator is consumed. This
-      // only works when loop bodies are fired in parallel (sequential=false)
-      didIterate = await iterateAsyncParallel(arr, loopBody, loopVars, errorContext);
+    try {
+      if (sequential) {
+        // Used for `while` and `each` loops and
+        // any `for` loop marked as sequential. It does NOT support `loop.length`
+        // or `loop.last` for async iterators, as that is impossible to know
+        // without first consuming the entire iterator.
+        didIterate = await iterateAsyncSequential(arr, loopBody, loopVars, errorContext);
+      } else {
+        // PARALLEL PATH
+        // This complex logic allows for `loop.length` and `loop.last` to work
+        // by resolving promises only after the entire iterator is consumed. This
+        // only works when loop bodies are fired in parallel (sequential=false)
+        didIterate = await iterateAsyncParallel(arr, loopBody, loopVars, errorContext);
+      }
+    } catch (err) {
+      const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+      poisonLoopEffects(loopFrame, buffer, asyncOptions, poison);
+      throw err;//re-thrown by iterateAsyncParallel or iterateAsyncSequential
     }
   }
   else if (arr) {
