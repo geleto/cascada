@@ -486,7 +486,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
   }
 
   if (errors.length > 0) {
-    throw new PoisonError(deduplicateErrors(errors));
+    throw new PoisonError(deduplicateAndFlattenErrors(errors));
   }
 
   return didIterate;
@@ -616,7 +616,7 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
         await Promise.allSettled(loopBodyPromises);
 
         if (allErrors.length > 0) {
-          throw new PoisonError(deduplicateErrors(allErrors));
+          throw new PoisonError(deduplicateAndFlattenErrors(allErrors));
         }
       } catch (error) {
         // ... handle hard error

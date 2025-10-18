@@ -181,7 +181,7 @@ class PoisonError extends Error {
   constructor(errors) {
     super(buildMessage(errors));
     this.name = 'PoisonError';
-    this.errors = deduplicateErrors(errors);
+    this.errors = deduplicateAndFlattenErrors(errors);
     this[POISON_ERROR_KEY] = true;
   }
 }
