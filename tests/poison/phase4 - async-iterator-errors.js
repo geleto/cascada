@@ -50,39 +50,6 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     }
   });
 
-  // Test 4.2: User generator throws (hard error)
-  it('should stop immediately when generator throws and propagate error', async () => {
-    let iterationCount = 0;
-    const context = {
-      async *testGen() {
-        yield 1;
-        iterationCount++;
-        yield 2;
-        iterationCount++;
-        throw new Error('Hard error - generator exhausted');
-        // eslint-disable-next-line no-unreachable
-        yield 3; // Unreachable
-      }
-    };
-
-    const script = `
-      :data
-      for item in testGen()
-        @data.items.push(item)
-      endfor
-    `;
-
-    try {
-      await env.renderScriptString(script, context);
-      expect().fail('Should have thrown PoisonError');
-    } catch (err) {
-      expect(isPoisonError(err)).to.be(true);
-      expect(err.errors).to.have.length(1);
-      expect(err.errors[0].message).to.contain('Hard error - generator exhausted');
-      expect(iterationCount).to.be(2); // Only 2 iterations completed
-    }
-  });
-
   // Test 4.3: User generator yields mixed values, some cause errors
   it('should collect all errors while processing mixed values', async () => {
     const context = {
@@ -315,6 +282,78 @@ describe('Phase 4: Async Iterator Error Handling', () => {
       expect(err.errors[0].message).to.contain('API rate limit exceeded');
       // Note: Pages 1 and 3 were successfully processed
     }
+  });
+
+  describe('Hard and Soft Error Handling in Async Iterators', () => {
+    // Test 4.2: User generator throws (hard error)
+    let context;
+    beforeEach(() => {
+      context = {
+        hardError: false,
+        //the counts will be 0 because context is shallow-copied before use:
+        iterationCount: 0,
+        async *testGen() {
+          yield 1;
+          this.iterationCount++;
+          yield 2;
+          this.iterationCount++;
+          if (this.hardError) {
+            throw new Error('Hard error - generator exhausted');
+          } else {
+            yield new Error('Soft error - continuing iteration');
+          }
+          yield 3; // Unreachable
+        }
+      };
+    });
+
+    it.only('Should propagate a soft error to body handler of "for"/"each" loops', async () => {
+      let script = `
+        :data
+        for item in testGen()
+          @data.items.push(item)
+        endfor
+      `;
+
+      for (let i = 0; i < 2; i++) {
+        const ctx = { ...context };
+        // test soft error
+        try {
+          await env.renderScriptString(script, ctx);
+          expect().fail('Should have thrown PoisonError(soft)');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.errors).to.have.length(1);
+          expect(err.errors[0].message).to.contain('Soft error - continuing iteration');
+        }
+        script = script.replace('for item', 'each item').replace('endfor', 'endeach');
+      }
+    });
+
+    it.only('Should propagate a hard error to body handler of "for"/"each" loops', async () => {
+      let script = `
+        :data
+        for item in testGen()
+          @data.items.push(item)
+        endfor
+      `;
+
+      for (let i = 0; i < 2; i++) {
+        const ctx = { ...context, hardError: true };
+        // test hard error
+        try {
+          await env.renderScriptString(script, ctx);
+          expect().fail('Should have thrown PoisonError(hard)');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.errors).to.have.length(1);
+          expect(err.errors[0].message).to.contain('Hard error - generator exhausted');
+        }
+
+        // test with 'for' and 'each'(sequential) loops
+        script = script.replace('for item', 'each item').replace('endfor', 'endeach');
+      }
+    });
   });
 });
 
