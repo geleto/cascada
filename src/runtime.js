@@ -2397,31 +2397,15 @@ function setLoopBindings(frame, index, len, last) {
 async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
   let didIterate = false;
   let i = 0;
-  const errors = []; // Collect all errors, don't stop on first
 
   try {
-    for await (const value of arr) {
+    for await (let value of arr) { // value is now mutable
       didIterate = true;
 
-      // Check if yielded value is an Error (soft error)
-      if (value instanceof Error && !isPoisonError(value)) {
-        errors.push(value);
-        i++;
-        continue; // Continue to collect all errors
-      }
-
-      // Check if yielded value is a PoisonError (multiple soft errors)
-      if (isPoisonError(value)) {
-        errors.push(...value.errors);
-        i++;
-        continue; // Continue to collect all errors
-      }
-
-      // Check if yielded value is poison (PoisonedValue - soft error)
-      if (isPoison(value)) {
-        errors.push(...value.errors);
-        i++;
-        continue; // Continue to collect all errors
+      if (value instanceof Error) {
+        // Soft error: generator yielded an error. Add context and poison it.
+        value = handleError(value, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        value = createPoison(value);
       }
 
       let res;
@@ -2429,41 +2413,29 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
         // `while` loops pass `undefined` for len/last, which is correct.
         res = loopBody(value, i, undefined, false, errorContext);
       } else {
-        if (!Array.isArray(value)) {
+        if (isPoison(value)) {
+          const args = Array(loopVars.length);
+          args[0] = value;
+          res = loopBody(...args, i, undefined, false, errorContext);
+        } else if (!Array.isArray(value)) {
           throw new Error('Expected an array for destructuring');
-        }
-        res = loopBody(...value.slice(0, loopVars.length), i, undefined, false, errorContext);
-      }
-
-      // In sequential mode, we MUST await the body before the next iteration
-      try {
-        await res;
-
-        // Check if result is poison (loop body may have returned poison)
-        if (isPoison(res)) {
-          errors.push(...res.errors);
-        }
-      } catch (err) {
-        // Collect error from loop body and continue
-        if (isPoisonError(err)) {
-          errors.push(...err.errors);
         } else {
-          errors.push(err);
+          res = loopBody(...value.slice(0, loopVars.length), i, undefined, false, errorContext);
         }
       }
+
+      // In sequential mode, we MUST await the body before the next iteration.
+      // If it throws, the outer catch will handle it and stop iteration.
+      await res;
 
       i++;
     }
   } catch (err) {
-    // Hard error: generator threw instead of yielding poison
+    // Hard error: generator threw OR the loopBody threw.
     // Add error context and re-throw immediately (stop iteration)
     const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+    contextualError.didIterate = didIterate;
     throw contextualError;
-  }
-
-  // If any soft errors collected, throw them all
-  if (errors.length > 0) {
-    throw new PoisonError(errors);
   }
 
   return didIterate;
