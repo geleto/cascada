@@ -2626,8 +2626,9 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
       }
     } catch (err) {
       const errors = isPoisonError(err) ? err.errors : [err];
-      poisonLoopEffects(loopFrame, buffer, asyncOptions, errors);
-      throw err;//re-thrown by iterateAsyncParallel or iterateAsyncSequential
+      didIterate = errors[errors.length - 1]?.didIterate || false;
+      // if we had at least one iteration, we won't poison the else side-effects
+      poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, didIterate);
     }
   }
   else if (arr) {
@@ -2710,7 +2711,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
  * @param {Object} asyncOptions - Options containing write counts and handlers
  * @param {PoisonedValue|Error} poisonValue - The poison value to propagate
  */
-function poisonLoopEffects(frame, buffer, asyncOptions, errors) {
+function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate = false) {
   //const poison = isPoison(poisonValue) ? poisonValue : createPoison(poisonValue);
 
   // Poison body effects
@@ -2719,6 +2720,10 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors) {
   }
   if (asyncOptions.bodyHandlers && asyncOptions.bodyHandlers.length > 0) {
     addPoisonMarkersToBuffer(buffer, errors, asyncOptions.bodyHandlers);
+  }
+
+  if (didIterate) {
+    return;// we don't poison the else side-effects if we had at least one iteration
   }
 
   // Poison else effects
