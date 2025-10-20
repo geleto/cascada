@@ -103,9 +103,9 @@
     "test:quick": "npm run mocha",
     "test:prep": "cross-env NODE_ENV=test npm run build && node scripts/runprecompile.js",
     "test:node-no-prep": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --require @babel/register tests 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
-    "test:node": "cross-env NODE_ENV=test npm run test:prep && npm run test:node-no-prep",
+    "test:node": "cross-env NODE_ENV=test npm run test:node-no-prep",
     "test:browser-no-prep": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/testrunner.js",
-    "test:browser": "cross-env NODE_ENV=test npm run test:prep && npm run test:browser-no-prep",
+    "test:browser": "cross-env NODE_ENV=test npm run test:browser-no-prep",
     "test:pasync": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
     "test": "npm run test:prep && npm run test:node-no-prep && npm run test:browser-no-prep -- fullTest",
     "mocha:single": "mocha --check-leaks -R spec"
