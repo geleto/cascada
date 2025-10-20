@@ -177,7 +177,7 @@ class Compiler extends CompilerBase {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
 
-      frame = this.emit.asyncBlockAddToBufferBegin(node, frame, positionNode);
+      frame = this.emit.asyncBlockAddToBufferBegin(node, frame, positionNode, 'text');
       errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
       this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
       if (noExtensionCallback) {
@@ -1647,7 +1647,7 @@ class Compiler extends CompilerBase {
         }
       } else {
         // Use the specific child expression node for position
-        frame = this.emit.asyncBlockAddToBufferBegin(node, frame, child);
+        frame = this.emit.asyncBlockAddToBufferBegin(node, frame, child, 'text');
         const errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, child)) : '';
         this.emit(`${node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
 
@@ -1926,11 +1926,11 @@ class Compiler extends CompilerBase {
         this.emit.asyncBlockAddToBuffer(node, frame, (resultVar, f) => {
           this.emit(`${resultVar} = `);
           emitLogic(f); // Pass the inner frame to the logic.
-        });
+        }, node, handler);
       } else {
         this.emit.addToBuffer(node, frame, () => {
           emitLogic(frame); // Pass the current frame.
-        });
+        }, node, handler);
       }
     };
 

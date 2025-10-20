@@ -237,7 +237,7 @@ module.exports = class CompileEmit {
   }
 
   //@todo - use the Begin/End
-  asyncBlockAddToBuffer(node, frame, renderFunction, positionNode = node) {
+  asyncBlockAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null) {
     const returnId = this.compiler._tmpid();
     if (node.isAsync) {
       this.asyncClosureDepth++;
@@ -246,11 +246,24 @@ module.exports = class CompileEmit {
       this.line(`runtime.executeAsyncBlock(async (astate, frame)=>{`);
       this.line(`let index = ${this.compiler.buffer}_index++;`);
 
-      this.line(`let ${returnId};`);
-
+      this.line(`try {`);
+      this.line(`  let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       this.line(';');
-      this.emit(`${this.compiler.buffer}[index] = ${returnId};`);
+      this.line(`  ${this.compiler.buffer}[index] = ${returnId};`);
+
+      this.line(`} catch(e) {`);
+      // Convert ALL errors to error array
+      this.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
+      if (handlerName) {
+        // Add marker for handler-specific outputs
+        this.line(`  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer}, errors, [${JSON.stringify(handlerName)}]);`);
+      } else {
+        // No handler means structural operation (Block/Include returning buffer arrays)
+        // These should still propagate the error for executeAsyncBlock to handle
+        this.line(`  throw e;`);
+      }
+      this.line(`}`);
 
       this.asyncClosureDepth--;
       this.line('}');
@@ -261,21 +274,24 @@ module.exports = class CompileEmit {
 
     } else {
       this.line(`let ${returnId};`);
-      renderFunction.call(this.compiler, returnId);
+      renderFunction.call(this.compiler, returnId, frame);
       if (this.compiler.asyncMode) {
-        this.emit(`${this.compiler.buffer}[index] = ${returnId};`);
+        this.line(`${this.compiler.buffer}[${this.compiler.buffer}_index++] = ${returnId};`);
       } else {
-        this.emit(`${this.compiler.buffer} += ${returnId};`);
+        this.line(`${this.compiler.buffer} += ${returnId};`);
       }
     }
   }
 
-  asyncBlockAddToBufferBegin(node, frame, positionNode = node) {
+  asyncBlockAddToBufferBegin(node, frame, positionNode = node, handlerName = null) {
     if (node.isAsync) {
       this.line(`runtime.executeAsyncBlock(async (astate, frame) => {`);
       this.line(`let index = ${this.compiler.buffer}_index++;`);
-      this.emit(`${this.compiler.buffer}[index] = `);
+      this.line(`try {`);
+      this.emit(`  ${this.compiler.buffer}[index] = `);
       this.asyncClosureDepth++;
+      // Store handlerName for End to use
+      this._pendingHandler = handlerName;
       return frame.push(false, false);
     }
     if (this.compiler.asyncMode) {
@@ -289,6 +305,20 @@ module.exports = class CompileEmit {
   asyncBlockAddToBufferEnd(node, frame, positionNode = node) {
     this.line(';');
     if (node.isAsync) {
+      const handlerName = this._pendingHandler;
+      this._pendingHandler = null;
+
+      this.line(`} catch(e) {`);
+      this.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
+      if (handlerName) {
+        // Handler-specific output - add poison marker to buffer
+        this.line(`  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer}, errors, [${JSON.stringify(handlerName)}]);`);
+      } else {
+        // Structural operation (Block/Include) - re-throw for executeAsyncBlock to handle
+        this.line(`  throw e;`);
+      }
+      this.line(`}`);
+
       this.asyncClosureDepth--;
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);

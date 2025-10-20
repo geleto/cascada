@@ -120,14 +120,14 @@ function deduplicateAndFlattenErrors(errors) {
     // If it's a PoisonError, flatten its underlying errors
     if (isPoisonError(err)) {
       for (const flattenedErr of err.errors) {
-        const key = flattenedErr.message || String(flattenedErr);
+        const key = flattenedErr;//.message || String(flattenedErr);
         if (!seen.has(key)) {
           seen.set(key, true);
           result.push(flattenedErr);
         }
       }
     } else {
-      const key = err.message || String(err);
+      const key = err;//err.message || String(err);
       if (!seen.has(key)) {
         seen.set(key, true);
         result.push(err);
@@ -2544,8 +2544,6 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
 }
 
 async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = [], asyncOptions = null) {
-  let didIterate = false;
-
   // Handle poison detection if in async mode
   if (asyncOptions) {
     // Check for synchronous poison first
@@ -2577,12 +2575,14 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
   const elseWriteCounts = asyncOptions ? asyncOptions.elseWriteCounts : null;
   const errorContext = asyncOptions ? asyncOptions.errorContext : null;
 
-  if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
-    // We must have two separate code paths. The `lenPromise` and `lastPromise`
-    // mechanism is fundamentally incompatible with sequential execution, as it
-    // would create a deadlock.
+  let didIterate = false;
 
-    try {
+  try {
+    if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
+      // We must have two separate code paths. The `lenPromise` and `lastPromise`
+      // mechanism is fundamentally incompatible with sequential execution, as it
+      // would create a deadlock.
+
       if (sequential) {
         // Used for `while` and `each` loops and
         // any `for` loop marked as sequential. It does NOT support `loop.length`
@@ -2596,58 +2596,73 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
         // only works when loop bodies are fired in parallel (sequential=false)
         didIterate = await iterateAsyncParallel(arr, loopBody, loopVars, errorContext);
       }
-    } catch (err) {
-      const errors = isPoisonError(err) ? err.errors : [err];
-      didIterate = errors[errors.length - 1]?.didIterate || false;
-      // if we had at least one iteration, we won't poison the else side-effects
-      poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, didIterate);
     }
-  }
-  else if (arr) {
-    arr = fromIterator(arr);
+    else if (arr) {
+      arr = fromIterator(arr);
 
-    if (Array.isArray(arr)) {
-      const len = arr.length;
+      if (Array.isArray(arr)) {
+        const len = arr.length;
 
-      for (let i = 0; i < arr.length; i++) {
-        didIterate = true;
-        const value = arr[i];
-        const isLast = i === arr.length - 1;
+        didIterate = len > 0;
+        for (let i = 0; i < arr.length; i++) {
+          let value = arr[i];
+          const isLast = i === arr.length - 1;
 
-        let res;
-        if (loopVars.length === 1) {
-          res = loopBody(value, i, len, isLast);
-        } else {
-          if (!Array.isArray(value)) {
-            throw new Error('Expected an array for destructuring');
+          // Convert Error objects to poison for consistency with async iterators
+          // (Poison values and rejecting promises pass through as-is)
+          if (value instanceof Error && !isPoison(value)) {
+            value = handleError(value, errorContext.lineno, errorContext.colno,
+              errorContext.errorContextString, errorContext.path);
+            value = createPoison(value);
           }
-          res = loopBody(...value.slice(0, loopVars.length), i, len, isLast);
-        }
 
-        if (sequential) {
-          await res;
-        }
-      }
-    } else {
-      const keys = Object.keys(arr);
-      const len = keys.length;
+          let res;
+          if (loopVars.length === 1) {
+            res = loopBody(value, i, len, isLast);
+          } else {
+            if (!Array.isArray(value)) {
+              throw new Error('Expected an array for destructuring');
+            }
+            res = loopBody(...value.slice(0, loopVars.length), i, len, isLast);
+          }
 
-      for (let i = 0; i < keys.length; i++) {
-        didIterate = true;
-        const key = keys[i];
-        const value = arr[key];
-        const isLast = i === keys.length - 1;
-
-        if (loopVars.length === 2) {
-          const res = loopBody(key, value, i, len, isLast);
           if (sequential) {
             await res;
           }
-        } else {
-          throw new Error(`Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`);
+        }
+      } else {
+        const keys = Object.keys(arr);
+        const len = keys.length;
+        didIterate = len > 0;
+
+        for (let i = 0; i < len; i++) {
+          const key = keys[i];
+          let value = arr[key];
+          const isLast = i === keys.length - 1;
+
+          // Convert Error objects to poison for consistency
+          if (value instanceof Error && !isPoison(value)) {
+            value = handleError(value, errorContext.lineno, errorContext.colno,
+              errorContext.errorContextString, errorContext.path);
+            value = createPoison(value);
+          }
+
+          if (loopVars.length === 2) {
+            const res = loopBody(key, value, i, len, isLast);
+            if (sequential) {
+              await res;
+            }
+          } else {
+            throw new Error(`Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`);
+          }
         }
       }
     }
+  } catch (err) {
+    const errors = isPoisonError(err) ? err.errors : [err];
+    didIterate = errors[errors.length - 1]?.didIterate || false;
+    // if we had at least one iteration, we won't poison the else side-effects
+    poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, didIterate);
   }
 
   // Implement mutual exclusion between body and else execution
