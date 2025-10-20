@@ -101,10 +101,10 @@
     "build": "npm run clean && npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/",
     "build:esm": "npx rollup -c rollup.config.mjs",
     "test:quick": "npm run mocha",
-    "test:node": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --require @babel/register tests 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
+    "test:node": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter --require @babel/register tests 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
     "test:browser": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/testrunner.js",
     "test:pasync": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
-    "test": "cross-env NODE_ENV=test npm run build && node scripts/runprecompile.js && npm run test:node && npm run test:browser -- fullTest",
+    "test": "node scripts/run-all-tests.js",
     "mocha:single": "mocha --check-leaks -R spec"
   },
   "nyc": {

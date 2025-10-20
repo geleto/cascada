@@ -41,4 +41,9 @@ This document explains how the test suites are organized and how to run them eff
 - Avoid asserting on the timing/order of concurrent operations; assert on final, deterministic output.
 - The precompile step is validated by `npm test`; the Node tests themselves do not depend on compiled output.
 
+### Combined totals and coverage (Full test)
+- When running `npm test`, Node test stats are written to `coverage/node-tests-stats.json` by a custom reporter.
+- The browser runner merges Node and browser coverage and prints a combined summary.
+- If there are failures, it also prints a breakdown like: `7 failing (2 node, 5 browser)`.
+
 

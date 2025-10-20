@@ -157,11 +157,13 @@ async function runTests() {
   let port;
   let overallTestsPassed = true;
 
-  let totalTests = 0;
   let totalPassed = 0;
   let totalFailed = 0;
   let totalPending = 0;
   let totalDuration = 0;
+
+  // Node stats (populated only in full test flow)
+  let nodeStats = null;
 
   try {
 
@@ -194,7 +196,6 @@ async function runTests() {
         overallTestsPassed = false;
       }
 
-      totalTests += result.stats.tests;
       totalPassed += result.stats.passes;
       totalFailed += result.stats.failures;
       totalPending += result.stats.pending;
@@ -241,8 +242,7 @@ async function runTests() {
 
     if (mergeNodeTestsCoverage) {
       console.log('\nCombined Coverage Summary from Node and browser tests:');
-    }
-    else {
+    } else {
       console.log('\nCoverage Summary from browser tests:');
     }
 
@@ -262,12 +262,30 @@ async function runTests() {
     console.error('Test runner encountered an error:', error);
     overallTestsPassed = false;
   } finally {
-    console.log('\nBrowser Tests Summary:');
-    console.log(`Tests: ${totalTests}`);
-    console.log(chalk.green(`Passed: ${totalPassed}`));
-    console.log(chalk.red(`Failed: ${totalFailed}`));
-    console.log(chalk.blue(`Pending: ${totalPending}`));
-    console.log(`Duration: (${totalDuration}ms)`);
+    if (mergeNodeTestsCoverage) {
+      // Try to read node stats if present
+      try {
+        const statsPath = path.join(__dirname, '../coverage/node-tests-stats.json');
+        const statsRaw = await fs.readFile(statsPath, 'utf8');
+        nodeStats = JSON.parse(statsRaw);
+      // eslint-disable-next-line no-empty
+      } catch (_) {}
+
+      const combinedPassed = (nodeStats?.passes || 0) + totalPassed;
+      const combinedFailed = (nodeStats?.failures || 0) + totalFailed;
+      const combinedPending = (nodeStats?.pending || 0) + totalPending;
+      const combinedDuration = (nodeStats?.duration || 0) + totalDuration;
+
+      const nodeFail = nodeStats?.failures || 0;
+      const browserFail = totalFailed;
+      const durationSec = Math.round(combinedDuration / 1000);
+
+      console.log('\nTOTALS:');
+      // Note: per request, color passing red and pending lighter blue
+      console.log(chalk.red(`${combinedPassed} passing (${durationSec}s)`));
+      console.log(chalk.cyan(`${combinedPending} pending`));
+      console.log(chalk.red(`${combinedFailed} failing (${nodeFail} node, ${browserFail} browser)\n`));
+    }
 
     if (browser) {
       await browser.close();
