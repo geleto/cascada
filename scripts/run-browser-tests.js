@@ -3,6 +3,7 @@
 
 'use strict';
 
+// Run browser tests
 require('@babel/register');
 
 const NYC = require('nyc');
@@ -67,7 +68,7 @@ function colorConsoleOutput(message) {
 
     // Individual test durations (only for lines starting with spaces, which are test results)
     .replace(/^(\s+.*?)\((\d+)ms\)/gm, (match, testName, duration) => {
-      const ms = parseInt(duration);
+      const ms = parseInt(duration, 10);
       if (ms > 100) return `${testName}${chalk.red(`(${duration}ms)`)}`;
       if (ms > 50) return `${testName}${chalk.yellow(`(${duration}ms)`)}`;
       return `${testName}${chalk.dim(`(${duration}ms)`)}`;
@@ -281,8 +282,7 @@ async function runTests() {
       const durationSec = Math.round(combinedDuration / 1000);
 
       console.log('\nTOTALS:');
-      // Note: per request, color passing red and pending lighter blue
-      console.log(chalk.red(`${combinedPassed} passing (${durationSec}s)`));
+      console.log(chalk.green(`${combinedPassed} passing (${durationSec}s)`));
       console.log(chalk.cyan(`${combinedPending} pending`));
       console.log(chalk.red(`${combinedFailed} failing (${nodeFail} node, ${browserFail} browser)\n`));
     }

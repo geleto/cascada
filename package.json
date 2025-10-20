@@ -102,7 +102,7 @@
     "build:esm": "npx rollup -c rollup.config.mjs",
     "test:quick": "npm run mocha",
     "test:node": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter --require @babel/register tests 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
-    "test:browser": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/testrunner.js",
+    "test:browser": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/run-browser-tests.js",
     "test:pasync": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
     "test": "node scripts/run-all-tests.js",
     "mocha:single": "mocha --check-leaks -R spec"
