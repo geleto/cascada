@@ -307,7 +307,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
       };
     });
 
-    it.only('Should propagate a soft error to body handler of "for"/"each" loops', async () => {
+    it('Should propagate a soft error to body handler of "for"/"each" loops', async () => {
       let script = `
         :data
         for item in testGen()
@@ -330,7 +330,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
       }
     });
 
-    it.only('Should propagate a hard error to body handler of "for"/"each" loops', async () => {
+    it('Should propagate a hard error to body handler of "for"/"each" loops', async () => {
       let script = `
         :data
         for item in testGen()
