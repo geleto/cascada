@@ -117,7 +117,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(1);
         expect(err.errors[0].message).to.contain('Iterable is poisoned');
       }
@@ -140,7 +140,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(1);
         expect(err.errors[0].message).to.contain('Iterable is poisoned');
       }
@@ -162,7 +162,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(2);
         expect(err.errors[0].message).to.contain('First failure');
         expect(err.errors[1].message).to.contain('Second failure');
@@ -187,7 +187,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(context.processed).to.eql(['A', 'B']);
       }
     });
@@ -221,7 +221,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(2);
         const messages = err.errors.map(e => e.message).sort();
         expect(messages).to.eql(['Failure on 2', 'Failure on 4']);
@@ -254,7 +254,7 @@
           await env.renderTemplateString(template, context);
           expect().fail(`Run ${i + 1} should have thrown`);
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
           const messages = err.errors.map(e => e.message).sort();
           expect(messages).to.eql(expectedErrors);
         }
@@ -315,7 +315,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(1);
         expect(err.errors[0].message).to.contain('Processing failed for item 2');
         expect(err.errors[0].lineno).to.be.a('number');
@@ -338,7 +338,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(2);
         const messages = err.errors.map(e => e.message).sort();
         expect(messages).to.eql(['Rejected promise error', 'Yielded poison error']);
@@ -367,7 +367,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(1);
         expect(err.errors[0].message).to.contain('Item B is invalid');
       }
@@ -393,7 +393,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(1);
         expect(err.errors[0].message).to.contain('This item is poisoned');
         expect(context.processed).to.eql(['good', 'also good']);
@@ -433,7 +433,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(2);
         const messages = err.errors.map(e => e.message).sort();
         expect(messages).to.eql(['Async processing error', 'Poison from generator']);
@@ -455,7 +455,7 @@
           await env.renderTemplateString(template, context);
           expect().fail(`Run ${i + 1} should have thrown`);
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
           expect(err.errors).to.have.length(1);
           expect(err.errors[0].message).to.contain('Single deterministic error');
         }
@@ -482,7 +482,7 @@
           await env.renderTemplateString(template, context);
           expect().fail(`Run ${i + 1} should have thrown`);
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
           const messages = err.errors.map(e => e.message).sort();
           expect(messages).to.eql(expectedMessages);
         }
@@ -505,7 +505,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(1);
         expect(err.errors[0].message).to.contain('This error should only appear once');
       }
@@ -519,13 +519,13 @@
           createPoison(new Error('Same message'))
         ]
       };
-      const template = `{% for item in items %}{% endfor %}`;
+      const template = `{% for item in items %}{{item}}{% endfor %}`;
 
       try {
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(2); // two distinct instances retained
         expect(err.errors[0].message).to.contain('Same message');
         expect(err.errors[1].message).to.contain('Same message');
@@ -549,7 +549,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(3);
         const messages = err.errors.map(e => e.message);
         expect(messages).to.eql(['Error A', 'Error B', 'Error C']);
@@ -627,7 +627,7 @@
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
         // Runtime should wrap the thrown error into a PoisonError
-        expect(isPoisonError(err)).to.be.true;
+        expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(1);
         expect(err.errors[0].message).to.contain('The generator itself has failed');
       }

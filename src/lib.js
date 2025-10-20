@@ -71,6 +71,7 @@ function _prettifyError(path, withInternals, err) {
 
 exports._prettifyError = _prettifyError;
 
+//@todo - rename to CompileError and use a class that extends Error
 function TemplateError(message, lineno, colno, errorContextString = null) {
   var err;
   var cause;

@@ -36,7 +36,7 @@
         const poison = createPoison(new Error('Poisoned object'));
         const result = runtime.memberLookupAsync(poison, 'prop');
 
-        expect(isPoison(result)).to.be.true;
+        expect(isPoison(result)).to.be(true);
         expect(result.errors[0].message).to.equal('Poisoned object');
       });
 
@@ -45,7 +45,7 @@
         const poison = createPoison(new Error('Poisoned key'));
         const result = runtime.memberLookupAsync(obj, poison);
 
-        expect(isPoison(result)).to.be.true;
+        expect(isPoison(result)).to.be(true);
         expect(result.errors[0].message).to.equal('Poisoned key');
       });
 
@@ -65,7 +65,7 @@
           await runtime.memberLookupAsync(promise, 'prop');
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
         }
       });
 
@@ -79,7 +79,7 @@
           await runtime.memberLookupAsync(promise1, promise2);
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
           expect(err.errors).to.have.length(2);
         }
       });
@@ -91,7 +91,7 @@
           await runtime.memberLookupAsync(promise, 'prop');
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.equal('Rejected');
         }
       });
@@ -109,7 +109,7 @@
         const poison = createPoison(new Error('Test'));
         const result = runtime.memberLookupScriptAsync(poison, 'prop');
 
-        expect(isPoison(result)).to.be.true;
+        expect(isPoison(result)).to.be(true);
       });
 
       it('should return value synchronously for literals', () => {
@@ -148,7 +148,7 @@
           );
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
         }
       });
 
@@ -164,10 +164,10 @@
           );
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
 
           const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be.true;
+          expect(isPoison(lock)).to.be(true);
         }
       });
 
@@ -184,10 +184,10 @@
           );
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
 
           const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be.true;
+          expect(isPoison(lock)).to.be(true);
         }
       });
 
@@ -203,10 +203,10 @@
           );
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
 
           const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be.true;
+          expect(isPoison(lock)).to.be(true);
         }
       });
 
@@ -252,7 +252,7 @@
           );
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
         }
       });
 
@@ -269,10 +269,10 @@
           );
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
 
           const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be.true;
+          expect(isPoison(lock)).to.be(true);
         }
       });
 
@@ -301,7 +301,7 @@
         }
 
         results.forEach(r => {
-          expect(Array.isArray(r)).to.be.true;
+          expect(Array.isArray(r)).to.be(true);
           expect(typeof r.then).to.equal('undefined');
         });
       });
@@ -317,11 +317,11 @@
           await runtime.memberLookupAsync(objPromise, valPromise);
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
           // Should contain both errors
           expect(err.errors).to.have.length(2);
-          expect(err.errors.some(e => e.message === 'Obj error')).to.be.true;
-          expect(err.errors.some(e => e.message === 'Val error')).to.be.true;
+          expect(err.errors.some(e => e.message === 'Obj error')).to.be(true);
+          expect(err.errors.some(e => e.message === 'Val error')).to.be(true);
         }
       });
     });

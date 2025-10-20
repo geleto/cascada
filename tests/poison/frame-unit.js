@@ -30,7 +30,7 @@
         frame.set('myVar', poison, true);
         const retrieved = frame.lookup('myVar');
 
-        expect(isPoison(retrieved)).to.be.true;
+        expect(isPoison(retrieved)).to.be(true);
         expect(retrieved).to.equal(poison);
       });
 
@@ -44,7 +44,7 @@
         asyncFrame.set('myVar', poison, true);
         const retrieved = asyncFrame.lookup('myVar');
 
-        expect(isPoison(retrieved)).to.be.true;
+        expect(isPoison(retrieved)).to.be(true);
       });
 
       it('should propagate poison through parent frames', () => {
@@ -57,10 +57,10 @@
         childFrame.set('x', poison, true);
 
         // Should be retrievable from child
-        expect(isPoison(childFrame.lookup('x'))).to.be.true;
+        expect(isPoison(childFrame.lookup('x'))).to.be(true);
 
         // Should propagate to root
-        expect(isPoison(rootFrame.lookup('x'))).to.be.true;
+        expect(isPoison(rootFrame.lookup('x'))).to.be(true);
       });
     });
 
@@ -81,7 +81,7 @@
 
         // Parent should have the poison
         const parentValue = parentFrame.lookup('myVar');
-        expect(isPoison(parentValue)).to.be.true;
+        expect(isPoison(parentValue)).to.be(true);
       });
 
       it('should convert rejected promise to poison', async () => {
@@ -99,7 +99,7 @@
 
         // Parent should have poison created from rejection
         const parentValue = parentFrame.lookup('myVar');
-        expect(isPoison(parentValue)).to.be.true;
+        expect(isPoison(parentValue)).to.be(true);
         expect(parentValue.errors[0].message).to.equal('Promise rejected');
       });
 
@@ -117,7 +117,7 @@
         await new Promise(resolve => setTimeout(resolve, 50));
 
         const parentValue = parentFrame.lookup('myVar');
-        expect(isPoison(parentValue)).to.be.true;
+        expect(isPoison(parentValue)).to.be(true);
       });
     });
 
@@ -130,8 +130,8 @@
         const error = new Error('Branch condition failed');
         frame.poisonBranchWrites(error, { x: 1, y: 1 });
 
-        expect(isPoison(frame.lookup('x'))).to.be.true;
-        expect(isPoison(frame.lookup('y'))).to.be.true;
+        expect(isPoison(frame.lookup('x'))).to.be(true);
+        expect(isPoison(frame.lookup('y'))).to.be(true);
 
         const xPoison = frame.lookup('x');
         expect(xPoison.errors[0]).to.equal(error);
@@ -144,7 +144,7 @@
         const poison = createPoison(new Error('Already poison'));
         frame.poisonBranchWrites(poison, { a: 2 });
 
-        expect(isPoison(frame.lookup('a'))).to.be.true;
+        expect(isPoison(frame.lookup('a'))).to.be(true);
         expect(frame.lookup('a')).to.equal(poison);
       });
 
@@ -155,7 +155,7 @@
         // Simulate a loop that would write 5 times
         frame.poisonBranchWrites(new Error('Loop failed'), { counter: 5 });
 
-        expect(isPoison(frame.lookup('counter'))).to.be.true;
+        expect(isPoison(frame.lookup('counter'))).to.be(true);
       });
 
       it('should create variables if they do not exist', () => {
@@ -163,7 +163,7 @@
 
         frame.poisonBranchWrites(new Error('Before declaration'), { newVar: 1 });
 
-        expect(isPoison(frame.lookup('newVar'))).to.be.true;
+        expect(isPoison(frame.lookup('newVar'))).to.be(true);
       });
 
       it('should work with asyncVars', async () => {
@@ -175,7 +175,7 @@
         asyncFrame.poisonBranchWrites(new Error('Async branch failed'), { x: 2 });
 
         // Should poison the asyncVar
-        expect(isPoison(asyncFrame.lookup('x'))).to.be.true;
+        expect(isPoison(asyncFrame.lookup('x'))).to.be(true);
 
         // Wait for countdown to complete
         await new Promise(resolve => setTimeout(resolve, 10));
@@ -204,7 +204,7 @@
 
         // Parent should have poison
         const parentValue = rootFrame.lookup('result');
-        expect(isPoison(parentValue)).to.be.true;
+        expect(isPoison(parentValue)).to.be(true);
       });
 
       it('should handle nested async blocks with poison', async () => {
@@ -222,7 +222,7 @@
         await new Promise(resolve => setTimeout(resolve, 20));
 
         // Should propagate all the way up
-        expect(isPoison(rootFrame.lookup('data'))).to.be.true;
+        expect(isPoison(rootFrame.lookup('data'))).to.be(true);
       });
     });
 
@@ -240,7 +240,7 @@
         frame.set('var1', poison2, true);
 
         const result = frame.lookup('var1');
-        expect(isPoison(result)).to.be.true;
+        expect(isPoison(result)).to.be(true);
         // Latest value wins (no automatic merging in set)
         expect(result).to.equal(poison2);
       });
@@ -274,9 +274,9 @@
         grandChildFrame.set('nested', poison, true);
 
         // Should be accessible from all levels
-        expect(isPoison(grandChildFrame.lookup('nested'))).to.be.true;
-        expect(isPoison(childFrame.lookup('nested'))).to.be.true;
-        expect(isPoison(rootFrame.lookup('nested'))).to.be.true;
+        expect(isPoison(grandChildFrame.lookup('nested'))).to.be(true);
+        expect(isPoison(childFrame.lookup('nested'))).to.be(true);
+        expect(isPoison(rootFrame.lookup('nested'))).to.be(true);
       });
 
       it('should handle poison in asyncVars vs variables', () => {
@@ -293,8 +293,8 @@
         const regularPoison = createPoison(new Error('Regular poison'));
         asyncFrame.variables.regularVar = regularPoison;
 
-        expect(isPoison(asyncFrame.lookup('testVar'))).to.be.true;
-        expect(isPoison(asyncFrame.lookup('regularVar'))).to.be.true;
+        expect(isPoison(asyncFrame.lookup('testVar'))).to.be(true);
+        expect(isPoison(asyncFrame.lookup('regularVar'))).to.be(true);
       });
     });
 
@@ -316,7 +316,7 @@
 
         // Should have poison in parent
         const parentValue = frame.lookup('chain');
-        expect(isPoison(parentValue)).to.be.true;
+        expect(isPoison(parentValue)).to.be(true);
       });
 
       it('should handle multiple poison sources in same frame', () => {
@@ -329,10 +329,10 @@
         frame.poisonBranchWrites(error2, { var3: 1, var4: 1 });
 
         // All variables should be poisoned
-        expect(isPoison(frame.lookup('var1'))).to.be.true;
-        expect(isPoison(frame.lookup('var2'))).to.be.true;
-        expect(isPoison(frame.lookup('var3'))).to.be.true;
-        expect(isPoison(frame.lookup('var4'))).to.be.true;
+        expect(isPoison(frame.lookup('var1'))).to.be(true);
+        expect(isPoison(frame.lookup('var2'))).to.be(true);
+        expect(isPoison(frame.lookup('var3'))).to.be(true);
+        expect(isPoison(frame.lookup('var4'))).to.be(true);
 
         // Each should have its respective error
         expect(frame.lookup('var1').errors[0]).to.equal(error1);
@@ -360,7 +360,7 @@
 
         // Root should have one of the poisons (last one wins)
         const rootValue = rootFrame.lookup('shared');
-        expect(isPoison(rootValue)).to.be.true;
+        expect(isPoison(rootValue)).to.be(true);
       });
     });
   });

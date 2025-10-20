@@ -758,7 +758,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.equal('Output error');
         }
       });
@@ -772,7 +772,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
           expect(err.errors).to.have.length(2);
         }
       });
@@ -785,7 +785,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
           // Verify it didn't stop early (error collected)
           expect(err.errors).to.have.length(1);
         }
@@ -803,7 +803,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
         }
       });
 
@@ -817,7 +817,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
         }
       });
 
@@ -835,7 +835,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
         }
       });
 
@@ -852,7 +852,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (err) {
-          expect(isPoisonError(err)).to.be.true;
+          expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Unknown command handler');
         }
       });
@@ -886,7 +886,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be.true;
+          expect(isPoisonError(thrown)).to.be(true);
           // Should be deduplicated to 1
           expect(thrown.errors).to.have.length(1);
         }
@@ -901,7 +901,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be.true;
+          expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors).to.have.length(2);
         }
       });
@@ -931,7 +931,7 @@
           runtime.flattenBuffer(errors, context);
           expect().fail('Should have thrown');
         } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be.true;
+          expect(isPoisonError(thrown)).to.be(true);
           // All 3 errors should be collected
           expect(thrown.errors).to.have.length(3);
         }
@@ -953,7 +953,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be.true;
+          expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors).to.have.length(3);
         }
       });
@@ -988,7 +988,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be.true;
+          expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0].message).to.contain('has no method');
         }
       });
@@ -1006,7 +1006,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be.true;
+          expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors[0].message).to.contain('Unknown command handler');
         }
       });
@@ -1042,7 +1042,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be.true;
+          expect(isPoisonError(thrown)).to.be(true);
           expect(thrown.errors).to.have.length(1);
         }
       });
@@ -1057,7 +1057,7 @@
           runtime.flattenBuffer(arr, context);
           expect().fail('Should have thrown');
         } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be.true;
+          expect(isPoisonError(thrown)).to.be(true);
         }
       });
     });
@@ -1081,7 +1081,7 @@
           runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be.true;
+          expect(isPoisonError(thrown)).to.be(true);
         }
       });
 
