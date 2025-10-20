@@ -108,6 +108,54 @@ class PoisonError extends Error {
   }
 }
 
+/**
+ * Runtime error with position and context information.
+ */
+class RuntimeError extends Error {
+  constructor(message, lineno, colno, errorContextString = null, path = null) {
+    let err;
+    let cause;
+    if (message instanceof Error) {
+      cause = message;
+      err = new Error(`${cause.name}: ${cause.message}`);
+    } else {
+      err = new Error(message);
+    }
+
+    // Build formatted message with path and position info
+    let formattedMessage = err.message;
+    if (path) {
+      let msg = '(' + (path || 'unknown path') + ')';
+
+      if (lineno && colno) {
+        msg += ` [Line ${lineno}, Column ${colno}]`;
+      } else if (lineno) {
+        msg += ` [Line ${lineno}]`;
+      }
+
+      if (errorContextString) {
+        msg += ` doing '${errorContextString}'`;
+      }
+
+      msg += '\n  ';
+      formattedMessage = msg + formattedMessage;
+    }
+
+    super(formattedMessage);
+    this.name = 'RuntimeError';
+    this.lineno = lineno;
+    this.colno = colno;
+    this.errorContextString = errorContextString;
+    this.path = path;
+    this.cause = cause;
+
+    // Capture stack trace
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
+  }
+}
+
 
 /**
  * Deduplicate errors by message and flatten any PoisonError objects.
@@ -2241,11 +2289,8 @@ function handleError(error, lineno, colno, errorContextString = null, path = nul
     }*/
     return error;
   } else {
-    // Wrap in TemplateError
-    const wrappedError = new lib.TemplateError(error, lineno, colno, errorContextString);
-    if (/*path && */typeof wrappedError.Update === 'function') {
-      wrappedError.Update(path);
-    }
+    // Wrap in RuntimeError
+    const wrappedError = new RuntimeError(error, lineno, colno, errorContextString, path);
     return wrappedError;
   }
 }
