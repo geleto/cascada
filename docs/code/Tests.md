@@ -13,23 +13,17 @@ This document explains how the test suites are organized and how to run them eff
   - No build, no precompile, no coverage/instrumentation.
   - Fastest inner loop.
 
-- test:node-no-prep
+- test:node
   - Runs Node tests from source with NYC coverage and @babel/register.
   - No build/precompile.
 
-- test:node
-  - Alias to the no-prep Node run with coverage (no build).
-
-- test:browser-no-prep
+- test:browser
   - Builds a browser bundle from source using `scripts/bundle.js` and runs the browser tests.
   - No full build/precompile.
 
-- test:browser
-  - Alias to the browser no-prep run (no build).
-
 - test
   - The only script that performs a build/precompile first.
-  - Sequence: build + precompile, then Node tests (from source), then browser tests (bundled from source).
+  - Sequence: build + precompile, then `test:node`, then `test:browser`.
 
 ### Which tests to use when
 - Quick local feedback on Node tests: `npm run test:quick`
