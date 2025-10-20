@@ -279,11 +279,11 @@ This section provides practical instructions for writing and testing code.
 
 ### Running Tests
 
--   **Quick Test (No Build)**: `npm run mocha`
+-   **Quick Test (No Build)**: `npm run test:quick`
 -   **Run a single file (Recommended)**: `npm run mocha:single -- tests/pasync/loop-phase1-two-pass.js --timeout 5000`
--   **Run all async tests**: `npm run pasync`
--   **Node Only**: `npm run test:node`
--   **Full Suite (Node + Browser)**: `npm test`
+-   **Node Only (from source, with coverage)**: `npm run test:node`
+-   **Browser Only (bundled from source)**: `npm run test:browser`
+-   **Full Suite (build + precompile + Node + Browser)**: `npm test`
 -   **Isolate Specific Tests**: Use `.only()` on `it()` or `describe()` blocks in the test files. This is the standard workflow for focused development.
 
 ```javascript
