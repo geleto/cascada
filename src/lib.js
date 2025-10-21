@@ -54,6 +54,9 @@ function _prettifyError(path, withInternals, err) {
   }
 
   // Regular error handling
+  if (err instanceof RuntimeError) {
+    return err;
+  }
   if (!err.Update) {
     // not one of ours, cast it
     err = new exports.TemplateError(err);
