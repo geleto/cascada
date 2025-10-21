@@ -2248,7 +2248,12 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
             loopBody(value, i, lenPromise, lastPromise, errorContext);
           } else {
             if (!Array.isArray(value)) {
-              throw new Error('Expected an array for destructuring');
+              if (isPoison(value)) {
+                //poison all loop variables
+                value = Array(loopVars.length).fill(value);
+              } else {
+                throw new Error('Expected an array for destructuring');
+              }
             }
             loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
           }
@@ -2451,6 +2456,8 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
  */
 function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate = false) {
   //const poison = isPoison(poisonValue) ? poisonValue : createPoison(poisonValue);
+  //replace the errors with the handleError'd errors
+  errors = errors.map(error => handleError(error, asyncOptions.errorContext.lineno, asyncOptions.errorContext.colno, asyncOptions.errorContext.errorContextString, asyncOptions.errorContext.path));
 
   // Poison body effects
   if (asyncOptions.bodyWriteCounts && Object.keys(asyncOptions.bodyWriteCounts).length > 0) {
@@ -2760,17 +2767,11 @@ async function* whileConditionIterator(frame, conditionEvaluator) {
 
   let iterationCount = 0;
 
-  while (true) {
-    try {
-      // Evaluate the condition
+  try {
+    while (true) {
+      // Evaluate the condition. If it returns poison or rejects, await will throw.
+      // and the error will be caught by the iterateAsyncSequential
       const conditionResult = await conditionEvaluator(frame);
-
-      // Check if condition evaluated to poison (soft error)
-      if (isPoison(conditionResult)) {
-        yield new PoisonError(conditionResult.errors);
-        frame.pop();
-        return;
-      }
 
       // Normal condition evaluation - check if we should continue
       if (!conditionResult) {
@@ -2780,18 +2781,12 @@ async function* whileConditionIterator(frame, conditionEvaluator) {
       // Yield the iteration count for this iteration
       yield iterationCount;
       iterationCount++;
-
-    } catch (err) {
-      // Condition threw an error (soft error)
-      // Yield the error as-is (Error or PoisonError)
-      // Don't yield PoisonedValue - it's thenable and would terminate the generator
-      yield (isPoisonError(err) ? err : err);
-      frame.pop();
-      return;
     }
   }
-
-  frame.pop();
+  finally {
+    // Ensure the temporary frame is always popped.
+    frame.pop();
+  }
 }
 
 module.exports = {
