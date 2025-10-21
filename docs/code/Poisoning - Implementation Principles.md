@@ -596,6 +596,54 @@ catch (err) {
 }
 ```
 
+### Bug #8: Delaying `handleError` Wrapping
+
+**The Problem:** An error is most useful when it points to its exact origin. If we catch a raw error and create a `PoisonedValue` from it without first adding context (line number, path), that specific origin information is lost. If we try to add context later, it's less accurate and can lead to the same underlying error being reported multiple times.
+
+**❌ WRONG:**
+```javascript
+// in some deep function
+try {
+  const data = riskyOperation();
+} catch (err) {
+  // BUG: We create poison with a raw error. The specific line number
+  // of `riskyOperation` is now lost forever.
+  return createPoison(err);
+}
+
+// ... later, in the main render loop ...
+if (isPoison(value)) {
+  // We try to add context here, but it's too late. This context is
+  // generic ("during render") not specific ("calling riskyOperation").
+  // If this happens in multiple places, we get duplicate errors.
+  const contextualPoison = createPoison(value.errors, ...genericContext);
+  throw new PoisonError(contextualPoison.errors);
+}
+```
+
+**Why it fails:**
+- The most valuable context—the exact location of the original failure—is lost.
+- The raw error propagates, and different parts of the system may later wrap it with their own, less-specific context.
+- This results in multiple `RuntimeError` objects being created from the *same original error*, bloating the final `PoisonError` with redundant and confusing messages.
+
+**✅ CORRECT:**
+```javascript
+// in some deep function
+try {
+  const data = riskyOperation();
+} catch (err) {
+  // CORRECT: Handle the error IMMEDIATELY to stamp it with the precise location.
+  const handledError = handleError(err, lineno, colno, 'riskyOperation', path);
+  return createPoison(handledError);
+}
+```
+
+**Why it's correct:**
+- `handleError` is used at the earliest possible moment, capturing the most accurate context available.
+- `handleError` is idempotent; it wraps a raw error but will not re-wrap an error that already has location information. This is critical.
+- This pattern guarantees that a single error source results in a single, precisely-located error in the final `PoisonError`. It stops error duplication before it starts.
+- **Rule of Thumb**: Any `catch` block that creates a new `PoisonedValue` from a caught error should almost always call `handleError` on that error first.
+
 ---
 
 ## Part 3: When CAN You Use Synchronous Propagation?
