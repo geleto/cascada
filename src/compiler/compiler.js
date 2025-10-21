@@ -574,9 +574,9 @@ class Compiler extends CompilerBase {
       }
 
       // Add catch block to poison variables when condition fails
-      const errorContextJson = JSON.stringify(this._createErrorContext(node, node.cond));
+      const errorContext = this._createErrorContext(node, node.cond);
       this.emit('} catch (e) {');
-      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContextJson}.lineno, ${errorContextJson}.colno, ${errorContextJson}.errorContextString, context.path);`);
+      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContext.lineno}, ${errorContext.colno}, "${errorContext.errorContextString}", context.path);`);
       catchPoisonPos = this.codebuf.length;
       this.emit('');
       this.emit('}');  // No re-throw - execution continues with poisoned vars
