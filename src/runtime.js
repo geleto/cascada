@@ -5,6 +5,7 @@ const {
   PoisonedValue,
   PoisonError,
   RuntimeError,
+  RuntimePromise,
   createPoison,
   isPoison,
   isPoisonError,
@@ -1817,6 +1818,10 @@ function callWrapAsync(obj, name, context, args, errorContext) {
                    !Object.prototype.hasOwnProperty.call(context.ctx, name);
 
     const result = obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
+    if (result && typeof result.then === 'function') {// && !isPoison(result)) {
+      // add context to the promise that will be applied if it rejects
+      return new RuntimePromise(result, errorContext);
+    }
     return result;
   } catch (err) {
     return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
