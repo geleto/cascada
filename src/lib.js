@@ -2,7 +2,7 @@
 
 var ArrayProto = Array.prototype;
 var ObjProto = Object.prototype;
-
+var RuntimeError = require('./runtime-errors').RuntimeError;
 var escapeMap = {
   '&': '&amp;',
   '"': '&quot;',
@@ -41,12 +41,13 @@ function _prettifyError(path, withInternals, err) {
       err.errors = err.errors.map(e => {
         if (e instanceof exports.TemplateError) {
           e.Update(path);
-          return e;
-        } else {
+          //return e;
+        } else if (!(e instanceof RuntimeError)) {
           const wrappedErr = new exports.TemplateError(e);
           wrappedErr.Update(path);
-          return wrappedErr;
+          e = wrappedErr;
         }
+        return e;
       });
     }
     return err; // Return PoisonError with updated errors

@@ -1,279 +1,20 @@
 'use strict';
 
 var lib = require('./lib');
+const {
+  PoisonedValue,
+  PoisonError,
+  RuntimeError,
+  createPoison,
+  isPoison,
+  isPoisonError,
+  collectErrors,
+  handleError
+} = require('./runtime-errors');
 var arrayFrom = Array.from;
 var supportsIterators = (
   typeof Symbol === 'function' && Symbol.iterator && typeof arrayFrom === 'function'
 );
-
-// Symbol for poison detection
-const POISON_KEY = typeof Symbol !== 'undefined'
-  ? Symbol.for('cascada.poison')
-  : '__cascadaPoisonError';
-
-// Symbol for PoisonError detection (more reliable than instanceof after transpilation)
-const POISON_ERROR_KEY = typeof Symbol !== 'undefined'
-  ? Symbol.for('cascada.poisonError')
-  : '__cascadaPoisonErrorMarker';
-
-/**
- * PoisonedValue: An inspectable error container that can be detected synchronously
- * and automatically rejects when awaited.
- *
- * Purpose: Enables sync-first error detection (isPoison()) while maintaining
- * compatibility with await/promises. Avoids async overhead for error propagation
- *
- * NOT FULLY PROMISE A+ COMPLIANT
- * - Rejection handlers execute synchronously (not on microtask queue)
- * - Returns `this` when no handler provided (doesn't create new promise)
- *
- * Trade-off: faster for sync-first patterns, but may break code expecting strict async behavior.
- */
-class PoisonedValue {
-  constructor(errors) {
-    this.errors = Array.isArray(errors) ? errors : [errors];
-    this[POISON_KEY] = true;
-  }
-
-  then(onFulfilled, onRejected) {
-    // Optimization: if no rejection handler, propagate poison directly
-    if (!onRejected) {
-      return this;
-    }
-
-    const error = new PoisonError(this.errors);
-
-    // Call the rejection handler
-    try {
-      const result = onRejected(error);
-      // Handler succeeded - need Promise for fulfillment
-      // Use Promise.resolve to handle case where result is itself a thenable
-      return Promise.resolve(result);
-    } catch (err) {
-      // Handler threw - return new PoisonedValue (no Promise needed!)
-      return createPoison(isPoisonError(err) ? err.errors : [err]);
-    }
-  }
-
-  catch(onRejected) {
-    return this.then(null, onRejected);
-  }
-
-  finally(onFinally) {
-    if (onFinally) {
-      try {
-        onFinally();
-      } catch (e) {
-        // Ignore errors in finally, return original poison
-      }
-    }
-    return this;
-  }
-}
-
-/**
- * Error thrown when one or more operations are poisoned.
- * Contains deduplicated array of original errors.
- */
-class PoisonError extends Error {
-  constructor(errors) {
-    errors = Array.isArray(errors) ? errors : [errors];
-    const deduped = deduplicateAndFlattenErrors(errors);
-
-    super();
-
-    this.name = 'PoisonError';
-    this.errors = deduped;
-    this[POISON_ERROR_KEY] = true;
-
-    // Determine the appropriate stack trace
-    const stacks = deduped.map(e => e.stack).filter(Boolean);
-    const allSame = stacks.length > 0 && stacks.every(s => s === stacks[0]);
-
-    if (allSame) {
-      // Use the shared stack if all are identical
-      this.stack = stacks[0];
-    }
-
-    // Ensure correct prototype chain (for Babel/older environments)
-    Object.setPrototypeOf?.(this, new.target.prototype);
-  }
-
-  get message() {
-    const deduped = this.errors;
-    return deduped.length === 1
-      ? deduped[0].message
-      : `Multiple errors occurred (${deduped.length}):\n` +
-        deduped.map((e, i) => `  ${i + 1}. ${e.message}`).join('\n');
-  }
-}
-
-/**
- * Runtime error with position and context information.
- */
-class RuntimeError extends Error {
-  constructor(message, lineno, colno, errorContextString = null, path = null) {
-    let err;
-    let cause;
-    if (message instanceof Error) {
-      cause = message;
-      err = new Error(`${cause.name}: ${cause.message}`);
-    } else {
-      err = new Error(message);
-    }
-
-    // Build formatted message with path and position info
-    let formattedMessage = err.message;
-    if (path) {
-      let msg = '(' + (path || 'unknown path') + ')';
-
-      if (lineno && colno) {
-        msg += ` [Line ${lineno}, Column ${colno}]`;
-      } else if (lineno) {
-        msg += ` [Line ${lineno}]`;
-      }
-
-      if (errorContextString) {
-        msg += ` doing '${errorContextString}'`;
-      }
-
-      msg += '\n  ';
-      formattedMessage = msg + formattedMessage;
-    }
-
-    super(formattedMessage);
-    this.name = 'RuntimeError';
-    this.lineno = lineno;
-    this.colno = colno;
-    this.errorContextString = errorContextString;
-    this.path = path;
-    this.cause = cause;
-
-    // Capture stack trace
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
-  }
-}
-
-
-/**
- * Deduplicate errors by message and flatten any PoisonError objects.
- */
-function deduplicateAndFlattenErrors(errors) {
-  const seen = new Map();
-  const result = [];
-
-  for (const err of errors) {
-    // If it's a PoisonError, flatten its underlying errors
-    if (isPoisonError(err)) {
-      for (const flattenedErr of err.errors) {
-        const key = flattenedErr;//.message || String(flattenedErr);
-        if (!seen.has(key)) {
-          seen.set(key, true);
-          result.push(flattenedErr);
-        }
-      }
-    } else {
-      const key = err;//err.message || String(err);
-      if (!seen.has(key)) {
-        seen.set(key, true);
-        result.push(err);
-      }
-    }
-  }
-
-  return result;
-}
-
-/**
- * Create a poison value from one or more errors, optionally adding position and path info.
- * Preserves existing position info in errors - never overwrites lineno, colno, or path.
- * Only adds position/path to errors that don't already have it.
- *
- * @param {Error|Error[]} errorOrErrors - Single error or array of errors
- * @param {number} lineno - Line number where error occurred (optional)
- * @param {number} colno - Column number where error occurred (optional)
- * @param {string} errorContextString - Context string for error message (optional)
- * @param {string} path - Template path (optional)
- * @returns {PoisonedValue} Poison value containing the error(s)
- */
-function createPoison(errorOrErrors, lineno = null, colno = null, errorContextString = null, path = null) {
-  let errors = Array.isArray(errorOrErrors) ? errorOrErrors : [errorOrErrors];
-
-  // If position or path info provided, add it to errors that don't already have it
-  if (lineno !== null || colno !== null || errorContextString !== null || path !== null) {
-    errors = errors.map(err => {
-      // If it's a PoisonError, extract its errors and process each one
-      if (isPoisonError(err)) {
-        return err.errors.map(e => {
-          // If error already has position info, preserve it completely (don't update lineno, colno, or path)
-          if (e.lineno) {
-            return e;
-          }
-          // Error lacks position info - add it via handleError
-          return handleError(e, lineno || 0, colno || 0, errorContextString, path);
-        });
-      }
-      // If error already has position info, preserve it completely
-      if (err.lineno) {
-        return err;
-      }
-      // Error lacks position info - add it via handleError
-      return handleError(err, lineno || 0, colno || 0, errorContextString, path);
-    }).flat();
-  }
-
-  return new PoisonedValue(errors);
-}
-
-/**
- * Check if a value is poisoned.
- */
-function isPoison(value) {
-  return value != null/*and undefined*/ && value[POISON_KEY] === true;
-}
-
-/**
- * Check if an error is a PoisonError.
- * More reliable than instanceof after transpilation.
- */
-function isPoisonError(error) {
-  return error != null/*and undefined*/ && error[POISON_ERROR_KEY] === true;
-}
-
-/**
- * Collect errors from an array of values.
- * Awaits all promises (even after finding errors), catches rejections,
- * extracts poison errors. Returns deduplicated error array.
- */
-async function collectErrors(values) {
-  const errors = [];
-
-  for (const value of values) {
-    if (isPoison(value)) {
-      errors.push(...value.errors);
-    } else if (value && typeof value.then === 'function') {
-      try {
-        const resolved = await value;
-        // Check if resolved to a poison
-        if (isPoison(resolved)) {
-          errors.push(...resolved.errors);
-        }
-      } catch (err) {
-        // If the error is a PoisonError (from unwrapping a poison),
-        // extract its underlying errors
-        if (isPoisonError(err)) {
-          errors.push(...err.errors);
-        } else {
-          errors.push(err);
-        }
-      }
-    }
-  }
-
-  return deduplicateAndFlattenErrors(errors);
-}
 
 /**
  * Add poison markers to output buffer for handlers that would have been written
@@ -284,21 +25,25 @@ async function collectErrors(values) {
  * flattenBuffer can collect these errors.
  *
  * @param {Array} buffer - The output buffer array to add markers to
- * @param {PoisonedValue|Error} error - The poison value or error from failed condition (should already have position info)
+ * @param {PoisonedValue|Error} error - The poison value or error from failed condition
  * @param {Array<string>} handlerNames - Names of handlers (e.g., ['text', 'data'])
+ * @param {Object} errorContext - Context object with lineno, colno, errorContextString, and path
  */
-function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames) {
-  // Note: error parameter should already have position info from condition evaluation
-  // No additional position info available in this function's scope
-  //const poison = isPoison(errorOrPoison) ? errorOrPoison : createPoison(errorOrPoison);
+function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorContext = null) {
   const errors = (Array.isArray(errorOrErrors) ? errorOrErrors : [errorOrErrors]);
+
+  // Process errors with proper context if available
+  const processedErrors = errorContext ?
+    errors.map(err => handleError(err, errorContext.lineno, errorContext.colno,
+      errorContext.errorContextString, errorContext.path)) :
+    errors;
 
   // Add one marker per handler that would have been written to
   for (const handlerName of handlerNames) {
     const marker = {
       __cascadaPoisonMarker: true,  // Flag for detection in flattenBuffer
-      errors,         // Array of Error objects to collect
-      handler: handlerName,          // Which handler was intended (for debugging)
+      errors: processedErrors,       // Array of Error objects to collect (now with proper context)
+      handler: handlerName,        // Which handler was intended (for debugging)
     };
 
     buffer.push(marker);
@@ -2255,53 +2000,13 @@ function contextOrFrameLookupScriptAsync(context, frame, name) {
   return f ? val : context.lookupScriptModeAsync(name);
 }
 
-/**
- * Handle errors by adding template position information and path context.
- * Preserves PoisonError with multiple errors, adding path to each contained error.
- *
- * @param {Error} error - The error to handle
- * @param {number} lineno - Line number where error occurred
- * @param {number} colno - Column number where error occurred
- * @param {string} errorContextString - Context string for error message
- * @param {string} path - Template path (e.g., 'template.njk')
- * @returns {Error} Processed error with position and path information
- * @todo - merge TemplateError and PoisonError
- */
-function handleError(error, lineno, colno, errorContextString = null, path = null) {
-  // Special handling for PoisonError - preserve multiple errors
-  if (isPoisonError(error)) {
-    // Add path information to each contained error
-    if (lineno || path) {
-      // @todo - we probably shall not do this if there are multiple errors
-      error.errors = error.errors.map(err => {
-        return handleError(err, lineno, colno, errorContextString, path);
-      });
-    }
-    return error; // Return PoisonError with updated errors
-  }
-
-  // Regular error handling
-  if ('lineno' in error && error.lineno !== undefined) {
-    // Already has position info
-    /*if (path && !error.path && typeof error.Update === 'function') {
-      //does this happen?
-      error.Update(path);
-    }*/
-    return error;
-  } else {
-    // Wrap in RuntimeError
-    const wrappedError = new RuntimeError(error, lineno, colno, errorContextString, path);
-    return wrappedError;
-  }
-}
-
 function executeAsyncBlock(asyncFunc, astate, frame, cb, lineno, colno, context, errorContextString = null) {
   try {
     // 1. Invoke the async function to get the promise.
     const promise = asyncFunc(astate, frame);
 
     // 2. Attach our lifecycle handlers.
-    promise.catch(err => {
+    /* promise.catch(err => {
       // This .catch() will now reliably run before the .finally() below.
       try {
         const handledError = handleError(err, lineno, colno, errorContextString, context ? context.path : null);
@@ -2312,7 +2017,8 @@ function executeAsyncBlock(asyncFunc, astate, frame, cb, lineno, colno, context,
         throw cbError;
       }
       throw err;// maybe no need for this, as the return promise is never awaited, it's fire and forget
-    }).finally(() => {
+    })*/
+    promise.finally(() => {
       // 3. This is guaranteed to run *after* the .catch() handler has completed.
       astate.leaveAsyncBlock();
     });
@@ -2751,7 +2457,7 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate = fal
     frame.poisonBranchWrites(errors, asyncOptions.bodyWriteCounts);
   }
   if (asyncOptions.bodyHandlers && asyncOptions.bodyHandlers.length > 0) {
-    addPoisonMarkersToBuffer(buffer, errors, asyncOptions.bodyHandlers);
+    addPoisonMarkersToBuffer(buffer, errors, asyncOptions.bodyHandlers, asyncOptions.errorContext);
   }
 
   if (didIterate) {
@@ -2763,7 +2469,7 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate = fal
     frame.poisonBranchWrites(errors, asyncOptions.elseWriteCounts);
   }
   if (asyncOptions.elseHandlers && asyncOptions.elseHandlers.length > 0) {
-    addPoisonMarkersToBuffer(buffer, errors, asyncOptions.elseHandlers);
+    addPoisonMarkersToBuffer(buffer, errors, asyncOptions.elseHandlers, asyncOptions.errorContext);
   }
 }
 
@@ -3095,7 +2801,9 @@ module.exports = {
 
   // Poison value infrastructure
   PoisonedValue,
-  PoisonError: PoisonError,
+  PoisonError,
+  RuntimeError,
+
   createPoison,
   isPoison,
   isPoisonError,

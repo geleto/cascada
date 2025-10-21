@@ -257,7 +257,7 @@ module.exports = class CompileEmit {
       this.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
       if (handlerName) {
         // Add marker for handler-specific outputs
-        this.line(`  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer}, errors, [${JSON.stringify(handlerName)}]);`);
+        this.line(`  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer}, errors, [${JSON.stringify(handlerName)}], { lineno: ${positionNode.lineno}, colno: ${positionNode.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node, positionNode))}, path: context.path });`);
       } else {
         // No handler means structural operation (Block/Include returning buffer arrays)
         // These should still propagate the error for executeAsyncBlock to handle
@@ -312,7 +312,7 @@ module.exports = class CompileEmit {
       this.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
       if (handlerName) {
         // Handler-specific output - add poison marker to buffer
-        this.line(`  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer}, errors, [${JSON.stringify(handlerName)}]);`);
+        this.line(`  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer}, errors, [${JSON.stringify(handlerName)}], { lineno: ${positionNode.lineno}, colno: ${positionNode.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node, positionNode))}, path: context.path });`);
       } else {
         // Structural operation (Block/Include) - re-throw for executeAsyncBlock to handle
         this.line(`  throw e;`);

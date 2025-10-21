@@ -10,7 +10,8 @@ const tests = require('./tests');
 const globals = require('./globals');
 const { Obj, EmitterObj } = require('./object');
 const globalRuntime = require('./runtime');
-const { handleError, Frame, AsyncFrame, AsyncState } = globalRuntime;
+const { handleError } = require('./runtime-errors');
+const { Frame, AsyncFrame, AsyncState } = globalRuntime;
 const expressApp = require('./express-app');
 const scriptTranspiler = require('./script-transpiler');
 const DataHandler = require('./data-handler');
@@ -674,7 +675,8 @@ class Context extends Obj {
       if (name in this.ctx) {
         return this.ctx[name];
       } else {
-        return globalRuntime.createPoison(new Error(`Can not look up unknown variable/function: ${name}`));
+        const { createPoison } = require('./runtime-errors');
+        return createPoison(new Error(`Can not look up unknown variable/function: ${name}`));
       }
     }
   }
