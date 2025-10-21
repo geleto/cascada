@@ -267,6 +267,8 @@
 
       it('should handle poison in nested frame resolution', () => {
         const rootFrame = new AsyncFrame();
+        rootFrame.set('nested', 'initial', true);
+
         const childFrame = rootFrame.push();
         const grandChildFrame = childFrame.push();
 

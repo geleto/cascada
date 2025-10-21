@@ -56,7 +56,7 @@
             return 'Hi';
           }
         };
-        const template = `{{ infoWait(2) }}{% set _dummy = err(5) %}`;
+        const template = `{{ infoWait(2) }}{% set dummy = err(5) %}{{ dummy }}`;
         await expectAsyncError(() => env.renderTemplateString(template, cont), err => {
           expect(err.message).to.contain('Dummy error');
         });
@@ -71,7 +71,7 @@
             throw new Error('Failed to run operation');
           }
         };
-        const template = `{% set _dummy = run!('exp1-A', 10) %}`;
+        const template = `{% set dummy = run!('exp1-A', 10) %}{{ dummy }}`;
         await expectAsyncError(() => env.renderTemplateString(template, cont), err => {
           expect(err.message).to.contain('Failed to run operation');
         });

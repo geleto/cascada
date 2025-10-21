@@ -210,12 +210,12 @@
           };
 
           const template = `
-			{% set count = 0 %}
-			{% while getCondition() %}
-			{% set count = count + 1 %}
-			{% endwhile %}
-			Count: {{ count }}
-		`;
+            {% set count = 0 %}
+            {% while getCondition() %}
+              {% set count = count + 1 %}
+            {% endwhile %}
+            Count: {{ count }}
+          `;
 
           try {
             await env.renderTemplateString(template, context);

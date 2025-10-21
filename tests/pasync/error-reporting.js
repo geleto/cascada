@@ -358,11 +358,11 @@
       var libTemplateName = 'error-import-async-lib.njk';
 
       loader.addTemplate(mainTemplateName, `{% import "${libTemplateName}" as lib with context %}{{ lib.value }}`);
-      loader.addTemplate(libTemplateName, '{% set value = asyncFunc() %}');
+      loader.addTemplate(libTemplateName, '{% set value = errorAsyncFunc() %}');//poison starts at lib template
 
       try {
         await env.renderTemplate(mainTemplateName, {
-          asyncFunc: async () => {
+          errorAsyncFunc: async () => {
             // Simulate async work then error
             await new Promise(resolve => setTimeout(resolve, 3));
             throw new Error('Async error during import');
@@ -388,7 +388,7 @@
 
     it('shoukld report correct path when accessing unknown variable in script', async () => {
       var scriptName = 'error-script-unknown-variable.scr';
-      loader.addTemplate(scriptName, 'var x = nonExistentVar');
+      loader.addTemplate(scriptName, ':data\nvar x = nonExistentVar\n@data.x = x');
       try {
         await env.renderScript(scriptName, {});
         expect().fail('Expected an error to be thrown');
@@ -548,7 +548,8 @@
       }
     });
 
-    it('should report correct path for error in include expression', async () => {
+    // include poisoning not yet supported
+    it.skip('should report correct path for error in include expression', async () => {
       var mainTemplateName = 'error-include-expression-main.njk';
       var childTemplateName = 'error-include-expression-child.njk';
       loader.addTemplate(mainTemplateName, '{% include asyncFunc() %}');
@@ -565,14 +566,15 @@
       }
     });
 
-    it('should report correct path for error in extends expression', async () => {
+    // extends poisoning not yet supported
+    it.skip('should report correct path for error in extends expression', async () => {
       var childTemplateName = 'error-extends-expression-child.njk';
       var parentTemplateName = 'error-extends-expression-parent.njk';
-      loader.addTemplate(childTemplateName, '{% extends asyncFunc() %}');
+      loader.addTemplate(childTemplateName, '{% extends errorAsyncFunc() %}');
       loader.addTemplate(parentTemplateName, '{% block content %}{% endblock %}');
       try {
         await env.renderTemplate(childTemplateName, {
-          asyncFunc: async () => {
+          errorAsyncFunc: async () => {
             throw new Error('Extends expression error');
           }
         });

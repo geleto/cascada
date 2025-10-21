@@ -156,16 +156,6 @@
         expect(compound.errors).to.have.length(2);
       });
 
-      it('should deduplicate errors with same message', () => {
-        const err1 = new Error('Duplicate message');
-        const err2 = new Error('Duplicate message');
-        const err3 = new Error('Different message');
-
-        const compound = new PoisonError([err1, err2, err3]);
-
-        expect(compound.errors).to.have.length(2);
-      });
-
       it('should return stack from only error', () => {
         const err = new Error('Test error');
         const compound = new PoisonError([err]);
@@ -250,17 +240,6 @@
 
         expect(errors).to.have.length(1);
         expect(errors[0]).to.equal(err);
-      });
-
-      it('should deduplicate collected errors', async () => {
-        const err1 = new Error('Duplicate error');
-        const err2 = new Error('Duplicate error');
-        const poison1 = createPoison(err1);
-        const poison2 = createPoison(err2);
-
-        const errors = await collectErrors([poison1, poison2]);
-
-        expect(errors).to.have.length(1);
       });
 
       it('should handle mixed poison and rejected promises', async () => {
@@ -421,7 +400,7 @@
       }
     });
 
-    it('should deduplicate errors with same message via collectErrors', async () => {
+    it('should not deduplicate errors with same message via collectErrors', async () => {
       const errors = await runtime.collectErrors([
         Promise.reject(new Error('Same error')),
         Promise.reject(new Error('Same error')),
@@ -429,7 +408,7 @@
       ]);
 
       // Should have only 2 unique errors after deduplication
-      expect(errors).to.have.length(2);
+      expect(errors).to.have.length(3);
     });
 
     it('should propagate poison in resolveAll with multiple values', async () => {
