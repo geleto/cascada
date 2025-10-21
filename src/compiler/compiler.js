@@ -1186,10 +1186,9 @@ class Compiler extends CompilerBase {
     });
 
     this.emit.line('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
-    // Build the return statement based on whether the node is async
+
     let returnStatement;
     if (node.isAsync) {
-      // Async case: wait for all closures, handle errors, and return SafeString
       const errorCheck = `if (${err}) throw ${err};`;
       let bufferArgs = bufferId;
       if (this.scriptMode) {
@@ -1198,13 +1197,22 @@ class Compiler extends CompilerBase {
       if (node.focus) {
         bufferArgs += `, "${node.focus}"`;
       }
-      const safeStringCall = `runtime.newSafeStringAsync(runtime.flattenBuffer(${bufferArgs}))`;
 
-      returnStatement =
-        `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;
+      const flattenCall = `runtime.flattenBuffer(${bufferArgs})`;
+
+      // Template mode OR script mode with :text focus needs SafeString
+      const needsSafeString = !this.scriptMode || node.focus === 'text';
+      const safeStringCall = needsSafeString
+        ? `runtime.newSafeStringAsync(${flattenCall})`
+        : flattenCall;
+
+      returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;
     } else {
-      // Sync case: return SafeString directly
-      returnStatement = `new runtime.SafeString(${bufferId})`;
+      // Sync case
+      const needsSafeString = !this.scriptMode || node.focus === 'text';
+      returnStatement = needsSafeString
+        ? `new runtime.SafeString(${bufferId})`
+        : bufferId;
     }
 
     this.emit.line('return ' + returnStatement);
