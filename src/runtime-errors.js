@@ -162,14 +162,14 @@ function deduplicateAndFlattenErrors(errors) {
     // If it's a PoisonError, flatten its underlying errors
     if (isPoisonError(err)) {
       for (const flattenedErr of err.errors) {
-        const key = flattenedErr;
+        const key = (flattenedErr instanceof RuntimeError && flattenedErr.cause) ? flattenedErr.cause : flattenedErr;
         if (!seen.has(key)) {
           seen.set(key, true);
           result.push(flattenedErr);
         }
       }
     } else {
-      const key = err;//err.message || String(err);
+      const key = (err instanceof RuntimeError && err.cause) ? err.cause : err;
       if (!seen.has(key)) {
         seen.set(key, true);
         result.push(err);
