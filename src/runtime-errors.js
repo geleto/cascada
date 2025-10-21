@@ -152,6 +152,77 @@ class RuntimeError extends Error {
 }
 
 /**
+ * Wraps a Promise to add contextual error information the *first time* it rejects.
+ * - Does NOT attach a catch in the constructor, so global unhandled rejections still fire.
+ * - Adds context only when a rejection handler is actually invoked (then/catch/await).
+ * - Each chaining method returns a new RuntimePromise, preserving behavior through chains.
+ * - Requires handleError() to be idempotent so context is added only once per error.
+ */
+class RuntimePromise {
+  constructor(promise, errorContext) {
+    this.promise = Promise.resolve(promise);
+    this.errorContext = errorContext;
+  }
+
+  then(onFulfilled, onRejected) {
+    const wrappedOnRejected = onRejected && (err =>
+      onRejected(handleError(
+        err,
+        this.errorContext.lineno,
+        this.errorContext.colno,
+        this.errorContext.errorContextString,
+        this.errorContext.path
+      ))
+    );
+
+    const p = this.promise.then(onFulfilled, wrappedOnRejected);
+    return new RuntimePromise(p, this.errorContext);
+  }
+
+  catch(onRejected) {
+    const p = this.promise.catch(err =>
+      onRejected(handleError(
+        err,
+        this.errorContext.lineno,
+        this.errorContext.colno,
+        this.errorContext.errorContextString,
+        this.errorContext.path
+      ))
+    );
+    return new RuntimePromise(p, this.errorContext);
+  }
+
+  finally(onFinally) {
+    const p = this.promise.finally(onFinally);
+    return new RuntimePromise(p, this.errorContext);
+  }
+
+  get [Symbol.toStringTag]() { return 'Promise'; }
+
+  toPromise() { return this.promise; }
+
+  static resolve(value, ctx) {
+    return new RuntimePromise(Promise.resolve(value), ctx);
+  }
+
+  static reject(reason, ctx) {
+    return new RuntimePromise(Promise.reject(reason), ctx);
+  }
+}
+
+/**
+ * Execution context for error reporting.
+ */
+class ErrorContext {
+  constructor(lineno, colno, path, errorContextString) {
+    this.lineno = lineno;
+    this.colno = colno;
+    this.path = path;
+    this.errorContextString = errorContextString;
+  }
+}
+
+/**
  * Deduplicate errors by message and flatten any PoisonError objects.
  */
 function deduplicateAndFlattenErrors(errors) {
@@ -186,13 +257,18 @@ function deduplicateAndFlattenErrors(errors) {
  * Only adds position/path to errors that don't already have it.
  *
  * @param {Error|Error[]} errorOrErrors - Single error or array of errors
- * @param {number} lineno - Line number where error occurred (optional)
+ * @param {number|ErrorContext} lineno - Line number where error occurred (optional) or ErrorContext object
  * @param {number} colno - Column number where error occurred (optional)
  * @param {string} errorContextString - Context string for error message (optional)
  * @param {string} path - Template path (optional)
  * @returns {PoisonedValue} Poison value containing the error(s)
  */
 function createPoison(errorOrErrors, lineno = null, colno = null, errorContextString = null, path = null) {
+  // Handle ErrorContext object as second parameter
+  if (lineno && typeof lineno === 'object' && lineno.constructor && lineno.constructor.name === 'ErrorContext') {
+    const errorContext = lineno;
+    return createPoison(errorOrErrors, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+  }
   let errors = Array.isArray(errorOrErrors) ? errorOrErrors : [errorOrErrors];
 
   // If position or path info provided, add it to errors that don't already have it
@@ -313,6 +389,8 @@ module.exports = {
   PoisonedValue,
   PoisonError,
   RuntimeError,
+  RuntimePromise,
+  ErrorContext,
   createPoison,
   isPoison,
   isPoisonError,

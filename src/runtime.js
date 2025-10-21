@@ -1816,7 +1816,8 @@ function callWrapAsync(obj, name, context, args, errorContext) {
     const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
                    !Object.prototype.hasOwnProperty.call(context.ctx, name);
 
-    return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
+    const result = obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, args);
+    return result;
   } catch (err) {
     return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
   }

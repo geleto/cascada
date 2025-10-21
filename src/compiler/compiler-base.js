@@ -96,12 +96,13 @@ class CompilerBase extends Obj {
 
   _createErrorContext(node, positionNode) {
     positionNode = positionNode || node;
-    return {
-      lineno: positionNode.lineno,
-      colno: positionNode.colno,
-      errorContextString: this._generateErrorContext(node, positionNode),
-      path: this.templateName // At runtime, context.path will be used
-    };
+    const { ErrorContext } = require('../runtime-errors');
+    return new ErrorContext(
+      positionNode.lineno,
+      positionNode.colno,
+      this.templateName, // At runtime, context.path will be used
+      this._generateErrorContext(node, positionNode)
+    );
   }
 
   fail(msg, lineno, colno, node, positionNode) { // Added node and positionNode
