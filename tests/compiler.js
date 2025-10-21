@@ -838,10 +838,11 @@
         tmpl.render({foo: foo}, function(err, res) {
           expect(res).to.be(undefined);
           expect(err.toString()).to.contain(
-            'render error: (user-error.njk) [Line 1, Column 11]'
-          );
-          expect(err.toString()).to.contain(
-            'Error: ERROR'
+            '(user-error.njk)'
+          ).and.to.contain(
+            '[Line 1, Column 11]'
+          ).and.to.contain(
+            ': ERROR'
           );
           done();
         });

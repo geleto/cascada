@@ -372,9 +372,8 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         var result = capture :data
-          @data.value = "success"
           // This would cause an error if not handled
-          var invalid = someUndefinedFunction()
+          @data.value = someUndefinedFunction()
         endcapture
         @data.result.output = result
       `;
