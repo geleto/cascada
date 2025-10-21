@@ -265,18 +265,18 @@ class Compiler extends CompilerBase {
       } else {
         this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
       }
-      frame = this.emit.asyncBlockAddToBufferEnd(node, frame, positionNode);
+      frame = this.emit.asyncBlockAddToBufferEnd(node, frame, positionNode, 'text');
     } else {
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
-      frame = this.emit.asyncBlockAddToBufferBegin(node, frame, positionNode);
+      frame = this.emit.asyncBlockAddToBufferBegin(node, frame, positionNode, 'text');
       const errorContextJson2 = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
       if (node.isAsync) {
         this.emit(`await runtime.suppressValueAsync(${res}, ${autoescape} && env.opts.autoescape, ${errorContextJson2});`);
       } else {
         this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
       }
-      frame = this.emit.asyncBlockAddToBufferEnd(node, frame, positionNode);
+      frame = this.emit.asyncBlockAddToBufferEnd(node, frame, positionNode, 'text');
 
       this.emit.addScopeLevel();
     }
@@ -1690,7 +1690,7 @@ class Compiler extends CompilerBase {
         } else {
           this.emit(', env.opts.autoescape);\n');
         }
-        frame = this.emit.asyncBlockAddToBufferEnd(node, frame, child); // Pass Output node as op, child as pos
+        frame = this.emit.asyncBlockAddToBufferEnd(node, frame, child, 'text'); // Pass Output node as op, child as pos
       }
     });
   }

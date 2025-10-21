@@ -171,7 +171,13 @@
 
     it('should report correct path for error in caller block', async () => {
       var templateName = 'error-caller.njk';
-      loader.addTemplate(templateName, '{% macro wrapper() %}{{ caller() }}{% endmacro %}{% call wrapper() %}{{ nonExistentFunction() }}{% endcall %}');
+      loader.addTemplate(templateName,
+        `{% macro wrapper() %}
+          {{ caller() }}
+         {% endmacro %}
+         {% call wrapper() %}
+          {{ nonExistentFunction() }}
+         {% endcall %}`);
       try {
         await env.renderTemplate(templateName, {});
         expect().fail('Expected an error to be thrown');
