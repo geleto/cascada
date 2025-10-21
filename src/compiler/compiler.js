@@ -413,11 +413,26 @@ class Compiler extends CompilerBase {
 
     const branchPositions = [];
     const branchWriteCounts = [];
+    const branchHandlers = []; // Track handlers per branch
+    let catchPoisonPos;
 
-    // Emit switch statement
-    this.emit('switch (');
-    this._compileAwaitedExpression(node.expr, frame, false);
-    this.emit(') {');
+    if (this.asyncMode) {
+      // Add try-catch wrapper for error handling
+      this.emit('try {');
+      this.emit('const switchResult = ');
+      this._compileAwaitedExpression(node.expr, frame, false);
+      this.emit(';');
+      this.emit('');
+      // Note: awaited result cannot be a resolved PoisonedValue, so no check needed
+
+      // Emit switch statement
+      this.emit('switch (switchResult) {');
+    } else {
+      // Sync mode - no error handling needed
+      this.emit('switch (');
+      this._compileAwaitedExpression(node.expr, frame, false);
+      this.emit(') {');
+    }
 
     // Compile cases
     node.cases.forEach((c, i) => {
@@ -433,8 +448,19 @@ class Compiler extends CompilerBase {
         this.emit.asyncBlock(c, frame, false, (f) => {
           this.compile(c.body, f);
           branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
-        }, c.body); // Pass body as code position
+
+          // Collect handlers from this branch
+          if (this.asyncMode) {
+            branchHandlers.push(this._collectBranchHandlers(c.body));
+          }
+        }, c.body);; // Pass body as code position
         this.emit.line('break;');
+      } else {
+        // Empty case body (fall-through)
+        branchWriteCounts.push({});
+        if (this.asyncMode) {
+          branchHandlers.push(new Set());
+        }
       }
     });
 
@@ -449,10 +475,31 @@ class Compiler extends CompilerBase {
       this.emit.asyncBlock(node, frame, false, (f) => {
         this.compile(node.default, f);
         branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
+
+        // Collect handlers from default
+        if (this.asyncMode) {
+          branchHandlers.push(this._collectBranchHandlers(node.default));
+        }
       }, node.default); // Pass default as code position
+    } else {
+      // No default case - add empty handler placeholder for collection
+      // (branchPositions and branchWriteCounts intentionally not modified)
+      if (this.asyncMode) {
+        branchHandlers.push(new Set());
+      }
     }
 
-    this.emit('}');
+    this.emit('}'); // Close switch
+
+    if (this.asyncMode) {
+      // Add catch block to poison variables and handlers when switch expression fails
+      const errorCtx = this._createErrorContext(node, node.expr);
+      this.emit('} catch (e) {');
+      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorCtx.lineno}, ${errorCtx.colno}, "${errorCtx.errorContextString}", context.path);`);
+      catchPoisonPos = this.codebuf.length;
+      this.emit('');
+      this.emit('}'); // No re-throw - execution continues with poisoned vars
+    }
 
     // Combine writes from all branches
     const totalWrites = this._combineWriteCounts(branchWriteCounts);
@@ -480,6 +527,33 @@ class Compiler extends CompilerBase {
         this.emit.insertLine(pos, `frame.skipBranchWrites(${JSON.stringify(writesToSkip)});`);
       }
     });
+
+    // Fill in the poison handling code now that we have write counts and handlers
+    if (this.asyncMode) {
+      // Combine handlers from all branches
+      const allHandlers = new Set();
+      branchHandlers.forEach(handlers => {
+        handlers.forEach(h => allHandlers.add(h));
+      });
+
+      const hasVariables = Object.keys(totalWrites).length > 0;
+      const hasHandlers = allHandlers.size > 0;
+
+      if (hasVariables || hasHandlers) {
+        // Variable poisoning in catch block
+        if (hasVariables) {
+          this.emit.insertLine(catchPoisonPos,
+            `    frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
+        }
+
+        // Handler (buffer) poisoning in catch block
+        if (hasHandlers) {
+          const handlerArray = Array.from(allHandlers);
+          this.emit.insertLine(catchPoisonPos,
+            `    runtime.addPoisonMarkersToBuffer(${this.buffer}, contextualError, ${JSON.stringify(handlerArray)});`);
+        }
+      }
+    }
 
     // Use node.expr (passed earlier) for the end block
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, false, node.expr);
