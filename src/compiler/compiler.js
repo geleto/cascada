@@ -1128,7 +1128,7 @@ class Compiler extends CompilerBase {
       `function (${realNames.join(', ')}, astate) {`
     );
 
-    // START CHANGE: Wrap the entire body in withPath to fork the context
+    // Wrap the entire body in withPath to fork the context
     this.emit.line(`return runtime.withPath(this, "${this.templateName}", function() {`);
 
     if (!keepFrame) {
@@ -1185,18 +1185,31 @@ class Compiler extends CompilerBase {
       this.compile(node.body, currFrame);
     });
 
-    // *** THIS IS THE CRITICAL CODE THAT WAS MISSING ***
     this.emit.line('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
-    this.emit.line('return ' + (
-      node.isAsync ?
-        `astate.waitAllClosures().then(() => {if (${err}) throw ${err};` +
-        `return runtime.newSafeStringAsync(runtime.flattenBuffer(${bufferId}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));}).catch(error => Promise.reject(error));` :
-        `new runtime.SafeString(${bufferId})`
-    )
-    );
-    // *** END OF CRITICAL CODE ***
+    // Build the return statement based on whether the node is async
+    let returnStatement;
+    if (node.isAsync) {
+      // Async case: wait for all closures, handle errors, and return SafeString
+      const errorCheck = `if (${err}) throw ${err};`;
+      let bufferArgs = bufferId;
+      if (this.scriptMode) {
+        bufferArgs += ', context';
+      }
+      if (node.focus) {
+        bufferArgs += `, "${node.focus}"`;
+      }
+      const safeStringCall = `runtime.newSafeStringAsync(runtime.flattenBuffer(${bufferArgs}))`;
 
-    // END CHANGE: Close the withPath wrapper function
+      returnStatement =
+        `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;
+    } else {
+      // Sync case: return SafeString directly
+      returnStatement = `new runtime.SafeString(${bufferId})`;
+    }
+
+    this.emit.line('return ' + returnStatement);
+
+    // Close the withPath wrapper function
     this.emit.line('});'); // 1. Closes the withPath inner function
 
     // Now, close the outer function passed to makeMacro
