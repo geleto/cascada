@@ -187,6 +187,32 @@ class PoisonError extends Error {
 }
 ```
 
+### Proactive Error Context with `RuntimePromise`
+
+`RuntimePromise` is a lightweight promise wrapper that proactively attaches contextual information (e.g., file path, line number) to a promise. If the promise rejects, this context enriches the raw error before it is collected into a `PoisonedValue`.
+
+It works by wrapping any `onRejected` handler passed to its `.then()` or `.catch()` methods. On rejection, `RuntimePromise` intercepts the error, uses its stored `errorContext` to create a `RuntimeError` via the idempotent `handleError` utility, and then passes the enriched error to the rejection handler. This lazy interception avoids suppressing native "unhandled rejection" warnings.
+
+As the first line of defense, `RuntimePromise` guarantees that an error is stamped with its precise origin before being collected.
+
+```javascript
+// Simplified example of what the engine does
+function someAsyncOperation() {
+  const promise = realAsyncFunc(); // Returns a raw Promise
+  const context = getCurrentErrorContext(); // { lineno: 10, colno: 5, ... }
+  return new RuntimePromise(promise, context);
+}
+
+// Later, when the promise is awaited...
+try {
+  await someAsyncOperation();
+} catch (err) {
+  // `err` is now a `RuntimeError` with line 10, column 5, etc.,
+  // ready to be added to a PoisonedValue.
+  const poison = createPoison(err);
+}
+```
+
 ### Three Function Return Patterns
 
 **Pattern 1: Pure Synchronous Functions**
@@ -598,51 +624,47 @@ catch (err) {
 
 ### Bug #8: Delaying `handleError` Wrapping
 
-**The Problem:** An error is most useful when it points to its exact origin. If we catch a raw error and create a `PoisonedValue` from it without first adding context (line number, path), that specific origin information is lost. If we try to add context later, it's less accurate and can lead to the same underlying error being reported multiple times.
+**The Problem:** If we add context too late, the precise origin (line/col/path) is lost and duplicate, generic errors can appear.
 
-**❌ WRONG:**
+**❌ ANTI-PATTERN: Delayed Context Wrapping**
 ```javascript
 // in some deep function
 try {
-  const data = riskyOperation();
+  const data = await riskyOperation();
 } catch (err) {
-  // BUG: We create poison with a raw error. The specific line number
-  // of `riskyOperation` is now lost forever.
+  // Creating poison from a raw error loses the original location.
   return createPoison(err);
 }
-
-// ... later, in the main render loop ...
-if (isPoison(value)) {
-  // We try to add context here, but it's too late. This context is
-  // generic ("during render") not specific ("calling riskyOperation").
-  // If this happens in multiple places, we get duplicate errors.
-  const contextualPoison = createPoison(value.errors, ...genericContext);
-  throw new PoisonError(contextualPoison.errors);
-}
 ```
 
-**Why it fails:**
-- The most valuable context—the exact location of the original failure—is lost.
-- The raw error propagates, and different parts of the system may later wrap it with their own, less-specific context.
-- This results in multiple `RuntimeError` objects being created from the *same original error*, bloating the final `PoisonError` with redundant and confusing messages.
+**✅ CORRECT: Attach Context Where You Have It (two valid patterns)**
 
-**✅ CORRECT:**
+1) Awaiting at the call site → use try/catch + handleError
 ```javascript
-// in some deep function
-try {
-  const data = riskyOperation();
-} catch (err) {
-  // CORRECT: Handle the error IMMEDIATELY to stamp it with the precise location.
-  const handledError = handleError(err, lineno, colno, 'riskyOperation', path);
-  return createPoison(handledError);
+async function invokeAndUse() {
+  const ctx = getCurrentErrorContext(); // { lineno, colno, path, ... }
+  try {
+    const result = await realAsyncFunc();
+    return process(result);
+  } catch (err) {
+    const handled = handleError(err, ctx.lineno, ctx.colno, ctx.errorContextString, ctx.path);
+    return createPoison(handled);
+  }
 }
 ```
 
-**Why it's correct:**
-- `handleError` is used at the earliest possible moment, capturing the most accurate context available.
-- `handleError` is idempotent; it wraps a raw error but will not re-wrap an error that already has location information. This is critical.
-- This pattern guarantees that a single error source results in a single, precisely-located error in the final `PoisonError`. It stops error duplication before it starts.
-- **Rule of Thumb**: Any `catch` block that creates a new `PoisonedValue` from a caught error should almost always call `handleError` on that error first.
+2) Returning a promise immediately → wrap with RuntimePromise so if it rejects the error context is added
+```javascript
+function invokeAndReturn() {
+  const promise = realAsyncFunc();
+  const errorContext = getCurrentErrorContext();
+  return new RuntimePromise(promise, errorContext);
+}
+```
+
+Rule of thumb:
+- If you await where you know the context, use try/catch + handleError.
+- If you return a promise without awaiting, return a RuntimePromise with that context.
 
 ---
 
