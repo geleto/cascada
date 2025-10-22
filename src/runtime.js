@@ -1633,7 +1633,11 @@ function memberLookupAsync(obj, val, errorContext) {
   }
 
   // No errors - proceed with lookup
-  return memberLookup(obj, val);
+  const result = memberLookup(obj, val);
+  if (result && typeof result.then === 'function') {
+    return new RuntimePromise(result, errorContext);
+  }
+  return result;
 }
 
 async function _memberLookupAsyncComplex(obj, val, errorContext) {
@@ -1721,6 +1725,9 @@ function memberLookupScriptAsync(obj, val, errorContext) {
     return (...args) => obj[val](...args);//use obj lookup so that 'this' binds correctly
   }
 
+  if (value && typeof value.then === 'function') {
+    return new RuntimePromise(value, errorContext);
+  }
   return value;
 }
 
