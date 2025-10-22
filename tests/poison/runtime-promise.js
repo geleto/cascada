@@ -618,15 +618,15 @@
           return Promise.reject(new Error('Capture data failed'));
         });
 
-        const template = `
-        {% set result = capture %}
-          {{ asyncData() }}
-        {% endcapture %}
-        {{ result }}
+        const script = `
+        var result = capture
+          @text(asyncData())
+        endcapture
+        @text(result)
       `;
 
         try {
-          await env.renderTemplateString(template);
+          await env.renderScriptString(script);
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -756,10 +756,10 @@
 
       it('should not affect sequential synchronous operations', async () => {
         const context = {
-          db: { connection: 'connected' }
+          db: { connection: () => 'connected' }
         };
 
-        const result = await env.renderTemplateString('{{ db!.connection }}', context);
+        const result = await env.renderTemplateString('{{ db!.connection() }}', context);
         expect(result).to.equal('connected');
       });
 
