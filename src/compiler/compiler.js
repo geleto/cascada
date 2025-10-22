@@ -599,11 +599,7 @@ class Compiler extends CompilerBase {
       this._compileAwaitedExpression(node.cond, frame, false);
       this.emit(';');
       this.emit('');
-      // awaited result can not be a resolved poison value
-      /*this.emit('if (runtime.isPoison(condResult)) {');
-      poisonCheckPos = this.codebuf.length;
-      this.emit('');
-      this.emit('} else if (condResult) {');*/
+
       this.emit('if (condResult) {');
 
       trueBranchCodePos = this.codebuf.length;

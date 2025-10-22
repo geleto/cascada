@@ -1662,7 +1662,15 @@ async function _memberLookupAsyncComplex(obj, val, errorContext) {
       return resolvedVal;
     }
 
-    return memberLookup(resolvedObj, resolvedVal);
+    const result = memberLookup(resolvedObj, resolvedVal);
+
+    // Wrap promise results to preserve error context
+    // This handles: 1) properties that are promises, 2) getters that return promises
+    if (result && typeof result.then === 'function') {
+      return new RuntimePromise(result, errorContext);
+    }
+
+    return result;
   } catch (err) {
     if (isPoisonError(err)) {
       return createPoison(err.errors);
@@ -1744,7 +1752,15 @@ async function _memberLookupScriptAsyncComplex(obj, val, errorContext) {
 
     // The call to memberLookupScript can throw a native TypeError if resolvedObj is null/undefined.
     // This try/catch block will handle it and enrich the error with context.
-    return memberLookupScript(resolvedObj, resolvedVal);
+    const result = memberLookupScript(resolvedObj, resolvedVal);
+
+    // Wrap promise results to preserve error context
+    // This handles: 1) properties that are promises, 2) getters that return promises
+    if (result && typeof result.then === 'function') {
+      return new RuntimePromise(result, errorContext);
+    }
+
+    return result;
   } catch (err) {
     // If the error is already a PoisonError, propagate it.
     if (isPoisonError(err)) {
@@ -1892,7 +1908,14 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext) {
     const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
                    !Object.prototype.hasOwnProperty.call(context.ctx, name);
 
-    return obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, resolvedArgs);
+    const result = obj.apply((obj.isMacro || isGlobal) ? context : context.ctx, resolvedArgs);
+
+    // Wrap promise results to preserve error context
+    if (result && typeof result.then === 'function') {
+      return new RuntimePromise(result, errorContext);
+    }
+
+    return result;
   } catch (err) {
     return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
   }
@@ -2666,6 +2689,12 @@ async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey, error
       throw new PoisonError(result.errors);
     }
 
+    // Wrap promise results to preserve error context
+    // Sequential operations must also preserve context for async property access
+    if (result && typeof result.then === 'function') {
+      return new RuntimePromise(result, errorContext);
+    }
+
     return result;
   } catch (err) {
     // Ensure lock is poisoned on any error
@@ -2735,6 +2764,12 @@ async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey,
     if (isPoison(result)) {
       frame.set(nodeLockKey, result, true);
       throw new PoisonError(result.errors);
+    }
+
+    // Wrap promise results to preserve error context
+    // Sequential operations must also preserve context for async property access
+    if (result && typeof result.then === 'function') {
+      return new RuntimePromise(result, errorContext);
     }
 
     return result;
