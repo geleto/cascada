@@ -51,7 +51,10 @@
           });
         });
 
-        const template = `{{ delayedReject() }}`;
+        const template = `
+        {% set result = delayedReject() %}
+        {{ result }}
+      `;
 
         try {
           await env.renderTemplateString(template, {});
@@ -61,8 +64,8 @@
           expect(err.errors[0].message).to.contain('Delayed async error');
 
           // CRITICAL: These assertions will FAIL without RuntimePromise fix
-          expect(err.errors[0].lineno).to.be.greaterThan(0);
-          expect(err.errors[0].colno).to.be.greaterThan(-1);
+          expect(err.errors[0].lineno).to.equal(2); // Line with delayedReject()
+          expect(err.errors[0].colno).to.be.greaterThan(0);
           // Without fix: lineno/colno will be undefined or incorrect
         }
       });
@@ -119,7 +122,10 @@
           };
         });
 
-        const template = `{{ getUser().getProfile() }}`;
+        const template = `
+        {% set result = getUser().getProfile() %}
+        {{ result }}
+      `;
 
         try {
           await env.renderTemplateString(template);
@@ -127,7 +133,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Profile load failed');
-          expect(err.errors[0].lineno).to.be.greaterThan(0);
+          expect(err.errors[0].lineno).to.equal(2); // Line with getUser().getProfile()
         }
       });
 
@@ -168,7 +174,10 @@
           }
         };
 
-        const template = `{{ user.profile }}`;
+        const template = `
+        {% set result = user.profile %}
+        {{ result }}
+      `;
 
         try {
           await env.renderTemplateString(template, context);
@@ -178,7 +187,7 @@
           expect(err.errors[0].message).to.contain('Profile promise rejected');
 
           // CRITICAL: Without RuntimePromise fix, these will fail
-          expect(err.errors[0].lineno).to.equal(1);
+          expect(err.errors[0].lineno).to.equal(2); // Line with user.profile
           expect(err.errors[0].colno).to.be.greaterThan(0);
         }
       });
@@ -203,7 +212,10 @@
           user: new User('Alice')
         };
 
-        const template = `{{ user.asyncProfile }}`;
+        const template = `
+        {% set result = user.asyncProfile %}
+        {{ result }}
+      `;
 
         try {
           await env.renderTemplateString(template, context);
@@ -211,7 +223,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Async profile getter failed');
-          expect(err.errors[0].lineno).to.equal(1);
+          expect(err.errors[0].lineno).to.equal(2); // Line with user.asyncProfile
         }
       });
 
@@ -225,7 +237,10 @@
           }
         };
 
-        const template = `{{ data.user.settings }}`;
+        const template = `
+        {% set result = data.user.settings %}
+        {{ result }}
+      `;
 
         try {
           await env.renderTemplateString(template, context);
@@ -233,7 +248,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Settings failed');
-          expect(err.errors[0].lineno).to.equal(1);
+          expect(err.errors[0].lineno).to.equal(2); // Line with data.user.settings
         }
       });
 
@@ -401,7 +416,10 @@
         };
 
         // Using ! for sequential access
-        const template = `{{ db!.connection() }}`;
+        const template = `
+        {% set result = db!.connection() %}
+        {{ result }}
+      `;
 
         try {
           await env.renderTemplateString(template, context);
@@ -411,7 +429,7 @@
           expect(err.errors[0].message).to.contain('DB connection failed');
 
           // CRITICAL: Sequential operations must preserve context too
-          expect(err.errors[0].lineno).to.equal(1);
+          expect(err.errors[0].lineno).to.equal(2); // Line with db!.connection()
           expect(err.errors[0].colno).to.be.greaterThan(0);
         }
       });
@@ -427,7 +445,10 @@
           db: new Database()
         };
 
-        const template = `{{ db!.asyncConnection() }}`;
+        const template = `
+        {% set result = db!.asyncConnection() %}
+        {{ result }}
+      `;
 
         try {
           await env.renderTemplateString(template, context);
@@ -435,7 +456,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Sequential connection failed');
-          expect(err.errors[0].lineno).to.equal(1);
+          expect(err.errors[0].lineno).to.equal(2); // Line with db!.asyncConnection()
         }
       });
 
@@ -448,7 +469,10 @@
           }
         };
 
-        const template = `{{ api.client!.session() }}`;
+        const template = `
+        {% set result = api.client!.session() %}
+        {{ result }}
+      `;
 
         try {
           await env.renderTemplateString(template, context);
@@ -456,7 +480,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Session init failed');
-          expect(err.errors[0].lineno).to.equal(1);
+          expect(err.errors[0].lineno).to.equal(2); // Line with api.client!.session()
         }
       });
 
@@ -468,7 +492,8 @@
         };
 
         const template = `
-        {% for item in service!.items() %}
+        {% set items = service!.items() %}
+        {% for item in items %}
           {{ item }}
         {% endfor %}
       `;
@@ -479,7 +504,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Sequential items failed');
-          expect(err.errors[0].lineno).to.equal(2);
+          expect(err.errors[0].lineno).to.equal(2); // Line with service!.items()
         }
       });
     });
@@ -731,6 +756,69 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('While condition failed');
+        }
+      });
+
+      it('should only report error from first ! operation when both are poisoned', async () => {
+        // Create a context where both operations would fail
+        const context = {
+          service: {
+            firstOp: () => Promise.reject(new Error('First operation failed')),
+            secondOp: () => Promise.reject(new Error('Second operation failed'))
+          }
+        };
+
+        const template = `
+        {% set result1 = service!.firstOp() %}
+        {% set result2 = service!.secondOp() %}
+        {{ result1 }} {{ result2 }}
+      `;
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+
+          // Should only have one error - from the first operation
+          expect(err.errors.length).to.equal(1);
+          expect(err.errors[0].message).to.contain('First operation failed');
+          expect(err.errors[0].lineno).to.equal(2); // Line with service!.firstOp()
+
+          // Should NOT contain error from second operation
+          expect(err.errors[0].message).to.not.contain('Second operation failed');
+        }
+      });
+
+      it('should only report error from first ! operation in script when both are poisoned', async () => {
+        // Create a context where both operations would fail
+        const context = {
+          service: {
+            firstOp: () => Promise.reject(new Error('First script operation failed')),
+            secondOp: () => Promise.reject(new Error('Second script operation failed'))
+          }
+        };
+
+        const script = `
+        var result1 = service!.firstOp()
+        var result2 = service!.secondOp()
+        @data.result1 = result1
+        @data.result2 = result2
+      `;
+
+        try {
+          await env.renderScriptString(script, context, { output: 'data' });
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+
+          // Should only have one error - from the first operation
+          expect(err.errors.length).to.equal(1);
+          expect(err.errors[0].message).to.contain('First script operation failed');
+          expect(err.errors[0].lineno).to.equal(2); // Line with service!.firstOp()
+
+          // Should NOT contain error from second operation
+          expect(err.errors[0].message).to.not.contain('Second script operation failed');
         }
       });
     });
