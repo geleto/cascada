@@ -55,7 +55,7 @@ class Tokenizer {
     this.str = str;
     this.index = 0;
     this.len = str.length;
-    this.lineno = 1;
+    this.lineno = 0;
     this.colno = 0;
 
     this.in_code = false;

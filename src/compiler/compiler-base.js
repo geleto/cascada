@@ -98,7 +98,7 @@ class CompilerBase extends Obj {
     positionNode = positionNode || node;
     const { ErrorContext } = require('../runtime-errors');
     return new ErrorContext(
-      positionNode.lineno,
+      positionNode.lineno + 1,
       positionNode.colno,
       this.templateName, // At runtime, context.path will be used
       this._generateErrorContext(node, positionNode)
