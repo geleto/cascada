@@ -319,6 +319,10 @@
     });
 
     // include poisoning not yet supported
+    // include imports missing template
+    // For templates this is easy - we know to poison the text output
+    // @todo - make a script version poisoning @data
+    // include "missing.njk" modifies @data
     it.skip('should report correct path for error when template loading fails', async () => {
       var mainTemplateName = 'error-template-load-main.njk';
       var missingTemplate = 'missing-template.njk';

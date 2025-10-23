@@ -169,9 +169,72 @@
       }
     });
 
-    // Replaces: 'iterateAsyncSequential - error collection' -> 'should continue iteration after finding error'
-    // @todo - convert to script and use @data for a separate test
-    // @todo - in this test processed shall be poisoned (convert to script)
+    it('should poison a simple sequential path', async () => {
+      const context = {
+        processed: [],
+        async errorFunc() {
+          throw new Error('Transient error');
+        },
+      };
+      const template = `
+        {%- do processed!.push(errorFunc()) -%}
+        {{- processed -}}`;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(context.processed).to.eql(['A', 'B']);
+      }
+    });
+
+    it('should poison sequential path', async () => {
+      const context = {
+        processed: [],
+        async errorFunc() {
+          throw new Error('Transient error');
+        },
+      };
+      const template = `
+        {%- do processed!.push('A') -%}
+        {%- do processed!.push(errorFunc()) -%}
+        {%- do processed!.push('B') -%}
+        {{- processed -}}`;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(context.processed).to.eql(['A', 'B']);
+      }
+    });
+
+    it('should poison sequential path from loop', async () => {
+      const context = {
+        processed: [],
+        async *myGenerator() {
+          yield 'A';
+          yield new Error('Transient error');
+          yield 'B';
+        }
+      };
+      const template = `
+        {% for item in myGenerator() %}
+          {% do processed!.push(item) %}
+        {% endfor %}
+        {{ processed }}`;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+      }
+    });
+
+    //@todo - is error not yet implemented
     it.skip('should continue processing valid items after a poison value is yielded', async () => {
       const context = {
         processed: [],
@@ -181,15 +244,16 @@
           yield 'B';
         }
       };
-      const template = `{% for item in myGenerator() %}{% do processed!.push(item) }}{% endfor %}`;
+      const template = `
+        {% for item in myGenerator() %}
+          {% item is not error %}
+            {% do processed!.push(item) %}
+          {% endif %}
+        {% endfor %}
+        {{ processed[1] }}:{{ processed[0] }}`;
 
-      try {
-        await env.renderTemplateString(template, context);
-        expect().fail('Render should have thrown a PoisonError');
-      } catch (err) {
-        expect(isPoisonError(err)).to.be(true);
-        expect(context.processed).to.eql(['A', 'B']);
-      }
+      const result = await env.renderTemplateString(template, context);
+      expect(result).to.equal('B:A');
     });
 
     // TODO - sequential side-effect access is not supported yet
