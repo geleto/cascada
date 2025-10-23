@@ -1928,55 +1928,6 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext) {
   }
 }
 
-//@todo - deprecate, the sequencedMemberLookupAsync of the FunCall path lookupVal/symbol should handle the frame lock release
-async function sequencedCallWrap(func, funcName, context, args, frame, sequenceLockKey, errorContext) {
-  return runSequenced(frame, sequenceLockKey, errorContext, {
-    fastPath() {
-      // FAST PATH: sync-poison in func/args (no awaits)
-      const errs = [];
-      if (isPoison(func)) errs.push(...func.errors);
-      for (const a of args) if (isPoison(a)) errs.push(...a.errors);
-      return errs.length ? createPoison(errs) : null;
-    },
-    async runOp() {
-      const errors = [];
-
-      // func may be a promise; if it rejects, collect with context
-      if (func && typeof func.then === 'function') {
-        try { func = await func; }
-        catch (err) {
-          errors.push(...(isPoisonError(err)
-            ? err.errors
-            : [handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path)]));
-        }
-      }
-
-      // collect arg errors deterministically
-      const argErrors = await collectErrors(args);
-      if (argErrors.length) errors.push(...argErrors);
-
-      if (errors.length) throw new PoisonError(errors);
-
-      // call (sync-first hybrid)
-      const result = callWrapAsync(func, funcName, context, args, errorContext);
-
-      if (isPoison(result)) throw new PoisonError(result.errors);
-
-      if (result && typeof result.then === 'function') {
-        try { return await result; }
-        catch (err) {
-          throw new PoisonError(isPoisonError(err)
-            ? err.errors
-            : [handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path)]);
-        }
-      }
-
-      return result;
-    }
-  });
-}
-
-
 //returns undefined if the variable is not found
 function contextOrFrameLookup(context, frame, name) {
   var val = frame.lookup(name);
@@ -2572,123 +2523,85 @@ function awaitSequenceLock(frame, lockKeyToAwait) {
   }
 }
 
-// Reusable runner for any "!-locked" operation
-async function runSequenced(frame, lockKey, errorContext, { fastPath, runOp }) {
-  let terminalPoison = null; // null => release (true), otherwise keep this poison
-
+/**
+ * Execute an operation with sequence lock coordination.
+ *
+ * Optimized to avoid unnecessary microtask scheduling:
+ * - Only awaits lock if it's actually a promise
+ * - Only awaits result if operation is async
+ *
+ * @param {AsyncFrame} frame - The async frame
+ * @param {string} lockKey - The lock variable name (e.g., "!processed")
+ * @param {Function} operation - The operation to execute (may be sync or async)
+ * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
+ * @returns {Promise} Result of the operation (always returns promise due to async function)
+ */
+async function withSequenceLock(frame, lockKey, operation, errorContext = null) {
   try {
-    // 1) Wait for the lock; if poisoned, this REJECTS (never returns a PoisonedValue)
-    await awaitSequenceLock(frame, lockKey); // may throw; handled below
+    // Get lock state (undefined, Promise, or PoisonedValue)
+    const lockPromise = awaitSequenceLock(frame, lockKey);
 
-    // 2) FAST PATH (sync-only checks; no awaits, may set terminalPoison and throw)
-    if (fastPath) {
-      const p = fastPath();
-      if (p) {                    // if it returned a PoisonedValue
-        terminalPoison = p;       // keep first poison
-        throw new PoisonError(p.errors);
+    if (lockPromise) {
+      // Early return if lock is poisoned
+      if (isPoison(lockPromise)) {
+        frame.set(lockKey, lockPromise, true);//lock already poisoned
+        return lockPromise;
+      }
+
+      // Wait for lock if it's held by another operation
+      if (typeof lockPromise.then === 'function') {
+        await lockPromise;//may throw an error (does this happen, lock is either poison or true)
       }
     }
 
-    // 3) Main async op (can await, collect errors, etc.)
-    return await runOp();
-
-  } catch (err) {
-    // Keep “first poison wins”
-    if (!terminalPoison) {
-      const current = frame.lookup(lockKey);
-      terminalPoison = isPoison(current)
-        ? current
-        : createPoison(
-          isPoisonError(err)
-            ? err.errors
-            : [errorContext
-              ? handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path)
-              : err]
-        );
+    // Execute the operation
+    let result = operation();
+    if (isPoison(result)) {
+      frame.set(lockKey, result, true);//poison the lock
+      return result;
     }
-    throw err;
-  } finally {
-    // Single write point: either poison or release
-    frame.set(lockKey, terminalPoison ?? true, true);
+
+    // Await only if promise and not poison(synchronous operations can return poison)
+    if (result && typeof result.then === 'function') {
+      result = await result;//may throw an error
+    }
+    frame.set(lockKey, true, true);//successfully acquired the lock
+    return result;
+  } catch (err) {
+    // Only reached if operation failed (not lock wait)
+    const poison = createPoison(err, errorContext);//poison the lock
+    frame.set(lockKey, poison, true);
+    return poison;
   }
+}
+
+//@todo - deprecate, the sequencedMemberLookupAsync of the FunCall path lookupVal/symbol should handle the frame lock release
+async function sequencedCallWrap(func, funcName, context, args, frame, lockKey, errorContext) {
+  return withSequenceLock(frame, lockKey, () =>
+    callWrapAsync(func, funcName, context, args, errorContext), errorContext
+  );
 }
 
 
 // Called in place of contextOrFrameLookup when the path has a sequence lock on it
-async function sequencedContextLookup(context, frame, name, nodeLockKey) {
-  return runSequenced(frame, nodeLockKey, /*no ctx*/ null, {
-    fastPath() {
-      // FAST PATH: symbol lookup is sync; if it returns poison, short-circuit
-      const res = contextOrFrameLookup(context, frame, name);
-      return isPoison(res) ? res : null;
-    },
-    async runOp() {
-      // No async work here—fast path already checked sync poison
-      return contextOrFrameLookup(context, frame, name);
-    }
-  });
+async function sequencedContextLookup(context, frame, name, lockKey) {
+  return withSequenceLock(frame, lockKey, () =>
+    contextOrFrameLookup(context, frame, name)
+  );
 }
 
-
-
 // Called in place of memberLookupAsync when the path has a sequence lock on it
-async function sequencedMemberLookupAsync(frame, target, key, nodeLockKey, errorContext) {
-  return runSequenced(frame, nodeLockKey, errorContext, {
-    fastPath() {
-      // FAST PATH: sync-poison on inputs
-      const errs = [];
-      if (isPoison(target)) errs.push(...target.errors);
-      if (isPoison(key))    errs.push(...key.errors);
-      if (errs.length) return createPoison(errs);
-      return null;
-    },
-    async runOp() {
-      // Collect async errors deterministically
-      const errors = await collectErrors([target, key]);
-      if (errors.length) throw new PoisonError(errors);
-
-      const [resolvedTarget, resolvedKey] = await resolveDuo(target, key);
-
-      // memberLookup is sync; may yield poison synchronously
-      const result = memberLookup(resolvedTarget, resolvedKey);
-      if (isPoison(result)) throw new PoisonError(result.errors);
-
-      // If promise, wrap/await to preserve context
-      if (result && typeof result.then === 'function') {
-        return new RuntimePromise(result, errorContext);
-      }
-
-      return result;
-    }
-  });
+async function sequencedMemberLookupAsync(frame, target, key, lockKey, errorContext) {
+  return withSequenceLock(frame, lockKey, () =>
+    memberLookupAsync(target, key, errorContext), errorContext
+  );
 }
 
-
 // Called in place of memberLookupAsync when the path has a sequence lock on it
-async function sequencedMemberLookupScriptAsync(frame, target, key, nodeLockKey, errorContext) {
-  return runSequenced(frame, nodeLockKey, errorContext, {
-    fastPath() {
-      const errs = [];
-      if (isPoison(target)) errs.push(...target.errors);
-      if (isPoison(key))    errs.push(...key.errors);
-      if (errs.length) return createPoison(errs);
-      return null;
-    },
-    async runOp() {
-      const errors = await collectErrors([target, key]);
-      if (errors.length) throw new PoisonError(errors);
-
-      const [resolvedTarget, resolvedKey] = await resolveDuo(target, key);
-
-      const result = memberLookupScript(resolvedTarget, resolvedKey); // may throw natively; upstream catches & stamps
-      if (isPoison(result)) throw new PoisonError(result.errors);
-
-      if (result && typeof result.then === 'function') {
-        return new RuntimePromise(result, errorContext);
-      }
-      return result;
-    }
-  });
+async function sequencedMemberLookupScriptAsync(frame, target, key, lockKey, errorContext) {
+  return withSequenceLock(frame, lockKey, () =>
+    memberLookupScriptAsync(target, key, errorContext), errorContext
+  );
 }
 
 
