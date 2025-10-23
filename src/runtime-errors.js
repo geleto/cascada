@@ -253,23 +253,27 @@ function deduplicateAndFlattenErrors(errors) {
 
 /**
  * Create a poison value from one or more errors, optionally adding position and path info.
+ * If any of the errors contain position info, it will be preserved.
  * Preserves existing position info in errors - never overwrites lineno, colno, or path.
  * Only adds position/path to errors that don't already have it.
  *
- * @param {Error|Error[]} errorOrErrors - Single error or array of errors
+ * @param {Error|Error[]} errors - Single error or array of errors
  * @param {number|ErrorContext} lineno - Line number where error occurred (optional) or ErrorContext object
  * @param {number} colno - Column number where error occurred (optional)
  * @param {string} errorContextString - Context string for error message (optional)
  * @param {string} path - Template path (optional)
  * @returns {PoisonedValue} Poison value containing the error(s)
  */
-function createPoison(errorOrErrors, lineno = null, colno = null, errorContextString = null, path = null) {
+function createPoison(errors/* or 1 error */, lineno = null, colno = null, errorContextString = null, path = null) {
   // Handle ErrorContext object as second parameter
-  if (lineno && typeof lineno === 'object' && lineno.constructor && lineno.constructor.name === 'ErrorContext') {
-    const errorContext = lineno;
-    return createPoison(errorOrErrors, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+  if (lineno && typeof lineno === 'object') {
+    const errorContext = new ErrorContext(lineno.lineno, lineno.colno, lineno.errorContextString, lineno.path);
+    return createPoison(errors, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
   }
-  let errors = Array.isArray(errorOrErrors) ? errorOrErrors : [errorOrErrors];
+
+  if (!Array.isArray(errors)) {
+    errors = isPoisonError(errors) ? errors.errors : [errors];
+  }
 
   // If position or path info provided, add it to errors that don't already have it
   if (lineno !== null || colno !== null || errorContextString !== null || path !== null) {
