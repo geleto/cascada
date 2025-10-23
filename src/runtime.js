@@ -2550,7 +2550,7 @@ async function withSequenceLock(frame, lockKey, operation, errorContext = null) 
 
       // Wait for lock if it's held by another operation
       if (typeof lockPromise.then === 'function') {
-        await lockPromise;//may throw an error (does this happen, lock is either poison or true)
+        await lockPromise;//may throw an error? (does this happen, lock is either poison or true)
       }
     }
 
@@ -2563,12 +2563,12 @@ async function withSequenceLock(frame, lockKey, operation, errorContext = null) 
 
     // Await only if promise and not poison(synchronous operations can return poison)
     if (result && typeof result.then === 'function') {
-      result = await result;//may throw an error
+      result = await result;//may throw an error?
     }
     frame.set(lockKey, true, true);//successfully acquired the lock
     return result;
   } catch (err) {
-    // Only reached if operation failed (not lock wait)
+    // Only reached if operation/lock await failed
     const poison = createPoison(err, errorContext);//poison the lock
     frame.set(lockKey, poison, true);
     return poison;
