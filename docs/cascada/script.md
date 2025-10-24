@@ -1115,25 +1115,42 @@ This model is designed for concurrency. When an operation in one part of your sc
 
 ### The Core Mechanism: Error Propagation
 
-Once an Error Value is created, it automatically "poisons" any subsequent operation that depends on it. This is called **error propagation**.
+Once an Error Value is created, it automatically spreads to any dependent operation or variable — this process is known as **error propagation**.
 
-*   **Expressions:** An expression involving an Error Value immediately resolves to that error without evaluating the other parts.
-    ```javascript
-    var x = myError + (2 * 10) // The result is myError, (2 * 10) is not calculated
-    ```
-*   **Function Calls:** A function call with an Error Value as an argument is never actually executed. It returns the Error Value immediately.
-    ```javascript
-    var result = someFunction(arg1, myError) // someFunction is not called
-    ```
-*   **Loops:** A loop over an Error Value will not execute its body.
-    ```javascript
-    for item in myErrorCollection // The loop body is skipped entirely
-      // ...
-    endfor
-    ```
-*   **Conditionals:** For an `if` statement with an Error Value, neither the `if` nor the `else` block is executed.
+* **Expressions:**
+  If any part of an expression is an error, the entire expression immediately evaluates to that same error. Other operands are not evaluated.
 
-This propagation happens for both errors returned from functions and for errors caused by expressions, such as dividing by zero or accessing a property on a `none` value.
+  ```javascript
+  var total = myError + 5 // total becomes myError
+  ```
+
+* **Function Calls:**
+  If an Error Value is passed as an argument, the function is skipped entirely, and the call simply returns that error.
+
+  ```javascript
+  var result = processData(myError) // processData is never called
+  ```
+
+* **Loops:**
+  A loop whose iterable is an Error Value will not execute its body.
+
+  ```javascript
+  for item in myErrorList
+    // skipped entirely
+  endfor
+  ```
+
+* **Conditionals:**
+  If a conditional test evaluates to an Error Value, neither the `if` nor `else` branch runs. In addition, the error propagates to **all variables modified by either branch** and to **any output handlers** those branches write to.
+
+* **Output Handlers:**
+  If an Error Value is written to an output handler (such as `@data` or `@text`), that handler becomes **poisoned**, and the **return value** of the current script, macro, or capture block becomes an **Error Value** instead of normal output.
+
+* **Sequential Side-Effect Paths:**
+  If a call in a **side-effect sequence** (`!path`) fails, that path becomes **poisoned**. Any later operations using the same `!path` will instantly yield an Error Value rather than executing.
+
+This mechanism ensures that once an operation fails, all dependent results and outputs reflect that failure, keeping data integrity consistent across parallel and sequential execution flows.
+
 
 ### Anatomy of an Error Object
 
