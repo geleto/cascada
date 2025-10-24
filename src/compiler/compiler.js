@@ -1833,8 +1833,12 @@ class Compiler extends CompilerBase {
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
 
     if (this.asyncMode) {
+      // NEW: Pre-declaration pass
+      const sequenceLocks = this.sequential.collectSequenceLocks(node);
+      this.sequential.preDeclareSequenceLocks(frame, sequenceLocks);
+
       this.async.propagateIsAsync(node);
-      this.sequential._declareSequentialLocks(node, frame);
+      // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
     }
 
     this.emit.funcBegin(node, 'root');

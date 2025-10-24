@@ -401,4 +401,102 @@ module.exports = class CompileSequential {
     // No valid sequence marker ('!') found according to the rules.
     return null;
   }
+
+  /**
+   * Collect all sequence lock names from the AST.
+   * Walks the entire AST looking for sequence-marked operations.
+   * @param {Node} node - Root AST node
+   * @returns {Set<string>} Set of lock names (e.g., '!account', '!db')
+   */
+  collectSequenceLocks(node) {
+    const locks = new Set();
+    const visited = new WeakSet();
+
+    const walk = (n) => {
+      if (!n || visited.has(n)) {
+        return;
+      }
+      visited.add(n);
+
+      // Check if this node has a sequence marker
+      // Adjust this condition based on actual AST structure
+      if (n.sequenced === true) {
+        const lockName = this._extractBaseLockName(n);
+        if (lockName) {
+          locks.add(lockName);
+        }
+      }
+
+      // Recursively walk children
+      const children = this.compiler._getImmediateChildren(n);
+      for (const child of children) {
+        walk(child);
+      }
+    };
+
+    walk(node);
+    return locks;
+  }
+
+  /**
+   * Extract the base variable name from a sequenced node.
+   * For account!.deposit() -> '!account'
+   * For db!.query().execute() -> '!db'
+   * Returns the leftmost/base identifier in the chain.
+   * @param {Node} node - The sequenced node
+   * @returns {string|null} Lock name prefixed with '!' or null
+   */
+  _extractBaseLockName(node) {
+    if (!node) {
+      return null;
+    }
+
+    // If it's a symbol: account!
+    if (node.typename === 'Symbol') {
+      return '!' + node.value;
+    }
+
+    // If it's a member lookup: account!.field or account!.method()
+    // Navigate to the leftmost base
+    if (node.typename === 'LookupVal' && node.target) {
+      return this._extractBaseLockName(node.target);
+    }
+
+    // If it's a function call: account!.method()
+    // The sequence is on the object being called on
+    if (node.typename === 'FunCall' && node.name) {
+      return this._extractBaseLockName(node.name);
+    }
+
+    // If it's a filter: account!|filter
+    if (node.typename === 'Filter' && node.name) {
+      return this._extractBaseLockName(node.name);
+    }
+
+    // Try to find the base by checking children for sequenced marker
+    const children = this.compiler._getImmediateChildren(node);
+    for (const child of children) {
+      if (child && child.sequenced) {
+        const lockName = this._extractBaseLockName(child);
+        if (lockName) {
+          return lockName;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Pre-declare all sequence locks at the root frame.
+   * This must be called BEFORE compilation starts.
+   * Locks are initialized but not set to any value - they start as undefined.
+   * @param {Frame} rootFrame - The root frame
+   * @param {Set<string>} locks - Set of lock names to declare
+   */
+  preDeclareSequenceLocks(rootFrame, locks) {
+    for (const lockName of locks) {
+      this.compiler._addDeclaredVar(rootFrame, lockName);
+    }
+  }
 };

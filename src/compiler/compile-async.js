@@ -34,47 +34,55 @@ module.exports = class CompileAsync {
 
   //@todo - do not store writes that will not be read by the parents
   updateFrameWrites(frame, name) {
-    //store the writes and variable declarations down the scope chain
-    //search for the var in the scope chain
+    // Store the writes and variable declarations down the scope chain
+    // Search for the var in the scope chain
     let vf = frame;
+
     if (name.startsWith('!')) {
       // Sequence keys are conceptually declared at the root
       while (vf.parent) {
         vf = vf.parent;
       }
+
+      // Ensure the lock is declared at root
+      // (In case pre-declaration missed it or it's created dynamically)
+      if (!vf.declaredVars || !vf.declaredVars.has(name)) {
+        this.compiler._addDeclaredVar(vf, name);
+      }
     } else {
+      // Normal variable scope resolution
       do {
         if (vf.declaredVars && vf.declaredVars.has(name)) {
-          break;//found the var in vf
+          break; // Found the var in vf
         }
         if (vf.isolateWrites) {
           vf = null;
           break;
         }
         vf = vf.parent;
-      }
-      while (vf);
+      } while (vf);
 
       if (!vf) {
-        //the variable did not exist
-        //declare a new variable in the current frame (or a parent if !createScope)
+        // The variable did not exist
+        // Declare a new variable in the current frame (or a parent if !createScope)
         vf = frame;
         while (!vf.createScope) {
-          vf = vf.parent;//skip the frames that can not create a new scope
+          vf = vf.parent; // Skip the frames that cannot create a new scope
         }
         this.compiler._addDeclaredVar(vf, name);
       }
     }
 
-    //count the sets in the current frame/async block, propagate the first write down the chain
-    //do not count for the frame where the variable is declared
+    // Count the sets in the current frame/async block
+    // Propagate the first write down the chain
+    // Do not count for the frame where the variable is declared
     while (frame != vf) {
       if (!frame.writeCounts || !frame.writeCounts[name]) {
         frame.writeCounts = frame.writeCounts || {};
-        frame.writeCounts[name] = 1;//first write, countiune to the parent frames (only 1 write per async block is propagated)
+        frame.writeCounts[name] = 1; // First write, continue to parent frames
       } else {
         frame.writeCounts[name]++;
-        break;//subsequent writes are not propagated
+        break; // Subsequent writes are not propagated
       }
       frame = frame.parent;
     }
@@ -82,28 +90,44 @@ module.exports = class CompileAsync {
 
   //@todo - handle included parent frames properly
   updateFrameReads(frame, name) {
-    //find the variable declaration in the scope chain
-    //let declared = false;
+    // Find the variable declaration in the scope chain
     let df = frame;
-    do {
-      if (df.declaredVars && df.declaredVars.has(name)) {
-        //declared = true;
-        break;//found the var declaration
+
+    // Special handling for sequence locks
+    if (name.startsWith('!')) {
+      // Locks are always declared at root
+      while (df.parent) {
+        df = df.parent;
       }
-      df = df.parent;
-    }
-    while (df);//&& !df.isolateWrites );
 
-    if (!df) {
-      //a context variable
-      return;
+      // Check if the lock was pre-declared
+      if (!df.declaredVars || !df.declaredVars.has(name)) {
+        // Lock not pre-declared - may be created dynamically by a write
+        // Don't add to readVars since it doesn't exist yet
+        return;
+      }
+      // Lock exists at root - proceed to add to readVars for snapshotting
+    } else {
+      // Normal variable lookup in scope chain
+      do {
+        if (df.declaredVars && df.declaredVars.has(name)) {
+          break; // Found the var declaration
+        }
+        df = df.parent;
+      } while (df);
+
+      if (!df) {
+        // A context variable (not a lock, not declared)
+        return;
+      }
     }
 
+    // Add to readVars for snapshotting
+    // Walk from current frame up to declaration frame
     while (frame != df) {
-      if ((frame.readVars && frame.readVars.has(name)) || (frame.writeCounts && frame.writeCounts[name])) {
-        //found the var
-        //if it's already in readVars - skip
-        //if it's set here or by children - it will be snapshotted anyway, don't add
+      if ((frame.readVars && frame.readVars.has(name)) ||
+        (frame.writeCounts && frame.writeCounts[name])) {
+        // Already in readVars, or written here (will be snapshotted anyway)
         break;
       }
       frame.readVars = frame.readVars || new Set();
