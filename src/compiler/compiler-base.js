@@ -46,6 +46,21 @@ class CompilerBase extends Obj {
     this.async = null;
   }
 
+  compile(node, frame) {
+    var _compile = this['compile' + node.typename];
+    if (_compile) {
+      if (node.wrapInAsyncBlock) {
+        this.emit.asyncBlockValue(node, frame, (n, f) => {
+          _compile.call(this, n, f);
+        }, undefined, node);
+      } else {
+        _compile.call(this, node, frame);
+      }
+    } else {
+      this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno, node);
+    }
+  }
+
   // --- Core Utilities (Needed by Expressions) ---
 
   _generateErrorContext(node, positionNode) {
