@@ -265,10 +265,10 @@ async function _suppressValueAsyncComplex(val, autoescape) {
 **Pattern 3: Pure Async Functions**
 - Declared with `async` keyword
 - MUST throw PoisonError, cannot return PoisonedValue
-- Example: `sequencedCallWrap()`, all `_complex` helpers
+- Example: `sequentialCallWrap()`, all `_complex` helpers
 
 ```javascript
-async function sequencedCallWrap(...) {
+async function sequentialCallWrap(...) {
   if (isPoison(val)) {
     throw new PoisonError(val.errors); // MUST throw
   }
@@ -729,10 +729,10 @@ You CANNOT return PoisonedValue, MUST throw:
 - Function IS declared with `async`
 - All returns are wrapped in Promise
 - Must throw PoisonError for poison
-- Example: `sequencedCallWrap()`, `_suppressValueAsyncComplex()`
+- Example: `sequentialCallWrap()`, `_suppressValueAsyncComplex()`
 
 ```javascript
-async function sequencedCallWrap(...) {
+async function sequentialCallWrap(...) {
   if (isPoison(val)) {
     throw new PoisonError(val.errors); // MUST throw
   }
@@ -1145,7 +1145,7 @@ Pattern 2: Sync-First Hybrid
 Pattern 3: Pure Async
 ├─ IS declared with async
 ├─ MUST throw PoisonError, never return PoisonedValue
-├─ Example: sequencedCallWrap(), _asyncHelper()
+├─ Example: sequentialCallWrap(), _asyncHelper()
 └─ Usage: if (isPoison(val)) throw new PoisonError(...);
 ```
 

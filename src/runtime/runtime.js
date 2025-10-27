@@ -11,7 +11,7 @@ const {
   isPoisonError,
   collectErrors,
   handleError
-} = require('../runtime-errors');
+} = require('./errors');
 var arrayFrom = Array.from;
 var supportsIterators = (
   typeof Symbol === 'function' && Symbol.iterator && typeof arrayFrom === 'function'
@@ -2575,8 +2575,8 @@ async function withSequenceLock(frame, lockKey, operation, errorContext = null) 
   }
 }
 
-//@todo - deprecate, the sequencedMemberLookupAsync of the FunCall path lookupVal/symbol should handle the frame lock release
-async function sequencedCallWrap(func, funcName, context, args, frame, lockKey, errorContext) {
+//@todo - deprecate, the sequentialMemberLookupAsync of the FunCall path lookupVal/symbol should handle the frame lock release
+async function sequentialCallWrap(func, funcName, context, args, frame, lockKey, errorContext) {
   return withSequenceLock(frame, lockKey, () =>
     callWrapAsync(func, funcName, context, args, errorContext), errorContext
   );
@@ -2584,21 +2584,21 @@ async function sequencedCallWrap(func, funcName, context, args, frame, lockKey, 
 
 
 // Called in place of contextOrFrameLookup when the path has a sequence lock on it
-async function sequencedContextLookup(context, frame, name, lockKey) {
+async function sequentialContextLookup(context, frame, name, lockKey) {
   return withSequenceLock(frame, lockKey, () =>
     contextOrFrameLookup(context, frame, name)
   );
 }
 
 // Called in place of memberLookupAsync when the path has a sequence lock on it
-async function sequencedMemberLookupAsync(frame, target, key, lockKey, errorContext) {
+async function sequentialMemberLookupAsync(frame, target, key, lockKey, errorContext) {
   return withSequenceLock(frame, lockKey, () =>
     memberLookupAsync(target, key, errorContext), errorContext
   );
 }
 
 // Called in place of memberLookupAsync when the path has a sequence lock on it
-async function sequencedMemberLookupScriptAsync(frame, target, key, lockKey, errorContext) {
+async function sequentialMemberLookupScriptAsync(frame, target, key, lockKey, errorContext) {
   return withSequenceLock(frame, lockKey, () =>
     memberLookupScriptAsync(target, key, errorContext), errorContext
   );
@@ -2679,11 +2679,11 @@ module.exports = {
 
   memberLookup,
   memberLookupAsync,
-  sequencedMemberLookupAsync,
+  sequentialMemberLookupAsync,
 
   memberLookupScript,
   memberLookupScriptAsync,
-  sequencedMemberLookupScriptAsync,
+  sequentialMemberLookupScriptAsync,
 
   contextOrFrameLookup,
   contextOrFrameLookupScript,
@@ -2691,7 +2691,7 @@ module.exports = {
 
   callWrap,
   callWrapAsync,
-  sequencedCallWrap,
+  sequentialCallWrap,
   handleError,
   executeAsyncBlock,
   isArray: lib.isArray,
@@ -2710,5 +2710,5 @@ module.exports = {
   whileConditionIterator,
   setLoopBindings,
   awaitSequenceLock,
-  sequencedContextLookup
+  sequentialContextLookup
 };

@@ -368,7 +368,7 @@
       });
     });
 
-    describe('sequencedCallWrap - Pure Async Function', () => {
+    describe('sequentialCallWrap - Pure Async Function', () => {
       let frame, mockContext;
 
       beforeEach(() => {
@@ -385,7 +385,7 @@
         const poison = createPoison(err);
 
         try {
-          await runtime.sequencedCallWrap(
+          await runtime.sequentialCallWrap(
             (x) => x * 2,
             'double',
             mockContext,
@@ -407,7 +407,7 @@
 
       it('should throw PoisonError when function throws', async () => {
         try {
-          await runtime.sequencedCallWrap(
+          await runtime.sequentialCallWrap(
             () => { throw new Error('Boom'); },
             'throwingFunc',
             mockContext,
@@ -429,7 +429,7 @@
         const poison = createPoison(new Error('Poisoned function'));
 
         try {
-          await runtime.sequencedCallWrap(
+          await runtime.sequentialCallWrap(
             poison,
             'poisonedFunc',
             mockContext,
@@ -452,7 +452,7 @@
         frame.set('!lockKey', lockPoison, true);
 
         try {
-          await runtime.sequencedCallWrap(
+          await runtime.sequentialCallWrap(
             (x) => x * 2,
             'double',
             mockContext,
@@ -473,7 +473,7 @@
         };
 
         try {
-          await runtime.sequencedCallWrap(
+          await runtime.sequentialCallWrap(
             asyncFunc,
             'asyncFunc',
             mockContext,
@@ -495,7 +495,7 @@
         const rejectingPromise = Promise.reject(new Error('Promise rejection'));
 
         try {
-          await runtime.sequencedCallWrap(
+          await runtime.sequentialCallWrap(
             (x) => x * 2,
             'double',
             mockContext,
@@ -514,7 +514,7 @@
       });
 
       it('should successfully call valid function', async () => {
-        const result = await runtime.sequencedCallWrap(
+        const result = await runtime.sequentialCallWrap(
           (x, y) => x + y,
           'add',
           mockContext,
@@ -536,7 +536,7 @@
           return 42;
         };
 
-        const result = await runtime.sequencedCallWrap(
+        const result = await runtime.sequentialCallWrap(
           asyncFunc,
           'asyncFunc',
           mockContext,

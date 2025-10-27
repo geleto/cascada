@@ -127,7 +127,7 @@
       });
     });
 
-    describe('sequencedMemberLookupAsync - Pure Async', () => {
+    describe('sequentialMemberLookupAsync - Pure Async', () => {
       let frame;
 
       beforeEach(() => {
@@ -140,7 +140,7 @@
         frame.set('!lockKey', lockPoison, true);
 
         try {
-          await runtime.sequencedMemberLookupAsync(
+          await runtime.sequentialMemberLookupAsync(
             frame,
             { prop: 'value' },
             'prop',
@@ -156,7 +156,7 @@
         const poison = createPoison(new Error('Target poisoned'));
 
         try {
-          await runtime.sequencedMemberLookupAsync(
+          await runtime.sequentialMemberLookupAsync(
             frame,
             poison,
             'prop',
@@ -176,7 +176,7 @@
         const promise = Promise.resolve(poison);
 
         try {
-          await runtime.sequencedMemberLookupAsync(
+          await runtime.sequentialMemberLookupAsync(
             frame,
             promise,
             'prop',
@@ -195,7 +195,7 @@
         const promise = Promise.reject(new Error('Rejected'));
 
         try {
-          await runtime.sequencedMemberLookupAsync(
+          await runtime.sequentialMemberLookupAsync(
             frame,
             promise,
             'prop',
@@ -212,7 +212,7 @@
 
       it('should successfully lookup and release lock', async () => {
         const obj = { name: 'test' };
-        const result = await runtime.sequencedMemberLookupAsync(
+        const result = await runtime.sequentialMemberLookupAsync(
           frame,
           obj,
           'name',
@@ -226,7 +226,7 @@
       });
     });
 
-    describe('sequencedContextLookup - Pure Async', () => {
+    describe('sequentialContextLookup - Pure Async', () => {
       let frame, context;
 
       beforeEach(() => {
@@ -244,7 +244,7 @@
         frame.set('!lockKey', lockPoison, true);
 
         try {
-          await runtime.sequencedContextLookup(
+          await runtime.sequentialContextLookup(
             context,
             frame,
             'myVar',
@@ -261,7 +261,7 @@
         frame.set('myVar', poison, true);
 
         try {
-          await runtime.sequencedContextLookup(
+          await runtime.sequentialContextLookup(
             context,
             frame,
             'myVar',
@@ -277,7 +277,7 @@
       });
 
       it('should successfully lookup and release lock', async () => {
-        const result = await runtime.sequencedContextLookup(
+        const result = await runtime.sequentialContextLookup(
           context,
           frame,
           'myVar',

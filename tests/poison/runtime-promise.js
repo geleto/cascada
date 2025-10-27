@@ -403,10 +403,10 @@
     });
 
     // ============================================================================
-    // TEST GROUP 4: Sequential Property Access - Template (sequencedMemberLookupAsync)
+    // TEST GROUP 4: Sequential Property Access - Template (sequentialMemberLookupAsync)
     // ============================================================================
 
-    describe('Issue #4: Sequential property access in templates (sequencedMemberLookupAsync)', () => {
+    describe('Issue #4: Sequential property access in templates (sequentialMemberLookupAsync)', () => {
 
       it('should preserve context for sequential property access with promise', async () => {
         const context = {
@@ -510,10 +510,10 @@
     });
 
     // ============================================================================
-    // TEST GROUP 5: Sequential Property Access - Script (sequencedMemberLookupScriptAsync)
+    // TEST GROUP 5: Sequential Property Access - Script (sequentialMemberLookupScriptAsync)
     // ============================================================================
 
-    describe('Issue #5: Sequential property access in scripts (sequencedMemberLookupScriptAsync)', () => {
+    describe('Issue #5: Sequential property access in scripts (sequentialMemberLookupScriptAsync)', () => {
 
       it('should preserve context for sequential property in script', async () => {
         const context = {

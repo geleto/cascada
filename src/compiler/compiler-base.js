@@ -96,7 +96,7 @@ class CompilerBase extends Obj {
 
   _createErrorContext(node, positionNode) {
     positionNode = positionNode || node;
-    const { ErrorContext } = require('../runtime-errors');
+    const { ErrorContext } = require('../runtime/errors');
     return new ErrorContext(
       positionNode.lineno + 1,
       positionNode.colno,
@@ -353,9 +353,9 @@ class CompilerBase extends Obj {
         // to indicate all further paths locked by it that they don't need to make a lock for further funCalls
         // hence we can use _updateFrameReads for all of them
         this.async.updateFrameWrites(frame, nodeStaticPathKey);
-        // Use sequenced lookup as a lock for this node exists
-        // sequencedContextLookup will `set` the path key, thus releasing it (by decrementing the lock writeCount)
-        this.emit(`runtime.sequencedContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
+        // Use sequential lookup as a lock for this node exists
+        // sequentialContextLookup will `set` the path key, thus releasing it (by decrementing the lock writeCount)
+        this.emit(`runtime.sequentialContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)})`);
         return;
       }
     }
@@ -563,12 +563,12 @@ class CompilerBase extends Obj {
 
   compileLookupVal(node, frame) {
     if (node.isAsync) {
-      // Handle both sequenced and standard lookups.
+      // Handle both sequential and standard lookups.
 
-      // Check if this is a sequenced lookup (marked with `!`).
+      // Check if this is a sequential lookup (marked with `!`).
       let nodeStaticPathKey = node.lockKey; // this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame /*.sequenceLockFrame*/, nodeStaticPathKey)) {
-        // This is a sequenced lookup.
+        // This is a sequential lookup.
         // Register the static path key as a variable write so the next lock waits for it.
         // Multiple static path keys can be in the same block.
         this.async.updateFrameWrites(frame, nodeStaticPathKey);
@@ -576,9 +576,9 @@ class CompilerBase extends Obj {
         // Create the error context and pass it to the runtime function.
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
         if (this.scriptMode) {
-          this.emit(`runtime.sequencedMemberLookupScriptAsync(frame, (`);
+          this.emit(`runtime.sequentialMemberLookupScriptAsync(frame, (`);
         } else {
-          this.emit(`runtime.sequencedMemberLookupAsync(frame, (`);
+          this.emit(`runtime.sequentialMemberLookupAsync(frame, (`);
         }
         this.compile(node.target, frame); // Compile the object being accessed.
         this.emit('),');
@@ -589,7 +589,7 @@ class CompilerBase extends Obj {
         return;
       }
 
-      // This is a standard (non-sequenced) async member lookup.
+      // This is a standard (non-sequential) async member lookup.
       // Pass the error context directly to the runtime function.
       const errorContextJson = JSON.stringify(this._createErrorContext(node));
       if (this.scriptMode) {
@@ -653,7 +653,7 @@ class CompilerBase extends Obj {
           if (!sequenceLockKey) {
             this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson});`);
           } else {
-            this.emit(`return runtime.sequencedCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}", ${errorContextJson});`);
+            this.emit(`return runtime.sequentialCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}", ${errorContextJson});`);
           }
         });
       } else {

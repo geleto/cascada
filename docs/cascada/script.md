@@ -964,7 +964,7 @@ It is crucial to understand the difference between these two features, as they s
 *   **`@` Output Commands:**
     *   **Purpose:** For **assembling a result** from a buffer after data is fetched.
     *   **Timing:** They are processed *after* their containing scope finishes its main evaluation. This delay may not be optimal if the operations need to have side effects as early as possible.
-    *   **Nature:** They are for data construction and sequenced logic, not for controlling live async operations.
+    *   **Nature:** They are for data construction and sequential logic, not for controlling live async operations.
 
 *   **`!` [Sequential Execution](#sequential-execution-control-):**
     *   **Purpose:** For **controlling the order of live, async operations** that have side effects (e.g., database writes).

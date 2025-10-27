@@ -347,7 +347,7 @@
       describe('2. Method-Specific Sequencing (object.path.method!())', () => {
 
         it('should enforce sequence for the specific marked method', async () => {
-          // Parser does not yet support setting .sequenced on FunCall nodes for method!()
+          // Parser does not yet support setting .sequential on FunCall nodes for method!()
           const template = `
                     {% do sequencer.runOp!('op1', 10) %}
                     {% do sequencer.runOp!('op2', 5) %}
@@ -570,8 +570,8 @@
 
       }); // End Constraint tests
 
-      // --- Additional tests for _getSequencedPath and ! marker constraints ---
-      describe('4. _getSequencedPath and ! marker constraint edge cases', () => {
+      // --- Additional tests for _getSequentialPath and ! marker constraints ---
+      describe('4. _getSequentialPath and ! marker constraint edge cases', () => {
         let constraintContext;
         beforeEach(() => {
           constraintContext = {
@@ -1049,11 +1049,11 @@
       env = new AsyncEnvironment(null, { autoescape: false });
     });
 
-    it('should execute sequenced operations within caller() in order', async function () {
+    it('should execute sequential operations within caller() in order', async function () {
       const callOrder = [];
       const context = {
         // This will be our context object with a method to sequence
-        sequencedService: {
+        sequentialService: {
           name: 'ServiceA',
           // A method with a side effect (pushing to callOrder) and a delay
           async processItem(item) {
@@ -1076,9 +1076,9 @@
 
         {% call myBox("Task Box") %}
           <p>Starting tasks...</p>
-          {# These two operations on the same object path should be sequenced #}
-          {% do sequencedService!.processItem("item1") %}
-          {% do sequencedService!.processItem("item2") %}
+          {# These two operations on the same object path should be sequential #}
+          {% do sequentialService!.processItem("item1") %}
+          {% do sequentialService!.processItem("item2") %}
           <p>Tasks initiated.</p>
         {% endcall %}
       `;
@@ -1092,7 +1092,7 @@
 
       // Verify the order of operations
       expect(callOrder).to.eql([
-        'ServiceA:item1', // Should be first despite potentially finishing later if not sequenced
+        'ServiceA:item1', // Should be first despite potentially finishing later if not sequential
         'ServiceA:item2'
       ]);
 
@@ -1103,7 +1103,7 @@
     });
 
 
-    it('should handle multiple sequenced calls on different path segments within caller()', async function () {
+    it('should handle multiple sequential calls on different path segments within caller()', async function () {
       const eventLog = [];
       const context = {
         dataStore: {
@@ -1184,7 +1184,7 @@
       };
     });
 
-    it('should ensure sequence order for multiple direct async calls to the same sequenced object path', async () => {
+    it('should ensure sequence order for multiple direct async calls to the same sequential object path', async () => {
       const template = `
         {% set r1 = seqObj!.updateAndGet("k1", "opA", 9) %}
         {% set r2 = seqObj!.updateAndGet("k2", "opB", 3) %}
@@ -1198,7 +1198,7 @@
       ]);
     });
 
-    it('should ensure sequence order for mixed operations on the same sequenced object path', async () => {
+    it('should ensure sequence order for mixed operations on the same sequential object path', async () => {
       const template = `
         {%- do seqObj!.updateAndGet("k1", "valX", 9) -%}
         {{- seqObj!.simpleLog("after valX update", 5) -}}
@@ -1266,7 +1266,7 @@
       cont = {
         logs: [],
         dataStore: { val: 'initial' },
-        // Sequenced object
+        // Sequential object
         seqObj: {
           idGen: 0,
           async updateAndGet(key, value, delayMs = 2) {
@@ -1304,10 +1304,10 @@
       });
     });
 
-    // --- Tests for Synchronous Filters (Filter node) with Sequenced/Async Arguments ---
+    // --- Tests for Synchronous Filters (Filter node) with Sequential/Async Arguments ---
 
-    it('should handle sync filter with sequenced async arg', async () => {
-      // `upper` is sync, but its input comes from a sequenced async op.
+    it('should handle sync filter with sequential async arg', async () => {
+      // `upper` is sync, but its input comes from a sequential async op.
       const template = `{{ seqObj!.updateAndGet("k1", "valA", 8) | upper }}`;
       // Expected: updateAndGet runs first, then its result is uppercased.
       const result = await env.renderTemplateString(template, cont);
@@ -1315,7 +1315,7 @@
       expect(cont.logs).to.eql(['updateAndGet: k1=valA (id: 1)']);
     });
 
-    it('should chain sync filters with a sequenced async arg at the start', async () => {
+    it('should chain sync filters with a sequential async arg at the start', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "valB", 8) | upper | customSyncSuffix("_chained") }}`;
       // Expected: updateAndGet -> upper -> customSyncSuffix
       const result = await env.renderTemplateString(template, cont);
@@ -1326,8 +1326,8 @@
       ]);
     });
 
-    it('should handle sync filter with multiple args, one sequenced and async', async () => {
-      // `replace` is sync. `seqObj!.updateAndGet` is sequenced. `getAsyncSuffix` is async.
+    it('should handle sync filter with multiple args, one sequential and async', async () => {
+      // `replace` is sync. `seqObj!.updateAndGet` is sequential. `getAsyncSuffix` is async.
       const template = `{{ "start" | replace("s", seqObj!.updateAndGet("k1", "REP", 8)) | customSyncSuffix(getAsyncSuffix(2)) }}`;
       // Expected:
       // 1. getAsyncSuffix can start.
@@ -1342,10 +1342,10 @@
         'customSyncSuffix: adding \'_asyncSuffix\' to \'REP-1tart\''
       ]);
       // To make the order more deterministic for logs if needed for such a test:
-      // You could make getAsyncSuffix depend on a dummy var set after the sequenced op.
+      // You could make getAsyncSuffix depend on a dummy var set after the sequential op.
     });
 
-    it('should ensure sequence order with sync filters and multiple sequenced ops', async () => {
+    it('should ensure sequence order with sync filters and multiple sequential ops', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "first", 9) | upper }} BEFORE {{ seqObj!.updateAndGet("k2", "second", 3) | lower }}`;
       // Expected: "first" op completes, then "second" op completes.
       const result = await env.renderTemplateString(template, cont);
@@ -1356,7 +1356,7 @@
       ]);
     });
 
-    it('should handle sync filter within an expression involving sequenced op', async () => {
+    it('should handle sync filter within an expression involving sequential op', async () => {
       const template = `Value: {{ (seqObj!.updateAndGet("k1", "expVal", 8) | customSyncSuffix("_sync")) + seqObj!.getValue("k1", 2) }}`;
       // Expected:
       // 1. updateAndGet("k1", "expVal") -> "expVal-1"
@@ -1373,9 +1373,9 @@
     });
 
 
-    // --- Tests for Asynchronous Filters (FilterAsync node) with Sequenced/Async Arguments ---
+    // --- Tests for Asynchronous Filters (FilterAsync node) with Sequential/Async Arguments ---
 
-    it('should handle async filter with sequenced async arg', async () => {
+    it('should handle async filter with sequential async arg', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "valC", 8) | customAsyncPrefix("PREFIX_") }}`;
       // Expected: updateAndGet runs first, then its result is prefixed.
       const result = await env.renderTemplateString(template, cont);
@@ -1386,7 +1386,7 @@
       ]);
     });
 
-    it('should chain async filters with a sequenced async arg at the start', async () => {
+    it('should chain async filters with a sequential async arg at the start', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "valD", 8) | customAsyncPrefix("P1_") | customAsyncPrefix("P2_") }}`;
       const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('P2_P1_valD-1');
@@ -1397,7 +1397,7 @@
       ]);
     });
 
-    it('should handle async filter with multiple args, one sequenced/async', async () => {
+    it('should handle async filter with multiple args, one sequential/async', async () => {
       // Adding a dummy async filter that takes multiple args for this test
       env.addFilter('customAsyncJoin', async (str1, str2, sep) => {
         await delay(2);
@@ -1410,26 +1410,26 @@
       // 2. seqObj!.updateAndGet("k1", "JOIN_PART", 20) runs (value: "JOIN_PART-1").
       // 3. customAsyncJoin joins "start", "JOIN_PART-1", and "_asyncSuffix".
       const result = await env.renderTemplateString(template, cont);
-      expect(result).to.equal('start_asyncSuffixJOIN_PART-1'); // Order of async suffix and join part might vary if not explicitly sequenced
+      expect(result).to.equal('start_asyncSuffixJOIN_PART-1'); // Order of async suffix and join part might vary if not explicitly sequential
       expect(cont.logs).to.contain('getAsyncSuffix');
       expect(cont.logs).to.contain('updateAndGet: k1=JOIN_PART (id: 1)');
       expect(cont.logs).to.contain('customAsyncJoin: joining \'start\', \'JOIN_PART-1\' with \'_asyncSuffix\'');
       // To ensure logs order for such a test, one might need to enforce sequence between getAsyncSuffix and updateAndGet too
     });
 
-    it('should ensure sequence order with async filters and multiple sequenced ops', async () => {
+    it('should ensure sequence order with async filters and multiple sequential ops', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "asyncFirst", 9) | customAsyncPrefix("A_") }} BEFORE {{ seqObj!.updateAndGet("k2", "asyncSecond", 3) | customAsyncPrefix("B_") }}`;
       const result = await env.renderTemplateString(template, cont);
       expect(result).to.equal('A_asyncFirst-1 BEFORE B_asyncSecond-2');
 
-      // The sequenced operations should run in order, but async filters can run in parallel
+      // The sequential operations should run in order, but async filters can run in parallel
       // once their inputs are ready. The exact order of filter execution may vary.
       expect(cont.logs).to.contain('updateAndGet: k1=asyncFirst (id: 1)');
       expect(cont.logs).to.contain('updateAndGet: k2=asyncSecond (id: 2)');
       expect(cont.logs).to.contain('customAsyncPrefix: adding \'A_\' to \'asyncFirst-1\'');
       expect(cont.logs).to.contain('customAsyncPrefix: adding \'B_\' to \'asyncSecond-2\'');
 
-      // Ensure the sequenced operations run in order
+      // Ensure the sequential operations run in order
       const updateLogs = cont.logs.filter(log => log.startsWith('updateAndGet:'));
       expect(updateLogs[0]).to.contain('k1=asyncFirst');
       expect(updateLogs[1]).to.contain('k2=asyncSecond');
@@ -1438,7 +1438,7 @@
 
     // --- Mixed Sync/Async Filters and Complex Expressions ---
 
-    it('should chain mixed sync and async filters with sequenced op', async () => {
+    it('should chain mixed sync and async filters with sequential op', async () => {
       const template = `{{ seqObj!.updateAndGet("k1", "mixed", 8) | upper | customAsyncPrefix("ASYNC_") | customSyncSuffix("_SYNC") }}`;
       // Expected: updateAndGet -> upper (sync) -> customAsyncPrefix (async) -> customSyncSuffix (sync)
       const result = await env.renderTemplateString(template, cont);
@@ -1451,7 +1451,7 @@
       ]);
     });
 
-    it('should handle sequenced op as arg to sync filter, result used by async filter', async () => {
+    it('should handle sequential op as arg to sync filter, result used by async filter', async () => {
       const template = `{{ "prefix-" | customSyncSuffix(seqObj!.updateAndGet("k1", "valE", 8)) | customAsyncPrefix("FINAL_") }}`;
       // Expected: updateAndGet -> customSyncSuffix -> customAsyncPrefix
       const result = await env.renderTemplateString(template, cont);
@@ -1484,7 +1484,7 @@
       ]);
     });
 
-    it('should handle filter result as part of complex expression with other sequenced op', async () => {
+    it('should handle filter result as part of complex expression with other sequential op', async () => {
       const template = `Result: {{ (seqObj!.updateAndGet("k1", "FILTER_IN", 8) | upper) + "---" + seqObj!.updateAndGet("k2", "OTHER_OP", 3) }}`;
       // Expected:
       // 1. updateAndGet("k1", "FILTER_IN") -> "FILTER_IN-1" -> "FILTER_IN-1" (upper)
@@ -1498,7 +1498,7 @@
       ]);
     });
 
-    it('should handle errors originating from sequenced argument to a filter gracefully', async () => {
+    it('should handle errors originating from sequential argument to a filter gracefully', async () => {
       env.addFilter('erroringSeqArgUser', (str) => 'PREFIX:' + str);
       cont.seqObj.erroringOp = async (key) => {
         await delay(5);

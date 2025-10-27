@@ -229,7 +229,7 @@ A resilient error handling system is under development.
 
 -   **Mechanism**: Uses **Sequence Keys** (e.g., `!account!deposit`) which are treated like special variables. The same promise-locking mechanism used for variables is applied to these keys.
 -   **Compiler Pass**: `_declareSequentialLocks` pass identifies all `!` markers to register the keys.
--   **Runtime Helpers**: `runtime.sequencedCallWrap` and `runtime.sequencedMemberLookupAsync` acquire and release the lock.
+-   **Runtime Helpers**: `runtime.sequentialCallWrap` and `runtime.sequentialMemberLookupAsync` acquire and release the lock.
 -   **Reference**: `docs/code/Sequential Operations - Execution.md`
 
 ### Error Handling (Poison System)

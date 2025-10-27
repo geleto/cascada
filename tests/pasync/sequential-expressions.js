@@ -115,7 +115,7 @@
             }
           },
           other: {
-            async nonSequencedOp(id, ms = 5) {
+            async nonSequentialOp(id, ms = 5) {
               await delay(ms);
               context.logs.push(`nonSeq${id} on other`);
               return `nonSeqResult${id}`;
@@ -135,7 +135,7 @@
           }
         },
         other: {
-          async nonSequencedOp(id, ms = 5) {
+          async nonSequentialOp(id, ms = 5) {
             await delay(ms);
             context.logs.push(`nonSeq${id} on other`);
             return `nonSeqResult${id}`;
@@ -201,7 +201,7 @@
         expect(context.logs).to.eql(['opA1 on obj.prop1', 'opA2 on obj.prop1']);
       });
 
-      it('should sequence method calls on non-sequenced paths', async () => {
+      it('should sequence method calls on non-sequential paths', async () => {
         const template = `{{ data.obj.prop1.opA!("1", 10) + data.obj.prop1.opA!("2", 5) }}`;
 
         const result = await env.renderTemplateString(template, context);
@@ -261,8 +261,8 @@
 
     // --- Mixed Operations Tests ---
     describe('Mixed Operations', () => {
-      it('should allow non-sequenced operations to run in parallel with sequenced ones', async () => {
-        const template = `{{ data.item!.op("1", 10) + other.nonSequencedOp("2", 5) }}`;
+      it('should allow non-sequential operations to run in parallel with sequential ones', async () => {
+        const template = `{{ data.item!.op("1", 10) + other.nonSequentialOp("2", 5) }}`;
         const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('result1nonSeqResult2');
@@ -276,7 +276,7 @@
         const result = await env.renderTemplateString(template, context);
 
         expect(result.trim()).to.equal('resultA1resultB2resultC3');
-        // Only check order for sequenced operations (data.item!)
+        // Only check order for sequential operations (data.item!)
         const idxA = context.logs.indexOf('opA1 on item');
         const idxB = context.logs.indexOf('opB2 on item');
         expect(idxA).to.be.lessThan(idxB);
@@ -550,16 +550,16 @@
         await expectAsyncError(() => env.renderTemplateString(template, context));
       });
 
-      it('should propagate errors from sequenced operations', async () => {
+      it('should propagate errors from sequential operations', async () => {
         context.data.item.errorOp = async function() {
           await delay(5);
-          throw new Error('Sequenced operation failed');
+          throw new Error('Sequential operation failed');
         };
 
         const template = `{{ data.item!.errorOp() + data.item!.op("1", 5) }}`;
 
         await expectAsyncError(() => env.renderTemplateString(template, context), err => {
-          expect(err.message).to.contain('Sequenced operation failed');
+          expect(err.message).to.contain('Sequential operation failed');
         });
       });
 

@@ -951,7 +951,7 @@ class Parser extends Obj {
             tok.lineno,
             tok.colno);
         }
-        node.sequenced = true;
+        node.sequential = true;
         // Continue to allow further postfixes (e.g., .method() after !)
       } else {
         break;

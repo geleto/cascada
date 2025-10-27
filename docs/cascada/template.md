@@ -134,7 +134,7 @@ Use this when multiple method calls on the same object must run in a specific or
 {% do account!.withdraw(50) %}      <!-- Runs third, after updateStats completes -->
 ```
 
-Each method call on `account!` waits for all previous operations on that path to complete before executing. The `!` marks the specific path segment (e.g., `account!`, `account.settings!`) whose operations will be sequenced.
+Each method call on `account!` waits for all previous operations on that path to complete before executing. The `!` marks the specific path segment (e.g., `account!`, `account.settings!`) whose operations will be sequential.
 
 #### 2. Method-Specific Sequencing: `object.path.method!()`
 

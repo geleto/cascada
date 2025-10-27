@@ -654,7 +654,7 @@
     });
   });
 
-  describe('Nunjucks Sync Filter with Asynchronous (Non-Sequenced) Arguments Tests', () => {
+  describe('Nunjucks Sync Filter with Asynchronous (Non-Sequential) Arguments Tests', () => {
     let env;
     beforeEach(() => {
       env = new AsyncEnvironment();

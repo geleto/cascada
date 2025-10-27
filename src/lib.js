@@ -2,7 +2,7 @@
 
 var ArrayProto = Array.prototype;
 var ObjProto = Object.prototype;
-var RuntimeError = require('./runtime-errors').RuntimeError;
+var RuntimeError = require('./runtime/errors').RuntimeError;
 var escapeMap = {
   '&': '&amp;',
   '"': '&quot;',

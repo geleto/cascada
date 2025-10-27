@@ -58,9 +58,9 @@ module.exports = class CompileSequential {
     node.isFunCallLocked = false;
     node.lockKey = null;
 
-    // Identify PATH Waiters & Perform Sanity Checks for `node.sequenced`
-    if (node.sequenced) {
-      // node.sequenced is true if '!' is directly on this Symbol/LookupVal
+    // Identify PATH Waiters & Perform Sanity Checks for `node.sequential`
+    if (node.sequential) {
+      // node.sequential is true if '!' is directly on this Symbol/LookupVal
       const currentPathKey = this._extractStaticPathKey(node); // Key for this specific node
       if (!funCallLockKey) {
         this.compiler.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
@@ -69,8 +69,8 @@ module.exports = class CompileSequential {
       }
       // No PATH operation is added here for this key because it's "covered" by the parent FunCall's LOCK.
     } else if ((node instanceof nodes.Symbol || node instanceof nodes.LookupVal)) {
-      // Still need to identify PATH waiters for nodes that are *not* `node.sequenced` themselves
-      // but are on a path that *is* sequenced by a FunCall elsewhere.
+      // Still need to identify PATH waiters for nodes that are *not* `node.sequential` themselves
+      // but are on a path that *is* sequential by a FunCall elsewhere.
       const pathKey = this._extractStaticPathKey(node);
       if (pathKey && pathKey !== funCallLockKey && this.compiler._isDeclared(frame, pathKey)) {
         // this is a path that is static
@@ -246,16 +246,16 @@ module.exports = class CompileSequential {
 
   //@todo - public
   _getSequenceKey(node) {
-    let path = this._getSequencedPath(node);
+    let path = this._getSequentialPath(node);
     return path ? '!' + path.join('!') : null;
   }
 
   // @todo - inline in _getSequenceKey
   // @todo - maybe this can be simplified
-  _getSequencedPath(node) {
+  _getSequentialPath(node) {
     let path = [];
     let current = node;
-    let sequencedCount = 0;
+    let sequentialCount = 0;
     // Flag to track if any dynamic segment (non-static key) was found
     // in the path *before* the segment marked with '!'.
     let dynamicFoundInPrefix = false;
@@ -275,9 +275,9 @@ module.exports = class CompileSequential {
     while (nodeToAnalyze && nodeToAnalyze.typename === 'LookupVal') {
       const isCurrentKeyStatic = isStaticStringKey(nodeToAnalyze.val);
 
-      if (nodeToAnalyze.sequenced) {
-        sequencedCount++;
-        if (sequencedCount > 1) {
+      if (nodeToAnalyze.sequential) {
+        sequentialCount++;
+        if (sequentialCount > 1) {
           this.compiler.fail(
             'Syntax Error: Using two sequence markers \'!\' in the same path is not supported.',
             nodeToAnalyze.lineno, nodeToAnalyze.colno, nodeToAnalyze
@@ -306,12 +306,12 @@ module.exports = class CompileSequential {
 
     // Check if the root node itself has '!' (e.g., contextVar!)
     let rootNode = nodeToAnalyze; // Whatever node we stopped at
-    if (!sequenceMarkerNode && rootNode && rootNode.typename === 'Symbol' && rootNode.sequenced) {
-      sequencedCount++;
-      if (sequencedCount > 1) { /* Should be caught above if chain existed */
+    if (!sequenceMarkerNode && rootNode && rootNode.typename === 'Symbol' && rootNode.sequential) {
+      sequentialCount++;
+      if (sequentialCount > 1) { /* Should be caught above if chain existed */
         this.compiler.fail('Syntax Error: Using two sequence markers \'!\' in the same path is not supported.', rootNode.lineno, rootNode.colno, rootNode);
       }
-      // Root node itself is sequenced.
+      // Root node itself is sequential.
       sequenceMarkerNode = rootNode;
       sequenceSegmentValue = rootNode.value; // The symbol's value is the key
       current = null; // No 'current' before the root
@@ -357,7 +357,7 @@ module.exports = class CompileSequential {
       } else if (rootNode) {
         // Path doesn't start with a simple variable (e.g., started with func() or literal)
         this.compiler.fail(
-          'Sequence Error: Sequenced paths marked with \'!\' must originate from a context variable (e.g., contextVar["key"]!). The path starts with a dynamic or non-variable element.',
+          'Sequence Error: Sequential paths marked with \'!\' must originate from a context variable (e.g., contextVar["key"]!). The path starts with a dynamic or non-variable element.',
           rootNode.lineno, rootNode.colno, rootNode
         );
       } else if (path.length === 0) {
@@ -377,7 +377,7 @@ module.exports = class CompileSequential {
         // Sequencing is only for context variables.
         if (this.isCompilingMacroBody) {
           this.compiler.fail(
-            'Sequence Error: Sequenced paths marked with \'!\' are not allowed for paths starting with macro variable.',
+            'Sequence Error: Sequential paths marked with \'!\' are not allowed for paths starting with macro variable.',
             node.lineno, node.colno, node
           );
         }
@@ -388,7 +388,7 @@ module.exports = class CompileSequential {
       //throw an error if we are inside a macro
       if (this.isCompilingMacroBody) {
         this.compiler.fail(
-          'Sequence Error: Sequenced paths marked with \'!\' are not allowed inside macros.',
+          'Sequence Error: Sequential paths marked with \'!\' are not allowed inside macros.',
           node.lineno, node.colno, node
         );
       }
@@ -420,7 +420,7 @@ module.exports = class CompileSequential {
 
       // Check if this node has a sequence marker
       // Adjust this condition based on actual AST structure
-      if (n.sequenced === true) {
+      if (n.sequential === true) {
         const lockName = this._extractBaseLockName(n);
         if (lockName) {
           locks.add(lockName);
@@ -439,11 +439,11 @@ module.exports = class CompileSequential {
   }
 
   /**
-   * Extract the base variable name from a sequenced node.
+   * Extract the base variable name from a sequential node.
    * For account!.deposit() -> '!account'
    * For db!.query().execute() -> '!db'
    * Returns the leftmost/base identifier in the chain.
-   * @param {Node} node - The sequenced node
+   * @param {Node} node - The sequential node
    * @returns {string|null} Lock name prefixed with '!' or null
    */
   _extractBaseLockName(node) {
@@ -473,10 +473,10 @@ module.exports = class CompileSequential {
       return this._extractBaseLockName(node.name);
     }
 
-    // Try to find the base by checking children for sequenced marker
+    // Try to find the base by checking children for sequential marker
     const children = this.compiler._getImmediateChildren(node);
     for (const child of children) {
-      if (child && child.sequenced) {
+      if (child && child.sequential) {
         const lockName = this._extractBaseLockName(child);
         if (lockName) {
           return lockName;
