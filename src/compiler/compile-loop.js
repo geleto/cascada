@@ -132,7 +132,7 @@ class CompileLoop {
     // Set up loop frame with combined write counts for mutual exclusion
     // This ensures the loop frame expects writes from either body OR else, not both
     if (node.isAsync) {
-      const combinedWriteCounts = this.compiler._combineWriteCounts([
+      const combinedWriteCounts = this.compiler.async._combineWriteCounts([
         bodyWriteCounts ? this.compiler.async.countsTo1(bodyWriteCounts) : null,
         elseWriteCounts
       ].filter(Boolean));
