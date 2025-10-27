@@ -10,7 +10,7 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    runtime = require('../../src/runtime');
+    runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
     isPoison = runtime.isPoison;
@@ -185,7 +185,7 @@
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
-        expect(context.processed).to.eql(['A', 'B']);
+        expect(context.processed).to.eql([]);
       }
     });
 

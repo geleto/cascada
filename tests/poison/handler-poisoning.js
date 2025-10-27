@@ -8,7 +8,7 @@
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
-    isPoisonError = require('../../src/runtime').isPoisonError;
+    isPoisonError = require('../../src/runtime/runtime').isPoisonError;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;

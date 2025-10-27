@@ -1,6 +1,6 @@
 'use strict';
 
-var lib = require('./lib');
+var lib = require('../lib');
 const {
   PoisonedValue,
   PoisonError,
@@ -11,7 +11,7 @@ const {
   isPoisonError,
   collectErrors,
   handleError
-} = require('./runtime-errors');
+} = require('../runtime-errors');
 var arrayFrom = Array.from;
 var supportsIterators = (
   typeof Symbol === 'function' && Symbol.iterator && typeof arrayFrom === 'function'

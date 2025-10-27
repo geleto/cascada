@@ -1,5 +1,5 @@
 const nodes = require('../nodes');
-const { AsyncFrame } = require('../runtime');
+const { AsyncFrame } = require('../runtime/runtime');
 
 const SequenceOperationType = {
   PATH: 1,

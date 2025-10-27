@@ -13,7 +13,7 @@
     expect = require('expect.js');
     util = require('./util');
     lib = require('../src/lib');
-    r = require('../src/runtime');
+    r = require('../src/runtime/runtime');
   } else {
     expect = window.expect;
     util = window.util;

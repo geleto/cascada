@@ -9,7 +9,7 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    runtime = require('../../src/runtime');
+    runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
     isPoison = runtime.isPoison;
     AsyncFrame = runtime.AsyncFrame;

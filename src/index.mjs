@@ -6,7 +6,7 @@ import * as precompileModule from './precompile.js';
 import * as compiler from './compiler/compiler.js';
 import * as parser from './parser.js';
 import * as lexer from './lexer.js';
-import * as runtime from './runtime.js';
+import * as runtime from './runtime/runtime.js';
 import * as nodes from './nodes.js';
 import installJinjaCompat from './jinja-compat.js';
 import * as loaderUtils from './loader/loader-utils.js';

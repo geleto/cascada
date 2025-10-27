@@ -1,6 +1,6 @@
 'use strict';
 
-var SafeString = require('./runtime').SafeString;
+var SafeString = require('./runtime/runtime').SafeString;
 
 /**
  * Returns `true` if the object is a function, otherwise `false`.

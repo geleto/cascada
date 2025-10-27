@@ -453,7 +453,7 @@ const result = await script.render(context);
 ### Key Files and Directories
 
 -   `src/environment.js`: **User-facing API & Test Setup**. This is the entry point for users. Tests will instantiate `AsyncEnvironment` from here. Contains `AsyncTemplate` and `AsyncScript` classes.
--   `src/runtime.js`: **Runtime helpers.** Contains `resolveAll`, `flattenBuffer`, `isPoison`, `PoisonError`, and all functions called by the compiled code.
+-   `src/runtime/runtime.js`: **Runtime helpers.** Contains `resolveAll`, `flattenBuffer`, `isPoison`, `PoisonError`, and all functions called by the compiled code.
 -   `src/compiler/compiler.js`: **Main compiler.** Handles statements (`if`, `for`, `block`, etc.) and orchestrates code generation.
 -   `src/compiler/compiler-base.js`: **Expression compiler.** Handles expressions (`+`, `*`, `myVar.prop`, `myFunc()`).
 -   `src/compiler/compile-async.js`: **Async analysis.** Contains `propagateIsAsync` and logic for calculating `readVars` and `writeCounters`.
