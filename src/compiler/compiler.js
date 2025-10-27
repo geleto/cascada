@@ -57,56 +57,6 @@ class Compiler extends CompilerBase {
     }
   }
 
-  /**
-   * Extracts a static path from a LookupVal node chain.
-   * A static path consists only of Symbol and Literal nodes in a chain.
-   * Returns null if the path is not static (contains expressions, function calls, etc.)
-   *
-   * @param {nodes.LookupVal|nodes.Symbol|nodes.Literal} node - The node to extract path from
-   * @returns {Array<string>|null} Array of path segments or null if not static
-   */
-  _extractStaticPath(node) {
-    const path = [];
-
-    // Helper function to recursively traverse the lookup chain
-    const traverse = (currentNode) => {
-      if (currentNode instanceof nodes.Symbol) {
-        // Base case: symbol node (e.g., 'paths')
-        path.unshift(currentNode.value);
-        return true;
-      } else if (currentNode instanceof nodes.Literal && typeof currentNode.value === 'string') {
-        // String literal (e.g., 'subpath')
-        path.unshift(currentNode.value);
-        return true;
-      } else if (currentNode instanceof nodes.LookupVal) {
-        // Recursive case: lookup node (e.g., paths.subpath)
-        // First, try to extract the value/key part
-        if (currentNode.val instanceof nodes.Literal && typeof currentNode.val.value === 'string') {
-          // Property access like .subpath
-          path.unshift(currentNode.val.value);
-        } else if (currentNode.val instanceof nodes.Symbol) {
-          // Property access like .subpath (as symbol)
-          path.unshift(currentNode.val.value);
-        } else {
-          // Non-static value (expression, function call, etc.)
-          return false;
-        }
-
-        // Then recursively traverse the target
-        return traverse(currentNode.target);
-      } else {
-        // Any other node type is not static
-        return false;
-      }
-    };
-
-    // Start traversal from the given node
-    if (traverse(node)) {
-      return path;
-    }
-
-    return null;
-  }
 
   /**
    * Recursively collect all output handlers written to within a node's subtree.
@@ -128,7 +78,7 @@ class Compiler extends CompilerBase {
 
       // Case 2: OutputCommand @handler.method() or @handler()
       if (n instanceof nodes.OutputCommand) {
-        const staticPath = this._extractStaticPath(n.call.name);
+        const staticPath = this.sequential._extractStaticPath(n.call.name);
         if (staticPath && staticPath.length > 0) {
           const handlerName = staticPath[0]; // First segment is always handler name
           handlers.add(handlerName);
@@ -289,7 +239,6 @@ class Compiler extends CompilerBase {
     this._compileChildren(node, frame);
   }
 
-  // @todo - add the variable in declaredVars in non-async modeW
   compileSet(node, frame) {
     const ids = [];
 
@@ -492,7 +441,7 @@ class Compiler extends CompilerBase {
     }
 
     // Combine writes from all branches
-    const totalWrites = this._combineWriteCounts(branchWriteCounts);
+    const totalWrites = this.async._combineWriteCounts(branchWriteCounts);
 
     // Helper to exclude current branch writes from combined writes
     const excludeCurrentWrites = (combined, current) => {
@@ -549,27 +498,6 @@ class Compiler extends CompilerBase {
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, false, node.expr);
   }
 
-  /**
- * Combine multiple write count objects by adding values for each variable.
- * Used to calculate total potential writes across all branches (if/else, switch cases).
- *
- * @param {Array<Object>} counts - Array of write count objects
- * @returns {Object} Combined write counts with summed values
- *
- * @todo - move to compile-async
- */
-  _combineWriteCounts(counts) {
-    const combined = {};
-
-    counts.forEach((count) => {
-      if (!count) return;
-      Object.entries(count).forEach(([key, value]) => {
-        combined[key] = (combined[key] || 0) + value;
-      });
-    });
-
-    return combined;
-  }
 
   //todo! - get rid of the callback
   compileIf(node, frame, async) {
@@ -644,7 +572,7 @@ class Compiler extends CompilerBase {
       this.emit('}');  // No re-throw - execution continues with poisoned vars
 
       // Fill in the poison handling code now that we have write counts and handlers
-      const combinedCounts = this._combineWriteCounts([trueBranchWriteCounts, falseBranchWriteCounts]);
+      const combinedCounts = this.async._combineWriteCounts([trueBranchWriteCounts, falseBranchWriteCounts]);
 
       // Poison both variables and handlers when condition fails
       const hasVariables = Object.keys(combinedCounts).length > 0;
@@ -1203,7 +1131,7 @@ class Compiler extends CompilerBase {
 
   compileOutputCommand(node, frame) {
     // Extract static path once for both focus detection and compilation
-    const staticPath = this._extractStaticPath(node.call.name);
+    const staticPath = this.sequential._extractStaticPath(node.call.name);
 
     if (this.outputFocus) {//@todo - think this over
       //skip compiling commands that do not target the focued property

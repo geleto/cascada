@@ -499,4 +499,53 @@ module.exports = class CompileSequential {
       this.compiler._addDeclaredVar(rootFrame, lockName);
     }
   }
+
+  /**
+   * Extracts a static path from a node for sequential operation analysis.
+   * A static path is a chain of property accesses that can be determined at compile time.
+   * @param {nodes.LookupVal|nodes.Symbol|nodes.Literal} node - The node to extract path from
+   * @returns {Array<string>|null} Array of path segments or null if not static
+   */
+  _extractStaticPath(node) {
+    const path = [];
+
+    // Helper function to recursively traverse the lookup chain
+    const traverse = (currentNode) => {
+      if (currentNode instanceof nodes.Symbol) {
+        // Base case: symbol node (e.g., 'paths')
+        path.unshift(currentNode.value);
+        return true;
+      } else if (currentNode instanceof nodes.Literal && typeof currentNode.value === 'string') {
+        // String literal (e.g., 'subpath')
+        path.unshift(currentNode.value);
+        return true;
+      } else if (currentNode instanceof nodes.LookupVal) {
+        // Recursive case: lookup node (e.g., paths.subpath)
+        // First, try to extract the value/key part
+        if (currentNode.val instanceof nodes.Literal && typeof currentNode.val.value === 'string') {
+          // Property access like .subpath
+          path.unshift(currentNode.val.value);
+        } else if (currentNode.val instanceof nodes.Symbol) {
+          // Property access like .subpath (as symbol)
+          path.unshift(currentNode.val.value);
+        } else {
+          // Non-static value (expression, function call, etc.)
+          return false;
+        }
+
+        // Then recursively traverse the target
+        return traverse(currentNode.target);
+      } else {
+        // Any other node type is not static
+        return false;
+      }
+    };
+
+    // Start traversal from the given node
+    if (traverse(node)) {
+      return path;
+    }
+
+    return null;
+  }
 };

@@ -67,7 +67,7 @@ class CompilerBase extends Obj {
     if (!node) return 'UnknownContext';
     // Special case for OutputCommand for more descriptive errors
     if (node.typename === 'OutputCommand' && node.call && node.call.name) {
-      const staticPath = this._extractStaticPath(node.call.name);
+      const staticPath = this.sequential._extractStaticPath(node.call.name);
       if (staticPath) {
         return '@' + staticPath.join('.');
       }
@@ -80,34 +80,6 @@ class CompilerBase extends Obj {
     return `${nodeType}(${posType})`;
   }
 
-  _extractStaticPath(node) {
-    // Extract a static path from a node tree (e.g., Symbol -> LookupVal -> LookupVal)
-    // Returns array like ['handler', 'method'] or null if path is not static
-    if (!node) return null;
-
-    if (node.typename === 'Symbol') {
-      return [node.value];
-    }
-
-    if (node.typename === 'LookupVal') {
-      const targetPath = this._extractStaticPath(node.target);
-      if (!targetPath) return null;
-
-      // Only support static string lookups
-      if (node.val && node.val.typename === 'Literal' && typeof node.val.value === 'string') {
-        return [...targetPath, node.val.value];
-      }
-
-      // Symbol lookups
-      if (node.val && node.val.typename === 'Symbol') {
-        return [...targetPath, node.val.value];
-      }
-
-      return null;
-    }
-
-    return null;
-  }
 
   _createErrorContext(node, positionNode) {
     positionNode = positionNode || node;

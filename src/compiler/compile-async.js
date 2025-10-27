@@ -148,5 +148,23 @@ module.exports = class CompileAsync {
     }
     return firstWritesOnly;
   }
+
+  /**
+   * Combines multiple write count objects into a single object
+   * @param {Array<Object>} counts - Array of write count objects
+   * @returns {Object} Combined write counts
+   */
+  _combineWriteCounts(counts) {
+    const combined = {};
+
+    counts.forEach((count) => {
+      if (!count) return;
+      Object.entries(count).forEach(([key, value]) => {
+        combined[key] = (combined[key] || 0) + value;
+      });
+    });
+
+    return combined;
+  }
 };
 
