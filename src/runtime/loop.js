@@ -1,0 +1,513 @@
+'use strict';
+
+const lib = require('../lib');
+const {
+  createPoison,
+  isPoison,
+  isPoisonError,
+  PoisonError,
+  handleError
+} = require('./errors');
+const { addPoisonMarkersToBuffer } = require('./buffer');
+
+const arrayFrom = Array.from;
+const supportsIterators = (
+  typeof Symbol === 'function' && Symbol.iterator && typeof arrayFrom === 'function'
+);
+
+function asyncEach(arr, dimen, iter, cb) {
+  if (lib.isArray(arr)) {
+    const len = arr.length;
+
+    lib.asyncIter(arr, function iterCallback(item, i, next) {
+      switch (dimen) {
+        case 1:
+          iter(item, i, len, next);
+          break;
+        case 2:
+          iter(item[0], item[1], i, len, next);
+          break;
+        case 3:
+          iter(item[0], item[1], item[2], i, len, next);
+          break;
+        default:
+          item.push(i, len, next);
+          iter.apply(this, item);
+      }
+    }, cb);
+  } else {
+    lib.asyncFor(arr, function iterCallback(key, val, i, len, next) {
+      iter(key, val, i, len, next);
+    }, cb);
+  }
+}
+
+function asyncAll(arr, dimen, func, cb) {
+  var finished = 0;
+  var len;
+  var outputArr;
+
+  function done(i, output) {
+    finished++;
+    outputArr[i] = output;
+
+    if (finished === len) {
+      cb(null, outputArr.join(''));
+    }
+  }
+
+  if (lib.isArray(arr)) {
+    len = arr.length;
+    outputArr = new Array(len);
+
+    if (len === 0) {
+      cb(null, '');
+    } else {
+      for (let i = 0; i < arr.length; i++) {
+        const item = arr[i];
+
+        switch (dimen) {
+          case 1:
+            func(item, i, len, done);
+            break;
+          case 2:
+            func(item[0], item[1], i, len, done);
+            break;
+          case 3:
+            func(item[0], item[1], item[2], i, len, done);
+            break;
+          default:
+            item.push(i, len, done);
+            func.apply(this, item);
+        }
+      }
+    }
+  } else {
+    const keys = lib.keys(arr || {});
+    len = keys.length;
+    outputArr = new Array(len);
+
+    if (len === 0) {
+      cb(null, '');
+    } else {
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        func(k, arr[k], i, len, done);
+      }
+    }
+  }
+}
+
+function fromIterator(arr) {
+  if (typeof arr !== 'object' || arr === null || lib.isArray(arr)) {
+    return arr;
+  } else if (supportsIterators && Symbol.iterator in arr) {
+    return arrayFrom(arr);
+  } else {
+    return arr;
+  }
+}
+
+function setLoopBindings(frame, index, len, last) {
+  // Set the loop variables that depend only on index directly
+  frame.set('loop.index', index + 1);
+  frame.set('loop.index0', index);
+  frame.set('loop.first', index === 0);
+  frame.set('loop.length', len);
+  frame.set('loop.last', last);
+
+  if (len && typeof len.then === 'function') {
+    // Set the remaining loop variables that depend on len as promises
+    frame.set('loop.revindex', len.then(l => l - index));
+    frame.set('loop.revindex0', len.then(l => l - index - 1));
+  } else {
+    // Set the remaining loop variables that depend on len directly
+    frame.set('loop.revindex', len - index);
+    frame.set('loop.revindex0', len - index - 1);
+  }
+}
+
+async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
+  let didIterate = false;
+  let i = 0;
+
+  try {
+    for await (let value of arr) { // value is now mutable
+      didIterate = true;
+
+      if (value instanceof Error) {
+        // Soft error: generator yielded an error. Add context and poison it.
+        value = handleError(value, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        value = createPoison(value);
+      }
+
+      let res;
+      if (loopVars.length === 1) {
+        // `while` loops pass `undefined` for len/last, which is correct.
+        res = loopBody(value, i, undefined, false, errorContext);
+      } else {
+        if (isPoison(value)) {
+          const args = Array(loopVars.length);
+          args[0] = value;
+          res = loopBody(...args, i, undefined, false, errorContext);
+        } else if (!Array.isArray(value)) {
+          throw new Error('Expected an array for destructuring');
+        } else {
+          res = loopBody(...value.slice(0, loopVars.length), i, undefined, false, errorContext);
+        }
+      }
+
+      // In sequential mode, we MUST await the body before the next iteration.
+      // If it throws, the outer catch will handle it and stop iteration.
+      await res;
+
+      i++;
+    }
+  } catch (err) {
+    // Hard error: generator threw OR the loopBody threw.
+    // Add error context and re-throw immediately (stop iteration)
+    const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+    contextualError.didIterate = didIterate;
+    throw contextualError;
+  }
+
+  return didIterate;
+}
+
+async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
+  let didIterate = false;
+  // PARALLEL PATH
+  // This logic allows for `loop.length` and `loop.last` to work
+  // by resolving promises only after the entire iterator is consumed. This
+  // only works when loop bodies are fired in parallel (sequential=false)
+  const iterator = arr[Symbol.asyncIterator]();
+  let result;
+  let i = 0;
+
+  let lastPromiseResolve;
+  let lastPromise = new Promise(resolve => {
+    lastPromiseResolve = resolve;
+  });
+
+  const loopBodyPromises = []; // Track all loop body promises
+
+  // This promise is used for the completion and error propagation
+  let iterationComplete;
+  const lenPromise = new Promise((resolve, reject) => {
+    let length = 0;
+    // This IIFE runs "in the background" to exhaust the iterator
+    iterationComplete = (async () => {
+      try {
+        while (true) {
+          // Async generators await yielded values. If a generator yields a thenable that rejects,
+          // iterator.next() will throw. We catch PoisonErrors as soft errors and continue iteration.
+          // Non-PoisonErrors from the generator are treated as hard errors.
+          result = await iterator.next();
+
+          // Check if iterator is done
+          if (result.done) {
+            break;
+          }
+
+          length++;
+          didIterate = true;
+          let value = result.value;
+          if (value instanceof Error) {
+            // Soft error: generator yielded an error
+            value = handleError(value, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+            value = createPoison(value);
+          }
+
+          // Resolve the previous iteration's lastPromise
+          if (lastPromiseResolve) {
+            lastPromiseResolve(false);
+            lastPromise = new Promise(resolveNew => {
+              lastPromiseResolve = resolveNew;
+            });
+          }
+
+          if (loopVars.length === 1) {
+            loopBody(value, i, lenPromise, lastPromise, errorContext);
+          } else {
+            if (!Array.isArray(value)) {
+              if (isPoison(value)) {
+                //poison all loop variables
+                value = Array(loopVars.length).fill(value);
+              } else {
+                throw new Error('Expected an array for destructuring');
+              }
+            }
+            loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
+          }
+          i++;
+        }
+
+        // Resolve final lastPromise
+        if (lastPromiseResolve) {
+          lastPromiseResolve(true);
+        }
+
+        // Resolve length to unblock any loop bodies waiting for loop.length
+        resolve(length);
+
+        // Wait for all loop body promises to complete before checking errors
+        await Promise.allSettled(loopBodyPromises);
+
+      } catch (error) {
+        // Hard error from iterator.next() or loop body
+        if (lastPromiseResolve) {
+          lastPromiseResolve(true);
+        }
+
+        // Add error context and re-throw, it will be caught by the outer catch block
+        // where all write variables and handlers are poisoned
+        const contextualError = handleError(error, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        contextualError.didIterate = didIterate;
+
+        //resolve(length);//Ensure length is resolved even on error
+        reject(new PoisonError(new PoisonError(contextualError)));//the length is a poison
+
+
+        //throw contextualError;//re-thrown by iterationComplete
+      }
+    })();
+  });
+
+  // Wait for iteration to complete (including loop bodies)
+  // lenPromise resolves with length, iterationComplete handles errors
+  await lenPromise;
+  await iterationComplete;
+
+  return didIterate;
+}
+
+/**
+ * Poison both body and else effects when loop array is poisoned before iteration.
+ * We poison both branches because we don't know if the underlying value would have
+ * been empty (else runs) or non-empty (body runs).
+ *
+ * @param {AsyncFrame} frame - The loop frame
+ * @param {Array} buffer - The output buffer array
+ * @param {Object} asyncOptions - Options containing write counts and handlers
+ * @param {Array} errors - Array of error objects to propagate
+ * @param {boolean} didIterate - Whether any iterations occurred
+ * @param {Function} addPoisonMarkersToBuffer - Function to add poison markers to buffer
+ */
+function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
+  //replace the errors with the handleError'd errors
+  errors = errors.map(error => handleError(error, asyncOptions.errorContext.lineno, asyncOptions.errorContext.colno, asyncOptions.errorContext.errorContextString, asyncOptions.errorContext.path));
+
+  // Poison body effects
+  if (asyncOptions.bodyWriteCounts && Object.keys(asyncOptions.bodyWriteCounts).length > 0) {
+    frame.poisonBranchWrites(errors, asyncOptions.bodyWriteCounts);
+  }
+  if (asyncOptions.bodyHandlers && asyncOptions.bodyHandlers.length > 0) {
+    addPoisonMarkersToBuffer(buffer, errors, asyncOptions.bodyHandlers, asyncOptions.errorContext);
+  }
+
+  if (didIterate) {
+    return;// we don't poison the else side-effects if we had at least one iteration
+  }
+
+  // Poison else effects
+  if (asyncOptions.elseWriteCounts && Object.keys(asyncOptions.elseWriteCounts).length > 0) {
+    frame.poisonBranchWrites(errors, asyncOptions.elseWriteCounts);
+  }
+  if (asyncOptions.elseHandlers && asyncOptions.elseHandlers.length > 0) {
+    addPoisonMarkersToBuffer(buffer, errors, asyncOptions.elseHandlers, asyncOptions.errorContext);
+  }
+}
+
+async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = [], asyncOptions = null) {
+  // Handle poison detection if in async mode
+  if (asyncOptions) {
+    // Check for synchronous poison first
+    if (isPoison(arr)) {
+      // Array expression evaluated to poison - poison both body and else
+      poisonLoopEffects(loopFrame, buffer, asyncOptions, arr.errors, false);
+      return; // Early return, else doesn't run
+    }
+
+    // Check for promise that might reject with poison
+    if (arr && typeof arr.then === 'function') {
+      try {
+        arr = await arr;
+      } catch (err) {
+        // Promise rejected - poison both body and else
+        //const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
+        const errors = isPoisonError(err) ? err.errors : [err];
+        poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
+        throw err; // Re-throw for upstream handling
+      }
+    }
+
+    // Note: After await, arr cannot be poison (await converts poison to PoisonError)
+  }
+
+  const sequential = asyncOptions ? asyncOptions.sequential : false;
+  const isAsync = asyncOptions !== null;
+  const bodyWriteCounts = asyncOptions ? asyncOptions.bodyWriteCounts : null;
+  const elseWriteCounts = asyncOptions ? asyncOptions.elseWriteCounts : null;
+  const errorContext = asyncOptions ? asyncOptions.errorContext : null;
+
+  let didIterate = false;
+
+  try {
+    if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
+      // We must have two separate code paths. The `lenPromise` and `lastPromise`
+      // mechanism is fundamentally incompatible with sequential execution, as it
+      // would create a deadlock.
+
+      if (sequential) {
+        // Used for `while` and `each` loops and
+        // any `for` loop marked as sequential. It does NOT support `loop.length`
+        // or `loop.last` for async iterators, as that is impossible to know
+        // without first consuming the entire iterator.
+        didIterate = await iterateAsyncSequential(arr, loopBody, loopVars, errorContext);
+      } else {
+        // PARALLEL PATH
+        // This complex logic allows for `loop.length` and `loop.last` to work
+        // by resolving promises only after the entire iterator is consumed. This
+        // only works when loop bodies are fired in parallel (sequential=false)
+        didIterate = await iterateAsyncParallel(arr, loopBody, loopVars, errorContext);
+      }
+    }
+    else if (arr) {
+      arr = fromIterator(arr);
+
+      if (Array.isArray(arr)) {
+        const len = arr.length;
+
+        didIterate = len > 0;
+        for (let i = 0; i < arr.length; i++) {
+          let value = arr[i];
+          const isLast = i === arr.length - 1;
+
+          // Convert Error objects to poison for consistency with async iterators
+          // (Poison values and rejecting promises pass through as-is)
+          if (value instanceof Error && !isPoison(value)) {
+            value = handleError(value, errorContext.lineno, errorContext.colno,
+              errorContext.errorContextString, errorContext.path);
+            value = createPoison(value);
+          }
+
+          let res;
+          if (loopVars.length === 1) {
+            res = loopBody(value, i, len, isLast);
+          } else {
+            if (!Array.isArray(value)) {
+              throw new Error('Expected an array for destructuring');
+            }
+            res = loopBody(...value.slice(0, loopVars.length), i, len, isLast);
+          }
+
+          if (sequential) {
+            await res;
+          }
+        }
+      } else {
+        const keys = Object.keys(arr);
+        const len = keys.length;
+        didIterate = len > 0;
+
+        for (let i = 0; i < len; i++) {
+          const key = keys[i];
+          let value = arr[key];
+          const isLast = i === keys.length - 1;
+
+          // Convert Error objects to poison for consistency
+          if (value instanceof Error && !isPoison(value)) {
+            value = handleError(value, errorContext.lineno, errorContext.colno,
+              errorContext.errorContextString, errorContext.path);
+            value = createPoison(value);
+          }
+
+          if (loopVars.length === 2) {
+            const res = loopBody(key, value, i, len, isLast);
+            if (sequential) {
+              await res;
+            }
+          } else {
+            throw new Error(`Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    const errors = isPoisonError(err) ? err.errors : [err];
+    didIterate = errors[errors.length - 1]?.didIterate || false;
+    // if we had at least one iteration, we won't poison the else side-effects
+    poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, didIterate);
+  }
+
+  // Implement mutual exclusion between body and else execution
+  // This follows our plan: always skip body, conditionally handle else
+
+  // Step 3: Always skip body write counters (regardless of didIterate)
+  // Body writes are suppressed during execution via sequentialLoopBody,
+  // this skip signals their completion to the loop frame
+  if (bodyWriteCounts && Object.keys(bodyWriteCounts).length > 0) {
+    loopFrame.skipBranchWrites(bodyWriteCounts);
+  }
+
+  // Step 4-5: Handle else execution and write counting
+  if (!didIterate && loopElse) {
+    // Step 4: Else block runs - let it propagate normally to loop frame
+    await loopElse();
+  } else if (elseWriteCounts && Object.keys(elseWriteCounts).length > 0) {
+    // Step 5: Else block doesn't run - skip its write counters
+    loopFrame.skipBranchWrites(elseWriteCounts);
+  }
+
+  // Note: No finalizeLoopWrites needed - the skipBranchWrites calls above
+  // handle the completion signaling for the mutual exclusion pattern
+}
+
+/**
+ * Create an async iterator for while loop conditions that handles poison and errors gracefully.
+ * Yields Error/PoisonError objects instead of PoisonedValue to keep generator alive.
+ *
+ * @param {AsyncFrame} frame - The loop frame
+ * @param {Function} conditionEvaluator - Async function that evaluates the condition
+ * @returns {AsyncGenerator} Async generator that yields iteration counts or errors
+ */
+async function* whileConditionIterator(frame, conditionEvaluator) {
+  // Push a frame to trap any writes from the condition expression
+  frame = frame.push();
+  frame.sequentialLoopBody = true;
+
+  let iterationCount = 0;
+
+  try {
+    while (true) {
+      // Evaluate the condition. If it returns poison or rejects, await will throw.
+      // and the error will be caught by the iterateAsyncSequential
+      const conditionResult = await conditionEvaluator(frame);
+
+      // Normal condition evaluation - check if we should continue
+      if (!conditionResult) {
+        break;
+      }
+
+      // Yield the iteration count for this iteration
+      yield iterationCount;
+      iterationCount++;
+    }
+  }
+  finally {
+    // Ensure the temporary frame is always popped.
+    frame.pop();
+  }
+}
+
+module.exports = {
+  asyncEach,
+  asyncAll,
+  fromIterator,
+  setLoopBindings,
+  iterateAsyncSequential,
+  iterateAsyncParallel,
+  poisonLoopEffects,
+  iterate,
+  whileConditionIterator
+};

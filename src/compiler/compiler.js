@@ -565,6 +565,8 @@ class Compiler extends CompilerBase {
  *
  * @param {Array<Object>} counts - Array of write count objects
  * @returns {Object} Combined write counts with summed values
+ *
+ * @todo - move to compile-async
  */
   _combineWriteCounts(counts) {
     const combined = {};
@@ -1923,6 +1925,7 @@ class Compiler extends CompilerBase {
     this.emit.line('root: root\n};');
   }
 
+  //@todo - move to compile-base
   compile(node, frame) {
     var _compile = this['compile' + node.typename];
     if (_compile) {
