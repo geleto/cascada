@@ -361,39 +361,6 @@ function promisify(fn) {
   };
 }
 
-function executeAsyncBlock(asyncFunc, astate, frameParam, cb, lineno, colno, context, errorContextString = null) {
-  try {
-    // 1. Invoke the async function to get the promise.
-    const promise = asyncFunc(astate, frameParam);
-
-    // 2. Attach our lifecycle handlers.
-    /* promise.catch(err => {
-      // This .catch() will now reliably run before the .finally() below.
-      try {
-        const handledError = errors.handleError(err, lineno, colno, errorContextString, context ? context.path : null);
-        cb(handledError);
-      } catch (cbError) {
-        console.error('FATAL: Error during Nunjucks error handling or callback:', cbError);
-        console.error('Original error was:', err);
-        throw cbError;
-      }
-      throw err;// maybe no need for this, as the return promise is never awaited, it's fire and forget
-    })*/
-    promise.finally(() => {
-      // 3. This is guaranteed to run *after* the .catch() handler has completed.
-      astate.leaveAsyncBlock();
-    });
-
-    return promise;
-  } catch (syncError) {
-    // This catches synchronous errors that might happen before the promise is even created.
-    // This can happen mostly due to compiler error, may remove it in the future
-    const handledError = errors.handleError(syncError, lineno, colno, errorContextString, context ? context.path : null);
-    cb(handledError);
-    astate.leaveAsyncBlock(); // Ensure cleanup even on sync failure.
-  }
-}
-
 class AsyncState {
   constructor(parent = null) {
     this.activeClosures = 0;
@@ -406,7 +373,7 @@ class AsyncState {
 
   enterAsyncBlock(asyncBlockFrame) {
     const newState = new AsyncState(this);
-    newState.asyncBlockFrame = asyncBlockFrame;
+    newState.asyncBlockFrame = asyncBlockFrame || null;
     newState._incrementClosures();
 
     // Create a new completion promise for this specific closure chain
@@ -436,6 +403,28 @@ class AsyncState {
     }
 
     return this.parent;
+  }
+
+  asyncBlock(func, runtime, f, readVars, writeCounts, cb, lineno, colno, context, errorContextString = null) {
+    const childFrame = f.pushAsyncBlock(readVars, writeCounts);
+    const childState = this.enterAsyncBlock(childFrame);
+
+    try {
+      // 1. Invoke the async function to get the promise.
+      const promise = func(childState, childFrame);
+
+      promise.finally(() => {
+        childState.leaveAsyncBlock();
+      });
+
+      return promise;
+    } catch (syncError) {
+      // This catches synchronous errors that might happen before the promise is even created.
+      // This can happen mostly due to compiler error, may remove it in the future
+      const handledError = runtime.handleError(syncError, lineno, colno, errorContextString, context ? context.path : null);
+      cb(handledError);
+      childState.leaveAsyncBlock();// Ensure cleanup even on sync failure.
+    }
   }
 
   _incrementClosures() {
@@ -482,7 +471,6 @@ module.exports = {
   ensureDefinedAsync,
   promisify,
   withPath,
-  executeAsyncBlock,
   SafeString,
   newSafeStringAsync,
   copySafeness,

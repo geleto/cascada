@@ -115,7 +115,7 @@ module.exports = class CompileEmit {
 
   asyncBlockBegin(node, frame, createScope, positionNode = node) {
     if (node.isAsync) {
-      this.line(`runtime.executeAsyncBlock(async (astate, frame) => {`);
+      this.line(`astate.asyncBlock(async (astate, frame) => {`);
       this.asyncClosureDepth++;
     }
     if (createScope && !node.isAsync) {
@@ -138,7 +138,8 @@ module.exports = class CompileEmit {
       this.asyncClosureDepth--;
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
     }
     if (createScope && !node.isAsync) {
       this.line('frame = frame.pop();');
@@ -152,7 +153,7 @@ module.exports = class CompileEmit {
   asyncBlockValue(node, frame, emitFunc, res, positionNode = node) {
     if (node.isAsync) {
 
-      this.line(`runtime.executeAsyncBlock(async (astate, frame) => {`);
+      this.line(`astate.asyncBlock(async (astate, frame) => {`);
       this.asyncClosureDepth++;
       frame = frame.push(false, false);
 
@@ -168,7 +169,8 @@ module.exports = class CompileEmit {
 
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
 
       this.asyncClosureDepth--;
       frame = frame.pop();
@@ -191,7 +193,7 @@ module.exports = class CompileEmit {
     }
 
     frame = frame.push(false, false);//unscoped frame for the async block
-    this.line(`runtime.executeAsyncBlock(async (astate, frame) =>{`);
+    this.line(`astate.asyncBlock(async (astate, frame) =>{`);
 
     const id = this.compiler._pushBuffer();//@todo - better way to get the buffer, see compileCapture
 
@@ -216,10 +218,11 @@ module.exports = class CompileEmit {
     this.line(`  return ${id};`);
     this.line('}');
     const errorContext = this.compiler._generateErrorContext(node, positionNode);
+    const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
     if (callbackName) {
-      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
     } else {
-      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
     }
 
     frame = frame.pop();
@@ -243,7 +246,7 @@ module.exports = class CompileEmit {
       this.asyncClosureDepth++;
       frame = frame.push(false, false);
 
-      this.line(`runtime.executeAsyncBlock(async (astate, frame)=>{`);
+      this.line(`astate.asyncBlock(async (astate, frame)=>{`);
       this.line(`let index = ${this.compiler.buffer}_index++;`);
 
       if (handlerName) {
@@ -268,7 +271,8 @@ module.exports = class CompileEmit {
       this.asyncClosureDepth--;
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
 
       frame = frame.pop();
 
@@ -285,7 +289,7 @@ module.exports = class CompileEmit {
 
   asyncBlockAddToBufferBegin(node, frame, positionNode = node, handlerName = null) {
     if (node.isAsync) {
-      this.line(`runtime.executeAsyncBlock(async (astate, frame) => {`);
+      this.line(`astate.asyncBlock(async (astate, frame) => {`);
       this.line(`let index = ${this.compiler.buffer}_index++;`);
       if (handlerName) {
         // if there is a handler, we need to catch errors and poison the handler/buffer
@@ -323,7 +327,8 @@ module.exports = class CompileEmit {
       this.asyncClosureDepth--;
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      this.line(`, astate.enterAsyncBlock(), ${this.getPushAsyncBlockCode(frame)}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
       return frame.pop();
     }
     return frame;
@@ -378,7 +383,7 @@ module.exports = class CompileEmit {
   // if a parent async block has the read and there are no writes
   // we can use the parent snapshot
   // similar for writes we can do some optimizations
-  getPushAsyncBlockCode(frame) {
+  getAsyncBlockArgs(frame) {
     let reads = [];
     if (frame.readVars) {
       //add each read var to a list of vars to be snapshotted, with a few exceptions
@@ -402,7 +407,7 @@ module.exports = class CompileEmit {
       });
     }
     const readArgs = reads.length ? JSON.stringify(reads) : 'null';
-    const writeArgs = frame.writeCounts ? ', ' + JSON.stringify(frame.writeCounts) : '';
-    return `frame.pushAsyncBlock(${readArgs}${writeArgs})`;
+    const writeArgs = frame.writeCounts ? JSON.stringify(frame.writeCounts) : 'null';
+    return { readArgs, writeArgs };
   }
 };

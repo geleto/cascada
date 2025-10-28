@@ -101,7 +101,7 @@ const bodyWriteCounts = bodyFrame.writeCounts;
 
 ```javascript
 let loop_body_123 = (async function(item, i, len, isLast, errorContext) {
-  return runtime.executeAsyncBlock(async (astate, frame) => {
+  return astate.asyncBlock(async (astate, frame) => {
     // Set up loop.index, loop.first, etc.
     runtime.setLoopBindings(frame, i, len, isLast);
 
@@ -111,7 +111,7 @@ let loop_body_123 = (async function(item, i, len, isLast, errorContext) {
     // ... compiled body code here ...
 
     return output; // The buffer array
-  }, astate.enterAsyncBlock(), frame.pushAsyncBlock(...), cb, ...);
+  }, runtime, frame, [...reads...], {...writes...}, cb, ...);
 }).bind(context);
 ```
 
@@ -194,10 +194,10 @@ if (node.else_) {
 
 ```javascript
 let loop_else_456 = (async function() {
-  return runtime.executeAsyncBlock(async (astate, frame) => {
+  return astate.asyncBlock(async (astate, frame) => {
     // ... compiled else code ...
     return output; // The buffer array
-  }, astate.enterAsyncBlock(), frame.pushAsyncBlock(...), cb, ...);
+  }, runtime, frame, [...reads...], {...writes...}, cb, ...);
 }).bind(context);
 ```
 
