@@ -164,7 +164,7 @@ module.exports = class CompileEmit {
       emitFunc.call(this.compiler, node, frame);
       this.line(';');
       //await ${res} to avoid unused vars throwing unhandled exceptions
-      //and to make sure leaveAsyncBlock is called after the promise resolves
+      //and to make sure _leaveAsyncBlock is called after the promise resolves
       this.line(`return await ${res};`);
 
       this.line('}');
