@@ -44,7 +44,7 @@ class AsyncState {
     return this.parent;
   }
 
-  asyncBlock(func, runtime, f, readVars, writeCounts, cb, lineno, colno, context, errorContextString = null) {
+  asyncBlock(func, runtime, f, readVars, writeCounts, cb, lineno, colno, context, errorContextString = null, isExpression = false) {
     const childFrame = f.pushAsyncBlock(readVars, writeCounts);
     const childState = this._enterAsyncBlock(childFrame);
 
@@ -52,14 +52,36 @@ class AsyncState {
       // 1. Invoke the async function to get the promise.
       const promise = func(childState, childFrame);
 
-      promise.finally(() => {
+      // Add error handler to fulfill writeCounts contract even on failure
+      const handled = (isExpression && writeCounts)
+        ? promise.catch(err => {
+          // Poison all variables that this block was supposed to write and decrement counters
+          // This happens with expressions with sequential operators because their locks are regular variables
+          if (writeCounts) {
+            childFrame.poisonBranchWrites(err, writeCounts);
+          }
+
+          // Re-throw to maintain error propagation to root handler
+          throw err;
+        })
+        : promise;
+
+      // The finally must run for all nodes.
+      const wrappedPromise = handled.finally(() => {
+        // Ensure per-block finalization always runs (decrementing counters, releasing locks, etc.)
         childState._leaveAsyncBlock();
       });
 
-      return promise;
+      return wrappedPromise;
     } catch (syncError) {
       // This catches synchronous errors that might happen before the promise is even created.
       // This can happen mostly due to compiler error, may remove it in the future
+
+      // Poison variables and decrement counters on sync failure too
+      if (writeCounts) {
+        childFrame.poisonBranchWrites(syncError, writeCounts);
+      }
+
       const handledError = runtime.handleError(syncError, lineno, colno, errorContextString, context ? context.path : null);
       cb(handledError);
       childState._leaveAsyncBlock();// Ensure cleanup even on sync failure.
