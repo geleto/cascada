@@ -1,7 +1,7 @@
 'use strict';
 
 const lib = require('../lib');
-const scriptTranspiler = require('../script-transpiler');
+const scriptTranspiler = require('../script/script-transpiler');
 const { Template } = require('./template');
 
 /**

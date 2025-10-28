@@ -1,7 +1,7 @@
 'use strict';
 
 const lib = require('../lib');
-const scriptTranspiler = require('../script-transpiler');
+const scriptTranspiler = require('../script/script-transpiler');
 const { BaseEnvironment } = require('./base-environment');
 const { callbackAsap } = require('./utils');
 const { Template } = require('./template');

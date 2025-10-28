@@ -375,7 +375,7 @@ expect(compiledCode).to.contain('output_command');
 Use `scriptTranspiler.scriptToTemplate()` to verify script-to-template conversion:
 
 ```javascript
-const scriptTranspiler = require('../src/script-transpiler');
+const scriptTranspiler = require('../src/script/script-transpiler');
 
 const script = ':data\nvar user = getUser()\n@data.userName = user.name';
 const template = scriptTranspiler.scriptToTemplate(script);
@@ -459,7 +459,7 @@ const result = await script.render(context);
 -   `src/compiler/compile-async.js`: **Async analysis.** Contains `propagateIsAsync` and logic for calculating `readVars` and `writeCounters`.
 -   `src/compiler/compile-sequential.js`: **Sequential (`!`) analysis.** Logic for identifying and managing sequential operation paths.
 -   `src/data-handler.js`: **`@data` handler implementation.** The logic for all `@data` commands resides here.
--   `src/script-*.js`: **Script-specific features,** including the script-to-template transpiler.
+-   `src/script/script-*.js`: **Script-specific features,** including the script-to-template transpiler.
 -   `tests/`: **Test suites.**
     -   `tests/pasync/`: Tests for advanced asynchronous execution and parallelism.
     -   `tests/poison/`: Tests for the error handling (Poison) system.

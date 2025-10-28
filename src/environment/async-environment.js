@@ -1,6 +1,6 @@
 'use strict';
 
-const DataHandler = require('../data-handler');
+const DataHandler = require('../script/data-handler');
 const { BaseEnvironment } = require('./base-environment');
 const { AsyncTemplate } = require('./template');
 const { AsyncScript } = require('./script');

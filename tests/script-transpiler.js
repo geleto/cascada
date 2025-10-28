@@ -1,5 +1,5 @@
-const scriptTranspiler = require('../src/script-transpiler');
-const { TOKEN_TYPES } = require('../src/script-lexer');
+const scriptTranspiler = require('../src/script/script-transpiler');
+const { TOKEN_TYPES } = require('../src/script/script-lexer');
 const expect = require('expect.js');
 
 describe('Script Transpiler', () => {
