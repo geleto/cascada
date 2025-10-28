@@ -14,7 +14,7 @@
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
     isPoison = runtime.isPoison;
-    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
   } else {
     expect = window.expect;
     createPoison = nunjucks.runtime.createPoison;

@@ -6,7 +6,7 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;

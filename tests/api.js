@@ -11,7 +11,7 @@
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     util = require('./util');
-    Environment = require('../src/environment').Environment;
+    Environment = require('../src/environment/environment').Environment;
     Loader = require('../src/loader/node-loaders').FileSystemLoader;
     templatesPath = 'tests/templates';
     path = require('path');

@@ -1,7 +1,7 @@
 'use strict';
 
 const expect = require('expect.js');
-const { AsyncEnvironment } = require('../src/environment');
+const { AsyncEnvironment } = require('../src/environment/environment');
 const { createPoison, isPoisonError } = require('../src/runtime/runtime');
 
 describe('Phase 6: Loop Poison Integration', () => {

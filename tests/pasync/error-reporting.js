@@ -9,7 +9,7 @@
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     path = require('path');
-    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
     StringLoader = require('../util').StringLoader;
   } else {
     expect = window.expect;

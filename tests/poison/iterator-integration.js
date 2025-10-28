@@ -10,7 +10,7 @@
     expect = require('expect.js');
     runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
-    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
   } else {
     expect = window.expect;
     createPoison = nunjucks.runtime.createPoison;

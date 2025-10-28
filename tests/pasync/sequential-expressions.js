@@ -8,7 +8,7 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
     delay = require('../util').delay;
     expectAsyncError = require('../util').expectAsyncError;
   } else {

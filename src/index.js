@@ -1,7 +1,7 @@
 'use strict';
 
 const lib = require('./lib');
-const {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScript} = require('./environment');
+const {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScript} = require('./environment/environment');
 const Loader = require('./loader/loader');
 const loaders = require('./loader/loaders');
 const precompile = require('./precompile');

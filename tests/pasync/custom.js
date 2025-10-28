@@ -10,8 +10,8 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
-    //Environment = require('../../src/environment').Environment;
+    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
+    //Environment = require('../../src/environment/environment').Environment;
     lexer = require('../../src/lexer');
     unescape = require('he').unescape;
     delay = require('../util').delay;

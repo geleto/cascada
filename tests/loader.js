@@ -19,8 +19,8 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    Environment = require('../src/environment').Environment;
-    AsyncEnvironment = require('../src/environment').AsyncEnvironment;
+    Environment = require('../src/environment/environment').Environment;
+    AsyncEnvironment = require('../src/environment/environment').AsyncEnvironment;
     WebLoader = require('../src/loader/web-loaders').WebLoader;
     FileSystemLoader = require('../src/loader/node-loaders').FileSystemLoader;
     NodeResolveLoader = require('../src/loader/node-loaders').NodeResolveLoader;
@@ -31,7 +31,7 @@
     raceLoaders = require('../src/index').raceLoaders;
     precompileTemplateString = require('../src/index').precompileTemplateString;
     precompileScriptString = require('../src/index').precompileScriptString;
-    Template = require('../src/environment').Template;
+    Template = require('../src/environment/environment').Template;
     delay = require('./util').delay;
   } else {
     expect = window.expect;

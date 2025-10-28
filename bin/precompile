@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 var { program } = require('commander');
 var precompile = require('../dist/cjs/precompile').precompile;
-var Environment = require('../dist/cjs/environment').Environment;
+var Environment = require('../dist/cjs/environment/environment').Environment;
 var lib = require('../dist/cjs/lib');
 
 var cmdpath = null;

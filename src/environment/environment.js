@@ -2,21 +2,21 @@
 
 const asap = require('asap');
 const waterfall = require('a-sync-waterfall');
-const lib = require('./lib');
-const compiler = require('./compiler/compiler');
-const filters = require('./filters');
-const { FileSystemLoader, WebLoader, PrecompiledLoader } = require('./loader/loaders');
-const tests = require('./tests');
-const globals = require('./globals');
-const { Obj, EmitterObj } = require('./object');
-const globalRuntime = require('./runtime/runtime');
-const { handleError } = require('./runtime/errors');
-const { Frame, AsyncFrame } = require('./runtime/frame');
+const lib = require('../lib');
+const compiler = require('../compiler/compiler');
+const filters = require('../filters');
+const { FileSystemLoader, WebLoader, PrecompiledLoader } = require('../loader/loaders');
+const tests = require('../tests');
+const globals = require('../globals');
+const { Obj, EmitterObj } = require('../object');
+const globalRuntime = require('../runtime/runtime');
+const { handleError } = require('../runtime/errors');
+const { Frame, AsyncFrame } = require('../runtime/frame');
 const { AsyncState } = globalRuntime;
-const expressApp = require('./express-app');
-const scriptTranspiler = require('./script-transpiler');
-const DataHandler = require('./data-handler');
-const { clearStringCache, callLoaders } = require('./loader/loader-utils');
+const expressApp = require('../express-app');
+const scriptTranspiler = require('../script-transpiler');
+const DataHandler = require('../data-handler');
+const { clearStringCache, callLoaders } = require('../loader/loader-utils');
 
 // If the user is using the async API, *always* call it
 // asynchronously even if the template was synchronous.
@@ -676,7 +676,7 @@ class Context extends Obj {
       if (name in this.ctx) {
         return this.ctx[name];
       } else {
-        const { createPoison } = require('./runtime/errors');
+        const { createPoison } = require('../runtime/errors');
         return createPoison(new Error(`Can not look up unknown variable/function: ${name}`));
       }
     }

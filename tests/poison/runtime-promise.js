@@ -18,7 +18,7 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
     isPoisonError = require('../../src/runtime/runtime').isPoisonError;
   } else {
     expect = window.expect;

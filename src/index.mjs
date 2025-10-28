@@ -1,5 +1,5 @@
 import lib from './lib.js';
-import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScript} from './environment.js';
+import {Environment, AsyncEnvironment, Template, AsyncTemplate, Script, AsyncScript} from './environment/environment.js';
 import Loader from './loader/loader.js';
 import * as loaders from './loader/loaders.js';
 import * as precompileModule from './precompile.js';

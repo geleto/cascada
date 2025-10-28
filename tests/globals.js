@@ -11,7 +11,7 @@
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     util = require('./util');
-    Environment = require('../src/environment').Environment;
+    Environment = require('../src/environment/environment').Environment;
   } else {
     expect = window.expect;
     util = window.util;

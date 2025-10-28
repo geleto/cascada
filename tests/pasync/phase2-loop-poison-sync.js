@@ -8,7 +8,7 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
     const runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;

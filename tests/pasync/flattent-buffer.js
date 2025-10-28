@@ -7,7 +7,7 @@ let expectAsyncError;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
-  AsyncEnvironment = require('../../src/environment').AsyncEnvironment;
+  AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
   flattenBuffer = require('../../src/runtime/runtime').flattenBuffer;
   expectAsyncError = require('../util').expectAsyncError;
 } else {

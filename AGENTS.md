@@ -254,7 +254,7 @@ This section provides practical instructions for writing and testing code.
 
 #### How to Add a New `@data` Method (e.g., `incrementBy`)
 
-1.  **Locate the API**: Go to `src/environment.js`.
+1.  **Locate the API**: Go to `src/environment/environment.js`.
 2.  **Find `AsyncEnvironment.addDataMethods`**: This is the public API for adding methods.
 3.  **Implement the Logic**: The method receives `(target, ...args)` and should return the new value.
     -   `target` is the current value at the path (e.g., `data.counter`). It could be `undefined`.
@@ -359,7 +359,7 @@ const result = await env.renderTemplate('main.njk', { title: 'Hello' });
 For debugging compiler issues, use `_compileSource()` to examine generated JavaScript:
 
 ```javascript
-const { AsyncTemplate, AsyncScript } = require('../src/environment');
+const { AsyncTemplate, AsyncScript } = require('../src/environment/environment');
 
 const template = new AsyncTemplate('{% set x = asyncFunc() %}{{ x }}', env);
 const source = template._compileSource();
@@ -452,7 +452,7 @@ const result = await script.render(context);
 
 ### Key Files and Directories
 
--   `src/environment.js`: **User-facing API & Test Setup**. This is the entry point for users. Tests will instantiate `AsyncEnvironment` from here. Contains `AsyncTemplate` and `AsyncScript` classes.
+-   `src/environment/environment.js`: **User-facing API & Test Setup**. This is the entry point for users. Tests will instantiate `AsyncEnvironment` from here. Contains `AsyncTemplate` and `AsyncScript` classes.
 -   `src/runtime/runtime.js`: **Runtime helpers.** Contains `resolveAll`, `flattenBuffer`, `isPoison`, `PoisonError`, and all functions called by the compiled code.
 -   `src/compiler/compiler.js`: **Main compiler.** Handles statements (`if`, `for`, `block`, etc.) and orchestrates code generation.
 -   `src/compiler/compiler-base.js`: **Expression compiler.** Handles expressions (`+`, `*`, `myVar.prop`, `myFunc()`).

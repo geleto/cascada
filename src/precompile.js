@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const {_prettifyError} = require('./lib');
 const compiler = require('./compiler/compiler');
-const {Environment, AsyncEnvironment} = require('./environment');
+const {Environment, AsyncEnvironment} = require('./environment/environment');
 const precompileGlobal = require('./precompile-global');
 
 function match(filename, patterns) {

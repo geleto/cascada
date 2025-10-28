@@ -1,7 +1,7 @@
 'use strict';
 
 const expect = require('expect.js');
-const { AsyncEnvironment } = require('../src/environment');
+const { AsyncEnvironment } = require('../src/environment/environment');
 
 describe('Phase 3: Empty Loop Handling', () => {
   let env;
