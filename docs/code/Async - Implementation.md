@@ -51,30 +51,20 @@ Crucially, even after resolving its *inputs*, the operation itself (like a funct
 
 Cascada enables concurrency by compiling potentially asynchronous sections of the template (identified by the compiler) into self-contained units called "Async Blocks." It doesn't explicitly *identify* independent operations beforehand, but rather structures the code so that independence can lead to parallelism.
 
-*   **IIFE Closures:** At the core, each async block in the generated JavaScript code is typically wrapped in an Immediately Invoked Function Expression (IIFE), specifically an `async` IIFE:
-    ```javascript
-    // Simplified conceptual representation
-    (async (astate, frame) => { // The async IIFE
-      try {
-        // ... compiled template code for the block ...
-        // This code might contain internal 'await's for its own operations
-        // or for dependency synchronization managed by the runtime.
-      } catch (e) {
-        runtime.handleError(e, lineno, colno); // Report errors
-        // Error might be propagated via callback or rejected promise chain
-      } finally {
-        // Signal completion to the runtime state tracker
-        astate.leaveAsyncBlock();
-      }
-    // Pass runtime state tracker and potentially a new frame
-    })(astate.enterAsyncBlock(), frame.pushAsyncBlock(...));
-    ```
-*   **Non-Blocking Execution:** The `async` IIFE is *called* immediately. Because it's `async`, the call *returns* a Promise almost instantly, *before* the asynchronous operations *within* the IIFE have completed. This allows the main template execution flow to continue processing subsequent code that doesn't depend on this block's result, effectively enabling concurrency whenever multiple such blocks are initiated without intermediate `await`s.
-*   **Runtime State Tracking (`astate`):** A runtime state object (conceptually `astate`) tracks the overall progress of concurrent operations.
-    *   `enterAsyncBlock()`: Increments a counter of active async blocks when an IIFE starts.
-    *   `leaveAsyncBlock()`: Decrements the counter when an IIFE finishes (in the `finally` block, ensuring it runs even on error).
-    *   `waitAllClosures()`: Returns a Promise that resolves only when the active block counter reaches zero (or a specified target count). The main rendering process awaits this promise before finalizing the output, ensuring all concurrent work is done.
-*   **Internal Synchronization with `waitAllClosures`:** Beyond the final wait at the root level, `astate.waitAllClosures()` is also crucial *within* the execution flow for local synchronization.
+- **Async Block Helper:** Rather than emitting a raw immediately invoked `async` function, the compiler now calls `astate.asyncBlock(...)`. This helper wraps the body, creates the child frame, registers the child async state, and wires the lifecycle callbacks automatically:
+  ```javascript
+  // Simplified conceptual representation
+  astate.asyncBlock(async (childState, childFrame) => {
+    // ... compiled template code for the block ...
+    // Internal awaits for this block's work happen here.
+  }, runtime, frame, readVars, writeCounts, cb, lineno, colno, context, errorContext);
+  ```
+  The helper ensures `frame.pushAsyncBlock(readVars, writeCounts)` runs before the closure executes, and it guarantees `leaveAsyncBlock()` in a `finally`, preserving the previous semantics of `runtime.executeAsyncBlock`.
+- **Non-Blocking Execution:** The `asyncBlock` call returns a Promise immediately, allowing the surrounding template logic to continue. Independent blocks therefore overlap in time whenever the compiler doesn't emit waits between them.
+- **Runtime State Tracking (`astate`):** The async state object tracks the lifecycle of these blocks.
+  - `asyncBlock(...)` creates the child frame/state and increments the active-closure counters.
+  - `waitAllClosures()` resolves once the counter drops to zero (or the provided target), ensuring `render` only completes after all child work finishes.
+- **Internal Synchronization with `waitAllClosures`:** Beyond the final wait at the root level, `astate.waitAllClosures()` is also crucial *within* the execution flow for local synchronization.
     *   **Mechanism:** When an async block needs to wait for its own spawned children (other async blocks it directly initiated), it typically uses `await astate.waitAllClosures(1)`. The `1` signifies waiting until the active closure count drops back to one, meaning only the waiting block itself remains active in its branch of execution.
     *   **Purpose:** This internal waiting ensures sequential correctness and proper data handling in scenarios like:
         *   **Data Aggregation:** `{% capture %}` or `{% macro %}` must wait for their async bodies to complete before finalizing their result.
@@ -197,7 +187,7 @@ The compiler performs crucial static analysis to enable the runtime mechanisms.
 *   **AST Transformation (`propagateIsAsync`):** Traverses the Abstract Syntax Tree (AST), marking each node `isAsync = true` if it or any child represents a potentially async operation. This flag dictates code generation paths.
 *   **Async Block Generation (`_emitAsyncBlock`, etc.):** When compiling an `isAsync` node (typically a template tag or complex expression), wraps the generated code in the `async` IIFE structure using helpers. Manages:
     *   IIFE creation (`async (...) => { ... }`).
-    *   `try...catch...finally` for errors and cleanup (`astate.leaveAsyncBlock`).
+    *   `try...catch...finally` for errors and cleanup (`astate._leaveAsyncBlock`).
     *   Runtime frame setup (`frame.pushAsyncBlock(...)` passing `reads` and `writeCounters`).
     *   Hierarchical buffer management (`bufferStack`, `_pushBuffer`, `_popBuffer`).
     *   Tracking async closure depth (`asyncClosureDepth`).
@@ -208,7 +198,7 @@ The compiler performs crucial static analysis to enable the runtime mechanisms.
 The runtime (`runtime.js`) provides the classes and helpers that execute the compiled code and manage the async flow.
 
 *   **`AsyncFrame`:** Extends `Frame` for async ops. Key properties: `asyncVars` (snapshots/intermediate values), `writeCounters`, `promiseResolves`. Key methods: `pushAsyncBlock`, `_snapshotVariables`, `_promisifyParentVariables`, `_countdownAndResolveAsyncWrites`, `skipBranchWrites`, `_resolveAsyncVar`, `finalizeLoopWrites`.
-*   **`AsyncState` (Conceptual):** Manages overall async state: active block count (`enter/leaveAsyncBlock`), completion waiting (`waitAllClosures`).
+*   **`AsyncState` (Conceptual):** Manages overall async state: active block count (handled by `asyncBlock`/`leaveAsyncBlock`), completion waiting (`waitAllClosures`).
 *   **Buffer Management (`flattenBuffer`):** Recursively flattens the nested buffer array into the final output string.
 *   **Async Helpers:** Functions (`resolveAll`, `resolveDuo`, `resolveSingle`, `memberLookupAsync`, `iterate`, `promisify`, etc.) provide building blocks for implicit Promise handling.
 
@@ -227,8 +217,8 @@ Error handling is built into the async block structure:
 
 *   **`try...catch...finally`:** Generated code wraps async block logic.
 *   **`runtime.handleError`:** Catches add context (line/col).
-*   **Propagation:** Errors occurring within an async block are caught by the `try...catch` structure wrapped around it by the compiler. The `catch` block typically uses `runtime.handleError` to add template context (like line/column numbers) and then causes the Promise associated with that specific async block (the one returned by its IIFE) to be **rejected**. This rejection propagates naturally through the Promise chain. Since runtime operations involving async blocks often await these Promises (e.g., waiting for arguments, waiting for included template rendering), the rejection will bubble up. The main rendering process waits for all top-level async blocks to complete via `astate.waitAllClosures()`. This waiting mechanism detects the rejection (likely stopping on the first encountered fatal error) and ultimately rejects the final Promise returned by the top-level `renderAsync` call, signaling failure to the caller.
-**Cleanup (`finally`):** Importantly, the `finally` block associated with each async IIFE ensures that `astate.leaveAsyncBlock()` is always called (even on error), decrementing the active block counter. This cleanup prevents the system from hanging indefinitely if an error occurs partway through execution.
+*   **Propagation:** Errors occurring within an async block are caught by the `try...catch` structure wrapped around it by the compiler. The `catch` block typically uses `runtime.handleError` to add template context (like line/column numbers) and then causes the Promise associated with that specific async block (the one returned by `astate.asyncBlock`) to be **rejected**. This rejection propagates naturally through the Promise chain. Since runtime operations involving async blocks often await these Promises (e.g., waiting for arguments, waiting for included template rendering), the rejection will bubble up. The main rendering process waits for all top-level async blocks to complete via `astate.waitAllClosures()`. This waiting mechanism detects the rejection (likely stopping on the first encountered fatal error) and ultimately rejects the final Promise returned by the top-level `renderAsync` call, signaling failure to the caller.
+**Cleanup (`finally`):** `astate.asyncBlock` registers a `finally` handler that always decrements the active block counter via `leaveAsyncBlock()`, even on error. This cleanup prevents the system from hanging indefinitely if an error occurs partway through execution.
 
 ## Performance Considerations
 
