@@ -2,13 +2,18 @@
 
 const lib = require('../lib');
 const { Obj } = require('../object');
-const { Environment } = require('./environment');
 const { createPoison } = require('../runtime/errors');
 
 class Context extends Obj {
   init(ctx, blocks, env, path) {
     // Has to be tied to an environment so we can tap into its globals.
-    this.env = env || new Environment();
+    if (!env) {
+      // Lazy load Environment to avoid circular dependency
+      const { Environment } = require('./environment');
+      this.env = new Environment();
+    } else {
+      this.env = env;
+    }
     this.path = path || null;
 
     // Make a duplicate of ctx
