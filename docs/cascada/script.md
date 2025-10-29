@@ -186,6 +186,8 @@ else
 endif
 ```
 
+If the condition of an `if` statement evaluates to an error, both the `if` and `else` branches are skipped, and the error is propagated to any variables or outputs that would have been modified within them. For more details, see the main section on [Error Handling](#resilient-error-handling-an-error-is-just-data).
+
 #### Loops
 Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
 
@@ -409,6 +411,8 @@ if (user.role == "Admin" and not user.isSuspended) or user.isOwner
 endif
 ```
 
+Cascada also provides a rich, data-centric error handling model. You can test if a variable contains a failure using the `is error` test, and inspect error details using the `#` (peek) operator. For more details, see the section on [Resilient Error Handling](#resilient-error-handling-an-error-is-just-data).
+
 #### Inline `if` Expressions
 For concise conditional assignments, you can use an inline `if` expression, which works like a ternary operator.
 
@@ -493,7 +497,7 @@ var userSettings = { notifications: true, theme: "light" }
 
 #### The Core Concept: Collect, Execute, Assemble
 
-Instead of being executed immediately, `@` commands are handled in a three-step process that applies at the end of each **execution scope** (the main script, a [macro](#macros-and-reusable-components), or a [`capture` block](#block-assignment-with-capture)):
+Instead of being executed immediately, `@` commands are stored in order and applied at the end of each **execution scope** (the main script, a [macro](#macros-and-reusable-components),or a [`capture` block](#block-assignment-with-capture)):
 
 1.  **Collect:** As your script runs, Cascada collects `@` commands into a buffer, preserving their source-code order.
 2.  **Execute:** All other logic—`var` assignments, `async` function calls, `for` loops—runs to completion. Independent async operations happen concurrently, maximizing performance.
@@ -551,6 +555,8 @@ Every `@` command is directed to an **output handler**. The handler determines w
 *   **`@data`**: The built-in handler for building structured data (objects, arrays, strings and numbers).
 *   **`@text`**: The built-in handler for generating a simple string of text.
 *   **Custom Handlers**: You can define your own handlers for domain-specific tasks where a sequence of operations is important, such as drawing graphics (`@turtle.forward(50)`), logging, or writing to a database (`@db.users.insert(...)`).
+
+When an error is written to an output handler (e.g., `@data.user = myError`), the handler becomes "poisoned," which can cause the entire script to fail. To manage this, you can use `guard` blocks to protect handlers and provide fallback logic. For more information, see the section on [Protecting Output Handlers with `guard`](#protecting-output-handlers-with-guard).
 
 Handler methods are executed synchronously during the "Assemble" step. For asynchronous tasks, your handler can use internal buffering or other state management techniques to collect commands and dispatch them asynchronously.
 
@@ -981,6 +987,8 @@ Macros implicitly return the structured object built by the [Output Commands](#t
 
 A macro can perform its own internal, parallel async operations and then assemble a return value.
 
+If an Error Value is passed as an argument to a macro, the macro is skipped and immediately returns the error.
+
 <table>
 <tr>
 <td width="50%" valign="top">
@@ -1104,6 +1112,8 @@ account.getStatus()
 //3. Withdraw money after getStatus()
 account!.withdraw(50)
 ```
+
+For details on how to handle errors within a sequential path, including how to "repair" a failed path so that subsequent operations can continue, see the section on [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-).
 
 ### Resilient Error Handling: An Error is Just Data
 
@@ -1321,7 +1331,11 @@ var writeResult = context.fileSystem!.writeData(data)  // ❌ Might fail
 // ✅ Always close the file, even if writes failed
 context.fileSystem!!.close()
 
-@data.success = writeResult is not error
+guard @data
+  @data.result = writeResult
+recover
+  @data.error = "Work failed"
+endguard
 ```
 
 **Checking Path State:**
