@@ -1115,6 +1115,47 @@ account!.withdraw(50)
 
 For details on how to handle errors within a sequential path, including how to "repair" a failed path so that subsequent operations can continue, see the section on [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-).
 
+#### Context Requirement for Sequential Paths
+
+Sequential paths must reference objects from the context, not local variables.
+The JS context object:
+```javascript
+// Assuming 'db' is provided in the context object:
+const context = { db: connectToDatabase() };
+```
+The script:
+```javascript
+// ✅ CORRECT: Direct reference to context property
+db!.insert(data)
+
+// ❌ WRONG: Local variable copy
+var database = db
+database!.insert(data)  // Error: sequential paths must be from context
+```
+
+Nested access from context properties works fine:
+```javascript
+services.database!.insert(data)  // ✅ CORRECT (if 'services' is in context)
+```
+
+**Why this restriction?** The engine uses object identity from the context to guarantee sequential ordering. Copying context objects to local variables breaks this tracking, which is why it's not allowed.
+
+**Exception for macros:** When a macro uses `!` on a parameter, that argument must originate from the context when calling the macro:
+```javascript
+macro performWork(database)
+  database!.insert(data)
+endmacro
+
+// ✅ CORRECT: Pass context object
+performWork(db)  // 'db' is from context
+
+// ❌ WRONG: Pass local variable
+var myDb = db
+performWork(myDb)
+```
+
+The engine uses object identity from the context to guarantee sequential ordering. Copying to local variables breaks this guarantee, which is why the restriction exists.
+
 ### Resilient Error Handling: An Error is Just Data
 
 **Note**: This feature is under development.
