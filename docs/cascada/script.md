@@ -1109,16 +1109,16 @@ account!.withdraw(50)
 
 **Note**: This feature is under development.
 
-Cascada has a simple yet powerful approach to error handling: **an error is just another type of data**. Instead of halting execution with exceptions, failed operations produce a special **Error Value**. Any variable can hold this value, it can be passed to functions, and it can be inspected just like a number or a string.
+Cascada has a simple yet powerful approach to error handling: **an error is just another type of data**. Instead of halting execution with exceptions, failed operations produce a special **Error Value**. Any variable can hold this value, it can be passed to functions, and it can be inspected like any object.
 
-This model is designed for concurrency. When an operation in one part of your script fails, it produces an Error Value. This has no effect on independent, parallel operations, which continue to run unaffected.
+This model is designed for concurrency. When an operation in one part of your script fails, it produces Error Values only for the variables affected by the operation. This has no effect on independent, parallel operations, which continue to run unaffected.
 
-### The Core Mechanism: Error Propagation
+#### The Core Mechanism: Error Propagation
 
-Once an Error Value is created, it automatically spreads to any dependent operation or variable — this process is known as **error propagation**.
+Once an Error Value is created, it automatically spreads to any dependent operation or variable — this process is known as **error propagation**, **dataflow poisoning** or just **poisoning**.
 
 * **Expressions:**
-  If any part of an expression is an error, the entire expression immediately evaluates to that same error. Other operands are not evaluated.
+  If any part of an expression is an error, the entire expression evaluates to the error.
 
   ```javascript
   var total = myError + 5 // total becomes myError
@@ -1132,7 +1132,7 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   ```
 
 * **Loops:**
-  A loop whose iterable is an Error Value will not execute its body.
+  A loop whose iterable is an Error Value will not execute its body, but will poison all variables and outputs affected by the loop.
 
   ```javascript
   for item in myErrorList
@@ -1149,23 +1149,58 @@ Once an Error Value is created, it automatically spreads to any dependent operat
 * **Sequential Side-Effect Paths:**
   If a call in a **side-effect sequence** (`!path`) fails, that path becomes **poisoned**. Any later operations using the same `!path` will instantly yield an Error Value rather than executing.
 
+* **Multiple errors:**
+  If multiple operations fail concurrently, their errors are collected into a single `PoisonError` that holds all the original, individual errors. This ensures that no error is lost and you get a complete picture of all failures. This is common in expressions where multiple operands are Error Values or in function calls where multiple arguments are Error Values.
+
 This mechanism ensures that once an operation fails, all dependent results and outputs reflect that failure, keeping data integrity consistent across parallel and sequential execution flows.
 
+#### Detecting and Repairing Errors
 
-### Anatomy of an Error Object
+The fundamental way to detect if a variable holds an Error Value is the `is error` test. Once a failure is detected, you can "repair" the situation by re-assigning the variable, which prevents the error from propagating further. Common repair strategies include assigning a default fallback value or retrying the failed operation.
 
-Every Error Value in Cascada is a rich object designed for easy debugging.
+**Example: Assigning a Fallback Value**
+```javascript
+// fetchUser(999) is assumed to fail and return an Error Value
+var user = fetchUser(999)
 
-*   `message`: (string) The human-readable error message.
-*   `name`: (string) A custom name for business-logic errors (e.g., `'ValidationError'`).
-*   `jsError`: (object | null) The underlying JavaScript `Error` object if the failure originated from the JS environment, providing access to the original stack trace.
-*   `source`: (object) A tracer that tells you the error's history:
-    *   `origin`: (string) The string representation of the function call or `@error` command that *first* created the error.
-    *   `variables`: (string[]) An array of all variable names that were subsequently assigned this exact Error Value as it propagated through your script.
+if user is error
+  // The fetch failed. Log the error and repair the 'user' variable
+  // by assigning a default user object.
+  @data.log = "Failed to fetch user: " + user#message
+  user = { name: "Guest", isDefault: true }
+endif
 
-### Inspecting, Reporting, and Handling Errors
+// This next line can now execute without failing, because 'user' was repaired.
+// The output will be "Guest".
+@data.username = user.name
+```
 
-Cascada provides a complete toolkit for creating, detecting, inspecting, and handling errors.
+**Example: Retrying a Failed Operation**
+You can use a `while` loop with `is error` to retry a failing operation a set number of times.
+
+```javascript
+var retries = 0
+var user
+
+// Try to fetch the user up to 3 times
+while retries < 3
+  user = fetchUser(123) // This operation might fail transiently
+  if user is not error
+    break // Success, so we exit the loop
+  endif
+  retries = retries + 1
+endwhile
+
+// After the loop, check if the operation was ever successful
+if user is error
+  // All retries failed, so we log it and assign a default value
+  @data.log = "Fetching user failed after 3 retries."
+  user = { name: "Guest", isDefault: true }
+endif
+
+// This code will now run with either the fetched user or the default
+@data.username = user.name
+```
 
 #### Peeking Inside Errors with `#`
 
@@ -1182,168 +1217,32 @@ if failedUser is error
 endif
 ```
 
-#### Checking for Errors with `is error`
+#### Anatomy of an Error Value
 
-The `is error` test is the fundamental way to check if a variable holds an Error Value.
-```javascript
-var user = fetchUser(123)
-if user is error
-  // Use '#' to get the error message for logging
-  @data.error_message = user#message
-endif
-```
+An Error Value is a rich object designed for easy debugging, containing detailed information about what went wrong and where.
 
-#### Providing Defaults with `fallback()`
+*   `errors`: (array) A list of one or more underlying error objects that contributed to this failure. Each object in this array provides detailed context about a specific failure and contains the following properties for diagnostics:
+    *   `message`: (string) The specific error message for this particular failure.
+    *   `name`: (string) A custom name for business-logic errors (e.g., `'ValidationError'`).
+    *   `lineno`: (number) The line number in the source file where the error occurred.
+    *   `colno`: (number) The column number on the line where the error occurred.
+    *   `path`: (string) The name of the script or template file where the error originated.
+    *   `operation`: (string) A technical description of the internal operation the engine was performing when the error occurred. This is primarily useful for debugging the engine itself. Examples include `FunCall` (for a function call), `LookupVal` (for property access like `user.name`), `Add` (for a `+` operation), or `Output(FunCall)` (an error while rendering the output of a function call).
+    *   `cause`: (object | null) If the error originated from the JavaScript environment (e.g., from a native function or an external library), this property holds the original JavaScript `Error` object, providing access to the original stack trace.
+*   `message`: (string) A summary message that combines the messages from all the individual errors contained in the `errors` array.
 
-To concisely provide a default value for an expression that might fail, use the `fallback()` global function. An error handled this way is considered resolved and will not trigger a `catch` block.
+#### The Final Error Object
 
-**`fallback(expression, defaultValue)`**
-It evaluates `expression`. If the result is an Error Value, it returns the `defaultValue`.
+A script or template only fails and rejects its `render` promise if an unhandled error reaches and "poisons" a final output handler (like `@data` or `@text`). An error is treated like data within the script; it only becomes an execution failure if it contaminates the final result. If you handle all errors internally (e.g., using is error to detect it and overwriting it with a normal value) so that no Error Value ever reaches an output command, the script will complete successfully.
 
-```javascript
-// Provide a default avatar if the user's preference is missing or invalid.
-@data.avatar = fallback(user.prefs.avatar_url, "default_avatar.png")
-```
+When a script *does* fail, the promise rejects with a special, rich JavaScript `Error` object. This object is not a simple error; it's a detailed report that contains all the properties described in the [Anatomy of an Error Value](#anatomy-of-an-error-value) section.
 
-#### Reporting Custom Errors with `@error`
+This means your JavaScript or TypeScript code can inspect the failure in detail:
 
-You can **report** your own business-logic errors using the `@error()` output command. This is perfect for validation or enforcing rules within your script.
+*   `err.message`: A summary of all failures.
+*   `err.errors`: An array of the individual, detailed error objects, each with properties like `lineno`, `colno`, `path`, and `operation`.
 
-**`@error(message, [error])`**
-*   `message`: (string) The error message.
-*   `error` (optional): A string name (e.g., `'Validation'`) or a raw JavaScript Error object.
-```javascript
-if user.balance < requiredAmount
-  @error("Insufficient funds for transaction.", "BalanceError")
-endif
-```
-
-### Handling Failures with the `try/on error/catch` Block
-
-The `try/on error/catch` construct is designed to handle real-time failures, build in resilience, and provide a final aggregation point, all without sacrificing concurrency.
-
-The block has three parts, each serving a distinct purpose:
-
-| Part | Purpose | Execution Timing |
-| :--- | :--- | :--- |
-| **`try`** | The main logic. | Executed first. |
-| **`on error`** | (Optional) A real-time event handler for each individual failure. | Runs immediately and concurrently each time an error occurs within `try`. |
-| **`catch`** | (Optional) A final aggregation block for all unhandled errors. | Runs once at the end, after all `try` and `on error` logic has completed. |
-
-#### The `try` Block: Defining the Scope
-This is where you place your main logic. All operations inside this block are monitored for failures.
-```javascript
-try
-  // Your main workflow logic goes here.
-  var user = fetchUser(123)
-  var report = generateReportFor(user)
-  db.save(report)
-  // ... on error and catch blocks follow
-```
-
-#### The `on error` Block: Real-time Intervention and Resilience
-This optional block is a powerful, real-time event handler. It is invoked **each time** an operation within the `try` scope fails, allowing you to react to failures as they happen. It is not invoked for Error Objects that were overriden by a `fallback()` call.
-
-*   **It Does Not Block:** The `on error` handler for one failure runs concurrently with other independent operations in the `try` block. It does not create a performance bottleneck.
-*   **Safe Scope:** It has read-only access to variables from the outer scope but can safely use buffered output commands (like `@data` or `@text`).
-*   **The `error` Variable:** Inside this block, a special `error` variable is available, holding the details of the specific failure that triggered it. You can access its properties directly without the `#` peek operator.
-
-The `error` variable provides properties for inspection and methods for taking action:
-*   **Properties for Inspection:**
-    *   `error.message`, `error.name`, `error.jsError`, `error.source`: The same rich properties as a standard Error Value.
-    *   `error.retryCount`: The number of times this specific operation has been retried (1-indexed).
-*   **Methods for Action:**
-    *   **`error.retry()`**: Re-invokes the original function call that failed. This is the primary mechanism for building resilience. The method returns `true` if a retry is possible (it was a function call error), and `false` otherwise (e.g., for a divide-by-zero error).
-    *   **`error.resolve(value)`**: Halts the error propagation and substitutes the given `value` as the successful result of the failed operation. The operation is now considered a success.
-
-Here is a full example demonstrating a retry strategy:
-```javascript
-try
-  var reportData = generateReport()      // Might fail with a 'TransientError'
-  db.saveReport(reportData)              // Might fail with a 'DBConnectionError'
-on error
-  // This logic runs for each failure.
-  if error.retryCount < 3 and error.name == 'TransientError'
-    // Log the attempt and retry for transient errors.
-    @text("Transient error on " + error.source.origin + ". Retrying...")
-    error.retry()
-  else
-    // For permanent errors or too many retries, just log it.
-    // The error will continue to propagate and be caught by the 'catch' block.
-    @text("Permanent failure on " + error.source.origin)
-  endif
-```
----
-#### The `catch` Block: Final Aggregation
-This optional block is the final backstop. It runs **once** after all logic in the `try` block and all `on error` handlers have completed. Its primary purpose is for final logging, setting a global failure status, reporting on the ultimate outcome of the workflow, or recovering from the errors.
-
-Inside this block, a special `errors` variable is available, containing an array of all **unhandled** Error Objects—those that were not resolved by `error.resolve()`, a successful `error.retry()`, or a `fallback()` call. You can access its properties directly without the `#` peek operator.
-
-```javascript
-catch errors
-  // This runs only if there are errors that were not successfully handled
-  // by the 'on error' block.
-  @data.status = "FAILED_PERMANENTLY"
-  for err in errors
-    @data.unhandled_errors.push({
-      culprit: err.source.origin,
-      message: err.message
-    })
-  endfor
-endtry // This concludes the full try/on error/catch construct.
-```
-
-### Unhandled Errors and the Final Return Value
-
-Cascada provides a crucial safety net to ensure that unhandled errors are never silently ignored, especially when using output focusing. This mechanism applies not just to the entire script, but to any execution scope that produces a result, such as a [macro](#macros-and-reusable-components) or a [`capture` block](#block-assignment-with-capture).
-
-Under the hood, all unhandled errors that are not resolved within a `try/on error/catch` block are collected by a special `@error` output handler. The presence of errors in this handler fundamentally changes the final return value of the scope.
-
-#### Behavior Without Output Focusing
-
-If you do not focus the output (i.e., you do not use `:data`, `:text`, etc.), the result of the scope is the standard result object. The collected errors will be neatly contained within the `error` property.
-
-*   **Result:** A standard object like `{ data: {...}, text: "...", error: <PoisonError> }`.
-*   **Error Propagation:** This return value is **not** an Error Value itself. It does not trigger error propagation. Your calling code is responsible for checking the `result.error` property to see if failures occurred.
-
-```javascript
-// A script without output focusing
-var user = fetchUser(999) // Fails
-
-// Returns: { data: {}, text: "", error: <PoisonError> }
-```
-
-#### Behavior With Output Focusing (`:data`, `:text`, etc.)
-
-This is where the safety net becomes critical. When you focus the output, you are asking for a specific, clean piece of data. If unhandled errors have occurred, returning just the (potentially incomplete) focused data would be misleading and dangerous.
-
-*   **Rule:** If a scope's output is focused (e.g., `:data`) AND the `@error` handler for that scope is not empty, the scope will **ignore the focusing directive**.
-*   **Result:** Instead of returning the focused data, the scope will return a single **Compound Error Value**.
-*   **Error Propagation:** Because the return value is a proper Error Value, it **will trigger error propagation** in the calling scope.
-
-```javascript
-// A macro with output focusing
-macro buildUser() :data
-  var user = fetchUser(999) // Fails, populates the @error handler
-  @data.id = user#id
-endmacro
-
-// Calling the macro
-var report = capture
-  // buildUser() returns a Compound Error Value, not the data object.
-  var userData = buildUser()
-  // Because userData is an error, this line propagates the error.
-  @data.final_user = userData
-endcapture
-
-// The 'report' variable will now hold the Compound Error Value from buildUser().
-```
-
-This design guarantees that you cannot accidentally consume partial or incorrect data from a failed, focused operation. The failure is forced into the data flow, demanding that it be handled.
-
-#### The Compound Error Object
-
-The `PoisonError` is a special type of Error Value that aggregates all unhandled errors from an execution scope. It shares the standard error properties (`message`, `name`, `source`) but also includes an `errors` property containing the array of all the individual Error Objects that were collected. This provides a complete summary of everything that went wrong within that scope.
+This allows you to programmatically handle failures, log detailed diagnostics, or display user-friendly error messages based on the specifics of what went wrong inside the script. Under the hood, this object is an instance of `PoisonError`, designed to capture and report on concurrent failures comprehensively.
 
 ### Filters and Global Functions
 
@@ -1756,184 +1655,4 @@ const env = new AsyncEnvironment([
     | Method | Description | Required? |
     |---|---|:---:|
     | `load(name)` | The core method. Loads an asset by name and returns its content (as a string or `LoaderSource` object), or `null` if not found. Can be async. | **Yes** |
-    | `isRelative(name)` | Returns `true` if a filename is relative (e.g., `./component.script`). Used for `include`, `import`, and `extends`. | No |
-    | `resolve(from, to)`| Resolves a relative path (`to`) based on the path of a parent script (`from`). | No |
-    | `on(event, handler)` | Listens for environment events (`'load'`, `'update'`). Useful for advanced caching strategies. | No |
-
-    Here is an example of a class-based loader that supports relative paths:
-    ```javascript
-    // A custom loader that fetches scripts from a database and handles relative paths
-    class DatabaseLoader {
-      constructor(db) { this.db = db; }
-
-      // The required 'load' method can be synchronous or asynchronous
-      async load(name) {
-        const scriptRecord = await this.db.scripts.findByName(name);
-        if (!scriptRecord) return null;
-        // Return a LoaderSource object with the content and path
-        return { src: scriptRecord.sourceCode, path: name, noCache: false };
-      }
-
-      // Optional method to identify relative paths
-      isRelative(filename) {
-        return filename.startsWith('./') || filename.startsWith('../');
-      }
-
-      // Optional method to resolve relative paths
-      resolve(from, to) {
-        // This is a simplified example; a real implementation would use a
-        // library like 'path' or a URL resolver.
-        const fromDir = from.substring(0, from.lastIndexOf('/'));
-        return `${fromDir}/${to}`;
-      }
-    }
-
-    const env = new AsyncEnvironment(new DatabaseLoader(myDbConnection));
-    ```
-
-    **4. Running Loaders Concurrently**
-
-The **`raceLoaders(loaders)`** function creates a single, optimized loader that runs multiple loaders concurrently and returns the result from the first one that succeeds. This is ideal for scenarios where you want to implement fallback mechanisms (e.g., try a CDN, then a local cache) or simply load from the fastest available source without waiting for slower ones.
-
-    ```javascript
-    const { raceLoaders, FileSystemLoader, WebLoader } = require('cascada-engine');
-
-    // This loader will try to fetch from the web first, but if that is slow
-    // or fails, it will fall back to the filesystem loader.
-    const fastLoader = raceLoaders([
-      new WebLoader('https://my-cdn.com/scripts/'),
-      new FileSystemLoader('scripts/backup/')
-    ]);
-
-    const env = new AsyncEnvironment(fastLoader);
-    ```
-
-#### Compilation and Caching
-
-For better performance, the environment can compile and cache assets.
-
-*   `asyncEnvironment.getScript(scriptName)`
-    Retrieves a compiled `AsyncScript` object for the given `scriptName`, loading it via the configured loader if it's not already in the cache. Returns a `Promise` that resolves with the `AsyncScript` instance.
-
-*   `asyncEnvironment.getTemplate(templateName)`
-    Retrieves a compiled `AsyncTemplate` object. Works similarly to `getScript`.
-
-    ```javascript
-    // Get a compiled script once
-    const compiledScript = await env.getScript('process_data.casc');
-
-    // Render it multiple times with different contexts
-    const result1 = await compiledScript.render({ input: 'data1' });
-    const result2 = await compiledScript.render({ input: 'data2' });
-    ```
-
-#### Extending the Engine
-
-You can add custom, reusable logic to any environment.
-
-*   `asyncEnvironment.addGlobal(name, value)`
-    Adds a global variable or function that is accessible in all scripts and templates.
-
-    ```javascript
-    env.addGlobal('utils', {
-      formatDate: (d) => d.toISOString(),
-      API_VERSION: 'v3'
-    });
-    // In script: var formatted = utils.formatDate(now())
-    ```
-
-*   `asyncEnvironment.addFilter(name, func, [isAsync])`
-    Adds a custom filter that can be used in both scripts and templates with the `|` operator.
-
-*   `asyncEnvironment.addDataMethods(methods)`
-    Extends the built-in `@data` handler with your own methods.
-
-    ```javascript
-    env.addDataMethods({
-      // Called via @data.path.incrementBy(10)
-      incrementBy: (target, amount) => (target || 0) + amount,
-    });
-    ```
-
-*   `asyncEnvironment.addCommandHandlerClass(name, handlerClass)`
-    Registers a **factory** for a custom output command handler. A new instance of `handlerClass` is created for each script run.
-
-*   `asyncEnvironment.addCommandHandler(name, handlerInstance)`
-    Registers a **singleton** instance of a custom output command handler. The same object is used across all script runs.
-
-### Compiled Objects: `AsyncScript`
-
-When you compile an asset, you get a reusable object that can be rendered efficiently multiple times.
-
-#### `AsyncScript`
-
-Represents a compiled Cascada Script.
-
-*   `asyncScript.render([context])`
-    Executes the compiled script with the given `context`, returning a `Promise` that resolves with the result (typically a data object).
-
-#### `AsyncTemplate`
-
-Represents a compiled Nunjucks Template.
-
-*   `asyncTemplate.render([context])`
-    Renders the compiled template, returning a `Promise` that resolves with the final string.
-
-### Precompiling for Production
-
-For maximum performance, you should precompile your scripts and templates into JavaScript ahead of time. This eliminates all parsing and compilation overhead at runtime, allowing your application to load assets instantly.
-
-Cascada provides functions to precompile files or strings directly to JavaScript:
-
-*   `precompileScript(path, [opts])`
-*   `precompileTemplate(path, [opts])`
-
-The resulting JavaScript string can be saved to a `.js` file and loaded in your application using the `PrecompiledLoader`. A key option is `opts.env`, which ensures that any custom filters, global functions, or command handlers you've added are correctly included in the compiled output.
-
-**For a comprehensive guide on all precompilation options and advanced usage, please refer to the [Nunjucks precompiling documentation](https://mozilla.github.io/nunjucks/api.html#precompiling).**
-
-## Development Status and Roadmap
-
-Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented  (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
-
-This roadmap outlines key features and enhancements that are planned or currently in progress.
-
-
--   **Resilient Error Handling: An Error is Just Data**
-    Tne error-handling construct designed for asynchronous workflows. This will allow for conditional retries and graceful failure management.
-
--   **Declaring Cross-Script Dependencies for (`import`, `include`, `extends`)**
-    Support declaring variable dependencies wtih the `extern`, `reads`, and `modifies` keywords.
-
--   **Reading from the `@data` Object**
-    Enabling the ability to read from the `@data` object on the right side of `@data` expressions (e.g., `@data.user.name = @data.form.firstName + ' ' + @data.form.lastName`). This will allow for more powerfull data composition.
-
--   **Expanded Sequential Execution (`!`) Support**
-    Enhancing the `!` marker to work on variables and not just objects from the global context. This is especially important for macro arguments as macros don't have access to the context object.
-
--   **Direct Property Assignment on Variables**
-    Adding support for direct property modification on variables (e.g., `myObject.property = "new value"`). This is currently possible only for `@data` assignments
-
--   **Compound Assignment for Variables (`+=`, `-=`, etc.)**
-    Extending support for compound assignment operators (`+=`, `*=`, etc.) to regular variables (this is currently supported only for `@data` assignments). Like their `@data` counterparts, the default behavior of each operator will be overridable with custom methods.
-
--   **Root-Level Sequential Operator**
-    Allowing the sequential execution operator `!` to be used directly on root-level function calls (e.g., `!.saveToDatabase(data)`), simplifying syntax for global functions with side effects.
-
--   **Expanded Built-in `@data` Methods**
-    Adding comprehensive support for standard JavaScript array and string methods (e.g., `map`, `filter`, `slice`, `replace`) as first-class operations within the `@data` handler.
-
--   **Enhanced Error Reporting**
-    Improving the debugging experience by providing detailed syntax and runtime error messages that include code snippets, file names, and line/column numbers to pinpoint issues quickly.
-
--   **Automated Dependency Declaration Tool**
-    A command-line tool that analyzes modular scripts (import, include, extends) to infer cross-file variable dependencies. This tool will automatically add the required extern, reads, and modifies declarations to your script files.
-
--   **Execution Replay and Debugging**
-    Creating an advanced logging system, via a dedicated output handler, to capture the entire execution trace. This will allow developers to replay and inspect the sequence of operations and variable states for complex debugging.
-
--   **OpenTelemetry and MLflow Integration for Observability**
-    Implementing native support for tracing using the OpenTelemetry standard. This will capture the inputs and outputs of scripts and templates, as well as the arguments and return values of individual function calls. This integration is designed for high-level observability, enabling developers to monitor data flow, analyze performance, and track costs (e.g., token usage in LLM calls) with platforms like MLflow's tracing system. It focuses on key I/O points rather than a complete execution trace.
-
--   **Robustness and Concurrency Validation**
-    Continuously expanding the test suite with a focus on complex, high-concurrency scenarios to formally verify the correctness and stability of the parallel.
+    | `isRelative(name)`
