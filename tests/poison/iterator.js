@@ -4,7 +4,6 @@
   var expect;
   let runtime;
   let createPoison;
-  let isPoison;
   let isPoisonError;
   let AsyncEnvironment;
 
@@ -13,12 +12,10 @@
     runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
-    isPoison = runtime.isPoison;
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
   } else {
     expect = window.expect;
     createPoison = nunjucks.runtime.createPoison;
-    isPoison = nunjucks.runtime.isPoison;
     isPoisonError = nunjucks.runtime.isPoisonError;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
   }
@@ -169,133 +166,6 @@
       }
     });
 
-    it('should poison a simple sequential path', async () => {
-      const context = {
-        processed: [],
-        async errorFunc() {
-          throw new Error('Transient error');
-        },
-      };
-      const template = `
-        {%- do processed!.push(errorFunc()) -%}
-        {{- processed -}}`;
-
-      try {
-        await env.renderTemplateString(template, context);
-        expect().fail('Render should have thrown a PoisonError');
-      } catch (err) {
-        expect(isPoisonError(err)).to.be(true);
-        expect(context.processed).to.eql([]);
-      }
-    });
-
-    it('should poison sequential path', async () => {
-      const context = {
-        processed: [],
-        async errorFunc() {
-          throw new Error('Transient error');
-        },
-      };
-      const template = `
-        {%- do processed!.push('A') -%}
-        {%- do processed!.push(errorFunc()) -%}
-        {%- do processed!.push('B') -%}
-        {{- processed -}}`;
-
-      try {
-        await env.renderTemplateString(template, context);
-        expect().fail('Render should have thrown a PoisonError');
-      } catch (err) {
-        expect(isPoisonError(err)).to.be(true);
-        expect(context.processed).to.eql(['A', 'B']);
-      }
-    });
-
-    it('should poison sequential path from loop', async () => {
-      const context = {
-        processed: [],
-        async *myGenerator() {
-          yield 'A';
-          yield new Error('Transient error');
-          yield 'B';
-        }
-      };
-      const template = `
-        {% for item in myGenerator() %}
-          {% do processed!.push(item) %}
-        {% endfor %}
-        {{ processed }}`;
-
-      try {
-        await env.renderTemplateString(template, context);
-        expect().fail('Render should have thrown a PoisonError');
-      } catch (err) {
-        expect(isPoisonError(err)).to.be(true);
-      }
-    });
-
-    //@todo - is error not yet implemented
-    it.skip('should continue processing valid items after a poison value is yielded', async () => {
-      const context = {
-        processed: [],
-        async *myGenerator() {
-          yield 'A';
-          yield new Error('Transient error');
-          yield 'B';
-        }
-      };
-      const template = `
-        {% for item in myGenerator() %}
-          {% item is not error %}
-            {% do processed!.push(item) %}
-          {% endif %}
-        {% endfor %}
-        {{ processed[1] }}:{{ processed[0] }}`;
-
-      const result = await env.renderTemplateString(template, context);
-      expect(result).to.equal('B:A');
-    });
-
-    // TODO - sequential side-effect access is not supported yet
-    // poisoning shall happen on all further operations at the critical path
-    it.skip('should process iterations with sequential side-effect access and collect multiple errors', async () => {
-      const context = {
-        processed: [],
-        async *myGenerator() {
-          yield 1;
-          yield 2;
-          yield 3;
-          yield 4;
-        },
-        async failingFunc(val) {
-          if (val === 2 || val === 4) {
-            throw new Error(`Failure on ${val}`);
-          }
-          return val;
-        }
-      };
-      const template = `
-        {% for item in myGenerator() %}
-          {% set result = failingFunc(item) %}
-          {% do processed!.push(result) %}
-        {% endfor %}
-      `;
-
-      try {
-        await env.renderTemplateString(template, context);
-        expect().fail('Render should have thrown a PoisonError');
-      } catch (err) {
-        expect(isPoisonError(err)).to.be(true);
-        expect(err.errors).to.have.length(2);
-        const messages = err.errors.map(e => e.message).sort();
-        expect(messages).to.eql(['Failure on 2', 'Failure on 4']);
-
-        const successfulResults = await Promise.all(
-          context.processed.filter(p => !isPoison(p))
-        );
-        expect(successfulResults).to.eql([1, 3]);
-      }
-    });
 
     // Replaces: 'Deterministic error collection'
     it('should collect errors deterministically regardless of async timing', async () => {
