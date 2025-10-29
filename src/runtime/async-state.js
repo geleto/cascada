@@ -53,7 +53,7 @@ class AsyncState {
       const promise = func(childState, childFrame);
 
       // Add error handler to fulfill writeCounts contract even on failure
-      const handled = (isExpression && writeCounts)
+      const handled = (isExpression && writeCounts)//asyncBlockValue
         ? promise.catch(err => {
           // Poison all variables that this block was supposed to write and decrement counters
           // This happens with expressions with sequential operators because their locks are regular variables

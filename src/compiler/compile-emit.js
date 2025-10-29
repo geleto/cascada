@@ -170,7 +170,7 @@ module.exports = class CompileEmit {
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
       const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", true)`);
 
       this.asyncClosureDepth--;
       frame = frame.pop();
