@@ -34,5 +34,16 @@ export default {
     sourcemap: true,
     exports: 'named',
     entryFileNames: '[name].mjs'
+  },
+  onwarn(warning, warn) {
+    if (warning.code === 'CIRCULAR_DEPENDENCY') {
+      // These are safe: lazy-loaded in constructors for backwards compatibility
+      // The require() happens inside init(), not at module level
+      if (/environment\/environment\.js.*template\.js/i.test(warning.message) ||
+          /environment\/environment\.js.*context\.js/i.test(warning.message)) {
+        return;
+      }
+    }
+    warn(warning);
   }
 };

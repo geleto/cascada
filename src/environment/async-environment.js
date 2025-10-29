@@ -2,6 +2,8 @@
 
 const DataHandler = require('../script/data-handler');
 const { BaseEnvironment } = require('./base-environment');
+const { AsyncTemplate } = require('./template');
+const { AsyncScript } = require('./script');
 
 class AsyncEnvironment extends BaseEnvironment {
   init(loaders, opts) {
@@ -85,8 +87,6 @@ class AsyncEnvironment extends BaseEnvironment {
         });
       } else {
         // render template string
-        // Lazy load AsyncTemplate to avoid circular dependency
-        const { AsyncTemplate } = require('./template');
         const tmpl = new AsyncTemplate(template, this, opts.path);
         tmpl.render(ctx, callback);
       }
@@ -115,8 +115,6 @@ class AsyncEnvironment extends BaseEnvironment {
         });
       } else {
         // render script string
-        // Lazy load AsyncScript to avoid circular dependency
-        const { AsyncScript } = require('./script');
         const tmpl = new AsyncScript(script, this, opts.path);
         tmpl.render(ctx, callback);
       }

@@ -4,6 +4,7 @@ const lib = require('../lib');
 const scriptTranspiler = require('../script/script-transpiler');
 const { BaseEnvironment } = require('./base-environment');
 const { callbackAsap } = require('./utils');
+const { Template } = require('./template');
 
 class Environment extends BaseEnvironment {
   getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
@@ -57,8 +58,6 @@ class Environment extends BaseEnvironment {
     }
     opts = opts || {};
 
-    // Lazy load Template to avoid circular dependency
-    const { Template } = require('./template');
     const tmpl = new Template(src, this, opts.path);
     return tmpl.render(ctx, cb);
   }
@@ -81,8 +80,6 @@ class Environment extends BaseEnvironment {
       throw error;
     }
 
-    // Lazy load Template to avoid circular dependency
-    const { Template } = require('./template');
     const tmpl = new Template(template, this, opts.path);
     return tmpl.render(ctx, cb);
   }

@@ -10,8 +10,8 @@ const { EmitterObj } = require('../object');
 const { handleError } = require('../runtime/errors');
 const expressApp = require('../express-app');
 const { clearStringCache, callLoaders } = require('../loader/loader-utils');
-// Lazy-loaded template and script classes to avoid circular dependencies
-let Template, AsyncTemplate, Script, AsyncScript;
+const { Template, AsyncTemplate } = require('./template');
+const { Script, AsyncScript } = require('./script');
 
 /**
  * A no-op template, for use with {% include ignore missing %}
@@ -249,15 +249,7 @@ class BaseEnvironment extends EmitterObj {
       eagerCompile = false;
     }
 
-    // Check if name is a Template or Script instance using lazy-loaded classes
-    if (!Template) {
-      const templateModule = require('./template');
-      const scriptModule = require('./script');
-      Template = templateModule.Template;
-      AsyncTemplate = templateModule.AsyncTemplate;
-      Script = scriptModule.Script;
-      AsyncScript = scriptModule.AsyncScript;
-    }
+    // Check if name is a Template or Script instance
     if (name instanceof Template || name instanceof Script || name instanceof AsyncScript) {
       tmpl = name;
     } else if (typeof name !== 'string') {
