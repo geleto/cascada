@@ -17,7 +17,7 @@ This guide provides the necessary context for developing the Cascada engine. You
 
 ### Your Core Task
 
-Your goal is to write and modify TypeScript/JavaScript code for the `cascada-engine` package. This includes implementing new features, fixing bugs, and writing tests. All work must align with Cascada's core philosophy: **Parallel by Default, Sequential by Exception.**
+Your goal is to write and modify TypeScript/JavaScript code for the `cascada-engine` package. This includes implementing new features, fixing bugs, and writing tests. All work must align with Cascada's core philosophy: **Implicitly Parallel, Explicitly Sequential.**
 
 ### Golden Rules (DOs and DON'Ts)
 
@@ -70,7 +70,7 @@ Your goal is to write and modify TypeScript/JavaScript code for the `cascada-eng
 
 ## Project Overview
 
-**Cascada** is a parallel-first scripting & templating engine for JavaScript/TypeScript that fundamentally inverts the traditional programming model: **parallel by default, sequential by exception**. Based on Nunjucks, it provides both a scripting language and template syntax with automatic, implicit concurrency.
+**Cascada** is a parallel-first scripting & templating engine for JavaScript/TypeScript that fundamentally inverts the traditional programming model: **Implicitly Parallel, Explicitly Sequential**. Based on Nunjucks, it provides both a scripting language and template syntax with automatic, implicit concurrency.
 
 ### Core Philosophy
 

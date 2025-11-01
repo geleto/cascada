@@ -22,10 +22,10 @@ This parallel-first philosophy is the foundation for both of its powerful modes:
 * 🚀   A purpose-built **[scripting language](docs/cascada/script.md)** for orchestrating complex data pipelines. Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable. It offers a complete toolset for sophisticated logic with `variable declarations`, `conditionals`, `loops,` and `standard operators`. Create reusable components with `macros` and build modular applications using `import` and `extends`.
 * 📜    A familiar **[template syntax](docs/cascada/template.md)** - Cascada is based on the popular [Nunjucks](https://mozilla.github.io/nunjucks/) template engine, for generating text-based output, ideal for dynamic websites, writing emails or crafting detailed LLM prompts.
 
-### ➡️ Parallel by default, sequential by exception
+### ➡️ Implicitly Parallel, Explicitly Sequential
 While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations**, without affecting the parallelism of the rest of the code..
 
-This inversion - parallel by default, sequential by exception - is what makes Cascada so effective and intuitive.
+This inversion - Implicitly Parallel, Explicitly Sequential - is what makes Cascada so effective and intuitive.
 
 ### 📋 Execution is chaotic, but the result is orderly
 While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
