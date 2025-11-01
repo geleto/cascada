@@ -1600,6 +1600,14 @@
       finish(done);
     });
 
+    it('should compile set with nested object', function(done) {
+      equal(
+        '{% set config = { "user": { "name": "test" }} %}' +
+        '{{ config.user.name }}',
+        'test');
+      finish(done);
+    });
+
     it('should compile block-set', function(done) {
       equal(
         '{% set block_content %}{% endset %}' +

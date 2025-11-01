@@ -59,6 +59,7 @@ class Tokenizer {
     this.colno = 0;
 
     this.in_code = false;
+    this.in_variable = false; // Track if we're in {{ }} vs {% %}
 
     opts = opts || {};
 
@@ -103,6 +104,7 @@ class Tokenizer {
         // breaks on delimiters so we can assume the token parsing
         // doesn't consume these elsewhere
         this.in_code = false;
+        this.in_variable = false;
         if (this.trimBlocks) {
           cur = this.current();
           if (cur === '\n') {
@@ -121,10 +123,12 @@ class Tokenizer {
           }
         }
         return token(TOKEN_BLOCK_END, tok, lineno, colno);
-      } else if ((tok = this._extractString(this.tags.VARIABLE_END)) ||
-        (tok = this._extractString('-' + this.tags.VARIABLE_END))) {
-        // Special check for variable end tag (see above)
+      } else if (this.in_variable &&
+        ((tok = this._extractString(this.tags.VARIABLE_END)) ||
+        (tok = this._extractString('-' + this.tags.VARIABLE_END)))) {
+        // Special check for variable end tag (only when in variable mode)
         this.in_code = false;
+        this.in_variable = false;
         return token(TOKEN_VARIABLE_END, tok, lineno, colno);
       } else if (cur === 'r' && this.str.charAt(this.index + 1) === '/') {
         // Skip past 'r/'.
@@ -260,10 +264,12 @@ class Tokenizer {
       } else if ((tok = this._extractString(this.tags.BLOCK_START + '-')) ||
         (tok = this._extractString(this.tags.BLOCK_START))) {
         this.in_code = true;
+        this.in_variable = false; // We're in block mode, not variable mode
         return token(TOKEN_BLOCK_START, tok, lineno, colno);
       } else if ((tok = this._extractString(this.tags.VARIABLE_START + '-')) ||
         (tok = this._extractString(this.tags.VARIABLE_START))) {
         this.in_code = true;
+        this.in_variable = true; // We're in variable mode
         return token(TOKEN_VARIABLE_START, tok, lineno, colno);
       } else {
         tok = '';
