@@ -436,6 +436,24 @@ class CompilerBase extends Obj {
     const errorContext = this._generateErrorContext(node, node.right);
     // Ensure failMsg is properly escaped for embedding in the generated string
 
+    if (testName === 'error' && this.asyncMode) {
+      // Special case for 'is error' in async mode. We do not want to await the
+      // value, as that would trigger the poison system. Instead, we pass the
+      // raw value (which may be a promise) to the test function.
+      this.emit('(() => {');
+
+      this.emit('const value = ');
+      this.compile(node.left, frame);
+      this.emit(';');
+
+      this.emit('if (runtime.isPoison(value)) { return true; }');
+      this.emit('if (value && typeof value.then === "function") { return value.then(() => false, () => true); }');
+      this.emit('return false;');
+
+      this.emit('})()');
+      return;
+    }
+
     if (node.isAsync) {
       const mergedNode = {
         isAsync: node.left.isAsync || node.right.isAsync,
