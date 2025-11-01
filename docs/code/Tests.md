@@ -30,6 +30,7 @@ This document explains how the test suites are organized and how to run them eff
 - Coverage or full Node test run from source: `npm run test:node`
 - Browser-including runs without build: `npm run test:browser`
 - CI/full validation including build + precompile: `npm test`
+- Run a single file: `npm run mocha:single -- tests/poison/tests.js`
 
 ### Code coverage instrumentation
 - Node (source tests): Coverage is collected by `nyc` with `@babel/register`, no build required. Reports (html/text/json) are emitted by `nyc` and map back to `src` via sourcemaps.
