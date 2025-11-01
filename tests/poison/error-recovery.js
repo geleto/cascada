@@ -4,15 +4,18 @@
   var expect;
   var AsyncEnvironment;
   var runtime;
+  var isPoisonError;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
     runtime = require('../../src/runtime/runtime');
+    isPoisonError = runtime.isPoisonError;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     runtime = nunjucks.runtime;
+    isPoisonError = nunjucks.runtime.isPoisonError;
   }
 
   describe('Poisoning Tests', () => {
@@ -62,6 +65,7 @@
         await env.renderTemplateString('{{ val is defined }}', { val: p });
         expect().fail('Should have thrown');
       } catch (e) {
+        expect(isPoisonError(e)).to.be(true);
         expect(e.message).to.contain('test error');
       }
     });
@@ -72,6 +76,7 @@
         await env.renderTemplateString('{{ 8 is divisibleby(val) }}', { val: p });
         expect().fail('Should have thrown');
       } catch (e) {
+        expect(isPoisonError(e)).to.be(true);
         expect(e.message).to.contain('REJECTED');
       }
     });
@@ -104,6 +109,7 @@
           await env.renderTemplateString(template, context);
           expect().fail('Should have thrown');
         } catch (e) {
+          expect(isPoisonError(e)).to.be(true);
           expect(e.message).to.contain('User fetch failed');
         }
       });
@@ -132,6 +138,7 @@
           await env.renderTemplateString(template, context);
           expect().fail('Should have thrown');
         } catch (e) {
+          expect(isPoisonError(e)).to.be(true);
           expect(e.message).to.contain('Data fetch failed');
         }
       });
@@ -160,6 +167,7 @@
           await env.renderTemplateString(template, context);
           expect().fail('Should have thrown');
         } catch (e) {
+          expect(isPoisonError(e)).to.be(true);
           expect(e.message).to.contain('Items fetch failed');
         }
       });
@@ -188,6 +196,7 @@
           await env.renderTemplateString(template, context);
           expect().fail('Should have thrown');
         } catch (e) {
+          expect(isPoisonError(e)).to.be(true);
           expect(e.message).to.contain('Status fetch failed');
         }
       });
@@ -216,6 +225,7 @@
           await env.renderTemplateString(template, context);
           expect().fail('Should have thrown');
         } catch (e) {
+          expect(isPoisonError(e)).to.be(true);
           expect(e.message).to.contain('Array fetch failed');
         }
       });

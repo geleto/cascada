@@ -54,6 +54,7 @@ describe('Phase 6: Loop Poison Integration', () => {
         await env.renderScriptString(script);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Generator error');
         // The test passes if error is thrown - else should have executed
       }

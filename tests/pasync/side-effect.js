@@ -6,6 +6,8 @@
   var StringLoader;
   var delay;
   var expectAsyncError;
+  var runtime;
+  var isPoisonError;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -13,12 +15,16 @@
     StringLoader = require('../util').StringLoader;
     delay = require('../util').delay;
     expectAsyncError = require('../util').expectAsyncError;
+    runtime = require('../../src/runtime/runtime');
+    isPoisonError = runtime.isPoisonError;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     StringLoader = window.util.StringLoader;
     delay = window.util.delay;
     expectAsyncError = window.util.expectAsyncError;
+    runtime = nunjucks.runtime;
+    isPoisonError = nunjucks.runtime.isPoisonError;
   }
 
 
@@ -1510,6 +1516,7 @@
         await env.renderTemplateString(template, cont);
         expect().fail('Error should have been propagated');
       } catch (e) {
+        expect(isPoisonError(e)).to.be(true);
         expect(e.message).to.contain('ErrorFrom!kErr');
         expect(cont.logs).to.eql(['erroringOp for kErr about to throw']);
       }

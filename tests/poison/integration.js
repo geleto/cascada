@@ -4,15 +4,21 @@
   var expect;
   let AsyncEnvironment;
   let StringLoader;
+  let runtime;
+  let isPoisonError;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
     StringLoader = require('../util').StringLoader;
+    runtime = require('../../src/runtime/runtime');
+    isPoisonError = runtime.isPoisonError;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     StringLoader = window.util.StringLoader;
+    runtime = nunjucks.runtime;
+    isPoisonError = nunjucks.runtime.isPoisonError;
   }
 
   describe('Poisoning integration Tests', () => {
@@ -41,6 +47,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Value fetch failed');
       }
     });
@@ -71,6 +78,7 @@
         await testEnv.renderTemplate('main.njk', {});
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Items failed');
       }
     });
@@ -96,6 +104,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Data fetch failed');
       }
     });
@@ -139,6 +148,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Inner error');
       }
     });

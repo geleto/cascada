@@ -3,13 +3,19 @@
 
   var expect;
   let AsyncEnvironment;
+  let runtime;
+  let isPoisonError;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
+    runtime = require('../../src/runtime/runtime');
+    isPoisonError = runtime.isPoisonError;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
+    runtime = nunjucks.runtime;
+    isPoisonError = nunjucks.runtime.isPoisonError;
   }
 
 
@@ -36,6 +42,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Fetch failed');
       }
     });
@@ -60,6 +67,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Condition failed');
       }
     });
@@ -84,6 +92,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Inner failed');
       }
     });
@@ -112,6 +121,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Operation failed');
       }
     });
@@ -133,6 +143,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Cannot fetch items');
       }
     });
@@ -156,6 +167,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Data fetch failed');
       }
     });
@@ -175,6 +187,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Value fetch failed');
       }
     });
@@ -199,6 +212,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Nested failure');
       }
     });
@@ -224,6 +238,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Condition evaluation failed');
       }
     });
@@ -243,6 +258,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Number fetch failed');
       }
     });
@@ -262,6 +278,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Object fetch failed');
       }
     });

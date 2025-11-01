@@ -7,6 +7,8 @@
   //var Environment;
   var lexer;
   var delay;
+  var runtime;
+  var isPoisonError;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -15,6 +17,8 @@
     lexer = require('../../src/lexer');
     unescape = require('he').unescape;
     delay = require('../util').delay;
+    runtime = require('../../src/runtime/runtime');
+    isPoisonError = runtime.isPoisonError;
   } else {
     expect = window.expect;
     unescape = window.he.unescape;
@@ -22,6 +26,8 @@
     //Environment = nunjucks.Environment;
     lexer = nunjucks.lexer;
     delay = window.util.delay;
+    runtime = nunjucks.runtime;
+    isPoisonError = nunjucks.runtime.isPoisonError;
   }
 
   class AsyncExtension {
@@ -843,6 +849,7 @@
         await env.renderTemplateString(template, context);
         expect().fail('Expected an error from syncConcat due to wrong argument type');
       } catch (e) {
+        expect(isPoisonError(e)).to.be(true);
         expect(e.message).to.contain('syncConcat expects two strings, got: string, number');
       }
     });
