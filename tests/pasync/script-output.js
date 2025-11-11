@@ -28,7 +28,7 @@ describe('Cascada Script: Output commands', function () {
       await env.renderScriptString(script);
       throw new Error('Expected an error to be thrown');
     } catch (error) {
-      expect(error.message).to.contain('Cannot read properties of null');
+      expect(error.message).to.contain('Cannot read properties');
     }
   });
 

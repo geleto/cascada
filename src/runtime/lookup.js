@@ -36,8 +36,8 @@ function memberLookup(obj, val) {
  */
 function memberLookupScript(obj, val) {
   if (obj === undefined || obj === null) {
-    //unlike in template mode, in script mode we throw an exception 'Cannot read properties of null'
-    throw new Error('Cannot read properties of null');//@todo - null/undefined
+    //unlike in template mode, in script mode we throw an exception
+    throw new Error(`Cannot read property ${val} of ${obj}`);
   }
 
   const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
@@ -167,8 +167,8 @@ function memberLookupScriptAsync(obj, val, errorContext) {
 
   // The same implementation as memberLookupScript, but returns a poison value instead of throwing an exception
   if (obj === undefined || obj === null) {
-    //unlike in template mode, in script mode we throw an exception 'Cannot read properties of null'
-    return createPoison(new Error('Cannot read properties of null'));//@todo - null/undefined
+    //unlike in template mode, in script mode we throw an exception
+    return createPoison(new Error(`Cannot read property ${val} of ${obj}`));
   }
 
   const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
