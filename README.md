@@ -11,9 +11,8 @@ The core philosophy of Cascada is to let you write asynchronous code with the cl
 - [The Kitchen and The Chef](https://geleto.github.io/posts/cascada-kitchen-chef/) - Understand how Cascada works through a restaurant analogy - no technical jargon, just cooks, ingredients, and a brilliant manager who makes parallel execution feel as natural as following a recipe
 - [Cascada Script Introduction](https://geleto.github.io/posts/cascada-script-intro/) - An introduction to Cascada Script's syntax, features, and how it solves real async programming challenges
 
-**Examples:**
-- [Casai Examples Repository](https://github.com/geleto/casai-examples) - Learn by example from practical use cases combining Cascada with the Casai agentic workflow framework (work in progress)
-
+**Learning by Example:**
+- [Casai Examples Repository](https://github.com/geleto/casai-examples) - After reading the articles, explore practical examples showing how Cascada and Casai (an AI orchestration framework built on Cascada) turn complex agentic workflows into readable, linear code - no visual node graphs or async spaghetti, just clear logic that tells a story (work in progress)
 
 ## Overview
 
