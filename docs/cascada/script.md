@@ -715,17 +715,22 @@ The most common operations involve setting or removing a value at a given path.
 | `@data.path = value` | **Replaces** the value at `path`. Creates objects/arrays as needed. This is a shortcut for the underlying `set` method. |
 | `@data.path.delete()` | **Deletes** the value at `path` by setting it to `undefined`, which typically removes the key from the final JSON output. |
 
-**Array Manipulation**
-These methods modify arrays in place. If the target path does not exist when a method is called, an empty array is created first.
+**Array Operations**
+These methods are used for array manipulation. Methods that are destructive (like `.pop()` or `.sort()`) modify the array in-place, while methods that return new values (like `.at()` or `.arraySlice()`) will replace the value at `path` with the result.
+If the target path does not exist when a method is called, an empty array is created first.
 
 | Command | Description |
 |---|---|
 | `@data.path.push(value)` | Appends an element to the array at `path`. |
-| `@data.path.concat(value)` | Concatenates another array to the array at `path`. If `value` is not an array, it is simply pushed as a single element. |
+| `@data.path.concat(value)` | Concatenates another array or value to the array at `path`. |
 | `@data.path.pop()` | Removes the last element from the array at `path`. |
 | `@data.path.shift()` | Removes the first element from the array at `path`. |
 | `@data.path.unshift(value)`| Adds one or more elements to the beginning of the array at `path`. |
-| `@data.path.reverse()` | Reverses the order of the elements in the array at `path`. |
+| `@data.path.reverse()` | Reverses the order of the elements in the array at `path` in-place. |
+| `@data.path.at(index)` | Replaces the value at `path` with the element at the specified `index`. |
+| `@data.path.sort()` | Sorts the array at `path` in-place. |
+| `@data.path.sortWith(func)` | Sorts the array at `path` in-place using a custom comparison function. |
+| `@data.path.arraySlice(start, [end])`| Replaces the array at `path` with a new array containing the extracted section. |
 
 **Object Manipulation**
 These methods are used for combining objects.
@@ -748,12 +753,24 @@ These operators provide a concise way to perform numeric modifications. They req
 | `@data.path--` | Decrements the target number by 1. |
 
 **String Operations**
-These methods are specialized for string manipulation.
+These methods perform common string transformations. The result of the operation replaces the original string value at `path`. If the target path does not exist when a method is called, an empty string is created first.
 
 | Command | Description |
 |---|---|
-| `@data.path += value` | Appends a string to the target string. Note: This operator is overloaded and also works for number addition. |
+| `@data.path += value` | Appends a string to the target string. |
 | `@data.path.append(value)`| Appends a string to the string value at `path`. |
+| `@data.path.toUpperCase()` | Replaces the string at `path` with its uppercase version. |
+| `@data.path.toLowerCase()` | Replaces the string at `path` with its lowercase version. |
+| `@data.path.slice(start, [end])` | Replaces the string at `path` with the extracted section. |
+| `@data.path.substring(start, [end])`| Replaces the string at `path` with the extracted section (no negative indices). |
+| `@data.path.trim()` | Replaces the string at `path` with a version with whitespace removed from both ends. |
+| `@data.path.trimStart()` | Replaces the string at `path` with a version with whitespace removed from the start. |
+| `@data.path.trimEnd()` | Replaces the string at `path` with a version with whitespace removed from the end. |
+| `@data.path.replace(find, replace)` | Replaces the string at `path` with a new string where the first occurrence of a substring is replaced. |
+| `@data.path.replaceAll(find, replace)` | Replaces the string at `path` with a new string where all occurrences of a substring are replaced. |
+| `@data.path.split([separator])` | Replaces the string at `path` with a new array of substrings. |
+| `@data.path.charAt(index)` | Replaces the string at `path` with the character at the specified index. |
+| `@data.path.repeat(count)` | Replaces the string at `path` with a new string repeated `count` times. |
 
 **Logical & Bitwise Operations**
 These operators are shortcuts for common logical and bitwise operations.
