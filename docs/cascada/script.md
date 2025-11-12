@@ -4,6 +4,15 @@
 The core philosophy of Cascada is to let you write asynchronous code with the clarity of synchronous logic. You write your script as a straightforward, top-to-bottom set of instructions, and Cascada's engine handles the complex concurrent execution for you.
 Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable.
 
+## Introduction
+
+**Articles:**
+- [The Kitchen and The Chef](https://geleto.github.io/posts/cascada-kitchen-chef/) - Understand how Cascada works through a restaurant analogy - no technical jargon, just cooks, ingredients, and a brilliant manager who makes parallel execution feel as natural as following a recipe
+- [Cascada Script Introduction](https://geleto.github.io/posts/cascada-script-intro/) - An introduction to Cascada Script's syntax, features, and how it solves real async programming challenges
+
+**Examples:**
+- [Casai Examples Repository](https://github.com/geleto/casai-examples) - Learn by example from practical use cases combining Cascada with the Casai agentic workflow framework (work in progress)
+
 ## Overview
 
 ### ⚡ Parallel by default
