@@ -28,7 +28,8 @@ describe('Cascada Script: Output commands', function () {
       await env.renderScriptString(script);
       throw new Error('Expected an error to be thrown');
     } catch (error) {
-      expect(error.message).to.contain('Cannot read properties');
+      // Accommodate for slight variations in the JS engine's error message
+      expect(error.message).to.match(/Cannot read propert(y|ies)/);
     }
   });
 
@@ -2364,6 +2365,27 @@ describe('Cascada Script: Output commands', function () {
           }
         });
       });
+    });
+  });
+
+  it('should create multiple levels of nested objects and arrays automatically', async () => {
+    const script = `
+      :data
+      // This command should create the 'a', 'b', and 'c' objects,
+      // and then the 'd' array before pushing the value.
+      @data.a.b.c.d.push(100)
+      @data.a.b.anotherProp = "hello"
+    `;
+    const result = await env.renderScriptString(script);
+    expect(result).to.eql({
+      a: {
+        b: {
+          c: {
+            d: [100]
+          },
+          anotherProp: 'hello'
+        }
+      }
     });
   });
 });
