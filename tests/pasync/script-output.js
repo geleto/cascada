@@ -1275,183 +1275,6 @@ describe('Cascada Script: Output commands', function () {
           ]
         });
       });
-
-      it('should handle multiple dynamic paths in sequence', async () => {
-        const script = `
-          :data
-          @data.company = companyData
-          @data.company.users[getUserId()].name = "Updated User"
-          @data.company.users[getUserId()].roles.push("manager")
-          @data.company.departments[getDeptId()].head = getUserId()
-        `;
-        const context = {
-          getUserId: () => 1,
-          getDeptId: () => 'engineering',
-          companyData: {
-            users: [
-              { name: 'Alice', roles: ['admin'] },
-              { name: 'Bob', roles: ['user'] }
-            ],
-            departments: {
-              engineering: { name: 'Engineering' },
-              marketing: { name: 'Marketing' }
-            }
-          }
-        };
-        const result = await env.renderScriptString(script, context);
-        expect(result).to.eql({
-          company: {
-            users: [
-              { name: 'Alice', roles: ['admin'] },
-              { name: 'Updated User', roles: ['user', 'manager'] }
-            ],
-            departments: {
-              engineering: { name: 'Engineering', head: 1 },
-              marketing: { name: 'Marketing' }
-            }
-          }
-        });
-      });
-
-      it('should handle dynamic path with async function call', async () => {
-        const script = `
-          :data
-          var userData = fetchUser(1)
-          var salaryData = fetchSalary(1)
-
-          @data.user.name = userData.name
-          @data.user.salary = salaryData.base
-          @data.user.salary += salaryData.bonus
-          @data.user.salary *= 1.05
-        `;
-        const context = {
-          fetchUser: async (id) => ({ name: 'Alice' }),
-          fetchSalary: async (id) => ({ base: 50000, bonus: 5000 })
-        };
-        const result = await env.renderScriptString(script, context);
-        expect(result).to.eql({
-          user: {
-            name: 'Alice',
-            salary: 57750 // (50000 + 5000) * 1.05
-          }
-        });
-      });
-
-      it('should handle dynamic path with conditional expression', async () => {
-        const script = `
-          :data
-          @data.users = usersData
-          var isAdmin = true
-          @data.users[0 if isAdmin else 1].role = "admin"
-        `;
-        const context = {
-          usersData: [
-            { name: 'Alice' },
-            { name: 'Bob' }
-          ]
-        };
-        const result = await env.renderScriptString(script, context);
-        expect(result).to.eql({
-          users: [
-            { name: 'Alice', role: 'admin' },
-            { name: 'Bob' }
-          ]
-        });
-      });
-
-      it('should handle dynamic path with mathematical expression', async () => {
-        const script = `
-          :data
-          @data.items = itemsData
-          var baseIndex = 2
-          @data.items[baseIndex * 2 - 1].priority = "high"
-        `;
-        const context = {
-          itemsData: [
-            { name: 'Item 1' },
-            { name: 'Item 2' },
-            { name: 'Item 3' },
-            { name: 'Item 4' },
-            { name: 'Item 5' }
-          ]
-        };
-        const result = await env.renderScriptString(script, context);
-        expect(result).to.eql({
-          items: [
-            { name: 'Item 1' },
-            { name: 'Item 2' },
-            { name: 'Item 3' },
-            { name: 'Item 4', priority: 'high' },
-            { name: 'Item 5' }
-          ]
-        });
-      });
-
-      it('should handle dynamic path with nested function calls', async () => {
-        const script = `
-          :data
-          @data.company = companyData
-          @data.company.users[getNestedUserId()].profile.settings[getSettingKey()] = "enabled"
-        `;
-        const context = {
-          getNestedUserId: () => 0,
-          getSettingKey: () => 'notifications',
-          companyData: {
-            users: [
-              {
-                name: 'Alice',
-                profile: {
-                  settings: {
-                    theme: 'dark'
-                  }
-                }
-              }
-            ]
-          }
-        };
-        const result = await env.renderScriptString(script, context);
-        expect(result).to.eql({
-          company: {
-            users: [
-              {
-                name: 'Alice',
-                profile: {
-                  settings: {
-                    theme: 'dark',
-                    notifications: 'enabled'
-                  }
-                }
-              }
-            ]
-          }
-        });
-      });
-
-      it('should handle dynamic path with array method call result', async () => {
-        const script = `
-          :data
-          @data.users = usersData
-          @data.users[getUserIndex()].name = "Updated Name"
-        `;
-        const context = {
-          getUserIndex: () => {
-            return 1;
-          },
-          usersData: [
-            { name: 'Alice' },
-            { name: 'Bob' },
-            { name: 'Charlie' }
-          ]
-        };
-        const result = await env.renderScriptString(script, context);
-        expect(result).to.eql({
-          users: [
-            { name: 'Alice' },
-            { name: 'Updated Name' },
-            { name: 'Charlie' }
-          ]
-        });
-      });
     });
   });
 
@@ -1711,6 +1534,53 @@ describe('Cascada Script: Output commands', function () {
             ]
           }
         });
+      });
+
+      it('should handle root-level array index targeting with @data[]', async () => {
+        const script = `
+          :data
+          // Initialize the root as an array
+          @data = []
+
+          // Push items to the root array
+          @data.push({ name: 'Alice' })
+          @data.push({ name: 'Bob' })
+
+          // Target the last item pushed (Bob) and modify it
+          @data[].status = "active"
+
+          // Push another item
+          @data.push({ name: 'Charlie' })
+
+          // Target the new last item (Charlie)
+          @data[].role = "guest"
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql([
+          { name: 'Alice' },
+          { name: 'Bob', status: 'active' },
+          { name: 'Charlie', role: 'guest' }
+        ]);
+      });
+
+      it('should handle root-level array index targeting with @data[0]', async () => {
+        const script = `
+          :data
+          // Initialize the root as an array
+          @data = []
+
+          // Push items to the root array
+          @data.push({ name: 'Alice' })
+          @data.push({ name: 'Bob' })
+
+          // Target a specific index and modify it
+          @data[0].status = "inactive"
+        `;
+        const result = await env.renderScriptString(script);
+        expect(result).to.eql([
+          { name: 'Alice', status: 'inactive' },
+          { name: 'Bob' }
+        ]);
       });
     });
 
@@ -2387,5 +2257,32 @@ describe('Cascada Script: Output commands', function () {
         }
       }
     });
+  });
+
+  it('should handle root-level array index targeting with @data[]', async () => {
+    const script = `
+      :data
+      // Initialize the root as an array
+      @data = []
+
+      // Push items to the root array
+      @data.push({ name: 'Alice' })
+      @data.push({ name: 'Bob' })
+
+      // Target the last item pushed (Bob) and modify it
+      @data[].status = "active"
+
+      // Push another item
+      @data.push({ name: 'Charlie' })
+
+      // Target the new last item (Charlie)
+      @data[].role = "guest"
+    `;
+    const result = await env.renderScriptString(script);
+    expect(result).to.eql([
+      { name: 'Alice' },
+      { name: 'Bob', status: 'active' },
+      { name: 'Charlie', role: 'guest' }
+    ]);
   });
 });

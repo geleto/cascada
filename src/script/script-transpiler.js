@@ -219,7 +219,7 @@ class ScriptTranspiler {
   _deconstructDataCommand(tokens, lineIndex) {
     let state = 'PARSING_PREFIX';
     let prefixBuffer = '';
-    let segments = []; // Array of strings: 'user', '.name', '[user.id]', etc.
+    let segments = []; // Array of strings: 'user', '.name', '[user.id]', '[]', etc.
     let currentSegment = '';
     let remainingBuffer = ''; // Everything after we start looking for args
     let bracketLevel = 0;
@@ -420,7 +420,8 @@ class ScriptTranspiler {
         path: path,
         command: command,
         args: args || null,
-        append
+        append,
+        segments
       };
     }
 
@@ -444,7 +445,37 @@ class ScriptTranspiler {
     // @data: @data.merge({ version: "1.1" })
     // generic: @data.merge(null, { version: "1.1" })
 
-    const pathArgument = tcom.path || 'null';
+    // Always build an explicit array literal of path segments when a path is present.
+    // This unifies handling for root and non-root paths.
+    let pathArgument;
+    const segs = tcom.segments || [];
+    if (segs.length === 0) {
+      // No path provided -> operate on root
+      pathArgument = 'null';
+    } else {
+      // Convert segments to array literal:
+      // - '.prop' -> '\"prop\"'
+      // - '[]' -> '\"[]\"'
+      // - '[expr]' -> expr (no quotes)
+      const arr = [];
+      for (const seg of segs) {
+        if (seg.startsWith('.')) {
+          const identifier = seg.slice(1);
+          arr.push(JSON.stringify(identifier));
+        } else if (seg.startsWith('[')) {
+          const inner = seg.slice(1, -1).trim(); // remove [ ]
+          if (inner === '') {
+            arr.push(JSON.stringify('[]'));
+          } else {
+            arr.push(inner);
+          }
+        } else {
+          // bare segment like 'user'
+          arr.push(JSON.stringify(seg));
+        }
+      }
+      pathArgument = `[${arr.join(', ')}]`;
+    }
     let args = tcom.args || '';
     let refArgs = args.trim();
     if (!multiline && tcom.append) {
@@ -783,11 +814,12 @@ class ScriptTranspiler {
       // Check if this is the @data command syntax
       let isDataCommand = false;
       if (ccontent.startsWith('data')) {
-        isDataCommand = ccontent.startsWith('data.') || ccontent.startsWith('data=');
+        isDataCommand = ccontent.startsWith('data.') || ccontent.startsWith('data=') || ccontent.startsWith('data[');
         if (!isDataCommand) {
           //check if the first word is a valid identifier
           const afterData = ccontent.substring('data'.length).trim();
-          isDataCommand = afterData.startsWith('.') || afterData.startsWith('=');//@data = or @data .push(
+          // @data =, @data .push(, @data[](root indexing), @data[0](root indexing)
+          isDataCommand = afterData.startsWith('.') || afterData.startsWith('=') || afterData.startsWith('[');
         }
       }
       if (isDataCommand) {

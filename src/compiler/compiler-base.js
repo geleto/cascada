@@ -815,7 +815,22 @@ class CompilerBase extends Obj {
    * @returns {nodes.NodeList} A NodeList containing the flattened path segments
    */
   _flattenPathToNodeList(pathNode) {
+    // Support two forms:
+    // 1) Normal expression path (symbols/lookups/null) -> flatten recursively
+    // 2) Array literal of segments (e.g., ['[]', 'status'] or [0, 'status'])
+    //    which allows root-level bracket indexing without a leading symbol
     const segments = [];
+
+    if (pathNode instanceof nodes.Array) {
+      // Directly use the array items as path segments
+      for (const item of pathNode.children) {
+        segments.push(item);
+      }
+      const nodeList = new nodes.NodeList(pathNode.lineno, pathNode.colno, segments);
+      nodeList.isAsync = segments.some(seg => seg.isAsync);
+      return nodeList;
+    }
+
     const flatten = (node) => {
       if (node instanceof nodes.Symbol) {
         segments.push(new nodes.Literal(node.lineno, node.colno, node.value));
@@ -829,7 +844,7 @@ class CompilerBase extends Obj {
       } else if (node instanceof nodes.Literal && node.value === null) {
         segments.push(new nodes.Literal(node.lineno, node.colno, null));
       } else {
-        this.fail('Invalid node type in path for @data command. Only symbols, lookups, and null are allowed.',
+        this.fail('Invalid node type in path for @data command. Only symbols, lookups, null, or array-literals are allowed.',
           node.lineno, node.colno, node);
       }
     };
