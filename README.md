@@ -4,7 +4,8 @@
 ### Think Sequentially. Execute Concurrently.
 
 The core philosophy of Cascada is to let you write asynchronous code with the clarity of synchronous logic. You write your scripts or templates as a straightforward set of instructions, and Cascada's engine handles the complex concurrent execution for you.
-The most up-to-date and complete information on the features of Cascada can be found in the [Cascada Script Documentation](docs/cascada/script.md).
+
+The most **up-to-date and complete information** on the features of Cascada can be found in the [Cascada Script Documentation](docs/cascada/script.md).
 
 ## Read First
 
