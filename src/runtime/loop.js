@@ -416,11 +416,13 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
       if (current >= len) {
         break;
       }
+      const res = runIteration(current);
       if (current === len - 1 && resolveAllScheduled) {
+        // this was the last runIteration
         resolveAllScheduled();
         resolveAllScheduled = null;
       }
-      await runIteration(current);
+      await res;
     }
   }
 
@@ -431,8 +433,10 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
     worker().catch(() => {});
   }
 
-  // Wait until every iteration has been scheduled at least once; completion of
-  // the underlying async blocks is still tracked via waitAllClosures.
+  // Wait until every iteration has been started
+  // ensuring all async blocks are started.
+  // completion of the underlying async blocks is still tracked via waitAllClosures
+  // as it cares only if the block has been started, not if it has completed.
   await allIterationsScheduled;
 
   return didIterate;
@@ -593,9 +597,10 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
       arr = fromIterator(arr);
 
       if (Array.isArray(arr)) {
+        const len = arr.length;
         if (sequential) {
           didIterate = await iterateArraySequential(arr, loopBody, loopVars, errorContext);
-        } else if (maxConcurrency) {
+        } else if (maxConcurrency && maxConcurrency < len) {
           didIterate = await iterateArrayLimited(arr, loopBody, loopVars, errorContext, maxConcurrency);
         } else {
           didIterate = await iterateArrayParallel(arr, loopBody, loopVars, errorContext);
