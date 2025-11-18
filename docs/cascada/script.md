@@ -1,8 +1,9 @@
 # Cascada Script Documentation
 
+Cascada Script isn’t a language you’d use to build an application. It’s a specialized scripting layer your **TypeScript** or **JavaScript** code can invoke whenever you need to orchestrate and run many interdependent async tasks in parallel without the usual boilerplate. Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable.
+
 ## Write synchronous-style scripts that execute concurrently under the hood.
 The core philosophy of Cascada is to let you write asynchronous code with the clarity of synchronous logic. You write your script as a straightforward, top-to-bottom set of instructions, and Cascada's engine handles the complex concurrent execution for you.
-Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable.
 
 ## Read First
 

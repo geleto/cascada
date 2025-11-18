@@ -1,9 +1,11 @@
 
-# Cascada: The Parallel-First Scripting & Templating Engine
+# Cascada: The Parallel-First Scripting & Templating Engine for TypeScript Applications
 
 ### Think Sequentially. Execute Concurrently.
 
 The core philosophy of Cascada is to let you write asynchronous code with the clarity of synchronous logic. You write your scripts or templates as a straightforward set of instructions, and Cascada's engine handles the complex concurrent execution for you.
+
+That said, Cascada isn’t a language you’d use to build an application. It’s a specialized scripting layer your TypeScript or JavaScript code can invoke whenever you need to orchestrate and run many interdependent async tasks in parallel without the usual boilerplate. Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable.
 
 The most **up-to-date and complete information** on the features of Cascada can be found in the **[Cascada Script Documentation](docs/cascada/script.md)**!
 
