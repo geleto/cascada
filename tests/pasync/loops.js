@@ -9,6 +9,7 @@
   var parser;
   var createPoison;
   var isPoisonError;
+  var isPoison;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -20,6 +21,7 @@
     const runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
+    isPoison = runtime.isPoison;
   } else {
     expect = window.expect;
     //unescape = window.he.unescape;
@@ -29,6 +31,7 @@
     parser = nunjucks.parser;
     createPoison = nunjucks.createPoison;
     isPoisonError = nunjucks.isPoisonError;
+    isPoison = nunjucks.isPoison;
   }
 
   describe('Async mode - loops', () => {
@@ -280,6 +283,168 @@
             expect(isPoisonError(err)).to.be(true);
             // The else block should have been poisoned, not executed
           }
+        });
+      });
+
+      describe('Limited concurrency behavior (sync arrays only)', () => {
+        it('should limit concurrent execution to specified limit', async () => {
+          const context = {
+            items: [0, 1, 2, 3, 4, 5],
+            concurrentCount: 0,
+            maxConcurrent: 0,
+            async processItem(id) {
+              // Track concurrent executions - use a small delay to ensure we catch concurrent state
+              await delay(1); // Small delay to ensure we capture concurrent state
+              context.concurrentCount++;
+              context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
+
+              await delay(50); // Enough time to overlap if not limited
+
+              context.concurrentCount--;
+              return `Item ${id}`;
+            }
+          };
+
+          const template = '{% for id in items of 2 %}{{ processItem(id) }}{% endfor %}';
+          await env.renderTemplateString(template, context);
+
+          // With limit of 2, max concurrent should be 2 (not 6)
+          expect(context.maxConcurrent).to.be(2);
+        });
+
+        it('should provide loop.index, loop.index0, and loop.first correctly', async () => {
+          const context = {
+            items: ['a', 'b', 'c']
+          };
+
+          const template = '{% for item in items of 2 %}{{ loop.index }}-{{ loop.index0 }}-{{ "T" if loop.first else "F" }},{% endfor %}';
+          const result = await env.renderTemplateString(template, context);
+
+          expect(result).to.equal('1-0-T,2-1-F,3-2-F,');
+        });
+
+        it('should not provide loop.length, loop.last, or loop.revindex* (while-style)', async () => {
+          const context = {
+            items: ['a', 'b', 'c']
+          };
+
+          const template = '{% for item in items of 2 %}' +
+            '{{ "HAS" if loop.length else "NO" }}-' +
+            '{{ "HAS" if loop.last else "NO" }}-' +
+            '{{ "HAS" if loop.revindex else "NO" }}-' +
+            '{{ "HAS" if loop.revindex0 else "NO" }},' +
+            '{% endfor %}';
+          const result = await env.renderTemplateString(template, context);
+
+          // All should be "NO" (undefined/false) - while-style semantics
+          expect(result).to.equal('NO-NO-NO-NO,NO-NO-NO-NO,NO-NO-NO-NO,');
+        });
+
+        it('should override limited concurrency when sequential is required (variable write)', async () => {
+          const context = {
+            items: [0, 1, 2, 3, 4, 5],
+            concurrentCount: 0,
+            maxConcurrent: 0,
+            async processItem(id) {
+              context.concurrentCount++;
+              context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
+
+              await delay(50);
+
+              context.concurrentCount--;
+              return `Item ${id}`;
+            }
+          };
+
+          // Writing to outer variable forces sequential execution
+          const template = '{% set outer = "" %}{% for id in items of 2 %}{% set outer = processItem(id) %}{% endfor %}';
+          await env.renderTemplateString(template, context);
+
+          // Sequential mode: max concurrent should be 1
+          expect(context.maxConcurrent).to.be(1);
+        });
+
+        it('should collect all errors when loop body throws errors', async () => {
+          const context = {
+            items: [0, 1, 2, 3, 4],
+            async processItem(id) {
+              await delay(10);
+              if (id % 2 === 0) {
+                throw new Error(`Error for item ${id}`);
+              }
+              return `Item ${id}`;
+            }
+          };
+
+          const template = '{% for id in items of 2 %}{{ processItem(id) }}{% endfor %}';
+
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown');
+          } catch (err) {
+            expect(isPoisonError(err)).to.be(true);
+            expect(err.errors).to.have.length(3);
+            expect(err.errors[0].message).to.contain('Error for item 0');
+            expect(err.errors[1].message).to.contain('Error for item 2');
+            expect(err.errors[2].message).to.contain('Error for item 4');
+          }
+        });
+
+        it('should handle PoisonedValue in array items', async () => {
+          const context = {
+            indexes: [0, 1, 2],
+            items: [0, createPoison(new Error('Poisoned item')), 2],
+            async processItem(index) {
+              const value = this.items[index];
+              if (isPoison(value)) {
+                return 'POISON';
+              }
+              return `Item ${value}`;
+            }
+          };
+
+          const template = '{% for index in indexes of 2 %}{{ processItem(index) }}{% endfor %}';
+          const result = await env.renderTemplateString(template, context);
+
+          // Should handle poison gracefully
+          expect(result).to.contain('Item 0');
+          expect(result).to.contain('POISON');
+          expect(result).to.contain('Item 2');
+        });
+
+        it('should behave like parallel loop when concurrentLimit is not specified', async () => {
+          const context = {
+            items: [0, 1, 2, 3, 4, 5],
+            concurrentCount: 0,
+            maxConcurrent: 0,
+            async processItem(id) {
+              context.concurrentCount++;
+              context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
+
+              await delay(10);
+
+              context.concurrentCount--;
+              return `Item ${id}`;
+            }
+          };
+
+          // No "of" clause - should use parallel execution
+          const template = '{% for id in items %}{{ processItem(id) }}{% endfor %}';
+          await env.renderTemplateString(template, context);
+
+          // Parallel mode: max concurrent should be 6 (all at once)
+          expect(context.maxConcurrent).to.be(6);
+        });
+
+        it('should work with destructured loop variables', async () => {
+          const context = {
+            items: [['a', 'b'], ['c', 'd'], ['e', 'f']]
+          };
+
+          const template = '{% for x, y in items of 2 %}{{ x }}-{{ y }},{% endfor %}';
+          const result = await env.renderTemplateString(template, context);
+
+          expect(result).to.equal('a-b,c-d,e-f,');
         });
       });
 

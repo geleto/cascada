@@ -110,7 +110,8 @@ class CompileLoop {
     this.compiler.emit(`let ${loopBodyFuncId} = `);
 
     //compile the loop body function
-    const bodyFrame = this._compileLoopBody(node, frame, arr, loopVars, sequential);
+    const hasConcurrentLimit = Boolean(node.concurrentLimit);
+    const bodyFrame = this._compileLoopBody(node, frame, arr, loopVars, sequential, hasConcurrentLimit);
     const bodyWriteCounts = bodyFrame.writeCounts;
     if (bodyWriteCounts) {
       // @todo - in the future will require writes+reads to be sequential,
@@ -188,7 +189,7 @@ class CompileLoop {
     frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
   }
 
-  _compileLoopBody(node, frame, arr, loopVars, sequential) {
+  _compileLoopBody(node, frame, arr, loopVars, sequential, forceAwaitLoopBody = false) {
     if (node.isAsync) {
       this.compiler.emit('(async function(');//@todo - think this over, does it need async block?
     } else {
@@ -268,7 +269,7 @@ class CompileLoop {
 
     // End buffer block for the loop body (using node.body position)
     let bodyFrame = frame;
-    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential, node.body);
+    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential || forceAwaitLoopBody, node.body);
 
     // Close the loop body function
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');

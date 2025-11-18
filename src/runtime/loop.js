@@ -282,6 +282,163 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
 }
 
 /**
+ * Helper function to call loop body with proper destructuring and poison handling.
+ * Used for limited concurrency mode which uses while-style metadata (no length-based props).
+ *
+ * @param {Function} loopBody - The loop body function
+ * @param {Array} loopVars - Array of loop variable names
+ * @param {*} value - The value for this iteration
+ * @param {number} index - The current index
+ * @param {Object} errorContext - Error context object
+ * @returns {Promise|*} The result of calling the loop body
+ */
+function callLoopBodyLimited(loopBody, loopVars, value, index, errorContext) {
+  if (loopVars.length === 1) {
+    // Single variable: pass undefined for len/last (while-style semantics)
+    return loopBody(value, index, undefined, false, errorContext);
+  }
+
+  if (isPoison(value)) {
+    const args = Array(loopVars.length).fill(value);
+    return loopBody(...args, index, undefined, false, errorContext);
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error('Expected an array for destructuring');
+  }
+
+  return loopBody(...value.slice(0, loopVars.length), index, undefined, false, errorContext);
+}
+
+async function iterateArraySequential(arr, loopBody, loopVars, errorContext) {
+  const len = arr.length;
+  let didIterate = len > 0;
+
+  for (let i = 0; i < arr.length; i++) {
+    let value = arr[i];
+    const isLast = i === arr.length - 1;
+
+    if (value instanceof Error && !isPoison(value)) {
+      value = handleError(value, errorContext.lineno, errorContext.colno,
+        errorContext.errorContextString, errorContext.path);
+      value = createPoison(value);
+    }
+
+    let res;
+    if (loopVars.length === 1) {
+      res = loopBody(value, i, len, isLast, errorContext);
+    } else {
+      if (!Array.isArray(value)) {
+        if (isPoison(value)) {
+          const args = Array(loopVars.length).fill(value);
+          res = loopBody(...args, i, len, isLast, errorContext);
+        } else {
+          throw new Error('Expected an array for destructuring');
+        }
+      } else {
+        res = loopBody(...value.slice(0, loopVars.length), i, len, isLast, errorContext);
+      }
+    }
+
+    await res;
+  }
+
+  return didIterate;
+}
+
+async function iterateArrayParallel(arr, loopBody, loopVars, errorContext) {
+  const len = arr.length;
+  let didIterate = len > 0;
+
+  // Arrays iterate synchronously and cannot fail during iteration (only loop bodies can).
+  // We intentionally "fire and forget" just like the legacy implementation: each loopBody
+  // call registers its own astate async block, and poison propagation handles failures.
+  // Unlike async iterators we do not need lenPromise/lastPromise or aggregated errors here.
+  for (let i = 0; i < arr.length; i++) {
+    let value = arr[i];
+    const isLast = i === arr.length - 1;
+
+    if (value instanceof Error && !isPoison(value)) {
+      value = handleError(value, errorContext.lineno, errorContext.colno,
+        errorContext.errorContextString, errorContext.path);
+      value = createPoison(value);
+    }
+
+    if (loopVars.length === 1) {
+      loopBody(value, i, len, isLast, errorContext);
+    } else {
+      if (!Array.isArray(value)) {
+        if (isPoison(value)) {
+          const args = Array(loopVars.length).fill(value);
+          loopBody(...args, i, len, isLast, errorContext);
+        } else {
+          throw new Error('Expected an array for destructuring');
+        }
+      } else {
+        loopBody(...value.slice(0, loopVars.length), i, len, isLast, errorContext);
+      }
+    }
+  }
+
+  return didIterate;
+}
+
+async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit) {
+  const len = arr.length;
+  const didIterate = len > 0;
+
+  if (len === 0) {
+    return false;
+  }
+
+  let nextIndex = 0;
+  let resolveAllScheduled;
+  const allIterationsScheduled = new Promise(resolve => {
+    resolveAllScheduled = resolve;
+  });
+
+  const runIteration = async (index) => {
+    let value = arr[index];
+
+    if (value instanceof Error && !isPoison(value)) {
+      value = createPoison(value, errorContext);
+    }
+
+    const res = callLoopBodyLimited(loopBody, loopVars, value, index, errorContext);
+    await Promise.resolve(res).catch(() => {});
+  };
+
+  async function worker() {
+    //each worker repeatedly grabs the next index and runs the iteration
+    //until the index is greater than the length of the array
+    while (true) {
+      const current = nextIndex++;
+      if (current >= len) {
+        break;
+      }
+      if (current === len - 1 && resolveAllScheduled) {
+        resolveAllScheduled();
+        resolveAllScheduled = null;
+      }
+      await runIteration(current);
+    }
+  }
+
+  // kick off the initial workers immediately
+  //
+  const workerCount = Math.min(limit, len);
+  for (let i = 0; i < workerCount; i++) {
+    worker().catch(() => {});
+  }
+
+  // Wait until every iteration has been scheduled at least once; completion of
+  // the underlying async blocks is still tracked via waitAllClosures.
+  await allIterationsScheduled;
+
+  return didIterate;
+}
+
+/**
  * Poison both body and else effects when loop array is poisoned before iteration.
  * We poison both branches because we don't know if the underlying value would have
  * been empty (else runs) or non-empty (body runs).
@@ -436,34 +593,12 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
       arr = fromIterator(arr);
 
       if (Array.isArray(arr)) {
-        const len = arr.length;
-
-        didIterate = len > 0;
-        for (let i = 0; i < arr.length; i++) {
-          let value = arr[i];
-          const isLast = i === arr.length - 1;
-
-          // Convert Error objects to poison for consistency with async iterators
-          // (Poison values and rejecting promises pass through as-is)
-          if (value instanceof Error && !isPoison(value)) {
-            value = handleError(value, errorContext.lineno, errorContext.colno,
-              errorContext.errorContextString, errorContext.path);
-            value = createPoison(value);
-          }
-
-          let res;
-          if (loopVars.length === 1) {
-            res = loopBody(value, i, len, isLast);
-          } else {
-            if (!Array.isArray(value)) {
-              throw new Error('Expected an array for destructuring');
-            }
-            res = loopBody(...value.slice(0, loopVars.length), i, len, isLast);
-          }
-
-          if (sequential) {
-            await res;
-          }
+        if (sequential) {
+          didIterate = await iterateArraySequential(arr, loopBody, loopVars, errorContext);
+        } else if (maxConcurrency) {
+          didIterate = await iterateArrayLimited(arr, loopBody, loopVars, errorContext, maxConcurrency);
+        } else {
+          didIterate = await iterateArrayParallel(arr, loopBody, loopVars, errorContext);
         }
       } else {
         const keys = Object.keys(arr);
