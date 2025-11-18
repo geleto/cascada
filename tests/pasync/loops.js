@@ -6,6 +6,7 @@
   var AsyncEnvironment;
   //var Environment;
   var delay;
+  var parser;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -13,12 +14,14 @@
     //Environment = require('../../src/environment/environment').Environment;
     //unescape = require('he').unescape;
     delay = require('../util').delay;
+    parser = require('../../src/parser');
   } else {
     expect = window.expect;
     //unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     //Environment = nunjucks.Environment;
     delay = window.util.delay;
+    parser = nunjucks.parser;
   }
 
   describe('Async mode - loops', () => {
@@ -50,6 +53,28 @@
 			- Data for ID 2
 			- Data for ID 3
 		  `);
+      });
+
+      it('should parse for loop concurrent limit syntax', async () => {
+        const template = '{% for chunk in chunks of limit %}{{ chunk }}{% endfor %}';
+        const ast = parser.parse(template);
+        let forNode = null;
+
+        for (let i = 0; i < ast.children.length; i++) {
+          const child = ast.children[i];
+          if (child && child.typename === 'For') {
+            forNode = child;
+            break;
+          }
+        }
+
+        expect(forNode).to.be.ok();
+        expect(forNode.concurrentLimit).to.be.ok();
+        expect(forNode.concurrentLimit.value).to.be('limit');
+
+        const context = { chunks: [1, 2, 3], limit: 2 };
+        const result = await env.renderTemplateString(template, context);
+        expect(result).to.equal('123');
       });
 
       it('should correctly resolve async functions with dependent arguments inside a for loop', async () => {

@@ -189,6 +189,11 @@ class Parser extends Obj {
     }
 
     node.arr = this.parseExpression();
+
+    if (this.skipSymbol('of')) {
+      node.concurrentLimit = this.parseExpression();
+    }
+
     this.advanceAfterBlockEnd(forTok.value);
 
     node.body = this.parseUntilBlocks(endBlock, 'else');

@@ -134,7 +134,7 @@ class InlineIf extends Node {
 
 class For extends Node {
   get typename() { return 'For'; }
-  get fields() { return ['arr', 'name', 'body', 'else_']; }
+  get fields() { return ['arr', 'name', 'body', 'else_', 'concurrentLimit']; }
 }
 
 class While extends Node {
