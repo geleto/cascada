@@ -7,6 +7,8 @@
   //var Environment;
   var delay;
   var parser;
+  var createPoison;
+  var isPoisonError;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -15,6 +17,9 @@
     //unescape = require('he').unescape;
     delay = require('../util').delay;
     parser = require('../../src/parser');
+    const runtime = require('../../src/runtime/runtime');
+    createPoison = runtime.createPoison;
+    isPoisonError = runtime.isPoisonError;
   } else {
     expect = window.expect;
     //unescape = window.he.unescape;
@@ -22,6 +27,8 @@
     //Environment = nunjucks.Environment;
     delay = window.util.delay;
     parser = nunjucks.parser;
+    createPoison = nunjucks.createPoison;
+    isPoisonError = nunjucks.isPoisonError;
   }
 
   describe('Async mode - loops', () => {
@@ -75,6 +82,205 @@
         const context = { chunks: [1, 2, 3], limit: 2 };
         const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('123');
+      });
+
+      describe('concurrentLimit validation', () => {
+        it('should accept valid positive numbers', async () => {
+          const template = '{% for x in items of 5 %}{{ x }}{% endfor %}';
+          const context = { items: [1, 2, 3] };
+          const result = await env.renderTemplateString(template, context);
+          expect(result).to.equal('123');
+        });
+
+        it('should treat 0 as no limit', async () => {
+          const template = '{% for x in items of 0 %}{{ x }}{% endfor %}';
+          const context = { items: [1, 2, 3] };
+          const result = await env.renderTemplateString(template, context);
+          expect(result).to.equal('123');
+        });
+
+        it('should treat null as no limit', async () => {
+          const template = '{% for x in items of null %}{{ x }}{% endfor %}';
+          const context = { items: [1, 2, 3] };
+          const result = await env.renderTemplateString(template, context);
+          expect(result).to.equal('123');
+        });
+
+        it('should treat undefined as no limit', async () => {
+          const template = '{% for x in items of undefined %}{{ x }}{% endfor %}';
+          const context = { items: [1, 2, 3] };
+          const result = await env.renderTemplateString(template, context);
+          expect(result).to.equal('123');
+        });
+
+        it('should accept promises resolving to valid numbers', async () => {
+          const template = '{% for x in items of limitPromise() %}{{ x }}{% endfor %}';
+          const context = {
+            items: [1, 2, 3],
+            async limitPromise() {
+              await delay(5);
+              return 3;
+            }
+          };
+          const result = await env.renderTemplateString(template, context);
+          expect(result).to.equal('123');
+        });
+
+        it('should accept promises resolving to 0 (no limit)', async () => {
+          const template = '{% for x in items of limitPromise() %}{{ x }}{% endfor %}';
+          const context = {
+            items: [1, 2, 3],
+            async limitPromise() {
+              await delay(5);
+              return 0;
+            }
+          };
+          const result = await env.renderTemplateString(template, context);
+          expect(result).to.equal('123');
+        });
+
+        it('should reject negative numbers', async () => {
+          const template = '{% for x in items of -1 %}{{ x }}{% endfor %}';
+          const context = { items: [1, 2, 3] };
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown an error');
+          } catch (err) {
+            expect(isPoisonError(err)).to.be(true);
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number');
+          }
+        });
+
+        it('should reject Infinity', async () => {
+          const template = '{% for x in items of limit %}{{ x }}{% endfor %}';
+          const context = { items: [1, 2, 3], limit: Infinity };
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown an error');
+          } catch (err) {
+            expect(isPoisonError(err)).to.be(true);
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number');
+          }
+        });
+
+        it('should reject NaN', async () => {
+          const template = '{% for x in items of limit %}{{ x }}{% endfor %}';
+          const context = { items: [1, 2, 3], limit: NaN };
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown an error');
+          } catch (err) {
+            expect(isPoisonError(err)).to.be(true);
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number');
+          }
+        });
+
+        it('should reject strings', async () => {
+          const template = '{% for x in items of "foo" %}{{ x }}{% endfor %}';
+          const context = { items: [1, 2, 3] };
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown an error');
+          } catch (err) {
+            expect(isPoisonError(err)).to.be(true);
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number');
+          }
+        });
+
+        it('should reject booleans', async () => {
+          const template = '{% for x in items of true %}{{ x }}{% endfor %}';
+          const context = { items: [1, 2, 3] };
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown an error');
+          } catch (err) {
+            expect(isPoisonError(err)).to.be(true);
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number');
+          }
+        });
+
+        it('should reject promises resolving to invalid values', async () => {
+          const template = '{% for x in items of limitPromise() %}{{ x }}{% endfor %}';
+          const context = {
+            items: [1, 2, 3],
+            async limitPromise() {
+              await delay(5);
+              return -1;
+            }
+          };
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown an error');
+          } catch (err) {
+            expect(isPoisonError(err)).to.be(true);
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number');
+          }
+        });
+
+        it('should handle poisoned concurrentLimit expression', async () => {
+          const template = '{% for x in items of getPoisoned() %}{{ x }}{% endfor %}';
+          const context = {
+            items: [1, 2, 3],
+            getPoisoned() {
+              return createPoison(new Error('Limit is poisoned'));
+            }
+          };
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown an error');
+          } catch (err) {
+            expect(isPoisonError(err)).to.be(true);
+            expect(err.errors[0].message).to.contain('Limit is poisoned');
+          }
+        });
+
+        it('should handle promises rejecting in concurrentLimit expression', async () => {
+          const template = '{% for x in items of limitPromise() %}{{ x }}{% endfor %}';
+          const context = {
+            items: [1, 2, 3],
+            async limitPromise() {
+              await delay(5);
+              throw new Error('Limit promise rejected');
+            }
+          };
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown an error');
+          } catch (err) {
+            expect(isPoisonError(err)).to.be(true);
+            expect(err.errors[0].message).to.contain('Limit promise rejected');
+          }
+        });
+
+        it('should not change loop behavior when concurrentLimit is not specified', async () => {
+          const template = '{% for x in items %}{{ x }}{% endfor %}';
+          const context = { items: [1, 2, 3] };
+          const result = await env.renderTemplateString(template, context);
+          expect(result).to.equal('123');
+        });
+
+        it('should work with else block when concurrentLimit is valid', async () => {
+          const template = '{% for x in items of 5 %}{{ x }}{% else %}empty{% endfor %}';
+          const context = { items: [1, 2, 3] };
+          const result = await env.renderTemplateString(template, context);
+          expect(result).to.equal('123');
+        });
+
+        it('should execute else block when concurrentLimit is poisoned and array is empty', async () => {
+          const template = '{% for x in [] of getPoisoned() %}{{ x }}{% else %}empty{% endfor %}';
+          const context = {
+            getPoisoned() {
+              return createPoison(new Error('Limit is poisoned'));
+            }
+          };
+          try {
+            await env.renderTemplateString(template, context);
+            expect().fail('Should have thrown an error');
+          } catch (err) {
+            expect(isPoisonError(err)).to.be(true);
+            // The else block should have been poisoned, not executed
+          }
+        });
       });
 
       it('should correctly resolve async functions with dependent arguments inside a for loop', async () => {

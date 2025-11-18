@@ -353,6 +353,66 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
   let didIterate = false;
 
   try {
+    // Resolve and validate concurrentLimit if present
+    let maxConcurrency = asyncOptions ? asyncOptions.concurrentLimit : null;
+
+    if (asyncOptions && maxConcurrency !== null && maxConcurrency !== undefined) {
+      // 1. If it's a PoisonedValue → whole loop is poisoned
+      if (isPoison(maxConcurrency)) {
+        const errors = maxConcurrency.errors || [maxConcurrency];
+        poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
+        return false; // didIterate = false
+      }
+
+      // 2. If it's a Promise (thenable), await it
+      if (typeof maxConcurrency.then === 'function') {
+        try {
+          maxConcurrency = await maxConcurrency;
+          // After await, if it was a PoisonedValue, it would have thrown a PoisonError
+          // which is caught by the outer catch. Check for poison after await.
+          if (isPoison(maxConcurrency)) {
+            const errors = maxConcurrency.errors || [maxConcurrency];
+            poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
+            return false; // didIterate = false
+          }
+        } catch (err) {
+          // Promise rejected - poison both body and else
+          const errors = isPoisonError(err) ? err.errors : [err];
+          poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
+          throw err; // Re-throw for upstream handling
+        }
+      }
+
+      // 3. Normalise and validate according to the rules
+      if (maxConcurrency == null || maxConcurrency === 0) {
+        // null / undefined / 0 → ignore, treated as "no limit"
+        maxConcurrency = null;
+      } else {
+        // Reject booleans explicitly (they convert to 0/1 which would pass)
+        if (typeof maxConcurrency === 'boolean') {
+          const poison = createPoison(
+            new Error('concurrentLimit must be a positive number or 0 / null / undefined'),
+            errorContext
+          );
+          poisonLoopEffects(loopFrame, buffer, asyncOptions, poison.errors, false);
+          return poison; // Return poison - will reject when awaited
+        }
+        // Must be a positive finite number
+        const n = Number(maxConcurrency);
+        // Check for Infinity, -Infinity, and NaN explicitly
+        // Also check if conversion resulted in non-finite or invalid number
+        if (!Number.isFinite(n) || n <= 0 || isNaN(n)) {
+          // Invalid configuration: create poison with error context
+          const poison = createPoison(
+            new Error('concurrentLimit must be a positive number or 0 / null / undefined'),
+            errorContext
+          );
+          poisonLoopEffects(loopFrame, buffer, asyncOptions, poison.errors, false);
+          return poison; // Return poison - will reject when awaited
+        }
+        maxConcurrency = n;
+      }
+    }
     if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
       // We must have two separate code paths. The `lenPromise` and `lastPromise`
       // mechanism is fundamentally incompatible with sequential execution, as it
@@ -438,6 +498,8 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
     didIterate = errors[errors.length - 1]?.didIterate || false;
     // if we had at least one iteration, we won't poison the else side-effects
     poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, didIterate);
+    // Re-throw the error so it propagates to the caller
+    throw err;
   }
 
   // Implement mutual exclusion between body and else execution

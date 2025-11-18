@@ -79,6 +79,14 @@ class CompileLoop {
       this.compiler.emit.line(';');
     }
 
+    // Compile concurrentLimit expression if present
+    const limitVar = node.concurrentLimit ? this.compiler._tmpid() : null;
+    if (node.concurrentLimit) {
+      this.compiler.emit(`let ${limitVar} = `);
+      this.compiler._compileExpression(node.concurrentLimit, frame, false);
+      this.compiler.emit.line(';');
+    }
+
     // Determine loop variable names
     const loopVars = [];
     if (node.name instanceof nodes.Array) {
@@ -151,6 +159,7 @@ class CompileLoop {
         bodyHandlers: ${JSON.stringify(bodyHandlers ? Array.from(bodyHandlers) : [])},
         elseWriteCounts: ${JSON.stringify(elseWriteCounts || {})},
         elseHandlers: ${JSON.stringify(elseHandlers ? Array.from(elseHandlers) : [])},
+        concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
         errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node))}, path: context.path }
       }`;
     }
