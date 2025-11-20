@@ -1,13 +1,7 @@
 'use strict';
 
 const lib = require('../lib');
-const {
-  createPoison,
-  isPoison,
-  isPoisonError,
-  PoisonError,
-  handleError
-} = require('./errors');
+const { createPoison, isPoison, isPoisonError, PoisonError, handleError } = require('./errors');
 const { addPoisonMarkersToBuffer } = require('./buffer');
 
 const arrayFrom = Array.from;
@@ -137,8 +131,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
 
       if (value instanceof Error) {
         // Soft error: generator yielded an error. Add context and poison it.
-        value = handleError(value, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-        value = createPoison(value);
+        value = createPoison(value, errorContext);
       }
 
       let res;
@@ -189,8 +182,6 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
     lastPromiseResolve = resolve;
   });
 
-  const loopBodyPromises = []; // Track all loop body promises
-
   // This promise is used for the completion and error propagation
   let iterationComplete;
   const lenPromise = new Promise((resolve, reject) => {
@@ -214,8 +205,7 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
           let value = result.value;
           if (value instanceof Error) {
             // Soft error: generator yielded an error
-            value = handleError(value, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-            value = createPoison(value);
+            value = createPoison(value, errorContext);
           }
 
           // Resolve the previous iteration's lastPromise
@@ -249,9 +239,6 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
 
         // Resolve length to unblock any loop bodies waiting for loop.length
         resolve(length);
-
-        // Wait for all loop body promises to complete before checking errors
-        await Promise.allSettled(loopBodyPromises);
 
       } catch (error) {
         // Hard error from iterator.next() or loop body
@@ -318,10 +305,8 @@ async function iterateArraySequential(arr, loopBody, loopVars, errorContext) {
     let value = arr[i];
     const isLast = i === arr.length - 1;
 
-    if (value instanceof Error && !isPoison(value)) {
-      value = handleError(value, errorContext.lineno, errorContext.colno,
-        errorContext.errorContextString, errorContext.path);
-      value = createPoison(value);
+    if (value instanceof Error) {
+      value = createPoison(value, errorContext);
     }
 
     let res;
@@ -358,10 +343,8 @@ async function iterateArrayParallel(arr, loopBody, loopVars, errorContext) {
     let value = arr[i];
     const isLast = i === arr.length - 1;
 
-    if (value instanceof Error && !isPoison(value)) {
-      value = handleError(value, errorContext.lineno, errorContext.colno,
-        errorContext.errorContextString, errorContext.path);
-      value = createPoison(value);
+    if (value instanceof Error) {
+      value = createPoison(value, errorContext);
     }
 
     if (loopVars.length === 1) {
@@ -392,37 +375,47 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
   }
 
   let nextIndex = 0;
+
   let resolveAllScheduled;
-  const allIterationsScheduled = new Promise(resolve => {
+  let rejectAllScheduled;
+  const allIterationsScheduled = new Promise((resolve, reject) => {
     resolveAllScheduled = resolve;
+    rejectAllScheduled = reject;
   });
 
   const runIteration = async (index) => {
     let value = arr[index];
 
-    if (value instanceof Error && !isPoison(value)) {
+    if (value instanceof Error) {
       value = createPoison(value, errorContext);
     }
 
     const res = callLoopBodyLimited(loopBody, loopVars, value, index, errorContext);
-    await Promise.resolve(res).catch(() => {});
+    await Promise.resolve(res);
   };
 
   async function worker() {
     //each worker repeatedly grabs the next index and runs the iteration
     //until the index is greater than the length of the array
     while (true) {
-      const current = nextIndex++;
-      if (current >= len) {
-        break;
+      try {
+        const current = nextIndex++;
+        if (current >= len) {
+          break;
+        }
+        const res = runIteration(current);
+        if (current === len - 1 && resolveAllScheduled) {
+          // this was the last runIteration
+          resolveAllScheduled();
+          resolveAllScheduled = null;
+        }
+        await res;
+      } catch (err) {
+        // most likely a bug, @todo - betetr handling of unexpoected errors
+        // iterate(...) will handle the error after allIterationsScheduled rejects
+        rejectAllScheduled(err);
+        rejectAllScheduled = null;
       }
-      const res = runIteration(current);
-      if (current === len - 1 && resolveAllScheduled) {
-        // this was the last runIteration
-        resolveAllScheduled();
-        resolveAllScheduled = null;
-      }
-      await res;
     }
   }
 
@@ -430,7 +423,7 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
   //
   const workerCount = Math.min(limit, len);
   for (let i = 0; i < workerCount; i++) {
-    worker().catch(() => {});
+    worker();
   }
 
   // Wait until every iteration has been started
@@ -520,6 +513,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
     if (asyncOptions && maxConcurrency !== null && maxConcurrency !== undefined) {
       // 1. If it's a PoisonedValue → whole loop is poisoned
       if (isPoison(maxConcurrency)) {
+        //a quick path for poison, without await
         const errors = maxConcurrency.errors || [maxConcurrency];
         poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
         return false; // didIterate = false
@@ -549,29 +543,10 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
         // null / undefined / 0 → ignore, treated as "no limit"
         maxConcurrency = null;
       } else {
-        // Reject booleans explicitly (they convert to 0/1 which would pass)
-        if (typeof maxConcurrency === 'boolean') {
-          const poison = createPoison(
-            new Error('concurrentLimit must be a positive number or 0 / null / undefined'),
-            errorContext
-          );
-          poisonLoopEffects(loopFrame, buffer, asyncOptions, poison.errors, false);
-          return poison; // Return poison - will reject when awaited
+        if (typeof maxConcurrency !== 'number' || !Number.isFinite(maxConcurrency) || maxConcurrency <= 0) {
+          //return createPoison(new Error('concurrentLimit must be a finite positive number or 0/null/undefined'), errorContext);
+          throw new Error('concurrentLimit must be a finite positive number or 0/null/undefined');
         }
-        // Must be a positive finite number
-        const n = Number(maxConcurrency);
-        // Check for Infinity, -Infinity, and NaN explicitly
-        // Also check if conversion resulted in non-finite or invalid number
-        if (!Number.isFinite(n) || n <= 0 || isNaN(n)) {
-          // Invalid configuration: create poison with error context
-          const poison = createPoison(
-            new Error('concurrentLimit must be a positive number or 0 / null / undefined'),
-            errorContext
-          );
-          poisonLoopEffects(loopFrame, buffer, asyncOptions, poison.errors, false);
-          return poison; // Return poison - will reject when awaited
-        }
-        maxConcurrency = n;
       }
     }
     if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
@@ -617,9 +592,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
 
           // Convert Error objects to poison for consistency
           if (value instanceof Error && !isPoison(value)) {
-            value = handleError(value, errorContext.lineno, errorContext.colno,
-              errorContext.errorContextString, errorContext.path);
-            value = createPoison(value);
+            value = createPoison(value, errorContext);
           }
 
           if (loopVars.length === 2) {

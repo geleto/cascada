@@ -199,7 +199,7 @@ A resilient error handling system is under development.
 
 ### Async Execution Model
 
--   **Core Principle**: Transparently handle promises as first-class values, resolving them only when needed.
+-   **Core Principle**: Transparently handle promises as first-class values, awaiting them only in the last moment when needed.
 -   **Mechanism**: Potentially async operations are wrapped in `async` IIFEs, allowing non-blocking execution. A runtime state manager (`astate`) tracks completion.
 -   **Key Components**: `AsyncFrame`, `runtime.resolveAll`, `runtime.flattenBuffer`.
 -   **Reference**: `docs/code/Async - Implementation.md`
