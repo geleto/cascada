@@ -162,6 +162,40 @@
 
         expect(compound.stack).to.equal(err.stack);
       });
+
+      it('should apply explicit context parameters to contained errors', () => {
+        const err = new Error('Contextual failure');
+        const compound = new PoisonError(err, {
+          lineno: 12,
+          colno: 4,
+          errorContextString: 'Output(Symbol)',
+          path: 'template.njk'
+        });
+
+        expect(compound.errors).to.have.length(1);
+        expect(compound.errors[0].path).to.equal('template.njk');
+        expect(compound.errors[0].lineno).to.equal(12);
+        expect(compound.errors[0].colno).to.equal(4);
+        expect(compound.errors[0].message).to.contain('Output(Symbol)');
+      });
+
+      it('should accept errorContext objects when adding metadata', () => {
+        const err = new Error('Context object failure');
+        const errorContext = {
+          lineno: 7,
+          colno: 9,
+          path: 'script.casc',
+          errorContextString: 'For(PosNode)'
+        };
+
+        const compound = new PoisonError(err, errorContext);
+
+        expect(compound.errors).to.have.length(1);
+        expect(compound.errors[0].path).to.equal('script.casc');
+        expect(compound.errors[0].lineno).to.equal(7);
+        expect(compound.errors[0].colno).to.equal(9);
+        expect(compound.errors[0].message).to.contain('For(PosNode)');
+      });
     });
 
     describe('collectErrors', () => {

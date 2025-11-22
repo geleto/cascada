@@ -246,16 +246,13 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
           lastPromiseResolve(true);
         }
 
-        // Add error context and re-throw, it will be caught by the outer catch block
-        // where all write variables and handlers are poisoned
-        const contextualError = handleError(error, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-        contextualError.didIterate = didIterate;
-
-        //resolve(length);//Ensure length is resolved even on error
-        reject(new PoisonError(new PoisonError(contextualError)));//the length is a poison
-
-
-        //throw contextualError;//re-thrown by iterationComplete
+        const rejectionError = new PoisonError(error, errorContext);
+        //@todo - only one of these assignments is needed
+        rejectionError.didIterate = didIterate;
+        if (rejectionError.errors.length > 0) {
+          rejectionError.errors[rejectionError.errors.length - 1].didIterate = didIterate;
+        }
+        reject(rejectionError);
       }
     })();
   });
@@ -592,7 +589,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
           const isLast = i === keys.length - 1;
 
           // Convert Error objects to poison for consistency
-          if (value instanceof Error && !isPoison(value)) {
+          if (value instanceof Error) {
             value = createPoison(value, errorContext);
           }
 

@@ -341,6 +341,60 @@
         expect(err.errors[0].message).to.contain('This item is poisoned');
       }
     });
+
+    it('should not poison else handlers when iterator fails after at least one iteration', async () => {
+      const context = {
+        async *myGenerator() {
+          yield 'ok';
+          throw new Error('Iterator failure after progress');
+        }
+      };
+      const template = `
+        {% set elseStatus = "initial" %}
+        {% for item in myGenerator() %}
+          {{ item }}
+        {% else %}
+          {% set elseStatus = "else" %}
+        {% endfor %}
+        {{ elseStatus }}
+      `;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.errors).to.have.length(1);
+        expect(err.errors[0].message).to.contain('Iterator failure after progress');
+      }
+    });
+
+    it('should poison else handlers when iterator fails before any iteration', async () => {
+      const context = {
+        async *myGenerator() {
+          throw new Error('Iterator failure before start');
+          yield; // eslint-disable-line no-unreachable
+        }
+      };
+      const template = `
+        {% set elseStatus = "initial" %}
+        {% for item in myGenerator() %}
+          {{ item }}
+        {% else %}
+          {% set elseStatus = "else" %}
+        {% endfor %}
+        {{ elseStatus }}
+      `;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.errors).to.have.length(1);
+        expect(err.errors[0].message).to.contain('Iterator failure before start');
+      }
+    });
   });
 
   describe('Integration: Advanced Loop Error Collection and Deduplication', () => {

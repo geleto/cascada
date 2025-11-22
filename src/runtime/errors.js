@@ -70,14 +70,15 @@ class PoisonedValue {
  * Contains deduplicated array of original errors.
  */
 class PoisonError extends Error {
-  constructor(errors) {
-    errors = Array.isArray(errors) ? errors : [errors];
-    const deduped = deduplicateAndFlattenErrors(errors);
+  constructor(errors, errorContext = null) {
+    const normalizedErrors = normalizeErrorsWithContext(errors, errorContext);
+    const deduped = deduplicateAndFlattenErrors(normalizedErrors);
+    const messageSource = deduped.length > 0 ? deduped : normalizedErrors;
 
-    const message = errors.length === 1
-      ? errors[0].message
-      : `Multiple errors occurred (${errors.length}):\n` +
-      errors.map((e, i) => `  ${i + 1}. ${e.message}`).join('\n');
+    const message = messageSource.length === 1
+      ? messageSource[0].message
+      : `Multiple errors occurred (${messageSource.length}):\n` +
+      messageSource.map((e, i) => `  ${i + 1}. ${e.message}`).join('\n');
     super(message);
 
     this.name = 'PoisonError';
@@ -264,41 +265,67 @@ function deduplicateAndFlattenErrors(errors) {
  * @param {string} path - Template path (optional)
  * @returns {PoisonedValue} Poison value containing the error(s)
  */
+function resolveErrorContextArgs(lineno = null, colno = null, errorContextString = null, path = null) {
+  if (lineno && typeof lineno === 'object' && !Array.isArray(lineno)) {
+    const ctx = lineno;
+    return {
+      lineno: ctx.lineno ?? null,
+      colno: ctx.colno ?? null,
+      errorContextString: ctx.errorContextString ?? null,
+      path: (ctx.path ?? ctx.errorContextString) ?? null
+    };
+  }
+
+  return { lineno, colno, errorContextString, path };
+}
+
+function normalizeErrorsWithContext(errors, lineno = null, colno = null, errorContextString = null, path = null) {
+  const context = resolveErrorContextArgs(lineno, colno, errorContextString, path);
+  let normalized = errors;
+
+  if (!Array.isArray(normalized)) {
+    normalized = isPoisonError(normalized) ? normalized.errors : [normalized];
+  }
+
+  const hasContext = context.lineno !== null ||
+    context.colno !== null ||
+    context.errorContextString !== null ||
+    context.path !== null;
+
+  if (!hasContext) {
+    return normalized;
+  }
+
+  return normalized.map(err => {
+    const didIterate = err && err.didIterate;
+
+    if (isPoisonError(err)) {
+      return err.errors.map(e => {
+        if (!e.lineno) {
+          e = handleError(e, context.lineno || 0, context.colno || 0, context.errorContextString, context.path);
+        }
+        if (didIterate) {
+          e.didIterate = didIterate;
+        }
+        return e;
+      });
+    }
+
+    if (!err.lineno) {
+      err = handleError(err, context.lineno || 0, context.colno || 0, context.errorContextString, context.path);
+    }
+
+    if (didIterate) {
+      err.didIterate = didIterate;
+    }
+
+    return err;
+  }).flat();
+}
+
 function createPoison(errors/* or 1 error */, lineno = null, colno = null, errorContextString = null, path = null) {
-  // Handle ErrorContext object as second parameter
-  if (lineno && typeof lineno === 'object') {
-    const errorContext = new ErrorContext(lineno.lineno, lineno.colno, lineno.errorContextString, lineno.path);
-    return createPoison(errors, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
-  }
-
-  if (!Array.isArray(errors)) {
-    errors = isPoisonError(errors) ? errors.errors : [errors];
-  }
-
-  // If position or path info provided, add it to errors that don't already have it
-  if (lineno !== null || colno !== null || errorContextString !== null || path !== null) {
-    errors = errors.map(err => {
-      // If it's a PoisonError, extract its errors and process each one
-      if (isPoisonError(err)) {
-        return err.errors.map(e => {
-          // If error already has position info, preserve it completely (don't update lineno, colno, or path)
-          if (e.lineno) {
-            return e;
-          }
-          // Error lacks position info - add it via handleError
-          return handleError(e, lineno || 0, colno || 0, errorContextString, path);
-        });
-      }
-      // If error already has position info, preserve it completely
-      if (err.lineno) {
-        return err;
-      }
-      // Error lacks position info - add it via handleError
-      return handleError(err, lineno || 0, colno || 0, errorContextString, path);
-    }).flat();
-  }
-
-  return new PoisonedValue(errors);
+  const normalizedErrors = normalizeErrorsWithContext(errors, lineno, colno, errorContextString, path);
+  return new PoisonedValue(normalizedErrors);
 }
 
 /**
