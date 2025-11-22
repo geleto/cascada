@@ -331,14 +331,13 @@ async function iterateArraySequential(arr, loopBody, loopVars, errorContext) {
   return didIterate;
 }
 
-async function iterateArrayParallel(arr, loopBody, loopVars, errorContext) {
+// Synchronous (not async): returns boolean directly for sync loops, avoids Promise overhead.
+// Arrays iterate synchronously - only loop bodies can be async.
+function iterateArrayParallel(arr, loopBody, loopVars, errorContext) {
   const len = arr.length;
   let didIterate = len > 0;
 
-  // Arrays iterate synchronously and cannot fail during iteration (only loop bodies can).
-  // We intentionally "fire and forget" just like the legacy implementation: each loopBody
-  // call registers its own astate async block, and poison propagation handles failures.
-  // Unlike async iterators we do not need lenPromise/lastPromise or aggregated errors here.
+  // Each loopBody call registers its own astate async block; poison propagation handles failures.
   for (let i = 0; i < arr.length; i++) {
     let value = arr[i];
     const isLast = i === arr.length - 1;
@@ -578,7 +577,9 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
         } else if (maxConcurrency && maxConcurrency < len) {
           didIterate = await iterateArrayLimited(arr, loopBody, loopVars, errorContext, maxConcurrency);
         } else {
-          didIterate = await iterateArrayParallel(arr, loopBody, loopVars, errorContext);
+          // Sync: returns boolean directly. Async: await to handle Promise (though it's not async)
+          const result = iterateArrayParallel(arr, loopBody, loopVars, errorContext);
+          didIterate = asyncOptions ? await result : result;
         }
       } else {
         const keys = Object.keys(arr);
@@ -628,7 +629,12 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
   // Step 4-5: Handle else execution and write counting
   if (!didIterate && loopElse) {
     // Step 4: Else block runs - let it propagate normally to loop frame
-    await loopElse();
+    if (asyncOptions) {
+      await loopElse();
+    } else {
+      // Sync: execute directly (else block is sync function, outputs to buffer via closure)
+      loopElse();
+    }
   } else if (elseWriteCounts && Object.keys(elseWriteCounts).length > 0) {
     // Step 5: Else block doesn't run - skip its write counters
     loopFrame.skipBranchWrites(elseWriteCounts);

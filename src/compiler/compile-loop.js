@@ -166,6 +166,8 @@ class CompileLoop {
     }
 
     // Call the runtime iterate loop function
+    // For sync loops: not awaited (fire-and-forget Promise). iterate() executes synchronously
+    // internally (no awaits hit) and executes else block before returning.
     this.compiler.emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${node.isAsync ? this.compiler.buffer : 'null'}, [`);
     loopVars.forEach((varName, index) => {
       if (index > 0) {
@@ -299,6 +301,7 @@ class CompileLoop {
 
     frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential && awaitSequentialElse, node.else_);
 
+    // Sync: use closure scope to access buffer. Async: bind context for proper this binding.
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
     return elseFrame;
   }
