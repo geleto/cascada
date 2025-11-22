@@ -342,6 +342,27 @@
       }
     });
 
+    it('should skip else handlers after any successful iteration without poisoning', async () => {
+      const context = {
+        async *myGenerator() {
+          yield 'first';
+          yield 'second';
+        }
+      };
+      const template = `
+        {% set elseStatus = "initial" %}
+        {% for item in myGenerator() %}
+          {{ item }}
+        {% else %}
+          {% set elseStatus = "else" %}
+        {% endfor %}
+        Status: {{ elseStatus }}
+      `;
+
+      const result = await env.renderTemplateString(template, context);
+      expect(result.trim().endsWith('Status: initial')).to.be(true);
+    });
+
     it('should not poison else handlers when iterator fails after at least one iteration', async () => {
       const context = {
         async *myGenerator() {
@@ -366,6 +387,39 @@
         expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(1);
         expect(err.errors[0].message).to.contain('Iterator failure after progress');
+      }
+    });
+
+    it('should skip else handlers and collect soft + hard errors when iterator yields poison before throwing', async () => {
+      const flags = { elseTriggered: false };
+      const context = {
+        async *myGenerator() {
+          yield new Error('Soft failure during iteration');
+          throw new Error('Iterator failure after progress');
+        },
+        markElse() {
+          flags.elseTriggered = true;
+          return '';
+        }
+      };
+      const template = `
+        {% for item in myGenerator() %}
+          {{ item }}
+        {% else %}
+          {{ markElse() }}
+        {% endfor %}
+      `;
+
+      try {
+        await env.renderTemplateString(template, context);
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.errors).to.have.length(2);
+        const messages = err.errors.map(e => e.message).sort();
+        expect(messages[0]).to.contain('Iterator failure after progress');
+        expect(messages[1]).to.contain('Soft failure during iteration');
+        expect(flags.elseTriggered).to.be(false);
       }
     });
 
