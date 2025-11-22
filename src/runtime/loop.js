@@ -265,9 +265,140 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
   return didIterate;
 }
 
+async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit) {
+  const iterator = arr[Symbol.asyncIterator]();
+  let didIterate = false;
+  let index = 0;
+  let iteratorDone = false;
+
+  let resolveAllScheduled;
+  let rejectAllScheduled;
+  const allIterationsScheduled = new Promise((resolve, reject) => {
+    resolveAllScheduled = resolve;
+    rejectAllScheduled = reject;
+  });
+
+  // --- Simple lock so iterator.next() is never called concurrently ---
+  let iteratorLocked = false;
+  const lockQueue = [];
+
+  async function acquireIteratorLock() {
+    while (iteratorLocked) {
+      await new Promise(resolve => lockQueue.push(resolve));
+    }
+    iteratorLocked = true;
+  }
+
+  function releaseIteratorLock() {
+    iteratorLocked = false;
+    const next = lockQueue.shift();
+    if (next) {
+      next();
+    }
+  }
+
+  // Helper to pull the next value from the async iterator
+  async function getNext() {
+    if (iteratorDone) {
+      return null;
+    }
+
+    await acquireIteratorLock();
+    try {
+      // Re-check under the lock to avoid extra next() calls after done
+      if (iteratorDone) {
+        return null;
+      }
+
+      const result = await iterator.next();
+
+      if (result.done) {
+        iteratorDone = true;
+        return null;
+      }
+
+      return result.value;
+    } catch (err) {
+      // Hard error from iterator.next().
+      // Let iterate(...) handle it via its outer catch.
+      if (rejectAllScheduled) {
+        if (!isPoisonError(err)) {
+          err.didIterate = didIterate;
+        }
+        rejectAllScheduled(err);
+        rejectAllScheduled = null;
+      }
+      iteratorDone = true;
+      return null;
+    } finally {
+      releaseIteratorLock();
+    }
+  }
+
+  // Use the same limited body-call helper as arrays
+  async function runIteration(i, value) {
+    // Soft error: generator yielded an Error → convert to poison with context
+    if (value instanceof Error) {
+      value = createPoison(value, errorContext);
+    }
+
+    const res = callLoopBodyLimited(loopBody, loopVars, value, i, errorContext);
+    // Normalise sync/async body
+    await Promise.resolve(res);
+  }
+
+  async function worker() {
+    while (true) {
+      const value = await getNext();
+      if (value === null) {
+        // Iterator exhausted or hard error already routed via rejectAllScheduled
+        if (iteratorDone && resolveAllScheduled) {
+          // First worker that observes exhaustion resolves "all scheduled"
+          resolveAllScheduled();
+          resolveAllScheduled = null;
+        }
+        return;
+      }
+
+      const currentIndex = index++;
+      didIterate = true;
+
+      try {
+        const res = runIteration(currentIndex, value);
+        await res;
+      } catch (err) {
+        // Error inside loop body. Let iterate(...) handle via its outer catch.
+        if (rejectAllScheduled) {
+          if (!isPoisonError(err)) {
+            err.didIterate = didIterate;
+          }
+          rejectAllScheduled(err);
+          rejectAllScheduled = null;
+        }
+        return;
+      }
+    }
+  }
+
+  const workerCount = Math.max(1, Math.floor(limit));
+
+  // Kick off the initial workers immediately
+  for (let i = 0; i < workerCount; i++) {
+    // Fire-and-forget; we only wait for "all scheduled"
+    worker();
+  }
+
+  // Wait until every iteration has been *started* (scheduled),
+  // mirroring iterateArrayLimited semantics. Completion of the
+  // underlying async blocks is still tracked externally via waitAllClosures.
+  await allIterationsScheduled;
+
+  return didIterate;
+}
+
 /**
  * Helper function to call loop body with proper destructuring and poison handling.
- * Used for limited concurrency mode which uses while-style metadata (no length-based props).
+ * Used for limited concurrency mode (arrays + async iterators) which uses while-style metadata.
  *
  * @param {Function} loopBody - The loop body function
  * @param {Array} loopVars - Array of loop variable names
@@ -556,6 +687,9 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
         // or `loop.last` for async iterators, as that is impossible to know
         // without first consuming the entire iterator.
         didIterate = await iterateAsyncSequential(arr, loopBody, loopVars, errorContext);
+      } else if (maxConcurrency) {
+        // Limited concurrency path: behaves like while loops for metadata
+        didIterate = await iterateAsyncLimited(arr, loopBody, loopVars, errorContext, maxConcurrency);
       } else {
         // PARALLEL PATH
         // This complex logic allows for `loop.length` and `loop.last` to work
