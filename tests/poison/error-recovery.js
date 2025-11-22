@@ -512,6 +512,132 @@
       });
     });
 
+    describe('Loop soft error healing', () => {
+      it('should heal soft errors inside script for loops over arrays', async () => {
+        const context = {
+          arraySource: ['alpha', new Error('array soft failure'), 'omega']
+        };
+        const script = `
+          :data
+          for value in arraySource
+            if value is error
+              value = "healed-array-for"
+            endif
+            @data.values.push(value)
+          endfor
+        `;
+
+        const data = await env.renderScriptString(script, context);
+        expect(data.values).to.eql(['alpha', 'healed-array-for', 'omega']);
+      });
+
+      it('should heal soft errors inside script for loops over async iterators', async () => {
+        const context = {
+          asyncItems: async function* () {
+            yield 'one';
+            yield new Error('async for soft failure');
+            yield 'two';
+          }
+        };
+        const script = `
+          :data
+          for value in asyncItems()
+            if value is error
+              value = "healed-async-for"
+            endif
+            @data.values.push(value)
+          endfor
+        `;
+
+        const data = await env.renderScriptString(script, context);
+        expect(data.values).to.eql(['one', 'healed-async-for', 'two']);
+      });
+
+      it('should heal soft errors inside script each loops over arrays', async () => {
+        const context = {
+          series: ['left', new Error('each array soft failure'), 'right']
+        };
+        const script = `
+          :data
+          each entry in series
+            if entry is error
+              entry = "healed-array-each"
+            endif
+            @data.values.push(entry)
+          endeach
+        `;
+
+        const data = await env.renderScriptString(script, context);
+        expect(data.values).to.eql(['left', 'healed-array-each', 'right']);
+      });
+
+      it('should heal soft errors inside script each loops over async iterators', async () => {
+        const context = {
+          series: async function* () {
+            yield 'uno';
+            yield new Error('each async soft failure');
+            yield 'dos';
+          }
+        };
+        const script = `
+        :data
+        each entry in series()
+          if entry is error
+            entry = "healed-async-each"
+          endif
+          @data.values.push(entry)
+        endeach
+        `;
+
+        const data = await env.renderScriptString(script, context);
+        expect(data.values).to.eql(['uno', 'healed-async-each', 'dos']);
+      });
+
+      it('should heal soft errors inside template for-of loops over arrays', async () => {
+        const context = {
+          items: ['good', new Error('for-of array soft failure'), 'done']
+        };
+        const template = `
+          {% set cleaned = [] %}
+          {% for item in items of 2 %}
+            {% set normalized = item %}
+            {% if normalized is error %}
+              {% set normalized = "healed-for-of-array" %}
+            {% endif %}
+            {% set cleaned = cleaned.concat([normalized]) %}
+          {% endfor %}
+          {{ cleaned | join(',') }}
+        `;
+
+        const output = await env.renderTemplateString(template, context);
+        expect(output.trim()).to.equal('good,healed-for-of-array,done');
+      });
+
+      it('should heal soft errors inside template for-of loops over async iterators', async () => {
+        const context = {
+          limitedItems: async function* () {
+            yield 'start';
+            yield new Error('for-of async soft failure');
+            yield 'end';
+          }
+        };
+        const template = `
+          {% set cleaned = [] %}
+          {% for item in limitedItems() of 2 %}
+            {% set normalized = item %}
+            {% if normalized is error %}
+              {% set normalized = "healed-for-of-async" %}
+            {% endif %}
+            {% set cleaned = cleaned.concat([normalized]) %}
+          {% endfor %}
+          {{ cleaned | join(',') }}
+        `;
+
+        const output = await env.renderTemplateString(template, context);
+        expect(output.trim()).to.equal('start,healed-for-of-async,end');
+      });
+    });
+
     // not implemented yet
     describe.skip('@data Output Error Recovery', () => {
       const errorPromise = (msg) => Promise.reject(new Error(msg));
