@@ -456,6 +456,12 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
   }
 
   if (didIterate) {
+    // Else branch never runs when the loop iterated at least once, but any
+    // pending write counters for it still need to be released so dependent
+    // variables unlock even though we aren't poisoning them.
+    if (asyncOptions.elseWriteCounts && Object.keys(asyncOptions.elseWriteCounts).length > 0) {
+      frame.skipBranchWrites(asyncOptions.elseWriteCounts);
+    }
     return;// we don't poison the else side-effects if we had at least one iteration
   }
 
