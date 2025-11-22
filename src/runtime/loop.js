@@ -456,12 +456,6 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
   }
 
   if (didIterate) {
-    // Else branch never runs when the loop iterated at least once, but any
-    // pending write counters for it still need to be released so dependent
-    // variables unlock even though we aren't poisoning them.
-    if (asyncOptions.elseWriteCounts && Object.keys(asyncOptions.elseWriteCounts).length > 0) {
-      frame.skipBranchWrites(asyncOptions.elseWriteCounts);
-    }
     return;// we don't poison the else side-effects if we had at least one iteration
   }
 
@@ -613,6 +607,9 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
   } catch (err) {
     const errors = isPoisonError(err) ? err.errors : [err];
     didIterate = errors[errors.length - 1]?.didIterate || false;
+    if (didIterate && asyncOptions && asyncOptions.elseWriteCounts && Object.keys(asyncOptions.elseWriteCounts).length > 0) {
+      loopFrame.skipBranchWrites(asyncOptions.elseWriteCounts);
+    }
     // if we had at least one iteration, we won't poison the else side-effects
     poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, didIterate);
     // Re-throw the error so it propagates to the caller
