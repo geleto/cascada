@@ -65,6 +65,43 @@
 		  `);
       });
 
+      describe('Object iteration with concurrentLimit hints', () => {
+        it('should ignore concurrentLimit when iterating over objects', async () => {
+          const context = {
+            catalog: { a: 1, b: 2, c: 3 },
+            concurrentCount: 0,
+            maxConcurrent: 0,
+            async processEntry(key, value) {
+              context.concurrentCount++;
+              context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
+              await delay(20);
+              context.concurrentCount--;
+              return `${key}:${value}`;
+            }
+          };
+
+          const template = '{% for key, value in catalog of 1 %}' +
+            '{{ processEntry(key, value) }}' +
+            '{% endfor %}';
+
+          await env.renderTemplateString(template, context);
+          expect(context.maxConcurrent).to.be(Object.keys(context.catalog).length);
+        });
+
+        it('should preserve object loop metadata even when concurrentLimit is provided', async () => {
+          const context = {
+            catalog: { a: 1, b: 2 }
+          };
+
+          const template = '{% for key, value in catalog of 4 %}' +
+            '{{ key }}-{{ loop.index }}/{{ loop.length }}/{{ "T" if loop.last else "F" }},' +
+            '{% endfor %}';
+
+          const result = await env.renderTemplateString(template, context);
+          expect(result).to.equal('a-1/2/F,b-2/2/T,');
+        });
+      });
+
       it('should parse for loop concurrent limit syntax', async () => {
         const template = '{% for chunk in chunks of limit %}{{ chunk }}{% endfor %}';
         const ast = parser.parse(template);
@@ -446,6 +483,88 @@
 
           expect(result).to.equal('a-b,c-d,e-f,');
         });
+
+        it('should ignore concurrentLimit when sequential operations enforce ordering', async () => {
+          const context = {
+            ids: [0, 1, 2, 3],
+            tracker: {
+              concurrent: 0,
+              max: 0
+            },
+            account: null
+          };
+
+          context.account = {
+            async record(id) {
+              context.tracker.concurrent++;
+              context.tracker.max = Math.max(context.tracker.max, context.tracker.concurrent);
+              await delay(15);
+              context.tracker.concurrent--;
+              return `record-${id}`;
+            }
+          };
+
+          const template = '{% for id in ids of 5 %}{{ account!.record(id) }}{% endfor %}';
+          await env.renderTemplateString(template, context);
+
+          expect(context.tracker.max).to.be(1);
+        });
+
+        it('should retain full loop metadata when no concurrentLimit is provided', async () => {
+          const context = {
+            items: ['a', 'b', 'c']
+          };
+
+          const template = '{% for item in items %}' +
+            '{{ loop.index }}/{{ loop.index0 }}/{{ loop.length }}/{{ "T" if loop.last else "F" }},' +
+            '{% endfor %}';
+          const result = await env.renderTemplateString(template, context);
+
+          expect(result).to.equal('1/0/3/F,2/1/3/F,3/2/3/T,');
+        });
+
+        it('should keep nested loop limits isolated', async () => {
+          const context = {
+            outerItems: [0, 1, 2],
+            innerItems: ['a', 'b'],
+            outerTracker: { current: 0, max: 0 },
+            innerTracker: {}
+          };
+
+          context.trackOuter = async function (outer) {
+            context.outerTracker.current++;
+            context.outerTracker.max = Math.max(context.outerTracker.max, context.outerTracker.current);
+            await delay(10);
+            context.outerTracker.current--;
+            return '';
+          };
+
+          context.trackInner = async function (outer, inner) {
+            if (!context.innerTracker[outer]) {
+              context.innerTracker[outer] = { current: 0, max: 0 };
+            }
+            const entry = context.innerTracker[outer];
+            entry.current++;
+            entry.max = Math.max(entry.max, entry.current);
+            await delay(5);
+            entry.current--;
+            return `${outer}-${inner}`;
+          };
+
+          const template = '{% for outer in outerItems of 2 %}' +
+            '{{ trackOuter(outer) }}' +
+            '{% for inner in innerItems of 1 %}' +
+            '{{ trackInner(outer, inner) }}' +
+            '{% endfor %}' +
+            '{% endfor %}';
+
+          await env.renderTemplateString(template, context);
+
+          expect(context.outerTracker.max).to.be(2);
+          Object.values(context.innerTracker).forEach(entry => {
+            expect(entry.max).to.be(1);
+          });
+        });
       });
 
       describe('Limited concurrency behavior (async iterators)', () => {
@@ -535,6 +654,32 @@
           expect(context.maxConcurrent).to.be(1);
         });
 
+        it('should ignore concurrentLimit when async iterator loop uses sequential operations', async () => {
+          const context = {
+            concurrentCount: 0,
+            maxConcurrent: 0,
+            async *makeAsyncItems() {
+              for (let i = 0; i < 4; i++) {
+                yield i;
+              }
+            },
+            logger: {
+              async record(value) {
+                context.concurrentCount++;
+                context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
+                await delay(10);
+                context.concurrentCount--;
+                return `log-${value}`;
+              }
+            }
+          };
+
+          const template = '{% for value in makeAsyncItems() of 5 %}{{ logger!.record(value) }}{% endfor %}';
+          await env.renderTemplateString(template, context);
+
+          expect(context.maxConcurrent).to.be(1);
+        });
+
         it('should propagate errors from async iterator limited loop bodies', async () => {
           const context = {
             async *makeAsyncItems() {
@@ -580,6 +725,35 @@
           const result = await env.renderTemplateString(template, context);
 
           expect(result).to.equal('FT');
+        });
+
+        it('should expose loop.length for async iterator loops without concurrentLimit', async () => {
+          const context = {
+            async *makeAsyncItems() {
+              yield 'x';
+              yield 'y';
+              yield 'z';
+            },
+            readMeta(value) {
+              if (value && typeof value.then === 'function') {
+                return value.then(v => v);
+              }
+              return value;
+            },
+            markFlag(val) {
+              if (val && typeof val.then === 'function') {
+                return val.then(result => (result ? 'T' : 'F'));
+              }
+              return val ? 'T' : 'F';
+            }
+          };
+
+          const template = '{% for value in makeAsyncItems() %}' +
+            '{{ readMeta(loop.length) }}-{{ markFlag(loop.last) }},' +
+            '{% endfor %}';
+          const result = await env.renderTemplateString(template, context);
+
+          expect(result).to.equal('3-F,3-F,3-T,');
         });
       });
 
@@ -2772,6 +2946,39 @@
       expect(context.state.counter).to.equal(4);
     });
 
+    it('should remain sequential for async while loops despite concurrentLimit additions elsewhere', async () => {
+      const context = {
+        state: {
+          counter: 0,
+          concurrentCount: 0,
+          maxConcurrent: 0,
+          async shouldContinue() {
+            await delay(2);
+            if (this.counter >= 3) {
+              return false;
+            }
+            this.counter++;
+            return true;
+          },
+          async doWork(index) {
+            this.concurrentCount++;
+            this.maxConcurrent = Math.max(this.maxConcurrent, this.concurrentCount);
+            await delay(15);
+            this.concurrentCount--;
+            return `work-${index}`;
+          }
+        }
+      };
+
+      const template = `
+        {%- while state.shouldContinue() -%}
+          {{ state.doWork(loop.index0) }}
+        {%- endwhile -%}
+      `;
+
+      await env.renderTemplateString(template, context);
+      expect(context.state.maxConcurrent).to.be(1);
+    });
   }); // End While Loops
 
   describe('Sequential Each Loops', () => {
@@ -3006,6 +3213,29 @@
       expect(result.trim()).to.equal('Processed 1Processed 2Processed 3');
     });
 
+    it('should remain sequential for asyncEach loops after concurrentLimit changes', async () => {
+      const context = {
+        items: [1, 2, 3],
+        concurrentCount: 0,
+        maxConcurrent: 0,
+        async processItem(item) {
+          context.concurrentCount++;
+          context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
+          await delay(10);
+          context.concurrentCount--;
+          return `Item ${item}`;
+        }
+      };
+
+      const template = `
+        {%- asyncEach item in items -%}
+          {{ processItem(item) }}
+        {%- endeach -%}
+      `;
+
+      await env.renderTemplateString(template, context);
+      expect(context.maxConcurrent).to.be(1);
+    });
   }); // End Sequential Each Loops
 
   describe('Cascada Script Loops', () => {
