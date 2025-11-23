@@ -66,27 +66,6 @@
       });
 
       describe('Object iteration with concurrentLimit hints', () => {
-        it('should ignore concurrentLimit when iterating over objects', async () => {
-          const context = {
-            catalog: { a: 1, b: 2, c: 3 },
-            concurrentCount: 0,
-            maxConcurrent: 0,
-            async processEntry(key, value) {
-              context.concurrentCount++;
-              context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
-              await delay(20);
-              context.concurrentCount--;
-              return `${key}:${value}`;
-            }
-          };
-
-          const template = '{% for key, value in catalog of 1 %}' +
-            '{{ processEntry(key, value) }}' +
-            '{% endfor %}';
-
-          await env.renderTemplateString(template, context);
-          expect(context.maxConcurrent).to.be(Object.keys(context.catalog).length);
-        });
 
         it('should preserve object loop metadata even when concurrentLimit is provided', async () => {
           const context = {

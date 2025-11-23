@@ -562,6 +562,84 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
   return didIterate;
 }
 
+async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency) {
+  const keys = Object.keys(arr);
+  const len = keys.length;
+  let didIterate = len > 0;
+
+  if (len > 0) {
+    // For objects we *always* require two loop variables: key and value
+    if (loopVars.length !== 2) {
+      throw new Error(
+        `Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`
+      );
+    }
+
+    if (effectiveSequential) {
+      // Sequential object iteration (unchanged semantics, but via effectiveSequential)
+      for (let i = 0; i < len; i++) {
+        const key = keys[i];
+        let value = arr[key];
+        const isLast = i === len - 1;
+
+        // Convert Error objects to poison for consistency
+        if (value instanceof Error) {
+          value = createPoison(value, errorContext);
+        }
+
+        const res = loopBody(key, value, i, len, isLast);
+        // In sequential mode we always await the body
+        await res;
+      }
+    } else if (maxConcurrency && maxConcurrency < len) {
+      // Limited-concurrency path: reuse array-limited helper on [key, value] pairs,
+      // preserving Error→poison behaviour and full length/last metadata.
+      const entries = new Array(len);
+      for (let i = 0; i < len; i++) {
+        const key = keys[i];
+        let value = arr[key];
+
+        // Convert Error objects to poison for consistency
+        if (value instanceof Error) {
+          value = createPoison(value, errorContext);
+        }
+
+        entries[i] = [key, value];
+      }
+
+      // iterateArrayLimited will:
+      // - enforce the concurrency pool,
+      // - call callLoopBodyLimited → loopBody(key, value, index, len, isLast, errorContext),
+      // - return a boolean didIterate.
+      didIterate = await iterateArrayLimited(
+        entries,
+        loopBody,
+        loopVars,
+        errorContext,
+        maxConcurrency
+      );
+    } else {
+      // Parallel (unbounded) object iteration – same semantics as before
+      for (let i = 0; i < len; i++) {
+        const key = keys[i];
+        let value = arr[key];
+        const isLast = i === len - 1;
+
+        // Convert Error objects to poison for consistency
+        if (value instanceof Error) {
+          value = createPoison(value, errorContext);
+        }
+
+        loopBody(key, value, i, len, isLast);
+        // Non-sequential bodies may be async; each body registers its own async block.
+        // We deliberately do *not* await loopBody here – same as existing parallel behaviour.
+      }
+    }
+  }
+
+  return didIterate;
+}
+
 /**
  * Poison both body and else effects when loop array is poisoned before iteration.
  * We poison both branches because we don't know if the underlying value would have
@@ -722,29 +800,9 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
           didIterate = asyncOptions ? await result : result;
         }
       } else {
-        const keys = Object.keys(arr);
-        const len = keys.length;
-        didIterate = len > 0;
-
-        for (let i = 0; i < len; i++) {
-          const key = keys[i];
-          let value = arr[key];
-          const isLast = i === keys.length - 1;
-
-          // Convert Error objects to poison for consistency
-          if (value instanceof Error) {
-            value = createPoison(value, errorContext);
-          }
-
-          if (loopVars.length === 2) {
-            const res = loopBody(key, value, i, len, isLast);
-            if (sequential) {
-              await res;
-            }
-          } else {
-            throw new Error(`Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`);
-          }
-        }
+        // object iteration
+        const effectiveSequential = sequential || limitSequentialOverride;
+        didIterate = await iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency);
       }
     }
   } catch (err) {
