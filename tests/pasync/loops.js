@@ -614,12 +614,19 @@
             yield 42;
           },
           async processItem(v) {
-            // Just echo something type-inspecting the value
-            return isPoison(v) ? 'POISON,' : `VAL-${v},`;
+            return `VAL-${v},`;
           }
         };
 
-        const template = '{% for v in makeAsyncItems() of 2 %}{{ processItem(v) }}{% endfor %}';
+        const template = `
+          {%- for v in makeAsyncItems() of 2 -%}
+            {%- if v is error -%}
+              {%- set result = "POISON," -%}
+            {%- else -%}
+              {%- set result = processItem(v) -%}
+            {%- endif -%}
+            {{- result -}}
+          {%- endfor -%}`;
         const result = await env.renderTemplateString(template, context);
 
         expect(result).to.equal('POISON,VAL-42,');

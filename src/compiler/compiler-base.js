@@ -311,7 +311,10 @@ class CompilerBase extends Obj {
     // @todo - omit this for function calls?
     // (parent instanceof nodes.FunCall && parent.name === node)
 
-    /*if (v) {
+    /*
+    // optimization: if the variable is already in the frame, use it directly
+    // @todo - bring it back for sync mode, check the bug list, it was somewhat broken in nunjucks
+    if (v) {
       //we are using a local variable, this is currently used only for:
       //the async filter, super(), set var
       this.emit(v);

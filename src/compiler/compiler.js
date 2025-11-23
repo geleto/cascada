@@ -274,16 +274,15 @@ class Compiler extends CompilerBase {
             this.fail(`Unknown varType '${node.varType}' for set/var statement.`, node.lineno, node.colno, node);
         }
 
-        // In script mode, we always generate a new temporary JS variable for the assignment.
-        id = this._tmpid();
-        this.emit.line('let ' + id + ';');
-
       } else {
         // TEMPLATE MODE: Replicates the original, tested behavior.
         if (node.varType !== 'assignment') { // 'set' is the only valid type
           this.fail(`'${node.varType}' is not allowed in template mode. Use 'set'.`, node.lineno, node.colno, node);
         }
 
+        /*
+        // This was an optimization to use local variables for the set value,
+        // @todo - reenable synchronous mode, also check compileSymbol
         // Look up the existing temporary variable ID. This is the crucial part
         // for template-mode re-assignments.
         id = frame.lookup(name);
@@ -292,8 +291,18 @@ class Compiler extends CompilerBase {
           id = this._tmpid();
           this.emit.line('let ' + id + ';');
         }
+        */
       }
 
+      // Both modes rely on a fresh temp for the JS assignment.
+      id = this._tmpid();
+      const declarationKeyword = this.asyncMode ? 'let' : 'var';
+      this.emit.line(`${declarationKeyword} ${id};`);
+
+      if (this.asyncMode) {
+        const declarationFrame = this._getDeclarationFrame(frame);
+        declarationFrame.set(name, id);
+      }
       ids.push(id);
 
       // This call is common and crucial for async operations in both modes.
@@ -1234,6 +1243,14 @@ class Compiler extends CompilerBase {
    * where the logic is handled in the parser. See parseAsRoot
    */
   compileOption(node, frame) {
+  }
+
+  _getDeclarationFrame(frame) {
+    let current = frame;
+    while (current && current.createScope === false) {
+      current = current.parent;
+    }
+    return current || frame;
   }
 }
 

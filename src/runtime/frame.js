@@ -81,7 +81,7 @@ class Frame {
     return p && p.resolve(name);
   }
 
-  push(isolateWrites) {
+  push(isolateWrites, _createScope) {
     return new Frame(this, isolateWrites);
   }
 
@@ -389,8 +389,8 @@ class AsyncFrame extends Frame {
     }
   }*/
 
-  push(isolateWrites) {
-    return new AsyncFrame(this, isolateWrites);
+  push(isolateWrites, createScope = true) {
+    return new AsyncFrame(this, isolateWrites, createScope);
   }
 
   /**
@@ -454,16 +454,21 @@ class AsyncFrame extends Frame {
       let {value, frame} = parent.lookupAndLocate(varName);
       if (!frame) {
         if (!varName.startsWith('!')) {
-          //all non-sequence lock variables should have been declared
-          throw new Error(`Promisified variable ${varName} not found`);
+          // Variable not declared yet in runtime scope; initialize it now so async block can lock it
+          parent.set(varName, undefined, true);
+          ({ value, frame } = parent.lookupAndLocate(varName));
+          if (!frame) {
+            throw new Error(`Promisified variable ${varName} not found`);
+          }
+        } else {
+          //for sequential keys, create a default value in root if none found
+          //e.g. declare the lock the first time it is used
+          const sequenceLockFrame = this.getRoot();//this.sequenceLockFrame;
+          value = undefined;//not yet locked
+          sequenceLockFrame.variables = sequenceLockFrame.variables || {};
+          sequenceLockFrame.variables[varName] = value;
+          frame = sequenceLockFrame;
         }
-        //for sequential keys, create a default value in root if none found
-        //e.g. declare the lock the first time it is used
-        const sequenceLockFrame = this.getRoot();//this.sequenceLockFrame;
-        value = undefined;//not yet locked
-        sequenceLockFrame.variables = sequenceLockFrame.variables || {};
-        sequenceLockFrame.variables[varName] = value;
-        frame = sequenceLockFrame;
       }
       this.asyncVars[varName] = value;//local snapshot of the value
       //promisify the variable in the frame (parent of the new async frame)
