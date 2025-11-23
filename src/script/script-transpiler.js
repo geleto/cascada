@@ -101,13 +101,15 @@ class ScriptTranspiler {
     // Define block-related configuration
     this.SYNTAX = {
       // Block-related tags
-      blockTags: ['for', 'each', 'while', 'if', 'block', 'macro', 'filter', 'raw', 'verbatim', 'try'],
+      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'try'],
       lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'option', 'var', 'extern'],
 
       // Middle tags with their parent block types
       middleTags: {
         'else': ['if', 'for'],
         'elif': ['if'],
+        'case': ['switch'],
+        'default': ['switch'],
         'resume': ['try'],
         'except': ['try']
       },
@@ -118,6 +120,7 @@ class ScriptTranspiler {
         'each': 'endeach',
         'while': 'endwhile',
         'if': 'endif',
+        'switch': 'endswitch',
         'block': 'endblock',
         'macro': 'endmacro',
         'filter': 'endfilter',
@@ -131,7 +134,8 @@ class ScriptTranspiler {
 
       // Tags that should never be treated as multi-line
       neverContinued: [
-        'else', 'endif', 'endfor', 'endblock', 'endmacro',
+        'else', 'elif', 'case', 'default',
+        'endif', 'endfor', 'endswitch', 'endblock', 'endmacro',
         'endfilter', 'endcall', 'endraw', 'endverbatim',
         'endwhile', 'endtry', 'endvar'
       ],
