@@ -173,6 +173,43 @@
         const result2 = await env.renderTemplateString(template2, context);
         expect(result2.trim()).to.equal('Active User');
       });
+
+      it('should preserve branch-only set assignments in async if blocks', async () => {
+        const context = {
+          async getValue() {
+            await delay(5);
+            return -5;
+          },
+          async processValue(v) {
+            await delay(5);
+            return `VAL-${v}`;
+          }
+        };
+
+        const template = `
+          {%- set result = "init" -%}
+          {%- if getValue() < 0 -%}
+            {%- set result = "NEG" -%}
+          {%- else -%}
+            {%- set result = processValue(getValue()) -%}
+          {%- endif -%}
+          {{- result -}}
+        `;
+        const result = await env.renderTemplateString(template, context);
+        expect(result.trim()).to.equal('NEG');
+
+        const template2 = `
+          {%- set result = "init" -%}
+          {%- if getValue() > 0 -%}
+            {%- set result = "POS" -%}
+          {%- else -%}
+            {%- set result = processValue(getValue()) -%}
+          {%- endif -%}
+          {{- result -}}
+        `;
+        const result2 = await env.renderTemplateString(template2, context);
+        expect(result2.trim()).to.equal('VAL--5');
+      });
     });
 
     describe('Async Switch Statement Tests', () => {

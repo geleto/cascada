@@ -632,6 +632,44 @@
         expect(result).to.equal('POISON,VAL-42,');
       });
 
+      it('should preserve loop-scoped set assignments across body and else', async () => {
+        const context = {
+          async *makeAsyncItems() {
+            yield -1;
+            yield 4;
+          },
+          async *makeEmptyItems() {},
+          async formatValue(v) {
+            return `VAL-${v},`;
+          }
+        };
+
+        const template = `
+          {%- for v in makeAsyncItems() of 2 -%}
+            {%- if v < 0 -%}
+              {%- set status = "NEG," -%}
+            {%- else -%}
+              {%- set status = formatValue(v) -%}
+            {%- endif -%}
+            {{- status -}}
+          {%- else -%}
+            {%- set status = "BODY_EMPTY," -%}
+            {{- status -}}
+          {%- endfor -%}
+          {%- for v in makeEmptyItems() of 2 -%}
+            {%- set status = formatValue(v) -%}
+            {{- status -}}
+          {%- else -%}
+            {%- set status = "EMPTY," -%}
+            {{- status -}}
+          {%- endfor -%}
+        `;
+
+        const result = await env.renderTemplateString(template, context);
+        expect(result.replace(/\s+/g, '')).to.equal('NEG,VAL-4,EMPTY,');
+      });
+
+
       it('should handle limits greater than the number of async iterator items', async () => {
         const context = {
           concurrentCount: 0,
