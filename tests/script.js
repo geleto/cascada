@@ -282,6 +282,142 @@ describe('Cascada Script: Variables', function () {
       const result = await env.renderScriptString(script, {});
       expect(result.result.items).to.eql(['outer - inner 0', 'outer - inner 1']);
     });
+
+    it('should scope branch-local vars for each side of an if/else', async function () {
+      const script = `
+        :data
+        var usePrimary = inputFlag
+        if usePrimary
+          var scopedValue = "primary"
+          @data.result.selection = scopedValue
+        else
+          var scopedValue = "fallback"
+          @data.result.selection = scopedValue
+        endif
+      `;
+
+      const primary = await env.renderScriptString(script, { inputFlag: true });
+      expect(primary.result.selection).to.be('primary');
+
+      const fallback = await env.renderScriptString(script, { inputFlag: false });
+      expect(fallback.result.selection).to.be('fallback');
+    });
+
+    it('should not leak vars declared inside if/else branches', async function () {
+      const script = `
+        :data
+        var pickPrimary = true
+        if pickPrimary
+          var scopedValue = "primary-only"
+          @data.result.selection = scopedValue
+        else
+          var scopedValue = "fallback-only"
+          @data.result.selection = scopedValue
+        endif
+        @data.result.postBranchSeen = scopedValue
+      `;
+
+      try {
+        await env.renderScriptString(script, {});
+        expect().fail('Expected referencing scopedValue outside the branch to fail');
+      } catch (error) {
+        expect(error.message).to.contain('Can not look up unknown variable/function');
+      }
+    });
+
+    it('should allow redeclaring a branch-local name after the if/else', async function () {
+      const script = `
+        :data
+        var shouldUsePrimary = true
+        if shouldUsePrimary
+          var scopedValue = "primary branch"
+          @data.result.internal = scopedValue
+        else
+          var scopedValue = "fallback branch"
+          @data.result.internal = scopedValue
+        endif
+        var scopedValue = "outer scope"
+        @data.result.outer = scopedValue
+      `;
+
+      const result = await env.renderScriptString(script, {});
+      expect(result.result.internal).to.be('primary branch');
+      expect(result.result.outer).to.be('outer scope');
+    });
+
+    it('should scope switch case variables independently', async function () {
+      const script = `
+        :data
+        var mode = currentMode
+        switch mode
+        case "alpha"
+          var branchScoped = "ALPHA"
+          @data.result.value = branchScoped
+        case "beta"
+          var branchScoped = "BETA"
+          @data.result.value = branchScoped
+        default
+          var branchScoped = "DEFAULT"
+          @data.result.value = branchScoped
+        endswitch
+      `;
+
+      const betaResult = await env.renderScriptString(script, { currentMode: 'beta' });
+      expect(betaResult.result.value).to.be('BETA');
+
+      const defaultResult = await env.renderScriptString(script, { currentMode: 'gamma' });
+      expect(defaultResult.result.value).to.be('DEFAULT');
+    });
+
+    it('should not leak vars declared in switch cases', async function () {
+      const script = `
+        :data
+        var mode = "alpha"
+        switch mode
+        case "alpha"
+          var branchScoped = "ALPHA"
+          @data.result.value = branchScoped
+        case "beta"
+          var branchScoped = "BETA"
+          @data.result.value = branchScoped
+        default
+          var branchScoped = "DEFAULT"
+          @data.result.value = branchScoped
+        endswitch
+        @data.result.after = branchScoped
+      `;
+
+      try {
+        await env.renderScriptString(script, {});
+        expect().fail('Expected branchScoped lookup after switch to fail');
+      } catch (error) {
+        expect(error.message).to.contain('Can not look up unknown variable/function');
+      }
+    });
+
+    it('should allow redeclaring a case-local name after the switch', async function () {
+      const script = `
+        :data
+        var mode = "beta"
+        switch mode
+        case "alpha"
+          var branchScoped = "ALPHA"
+          @data.result.inner = branchScoped
+        case "beta"
+          var branchScoped = "BETA"
+          @data.result.inner = branchScoped
+        default
+          var branchScoped = "DEFAULT"
+          @data.result.inner = branchScoped
+        endswitch
+        var branchScoped = "outer switch scope"
+        @data.result.outer = branchScoped
+      `;
+
+      const result = await env.renderScriptString(script, {});
+      expect(result.result.inner).to.be('BETA');
+      expect(result.result.outer).to.be('outer switch scope');
+    });
   });
 
   describe('Complex Variable Scenarios', function () {

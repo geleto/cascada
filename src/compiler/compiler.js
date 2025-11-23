@@ -363,6 +363,7 @@ class Compiler extends CompilerBase {
     const branchWriteCounts = [];
     const branchHandlers = []; // Track handlers per branch
     let catchPoisonPos;
+    const caseCreatesScope = this.scriptMode;
 
     if (this.asyncMode) {
       // Add try-catch wrapper for error handling
@@ -393,7 +394,7 @@ class Compiler extends CompilerBase {
 
       if (c.body.children.length) {
         // Use case body 'c.body' as position node for this block
-        this.emit.asyncBlock(c, frame, false, (f) => {
+        this.emit.asyncBlock(c, frame, caseCreatesScope, (f) => {
           this.compile(c.body, f);
           branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
 
@@ -420,7 +421,7 @@ class Compiler extends CompilerBase {
       this.emit('');
 
       // Use default body 'node.default' as position node for this block
-      this.emit.asyncBlock(node, frame, false, (f) => {
+      this.emit.asyncBlock(node, frame, caseCreatesScope, (f) => {
         this.compile(node.default, f);
         branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
 
@@ -514,6 +515,8 @@ class Compiler extends CompilerBase {
       async = false;//old type of async
     }
 
+    const branchCreatesScope = this.scriptMode;
+
     // Use node.cond as the position node for the overarching If block
     frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.cond);
 
@@ -534,7 +537,7 @@ class Compiler extends CompilerBase {
       trueBranchCodePos = this.codebuf.length;
       this.emit('');
       // Use node.body as the position node for the true branch block
-      this.emit.asyncBlock(node, frame, false, (f) => {
+      this.emit.asyncBlock(node, frame, branchCreatesScope, (f) => {
         this.compile(node.body, f);
         trueBranchWriteCounts = this.async.countsTo1(f.writeCounts);
       }, node.body); // Pass body as code position
@@ -548,7 +551,7 @@ class Compiler extends CompilerBase {
 
       if (node.else_) {
         // Use node.else_ as the position node for the false branch block
-        this.emit.asyncBlock(node, frame, false, (f) => {
+        this.emit.asyncBlock(node, frame, branchCreatesScope, (f) => {
           this.compile(node.else_, f);
           falseBranchWriteCounts = this.async.countsTo1(f.writeCounts);
         }, node.else_); // Pass else as code position
@@ -612,7 +615,15 @@ class Compiler extends CompilerBase {
       this.emit('){');
 
       this.emit.withScopedSyntax(() => {
-        this.compile(node.body, frame);
+        let trueFrame = frame;
+        if (branchCreatesScope) {
+          trueFrame = frame.push();
+          this.emit.line('frame = frame.push();');
+        }
+        this.compile(node.body, trueFrame);
+        if (branchCreatesScope) {
+          this.emit.line('frame = frame.pop();');
+        }
         if (async) {
           this.emit('cb()');
         }
@@ -622,7 +633,15 @@ class Compiler extends CompilerBase {
 
       if (node.else_) {
         this.emit.withScopedSyntax(() => {
-          this.compile(node.else_, frame);
+          let falseFrame = frame;
+          if (branchCreatesScope) {
+            falseFrame = frame.push();
+            this.emit.line('frame = frame.push();');
+          }
+          this.compile(node.else_, falseFrame);
+          if (branchCreatesScope) {
+            this.emit.line('frame = frame.pop();');
+          }
           if (async) {
             this.emit('cb()');
           }
