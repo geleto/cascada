@@ -360,7 +360,7 @@
           expect(result).to.equal('1-0-T,2-1-F,3-2-F,');
         });
 
-        it('should not provide loop.length, loop.last, or loop.revindex* (while-style)', async () => {
+        it('should provide loop.length, loop.last, and loop.revindex* like standard arrays', async () => {
           const context = {
             items: ['a', 'b', 'c']
           };
@@ -373,8 +373,7 @@
             '{% endfor %}';
           const result = await env.renderTemplateString(template, context);
 
-          // All should be "NO" (undefined/false) - while-style semantics
-          expect(result).to.equal('NO-NO-NO-NO,NO-NO-NO-NO,NO-NO-NO-NO,');
+          expect(result).to.equal('HAS-NO-HAS-HAS,HAS-NO-HAS-HAS,HAS-HAS-HAS-NO,');
         });
 
         it('should override limited concurrency when sequential is required (variable write)', async () => {

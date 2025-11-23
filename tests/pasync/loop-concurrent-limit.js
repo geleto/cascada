@@ -809,7 +809,7 @@
         expect(context.maxConcurrent > 1).to.be(true);
       });
 
-      it('should keep bounded arrays with limit 1 sequential without while-style metadata', async () => {
+      it('should expose array metadata even when limit is 1', async () => {
         const context = {
           items: ['a', 'b', 'c'],
           concurrent: 0,
@@ -826,12 +826,12 @@
         const template = `
         {%- for item in items of 1 -%}
           {{ process(item) }}
-          {{ "HAS" if loop.length else "NO" }},
+          {{ loop.length }}-{{ "T" if loop.last else "F" }},
         {%- endfor -%}
         `;
 
         const result = await env.renderTemplateString(template, context);
-        expect(normalizeOutput(result)).to.equal('NO,NO,NO,');
+        expect(normalizeOutput(result)).to.equal('3-F,3-F,3-T,');
         expect(context.maxConcurrent).to.be(1);
       });
 

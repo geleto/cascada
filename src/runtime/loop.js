@@ -342,7 +342,7 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit)
       value = createPoison(value, errorContext);
     }
 
-    const res = callLoopBodyLimited(loopBody, loopVars, value, i, errorContext);
+    const res = callLoopBodyLimited(loopBody, loopVars, value, i, undefined, false, errorContext);
     // Normalise sync/async body
     await Promise.resolve(res);
   }
@@ -407,22 +407,21 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit)
  * @param {Object} errorContext - Error context object
  * @returns {Promise|*} The result of calling the loop body
  */
-function callLoopBodyLimited(loopBody, loopVars, value, index, errorContext) {
+function callLoopBodyLimited(loopBody, loopVars, value, index, len, isLast, errorContext) {
   if (loopVars.length === 1) {
-    // Single variable: pass undefined for len/last (while-style semantics)
-    return loopBody(value, index, undefined, false, errorContext);
+    return loopBody(value, index, len, isLast, errorContext);
   }
 
   if (isPoison(value)) {
     const args = Array(loopVars.length).fill(value);
-    return loopBody(...args, index, undefined, false, errorContext);
+    return loopBody(...args, index, len, isLast, errorContext);
   }
 
   if (!Array.isArray(value)) {
     throw new Error('Expected an array for destructuring');
   }
 
-  return loopBody(...value.slice(0, loopVars.length), index, undefined, false, errorContext);
+  return loopBody(...value.slice(0, loopVars.length), index, len, isLast, errorContext);
 }
 
 async function iterateArraySequential(arr, loopBody, loopVars, errorContext) {
@@ -517,7 +516,8 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
       value = createPoison(value, errorContext);
     }
 
-    const res = callLoopBodyLimited(loopBody, loopVars, value, index, errorContext);
+    const isLast = index === len - 1;
+    const res = callLoopBodyLimited(loopBody, loopVars, value, index, len, isLast, errorContext);
     await Promise.resolve(res);
   };
 
@@ -625,7 +625,8 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
     // Note: After await, arr cannot be poison (await converts poison to PoisonError)
   }
 
-  const sequential = asyncOptions ? asyncOptions.sequential : false;
+  let sequential = asyncOptions ? asyncOptions.sequential : false;
+  let limitSequentialOverride = false;
   const isAsync = asyncOptions !== null;
   const bodyWriteCounts = asyncOptions ? asyncOptions.bodyWriteCounts : null;
   const elseWriteCounts = asyncOptions ? asyncOptions.elseWriteCounts : null;
@@ -674,6 +675,10 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
           await createPoison(new Error('concurrentLimit must be a positive number or 0 / null / undefined'), errorContext);
         }
         maxConcurrency = numericLimit;
+        if (numericLimit === 1) {
+          limitSequentialOverride = true;
+          maxConcurrency = null;
+        }
       }
     }
     if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
@@ -681,7 +686,9 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
       // mechanism is fundamentally incompatible with sequential execution, as it
       // would create a deadlock.
 
-      if (sequential) {
+      const effectiveSequential = sequential || limitSequentialOverride;
+
+      if (effectiveSequential) {
         // Used for `while` and `each` loops and
         // any `for` loop marked as sequential. It does NOT support `loop.length`
         // or `loop.last` for async iterators, as that is impossible to know
@@ -703,7 +710,9 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
 
       if (Array.isArray(arr)) {
         const len = arr.length;
-        if (sequential) {
+        const effectiveSequential = sequential || limitSequentialOverride;
+
+        if (effectiveSequential) {
           didIterate = await iterateArraySequential(arr, loopBody, loopVars, errorContext);
         } else if (maxConcurrency && maxConcurrency < len) {
           didIterate = await iterateArrayLimited(arr, loopBody, loopVars, errorContext, maxConcurrency);
