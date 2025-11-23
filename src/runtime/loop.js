@@ -640,10 +640,9 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
     if (asyncOptions && maxConcurrency !== null && maxConcurrency !== undefined) {
       // 1. If it's a PoisonedValue → whole loop is poisoned
       if (isPoison(maxConcurrency)) {
-        //a quick path for poison, without await
         const errors = maxConcurrency.errors || [maxConcurrency];
         poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
-        return false; // didIterate = false
+        await createPoison(errors, errorContext);
       }
 
       // 2. If it's a Promise (thenable), await it
@@ -655,7 +654,7 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
           if (isPoison(maxConcurrency)) {
             const errors = maxConcurrency.errors || [maxConcurrency];
             poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, false);
-            return false; // didIterate = false
+            await createPoison(errors, errorContext);
           }
         } catch (err) {
           // Promise rejected - poison both body and else
@@ -670,10 +669,11 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
         // null / undefined / 0 → ignore, treated as "no limit"
         maxConcurrency = null;
       } else {
-        if (typeof maxConcurrency !== 'number' || !Number.isFinite(maxConcurrency) || maxConcurrency <= 0) {
-          //return createPoison(new Error('concurrentLimit must be a finite positive number or 0/null/undefined'), errorContext);
-          throw new Error('concurrentLimit must be a finite positive number or 0/null/undefined');
+        const numericLimit = Number(maxConcurrency);
+        if (typeof maxConcurrency !== 'number' || !Number.isFinite(numericLimit) || numericLimit <= 0) {
+          await createPoison(new Error('concurrentLimit must be a positive number or 0 / null / undefined'), errorContext);
         }
+        maxConcurrency = numericLimit;
       }
     }
     if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {

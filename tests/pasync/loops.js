@@ -187,7 +187,7 @@
             expect().fail('Should have thrown an error');
           } catch (err) {
             expect(isPoisonError(err)).to.be(true);
-            expect(err.errors[0].message).to.contain('concurrentLimit must be a finite positive number');
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
           }
         });
 
@@ -199,7 +199,7 @@
             expect().fail('Should have thrown an error');
           } catch (err) {
             expect(isPoisonError(err)).to.be(true);
-            expect(err.errors[0].message).to.contain('concurrentLimit must be a finite positive number');
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
           }
         });
 
@@ -211,7 +211,7 @@
             expect().fail('Should have thrown an error');
           } catch (err) {
             expect(isPoisonError(err)).to.be(true);
-            expect(err.errors[0].message).to.contain('concurrentLimit must be a finite positive number');
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
           }
         });
 
@@ -223,7 +223,7 @@
             expect().fail('Should have thrown an error');
           } catch (err) {
             expect(isPoisonError(err)).to.be(true);
-            expect(err.errors[0].message).to.contain('concurrentLimit must be a finite positive number');
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
           }
         });
 
@@ -235,7 +235,7 @@
             expect().fail('Should have thrown an error');
           } catch (err) {
             expect(isPoisonError(err)).to.be(true);
-            expect(err.errors[0].message).to.contain('concurrentLimit must be a finite positive number');
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
           }
         });
 
@@ -253,7 +253,7 @@
             expect().fail('Should have thrown an error');
           } catch (err) {
             expect(isPoisonError(err)).to.be(true);
-            expect(err.errors[0].message).to.contain('concurrentLimit must be a finite positive number');
+            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
           }
         });
 
