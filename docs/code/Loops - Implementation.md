@@ -1011,3 +1011,28 @@ Additionally, while loops conceptually execute one iteration at a time (checking
 - No manual mutex/semaphore management needed
 
 This architecture supports complex features (async iterators, poison propagation, variable synchronization) while keeping the code comprehensible and maintainable.
+
+---
+
+## Appendix: Loop variable metadata by iterator type
+
+Every compiled loop body has the signature:
+
+```
+loopBody(iterationValueOrTuple, index, len, isLast, errorContext)
+```
+
+but the `len` / `isLast` metadata depends on the iterator and execution mode. Use the matrix below as the authoritative reference.
+
+| Iterator type          | Normal (parallel / unbounded)                                                                 | Sequential (compiler‑forced, explicit `!`, or `concurrentLimit = 1`)                           | Limited concurrency (`of N` with N > 0)                                        |
+|------------------------|-----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| **Arrays / sync iterables** | `len` is the concrete array length, `isLast` is a boolean per iteration.                     | Same as normal. Sequential helpers know the length up front, so metadata is identical.          | Same as normal. The limited array runner now forwards `len`/`isLast`.           |
+| **Async iterators**    | `len` / `isLast` are *promises* resolved after the iterator is exhausted (enables `loop.length`/`loop.last`). | `len` is `undefined` and `isLast` is always `false` (“while” semantics).                        | Same as sequential: bounded async iterators intentionally behave like while loops. |
+| **Plain objects**      | Receives `(key, value)` plus concrete `len = Object.keys(obj).length` and boolean `isLast`.     | Same as normal; sequential simply awaits between iterations without changing metadata.         | Not applicable — objects ignore `concurrentLimit` hints and stay on the normal/object path. |
+
+Additional notes:
+
+1. `loop.revindex` / `loop.revindex0` derive from `len`, so they follow the same availability rules.
+2. Async iterator “normal” mode is the only case where `len`/`isLast` are promises. Cascada’s transparent promise handling lets templates treat them like regular values.
+3. Bounded async iterators (`of N`) behave like while loops by design. They expose `loop.index`, `loop.index0`, and `loop.first`, but never `loop.length` or `loop.last`, regardless of the numeric limit.
+4. Plain-object loops do not support limited concurrency. Any `of N` hint (after validation) is ignored and execution remains parallel unless the compiler marked the loop as sequential for dependency reasons.
