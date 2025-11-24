@@ -233,7 +233,6 @@ A resilient error handling system is under development.
 -   **Reference**: `docs/code/Sequential Operations - Execution.md`
 
 ### Error Handling (Poison System)
-
 -   **Core Principle**: "Never Miss Any Error." Await all promises and collect all errors before throwing.
 -   **`PoisonedValue`**: A *thenable* object that carries an `.errors[]` array. It can be passed around synchronously.
 -   **`PoisonError`**: The `Error` that is *thrown* when a `PoisonedValue` is awaited.
@@ -242,6 +241,22 @@ A resilient error handling system is under development.
     -   `isPoisonError(err)` -> Use **in a `catch` block**.
 -   **Reference**: `docs/code/Error Handling Guide.md` and `docs/code/Poisoning - Implementation Principles.md`
 
+Here is a clear, concise, and agent-friendly summary for your `AGENT.md`.
+
+#### Error Propagation (Dataflow Poisoning)
+Cascada treats errors as data ("Poison") that flows through the system.
+
+*   **Skip & Propagate:** If an operation receives a Poison value as input, it **does not execute**. Instead, it immediately returns a new Poison value combining the input errors.
+*   **Contamination:** Any variable or output that *would* have been modified by the skipped operation or block automatically becomes Poisoned.
+*   **No Crash on Generation:** The script/template **only throws an exception** if a Poison value reaches a final **Output Handler** (e.g., `@data`, `@text`). If you handle/repair the error internally, the script succeeds.
+*   **Context Function Warning:** **DO NOT** attempt to pass Poison values to context functions (e.g., for logging). The function will never execute. Use `is error` to check first.
+
+**Propagation Logic by Type:**
+*   **Expressions:** `1 + error` → Evaluates to `error`.
+*   **Function Calls:** `myFunc(error)` → Function body is skipped; returns `error`.
+*   **Loops:** `for x in error` → Loop body is skipped; all variables modified within are poisoned.
+*   **Conditionals:** `if error` → Both `if` and `else` branches are skipped; all variables modified within are poisoned.
+*   **Sequential (`!`):** `db!.fail()` → Subsequent `db!.op()` calls are skipped and return error.
 </details>
 
 ---
