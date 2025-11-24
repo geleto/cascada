@@ -1,6 +1,6 @@
 {
   "name": "cascada-engine",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "The parallel-first scripting & templating engine with transparent async support and automatic, implicit concurrency.",
   "license": "BSD-2-Clause",
   "author": "Angel Popov<geleto@gmail.com>",
@@ -98,7 +98,8 @@
     "build:transpile": "babel src --out-dir dist/cjs",
     "build:bundle": "node scripts/bundle.js",
     "build:types": "cpy src/index.d.ts dist/types/ --flat",
-    "build": "npm run clean && npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/",
+    "build:docs": "cpy docs/cascada/script.md README.md dist/docs/ --flat",
+    "build": "npm run clean && npm run lint && npm run build:transpile && npm run build:bundle && npm run build:esm && npm run build:types && cpy bin/**/* dist/bin/ && npm run build:docs",
     "build:esm": "npx rollup -c rollup.config.mjs",
     "test:quick": "npm run mocha",
     "test:node": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text --reporter=json mocha --check-leaks --reporter ./scripts/lib/node-stats-reporter --require @babel/register tests 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
