@@ -6,7 +6,6 @@
   let delay;
   let createPoison;
   let isPoisonError;
-  let isPoison;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -15,14 +14,12 @@
     const runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
-    isPoison = runtime.isPoison;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     delay = window.util.delay;
     createPoison = nunjucks.createPoison;
     isPoisonError = nunjucks.isPoisonError;
-    isPoison = nunjucks.isPoison;
   }
 
   function normalizeOutput(str) {
