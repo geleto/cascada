@@ -210,6 +210,34 @@
         const result2 = await env.renderTemplateString(template2, context);
         expect(result2.trim()).to.equal('VAL--5');
       });
+
+      it('should not leak variables declared inside async if branches', async () => {
+        const context = {
+          async shouldRun() {
+            await delay(2);
+            return true;
+          },
+          async getBranchValue() {
+            await delay(2);
+            return 'BRANCH';
+          }
+        };
+
+        const template = `
+          {%- if shouldRun() -%}
+            {%- set branchScoped = getBranchValue() -%}
+            {{- branchScoped -}}
+          {%- endif -%}
+          {%- if branchScoped is defined -%}
+            LEAK
+          {%- else -%}
+            SCOPED
+          {%- endif -%}
+        `;
+
+        const result = await env.renderTemplateString(template, context);
+        expect(result.trim()).to.equal('BRANCHSCOPED');
+      });
     });
 
     describe('Async Switch Statement Tests', () => {
@@ -449,6 +477,39 @@
         } catch (error) {
           expect(error.message).to.contain('Case expression error');
         }
+      });
+
+      it('should not leak variables declared inside async switch cases', async () => {
+        const context = {
+          async getKey() {
+            await delay(2);
+            return 'beta';
+          },
+          async getCaseValue() {
+            await delay(2);
+            return 'BETA-VALUE';
+          }
+        };
+
+        const template = `
+          {%- switch getKey() -%}
+            {%- case 'alpha' -%}
+              Alpha
+            {%- case 'beta' -%}
+              {%- set caseScoped = getCaseValue() -%}
+              {{- caseScoped -}}
+            {%- default -%}
+              Default
+          {%- endswitch -%}
+          {%- if caseScoped is defined -%}
+            LEAK
+          {%- else -%}
+            SCOPED
+          {%- endif -%}
+        `;
+
+        const result = await env.renderTemplateString(template, context);
+        expect(result.trim()).to.equal('BETA-VALUESCOPED');
       });
     });
 

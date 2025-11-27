@@ -3444,6 +3444,31 @@ endcapture
       expect(maxCount).to.be(3);
     });
 
+    it('should not leak loop-local variables in async template loops', async () => {
+      const context = {
+        candidates: ['a', 'b', 'c'],
+        async renderItem(item) {
+          await delay(1);
+          return `Item-${item}`;
+        }
+      };
+
+      const template = `
+        {%- for text in candidates -%}
+          {%- set loopScoped = renderItem(text) -%}
+          {{- loopScoped -}}
+        {%- endfor -%}
+        {%- if loopScoped is defined -%}
+          LEAK
+        {%- else -%}
+          SCOPED
+        {%- endif -%}
+      `;
+
+      const result = await env.renderTemplateString(template, context);
+      expect(result).to.equal('Item-aItem-bItem-cSCOPED');
+    });
+
   }); // End Cascada Script Loops
 
 })();
