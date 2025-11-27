@@ -2022,3 +2022,10 @@ const env = new AsyncEnvironment([
     |---|---|:---:|
     | `load(name)` | The core method. Loads an asset by name and returns its content (as a string or `LoaderSource` object), or `null` if not found. Can be async. | **Yes** |
     | `isRelative(name)`
+
+## Differences from classic Nunjucks
+
+- **Async templates & Cascada Script:** `if`, `for`/`each`/`while`, and `switch` branches run in their own scope, so `set`/`var` stay local unless you intentionally write to an outer variable. This avoids race conditions and keeps loops parallel.
+- **Sync templates (`asyncMode: false`):** No scope isolation—control-flow blocks share the parent frame exactly like Nunjucks.
+
+So: async builds get safer block-local semantics; fully synchronous templates keep the legacy behavior.
