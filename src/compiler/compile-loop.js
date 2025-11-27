@@ -192,6 +192,7 @@ class CompileLoop {
   }
 
   _compileLoopBody(node, frame, arr, loopVars, sequential, forceAwaitLoopBody = false) {
+    const bodyCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
     if (node.isAsync) {
       this.compiler.emit('(async function(');//@todo - think this over, does it need async block?
     } else {
@@ -217,7 +218,7 @@ class CompileLoop {
       // we return the IIFE promise so that awaiting the loop body will wait for all closures
       this.compiler.emit('return ');
     }
-    frame = this.compiler.emit.asyncBlockBufferNodeBegin(node, frame, false, node.body);
+    frame = this.compiler.emit.asyncBlockBufferNodeBegin(node, frame, bodyCreatesScope, node.body);
 
     const makeSequentialPos = this.compiler.codebuf.length;// we will know later if it's sequential or not
     this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
@@ -272,7 +273,7 @@ class CompileLoop {
     // End buffer block for the loop body (using node.body position)
     let bodyFrame = frame;
     const shouldAwaitLoopBody = Boolean(frame.writeCounts) || sequential || forceAwaitLoopBody;
-    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, false, shouldAwaitLoopBody, node.body);
+    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, bodyCreatesScope, shouldAwaitLoopBody, node.body);
 
     // Close the loop body function
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
@@ -282,6 +283,7 @@ class CompileLoop {
 
   _compileLoopElse(node, frame, sequential) {
     const awaitSequentialElse = false;//I think awaiting it like loop body is not needed
+    const elseCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
 
     if (node.isAsync) {
       this.compiler.emit('(async function() {');
@@ -295,12 +297,12 @@ class CompileLoop {
     }
 
     // Use node.else_ as position for the else block buffer
-    frame = this.compiler.emit.asyncBlockBufferNodeBegin(node, frame, false, node.else_);
+    frame = this.compiler.emit.asyncBlockBufferNodeBegin(node, frame, elseCreatesScope, node.else_);
     this.compiler.compile(node.else_, frame);
 
     const elseFrame = frame;
 
-    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential && awaitSequentialElse, node.else_);
+    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, elseCreatesScope, sequential && awaitSequentialElse, node.else_);
 
     // Sync: use closure scope to access buffer. Async: bind context for proper this binding.
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');

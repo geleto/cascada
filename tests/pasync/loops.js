@@ -3371,7 +3371,7 @@ endcapture
         candidates: ['a', 'b', 'c'],
         async processItem(item) {
           count++;
-          await delay(5);
+          await delay(1);
           maxCount = Math.max(maxCount, count);
           count--;
           return `Processed: ${item}`;
@@ -3388,6 +3388,58 @@ endcapture
       const result = await env.renderScriptString(script, context);
       expect(result).to.be('Processed: c');
       expect(maxCount).to.be(1);
+    });
+
+    it('should handle locally scoped variables in script loop body', async () => {
+      let count = 0;
+      let maxCount = 0;
+      const context = {
+        candidates: ['a', 'b', 'c'],
+        async processItem(item) {
+          count++;
+          await delay(1);
+          maxCount = Math.max(maxCount, count);
+          count--;
+          return `Processed: ${item}`;
+        }
+      };
+
+      const script = `:data
+			for text in candidates
+				var result = processItem(text)
+				@data = result
+			endfor`;
+
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.be('Processed: c');
+      expect(maxCount).to.be(3);
+    });
+
+    it('should keep script loops parallel with local vars inside if block', async () => {
+      let count = 0;
+      let maxCount = 0;
+      const context = {
+        candidates: ['a', 'b', 'c'],
+        async processItem(item) {
+          count++;
+          await delay(1);
+          maxCount = Math.max(maxCount, count);
+          count--;
+          return `Processed: ${item}`;
+        }
+      };
+
+      const script = `:data
+			for text in candidates
+				if text
+					var result = processItem(text)
+					@data = result
+				endif
+			endfor`;
+
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.be('Processed: c');
+      expect(maxCount).to.be(3);
     });
 
   }); // End Cascada Script Loops
