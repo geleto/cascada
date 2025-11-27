@@ -363,7 +363,7 @@ class Compiler extends CompilerBase {
     const branchWriteCounts = [];
     const branchHandlers = []; // Track handlers per branch
     let catchPoisonPos;
-    const caseCreatesScope = this.scriptMode;
+    const caseCreatesScope = this.scriptMode || this.asyncMode;
 
     if (this.asyncMode) {
       // Add try-catch wrapper for error handling
