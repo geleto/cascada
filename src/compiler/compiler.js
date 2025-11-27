@@ -515,7 +515,7 @@ class Compiler extends CompilerBase {
       async = false;//old type of async
     }
 
-    const branchCreatesScope = this.scriptMode;
+    const branchCreatesScope = this.scriptMode || this.asyncMode;
 
     // Use node.cond as the position node for the overarching If block
     frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.cond);

@@ -772,6 +772,7 @@
 
         const template = `
           {%- for v in makeAsyncItems() of 2 -%}
+            {%- set result = "" -%}
             {%- if v is error -%}
               {%- set result = "POISON," -%}
             {%- else -%}
@@ -798,6 +799,7 @@
 
         const template = `
           {%- for v in makeAsyncItems() of 2 -%}
+            {%- set status = "" -%}
             {%- if v < 0 -%}
               {%- set status = "NEG," -%}
             {%- else -%}
