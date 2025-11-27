@@ -271,7 +271,8 @@ class CompileLoop {
 
     // End buffer block for the loop body (using node.body position)
     let bodyFrame = frame;
-    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, false, sequential || forceAwaitLoopBody, node.body);
+    const shouldAwaitLoopBody = Boolean(frame.writeCounts) || sequential || forceAwaitLoopBody;
+    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, false, shouldAwaitLoopBody, node.body);
 
     // Close the loop body function
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');

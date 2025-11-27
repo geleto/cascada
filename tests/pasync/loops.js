@@ -3364,6 +3364,32 @@ endcapture
       expect(result.summary).to.have.property('items', 'a, b, c');
     });
 
+    it('should handle loop in script format sequentially(mutable parent var)', async () => {
+      let count = 0;
+      let maxCount = 0;
+      const context = {
+        candidates: ['a', 'b', 'c'],
+        async processItem(item) {
+          count++;
+          await delay(5);
+          maxCount = Math.max(maxCount, count);
+          count--;
+          return `Processed: ${item}`;
+        }
+      };
+
+      const script = `:data
+      var result = 1
+			for text in candidates
+				result = processItem(text)
+				@data = result
+			endfor`;
+
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.be('Processed: c');
+      expect(maxCount).to.be(1);
+    });
+
   }); // End Cascada Script Loops
 
 })();
