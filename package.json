@@ -1,6 +1,6 @@
 {
   "name": "cascada-engine",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "The parallel-first scripting & templating engine with transparent async support and automatic, implicit concurrency.",
   "license": "BSD-2-Clause",
   "author": "Angel Popov<geleto@gmail.com>",
@@ -21,6 +21,7 @@
   "files": [
     "dist/**"
   ],
+  "homepage": "https://github.com/geleto/cascada",
   "dependencies": {
     "a-sync-waterfall": "^1.0.1",
     "asap": "^2.0.6",
