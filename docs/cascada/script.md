@@ -8,11 +8,13 @@ The core philosophy of Cascada is to let you write asynchronous code with the cl
 ## Read First
 
 **Articles:**
-- [The Kitchen Chef's Guide to Concurrent Programming with Cascada](https://geleto.github.io/posts/cascada-kitchen-chef/) - Understand how Cascada works through a restaurant analogy - no technical jargon, just cooks, ingredients, and a brilliant manager who makes parallel execution feel as natural as following a recipe
+
 - [Cascada Script Introduction](https://geleto.github.io/posts/cascada-script-intro/) - An introduction to Cascada Script's syntax, features, and how it solves real async programming challenges
 
+- [The Kitchen Chef's Guide to Concurrent Programming with Cascada](https://geleto.github.io/posts/cascada-kitchen-chef/) - Understand how Cascada works through a restaurant analogy - no technical jargon, just cooks, ingredients, and a brilliant manager who makes parallel execution feel as natural as following a recipe
+
 **Learning by Example:**
-- [Casai Examples Repository](https://github.com/geleto/casai-examples) - After reading the articles, explore practical examples showing how Cascada and Casai (an AI orchestration framework built on Cascada) turn complex agentic workflows into readable, linear code - no visual node graphs or async spaghetti, just clear logic that tells a story (work in progress)
+- [Casai Examples Repository](https://github.com/geleto/casai-examples) - Explore practical examples showing how Cascada and Casai (an AI orchestration framework built on Cascada) turn complex agentic workflows into readable, linear code - no visual node graphs or async spaghetti, just clear logic that tells a story (work in progress)
 
 ## Overview
 
@@ -366,7 +368,7 @@ if (user.role == "Admin" and not user.isSuspended) or user.isOwner
 endif
 ```
 
-Cascada also provides a rich, data-centric error handling model. You can test if a variable contains a failure using the `is error` test, and inspect error details using the `#` (peek) operator. For more details, see the section on [Resilient Error Handling](#resilient-error-handling-an-error-is-just-data).
+Cascada also provides a rich, data-centric error handling model. You can test if a variable contains a failure using the `is error` test. For more details, see the section on [Resilient Error Handling](#resilient-error-handling-an-error-is-just-data).
 
 #### Inline `if` Expressions
 For concise conditional assignments, you can use an inline `if` expression, which works like a ternary operator.
@@ -1132,7 +1134,7 @@ The engine uses object identity from the context to guarantee sequential orderin
 
 **Note**: This feature is under development.
 
-Cascada's parallel-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Instead, Cascada treats **errors as just another type of data** that flows through your script. Failed operations produce a special **Error Value** that can be stored in variables, passed to functions, and inspected like any other object.
+Cascada's parallel-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Also, there may already be code that executes after the try statement. Instead, Cascada treats **errors as just another type of data** that flows through your script. Failed operations produce a special **Error Value** that is stored in variables, passed to functions, and can be inspected.
 
 This data-centric model allows independent operations to continue running while failures are isolated to only the variables and operations that depend on the failed result. When an operation in one part of your script fails, it has no effect on unrelated parallel operations—they continue executing, maximizing throughput and resilience.
 
@@ -1286,14 +1288,16 @@ endif
 ```javascript
 var retries = 0
 var user
+var success = false
 
 // Try to fetch the user up to 3 times
-while retries < 3
+while retries < 3 and not success
   user = fetchUser(123) // This operation might fail transiently
   if user is not error
-    break // Success, exit the loop
+    success = true
+  else
+    retries = retries + 1
   endif
-  retries = retries + 1
 endwhile
 
 // After the loop, check if the operation was ever successful
@@ -1343,12 +1347,6 @@ var writeResult = context.fileSystem!.writeData(data)  // ❌ Might fail
 
 // ✅ Always close the file, even if writes failed
 context.fileSystem!!.close()
-
-guard @data
-  @data.result = writeResult
-recover
-  @data.error = "Work failed"
-endguard
 ```
 
 **Checking Path State:**
@@ -1392,14 +1390,14 @@ guard @data, @text
   @data.result = result
   @text("Processing complete: " + result.summary)
 recover
-  // Both @data and @text are reset
+  // Both @data and @text are reset to the state before the guard block
   @data.status = "failed"
   @text("Processing failed")
 endguard
 ```
 
 **Optional recover:**
-The `recover` block is optional. Without it, if the guard block fails, the handlers remain poisoned and the script will fail normally.
+The `recover` block is optional. Without it, if the guard block fails, the handlers will be reset to the state before the guard block.
 
 ```javascript
 guard @data
@@ -1437,45 +1435,10 @@ You can check if an output handler is poisoned using the `is error` test:
 @data.field2 = value2  // ❌ Fails, poisons @data
 
 if @data is error
-  // Handler is poisoned, can peek at errors
-  @data.errorInfo = @data#errors
+  // Handler is poisoned
+  @log.errors.push("Failed to process data")
 endif
 ```
-
-#### Handling Multiple Concurrent Errors
-
-When multiple operations fail concurrently, their errors are collected into a single `PoisonError` that holds all the original, individual errors. This ensures that no error is lost and you get a complete picture of all failures.
-
-**Example: Multiple Concurrent Failures**
-
-```javascript
-// Three parallel operations that all fail
-var user = fetchUser(999)        // ❌ fails: "User not found"
-var profile = fetchProfile(999)  // ❌ fails: "Profile service unavailable"
-var settings = fetchSettings(999) // ❌ fails: "Settings database timeout"
-
-// Using all three creates a PoisonError containing all failures
-var summary = user.name + " - " + profile.bio + " - " + settings.theme
-
-if summary is error
-  // summary#errors is an array with all three original errors
-  @data.errorCount = summary#errors | length  // 3
-
-  // Iterate through all the failures
-  for err in summary#errors
-    @data.errorLog.push({
-      message: err#message,
-      source: err#source.origin
-    })
-  endfor
-
-  summary = "User data unavailable"
-endif
-
-@data.userSummary = summary
-```
-
-This aggregation is particularly valuable in error reporting and debugging, as you can see all failures that occurred in a parallel batch rather than just the first one encountered.
 
 #### Peeking Inside Errors with `#`
 
@@ -1522,7 +1485,7 @@ endif
 
 #### Anatomy of an Error Value
 
-An Error Value is a rich object designed for easy debugging, containing detailed information about what went wrong and where.
+An Error Value is a rich object designed for easy debugging, containing detailed information about what went wrong and where. You can read it by using the peek operator (`#`).
 
 *   **`errors`**: (array) A list of one or more underlying error objects that contributed to this failure. Each object provides detailed context about a specific failure:
     *   **`message`**: (string) The specific error message for this particular failure.
@@ -1533,6 +1496,42 @@ An Error Value is a rich object designed for easy debugging, containing detailed
     *   **`operation`**: (string) A technical description of the internal operation the engine was performing when the error occurred. Examples include `FunCall` (function call), `LookupVal` (property access like `user.name`), `Add` (a `+` operation), or `Output(FunCall)` (an error while rendering the output of a function call).
     *   **`cause`**: (object | null) If the error originated from the JavaScript environment (e.g., from a native function or an external library), this property holds the original JavaScript `Error` object, providing access to the original stack trace and error details.
 *   **`message`**: (string) A summary message that combines the messages from all the individual errors contained in the `errors` array.
+
+#### Handling Multiple Concurrent Errors
+
+When multiple operations fail concurrently, their errors are collected into a single `PoisonError` that holds all the original, individual errors. This ensures that no error is lost and you get a complete picture of all failures.
+
+**Example: Multiple Concurrent Failures**
+
+```javascript
+// Three parallel operations that all fail
+var user = fetchUser(999)        // ❌ fails: "User not found"
+var profile = fetchProfile(999)  // ❌ fails: "Profile service unavailable"
+var settings = fetchSettings(999) // ❌ fails: "Settings database timeout"
+
+// Using all three creates a PoisonError containing all failures
+var summary = user.name + " - " + profile.bio + " - " + settings.theme
+
+if summary is error
+  // summary#errors is an array with all three original errors
+  @data.errorCount = summary#errors | length  // 3
+
+  // Iterate through all the failures
+  for err in summary#errors
+    @data.errorLog.push({
+      message: err#message,
+      source: err#source.origin
+    })
+  endfor
+
+  summary = "User data unavailable"
+endif
+
+@data.userSummary = summary
+```
+
+This aggregation is particularly valuable in error reporting and debugging, as you can see all failures that occurred in a parallel batch rather than just the first one encountered.
+
 
 #### Error Handling with Sequential Operations
 
@@ -1580,7 +1579,7 @@ endif
 ```
 
 **Script Failure:**
-When an Error Value reaches an output command without being handled, the promise rejects with a special, rich JavaScript `Error` object that contains all the properties described in the [Anatomy of an Error Value](#anatomy-of-an-error-value) section:
+When an Error Value reaches an output command without being handled, the promise rejects with an Error Value, see the [Anatomy of an Error Value](#anatomy-of-an-error-value) section:
 
 ```javascript
 var user = fetchUser(999)  // ❌ Returns an error
