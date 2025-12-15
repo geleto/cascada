@@ -92,6 +92,24 @@ class Frame {
   new() {
     return new Frame();//undefined, this.isolateWrites);
   }
+
+  markOutputBufferScope(buffer) {
+    this._revertBuffer = buffer;
+  }
+
+  revertOutputHandler(handlerName) {
+    let current = this;
+    while (current) {
+      if (current._revertBuffer) {
+        const buf = current._revertBuffer;
+        if (Array.isArray(buf)) {
+          buf.length = 0;
+        }
+        return;
+      }
+      current = current.parent;
+    }
+  }
 }
 
 class AsyncFrame extends Frame {
@@ -451,7 +469,7 @@ class AsyncFrame extends Frame {
     let parent = this.parent;
     for (let varName in writeCounters) {
       //snapshot the value
-      let {value, frame} = parent.lookupAndLocate(varName);
+      let { value, frame } = parent.lookupAndLocate(varName);
       if (!frame) {
         if (!varName.startsWith('!')) {
           // Variable not declared yet in runtime scope; initialize it now so async block can lock it

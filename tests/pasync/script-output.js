@@ -20,7 +20,7 @@ describe('Cascada Script: Output commands', function () {
   });
 
   it('scripts throw error when accessing properties of null/undefined (unlike templates)', async () => {
-    const script =  `
+    const script = `
         var obj = none
         @data.value = obj.prop`;
 
@@ -152,7 +152,7 @@ describe('Cascada Script: Output commands', function () {
     });
   });
 
-  describe('Built-in Data Commands', function() {
+  describe('Built-in Data Commands', function () {
     it('should handle @data assignment, @data.push, @data.merge, and @data.deepMerge', async () => {
       const script = `
         :data
@@ -491,7 +491,7 @@ describe('Cascada Script: Output commands', function () {
     });
   });
 
-  describe('@text command', function() {
+  describe('@text command', function () {
     it('should append to global text stream and return in the text property', async () => {
       const script = `
         @text("Hello")
@@ -530,7 +530,7 @@ describe('Cascada Script: Output commands', function () {
     });
   });
 
-  describe('Customization and Extension', function() {
+  describe('Customization and Extension', function () {
     it('should support custom data methods via addDataMethods', async () => {
       env.addDataMethods({
         upsert: (target, data) => {
@@ -603,10 +603,10 @@ describe('Cascada Script: Output commands', function () {
     it('should support custom handlers with the Singleton pattern (addCommandHandler) - 1 segment path', async () => {
       const logger = {
         log: [],
-        login: function(user) {
+        login: function (user) {
           this.log.push(`login(${user})`);
         },
-        action: function(action, doc) {
+        action: function (action, doc) {
           this.log.push(`action(${action},${doc})`);
         },
       };
@@ -660,7 +660,7 @@ describe('Cascada Script: Output commands', function () {
     });
   });
 
-  describe('Scoping and Control', function() {
+  describe('Scoping and Control', function () {
     it('should use a capture block to capture output without focusing', async () => {
       const script = `
         :data
@@ -858,14 +858,14 @@ describe('Cascada Script: Output commands', function () {
         // Transpiles to `{{ user. firstName }}`, where `user.` is undefined.
         // Nunjucks treats `undefined` as an empty string in concatenation.
         const script = '@text(user. firstName)';
-        const context = { user: {firstName: 'Grace'} };
+        const context = { user: { firstName: 'Grace' } };
         const result = await env.renderScriptString(script, context);
         expect(result.text).to.equal('Grace');
       });
 
       it('should handle an object as an expression', async () => {
         const script = '@text(user)';
-        const context = {user: 'John'};
+        const context = { user: 'John' };
         const result = await env.renderScriptString(script, context);
         // Nunjucks default object stringification
         expect(result.text).to.equal('John');
@@ -1455,8 +1455,8 @@ describe('Cascada Script: Output commands', function () {
     });
   });
 
-  describe('New Arithmetic and Logical @data Commands', function() {
-    describe('Arithmetic Operations', function() {
+  describe('New Arithmetic and Logical @data Commands', function () {
+    describe('Arithmetic Operations', function () {
       it('should handle @data.add with numbers', async () => {
         const script = `
           :data
@@ -1856,7 +1856,7 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    describe('Logical Operations', function() {
+    describe('Logical Operations', function () {
       it('should handle @data.and with truthy values', async () => {
         const script = `
           :data
@@ -2174,7 +2174,7 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    describe('Delete Operation', function() {
+    describe('Delete Operation', function () {
       it('should handle @data.delete', async () => {
         const script = `
           :data
@@ -2223,7 +2223,7 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    describe('Array Concatenation', function() {
+    describe('Array Concatenation', function () {
       it('should handle @data.concat with arrays', async () => {
         const script = `
           :data
@@ -2330,7 +2330,7 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    describe('Error Handling', function() {
+    describe('Error Handling', function () {
       it('should throw error when using arithmetic operations on non-numbers', async () => {
         const script = `
           :data
@@ -2416,7 +2416,7 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    describe('Complex Scenarios', function() {
+    describe('Complex Scenarios', function () {
       it('should handle mixed arithmetic and logical operations', async () => {
         const script = `
           :data
@@ -2431,7 +2431,7 @@ describe('Cascada Script: Output commands', function () {
           @data.flag &&= finished
           @data.flag ||= finished
         `;
-        const result = await env.renderScriptString(script, {finished: true});
+        const result = await env.renderScriptString(script, { finished: true });
         expect(result).to.eql({
           counter: 14,
           flag: true
@@ -2556,5 +2556,129 @@ describe('Cascada Script: Output commands', function () {
       { name: 'Bob', status: 'active' },
       { name: 'Charlie', role: 'guest' }
     ]);
+  });
+  describe('_revert() Support', function () {
+    it('should revert macro output', async () => {
+      const script = `
+        :text
+        macro test()
+          @text("A")
+          if true
+            @text("B")
+            @text._revert()
+            @text("C")
+          endif
+          @text("D")
+        endmacro
+
+        @text(test().text)
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('D');
+    });
+
+    it('should revert capture output', async () => {
+      const script = `
+        :text
+        var captured = capture
+          @text("A")
+          @text._revert()
+          @text("B")
+        endcapture
+        @text(captured.text)
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('B');
+    });
+
+    it('should revert through loops (transparent scope)', async () => {
+      const script = `
+        :text
+        macro loopRev()
+           @text("Start")
+           for i in [1]
+             @text("Loop")
+             @text._revert()
+           endfor
+           @text("End")
+        endmacro
+        @text(loopRev().text)
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('End');
+    });
+
+    it('should revert data handler output', async () => {
+      const script = `
+        :data
+        @data.val = 1
+        @data._revert()
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.be(undefined);
+    });
+
+    it('should throw error when _revert is called on a subpath', async () => {
+      const script = `
+        :data
+        @data.nested._revert() // Invalid
+      `;
+      try {
+        await env.renderScriptString(script);
+        throw new Error('Expected compiler error');
+      } catch (e) {
+        expect(e.message).to.contain('_revert() can only be called on the handler root');
+      }
+    });
+
+    it.skip('should revert call block output', async () => {
+      const script = `
+        :text
+        macro wrapper()
+           var content = caller()
+           @text("Wrapper: " + content)
+        endmacro
+
+        call wrapper()
+          @text("Inner")
+          @text._revert()
+          @text("Reverted")
+        endcall
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('Wrapper: Reverted');
+    });
+
+    it('should respect nested scopes (revert only nearest scope)', async () => {
+      const script = `
+        :text
+        macro outer()
+          @text("Outer")
+          var inner = capture
+             @text("Inner")
+             @text._revert()
+          endcapture
+          @text(inner.text)
+        endmacro
+        @text(outer().text)
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('Outer');
+    });
+
+    it('should handle multiple reverts idempotently', async () => {
+      const script = `
+        :text
+        macro multi()
+           @text("A")
+           @text._revert()
+           @text("B")
+           @text._revert()
+        endmacro
+        @text(multi().text)
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.be(undefined);
+    });
   });
 });

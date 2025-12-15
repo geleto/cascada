@@ -42,6 +42,9 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
 }
 
 function flattenBuffer(arr, context = null, focusOutput = null) {
+  if (arr && arr._reverted) {
+    return context ? {} : '';
+  }
   // FAST PATH: If no context, it's a simple template. Concatenate strings and arrays.
   if (!context) {
     if (!Array.isArray(arr)) {
@@ -68,6 +71,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
       // Handle nested arrays (recursive call)
       if (Array.isArray(item)) {
+        if (item._reverted) return acc;
         try {
           return acc + flattenBuffer(item, null, null);
         } catch (err) {
@@ -107,8 +111,8 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
   // Validate focusOutput handler exists if specified
   if (focusOutput) {
     const handlerExists = focusOutput === 'text' ||
-                         env.commandHandlerInstances[focusOutput] ||
-                         env.commandHandlerClasses[focusOutput];
+      env.commandHandlerInstances[focusOutput] ||
+      env.commandHandlerClasses[focusOutput];
     if (!handlerExists) {
       throw new Error(`Data output focus target not found: '${focusOutput}'`);
     }
@@ -165,6 +169,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     }
 
     if (Array.isArray(item)) {
+      if (item._reverted) return;
       const last = item.length > 0 ? item[item.length - 1] : null;
 
       // Handle arrays with a post-processing function (e.g., from auto-escaping).
@@ -345,5 +350,8 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
 module.exports = {
   addPoisonMarkersToBuffer,
-  flattenBuffer
+  flattenBuffer,
+  markBufferReverted: (buffer) => {
+    buffer._reverted = true;
+  }
 };

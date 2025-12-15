@@ -184,6 +184,7 @@ class Compiler extends CompilerBase {
           if (node.isAsync && !resolveArgs) {
             //when args are not resolved, the contentArgs are promises
             this.emit.asyncBlockRender(node, frame, function (f) {
+              this.emit.line(`frame.markOutputBufferScope(${this.buffer});`);
               this.compile(arg, f);
             }, null, arg); // Use content arg node for position
           }
@@ -194,6 +195,7 @@ class Compiler extends CompilerBase {
 
             this.emit.withScopedSyntax(() => {
               this.emit.asyncBlockRender(node, frame, function (f) {
+                this.emit.line(`frame.markOutputBufferScope(${this.buffer});`);
                 this.compile(arg, f);
               }, 'cb', arg); // Use content arg node for position
               this.emit.line(';');
@@ -786,6 +788,7 @@ class Compiler extends CompilerBase {
       this._addDeclaredVar(currFrame, 'caller');
     }
     const bufferId = this._pushBuffer();
+    this.emit.line(`frame.markOutputBufferScope(${bufferId});`);
 
     this.emit.withScopedSyntax(() => {
       this.compile(node.body, currFrame);
@@ -899,6 +902,7 @@ class Compiler extends CompilerBase {
       this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this.emit.line('let output = [];');
+        this.emit.line('frame.markOutputBufferScope(output);');
 
         this.compile(n.body, f);//write to output
 
@@ -1039,6 +1043,7 @@ class Compiler extends CompilerBase {
     }
 
     this.emit.funcBegin(node, 'root');
+    this.emit.line(`frame.markOutputBufferScope(${this.buffer});`);
     // Always declare parentTemplate (needed even for dynamic-only extends)
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
@@ -1199,6 +1204,24 @@ class Compiler extends CompilerBase {
 
     // Use a wrapper to avoid duplicating the sync/async logic.
     const wrapper = (emitLogic) => {
+      // Revert Command Interception
+      if (command === '_revert') {
+        if (subpath && subpath.length > 0) {
+          this.fail('_revert() can only be called on the handler root (e.g. @data._revert())', node.lineno, node.colno, node);
+        }
+        // Special check for transpiled @data commands which move path to first argument
+        if (handler === 'data' && node.call.args && node.call.args.children.length > 0) {
+          const pathArg = node.call.args.children[0];
+          // If pathArg is provided and is NOT a null literal, it means a subpath was provided
+          // The transpiler generates Literal(null) for root calls like @data._revert()
+          if (pathArg && !(pathArg instanceof nodes.Literal && pathArg.value === null)) {
+            this.fail('_revert() can only be called on the handler root (e.g. @data._revert())', node.lineno, node.colno, node);
+          }
+        }
+        this.emit.line(`frame.revertOutputHandler('${handler}');`);
+        return;
+      }
+
       if (isAsync) {
         this.emit.asyncBlockAddToBuffer(node, frame, (resultVar, f) => {
           this.emit(`${resultVar} = `);
