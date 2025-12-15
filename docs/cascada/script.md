@@ -937,6 +937,80 @@ A handler can optionally implement a `getReturnValue()` method.
 
 This is how the built-in `@data` handler provides a clean data object in the final result, rather than the `DataHandler` instance itself.
 
+###### Supporting Scopes and Revert
+To support `guard`, `capture` and `macro` blocks, with the manual `_revert()` command, your custom handler class should implement three specific lifecycle methods. These methods allow your handler to manage "checkpoints" of its state.
+
+*   **`enterScope()`**: Called automatically by the engine when execution enters a `guard`, `capture`, or `macro`. You should save a snapshot of your current state (e.g., push to an internal stack).
+*   **`exitScope()`**: Called automatically when execution leaves a scope successfully. You can discard the last snapshot (e.g., pop from the stack) as it is no longer needed for rollback.
+*   **`_revert()`**: Called manually by the script (via `@handler._revert()`) or automatically by a `guard` recovery. You should restore your state to the last snapshot.
+
+**Example: A Revertible List Handler**
+This handler builds a list of items but supports rolling back changes if a block fails.
+
+```javascript
+class ListHandler {
+  constructor() {
+    this.items = [];
+    // We use a stack to store the array length at each scope boundary
+    this.checkpoints = [];
+  }
+
+  // --- 1. The Logic ---
+  add(item) {
+    this.items.push(item);
+  }
+
+  // --- 2. The Lifecycle Hooks ---
+
+  _enterScope() {
+    // Snapshot: Remember how many items we have right now
+    this.checkpoints.push(this.items.length);
+  }
+
+  _exitScope() {
+    // Success: We don't need this snapshot anymore
+    this.checkpoints.pop();
+  }
+
+  _revert() {
+    // Rollback: Find the most recent checkpoint
+    // If no checkpoints exist (root scope), revert to 0
+    const targetLength = this.checkpoints.length > 0
+      ? this.checkpoints[this.checkpoints.length - 1]
+      : 0;
+
+    // Restore the state (truncating the array)
+    this.items.length = targetLength;
+  }
+
+  // --- 3. The Result ---
+  getReturnValue() {
+    return this.items;
+  }
+}
+
+env.addCommandHandlerClass('list', ListHandler);
+```
+
+**Usage in Script:**
+
+```javascript
+@list.add("A")
+
+guard
+  @list.add("B")
+  // Handler calls _enterScope(), saves length: 1
+
+  @list.add("C") // items: ["A", "B", "C"]
+
+  var err = fetchFail() // Fails!
+recover
+  // Engine calls _revert().
+  // Handler looks at checkpoint (length: 1) and truncates.
+  // items is back to ["A"]
+endguard
+```
+
 #### Important Distinction: `@` Commands vs. `!` Sequential Execution
 
 It is crucial to understand the difference between these two features, as they solve different problems.
