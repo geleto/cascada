@@ -63,7 +63,11 @@ const data = await env.renderScriptString(
 console.log(data);
 ```
 
+The syntax is familiar, but the execution is fundamentally different. To understand how Cascada achieves effortless concurrency, read the next section on Cascada's execution model.
+
 ## Cascada's Execution Model
+
+Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts—it explains why the language behaves the way it does and how to leverage its parallel capabilities.
 
 ### ⚡ Parallel by default
 Cascada Script is a scripting language for **JavaScript** and **TypeScript** applications, purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
@@ -84,6 +88,8 @@ While independent operations run in parallel and may start and complete in any o
 This inversion - Implicitly Parallel, Explicitly Sequential - makes building complex, high-performance data pipelines feel surprisingly simple and intuitive.
 
 ## Errors Are Data
+
+To handle failures in a parallel-by-default execution environment, Cascada replaces traditional exceptions with a data-centric error model. This section explains how errors flow through your script and how to detect and recover from them.
 
 ### ☣️ Dataflow Poisoning - Errors that flow like data
 Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. You can detect and repair these errors,  using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
@@ -179,7 +185,7 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   ```
 
 * **Sequential Side-Effect Paths:**
-  If a call in a [sequential execution path](#sequential-execution-control-) (marked with `!`) fails, that path becomes **poisoned**. Any later operations using the same `!path` will instantly yield an Error Value without executing, preserving the sequential guarantee even in failure.
+  If a call in a sequential execution path (marked with `!`) fails, that path becomes **poisoned**. Any later operations using the same `!path` will instantly yield an Error Value without executing, preserving the sequential guarantee even in failure. For details on sequential execution, see [Sequential Execution Control](#sequential-execution-control-).
 
   ```javascript
   context.database!.connect()      // ❌ fails
@@ -558,7 +564,7 @@ This aggregation is particularly valuable in error reporting and debugging, as y
 
 #### Error Handling with Sequential Operations
 
-When using [sequential execution paths](#sequential-execution-control-) marked with `!`, error handling follows the same principles but respects the sequential guarantee:
+When using [sequential execution paths](#sequential-execution-control-) marked with `!`, error handling follows the same principles described above but respects the sequential guarantee.
 
 ```javascript
 var db = context.db
@@ -633,6 +639,8 @@ try {
 This boundary between internal error handling (Error Values as data) and external error reporting (rejected promises) gives you precise control over when failures should propagate to your application code versus being handled gracefully within the script.
 
 ## Language Fundamentals
+
+This section covers the syntax and fundamental constructs for writing scripts. While the syntax is familiar to JavaScript developers, its semantics differ due to the parallel-by-default execution model described above.
 
 ## Core Syntax and Expressions
 
@@ -767,7 +775,7 @@ if (user.role == "Admin" and not user.isSuspended) or user.isOwner
 endif
 ```
 
-Cascada also provides a rich, data-centric error handling model. You can test if a variable contains a failure using the `is error` test. For more details, see the section on [Resilient Error Handling](#resilient-error-handling-an-error-is-just-data).
+Cascada also provides a rich, data-centric error handling model. You can test if a variable contains a failure using the `is error` test. For more details, see [Errors Are Data](#errors-are-data).
 
 #### Inline `if` Expressions
 For concise conditional assignments, you can use an inline `if` expression, which works like a ternary operator.
@@ -789,6 +797,8 @@ endif
 
 ## Control Flow
 
+This section covers control flow constructs. Remember that Cascada's parallel-by-default execution means loops and conditionals behave differently than in traditional languages.
+
 ### Basic Statements
 
 #### Conditional Logic
@@ -802,13 +812,13 @@ else
 endif
 ```
 
-If the condition of an `if` statement evaluates to an error, both the `if` and `else` branches are skipped, and the error is propagated to any variables or outputs that would have been modified within them. For more details, see the main section on [Error Handling](#resilient-error-handling-an-error-is-just-data).
+As described in [Errors Are Data](#errors-are-data), if the condition of an `if` statement evaluates to an error, both the `if` and `else` branches are skipped, and the error is propagated to any variables or outputs that would have been modified within them.
 
 #### Loops
 Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
 
 ##### `for` Loops: Iterate Concurrently
-Use a `for` loop to iterate over arrays, dictionaries (objects), async iterators, and other iterable data structures. In Cascada, the body of the `for` loop executes **in parallel for each item** in the collection by default. This is the most powerful looping construct for maximizing I/O throughput when performing independent asynchronous operations.
+Use a `for` loop to iterate over arrays, dictionaries (objects), async iterators, and other iterable data structures. By default, the body of the `for` loop executes **in parallel for each item**, maximizing I/O throughput for independent operations.
 
 ```javascript
 // Each iteration runs concurrently, fetching user details in parallel
@@ -878,7 +888,7 @@ You can iterate over various collection types:
 **Automatic Sequential Fallback**
 For safety, a `for` loop will automatically switch to **sequential execution** (waiting for one iteration to finish before starting the next) if you introduce dependencies between iterations. This happens if you:
 1.  **Modify a shared variable** (e.g., `total = total + 1`).
-2.  Use the **sequential execution operator (`!`)** on a function call inside the loop.
+2.  Use the sequential execution operator (`!`) on a function call inside the loop (see [Sequential Execution Control](#sequential-execution-control-)).
 
 **The `else` block**
 A `for` loop can have an `else` block that is executed only if the collection is empty:
@@ -941,6 +951,8 @@ Use the following guidelines to determine if these properties are available:
     ❌ **Not Available.** Since a `while` loop runs until a condition changes, the total number of iterations is never known before all iterations are complete.
 
 ## Building Outputs Declaratively
+
+This section introduces Cascada's output system—how you declare what result your script should produce. As explained in [Cascada's Execution Model](#cascadas-execution-model), the execution of your logic is separate from the assembly of your final output, allowing maximum parallelism while ensuring deterministic results.
 
 ### **The Handler System: Using @ Output Commands**
 
@@ -1067,7 +1079,7 @@ Every `@` command is directed to an **output handler**. The handler determines w
 *   **`@text`**: The built-in handler for generating a simple string of text.
 *   **Custom Handlers**: You can define your own handlers for domain-specific tasks where a sequence of operations is important, such as drawing graphics (`@turtle.forward(50)`), logging, or writing to a database (`@db.users.insert(...)`).
 
-When an error is written to an output handler (e.g., `@data.user = myError`), the handler becomes "poisoned," which can cause the entire script to fail. To manage this, you can use `guard` blocks to automatically safeguard execution flow, or manually reset the handler using `_revert()`. For more information, see the sections on [Protecting State with `guard`](#protecting-state-with-guard) and [Manually Recovering Output Handlers](#manually-recovering-output-handlers-with-_revert).
+As described in [Errors Are Data](#errors-are-data), when an error is written to an output handler, the handler becomes "poisoned." You can use `guard` blocks or manually reset the handler using `_revert()` to manage this. For more information, see the sections on [Protecting State with `guard`](#protecting-state-with-guard) and [Manually Recovering Output Handlers](#manually-recovering-output-handlers-with-_revert).
 
 Handler methods are executed synchronously during the "Assemble" step. For asynchronous tasks, your handler can use internal buffering or other state management techniques to collect commands and dispatch them asynchronously.
 
@@ -1351,12 +1363,16 @@ It is crucial to understand the difference between these two features, as they s
     *   **Timing:** They are processed *after* their containing scope finishes its main evaluation. This delay may not be optimal if the operations need to have side effects as early as possible.
     *   **Nature:** They are for data construction and sequential logic, not for controlling live async operations.
 
-*   **`!` [Sequential Execution](#sequential-execution-control-):**
+*   **`!` Sequential Execution:**
     *   **Purpose:** For **controlling the order of live, async operations** that have side effects (e.g., database writes).
     *   **Timing:** It forces one async call to wait for another to finish *during* the main script evaluation, ensuring operations run as early as possible.
     *   **Nature:** It manages the real-time execution flow of asynchronous functions, and their results are immediately available to the next line of code.
 
+For details on the `!` operator, see [Sequential Execution Control](#sequential-execution-control-).
+
 ## Reuse and Composition
+
+This section covers how to create reusable components and organize complex scripts into maintainable modules.
 
 ## Macros and Reusable Components
 
@@ -1368,7 +1384,7 @@ Macros implicitly return the structured object built by the [Output Commands](#t
 
 A macro can perform its own internal, parallel async operations and then assemble a return value.
 
-If an Error Value is passed as an argument to a macro, the macro is skipped and immediately returns the error.
+As described in [Errors Are Data](#errors-are-data), if an Error Value is passed as an argument to a macro, the macro is skipped and immediately returns the error.
 
 <table>
 <tr>
@@ -1600,6 +1616,8 @@ endcall
 
 ## Advanced Flow Control
 
+This section covers advanced techniques for controlling execution flow, particularly when dealing with operations that have side effects or require strict ordering.
+
 ### Sequential Execution Control (`!`)
 
 For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
@@ -1617,7 +1635,7 @@ account.getStatus()
 account!.withdraw(50)
 ```
 
-For details on how to handle errors within a sequential path, including how to "repair" a failed path so that subsequent operations can continue, see the section on [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-).
+For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
 
 #### Context Requirement for Sequential Paths
 
@@ -1709,6 +1727,8 @@ endfor
 ```
 
 ## Code Organization
+
+As scripts grow in complexity, organizing them into multiple files becomes essential. This section explains how to structure larger projects with imports, includes, and inheritance.
 
 ## Modular Scripts
 **Note:** This functionality is under active development. Currently you can not safely access mutable fariables from a parent script.
@@ -2114,72 +2134,87 @@ To support `guard`, `capture` and `macro` blocks, with the manual `_revert()` co
 *   **`exitScope()`**: Called automatically when execution leaves a scope successfully. You can discard the last snapshot (e.g., pop from the stack) as it is no longer needed for rollback.
 *   **`_revert()`**: Called manually by the script (via `@handler._revert()`) or automatically by a `guard` recovery. You should restore your state to the last snapshot.
 
-**Example: A Revertible List Handler**
-This handler builds a list of items but supports rolling back changes if a block fails.
+#### Example: A Turtle Graphics Handler
+
+Here's a complete example of a handler that implements turtle graphics commands:
 
 ```javascript
-class ListHandler {
-  constructor() {
-    this.items = [];
-    // We use a stack to store the array length at each scope boundary
-    this.checkpoints = [];
+class TurtleHandler {
+  init() {
+    this.x = 0;
+    this.y = 0;
+    this.angle = 0;
   }
 
-  // --- 1. The Logic ---
-  add(item) {
-    this.items.push(item);
+  invoke(target, method, args) {
+    if (target.length === 0) {  // Root-level commands like @turtle.forward(50)
+      switch (method) {
+        case 'forward':
+          const distance = args[0];
+          this.x += Math.cos(this.angle * Math.PI / 180) * distance;
+          this.y += Math.sin(this.angle * Math.PI / 180) * distance;
+          break;
+        case 'turn':
+          this.angle += args[0];
+          break;
+        case 'reset':
+          this.init();
+          break;
+      }
+    }
   }
 
-  // --- 2. The Lifecycle Hooks ---
-
-  _enterScope() {
-    // Snapshot: Remember how many items we have right now
-    this.checkpoints.push(this.items.length);
-  }
-
-  _exitScope() {
-    // Success: We don't need this snapshot anymore
-    this.checkpoints.pop();
-  }
-
-  _revert() {
-    // Rollback: Find the most recent checkpoint
-    // If no checkpoints exist (root scope), revert to 0
-    const targetLength = this.checkpoints.length > 0
-      ? this.checkpoints[this.checkpoints.length - 1]
-      : 0;
-
-    // Restore the state (truncating the array)
-    this.items.length = targetLength;
-  }
-
-  // --- 3. The Result ---
-  getReturnValue() {
-    return this.items;
+  finalize() {
+    return {
+      x: this.x,
+      y: this.y,
+      angle: this.angle
+    };
   }
 }
 
-env.addCommandHandlerClass('list', ListHandler);
+// Register the handler
+env.addCommandHandlerClass('turtle', TurtleHandler);
 ```
 
-**Usage in Script:**
-
+**Using the Handler:**
 ```javascript
-@list.add("A")
-
-guard
-  @list.add("B")
-  // Handler calls _enterScope(), saves length: 1
-
-  @list.add("C") // items: ["A", "B", "C"]
-
-  var err = fetchFail() // Fails!
-recover
-  // Engine calls _revert().
-  // Handler looks at checkpoint (length: 1) and truncates.
-  // items is back to ["A"]
-endguard
+@turtle.forward(100)
+@turtle.turn(90)
+@turtle.forward(50)
 ```
+
+**Result:**
+```json
+{
+  "turtle": {
+    "x": 50,
+    "y": 100,
+    "angle": 90
+  }
+}
+```
+
+#### Handler Lifecycle
+
+1. **`init()`** is called at the start of each output scope (script, macro, or capture block)
+2. Commands are buffered during execution
+3. **`invoke()`** is called for each buffered command during the Assembly phase
+4. **`finalize()`** is called to produce the final value
+
+#### Registration Options
+
+*   **Class Registration (Factory Pattern):**
+    ```javascript
+    env.addCommandHandlerClass('name', HandlerClass)
+    ```
+    Creates a new instance for each script execution. Use this when your handler needs isolated state per execution.
+
+*   **Instance Registration (Singleton Pattern):**
+    ```javascript
+    env.addCommandHandler('name', handlerInstance)
+    ```
+    Reuses the same instance across all executions. Use this for handlers that aggregate data across multiple script runs or manage shared resources.
 
 ## API Reference
 
