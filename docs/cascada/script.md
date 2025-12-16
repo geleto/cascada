@@ -787,13 +787,60 @@ if emailRegex.test(user.email)
 endif
 ```
 
+### Filters and Global Functions
+
+Cascada Script supports the full range of Nunjucks [built-in filters](https://mozilla.github.io/nunjucks/templating.html#builtin-filters) and [global functions](https://mozilla.github.io/nunjucks/templating.html#global-functions). You can use them just as you would in a template.
+
+#### Filters
+Filters are applied with the pipe `|` operator.
+```javascript
+var title = "a tale of two cities" | title
+@text(title) // "A Tale Of Two Cities"
+
+var users = ["Alice", "Bob"]
+@text("Users: " + (users | join(", "))) // "Users: Alice, Bob"
+```
+
+#### Global Functions
+Global functions like `range` can be called directly.
+```javascript
+for i in range(3)
+  @text("Item " + i) // Prints Item 0, Item 1, Item 2
+endfor
+```
+
+#### Additional Global Functions
+
+##### `cycler(...items)`
+The `cycler` function creates an object that cycles through a set of values each time its `next()` method is called.
+
+```javascript
+var rowClass = cycler("even", "odd")
+for item in items
+  // First item gets "even", second "odd", third "even", etc.
+  @data.push(report.rows, { class: rowClass.next(), value: item })
+endfor
+```
+
+##### `joiner([separator])`
+The `joiner` creates a function that returns the separator (default is `,`) on every call except the first. This is useful for delimiting items in a list.
+
+```javascript
+var comma = joiner(", ")
+var output = ""
+for tag in ["rock", "pop", "jazz"]
+  // The first call to comma() returns "", subsequent calls return ", "
+  output = output + comma() + tag
+endfor
+@text(output) // "rock, pop, jazz"
+```
+
 ## Control Flow
 
 This section covers control flow constructs. Remember that Cascada's parallel-by-default execution means loops and conditionals behave differently than in traditional languages.
 
-### Basic Statements
 
-#### Conditional Logic
+### Conditionals
 ```
 if condition
   // statements
@@ -806,7 +853,7 @@ endif
 
 As described in [Error Handling](#error-handling), if the condition of an `if` statement evaluates to an error, both the `if` and `else` branches are skipped, and the error is propagated to any variables or outputs that would have been modified within them.
 
-#### Loops
+### Loops
 Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
 
 ##### `for` Loops: Iterate Concurrently
@@ -941,6 +988,67 @@ Use the following guidelines to determine if these properties are available:
 
 4.  **`while` Loops:**
     ❌ **Not Available.** Since a `while` loop runs until a condition changes, the total number of iterations is never known before all iterations are complete.
+
+### Sequential Execution Control (`!`)
+
+For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
+
+```javascript
+// The `!` on deposit() creates a
+// sequence for the 'account' path.
+var account = getBankAccount()
+
+//1. Set initial Deposit:
+account!.deposit(100)
+//2. Get updated status after initial deposit:
+account.getStatus()
+//3. Withdraw money after getStatus()
+account!.withdraw(50)
+```
+
+For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
+
+#### Context Requirement for Sequential Paths
+
+Sequential paths must reference objects from the context, not local variables.
+The JS context object:
+```javascript
+// Assuming 'db' is provided in the context object:
+const context = { db: connectToDatabase() };
+```
+The script:
+```javascript
+// ✅ CORRECT: Direct reference to context property
+db!.insert(data)
+
+// ❌ WRONG: Local variable copy
+var database = db
+database!.insert(data)  // Error: sequential paths must be from context
+```
+
+Nested access from context properties works fine:
+```javascript
+services.database!.insert(data)  // ✅ CORRECT (if 'services' is in context)
+```
+
+**Why this restriction?** The engine uses object identity from the context to guarantee sequential ordering. Copying context objects to local variables breaks this tracking, which is why it's not allowed.
+
+**Exception for macros:** When a macro uses `!` on a parameter, that argument must originate from the context when calling the macro:
+```javascript
+macro performWork(database)
+  database!.insert(data)
+endmacro
+
+// ✅ CORRECT: Pass context object
+performWork(db)  // 'db' is from context
+
+// ❌ WRONG: Pass local variable
+var myDb = db
+performWork(myDb)
+```
+
+The engine uses object identity from the context to guarantee sequential ordering. Copying to local variables breaks this guarantee, which is why the restriction exists.
+
 
 ## Building Outputs Declaratively
 
@@ -1606,117 +1714,6 @@ endcall
 - Process or transform a block of logic before including it in output
 - Any scenario where a macro needs to control *when* and *how* some logic executes
 
-## Advanced Flow Control
-
-This section covers advanced techniques for controlling execution flow, particularly when dealing with operations that have side effects or require strict ordering.
-
-### Sequential Execution Control (`!`)
-
-For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
-
-```javascript
-// The `!` on deposit() creates a
-// sequence for the 'account' path.
-var account = getBankAccount()
-
-//1. Set initial Deposit:
-account!.deposit(100)
-//2. Get updated status after initial deposit:
-account.getStatus()
-//3. Withdraw money after getStatus()
-account!.withdraw(50)
-```
-
-For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
-
-#### Context Requirement for Sequential Paths
-
-Sequential paths must reference objects from the context, not local variables.
-The JS context object:
-```javascript
-// Assuming 'db' is provided in the context object:
-const context = { db: connectToDatabase() };
-```
-The script:
-```javascript
-// ✅ CORRECT: Direct reference to context property
-db!.insert(data)
-
-// ❌ WRONG: Local variable copy
-var database = db
-database!.insert(data)  // Error: sequential paths must be from context
-```
-
-Nested access from context properties works fine:
-```javascript
-services.database!.insert(data)  // ✅ CORRECT (if 'services' is in context)
-```
-
-**Why this restriction?** The engine uses object identity from the context to guarantee sequential ordering. Copying context objects to local variables breaks this tracking, which is why it's not allowed.
-
-**Exception for macros:** When a macro uses `!` on a parameter, that argument must originate from the context when calling the macro:
-```javascript
-macro performWork(database)
-  database!.insert(data)
-endmacro
-
-// ✅ CORRECT: Pass context object
-performWork(db)  // 'db' is from context
-
-// ❌ WRONG: Pass local variable
-var myDb = db
-performWork(myDb)
-```
-
-The engine uses object identity from the context to guarantee sequential ordering. Copying to local variables breaks this guarantee, which is why the restriction exists.
-
-### Filters and Global Functions
-
-Cascada Script supports the full range of Nunjucks [built-in filters](https://mozilla.github.io/nunjucks/templating.html#builtin-filters) and [global functions](https://mozilla.github.io/nunjucks/templating.html#global-functions). You can use them just as you would in a template.
-
-#### Filters
-Filters are applied with the pipe `|` operator.
-```javascript
-var title = "a tale of two cities" | title
-@text(title) // "A Tale Of Two Cities"
-
-var users = ["Alice", "Bob"]
-@text("Users: " + (users | join(", "))) // "Users: Alice, Bob"
-```
-
-#### Global Functions
-Global functions like `range` can be called directly.
-```javascript
-for i in range(3)
-  @text("Item " + i) // Prints Item 0, Item 1, Item 2
-endfor
-```
-
-#### Additional Global Functions
-
-##### `cycler(...items)`
-The `cycler` function creates an object that cycles through a set of values each time its `next()` method is called.
-
-```javascript
-var rowClass = cycler("even", "odd")
-for item in items
-  // First item gets "even", second "odd", third "even", etc.
-  @data.push(report.rows, { class: rowClass.next(), value: item })
-endfor
-```
-
-##### `joiner([separator])`
-The `joiner` creates a function that returns the separator (default is `,`) on every call except the first. This is useful for delimiting items in a list.
-
-```javascript
-var comma = joiner(", ")
-var output = ""
-for tag in ["rock", "pop", "jazz"]
-  // The first call to comma() returns "", subsequent calls return ", "
-  output = output + comma() + tag
-endfor
-@text(output) // "rock, pop, jazz"
-```
 
 ## Imports and Modules
 
