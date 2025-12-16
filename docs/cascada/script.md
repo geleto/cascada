@@ -4,7 +4,7 @@
 
 **Cascada Script** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
 
-It uses syntax and language constructs that are instantly familiar to Python and JavaScript developers, alongside powerful constructs such as parallel loops, structured output handlers, reusable macros, and transactional guards.
+It uses syntax and language constructs that are instantly familiar to Python and JavaScript developers, while offering language-level support for parallel workflows, explicit control over side effects, structured output construction, and dataflow-based error handling.
 
 Cascada inverts the traditional async model:
 
