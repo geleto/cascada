@@ -958,15 +958,19 @@ class Parser extends Obj {
           tok.colno,
           node,
           lookup);
-      } else if (tok.type === lexer.TOKEN_OPERATOR && tok.value === '!') {
-        // Handle the ! marker for sequencing
+      } else if (tok.type === lexer.TOKEN_OPERATOR && (tok.value === '!' || tok.value === '!!')) {
+        // Handle the ! and !! marker for sequencing
+        const isRepair = tok.value === '!!';
         this.nextToken();
         if (node.typename !== 'LookupVal' && node.typename !== 'Symbol') {
-          this.fail(`Syntax Error: The sequence marker '!' cannot be applied directly to a ${node.typename}. It's intended for object paths and call names.`,
+          this.fail(`Syntax Error: The sequence marker '${tok.value}' cannot be applied directly to a ${node.typename}. It's intended for object paths and call names.`,
             tok.lineno,
             tok.colno);
         }
         node.sequential = true;
+        if (isRepair) {
+          node.sequentialRepair = true;
+        }
         // Continue to allow further postfixes (e.g., .method() after !)
       } else {
         break;

@@ -63,9 +63,15 @@ module.exports = class CompileSequential {
       // node.sequential is true if '!' is directly on this Symbol/LookupVal
       const currentPathKey = this._extractStaticPathKey(node); // Key for this specific node
       if (!funCallLockKey) {
-        this.compiler.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
+        if (!node.sequentialRepair) {
+          this.compiler.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
+        }
       } else if (funCallLockKey !== currentPathKey) {
         this.compiler.fail('Cannot use more than one sequence marker (!) in a single effective path segment.', node.lineno, node.colno, node);
+      } else if (node.sequentialRepair) {
+        // If this is a repair node (!!), we must set the lockKey so that compileSymbol/compileLookupVal
+        // emits the sequential lookup (sequentialContextLookup) which handles the repair logic.
+        node.lockKey = currentPathKey;
       }
       // No PATH operation is added here for this key because it's "covered" by the parent FunCall's LOCK.
     } else if ((node instanceof nodes.Symbol || node instanceof nodes.LookupVal)) {

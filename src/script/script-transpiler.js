@@ -609,7 +609,13 @@ class ScriptTranspiler {
 
     // Check for continuation characters at end of line
     const lastChar = codeContent.slice(-1);
-    if (this.SYNTAX.continuation.endChars.includes(lastChar)) return true;
+    if (this.SYNTAX.continuation.endChars.includes(lastChar)) {
+      // Special case: !! operator does not continue (it's a repair operator)
+      if (codeContent.endsWith('!!') && !codeContent.endsWith('!!!')) {
+        return false;
+      }
+      return true;
+    }
 
     // Check for continuation operators at end of line
     for (const op of this.SYNTAX.continuation.endOperators) {

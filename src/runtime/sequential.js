@@ -38,21 +38,29 @@ function awaitSequenceLock(frame, lockKeyToAwait) {
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} Result of the operation (always returns promise due to async function)
  */
-async function withSequenceLock(frame, lockKey, operation, errorContext = null) {
+async function withSequenceLock(frame, lockKey, operation, errorContext = null, repair = false) {
   try {
     // Get lock state (undefined, Promise, or PoisonedValue)
     const lockPromise = awaitSequenceLock(frame, lockKey);
 
     if (lockPromise) {
-      // Early return if lock is poisoned
-      if (isPoison(lockPromise)) {
-        frame.set(lockKey, lockPromise, true);//lock already poisoned
+      // Normal sequential logic: check for existing poison on the lock
+      if (!repair && isPoison(lockPromise)) {
+        frame.set(lockKey, lockPromise, true);
         return lockPromise;
       }
 
       // Wait for lock if it's held by another operation
+      // If repairing, we suppress any errors from the previous lock holder
       if (typeof lockPromise.then === 'function') {
-        await lockPromise;//may throw an error? (does this happen, lock is either poison or true)
+        try {
+          await lockPromise;
+        } catch (e) {
+          if (!repair) {
+            throw e;
+          }
+          // If repairing, suppress error
+        }
       }
     }
 
@@ -91,9 +99,9 @@ async function withSequenceLock(frame, lockKey, operation, errorContext = null) 
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} Result of the function call
  */
-async function sequentialCallWrap(func, funcName, context, args, frame, lockKey, errorContext) {
+async function sequentialCallWrap(func, funcName, context, args, frame, lockKey, errorContext, repair = false) {
   return withSequenceLock(frame, lockKey, () =>
-    callWrapAsync(func, funcName, context, args, errorContext), errorContext
+    callWrapAsync(func, funcName, context, args, errorContext), errorContext, repair
   );
 }
 
@@ -106,9 +114,9 @@ async function sequentialCallWrap(func, funcName, context, args, frame, lockKey,
  * @param {string} lockKey - The lock variable name
  * @returns {Promise} The lookup result
  */
-async function sequentialContextLookup(context, frame, name, lockKey) {
+async function sequentialContextLookup(context, frame, name, lockKey, repair = false) {
   return withSequenceLock(frame, lockKey, () =>
-    contextOrFrameLookup(context, frame, name)
+    contextOrFrameLookup(context, frame, name), null, repair
   );
 }
 
@@ -122,9 +130,9 @@ async function sequentialContextLookup(context, frame, name, lockKey) {
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} The lookup result
  */
-async function sequentialMemberLookupAsync(frame, target, key, lockKey, errorContext) {
+async function sequentialMemberLookupAsync(frame, target, key, lockKey, errorContext, repair = false) {
   return withSequenceLock(frame, lockKey, () =>
-    memberLookupAsync(target, key, errorContext), errorContext
+    memberLookupAsync(target, key, errorContext), errorContext, repair
   );
 }
 
@@ -138,9 +146,9 @@ async function sequentialMemberLookupAsync(frame, target, key, lockKey, errorCon
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} The lookup result
  */
-async function sequentialMemberLookupScriptAsync(frame, target, key, lockKey, errorContext) {
+async function sequentialMemberLookupScriptAsync(frame, target, key, lockKey, errorContext, repair = false) {
   return withSequenceLock(frame, lockKey, () =>
-    memberLookupScriptAsync(target, key, errorContext), errorContext
+    memberLookupScriptAsync(target, key, errorContext), errorContext, repair
   );
 }
 

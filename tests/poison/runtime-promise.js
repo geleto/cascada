@@ -15,15 +15,19 @@
   var expect;
   let AsyncEnvironment;
   let isPoisonError;
+  let createPoison;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
     isPoisonError = require('../../src/runtime/runtime').isPoisonError;
+    const runtime = require('../../src/runtime/runtime');
+    createPoison = runtime.createPoison;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     isPoisonError = nunjucks.runtime.isPoisonError;
+    createPoison = nunjucks.createPoison;
   }
 
 
@@ -867,6 +871,39 @@
         const result = await env.renderTemplateString('{{ data.value }}', context);
         expect(result).to.equal('resolved');
       });
+    });
+
+    it('should prevent subsequent sequential calls if function resolution fails (function is poison)', async () => {
+      // Setup
+      let goodFuncCallCount = 0;
+
+      const context = {
+        db: {
+          badFunc: createPoison(new Error('This function is poisoned')),
+          goodFunc: () => {
+            goodFuncCallCount++;
+            return 'Success';
+          }
+        }
+      };
+
+      // Template:
+      // 1. badFunc() resolves to Poison. Expect lock poisoning.
+      // 2. goodFunc() should be blocked.
+      const src = `
+      {{ db!.badFunc() }}
+      {{ db!.goodFunc() }}
+    `;
+
+      try {
+        await env.renderTemplateString(src, context);
+        // If it renders successfully (errors suppressed), we check functionality
+        expect(goodFuncCallCount).to.equal(0);
+      } catch (err) {
+        // If it throws, it might be due to poison bubbling up (which is acceptable behavior here).
+        // The CRITICAL check is that goodFunc was NOT called.
+        expect(goodFuncCallCount).to.equal(0);
+      }
     });
   });
 })();

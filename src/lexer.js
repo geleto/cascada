@@ -125,7 +125,7 @@ class Tokenizer {
         return token(TOKEN_BLOCK_END, tok, lineno, colno);
       } else if (this.in_variable &&
         ((tok = this._extractString(this.tags.VARIABLE_END)) ||
-        (tok = this._extractString('-' + this.tags.VARIABLE_END)))) {
+          (tok = this._extractString('-' + this.tags.VARIABLE_END)))) {
         // Special check for variable end tag (only when in variable mode)
         this.in_code = false;
         this.in_variable = false;
@@ -167,7 +167,7 @@ class Tokenizer {
       } else if (delimChars.indexOf(cur) !== -1) {
         // We've hit a delimiter (a special char like a bracket)
         this.forward();
-        let complexOps = ['==', '===', '!=', '!==', '<=', '>=', '//', '**'];
+        let complexOps = ['==', '===', '!=', '!==', '<=', '>=', '//', '**', '!!'];
         let curComplex = cur + this.current();
         let type;
 
@@ -235,13 +235,13 @@ class Tokenizer {
           return token(TOKEN_BOOLEAN, tok, lineno, colno);
         } else if (tok === 'none') {
           return token(TOKEN_NONE, tok, lineno, colno);
-        /*
-         * Added to make the test `null is null` evaluate truthily.
-         * Otherwise, Nunjucks will look up null in the context and
-         * return `undefined`, which is not what we want. This *may* have
-         * consequences is someone is using null in their templates as a
-         * variable.
-         */
+          /*
+           * Added to make the test `null is null` evaluate truthily.
+           * Otherwise, Nunjucks will look up null in the context and
+           * return `undefined`, which is not what we want. This *may* have
+           * consequences is someone is using null in their templates as a
+           * variable.
+           */
         } else if (tok === 'null') {
           return token(TOKEN_NONE, tok, lineno, colno);
         } else if (tok) {
@@ -255,9 +255,9 @@ class Tokenizer {
       // delimiters because we need to look for block/variable start
       // tags (don't use the full delimChars for optimization)
       let beginChars = (this.tags.BLOCK_START.charAt(0) +
-      this.tags.VARIABLE_START.charAt(0) +
-      this.tags.COMMENT_START.charAt(0) +
-      this.tags.COMMENT_END.charAt(0));
+        this.tags.VARIABLE_START.charAt(0) +
+        this.tags.COMMENT_START.charAt(0) +
+        this.tags.COMMENT_END.charAt(0));
 
       if (this.isFinished()) {
         return null;

@@ -1097,5 +1097,177 @@
         }
       });
     });
+
+    describe('Poison Repair with !!', () => {
+      it('should repair a poisoned path using !!', async () => {
+        const context = {
+          db: {
+            _log: [],
+            insert: async function (data) {
+              if (data === 'bad') {
+                throw new Error('Database error');
+              }
+              this._log.push('insert:' + data);
+              return true;
+            },
+            rollback: async function () {
+              this._log.push('rollback');
+              return 'rollback';
+            },
+            getLog: function () {
+              return this._log;
+            }
+          }
+        };
+
+        const script = `
+:data
+var res1 = db!.insert('bad')
+var res2 = db!.insert('good')
+var res3 = db!!.rollback()
+var res4 = db!.insert('after')
+@data.log = db.getLog()
+@data.res2_poison = res2 is error
+@data.res3_poison = res3 is error
+@data.res3_val = res3
+`;
+
+        const result = await env.renderScriptString(script, context);
+
+        expect(result.res2_poison).to.be(true);
+        expect(result.res3_poison).to.be(false);
+        expect(result.res3_val).to.be('rollback');
+        expect(result.log).to.contain('rollback');
+        expect(result.log).to.contain('insert:after');
+        expect(result.log).not.to.contain('insert:good');
+      });
+
+      it('should support standalone repair expression context.db!!', async () => {
+        const context = {
+          service: {
+            doSomething: function () { throw new Error('fail'); },
+            reset: function () { },
+            status: 'ok'
+          }
+        };
+
+        const script = `
+        :data
+
+        // Poison the path
+        var _ = service!.doSomething()
+
+        // Verify it is poisoned (next call skipped)
+        var skip = service!.reset()
+
+        // Standalone repair
+        service!!
+
+        // Should work now
+        @data.status = service.status
+        @data.skipped_is_poison = skip is error
+      `;
+
+        const result = await env.renderScriptString(script, context);
+
+        expect(result.skipped_is_poison).to.be(true);
+        expect(result.status).to.be('ok');
+      });
+
+      it('should execute repair operator on healthy lock without issues (sanity check)', async () => {
+        const context = {
+          db: {
+            status: 'init',
+            setStatus: function (val) {
+              this.status = val;
+              return true;
+            }
+          }
+        };
+
+        // Normal call, then repair call on generic healthy state
+        const script = `
+        db!.setStatus('step1')
+        db!!.setStatus('step2')
+        var finalStatus = db.status
+      `;
+
+        const result = await env.renderScriptString(script, context);
+        expect(context.db.status).to.equal('step2');
+      });
+
+      it('should handle cyclic poison and repair sequences', async () => {
+        const context = {
+          service: {
+            state: 'healthy',
+            fail: function () {
+              throw new Error('fail');
+            },
+            recover: function () {
+              return 'recovered';
+            },
+            work: function (val) {
+              return val;
+            }
+          }
+        };
+
+        // Poison -> Repair -> Work -> Poison -> Repair -> Work
+        const script = `
+        :data
+        // Cycle 1
+        var fail1 = service!.fail()
+        var rep1 = service!!.recover()
+        var work1 = service!.work('working1')
+
+        // Cycle 2
+        var fail2 = service!.fail()
+        var rep2 = service!!.recover()
+        var work2 = service!.work('working2')
+
+        @data.rep1 = rep1
+        @data.work1 = work1
+        @data.rep2 = rep2
+        @data.work2 = work2
+      `;
+
+        const result = await env.renderScriptString(script, context);
+
+        expect(result.rep1).to.equal('recovered');
+        expect(result.work1).to.equal('working1');
+        expect(result.rep2).to.equal('recovered');
+        expect(result.work2).to.equal('working2');
+      });
+
+      it('should correctly repair locks inside loops', async () => {
+        const context = {
+          processor: {
+            processed: [],
+            fail: function () { throw new Error('fail'); },
+            recover: function () { return 'recovered'; },
+            process: function (val) {
+              this.processed.push(val);
+              return val;
+            }
+          }
+        };
+
+        // Loop 3 times: Poison -> Repair -> Process
+        // Using 'set' or implicit assignment might be safer, but just calling the method is best if allowed.
+        // Assuming expression statements are allowed in scripts (which they usually are).
+        const script = `
+        var items = [1, 2, 3]
+        for item in items
+          // Just call them for side effects
+          processor!.fail()
+          processor!!.recover()
+          processor!.process(item)
+        endfor
+      `;
+
+        await env.renderScriptString(script, context);
+        expect(context.processor.processed).to.eql([1, 2, 3]);
+      });
+    });
   });
 }());
