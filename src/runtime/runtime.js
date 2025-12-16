@@ -118,6 +118,8 @@ module.exports = {
   numArgs,
   suppressValue: outputValue.suppressValue,
   suppressValueAsync: outputValue.suppressValueAsync,
+  suppressValueScript: outputValue.suppressValueScript,
+  suppressValueScriptAsync: outputValue.suppressValueScriptAsync,
   ensureDefined: outputValue.ensureDefined,
   ensureDefinedAsync: outputValue.ensureDefinedAsync,
   promisify,

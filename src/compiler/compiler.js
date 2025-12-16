@@ -941,7 +941,14 @@ class Compiler extends CompilerBase {
         // Use the specific child expression node for position
         frame = this.emit.asyncBlockAddToBufferBegin(node, frame, child, 'text');
         const errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, child)) : '';
-        this.emit(`${node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
+
+        // In script mode, we use a special suppressor that passes through Result Objects
+        // but still escapes standard strings if autoescape is on.
+        if (this.scriptMode) {
+          this.emit(`${node.isAsync ? 'await runtime.suppressValueScriptAsync(' : 'runtime.suppressValueScript('}`);
+        } else {
+          this.emit(`${node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
+        }
 
         if (this.throwOnUndefined) {
           this.emit(`${node.isAsync ? 'await runtime.ensureDefinedAsync(' : 'runtime.ensureDefined('}`);
@@ -957,10 +964,12 @@ class Compiler extends CompilerBase {
         }
         // Use child position for suppressValue error
         if (node.isAsync) {
-          this.emit(`, env.opts.autoescape, ${errorContextJson});\n`);
+          this.emit(`, env.opts.autoescape, ${errorContextJson})`);
         } else {
-          this.emit(', env.opts.autoescape);\n');
+          this.emit(', env.opts.autoescape)');
         }
+        this.emit(';\n');
+
         frame = this.emit.asyncBlockAddToBufferEnd(node, frame, child, 'text'); // Pass Output node as op, child as pos
       }
     });

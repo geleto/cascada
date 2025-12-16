@@ -260,8 +260,18 @@ class Parser extends Obj {
     }
 
     const callerArgs = this.parseSignature(true) || new nodes.NodeList();
-    //const focus = this.parseFocusDirective();
+
     const macroCall = this.parsePrimary();
+
+    let focus;
+    if (this.skip(lexer.TOKEN_COLON)) {
+      const tok = this.nextToken();
+      if (!tok && tok.type !== lexer.TOKEN_SYMBOL) {
+        this.fail('parseCall: expected focus directive value', tok.lineno, tok.colno);
+      } else {
+        focus = tok.value;
+      }
+    }
 
     this.advanceAfterBlockEnd(callTok.value);
     const body = this.parseUntilBlocks('endcall');
@@ -275,7 +285,7 @@ class Parser extends Obj {
       callerName,
       callerArgs,
       body,
-      //focus
+      focus
     );
 
     // add the additional caller kwarg, adding kwargs if necessary
@@ -1509,13 +1519,13 @@ class Parser extends Obj {
         // Same for the succeeding block start token
         if (nextToken &&
           ((nextToken.type === lexer.TOKEN_BLOCK_START &&
-          nextVal.charAt(nextVal.length - 1) === '-') ||
-          (nextToken.type === lexer.TOKEN_VARIABLE_START &&
-          nextVal.charAt(this.tokens.tags.VARIABLE_START.length)
-          === '-') ||
-          (nextToken.type === lexer.TOKEN_COMMENT &&
-          nextVal.charAt(this.tokens.tags.COMMENT_START.length)
-          === '-'))) {
+            nextVal.charAt(nextVal.length - 1) === '-') ||
+            (nextToken.type === lexer.TOKEN_VARIABLE_START &&
+              nextVal.charAt(this.tokens.tags.VARIABLE_START.length)
+              === '-') ||
+            (nextToken.type === lexer.TOKEN_COMMENT &&
+              nextVal.charAt(this.tokens.tags.COMMENT_START.length)
+              === '-'))) {
           // TODO: this could be optimized (don't use regex)
           data = data.replace(/\s*$/, '');
         }

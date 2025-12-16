@@ -313,6 +313,34 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     }
 
     // Default: literal value for text output
+    // Check if item is a Result Object from a macro call (has text/handlers but no command structure).
+    // In SCRIPT MODE, macros do not return a raw text string. Instead, they return a structured "Result Object"
+    // that wraps the output (e.g. { text: "...", data: ... }).
+    // This allows the script to access side effects. We must unwrap this object to put the .text into the buffer.
+    // We exclude objects with custom toString (like SafeString) and Promises which are distinct values.
+    if (typeof item === 'object' && !item.handler && !item.method) {
+      const hasCustomToString = item.toString && item.toString !== Object.prototype.toString;
+      const isPromise = typeof item.then === 'function';
+
+      if (!hasCustomToString && !isPromise) {
+        if (item.text) {
+          textOutput.push(item.text);
+        }
+        Object.keys(item).forEach(key => {
+          if (key === 'text') return;
+          // Merge known handlers (currently data)
+          // @todo - generalize for other handlers if they support merge
+          if (key === 'data') {
+            const instance = getOrInstantiateHandler('data');
+            if (instance && typeof instance.merge === 'function') {
+              instance.merge(null, item[key]);
+            }
+          }
+        });
+        return;
+      }
+    }
+
     textOutput.push(item);
   }
 

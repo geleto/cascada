@@ -254,10 +254,59 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
   return ensureDefined(val, lineno, colno, context);
 }
 
+function suppressValueScript(val, autoescape) {
+  // Pass through any objects in script mode so they can be handled by the buffer processor
+  // (flattenBuffer -> processItem). This avoids stringifying objects like { value: ... }
+  // to "[object Object]".
+  if (val && typeof val === 'object' && !val.handler && !val.method && !Array.isArray(val)) {
+    const hasCustomToString = val.toString && val.toString !== Object.prototype.toString;
+    const isPromise = typeof val.then === 'function';
+    // If it's a plain object (no custom toString, not specific class), pass it through.
+    // SafeString has custom toString, so it falls through to suppressValue.
+    if (!hasCustomToString && !isPromise) {
+      return val;
+    }
+  }
+  return suppressValue(val, autoescape);
+}
+
+
+
+
+
+function suppressValueScriptAsync(val, autoescape, errorContext) {
+  // Handle Promises
+  if (val && typeof val.then === 'function') {
+    return _suppressValueScriptAsyncComplex(val, autoescape, errorContext);
+  }
+  return suppressValueScript(val, autoescape);
+}
+
+async function _suppressValueScriptAsyncComplex(val, autoescape, errorContext) {
+  try {
+    val = await val;
+  } catch (err) {
+    if (errors.isPoisonError(err)) {
+      throw err;
+    } else {
+      const contextualError = errors.handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      throw new errors.PoisonError([contextualError]);
+    }
+  }
+
+  if (errors.isPoison(val)) {
+    throw new errors.PoisonError(val.errors);
+  }
+
+  return suppressValueScript(val, autoescape);
+}
+
 module.exports = {
   suppressValue,
   suppressValueAsync,
   _suppressValueAsyncComplex,
+  suppressValueScript,
+  suppressValueScriptAsync,
   SafeString,
   newSafeStringAsync,
   copySafeness,

@@ -101,7 +101,7 @@ class ScriptTranspiler {
     // Define block-related configuration
     this.SYNTAX = {
       // Block-related tags
-      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'try'],
+      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'try', 'call'],
       lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'option', 'var', 'extern'],
 
       // Middle tags with their parent block types
@@ -320,15 +320,15 @@ class ScriptTranspiler {
               state = finishCurrentSegment(state);
               state = 'COLLECTING_REMAINING';
               remainingBuffer = char;
-            /*} else if (char === '=' && bracketLevel === 0) {
-              // TEMP
-              // replace = with .set(
-              state = finishCurrentSegment(state);
-              currentSegment = '.set';
-              state = finishCurrentSegment(state);
-              state = 'COLLECTING_REMAINING';
-              remainingBuffer = '(';
-              append = ')';//find the last continuation line and ')' at the end of it*/
+              /*} else if (char === '=' && bracketLevel === 0) {
+                // TEMP
+                // replace = with .set(
+                state = finishCurrentSegment(state);
+                currentSegment = '.set';
+                state = finishCurrentSegment(state);
+                state = 'COLLECTING_REMAINING';
+                remainingBuffer = '(';
+                append = ')';//find the last continuation line and ')' at the end of it*/
             } else if (this.DATA_COMMANDS.operatorStart.includes(char) && bracketLevel === 0) {
               // =, +=, -=, ++, --, *=, /=, &=, |=, &&=, ||=
               state = finishCurrentSegment(state);
@@ -1013,7 +1013,7 @@ class ScriptTranspiler {
 
     if (!processedLine.isContinuation) {
       switch (processedLine.lineType) {
-        case 'TAG':{
+        case 'TAG': {
           let tagName = processedLine.tagName;
           if (tagName === 'each') {
             tagName = 'asyncEach';
