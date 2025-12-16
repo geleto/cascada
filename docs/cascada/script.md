@@ -1142,6 +1142,129 @@ var userObject = buildUser("Alice")
 </tr>
 </table>
 
+### Dynamic Call Blocks (`call`)
+
+Think of a `call` block as a way to pass a "callback" to a macro—a chunk of logic that the macro can invoke at just the right moment. This pattern is incredibly powerful for creating wrapper components that need to process, decorate, or transform content you provide.
+
+#### The Pattern: Wrapping Your Logic
+
+Instead of calling a macro with simple arguments, you can pass it an entire block of code. The macro decides when and how to execute that code by calling the special `caller()` function.
+
+#### Syntax
+
+```javascript
+// Define a macro that will invoke the callback
+macro wrapper(title)
+  @text("Before: " + title)
+  caller()  // Execute the callback here
+  @text("After")
+endmacro
+
+// Call the macro with a callback block
+call wrapper("My Title")
+  // This block is your "callback"
+  // It doesn't run immediately—it waits for the macro to invoke it
+  @data.items.push(someValue)
+  @text("Some content")
+endcall
+```
+
+#### The `caller()` Function
+
+Inside the macro, `caller()` is your handle to the wrapped content:
+
+*   **Invokes the block**: When the macro calls `caller()`, the wrapped code executes
+*   **Caller's context**: The block runs with access to variables from where the `call` was written, not the macro's internal scope
+*   **Returns the result**: `caller()` returns whatever the block produces—could be data, text, or both
+
+#### Example: A Layout Wrapper
+
+Here's a macro that wraps content with a header and footer, executing your block in between:
+
+```javascript
+macro card(title) : text
+  @text("<div class='card'>")
+  @text("  <h1>" + title + "</h1>")
+  @text("  <div class='body'>")
+
+  // Your content goes here
+  caller()
+
+  @text("  </div>")
+  @text("</div>")
+endmacro
+
+// Usage
+call card("Welcome")
+  @text("Hello, World!")
+  @text("This is the card content.")
+endcall
+```
+
+**Output:**
+```html
+<div class='card'>
+  <h1>Welcome</h1>
+  <div class='body'>
+    Hello, World!
+    This is the card content.
+  </div>
+</div>
+```
+
+#### Example: Data Processing Wrapper
+
+The pattern isn't limited to text—it works beautifully for data workflows too:
+
+```javascript
+macro withErrorHandling()
+  guard
+    var result = caller()
+    @data.result = result
+    @data.status = "success"
+  recover(err)
+    @data.status = "failed"
+    @data.error = err#message
+  endguard
+endmacro
+
+// Usage
+call withErrorHandling()
+  var user = fetchUser(123)  // Might fail
+  @data.userData = user
+endcall
+```
+
+#### Focusing the Output
+
+When you need fine control over what the `call` block returns, use an output focus directive (like `:data` or `:text`). This is especially useful in Script Mode to extract specific results or suppress unwanted output.
+
+**Example: Extracting Just the Data**
+
+```javascript
+macro dataProcessor()
+  var result = caller()  // Get only the data object
+  @data.processed = result
+  @data.timestamp = now()
+endmacro
+
+// The :data filter means caller() returns only the data object,
+// ignoring any @text() commands in the block
+call dataProcessor() : data
+  @data.value = 100
+  @text("This text is ignored")
+endcall
+```
+
+#### When to Use `call` Blocks
+
+`call` blocks shine when you need to:
+- Create layout wrappers that decorate content
+- Build error-handling patterns that wrap risky operations
+- Implement conditional rendering based on the caller's logic
+- Process or transform a block of logic before including it in output
+- Any scenario where a macro needs to control *when* and *how* some logic executes
+
 ## Advanced Flow Control
 
 ### Sequential Execution Control (`!`)
