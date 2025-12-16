@@ -85,551 +85,6 @@ Cascada replaces traditional try/catch exceptions with a data-centric error mode
 
 ### 💡 Clean, Expressive Syntax
 Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `macros` that support keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
-
-## Error Handling
-
-**Note**: This feature is under development.
-
-Cascada's parallel-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Also, there may already be code that executes after the try statement. Instead, Cascada treats **errors as just another type of data** that flows through your script. Failed operations produce a special **Error Value** that is stored in variables, passed to functions, and can be inspected.
-
-This data-centric model allows independent operations to continue running while failures are isolated to only the variables and operations that depend on the failed result. When an operation in one part of your script fails, it has no effect on unrelated parallel operations—they continue executing, maximizing throughput and resilience.
-
-### Error Handling in Action
-
-Here's a concrete example showing how error propagation works in parallel execution:
-
-```javascript
-// These three API calls run in parallel
-var user = fetchUser(123)      // ✅ succeeds
-var posts = fetchPosts(123)    // ❌ fails with network error
-var comments = fetchComments() // ✅ succeeds
-
-// Only operations depending on 'posts' are affected
-@data.username = user.name           // ✅ works fine
-@data.commentCount = comments.length // ✅ works fine
-@data.postCount = posts.length       // ❌ becomes an error
-@data.summary = posts + " analysis"  // ❌ becomes an error
-
-// You can detect and repair the error
-if posts is error
-  @data.postCount = 0  // ✅ assign a fallback
-  @data.summary = ''   // ✅ assign a fallback
-endif
-```
-
-In this example, the failure of `fetchPosts()` only affects operations that depend on the `posts` variable. The `user` and `comments` operations complete successfully and their results are available immediately.
-
-### The Core Mechanism: Error Propagation
-
-Once an Error Value is created, it automatically spreads to any dependent operation or variable—this process is known as **error propagation**, **dataflow poisoning**, or just **poisoning**. This ensures that corrupted data never silently produces incorrect results.
-
-#### Data Operations
-
-* **Expressions:**
-  If any operand in an expression is an error, the entire expression evaluates to that error.
-
-  ```javascript
-  var total = myError + 5  // ❌ total becomes myError
-  var result = 10 * myError / 2  // ❌ result becomes myError
-  ```
-
-* **Function Calls:**
-  If an Error Value is passed as an argument, the function is skipped entirely and the call immediately returns that error without executing the function body.
-
-  ```javascript
-  var result = processData(myError)  // ❌ processData is never called
-  var output = transform(validData, myError, moreData)  // ❌ skipped due to second arg
-  ```
-
-#### Control Flow
-
-* **Loops:**
-  A loop whose iterable is an Error Value will not execute its body. The error propagates to all variables and outputs that would have been affected by the loop.
-
-  ```javascript
-  for item in myErrorList
-    // This entire block is skipped
-    @data.items.push(item.name)
-  endfor
-  // ❌ @data is now poisoned
-  ```
-
-* **Conditionals:**
-  If a conditional test evaluates to an Error Value, neither the `if` nor `else` branch executes. The error propagates to **all variables modified by either branch** and to **any output handlers** those branches write to.
-
-  ```javascript
-  if myErrorCondition
-    result = "yes"
-  else
-    result = "no"
-  endif
-  // ❌ The 'result' variable is now an Error Value
-  ```
-
-#### Output & Effects
-
-* **Output Handlers:**
-  If an Error Value is written to an output handler (such as `@data` or `@text`), that handler becomes **poisoned**. This causes the **return value** of the current script, macro, or capture block to become an **Error Value** instead of normal output, which will reject the render promise. See [How Scripts Fail](#how-scripts-fail-from-error-values-to-rejected-promises) for details.
-
-  ```javascript
-  @data.user = myError  // ❌ Poisons the @data handler
-  // The entire script will now fail and reject its promise
-  ```
-
-* **Sequential Side-Effect Paths:**
-  If a call in a sequential execution path (marked with `!`) fails, that path becomes **poisoned**. Any later operations using the same `!path` will instantly yield an Error Value without executing, preserving the sequential guarantee even in failure. For details on sequential execution, see [Sequential Execution Control](#sequential-execution-control-).
-
-  ```javascript
-  context.database!.connect()      // ❌ fails
-  context.database!.insert(record) // ❌ skipped, returns error immediately
-  context.database!.commit()       // ❌ skipped, returns error immediately
-  ```
-
-This mechanism ensures that once an operation fails, all dependent results and outputs reflect that failure, maintaining data integrity across both parallel and sequential execution flows.
-
-### Deciding When to Handle Errors
-
-A key design decision in Cascada scripts is choosing where to handle errors versus letting them propagate.
-
-**❌ Do not handle errors, let them propagate when:**
-- The operation is critical to the final output (e.g., fetching the primary data for a report)
-- You want the entire script to fail if this operation fails
-- The error should bubble up to the calling JavaScript/TypeScript code
-- There's no reasonable fallback or default value
-- You're building a strict data pipeline where partial results are unacceptable
-
-**✅ Handle errors locally when:**
-- You have a sensible fallback or default value
-- The operation is optional or non-critical to the final result
-- You're implementing retry logic for transient failures
-- You're aggregating results where partial success is acceptable
-- You want to collect multiple errors for reporting without halting execution
-- The error represents a business-logic case that should produce specific output (e.g., "user not found" → guest mode)
-
-```javascript
-// ❌ Critical operation - let it propagate and fail the script
-var primaryData = fetchCriticalData()
-@data.report = primaryData.summary  // Will fail if primaryData is an error
-
-// ✅ Optional enhancement - handle locally
-var recommendations = fetchRecommendations()
-if recommendations is error
-  // Not critical, use empty array as fallback
-  recommendations = []
-endif
-@data.recommendations = recommendations  // Always succeeds
-```
-
-### Detecting and Repairing Errors
-
-The fundamental way to detect if a variable holds an Error Value is the `is error` test. Once a failure is detected, you can "repair" the situation by re-assigning the variable, which prevents the error from propagating further.
-
-**Example: Assigning a Fallback Value**
-```javascript
-// fetchUser(999) is assumed to fail and return an Error Value
-var user = fetchUser(999)
-
-if user is error
-  // The fetch failed. Log the error and repair the 'user' variable
-  // by assigning a default user object.
-  @data.log = "Failed to fetch user: " + user#message
-  user = { name: "Guest", isDefault: true }
-endif
-
-// This next line can now execute without failing, because 'user' was repaired.
-@data.username = user.name
-```
-
-**Example: Retrying a Failed Operation**
-```javascript
-var retries = 0
-var user
-var success = false
-
-// Try to fetch the user up to 3 times
-while retries < 3 and not success
-  user = fetchUser(123) // This operation might fail transiently
-  if user is not error
-    success = true
-  else
-    retries = retries + 1
-  endif
-endwhile
-
-// After the loop, check if the operation was ever successful
-if user is error
-  // All retries failed, assign a default value
-  @data.log = "Fetching user failed after 3 retries."
-  user = { name: "Guest", isDefault: true }
-endif
-
-@data.username = user.name
-```
-
-### Repairing Sequential Paths with `!!`
-
-When a sequential path becomes poisoned, all subsequent operations on that path immediately return errors without executing. The `!!` operator provides two ways to recover:
-
-**Repair the Path:**
-Use `!!` alone to clear the poison state, allowing subsequent operations to execute normally.
-
-```javascript
-context.db!.insert(data)  // ❌ Fails and poisons the path
-
-context.db!!  // ✅ Repairs the path
-
-context.db!.insert(otherData)  // ✅ Now executes
-```
-
-**Repair and Execute:**
-Use `!!` before a method call to repair the path and then execute the method, even if the path was poisoned.
-
-```javascript
-context.db!.beginTransaction()
-context.db!.insert(userData)      // ❌ Fails, poisons path
-context.db!.insert(profileData)   // ❌ Skipped due to poison
-
-// ✅ Repairs path and executes rollback
-context.db!!.rollback()
-```
-
-This is particularly useful for cleanup operations that must run regardless of whether previous operations failed:
-
-```javascript
-var file = context.fileSystem!.open(path)
-
-context.fileSystem!.writeHeader(metadata)
-var writeResult = context.fileSystem!.writeData(data)  // ❌ Might fail
-
-// ✅ Always close the file, even if writes failed
-context.fileSystem!!.close()
-```
-
-**Checking Path State:**
-You can check if a sequential path is poisoned using the `is error` test:
-
-```javascript
-context.api!.sendRequest(data)  // ❌ Might fail
-
-if context.api! is error
-  @data.error = context.api!#message  // Peek at the error
-  context.api!!  // Repair the path
-endif
-```
-
-### Protecting State with `guard`
-
-The `guard` block provides transaction-like safety for your script's logic. It takes a "snapshot" of your script's state—variables, output handlers, and execution locks—before running a block of code. If the code within the block results in unhandled **poisoning** (an active Error Value), Cascada rolls back all internal state changes and optionally passes control to a `recover` block.
-
-This mechanism allows you to attempt complex, interdependent operations without worrying about leaving your data or variables in a corrupted or half-modified state.
-
-**Syntax:**
-
-```javascript
-guard
-  // Attempt risky operations here
-  // Modifications to variables, outputs, and locks are tracked
-recover(error)
-  // Optional: Runs if the guard block is poisoned.
-  // 'error' contains the compound PoisonError.
-  // State is already rolled back to the start of the guard.
-endguard
-```
-
-#### Automatic Rollback
-If the `guard` block results in an error:
-
-1.  **Variables:** Any variables modified or declared inside the block are reverted to their values at the start of the `guard`.
-2.  **Output Handlers:** Any data written to handlers (like `@data` or `@text`) inside the block is discarded.
-3.  **Sequence Locks:** If a sequential path (e.g., `db!`) was poisoned, the lock is "repaired" (unpoisoned), allowing you to use that path again immediately in the `recover` block.
-
-**Important:** The rollback is only triggered by **unhandled** errors that poison the block. If you detect an error using `is error` and repair it (e.g., by assigning a fallback value) within the block, the `guard` considers the execution successful and commits the changes.
-
-**Example: Protecting Data Integrity**
-
-```javascript
-var user = { name: "Guest", attempts: 0 }
-
-guard
-  // 1. Modify local state
-  user.attempts = user.attempts + 1
-  user.name = "Pending..."
-
-  // 2. Write to output
-  @text("Attempting login...")
-
-  // 3. Risky operation
-  var profile = fetchProfile(id) // ❌ Fails
-
-  // If we don't handle 'profile', the block becomes poisoned.
-  user.name = profile.name
-recover(err)
-  // STATE RESTORED:
-  // 'user.name' is back to "Guest"
-  // 'user.attempts' is back to 0
-  // The "Attempting login..." text is removed from output
-
-  @text("Login failed: " + err#message)
-endguard
-```
-
-#### Handling External Side Effects
-While `guard` can roll back the *internal* state of your script variables, it cannot undo external side effects that already happened (like an API call that was sent). However, because `guard` automatically repairs sequential execution locks (`!`), you can easily trigger compensatory actions (like a database rollback) in the `recover` block.
-
-```javascript
-// Start a transaction
-context.db!.beginTransaction()
-
-guard
-  // If this fails, the 'db!' sequence becomes poisoned
-  context.db!.insert(riskyData)
-recover(err)
-  // The 'db!' lock is automatically repaired here,
-  // allowing us to run the rollback command safely.
-  context.db!.rollback()
-
-  @data.error = "Transaction cancelled"
-endguard
-```
-
-#### The `recover` Block
-The `recover` clause is optional. It accepts a single argument (e.g., `recover(err)`), which is a `PoisonError` containing all errors that contributed to the failure.
-
-*   **With `recover`**: You can handle the error, log it, or set fallback values.
-*   **Without `recover`**: The `guard` block acts as a silent safety net. If an unhandled error occurs, the state rolls back, the error is swallowed, and execution continues immediately after the `endguard` statement.
-
-```javascript
-// Silent failure pattern
-guard
-  @data.widgets = fetchWidgets() // If this fails...
-endguard
-
-// ...execution continues here with @data.widgets untouched (undefined)
-```
-
-### Manually Recovering Output Handlers with `_revert()`
-
-While `guard` provides automatic protection for a block of code, you may sometimes need manual control to "fix" an output handler that has become poisoned within the current flow. Unlike variables (which can be reassigned) or sequential locks (which can be repaired with `!!`), output handlers accumulate changes, so they require a specific reset mechanism.
-
-Calling `@handler._revert()` resets that handler to the state it was in at the beginning of the **current output scope**. This discards all writes (successful or failed) made within that scope and removes the poison status.
-
-**Output Scopes**
-The "checkpoint" that `_revert()` restores to is the start of the nearest enclosing:
-1.  `guard` block
-2.  `capture` block
-3.  `macro` definition
-4.  The Script root (if none of the above apply)
-
-**Usage**
-*   **Supported Handlers:** Works on `@data`, `@text`, and any custom handlers.
-*   **Root Only:** You must call this on the handler itself (e.g., `@data._revert()`), not on a specific path.
-
-**Example: Resetting `@data` on failure**
-
-```javascript
-// 1. Write some initial data
-@data.timestamp = now()
-
-// 2. This operation fails and poisons the @data handler
-@data.content = fetchContent()
-
-// 3. Check if the handler is poisoned
-if @data is error
-  // 4. Revert @data to the start of the script/scope
-  // This removes 'timestamp' AND the error from 'fetchContent'
-  @data._revert()
-
-  // 5. Write a clean fallback response
-  @data.error = "Content unavailable"
-endif
-```
-
-**Example: Resetting `@text` inside a `capture` block**
-
-```javascript
-var message = capture :text
-  @text("Starting operation...")
-  var result = riskyOperation()
-
-  if result is error
-     // Reverts only to the start of this capture block
-     @text._revert()
-     @text("Operation failed.")
-  else
-     @text(" Success!")
-  endif
-endcapture
-```
-
-### Peeking Inside Errors with `#`
-
-Because of error propagation, a standard property access like `myError.message` would just return `myError` again. To inspect the properties of an Error Value itself, use the special **`#` (peek) operator**. This operator "reaches through" the error to access its internal properties without triggering propagation.
-
-```javascript
-var failedUser = fetchUser(999)
-
-if failedUser is error
-  // Use '#' to access properties of the Error Value
-  @text("Operation failed!")
-  @text("Origin: " + failedUser#source.origin)
-  @text("Message: " + failedUser#message)
-endif
-```
-
-**Important**: Peeking at a non-poisoned path or handler returns a poison value. Always check with `is error` before peeking:
-
-```javascript
-context.db!.insert(data)  // ✅ Succeeds
-
-// ❌ WRONG: Peeking at non-poisoned path returns poison
-var msg = context.db!#message
-
-// ✅ CORRECT: Check first, then peek
-if context.db! is error
-  var msg = context.db!#message  // Safe
-endif
-```
-
-The same applies to output handlers:
-
-```javascript
-@data.value = 42  // ✅ Success
-
-// ❌ WRONG: Returns poison
-var msg = @data#message
-
-// ✅ CORRECT: Check first
-if @data is error
-  var msg = @data#message
-endif
-```
-
-### Anatomy of an Error Value
-
-An Error Value is a rich object designed for easy debugging, containing detailed information about what went wrong and where. You can read it by using the peek operator (`#`).
-
-*   **`errors`**: (array) A list of one or more underlying error objects that contributed to this failure. Each object provides detailed context about a specific failure:
-    *   **`message`**: (string) The specific error message for this particular failure.
-    *   **`name`**: (string) A custom name for business-logic errors (e.g., `'ValidationError'`, `'NotFoundError'`).
-    *   **`lineno`**: (number) The line number in the source file where the error occurred.
-    *   **`colno`**: (number) The column number on the line where the error occurred.
-    *   **`path`**: (string) The name of the script or template file where the error originated.
-    *   **`operation`**: (string) A technical description of the internal operation the engine was performing when the error occurred. Examples include `FunCall` (function call), `LookupVal` (property access like `user.name`), `Add` (a `+` operation), or `Output(FunCall)` (an error while rendering the output of a function call).
-    *   **`cause`**: (object | null) If the error originated from the JavaScript environment (e.g., from a native function or an external library), this property holds the original JavaScript `Error` object, providing access to the original stack trace and error details.
-*   **`message`**: (string) A summary message that combines the messages from all the individual errors contained in the `errors` array.
-
-### Handling Multiple Concurrent Errors
-
-When multiple operations fail concurrently, their errors are collected into a single `PoisonError` that holds all the original, individual errors. This ensures that no error is lost and you get a complete picture of all failures.
-
-**Example: Multiple Concurrent Failures**
-
-```javascript
-// Three parallel operations that all fail
-var user = fetchUser(999)        // ❌ fails: "User not found"
-var profile = fetchProfile(999)  // ❌ fails: "Profile service unavailable"
-var settings = fetchSettings(999) // ❌ fails: "Settings database timeout"
-
-// Using all three creates a PoisonError containing all failures
-var summary = user.name + " - " + profile.bio + " - " + settings.theme
-
-if summary is error
-  // summary#errors is an array with all three original errors
-  @data.errorCount = summary#errors | length  // 3
-
-  // Iterate through all the failures
-  for err in summary#errors
-    @data.errorLog.push({
-      message: err#message,
-      source: err#source.origin
-    })
-  endfor
-
-  summary = "User data unavailable"
-endif
-
-@data.userSummary = summary
-```
-
-This aggregation is particularly valuable in error reporting and debugging, as you can see all failures that occurred in a parallel batch rather than just the first one encountered.
-
-
-### Error Handling with Sequential Operations
-
-When using [sequential execution paths](#sequential-execution-control-) marked with `!`, error handling follows the same principles described above but respects the sequential guarantee.
-
-```javascript
-var db = context.db
-
-db!.beginTransaction()
-
-// These operations run sequentially
-var insertResult = db!.insert("users", userData)
-var updateResult = db!.update("profiles", profileData)
-
-// Check if any operation failed
-if db! is error
-  // Path is poisoned, cleanup
-  db!!.rollback()
-
-  @data.status = "transaction_failed"
-  @data.error = db!#message
-else
-  db!.commit()
-  @data.status = "success"
-endif
-```
-
-The key difference is that in a sequential chain, if any operation fails, all subsequent operations on that path are immediately skipped and return errors, maintaining the sequential guarantee even in failure scenarios.
-
-### How Scripts Fail: From Error Values to Rejected Promises
-
-An important distinction in Cascada's error model: **an error is treated as data *within* the script**. A script only fails and rejects its render promise when an unhandled Error Value reaches and "poisons" a final output handler (like `@data` or `@text`).
-
-**Internal Error Handling:**
-If you handle all errors internally using `is error` tests and repair them by assigning normal values, the script completes successfully even though errors occurred during execution:
-
-```javascript
-var user = fetchUser(999)  // ❌ Returns an error
-
-if user is error
-  user = { name: "Guest" }  // ✅ Repaired - no longer an error
-endif
-
-@data.username = user.name  // ✅ Script succeeds, outputs: { username: "Guest" }
-```
-
-**Script Failure:**
-When an Error Value reaches an output command without being handled, the promise rejects with an Error Value, see the [Anatomy of an Error Value](#anatomy-of-an-error-value) section:
-
-```javascript
-var user = fetchUser(999)  // ❌ Returns an error
-@data.user = user  // ❌ Unhandled error reaches output - script fails
-```
-
-In your JavaScript/TypeScript code, you can catch and inspect this detailed error:
-
-```javascript
-try {
-  const result = await env.renderScript('getUserData.casc', { userId: 999 });
-} catch (err) {
-  // err is a PoisonError with rich diagnostic information
-  console.log(err.message);  // Summary of all failures
-
-  // Inspect individual errors for detailed diagnostics
-  err.errors.forEach(error => {
-    console.log(`Error at ${error.path}:${error.lineno}:${error.colno}`);
-    console.log(`Operation: ${error.operation}`);
-    console.log(`Message: ${error.message}`);
-    if (error.cause) {
-      console.log('Original JS error:', error.cause);
-    }
-  });
-}
-```
-
-This boundary between internal error handling (Error Values as data) and external error reporting (rejected promises) gives you precise control over when failures should propagate to your application code versus being handled gracefully within the script.
-
 ## Language Fundamentals
 
 This section covers the syntax and fundamental constructs for writing scripts. While the syntax is familiar to JavaScript developers, its semantics differ due to the parallel-by-default execution model described above.
@@ -1469,6 +924,550 @@ It is crucial to understand the difference between these two features, as they s
     *   **Nature:** It manages the real-time execution flow of asynchronous functions, and their results are immediately available to the next line of code.
 
 For details on the `!` operator, see [Sequential Execution Control](#sequential-execution-control-).
+
+## Error Handling
+
+**Note**: This feature is under development.
+
+Cascada's parallel-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Also, there may already be code that executes after the try statement. Instead, Cascada treats **errors as just another type of data** that flows through your script. Failed operations produce a special **Error Value** that is stored in variables, passed to functions, and can be inspected.
+
+This data-centric model allows independent operations to continue running while failures are isolated to only the variables and operations that depend on the failed result. When an operation in one part of your script fails, it has no effect on unrelated parallel operations—they continue executing, maximizing throughput and resilience.
+
+### Error Handling in Action
+
+Here's a concrete example showing how error propagation works in parallel execution:
+
+```javascript
+// These three API calls run in parallel
+var user = fetchUser(123)      // ✅ succeeds
+var posts = fetchPosts(123)    // ❌ fails with network error
+var comments = fetchComments() // ✅ succeeds
+
+// Only operations depending on 'posts' are affected
+@data.username = user.name           // ✅ works fine
+@data.commentCount = comments.length // ✅ works fine
+@data.postCount = posts.length       // ❌ becomes an error
+@data.summary = posts + " analysis"  // ❌ becomes an error
+
+// You can detect and repair the error
+if posts is error
+  @data.postCount = 0  // ✅ assign a fallback
+  @data.summary = ''   // ✅ assign a fallback
+endif
+```
+
+In this example, the failure of `fetchPosts()` only affects operations that depend on the `posts` variable. The `user` and `comments` operations complete successfully and their results are available immediately.
+
+### The Core Mechanism: Error Propagation
+
+Once an Error Value is created, it automatically spreads to any dependent operation or variable—this process is known as **error propagation**, **dataflow poisoning**, or just **poisoning**. This ensures that corrupted data never silently produces incorrect results.
+
+#### Data Operations
+
+* **Expressions:**
+  If any operand in an expression is an error, the entire expression evaluates to that error.
+
+  ```javascript
+  var total = myError + 5  // ❌ total becomes myError
+  var result = 10 * myError / 2  // ❌ result becomes myError
+  ```
+
+* **Function Calls:**
+  If an Error Value is passed as an argument, the function is skipped entirely and the call immediately returns that error without executing the function body.
+
+  ```javascript
+  var result = processData(myError)  // ❌ processData is never called
+  var output = transform(validData, myError, moreData)  // ❌ skipped due to second arg
+  ```
+
+#### Control Flow
+
+* **Loops:**
+  A loop whose iterable is an Error Value will not execute its body. The error propagates to all variables and outputs that would have been affected by the loop.
+
+  ```javascript
+  for item in myErrorList
+    // This entire block is skipped
+    @data.items.push(item.name)
+  endfor
+  // ❌ @data is now poisoned
+  ```
+
+* **Conditionals:**
+  If a conditional test evaluates to an Error Value, neither the `if` nor `else` branch executes. The error propagates to **all variables modified by either branch** and to **any output handlers** those branches write to.
+
+  ```javascript
+  if myErrorCondition
+    result = "yes"
+  else
+    result = "no"
+  endif
+  // ❌ The 'result' variable is now an Error Value
+  ```
+
+#### Output & Effects
+
+* **Output Handlers:**
+  If an Error Value is written to an output handler (such as `@data` or `@text`), that handler becomes **poisoned**. This causes the **return value** of the current script, macro, or capture block to become an **Error Value** instead of normal output, which will reject the render promise. See [How Scripts Fail](#how-scripts-fail-from-error-values-to-rejected-promises) for details.
+
+  ```javascript
+  @data.user = myError  // ❌ Poisons the @data handler
+  // The entire script will now fail and reject its promise
+  ```
+
+* **Sequential Side-Effect Paths:**
+  If a call in a sequential execution path (marked with `!`) fails, that path becomes **poisoned**. Any later operations using the same `!path` will instantly yield an Error Value without executing, preserving the sequential guarantee even in failure. For details on sequential execution, see [Sequential Execution Control](#sequential-execution-control-).
+
+  ```javascript
+  context.database!.connect()      // ❌ fails
+  context.database!.insert(record) // ❌ skipped, returns error immediately
+  context.database!.commit()       // ❌ skipped, returns error immediately
+  ```
+
+This mechanism ensures that once an operation fails, all dependent results and outputs reflect that failure, maintaining data integrity across both parallel and sequential execution flows.
+
+### Deciding When to Handle Errors
+
+A key design decision in Cascada scripts is choosing where to handle errors versus letting them propagate.
+
+**❌ Do not handle errors, let them propagate when:**
+- The operation is critical to the final output (e.g., fetching the primary data for a report)
+- You want the entire script to fail if this operation fails
+- The error should bubble up to the calling JavaScript/TypeScript code
+- There's no reasonable fallback or default value
+- You're building a strict data pipeline where partial results are unacceptable
+
+**✅ Handle errors locally when:**
+- You have a sensible fallback or default value
+- The operation is optional or non-critical to the final result
+- You're implementing retry logic for transient failures
+- You're aggregating results where partial success is acceptable
+- You want to collect multiple errors for reporting without halting execution
+- The error represents a business-logic case that should produce specific output (e.g., "user not found" → guest mode)
+
+```javascript
+// ❌ Critical operation - let it propagate and fail the script
+var primaryData = fetchCriticalData()
+@data.report = primaryData.summary  // Will fail if primaryData is an error
+
+// ✅ Optional enhancement - handle locally
+var recommendations = fetchRecommendations()
+if recommendations is error
+  // Not critical, use empty array as fallback
+  recommendations = []
+endif
+@data.recommendations = recommendations  // Always succeeds
+```
+
+### Detecting and Repairing Errors
+
+The fundamental way to detect if a variable holds an Error Value is the `is error` test. Once a failure is detected, you can "repair" the situation by re-assigning the variable, which prevents the error from propagating further.
+
+**Example: Assigning a Fallback Value**
+```javascript
+// fetchUser(999) is assumed to fail and return an Error Value
+var user = fetchUser(999)
+
+if user is error
+  // The fetch failed. Log the error and repair the 'user' variable
+  // by assigning a default user object.
+  @data.log = "Failed to fetch user: " + user#message
+  user = { name: "Guest", isDefault: true }
+endif
+
+// This next line can now execute without failing, because 'user' was repaired.
+@data.username = user.name
+```
+
+**Example: Retrying a Failed Operation**
+```javascript
+var retries = 0
+var user
+var success = false
+
+// Try to fetch the user up to 3 times
+while retries < 3 and not success
+  user = fetchUser(123) // This operation might fail transiently
+  if user is not error
+    success = true
+  else
+    retries = retries + 1
+  endif
+endwhile
+
+// After the loop, check if the operation was ever successful
+if user is error
+  // All retries failed, assign a default value
+  @data.log = "Fetching user failed after 3 retries."
+  user = { name: "Guest", isDefault: true }
+endif
+
+@data.username = user.name
+```
+
+### Repairing Sequential Paths with `!!`
+
+When a sequential path becomes poisoned, all subsequent operations on that path immediately return errors without executing. The `!!` operator provides two ways to recover:
+
+**Repair the Path:**
+Use `!!` alone to clear the poison state, allowing subsequent operations to execute normally.
+
+```javascript
+context.db!.insert(data)  // ❌ Fails and poisons the path
+
+context.db!!  // ✅ Repairs the path
+
+context.db!.insert(otherData)  // ✅ Now executes
+```
+
+**Repair and Execute:**
+Use `!!` before a method call to repair the path and then execute the method, even if the path was poisoned.
+
+```javascript
+context.db!.beginTransaction()
+context.db!.insert(userData)      // ❌ Fails, poisons path
+context.db!.insert(profileData)   // ❌ Skipped due to poison
+
+// ✅ Repairs path and executes rollback
+context.db!!.rollback()
+```
+
+This is particularly useful for cleanup operations that must run regardless of whether previous operations failed:
+
+```javascript
+var file = context.fileSystem!.open(path)
+
+context.fileSystem!.writeHeader(metadata)
+var writeResult = context.fileSystem!.writeData(data)  // ❌ Might fail
+
+// ✅ Always close the file, even if writes failed
+context.fileSystem!!.close()
+```
+
+**Checking Path State:**
+You can check if a sequential path is poisoned using the `is error` test:
+
+```javascript
+context.api!.sendRequest(data)  // ❌ Might fail
+
+if context.api! is error
+  @data.error = context.api!#message  // Peek at the error
+  context.api!!  // Repair the path
+endif
+```
+
+### Protecting State with `guard`
+
+The `guard` block provides transaction-like safety for your script's logic. It takes a "snapshot" of your script's state—variables, output handlers, and execution locks—before running a block of code. If the code within the block results in unhandled **poisoning** (an active Error Value), Cascada rolls back all internal state changes and optionally passes control to a `recover` block.
+
+This mechanism allows you to attempt complex, interdependent operations without worrying about leaving your data or variables in a corrupted or half-modified state.
+
+**Syntax:**
+
+```javascript
+guard
+  // Attempt risky operations here
+  // Modifications to variables, outputs, and locks are tracked
+recover(error)
+  // Optional: Runs if the guard block is poisoned.
+  // 'error' contains the compound PoisonError.
+  // State is already rolled back to the start of the guard.
+endguard
+```
+
+#### Automatic Rollback
+If the `guard` block results in an error:
+
+1.  **Variables:** Any variables modified or declared inside the block are reverted to their values at the start of the `guard`.
+2.  **Output Handlers:** Any data written to handlers (like `@data` or `@text`) inside the block is discarded.
+3.  **Sequence Locks:** If a sequential path (e.g., `db!`) was poisoned, the lock is "repaired" (unpoisoned), allowing you to use that path again immediately in the `recover` block.
+
+**Important:** The rollback is only triggered by **unhandled** errors that poison the block. If you detect an error using `is error` and repair it (e.g., by assigning a fallback value) within the block, the `guard` considers the execution successful and commits the changes.
+
+**Example: Protecting Data Integrity**
+
+```javascript
+var user = { name: "Guest", attempts: 0 }
+
+guard
+  // 1. Modify local state
+  user.attempts = user.attempts + 1
+  user.name = "Pending..."
+
+  // 2. Write to output
+  @text("Attempting login...")
+
+  // 3. Risky operation
+  var profile = fetchProfile(id) // ❌ Fails
+
+  // If we don't handle 'profile', the block becomes poisoned.
+  user.name = profile.name
+recover(err)
+  // STATE RESTORED:
+  // 'user.name' is back to "Guest"
+  // 'user.attempts' is back to 0
+  // The "Attempting login..." text is removed from output
+
+  @text("Login failed: " + err#message)
+endguard
+```
+
+#### Handling External Side Effects
+While `guard` can roll back the *internal* state of your script variables, it cannot undo external side effects that already happened (like an API call that was sent). However, because `guard` automatically repairs sequential execution locks (`!`), you can easily trigger compensatory actions (like a database rollback) in the `recover` block.
+
+```javascript
+// Start a transaction
+context.db!.beginTransaction()
+
+guard
+  // If this fails, the 'db!' sequence becomes poisoned
+  context.db!.insert(riskyData)
+recover(err)
+  // The 'db!' lock is automatically repaired here,
+  // allowing us to run the rollback command safely.
+  context.db!.rollback()
+
+  @data.error = "Transaction cancelled"
+endguard
+```
+
+#### The `recover` Block
+The `recover` clause is optional. It accepts a single argument (e.g., `recover(err)`), which is a `PoisonError` containing all errors that contributed to the failure.
+
+*   **With `recover`**: You can handle the error, log it, or set fallback values.
+*   **Without `recover`**: The `guard` block acts as a silent safety net. If an unhandled error occurs, the state rolls back, the error is swallowed, and execution continues immediately after the `endguard` statement.
+
+```javascript
+// Silent failure pattern
+guard
+  @data.widgets = fetchWidgets() // If this fails...
+endguard
+
+// ...execution continues here with @data.widgets untouched (undefined)
+```
+
+### Manually Recovering Output Handlers with `_revert()`
+
+While `guard` provides automatic protection for a block of code, you may sometimes need manual control to "fix" an output handler that has become poisoned within the current flow. Unlike variables (which can be reassigned) or sequential locks (which can be repaired with `!!`), output handlers accumulate changes, so they require a specific reset mechanism.
+
+Calling `@handler._revert()` resets that handler to the state it was in at the beginning of the **current output scope**. This discards all writes (successful or failed) made within that scope and removes the poison status.
+
+**Output Scopes**
+The "checkpoint" that `_revert()` restores to is the start of the nearest enclosing:
+1.  `guard` block
+2.  `capture` block
+3.  `macro` definition
+4.  The Script root (if none of the above apply)
+
+**Usage**
+*   **Supported Handlers:** Works on `@data`, `@text`, and any custom handlers.
+*   **Root Only:** You must call this on the handler itself (e.g., `@data._revert()`), not on a specific path.
+
+**Example: Resetting `@data` on failure**
+
+```javascript
+// 1. Write some initial data
+@data.timestamp = now()
+
+// 2. This operation fails and poisons the @data handler
+@data.content = fetchContent()
+
+// 3. Check if the handler is poisoned
+if @data is error
+  // 4. Revert @data to the start of the script/scope
+  // This removes 'timestamp' AND the error from 'fetchContent'
+  @data._revert()
+
+  // 5. Write a clean fallback response
+  @data.error = "Content unavailable"
+endif
+```
+
+**Example: Resetting `@text` inside a `capture` block**
+
+```javascript
+var message = capture :text
+  @text("Starting operation...")
+  var result = riskyOperation()
+
+  if result is error
+     // Reverts only to the start of this capture block
+     @text._revert()
+     @text("Operation failed.")
+  else
+     @text(" Success!")
+  endif
+endcapture
+```
+
+### Peeking Inside Errors with `#`
+
+Because of error propagation, a standard property access like `myError.message` would just return `myError` again. To inspect the properties of an Error Value itself, use the special **`#` (peek) operator**. This operator "reaches through" the error to access its internal properties without triggering propagation.
+
+```javascript
+var failedUser = fetchUser(999)
+
+if failedUser is error
+  // Use '#' to access properties of the Error Value
+  @text("Operation failed!")
+  @text("Origin: " + failedUser#source.origin)
+  @text("Message: " + failedUser#message)
+endif
+```
+
+**Important**: Peeking at a non-poisoned path or handler returns a poison value. Always check with `is error` before peeking:
+
+```javascript
+context.db!.insert(data)  // ✅ Succeeds
+
+// ❌ WRONG: Peeking at non-poisoned path returns poison
+var msg = context.db!#message
+
+// ✅ CORRECT: Check first, then peek
+if context.db! is error
+  var msg = context.db!#message  // Safe
+endif
+```
+
+The same applies to output handlers:
+
+```javascript
+@data.value = 42  // ✅ Success
+
+// ❌ WRONG: Returns poison
+var msg = @data#message
+
+// ✅ CORRECT: Check first
+if @data is error
+  var msg = @data#message
+endif
+```
+
+### Anatomy of an Error Value
+
+An Error Value is a rich object designed for easy debugging, containing detailed information about what went wrong and where. You can read it by using the peek operator (`#`).
+
+*   **`errors`**: (array) A list of one or more underlying error objects that contributed to this failure. Each object provides detailed context about a specific failure:
+    *   **`message`**: (string) The specific error message for this particular failure.
+    *   **`name`**: (string) A custom name for business-logic errors (e.g., `'ValidationError'`, `'NotFoundError'`).
+    *   **`lineno`**: (number) The line number in the source file where the error occurred.
+    *   **`colno`**: (number) The column number on the line where the error occurred.
+    *   **`path`**: (string) The name of the script or template file where the error originated.
+    *   **`operation`**: (string) A technical description of the internal operation the engine was performing when the error occurred. Examples include `FunCall` (function call), `LookupVal` (property access like `user.name`), `Add` (a `+` operation), or `Output(FunCall)` (an error while rendering the output of a function call).
+    *   **`cause`**: (object | null) If the error originated from the JavaScript environment (e.g., from a native function or an external library), this property holds the original JavaScript `Error` object, providing access to the original stack trace and error details.
+*   **`message`**: (string) A summary message that combines the messages from all the individual errors contained in the `errors` array.
+
+### Handling Multiple Concurrent Errors
+
+When multiple operations fail concurrently, their errors are collected into a single `PoisonError` that holds all the original, individual errors. This ensures that no error is lost and you get a complete picture of all failures.
+
+**Example: Multiple Concurrent Failures**
+
+```javascript
+// Three parallel operations that all fail
+var user = fetchUser(999)        // ❌ fails: "User not found"
+var profile = fetchProfile(999)  // ❌ fails: "Profile service unavailable"
+var settings = fetchSettings(999) // ❌ fails: "Settings database timeout"
+
+// Using all three creates a PoisonError containing all failures
+var summary = user.name + " - " + profile.bio + " - " + settings.theme
+
+if summary is error
+  // summary#errors is an array with all three original errors
+  @data.errorCount = summary#errors | length  // 3
+
+  // Iterate through all the failures
+  for err in summary#errors
+    @data.errorLog.push({
+      message: err#message,
+      source: err#source.origin
+    })
+  endfor
+
+  summary = "User data unavailable"
+endif
+
+@data.userSummary = summary
+```
+
+This aggregation is particularly valuable in error reporting and debugging, as you can see all failures that occurred in a parallel batch rather than just the first one encountered.
+
+
+### Error Handling with Sequential Operations
+
+When using [sequential execution paths](#sequential-execution-control-) marked with `!`, error handling follows the same principles described above but respects the sequential guarantee.
+
+```javascript
+var db = context.db
+
+db!.beginTransaction()
+
+// These operations run sequentially
+var insertResult = db!.insert("users", userData)
+var updateResult = db!.update("profiles", profileData)
+
+// Check if any operation failed
+if db! is error
+  // Path is poisoned, cleanup
+  db!!.rollback()
+
+  @data.status = "transaction_failed"
+  @data.error = db!#message
+else
+  db!.commit()
+  @data.status = "success"
+endif
+```
+
+The key difference is that in a sequential chain, if any operation fails, all subsequent operations on that path are immediately skipped and return errors, maintaining the sequential guarantee even in failure scenarios.
+
+### How Scripts Fail: From Error Values to Rejected Promises
+
+An important distinction in Cascada's error model: **an error is treated as data *within* the script**. A script only fails and rejects its render promise when an unhandled Error Value reaches and "poisons" a final output handler (like `@data` or `@text`).
+
+**Internal Error Handling:**
+If you handle all errors internally using `is error` tests and repair them by assigning normal values, the script completes successfully even though errors occurred during execution:
+
+```javascript
+var user = fetchUser(999)  // ❌ Returns an error
+
+if user is error
+  user = { name: "Guest" }  // ✅ Repaired - no longer an error
+endif
+
+@data.username = user.name  // ✅ Script succeeds, outputs: { username: "Guest" }
+```
+
+**Script Failure:**
+When an Error Value reaches an output command without being handled, the promise rejects with an Error Value, see the [Anatomy of an Error Value](#anatomy-of-an-error-value) section:
+
+```javascript
+var user = fetchUser(999)  // ❌ Returns an error
+@data.user = user  // ❌ Unhandled error reaches output - script fails
+```
+
+In your JavaScript/TypeScript code, you can catch and inspect this detailed error:
+
+```javascript
+try {
+  const result = await env.renderScript('getUserData.casc', { userId: 999 });
+} catch (err) {
+  // err is a PoisonError with rich diagnostic information
+  console.log(err.message);  // Summary of all failures
+
+  // Inspect individual errors for detailed diagnostics
+  err.errors.forEach(error => {
+    console.log(`Error at ${error.path}:${error.lineno}:${error.colno}`);
+    console.log(`Operation: ${error.operation}`);
+    console.log(`Message: ${error.message}`);
+    if (error.cause) {
+      console.log('Original JS error:', error.cause);
+    }
+  });
+}
+```
+
+This boundary between internal error handling (Error Values as data) and external error reporting (rejected promises) gives you precise control over when failures should propagate to your application code versus being handled gracefully within the script.
 
 ## Macros and Reusability
 
