@@ -1,9 +1,27 @@
 # Cascada Script Documentation
 
-Cascada Script isn't a language you'd use to build an application. It's a specialized scripting layer your **TypeScript** or **JavaScript** code can invoke whenever you need to orchestrate and run many interdependent async tasks in parallel without the usual boilerplate. Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable.
+## Cascada Script — Implicitly Parallel, Explicitly Sequential
 
-## Write synchronous-style scripts that execute concurrently under the hood.
-The core philosophy of Cascada is to let you write asynchronous code with the clarity of synchronous logic. You write your script as a straightforward, top-to-bottom set of instructions, and Cascada's engine handles the complex concurrent execution for you.
+**Cascada Script** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
+
+It uses syntax and language constructs that are instantly familiar to Python and JavaScript developers, alongside powerful constructs such as parallel loops, structured output handlers, reusable macros, and transactional guards.
+
+Cascada inverts the traditional async model:
+
+* ⚡ **Parallel by default** — Independent operations execute concurrently without `async`, `await`, or promise management.
+* 🚦 **Data-driven execution** — Code runs automatically when its input data becomes available, eliminating race conditions by design.
+* ➡️ **Explicit sequencing only when needed** — A simple marker (`!`) is used to enforce strict ordering for side-effectful operations, without reducing overall parallelism.
+* 📋 **Deterministic results** — Even though execution is concurrent, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
+* ☣️ **Errors are data** — Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated parallel work to continue safely.
+
+Cascada Script is particularly well suited for:
+
+* AI and LLM orchestration
+* Data pipelines and ETL workflows
+* Agent systems and planning patterns
+* High-throughput I/O coordination
+
+In short, Cascada lets developers **write clear, linear logic** while the engine handles **parallel execution, ordering guarantees, and error propagation** automatically.
 
 ## Read First
 
@@ -19,10 +37,11 @@ The core philosophy of Cascada is to let you write asynchronous code with the cl
 ## Table of Contents
 - [Quick Start](#quick-start)
 - [Cascada's Execution Model](#cascadas-execution-model)
-- [Error Handling](#error-handling)
 - [Language Fundamentals](#language-fundamentals)
+  - [Core Syntax and Expressions](#core-syntax-and-expressions)
 - [Control Flow](#control-flow)
 - [Building Outputs Declaratively](#building-outputs-declaratively)
+- [Error Handling](#error-handling)
 - [Macros and Reusability](#macros-and-reusability)
 - [Imports and Modules](#imports-and-modules)
 - [Extending Cascada](#extending-cascada)
