@@ -2297,9 +2297,186 @@ const env = new AsyncEnvironment([
     | Method | Description | Required? |
     |---|---|:---:|
     | `load(name)` | The core method. Loads an asset by name and returns its content (as a string or `LoaderSource` object), or `null` if not found. Can be async. | **Yes** |
-    | `isRelative(name)`
+    | `isRelative(name)` | Returns `true` if a filename is relative (e.g., `./component.script`). Used for `include`, `import`, and `extends`. | No |
+    | `resolve(from, to)`| Resolves a relative path (`to`) based on the path of a parent script (`from`). | No |
+    | `on(event, handler)` | Listens for environment events (`'load'`, `'update'`). Useful for advanced caching strategies. | No |
+
+    Here is an example of a class-based loader that supports relative paths:
+    ```javascript
+    // A custom loader that fetches scripts from a database and handles relative paths
+    class DatabaseLoader {
+      constructor(db) { this.db = db; }
+
+      // The required 'load' method can be synchronous or asynchronous
+      async load(name) {
+        const scriptRecord = await this.db.scripts.findByName(name);
+        if (!scriptRecord) return null;
+        // Return a LoaderSource object with the content and path
+        return { src: scriptRecord.sourceCode, path: name, noCache: false };
+      }
+
+      // Optional method to identify relative paths
+      isRelative(filename) {
+        return filename.startsWith('./') || filename.startsWith('../');
+      }
+
+      // Optional method to resolve relative paths
+      resolve(from, to) {
+        // This is a simplified example; a real implementation would use a
+        // library like 'path' or a URL resolver.
+        const fromDir = from.substring(0, from.lastIndexOf('/'));
+        return `${fromDir}/${to}`;
+      }
+    }
+
+    const env = new AsyncEnvironment(new DatabaseLoader(myDbConnection));
+    ```
+
+    **4. Running Loaders Concurrently**
+
+The **`raceLoaders(loaders)`** function creates a single, optimized loader that runs multiple loaders concurrently and returns the result from the first one that succeeds. This is ideal for scenarios where you want to implement fallback mechanisms (e.g., try a CDN, then a local cache) or simply load from the fastest available source without waiting for slower ones.
+
+    ```javascript
+    const { raceLoaders, FileSystemLoader, WebLoader } = require('cascada-engine');
+
+    // This loader will try to fetch from the web first, but if that is slow
+    // or fails, it will fall back to the filesystem loader.
+    const fastLoader = raceLoaders([
+      new WebLoader('https://my-cdn.com/scripts/'),
+      new FileSystemLoader('scripts/backup/')
+    ]);
+
+    const env = new AsyncEnvironment(fastLoader);
+    ```
+
+#### Compilation and Caching
+
+For better performance, the environment can compile and cache assets.
+
+*   `asyncEnvironment.getScript(scriptName)`
+    Retrieves a compiled `AsyncScript` object for the given `scriptName`, loading it via the configured loader if it's not already in the cache. Returns a `Promise` that resolves with the `AsyncScript` instance.
+
+*   `asyncEnvironment.getTemplate(templateName)`
+    Retrieves a compiled `AsyncTemplate` object. Works similarly to `getScript`.
+
+    ```javascript
+    // Get a compiled script once
+    const compiledScript = await env.getScript('process_data.casc');
+
+    // Render it multiple times with different contexts
+    const result1 = await compiledScript.render({ input: 'data1' });
+    const result2 = await compiledScript.render({ input: 'data2' });
+    ```
+
+#### Extending the Engine
+
+You can add custom, reusable logic to any environment.
+
+*   `asyncEnvironment.addGlobal(name, value)`
+    Adds a global variable or function that is accessible in all scripts and templates.
+
+    ```javascript
+    env.addGlobal('utils', {
+      formatDate: (d) => d.toISOString(),
+      API_VERSION: 'v3'
+    });
+    // In script: var formatted = utils.formatDate(now())
+    ```
+
+*   `asyncEnvironment.addFilter(name, func, [isAsync])`
+    Adds a custom filter that can be used in both scripts and templates with the `|` operator.
+
+*   `asyncEnvironment.addDataMethods(methods)`
+    Extends the built-in `@data` handler with your own methods.
+
+    ```javascript
+    env.addDataMethods({
+      // Called via @data.path.incrementBy(10)
+      incrementBy: (target, amount) => (target || 0) + amount,
+    });
+    ```
+
+*   `asyncEnvironment.addCommandHandlerClass(name, handlerClass)`
+    Registers a **factory** for a custom output command handler. A new instance of `handlerClass` is created for each script run.
+
+*   `asyncEnvironment.addCommandHandler(name, handlerInstance)`
+    Registers a **singleton** instance of a custom output command handler. The same object is used across all script runs.
+
+### Compiled Objects: `AsyncScript`
+
+When you compile an asset, you get a reusable object that can be rendered efficiently multiple times.
+
+#### `AsyncScript`
+
+Represents a compiled Cascada Script.
+
+*   `asyncScript.render([context])`
+    Executes the compiled script with the given `context`, returning a `Promise` that resolves with the result (typically a data object).
+
+#### `AsyncTemplate`
+
+Represents a compiled Nunjucks Template.
+
+*   `asyncTemplate.render([context])`
+    Renders the compiled template, returning a `Promise` that resolves with the final string.
+
+### Precompiling for Production
+
+For maximum performance, you should precompile your scripts and templates into JavaScript ahead of time. This eliminates all parsing and compilation overhead at runtime, allowing your application to load assets instantly.
+
+Cascada provides functions to precompile files or strings directly to JavaScript:
+
+*   `precompileScript(path, [opts])`
+*   `precompileTemplate(path, [opts])`
+
+The resulting JavaScript string can be saved to a `.js` file and loaded in your application using the `PrecompiledLoader`. A key option is `opts.env`, which ensures that any custom filters, global functions, or command handlers you've added are correctly included in the compiled output.
+
+**For a comprehensive guide on all precompilation options and advanced usage, please refer to the [Nunjucks precompiling documentation](https://mozilla.github.io/nunjucks/api.html#precompiling).**
 
 ## Development Status and Roadmap
+
+Cascada is a new project and is evolving quickly! This is exciting, but it also means things are in flux. You might run into bugs, and the documentation might not always align perfectly with the released code. It could be behind, have gaps, or even describe features that are planned but not yet implemented  (these are marked as under development). I am working hard to improve everything and welcome your contributions and feedback.
+
+This roadmap outlines key features and enhancements that are planned or currently in progress.
+
+
+-   **Resilient Error Handling: An Error is Just Data**
+    Tne error-handling construct designed for asynchronous workflows. This will allow for conditional retries and graceful failure management.
+
+-   **Declaring Cross-Script Dependencies for (`import`, `include`, `extends`)**
+    Support declaring variable dependencies wtih the `extern`, `reads`, and `modifies` keywords.
+
+-   **Reading from the `@data` Object**
+    Enabling the ability to read from the `@data` object on the right side of `@data` expressions (e.g., `@data.user.name = @data.form.firstName + ' ' + @data.form.lastName`). This will allow for more powerfull data composition.
+
+-   **Expanded Sequential Execution (`!`) Support**
+    Enhancing the `!` marker to work on variables and not just objects from the global context. This is especially important for macro arguments as macros don't have access to the context object.
+
+-   **Direct Property Assignment on Variables**
+    Adding support for direct property modification on variables (e.g., `myObject.property = "new value"`). This is currently possible only for `@data` assignments
+
+-   **Compound Assignment for Variables (`+=`, `-=`, etc.)**
+    Extending support for compound assignment operators (`+=`, `*=`, etc.) to regular variables (this is currently supported only for `@data` assignments). Like their `@data` counterparts, the default behavior of each operator will be overridable with custom methods.
+
+-   **Root-Level Sequential Operator**
+    Allowing the sequential execution operator `!` to be used directly on root-level function calls (e.g., `!.saveToDatabase(data)`), simplifying syntax for global functions with side effects.
+
+-   **Expanded Built-in `@data` Methods**
+    Adding comprehensive support for standard JavaScript array and string methods (e.g., `map`, `filter`, `slice`, `replace`) as first-class operations within the `@data` handler.
+
+-   **Enhanced Error Reporting**
+    Improving the debugging experience by providing detailed syntax and runtime error messages that include code snippets, file names, and line/column numbers to pinpoint issues quickly.
+
+-   **Automated Dependency Declaration Tool**
+    A command-line tool that analyzes modular scripts (import, include, extends) to infer cross-file variable dependencies. This tool will automatically add the required extern, reads, and modifies declarations to your script files.
+
+-   **Execution Replay and Debugging**
+    Creating an advanced logging system, via a dedicated output handler, to capture the entire execution trace. This will allow developers to replay and inspect the sequence of operations and variable states for complex debugging.
+
+-   **OpenTelemetry and MLflow Integration for Observability**
+    Implementing native support for tracing using the OpenTelemetry standard. This will capture the inputs and outputs of scripts and templates, as well as the arguments and return values of individual function calls. This integration is designed for high-level observability, enabling developers to monitor data flow, analyze performance, and track costs (e.g., token usage in LLM calls) with platforms like MLflow's tracing system. It focuses on key I/O points rather than a complete execution trace.
+
+-   **Robustness and Concurrency Validation**
 
 ## Differences from classic Nunjucks
 
