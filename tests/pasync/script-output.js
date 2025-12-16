@@ -2710,7 +2710,7 @@ describe('Cascada Script: Output commands', function () {
       const result = await env.renderScriptString(script);
 
       // Check text output
-      const textOut = (typeof result === 'string') ? result : (result.text || "");
+      const textOut = (typeof result === 'string') ? result : (result.text || '');
 
       // "Call-Data: " should be followed by empty string because dataProducer :data filter suppresses text
       // and our fix ensures it doesn't print [object Object].
@@ -2903,7 +2903,7 @@ describe('Cascada Script: Output commands', function () {
       `;
       const context = {
         customObj: {
-          toString: function () { return "Custom String"; }
+          toString: function () { return 'Custom String'; }
         }
       };
       const result = await env.renderScriptString(script, context);
@@ -2919,7 +2919,7 @@ describe('Cascada Script: Output commands', function () {
       `;
       const context = {
         asyncObj: async () => {
-          return { key: "async val" };
+          return { key: 'async val' };
         }
       };
       const result = await env.renderScriptString(script, context);
