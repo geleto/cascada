@@ -16,11 +16,6 @@ The core philosophy of Cascada is to let you write asynchronous code with the cl
 **Learning by Example:**
 - [Casai Examples Repository](https://github.com/geleto/casai-examples) - Explore practical examples showing how Cascada and Casai (an AI orchestration framework built on Cascada) turn complex agentic workflows into readable, linear code - no visual node graphs or async spaghetti, just clear logic that tells a story (work in progress)
 
-## Overview
-
-### 💡 Clean, Expressive Syntax
-Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `macros` that support keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
-
 ## Table of Contents
 - [Quick Start](#quick-start)
 - [Cascada's Execution Model](#cascadas-execution-model)
@@ -28,8 +23,8 @@ Cascada Script offers a modern, expressive syntax designed to be instantly famil
 - [Language Fundamentals](#language-fundamentals)
 - [Control Flow](#control-flow)
 - [Building Outputs Declaratively](#building-outputs-declaratively)
-- [Reuse and Composition](#reuse-and-composition)
-- [Code Organization](#code-organization)
+- [Macros and Reusability](#macros-and-reusability)
+- [Imports and Modules](#imports-and-modules)
 - [Extending Cascada](#extending-cascada)
 - [API Reference](#api-reference)
 - [Development Status and Roadmap](#development-status-and-roadmap)
@@ -87,6 +82,9 @@ While independent operations run in parallel and may start and complete in any o
 
 ### ☣️ Dataflow Poisoning - Errors that flow like data
 Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. You can detect and repair these errors,  using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
+
+### 💡 Clean, Expressive Syntax
+Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `macros` that support keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
 
 ## Error Handling
 
@@ -1364,7 +1362,7 @@ It is crucial to understand the difference between these two features, as they s
 
 For details on the `!` operator, see [Sequential Execution Control](#sequential-execution-control-).
 
-## Reuse and Composition
+## Macros and Reusability
 
 This section covers how to create reusable components and organize complex scripts into maintainable modules.
 
@@ -1720,7 +1718,7 @@ endfor
 @text(output) // "rock, pop, jazz"
 ```
 
-## Code Organization
+## Imports and Modules
 
 As scripts grow in complexity, organizing them into multiple files becomes essential. This section explains how to structure larger projects with imports, includes, and inheritance.
 
