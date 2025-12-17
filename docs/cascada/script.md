@@ -82,27 +82,29 @@ The syntax is familiar, but the execution is fundamentally different. To underst
 
 Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts—it explains why the language behaves the way it does and how to leverage its parallel capabilities.
 
-### ⚡ Parallel by default
+⚡ Parallel by default
 Cascada Script is a scripting language for **JavaScript** and **TypeScript** applications, purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
 
-### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
+🚦 Data-Driven Flow: Code runs when its inputs are ready.
 In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, guaranteeing that **operations will wait for their required inputs** before executing. This orchestration **eliminates the possibility of race conditions** by design, ensuring correct execution order while maximizing performance for I/O-bound workflows.
 
-### ✨ Implicit Concurrency: Write Business Logic, Not Async Plumbing.
+✨ Implicit Concurrency: Write Business Logic, Not Async Plumbing.
 Forget await. Forget .then(). Forget manually tracking which variables are promises and which are not. Cascada fundamentally changes how you interact with asynchronous operations by making them invisible.
 This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
 
-### ➡️ Implicitly Parallel, Explicitly Sequential
+➡️ Implicitly Parallel, Explicitly Sequential
 While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations, without affecting the parallelism of the rest of the script.**.
 
-### 📋 Execution is chaotic, but the result is orderly
+📋 Execution is chaotic, but the result is orderly
 While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
 
-### ☣️ Dataflow Poisoning - Errors that flow like data
+☣️ Dataflow Poisoning - Errors that flow like data
 Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. You can detect and repair these errors,  using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
 
-### 💡 Clean, Expressive Syntax
+💡 Clean, Expressive Syntax
 Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `macros` that support keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
+
+
 ## Language Fundamentals
 
 This section covers the syntax and fundamental constructs for writing scripts. While the syntax is familiar to JavaScript developers, its semantics differ due to the parallel-by-default execution model described above.
@@ -523,17 +525,13 @@ performWork(myDb)
 The engine uses object identity from the context to guarantee sequential ordering. Copying to local variables breaks this guarantee, which is why the restriction exists.
 
 
-## Building Outputs Declaratively
-
-This section introduces Cascada's output system—how you declare what result your script should produce. As explained in [Cascada's Execution Model](#cascadas-execution-model), the execution of your logic is separate from the assembly of your final output, allowing maximum parallelism while ensuring deterministic results.
-
-### **The Handler System: Using @ Output Commands**
+## Building Outputs Declaratively with `@`
 
 Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct a **result object** that is returned by any executable scope, such as an entire **script**, a **[macro](#macros-and-reusable-components)**, or a **[`capture` block](#block-assignment-with-capture)**.
 
 All output operations use a standard function-call syntax, such as `@handler.method(...)`. This approach separates the *definition* of your final output from the *execution* of your asynchronous logic, allowing Cascada to run independent operations in parallel while ensuring your data is assembled correctly and in a predictable order.
 
-#### A Simple Example
+### A Simple Example
 
 Before diving into the theory, let's look at how a few commands work together to build a JSON object.
 
@@ -591,7 +589,7 @@ var userSettings = { notifications: true, theme: "light" }
 </tr>
 </table>
 
-#### The Core Concept: Collect, Execute, Assemble
+### The Core Concept: Collect, Execute, Assemble
 
 Instead of being executed immediately, `@` commands are stored in order and applied at the end of each **execution scope** (the main script, a [macro](#macros-and-reusable-components),or a [`capture` block](#block-assignment-with-capture)):
 
@@ -644,7 +642,7 @@ endfor
 </tr>
 </table>
 
-#### Output Handlers: `@data`, `@text`, and Custom Logic
+### Output Handlers: `@data`, `@text`, and Custom Logic
 
 Every `@` command is directed to an **output handler**. The handler determines what action is performed. Cascada provides two built-in handlers and allows you to [define your own for custom logic](#creating-custom-output-command-handlers).
 
@@ -656,7 +654,7 @@ As described in [Error Handling](#error-handling), when an error is written to a
 
 Handler methods are executed synchronously during the "Assemble" step. For asynchronous tasks, your handler can use internal buffering or other state management techniques to collect commands and dispatch them asynchronously.
 
-#### Understanding the Result Object
+### Understanding the Result Object
 
 Any block of logic—the entire script, a macro, or a `capture` block—produces a result object. The keys of this object correspond to the **names of the output handlers** used within that scope. After the "Assemble" phase, the engine populates this object using values from each handler.
 
@@ -669,7 +667,7 @@ For example, a scope that uses the `data`, `text`, and a [custom `turtle` handle
 }
 ```
 
-#### Focusing the Output (`:data`, `:text`, `:handlerName`)
+### Focusing the Output (`:data`, `:text`, `:handlerName`)
 
 Often, you only need one piece of the result. You can **focus the output** using a colon (`:`) followed by the name of the desired handler (`data`, `text`, or a custom handler name). This **output focus directive** changes the return value of its scope from the full result object to just the single property you specified.
 
@@ -733,9 +731,9 @@ Often, you only need one piece of the result. You can **focus the output** using
 </tr>
 </table>
 
-#### Built-in Output Handlers
+### Built-in Output Handlers
 
-##### The `@data` Handler: Building Structured Data
+#### The `@data` Handler: Building Structured Data
 The `@data` handler is the primary tool for constructing your script's `data` object. It provides a declarative, easy-to-read syntax for building complex data structures. All `@data` commands are collected during the script's execution and then applied in order to assemble the final data object.
 
 Here's a simple example of how it works:
@@ -797,7 +795,7 @@ Of course. Here is a more concise version:
 ```
 This functionality will be implemented in a future release.
 
-###### `@data` Operations
+##### `@data` Operations
 Below is a detailed list of all available commands and operators.
 
 **Assignment and Deletion**
@@ -877,13 +875,13 @@ These operators are shortcuts for common logical and bitwise operations.
 | `@data.path.not()` | Replaces the target with its logical NOT (`!target`). |
 | `@data.path.bitNot()`| Replaces the target number with its bitwise NOT (`~target`). |
 
-###### Handling `undefined` and `null` Targets
+##### Handling `undefined` and `null` Targets
 The `@data` handler is designed to be robust but also safe. Its behavior with non-existent (`undefined`) or `null` targets depends on the type of operation:
 
 *   **Structure-building methods** (like `.push()`, `.merge()`, `.append()`) will gracefully handle an `undefined` target. For example, if you call `.push()` on a path that doesn't exist, Cascada will automatically create an empty array before pushing the new element.
 *   **Arithmetic and Logical operators** (`+=`, `--`, `&&=`, etc.) are stricter. To prevent silent errors and unexpected results (like `null + 1` evaluating to `1`), these operators will throw a runtime error if the target path is `undefined` or `null`. You must explicitly initialize a value (e.g., `@data.counter = 0`) before you can increment or add to it.
 
-##### The `@text` Command: Generating Text
+#### The `@text` Command: Generating Text
 The `@text(value)` command is a convenient shorthand for the `{{ value }}` output syntax found in the Cascada templating engine. It appends its `value` to a simple text stream, which populates the `text` property of the result object. This stream is completely separate from the `data` object.
 
 ```javascript
@@ -927,7 +925,7 @@ Paths in `@data` commands are highly flexible.
     @data.users[].permissions.push("read") // Affects "Charlie"
     ```
 
-#### Important Distinction: `@` Commands vs. `!` Sequential Execution
+### Important Distinction: `@` Commands vs. `!` Sequential Execution
 
 It is crucial to understand the difference between these two features, as they solve different problems.
 
@@ -1525,10 +1523,6 @@ try {
 
 This boundary between internal error handling (Error Values as data) and external error reporting (rejected promises) gives you precise control over when failures should propagate to your application code versus being handled gracefully within the script.
 
-## Macros and Reusability
-
-This section covers how to create reusable components and organize complex scripts into maintainable modules.
-
 ## Macros and Reusable Components
 
 Macros allow you to define reusable chunks of logic that build and return structured data objects. They operate in a completely isolated scope and are the primary way to create modular, reusable components in Cascada Script.
@@ -1768,11 +1762,6 @@ endcall
 - Implement conditional rendering based on the caller's logic
 - Process or transform a block of logic before including it in output
 - Any scenario where a macro needs to control *when* and *how* some logic executes
-
-
-## Imports and Modules
-
-As scripts grow in complexity, organizing them into multiple files becomes essential. This section explains how to structure larger projects with imports, includes, and inheritance.
 
 ## Modular Scripts
 **Note:** This functionality is under active development. Currently you can not safely access mutable fariables from a parent script.
@@ -2022,9 +2011,7 @@ endblock
 
 ## Extending Cascada
 
-#### Extending Output Commands
-
-##### Customizing the `@data` Handler
+### Customizing the `@data` Handler
 You can add your own custom methods or override existing ones for the built-in `@data` handler using `env.addDataMethods()`. This method takes an object where each key is a method name and each value is a function that defines the custom logic.
 
 This is a powerful way to create reusable, domain-specific logic. Your custom methods are defined in JavaScript and can be called from within your Cascada scripts like any built-in method.
@@ -2108,10 +2095,10 @@ env.addDataMethods({
 @data.users.upsert({ id: 1, name: "Alice", status: "active" })
 ```
 
-##### Creating Custom Output Command Handlers
+### Creating Custom Output Command Handlers
 For advanced use cases, you can define **Custom Output Command Handlers**. These are classes that receive and process `@` commands, allowing you to create powerful, domain-specific logic.
 
-###### Registering and Using Handlers
+#### Registering and Using Handlers
 You register handlers with a unique name. To use a named handler, prefix the command with the handler's name and a dot.
 
 **Example: Using a `turtle` handler.**
@@ -2125,7 +2112,7 @@ env.addCommandHandlerClass('turtle', CanvasTurtle);
 @turtle.stroke('cyan')
 ```
 
-###### Handler Implementation Patterns
+#### Handler Implementation Patterns
 Cascada supports two powerful patterns for how your handler classes are instantiated and used.
 
 **Pattern 1: The Factory (Clean Slate per Render)**
@@ -2164,7 +2151,7 @@ const logger = new CommandLogger();
 env.addCommandHandler('audit', logger);
 ```
 
-###### Contributing to the Result Object: The `getReturnValue` Method
+#### Contributing to the Result Object: The `getReturnValue` Method
 A handler can optionally implement a `getReturnValue()` method.
 *   If `getReturnValue()` **is implemented**, its return value will be used as the value for the handler's key in the final result object.
 *   If it **is not implemented**, the handler instance itself will be used.
@@ -2232,7 +2219,7 @@ env.addCommandHandlerClass('turtle', TurtleHandler);
 }
 ```
 
-#### Handler Lifecycle
+### Handler Lifecycle
 
 1. **`init()`** is called at the start of each output scope (script, macro, or capture block)
 2. Commands are buffered during execution
