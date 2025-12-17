@@ -3,9 +3,30 @@
 
 ### Think Sequentially. Execute Concurrently.
 
-The core philosophy of Cascada is to let you write asynchronous code with the clarity of synchronous logic. You write your scripts or templates as a straightforward set of instructions, and Cascada's engine handles the complex concurrent execution for you.
+**Cascada** is a data-orchestration engine for JavaScript and TypeScript applications, designed to make complex asynchronous workflows clear and low-boilerplate. It comes in two flavors sharing the same powerful execution model:
 
-That said, Cascada isn’t a language you’d use to build an application. It’s a specialized scripting layer your TypeScript or JavaScript code can invoke whenever you need to orchestrate and run many interdependent async tasks in parallel without the usual boilerplate. Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable.
+- **[Cascada Script](docs/cascada/script.md)** — A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls
+- **Cascada Template** — Template syntax with the same parallel execution capabilities for dynamic content generation
+
+Both share the same core philosophy: **write clear, linear logic while the engine handles parallel execution, ordering guarantees, and error propagation automatically.**
+
+**The problem they solve:** Traditional async/await often forces you to choose between readable sequential code OR maximum concurrency. Cascada gives you both. Independent operations run in parallel automatically, while the engine manages dependencies and assembles results deterministically.
+
+**How it works:**
+
+* ⚡ **Parallel by default** — Independent operations execute concurrently without `async`, `await`, or promise management
+* 🚦 **Data-driven execution** — Operations run automatically when their inputs are ready, eliminating race conditions by design
+* ➡️ **Sequential when needed** — Use a simple `!` marker to enforce ordering for side-effectful operations
+* 📋 **Deterministic outputs** — Concurrent execution, sequential results—final outputs assemble exactly as written
+* ☣️ **Errors as data** — Failures propagate through the dataflow without stopping unrelated work
+
+**Perfect for:**
+- AI and LLM orchestration
+- Data pipelines and ETL workflows
+- Agent systems and multi-step planning
+- High-throughput I/O coordination
+
+**In short:** Cascada is a data-orchestration layer that handles the complexity of parallel async execution while you focus on business logic—whether you're building data structures with Script or generating dynamic content with Templates.
 
 The most **up-to-date and complete information** on the features of Cascada can be found in the **[Cascada Script Documentation](docs/cascada/script.md)**!
 
@@ -75,9 +96,11 @@ Cascada replaces traditional try/catch exceptions with a data-centric error mode
     console.log(user.name); // Alice
     console.log(user.log);  // User profile created. Login successful.
 
-## Core Concepts
+## Core Concepts (Deeper Dive)
 
-At its core, Cascada offers a set of powerful features available in both its templating and scripting modes:
+At its core, Cascada offers a set of powerful features available in both its templating and scripting modes.
+The sections below go deeper into Cascada’s execution model. You don’t need to understand everything here to get started.
+
 
 <table>
 <tr>
