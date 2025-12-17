@@ -1190,7 +1190,7 @@ guard [targets...]
 recover err  // (Optional)
   // 3. Runs ONLY if the guard block remains poisoned (failed)
   // 4. Guarded state has already been restored
-  // 5. 'err' contains the error that caused recovery
+  // 5. 'err' contains the error or errors that caused recovery
 endguard
 ```
 
@@ -1204,7 +1204,7 @@ By default, a `guard` block (with no arguments) protects:
    Writes made inside the block are discarded on error using `_revert()`.
 
 2. **All Sequential Paths** (`!`)
-   If a path (such as `db!`) becomes poisoned, it is automatically repaired using `!!` so it can be used again.
+   If a path (such as `db!`) becomes poisoned, it is automatically repaired using `!!` so it can be used again, but - any side-effect calls are not undone.
 
 **Variables are NOT protected by default.**
 This is a deliberate design choice to preserve parallel execution.
@@ -1285,7 +1285,7 @@ endguard
 ```
 
 **⚠️ Performance warning**
-When variables are protected (via `guard *` or explicit variable names), their values are only released after the guard finishes. Any code that depends on them must wait, which can reduce parallelism. Use `guard *` only for small, tightly scoped operations where consistency is more important than concurrency.
+When variables are protected (via `guard *` or explicit variable names), the value of each such variable is only released after the guard finishes modifying all protected variables, outputs, and sequential paths. Any code that depends on such a variable must wait, which can reduce parallelism. Use `guard *` only for small, tightly scoped operations where consistency is more important than concurrency.
 
 ---
 
