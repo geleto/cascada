@@ -49,11 +49,13 @@
     "core-js": "^3.43.0",
     "cpy-cli": "^5.0.0",
     "cross-env": "^7.0.3",
+    "docsify-cli": "^4.4.4",
     "eslint": "^9.28.0",
     "eslint-plugin-mocha": "^11.1.0",
     "expect.js": "*",
     "express": "5.x",
     "fs-extra": "^11.3.0",
+    "gh-pages": "^6.3.0",
     "globals": "^16.2.0",
     "he": "^1.2.0",
     "istanbul-lib-coverage": "^3.2.2",
@@ -62,6 +64,7 @@
     "istanbul-reports": "^3.1.7",
     "mocha": "^11.1.0",
     "module-alias": "^2.2.3",
+    "ncp": "^2.0.0",
     "node-libs-browser": "^2.2.1",
     "nyc": "^17.1.0",
     "playwright": "^1.52.0",
@@ -107,7 +110,10 @@
     "test:browser": "cross-env NODE_ENV=test node scripts/bundle.js && node scripts/run-browser-tests.js",
     "test:pasync": "cross-env NODE_ENV=test NODE_PATH=./tests/test-node-pkgs nyc --reporter=html --reporter=text mocha --check-leaks --require @babel/register 'tests/pasync/**/*.js' 'tests/poison/**/*.js'",
     "test": "node scripts/run-all-tests.js",
-    "mocha:single": "mocha --check-leaks -R spec"
+    "mocha:single": "mocha --check-leaks -R spec",
+    "docs:build": "node scripts/docs-build.js",
+    "docs:serve": "npm run docs:build && docsify serve generated-docs/script",
+    "docs:publish": "npm run docs:build && gh-pages -d generated-docs/script -r https://github.com/geleto/cascada-script.git -b gh-pages"
   },
   "nyc": {
     "extends": "@istanbuljs/nyc-config-babel",
