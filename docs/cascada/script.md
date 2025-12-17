@@ -82,26 +82,26 @@ The syntax is familiar, but the execution is fundamentally different. To underst
 
 Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts—it explains why the language behaves the way it does and how to leverage its parallel capabilities.
 
-⚡ Parallel by default
+#### ⚡ Parallel by default
 Cascada Script is a scripting language for **JavaScript** and **TypeScript** applications, purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
 
-🚦 Data-Driven Flow: Code runs when its inputs are ready.
+#### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
 In Cascada, any independent operations - like API calls, LLM requests, and database queries - are automatically executed concurrently without requiring special constructs or even the `await` keyword. The engine intelligently analyzes your script's data dependencies, guaranteeing that **operations will wait for their required inputs** before executing. This orchestration **eliminates the possibility of race conditions** by design, ensuring correct execution order while maximizing performance for I/O-bound workflows.
 
-✨ Implicit Concurrency: Write Business Logic, Not Async Plumbing.
+#### ✨ Implicit Concurrency: Write Business Logic, Not Async Plumbing.
 Forget await. Forget .then(). Forget manually tracking which variables are promises and which are not. Cascada fundamentally changes how you interact with asynchronous operations by making them invisible.
 This "just works" approach means that while any variable can be a promise under the hood, you can pass it into functions, use it in expressions, and assign it without ever thinking about its asynchronous state.
 
-➡️ Implicitly Parallel, Explicitly Sequential
+#### ➡️ Implicitly Parallel, Explicitly Sequential
 While this "parallel-first" approach is powerful, Cascada recognizes that order is critical for operations with side-effects. For these specific cases, such as writing to a database, interacting with a stateful API or making LLM request, you can use the simple `!` marker to **enforce a strict sequential order on a specific chain of operations, without affecting the parallelism of the rest of the script.**.
 
-📋 Execution is chaotic, but the result is orderly
+#### 📋 Execution is chaotic, but the result is orderly
 While independent operations run in parallel and may start and complete in any order, Cascada guarantees the final output is identical to what you'd get from sequential execution. This means all your data manipulations are applied predictably, ensuring your final texts, arrays and objects are assembled in the exact order written in your script.
 
-☣️ Dataflow Poisoning - Errors that flow like data
+#### ☣️ Dataflow Poisoning - Errors that flow like data
 Cascada replaces traditional try/catch exceptions with a data-centric error model called **dataflow poisoning**. If an operation fails, it produces an `Error Value` that propagates to any dependent operation, variable and output - ensuring corrupted data never silently produces incorrect results. For example, if fetchPosts() fails, any variable or output using its result also becomes an error - but critically, unrelated operations continue running unaffected. You can detect and repair these errors,  using `is error` checks, providing fallbacks and logging without derailing your entire workflow.
 
-💡 Clean, Expressive Syntax
+#### 💡 Clean, Expressive Syntax
 Cascada Script offers a modern, expressive syntax designed to be instantly familiar to JavaScript and TypeScript developers. It provides a complete toolset for writing sophisticated logic, including variable declarations (`var`), `if/else` conditionals, `for/while` loops, and a full suite of standard operators. Build reusable components with `macros` that support keyword arguments, and compose complex applications by organizing your code into modular files with `import` and `extends`.
 
 
@@ -1194,7 +1194,7 @@ endguard
 
 ---
 
-### Default Protection: Outputs & Sequences
+#### Default Protection: Outputs & Sequences
 
 By default, a `guard` block (with no arguments) protects:
 
@@ -1234,7 +1234,7 @@ endguard
 
 ---
 
-### Selective Protection
+#### Selective Protection
 
 You can explicitly specify what the guard should protect.
 
@@ -1243,7 +1243,7 @@ You can explicitly specify what the guard should protect.
 guard @data, db!, status
 ```
 
-#### Selectors
+##### Selectors
 
 * **`@handlerName`** — protects a specific output handler
 * **`@`** — protects all output handlers
@@ -1273,7 +1273,7 @@ endguard
 
 ---
 
-### `guard *` (Protect Everything)
+#### `guard *` (Protect Everything)
 
 ```javascript
 guard *
@@ -1287,7 +1287,7 @@ When variables are protected (via `guard *` or explicit variable names), the val
 
 ---
 
-### The `recover` Block
+#### The `recover` Block
 
 The `recover` block is optional. If omitted, the guard silently restores protected state and execution continues after `endguard`.
 
