@@ -1,6 +1,6 @@
 # Cascada Script Documentation
 
-## Cascada Script — Implicitly Parallel, Explicitly Sequential Execution
+## Cascada Script — Implicitly Parallel, Explicitly Sequential
 
 **Cascada Script** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
 
@@ -1176,93 +1176,131 @@ endif
 
 ### Protecting State with `guard`
 
-The `guard` block provides transaction-like safety for your script's logic. It takes a "snapshot" of your script's state—variables, output handlers, and execution locks—before running a block of code. If the code within the block results in unhandled **poisoning** (an active Error Value), Cascada rolls back all internal state changes and optionally passes control to a `recover` block.
 
-This mechanism allows you to attempt complex, interdependent operations without worrying about leaving your data or variables in a corrupted or half-modified state.
+The `guard` block provides **controlled, transaction-like recovery** for your script. It allows you to attempt complex operations with the confidence that if something goes wrong, Cascada will automatically restore selected state.
 
-**Syntax:**
+You can think of `guard` like a save point: if the block finishes in an error, the specified state is restored before recovery logic runs.
+
+#### Syntax
 
 ```javascript
-guard
-  // Attempt risky operations here
-  // Modifications to variables, outputs, and locks are tracked
-recover(error)
-  // Optional: Runs if the guard block is poisoned.
-  // 'error' contains the compound PoisonError.
-  // State is already rolled back to the start of the guard.
+guard [targets...]
+  // 1. Attempt risky operations
+  // 2. Changes to guarded targets are tracked for recovery
+recover err  // (Optional)
+  // 3. Runs ONLY if the guard block remains poisoned (failed)
+  // 4. Guarded state has already been restored
+  // 5. 'err' contains the error that caused recovery
 endguard
 ```
 
-#### Automatic Rollback
-If the `guard` block results in an error:
+---
 
-1.  **Variables:** Any variables modified or declared inside the block are reverted to their values at the start of the `guard`.
-2.  **Output Handlers:** Any data written to handlers (like `@data` or `@text`) inside the block is discarded.
-3.  **Sequence Locks:** If a sequential path (e.g., `db!`) was poisoned, the lock is "repaired" (unpoisoned), allowing you to use that path again immediately in the `recover` block.
+### Default Protection: Outputs & Sequences
 
-**Important:** The rollback is only triggered by **unhandled** errors that poison the block. If you detect an error using `is error` and repair it (e.g., by assigning a fallback value) within the block, the `guard` considers the execution successful and commits the changes.
+By default, a `guard` block (with no arguments) protects:
 
-**Example: Protecting Data Integrity**
+1. **All Output Handlers** (`@data`, `@text`, etc.)
+   Writes made inside the block are discarded on error using `_revert()`.
+
+2. **All Sequential Paths** (`!`)
+   If a path (such as `db!`) becomes poisoned, it is automatically repaired using `!!` so it can be used again.
+
+**Variables are NOT protected by default.**
+This is a deliberate design choice to preserve parallel execution.
+
+##### Example: Database Transaction
 
 ```javascript
-var user = { name: "Guest", attempts: 0 }
+// db! is a sequential path from context
+db!.beginTransaction()
 
 guard
-  // 1. Modify local state
-  user.attempts = user.attempts + 1
-  user.name = "Pending..."
+  @data.status = "processing"
 
-  // 2. Write to output
-  @text("Attempting login...")
+  db!.insert(user)
+  db!.update(account) // ❌ Assume this fails
 
-  // 3. Risky operation
-  var profile = fetchProfile(id) // ❌ Fails
+  db!.commit()
+  @data.status = "success"
 
-  // If we don't handle 'profile', the block becomes poisoned.
-  user.name = profile.name
-recover(err)
+recover err
   // STATE RESTORED:
-  // 'user.name' is back to "Guest"
-  // 'user.attempts' is back to 0
-  // The "Attempting login..." text is removed from output
+  // - @data changes inside the guard are reverted
+  // - db! is repaired and safe to use
 
-  @text("Login failed: " + err#message)
+  db!.rollback()
+  @data.error = "Transaction failed: " + err#message
 endguard
 ```
 
-#### Handling External Side Effects
-While `guard` can roll back the *internal* state of your script variables, it cannot undo external side effects that already happened (like an API call that was sent). However, because `guard` automatically repairs sequential execution locks (`!`), you can easily trigger compensatory actions (like a database rollback) in the `recover` block.
+---
+
+### Selective Protection
+
+You can explicitly specify what the guard should protect.
 
 ```javascript
-// Start a transaction
-context.db!.beginTransaction()
-
-guard
-  // If this fails, the 'db!' sequence becomes poisoned
-  context.db!.insert(riskyData)
-recover(err)
-  // The 'db!' lock is automatically repaired here,
-  // allowing us to run the rollback command safely.
-  context.db!.rollback()
-
-  @data.error = "Transaction cancelled"
-endguard
+// Protects the @data handler, the db! path, and the 'status' variable
+guard @data, db!, status
 ```
 
-#### The `recover` Block
-The `recover` clause is optional. It accepts a single argument (e.g., `recover(err)`), which is a `PoisonError` containing all errors that contributed to the failure.
+#### Selectors
 
-*   **With `recover`**: You can handle the error, log it, or set fallback values.
-*   **Without `recover`**: The `guard` block acts as a silent safety net. If an unhandled error occurs, the state rolls back, the error is swallowed, and execution continues immediately after the `endguard` statement.
+* **`@handlerName`** — protects a specific output handler
+* **`@`** — protects all output handlers
+* **`path!`** — protects a specific sequential path
+* **`!`** — protects all sequential paths
+* **`variableName`** — protects a specific variable
+* **`*`** — protects everything (all outputs, paths, and variables)
+
+##### Example: Protecting a Specific Variable
 
 ```javascript
-// Silent failure pattern
-guard
-  @data.widgets = fetchWidgets() // If this fails...
-endguard
+var attempts = 0
+var lastLog = ""
 
-// ...execution continues here with @data.widgets untouched (undefined)
+guard attempts, @, !
+  attempts = attempts + 1
+  lastLog = "Trying..."  // not protected
+
+  riskyOperation() // ❌ Fails
+recover err
+  // 'attempts' is restored to 0
+  // 'lastLog' remains "Trying..."
+
+  @text("Failed after " + attempts + " attempts.")
+endguard
 ```
+
+---
+
+### `guard *` (Protect Everything)
+
+```javascript
+guard *
+  var x = calculate()
+  var y = fetch()
+endguard
+```
+
+**⚠️ Performance warning**
+When variables are protected (via `guard *` or explicit variable names), their values are only released after the guard finishes. Any code that depends on them must wait, which can reduce parallelism. Use `guard *` only for small, tightly scoped operations where consistency is more important than concurrency.
+
+---
+
+### The `recover` Block
+
+The `recover` block is optional. If omitted, the guard silently restores protected state and execution continues after `endguard`.
+
+If present, it runs only if the guard finishes poisoned:
+
+* Guarded outputs have already been reverted via `_revert()`
+* Guarded sequential paths have already been repaired via `!!`
+* Guarded variables have already been restored
+* `recover err` provides access to the final `PoisonError` via the `#` peek operator
+
+> Note: If all errors are detected and repaired inside the guard (for example using `is error`), the guard is considered successful and no recovery occurs.
 
 ### Manually Recovering Output Handlers with `_revert()`
 
@@ -2132,13 +2170,6 @@ A handler can optionally implement a `getReturnValue()` method.
 *   If it **is not implemented**, the handler instance itself will be used.
 
 This is how the built-in `@data` handler provides a clean data object in the final result, rather than the `DataHandler` instance itself.
-
-###### Supporting Scopes and Revert
-To support `guard`, `capture` and `macro` blocks, with the manual `_revert()` command, your custom handler class should implement three specific lifecycle methods. These methods allow your handler to manage "checkpoints" of its state.
-
-*   **`enterScope()`**: Called automatically by the engine when execution enters a `guard`, `capture`, or `macro`. You should save a snapshot of your current state (e.g., push to an internal stack).
-*   **`exitScope()`**: Called automatically when execution leaves a scope successfully. You can discard the last snapshot (e.g., pop from the stack) as it is no longer needed for rollback.
-*   **`_revert()`**: Called manually by the script (via `@handler._revert()`) or automatically by a `guard` recovery. You should restore your state to the last snapshot.
 
 #### Example: A Turtle Graphics Handler
 
