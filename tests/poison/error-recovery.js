@@ -1192,7 +1192,7 @@ var res4 = db!.insert('after')
         var finalStatus = db.status
       `;
 
-        const result = await env.renderScriptString(script, context);
+        await env.renderScriptString(script, context);
         expect(context.db.status).to.equal('step2');
       });
 
