@@ -426,5 +426,5 @@ module.exports = {
   isPoison,
   isPoisonError,
   collectErrors,
-  handleError,
+  handleError
 };

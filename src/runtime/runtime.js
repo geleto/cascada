@@ -155,6 +155,9 @@ module.exports = {
 
   flattenBuffer: buffer.flattenBuffer,
   addPoisonMarkersToBuffer: buffer.addPoisonMarkersToBuffer,
+  markBufferReverted: buffer.markBufferReverted,
+  bufferHasPoison: buffer.bufferHasPoison,
+
 
   memberLookup: lookup.memberLookup,
   memberLookupAsync: lookup.memberLookupAsync,

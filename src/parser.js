@@ -798,6 +798,22 @@ class Parser extends Obj {
     return new nodes.Option(tag.lineno, tag.colno, key, value);
   }
 
+  parseGuard() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('guard')) {
+      this.fail('parseGuard: expected guard', tag.lineno, tag.colno);
+    }
+
+    this.advanceAfterBlockEnd(tag.value);
+
+    // Parse the body until endguard
+    const body = this.parseUntilBlocks('endguard');
+
+    this.advanceAfterBlockEnd();
+
+    return new nodes.Guard(tag.lineno, tag.colno, body);
+  }
+
   parseStatement() {
     var tok = this.peekToken();
     var node;
@@ -855,6 +871,8 @@ class Parser extends Obj {
         return this.parseOption();
       case 'extern':
         return this.parseExtern();
+      case 'guard':
+        return this.parseGuard();
       default:
         if (this.extensions.length) {
           for (let i = 0; i < this.extensions.length; i++) {

@@ -510,6 +510,40 @@ class Compiler extends CompilerBase {
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, false, node.expr);
   }
 
+  compileGuard(node, frame) {
+    if (!this.asyncMode) {
+      this.fail('guard block only supported in async mode', node.lineno, node.colno);
+    }
+
+    // Guard blocks are always async boundaries
+    node.isAsync = true;
+
+    // 1. Start Async Block with Nested Buffer
+    // This creates a nested buffer (this.buffer) and pushes a new async block
+    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, true);
+
+    // 2. Link for explicit reversion (optional, if we want to support manual revert)
+    this.emit.line(`frame.markOutputBufferScope(${this.buffer});`);
+
+    // 3. Compile Body
+    this.compile(node.body, frame);
+
+    // 4. Inject Logic BEFORE closing the block
+    // We need to wait for all inner async operations to complete so the buffer is fully populated
+    // We wait for 1 because the current block itself is an active closure
+    this.emit.line('await astate.waitAllClosures(1);');
+
+    // 5. Check Buffer for Poison
+    // If poison is found, we mark this specific buffer node as reverted.
+    // We use the runtime helper we just added.
+    this.emit.line(`if (runtime.bufferHasPoison(${this.buffer})) {`);
+    this.emit.line(`  runtime.markBufferReverted(${this.buffer});`);
+    this.emit.line('}');
+
+    // 6. End Async Block
+    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node);
+  }
+
 
   //todo! - get rid of the callback
   compileIf(node, frame, async) {

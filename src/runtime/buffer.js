@@ -41,10 +41,38 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
   }
 }
 
-function flattenBuffer(arr, context = null, focusOutput = null) {
-  if (arr && arr._reverted) {
-    return context ? {} : '';
+function bufferHasPoison(arr) {
+  if (!arr) return false;
+  if (!Array.isArray(arr)) {
+    return isPoison(arr);
   }
+
+  for (const item of arr) {
+    if (!item) continue;
+    // Check for poison marker
+    if (item.__cascadaPoisonMarker === true) {
+      return true;
+    }
+    // Check for direct poison value or PoisonError
+    if (isPoison(item) || isPoisonError(item)) {
+      return true;
+    }
+    // Recursive check for nested arrays
+    if (Array.isArray(item)) {
+      if (item._reverted) continue; // Skip if already reverted
+      if (bufferHasPoison(item)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function flattenBuffer(arr, context = null, focusOutput = null) {
+  // if (arr && arr._reverted) {
+  //   return context ? {} : '';
+  // }
   // FAST PATH: If no context, it's a simple template. Concatenate strings and arrays.
   if (!context) {
     if (!Array.isArray(arr)) {
@@ -381,5 +409,7 @@ module.exports = {
   flattenBuffer,
   markBufferReverted: (buffer) => {
     buffer._reverted = true;
-  }
+    buffer.length = 0;
+  },
+  bufferHasPoison
 };

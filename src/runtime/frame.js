@@ -98,13 +98,17 @@ class Frame {
   }
 
   revertOutputHandler(handlerName) {
+    this.revertOutput();//temporary before actual implementation
+  }
+
+  revertOutput() {
     let current = this;
     while (current) {
       if (current._revertBuffer) {
-        const buf = current._revertBuffer;
-        if (Array.isArray(buf)) {
-          buf.length = 0;
-        }
+        // Use the buffer module to mark it as reverted
+        // We assume _reverted property convention as per buffer.js logic
+        current._revertBuffer._reverted = true;
+        current._revertBuffer.length = 0;
         return;
       }
       current = current.parent;

@@ -1,6 +1,6 @@
 'use strict';
 
-const {Obj} = require('./object');
+const { Obj } = require('./object');
 
 function traverseAndCheck(obj, type, results) {
   if (obj instanceof type) {
@@ -125,6 +125,17 @@ class If extends Node {
 
 class IfAsync extends If {
   get typename() { return 'IfAsync'; }
+}
+
+class Guard extends Node {
+  constructor(lineno, colno, body) {
+    super(lineno, colno, body);
+    this.body = body;
+  }
+
+  get fields() {
+    return ['body'];
+  }
 }
 
 class InlineIf extends Node {
@@ -444,6 +455,7 @@ module.exports = {
   InlineIf: InlineIf,
   For: For,
   While: While,
+  Guard: Guard,
   AsyncEach: AsyncEach,
   AsyncAll: AsyncAll,
   Macro: Macro,

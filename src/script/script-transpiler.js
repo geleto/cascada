@@ -101,7 +101,7 @@ class ScriptTranspiler {
     // Define block-related configuration
     this.SYNTAX = {
       // Block-related tags
-      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'try', 'call'],
+      blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
       lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'option', 'var', 'extern'],
 
       // Middle tags with their parent block types
@@ -129,7 +129,8 @@ class ScriptTranspiler {
         'verbatim': 'endverbatim',
         'try': 'endtry',
         'set': 'endset', //only when no = in the set, then the block has to be closed
-        'var': 'endvar' //only when no = in the var, then the block has to be closed
+        'var': 'endvar', //only when no = in the var, then the block has to be closed
+        'guard': 'endguard'
       },
 
       // Tags that should never be treated as multi-line
