@@ -1,5 +1,7 @@
 # Cascada Script Documentation
 
+[Download as Markdown](https://raw.githubusercontent.com/geleto/cascada/master/docs/cascada/script.md)
+
 ## Cascada Script — Implicitly Parallel, Explicitly Sequential
 
 **Cascada Script** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
