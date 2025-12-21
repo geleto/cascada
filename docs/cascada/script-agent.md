@@ -1,7 +1,7 @@
 # Cascada Script - Compressed Reference
 
-**Technology**: Cascada Script - Data orchestration language for JavaScript/TypeScript async workflows  
-**Baseline**: JavaScript/TypeScript syntax familiarity, standard programming constructs  
+**Technology**: Cascada Script - Data orchestration language for JavaScript/TypeScript async workflows
+**Baseline**: JavaScript/TypeScript syntax familiarity, standard programming constructs
 **Target Use**: AI code generation for async orchestration, LLM workflows, data pipelines
 
 ## Core Differentials Summary
@@ -31,25 +31,25 @@ API-xxx: API and extension points
 
 ## Core Execution Model
 
-**[EXEC-001] Parallel-by-Default Execution**  
-DIFFERENTIAL: Operations execute concurrently unless dependencies exist  
+**[EXEC-001] Parallel-by-Default Execution**
+DIFFERENTIAL: Operations execute concurrently unless dependencies exist
 Independent operations (API calls, async functions) run automatically in parallel without `await` keyword
 
-**[EXEC-002] Data-Driven Flow**  
-Operations wait for their required inputs before executing  
+**[EXEC-002] Data-Driven Flow**
+Operations wait for their required inputs before executing
 Dependency analysis ensures correct execution order while maximizing parallelism
 
-**[EXEC-003] Deterministic Output Ordering**  
-DIFFERENTIAL: Execution is concurrent and out-of-order; outputs assembled in source-code order  
+**[EXEC-003] Deterministic Output Ordering**
+DIFFERENTIAL: Execution is concurrent and out-of-order; outputs assembled in source-code order
 Final result identical to sequential execution despite parallel processing
 
-**[EXEC-004] Three-Phase Execution: Collect-Execute-Assemble**  
+**[EXEC-004] Three-Phase Execution: Collect-Execute-Assemble**
 1. **Collect**: `@` commands buffered in source order
 2. **Execute**: All logic (`var`, functions, loops) runs to completion concurrently
 3. **Assemble**: Buffered `@` commands dispatched sequentially to build final result
 
-**[EXEC-005] Implicit Promise Resolution**  
-Any variable can be a promise; no explicit await needed  
+**[EXEC-005] Implicit Promise Resolution**
+Any variable can be a promise; no explicit await needed
 Pass promises into functions, use in expressions without async ceremony
 
 ---
@@ -1096,11 +1096,11 @@ class DatabaseLoader {
     if (!record) return null
     return { src: record.code, path: name }
   }
-  
+
   isRelative(filename) {
     return filename.startsWith('./')
   }
-  
+
   resolve(from, to) {
     const fromDir = from.substring(0, from.lastIndexOf('/'))
     return `${fromDir}/${to}`
@@ -1122,17 +1122,17 @@ class CustomHandler {
   constructor(env) {
     this.env = env
   }
-  
+
   init() {
     // Called at scope start
     this.commands = []
   }
-  
+
   invoke(name, args) {
     // Called during assembly phase
     this.commands.push({ name, args })
   }
-  
+
   finalize() {
     // Return final value
     return { result: this.commands }
@@ -1152,50 +1152,15 @@ const js = precompileScript('main.casc', { env })
 
 ## Appendix: UID Index
 
-**Execution Model**: EXEC-001 to EXEC-005  
-**Variables**: VAR-001 to VAR-006  
-**Expressions**: EXPR-001 to EXPR-004  
-**Control Flow**: CTRL-001 to CTRL-008  
-**Sequential**: SEQ-001 to SEQ-006  
-**Output**: OUT-001 to OUT-012  
-**Errors**: ERR-001 to ERR-012  
-**Macros**: MAC-001 to MAC-006  
-**Modularity**: MOD-001 to MOD-011  
-**API**: API-001 to API-015  
+**Execution Model**: EXEC-001 to EXEC-005
+**Variables**: VAR-001 to VAR-006
+**Expressions**: EXPR-001 to EXPR-004
+**Control Flow**: CTRL-001 to CTRL-008
+**Sequential**: SEQ-001 to SEQ-006
+**Output**: OUT-001 to OUT-012
+**Errors**: ERR-001 to ERR-012
+**Macros**: MAC-001 to MAC-006
+**Modularity**: MOD-001 to MOD-011
+**API**: API-001 to API-015
 
-**Total UIDs**: 82  
-**Coverage**: 100% (all normative statements mapped)  
-**Completeness**: 100% (all UIDs have semantic atoms)
-
----
-
-## Verification Checklist
-
-✅ Mathematical Completeness  
-- Coverage = 100% (all normatives → UIDs)  
-- Completeness = 100% (all UIDs → atoms)  
-- Back-reference check passes
-
-✅ Semantic Preservation  
-- All behavioral rules represented  
-- All constraints encoded  
-- All edge cases demonstrated  
-- All differentials explicitly stated
-
-✅ Token Efficiency  
-- Narrative prose eliminated  
-- No redundant explanations  
-- Maximal use of tables and structure  
-- Only differentials documented
-
-✅ AI Usability  
-- Every atom independently understandable  
-- All patterns demonstrable via code  
-- Invalid usage explicitly shown  
-- Standard knowledge not duplicated
-
-✅ Quality Gates  
-- No red flags detected  
-- All UIDs have atoms  
-- All normatives have UIDs  
-- Cross-references valid
+**Total UIDs**: 82
