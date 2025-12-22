@@ -38,6 +38,7 @@ class Compiler extends CompilerBase {
     this.buffer = id;
     if (this.asyncMode) {
       this.emit.line(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
+      this.emit.line(`${this.buffer}._reserved = 0;`);
     } else {
       this.emit.line(`let ${this.buffer} = "";`);
     }
@@ -936,6 +937,7 @@ class Compiler extends CompilerBase {
       this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this.emit.line('let output = [];');
+        this.emit.line('output._reserved = 0;');
         this.emit.line('frame.markOutputBufferScope(output);');
 
         this.compile(n.body, f);//write to output

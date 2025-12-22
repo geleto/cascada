@@ -5,6 +5,9 @@ const {
   isPoison,
   isPoisonError
 } = require('./errors');
+const {
+  recordRevertOperation
+} = require('./buffer');
 
 // Frames keep track of scoping both at compile-time and run-time so
 // we know how to access variables. Block tags can introduce special
@@ -98,17 +101,22 @@ class Frame {
   }
 
   revertOutputHandler(handlerName) {
-    this.revertOutput();//temporary before actual implementation
+    this._applyOutputRevert(handlerName);
   }
 
   revertOutput() {
+    this._applyOutputRevert(null);
+  }
+
+  _applyOutputRevert(handlerName) {
     let current = this;
     while (current) {
       if (current._revertBuffer) {
-        // Use the buffer module to mark it as reverted
-        // We assume _reverted property convention as per buffer.js logic
-        current._revertBuffer._reverted = true;
-        current._revertBuffer.length = 0;
+        if (!handlerName || handlerName === '_') {
+          recordRevertOperation(current._revertBuffer, '__all');
+        } else {
+          recordRevertOperation(current._revertBuffer, handlerName);
+        }
         return;
       }
       current = current.parent;

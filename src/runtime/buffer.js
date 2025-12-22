@@ -41,14 +41,17 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
   }
 }
 
+// NOTE: bufferHasPoison must only be called after astate.waitAllClosures(...)
+// to guarantee that all pending async writes have finished populating the buffer.
 function bufferHasPoison(arr) {
+  applyRevertOperations(arr);
   if (!arr) return false;
   if (!Array.isArray(arr)) {
     return isPoison(arr);
   }
 
   for (const item of arr) {
-    if (!item) continue;
+    if (!item || item._reverted) continue;
     // Check for poison marker
     if (item.__cascadaPoisonMarker === true) {
       return true;
@@ -69,7 +72,107 @@ function bufferHasPoison(arr) {
   return false;
 }
 
+function markItemReverted(item) {
+  if (item && typeof item === 'object') {
+    item._reverted = true;
+  }
+}
+
+function recordRevertOperation(buffer, handlerName) {
+  if (!buffer) return;
+  if (!buffer._revertEvents) {
+    buffer._revertEvents = [];
+  }
+  const order = typeof buffer._reserved === 'number' ? buffer._reserved : (Array.isArray(buffer) ? buffer.length : 0);
+  buffer._revertEvents.push({
+    handlers: [handlerName || '__all'],
+    order
+  });
+}
+
+function detectHandlerName(item) {
+  if (!item) return null;
+  if (item.__cascadaPoisonMarker === true) {
+    return item.handler || 'text';
+  }
+  if (Array.isArray(item)) {
+    return 'text';
+  }
+  if (typeof item === 'object') {
+    if ('handler' in item && item.handler) {
+      return item.handler;
+    }
+    if ('text' in item && Object.keys(item).length > 0) {
+      return 'text';
+    }
+    return null;
+  }
+  // primitives/functions count as text output
+  return 'text';
+}
+
+function markEntryRemoved(buffer, index) {
+  const entry = buffer[index];
+  if (!entry) {
+    buffer[index] = null;
+    return;
+  }
+
+  if (Array.isArray(entry)) {
+    entry._reverted = true;
+  } else if (typeof entry === 'object') {
+    markItemReverted(entry);
+  } else {
+    buffer[index] = null;
+  }
+}
+
+function applyRevertOperations(buffer) {
+  if (!Array.isArray(buffer)) {
+    return;
+  }
+
+  const events = buffer._revertEvents || [];
+  if (events.length > 0) {
+    let eventIdx = 0;
+    const visited = [];
+    for (let i = 0; i < buffer.length; i++) {
+      visited.push({ buffer, index: i, entry: buffer[i] });
+      while (eventIdx < events.length && visited.length >= events[eventIdx].order) {
+        markVisitedEntries(visited, events[eventIdx].handlers, events[eventIdx].order);
+        eventIdx++;
+      }
+    }
+    buffer._revertEvents.length = 0;
+  }
+
+  for (let i = 0; i < buffer.length; i++) {
+    const item = buffer[i];
+    if (Array.isArray(item)) {
+      applyRevertOperations(item);
+    }
+  }
+}
+
+function markVisitedEntries(visited, handlers, order) {
+  const targetAll = handlers.includes('__all');
+  for (let i = visited.length - 1; i >= 0; i--) {
+    const { buffer, index, entry } = visited[i];
+    if (index >= order) {
+      continue;
+    }
+    if (!targetAll) {
+      const handler = detectHandlerName(entry);
+      if (!handler || !handlers.includes(handler)) {
+        continue;
+      }
+    }
+    markEntryRemoved(buffer, index);
+  }
+}
+
 function flattenBuffer(arr, context = null, focusOutput = null) {
+  applyRevertOperations(arr);
   // if (arr && arr._reverted) {
   //   return context ? {} : '';
   // }
@@ -83,6 +186,9 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     const errors = [];
 
     const result = arr.reduce((acc, item) => {
+      if (item && item._reverted) {
+        return acc;
+      }
       // Check for poison marker first
       if (item && typeof item === 'object' && item.__cascadaPoisonMarker === true) {
         if (item.errors && Array.isArray(item.errors)) {
@@ -177,6 +283,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
   }
 
   function processItem(item) {
+    if (item && item._reverted) return;
     // Check for poison marker FIRST (before any other processing)
     // Markers are objects with a special flag indicating poisoned handler output
     if (item && typeof item === 'object' && item.__cascadaPoisonMarker === true) {
@@ -411,5 +518,6 @@ module.exports = {
     buffer._reverted = true;
     buffer.length = 0;
   },
-  bufferHasPoison
+  bufferHasPoison,
+  recordRevertOperation
 };

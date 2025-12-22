@@ -777,7 +777,14 @@ class ScriptTranspiler {
   _processOutputCommand(parseResult, lineIndex) {
     // Find the @ symbol position and preserve all whitespace after it
     const atIndex = parseResult.codeContent.indexOf('@');
-    const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
+    let commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
+
+    // Normalize global handler shorthand: allow syntax like @._revert()
+    // by rewriting to @_._revert() so the template parser sees a valid handler name.
+    const globalCommandMatch = commandContent.match(/^(\s*)\.(.+)$/);
+    if (globalCommandMatch) {
+      commandContent = `${globalCommandMatch[1]}_.${globalCommandMatch[2]}`;
+    }
 
     // Check if this is a @text command (the current command for text output)
     let ccontent = commandContent.trim();

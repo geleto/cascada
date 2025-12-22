@@ -230,24 +230,30 @@ module.exports = class CompileEmit {
   }
 
   addToBuffer(node, frame, renderFunction, positionNode = node) {
+    const bufferName = this.compiler.buffer;
     if (this.compiler.asyncMode) {
-      this.line(`${this.compiler.buffer}[${this.compiler.buffer}_index++] = `);
+      this.line(`${bufferName}[${bufferName}_index++] = `);
     } else {
       this.emit(`${this.compiler.buffer} += `);
     }
     renderFunction.call(this.compiler, frame);
     this.line(';');
+    if (this.compiler.asyncMode) {
+      this.line(`${bufferName}._reserved = ${bufferName}_index;`);
+    }
   }
 
   //@todo - use the Begin/End
   asyncBlockAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null) {
     const returnId = this.compiler._tmpid();
+    const bufferName = this.compiler.buffer;
     if (node.isAsync) {
       this.asyncClosureDepth++;
       frame = frame.push(false, false);
 
       this.line(`astate.asyncBlock(async (astate, frame)=>{`);
-      this.line(`let index = ${this.compiler.buffer}_index++;`);
+      this.line(`let index = ${bufferName}_index++;`);
+      this.line(`${bufferName}._reserved = ${bufferName}_index;`);
 
       if (handlerName) {
         // if there is a handler, we need to catch errors and poison the handler/buffer
@@ -256,7 +262,7 @@ module.exports = class CompileEmit {
       this.line(`  let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       this.line(';');
-      this.line(`  ${this.compiler.buffer}[index] = ${returnId};`);
+      this.line(`  ${bufferName}[index] = ${returnId};`);
 
       if (handlerName) {
         // catch errors and poison the handler/buffer
@@ -280,7 +286,8 @@ module.exports = class CompileEmit {
       this.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       if (this.compiler.asyncMode) {
-        this.line(`${this.compiler.buffer}[${this.compiler.buffer}_index++] = ${returnId};`);
+        this.line(`${bufferName}[${bufferName}_index++] = ${returnId};`);
+        this.line(`${bufferName}._reserved = ${bufferName}_index;`);
       } else {
         this.line(`${this.compiler.buffer} += ${returnId};`);
       }
@@ -288,21 +295,23 @@ module.exports = class CompileEmit {
   }
 
   asyncBlockAddToBufferBegin(node, frame, positionNode = node, handlerName = null) {
+    const bufferName = this.compiler.buffer;
     if (node.isAsync) {
       this.line(`astate.asyncBlock(async (astate, frame) => {`);
-      this.line(`let index = ${this.compiler.buffer}_index++;`);
+      this.line(`let index = ${bufferName}_index++;`);
+      this.line(`${bufferName}._reserved = ${bufferName}_index;`);
       if (handlerName) {
         // if there is a handler, we need to catch errors and poison the handler/buffer
         this.line(`try {`);
       }
-      this.emit(`  ${this.compiler.buffer}[index] = `);
+      this.emit(`  ${bufferName}[index] = `);
       this.asyncClosureDepth++;
       // Store handlerName for End to use
       //this._pendingHandler = handlerName;
       return frame.push(false, false);
     }
     if (this.compiler.asyncMode) {
-      this.line(`${this.compiler.buffer}[${this.compiler.buffer}_index++] = `);
+      this.line(`${bufferName}[${bufferName}_index++] = `);
     } else {
       this.emit(`${this.compiler.buffer} += `);
     }
@@ -311,6 +320,7 @@ module.exports = class CompileEmit {
 
   asyncBlockAddToBufferEnd(node, frame, positionNode = node, handlerName = null) {
     this.line(';');
+    const bufferName = this.compiler.buffer;
     if (node.isAsync) {
       //const handlerName = this._pendingHandler;
       //this._pendingHandler = null;
@@ -331,6 +341,9 @@ module.exports = class CompileEmit {
       this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
       return frame.pop();
     }
+    if (this.compiler.asyncMode) {
+      this.line(`${bufferName}._reserved = ${bufferName}_index;`);
+    }
     return frame;
   }
 
@@ -348,9 +361,11 @@ module.exports = class CompileEmit {
       // Initialize the new buffer and its index inside the async closure
       this.line(`let ${newBuffer} = [];`);
       this.line(`let ${newBuffer}_index = 0;`);
+      this.line(`${newBuffer}._reserved = 0;`);
 
       // Append the new buffer to the parent buffer
       this.line(`${this.compiler.buffer}[${this.compiler.buffer}_index++] = ${newBuffer};`);
+      this.line(`${this.compiler.buffer}._reserved = ${this.compiler.buffer}_index;`);
 
       // Update the buffer reference
       this.compiler.buffer = newBuffer;

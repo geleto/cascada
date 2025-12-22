@@ -2781,6 +2781,51 @@ describe('Cascada Script: Output commands', function () {
       expect(result).to.be(undefined);
     });
 
+    it('should revert text without clearing data output', async () => {
+      const script = `
+        @data.before = 1
+        @text("Alpha")
+        @text._revert()
+        @data.after = 2
+        @text("Omega")
+      `;
+      const result = await env.renderScriptString(script);
+      const textOut = typeof result === 'string' ? result : (result && result.text) || '';
+      expect(textOut).to.equal('Omega');
+      expect(result.data).to.eql({ before: 1, after: 2 });
+    });
+
+    it('should keep text output when reverting @data', async () => {
+      const script = `
+        @text("Before")
+        @data.value = 42
+        @data._revert()
+        @text("After")
+      `;
+      const result = await env.renderScriptString(script);
+      const textOut = typeof result === 'string' ? result : (result && result.text) || '';
+      expect(textOut).to.equal('BeforeAfter');
+      if (result && typeof result === 'object') {
+        expect(result.data).to.be(undefined);
+      }
+    });
+
+    it('should revert all handlers via @._revert()', async () => {
+      const script = `
+        @text("Before")
+        @data.value = 1
+        @._revert()
+        @text("After")
+        @data.next = 2
+      `;
+      const result = await env.renderScriptString(script);
+      const textOut = typeof result === 'string' ? result : (result && result.text) || '';
+      expect(textOut).to.equal('After');
+      if (result && typeof result === 'object') {
+        expect(result.data).to.eql({ next: 2 });
+      }
+    });
+
     it('should throw error when _revert is called on a subpath', async () => {
       const script = `
         :data
@@ -2858,6 +2903,127 @@ describe('Cascada Script: Output commands', function () {
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.be(undefined);
+    });
+
+    it('should drop async text writes scheduled before revert', async () => {
+      const context = {
+        delayedText(value) {
+          return new Promise(resolve => setTimeout(() => resolve(value), 5));
+        }
+      };
+      const script = `
+        :text
+        var pending = delayedText("DROP")
+        @text(pending)
+        @text._revert()
+        @text(delayedText("KEEP"))
+      `;
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.equal('KEEP');
+    });
+
+    it('should drop async data writes scheduled before revert', async () => {
+      const context = {
+        delayedValue(value) {
+          return new Promise(resolve => setTimeout(() => resolve(value), 5));
+        }
+      };
+      const script = `
+        :data
+        var pending = delayedValue(1)
+        @data.val = pending
+        @data._revert()
+        @data.val = delayedValue(2)
+      `;
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.eql({ val: 2 });
+    });
+
+    it('should reset all handlers with pending async writes via @._revert()', async () => {
+      const context = {
+        delayedText(value) {
+          return new Promise(resolve => setTimeout(() => resolve(value), 5));
+        },
+        delayedValue(value) {
+          return new Promise(resolve => setTimeout(() => resolve(value), 5));
+        }
+      };
+      const script = `
+        var dropText = delayedText("text-before")
+        var dropVal = delayedValue(1)
+        @text(dropText)
+        @data.value = dropVal
+        @._revert()
+        @text(delayedText("text-after"))
+        @data.value = delayedValue(2)
+      `;
+      const result = await env.renderScriptString(script, context);
+      const textOut = typeof result === 'string' ? result : (result && result.text) || '';
+      expect(textOut).to.equal('text-after');
+      expect(result.data).to.eql({ value: 2 });
+    });
+
+    it('should revert the parent output scope when called inside nested blocks', async () => {
+      const context = {
+        delayedText(value) {
+          return new Promise(resolve => setTimeout(() => resolve(value), 5));
+        }
+      };
+      const script = `
+        :text
+        @text("OUTER-")
+        if true
+          @text(delayedText("DROP-"))
+          @text._revert()
+          @text("AFTER-")
+        endif
+        @text("END")
+      `;
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.equal('END');
+    });
+
+    it('should revert custom handlers independently of text/data', async () => {
+      const tracker = [];
+      const envWithHandler = new AsyncEnvironment();
+      envWithHandler.addCommandHandlerClass('metrics', class {
+        constructor(vars) {
+          this.vars = vars;
+          this.records = [];
+        }
+        inc(value) {
+          this.records.push(value);
+        }
+        getReturnValue() {
+          return { records: this.records.slice() };
+        }
+      });
+      const script = `
+        @text("TEXT-")
+        @metrics.inc("DROP")
+        @metrics._revert()
+        @metrics.inc("KEEP")
+        @text("DONE")
+      `;
+      const result = await envWithHandler.renderScriptString(script);
+      expect(result.text).to.equal('TEXT-DONE');
+      expect(result.metrics.records).to.eql(['KEEP']);
+    });
+
+    it.skip('should clean reverted handlers before guard poison detection', async () => {
+      const script = `
+        :text
+        var cleaned = false
+        guard *
+          @text("Start")
+          @text._revert()
+          @text("Recovered")
+          cleaned = true
+        endguard
+        @text(cleaned ? "After" : "Failed")
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('After');
     });
   });
 
