@@ -86,7 +86,7 @@ function processReverts(buffer) {
 }
 
 // Recursively walks a buffer tree collecting nodes for the linear pass.
-function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinearNodes = null) {
+function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinearNodes = null, parentIndexRef = null) {
   const isScopeRoot = forceScopeRoot || container._outputScopeRoot === true;
   const linearNodes = isScopeRoot ? [] : inheritedLinearNodes;
 
@@ -110,7 +110,7 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
 
       if (childIsScope) {
         if (item._hasRevert === true) {
-          const childHasRevert = walkBufferForReverts(item, false, null);
+          const childHasRevert = walkBufferForReverts(item, false, null, { container, index: i });
           if (childHasRevert) {
             item._hasRevert = true;
             scopeHasRevert = true;
@@ -118,11 +118,11 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
         } else {
           item._revertsProcessed = true;
         }
-        linearNodes.push({ handler: 'text', container, index: i, scopeRoot: true });
+        linearNodes.push({ handler: 'text', container, index: i, scopeRoot: true, parentIndexRef });
         continue;
       }
 
-      const childHasRevert = walkBufferForReverts(item, false, linearNodes);
+      const childHasRevert = walkBufferForReverts(item, false, linearNodes, { container, index: i });
       if (childHasRevert) {
         scopeHasRevert = true;
       }
@@ -148,7 +148,7 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
     }
 
     const handlerName = detectHandlerName(item) || 'text';
-    linearNodes.push({ handler: handlerName, container, index: i });
+    linearNodes.push({ handler: handlerName, container, index: i, parentIndexRef });
   }
 
   if (isScopeRoot) {

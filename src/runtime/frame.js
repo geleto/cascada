@@ -99,6 +99,7 @@ class Frame {
       if (buffer._hasRevert === undefined) {
         buffer._hasRevert = false;
       }
+      buffer._parentScope = this._revertBuffer || null;
     }
     this._revertBuffer = buffer;
   }
