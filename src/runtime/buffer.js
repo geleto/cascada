@@ -55,8 +55,21 @@ function markNodeReverted(container, index) {
 
 // Walks recorded linear nodes backwards and reverts those for a handler.
 function revertLinearNodes(linearNodes, handlerName) {
+  if (!linearNodes) return;
   for (let i = linearNodes.length - 1; i >= 0; i--) {
     const info = linearNodes[i];
+
+    if (info && info.isRevertMarker) {
+      const markerHandlers = info.handlers;
+      const appliesToHandler = !markerHandlers ||
+        markerHandlers.length === 0 ||
+        markerHandlers.includes(handlerName);
+      if (appliesToHandler) {
+        break; // stop rewinding once we hit a previous _revert on the same handler
+      }
+      continue;
+    }
+
     const currentHandler = info.handler || 'text';
     if (handlerName && handlerName !== currentHandler) {
       continue;
@@ -125,6 +138,10 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
         item.handlers :
         [item.handler || 'text'];
       handlers.forEach(handler => revertLinearNodes(linearNodes, handler));
+      linearNodes.push({
+        isRevertMarker: true,
+        handlers: handlers.slice()
+      });
       markNodeReverted(container, i);
       scopeHasRevert = true;
       continue;
