@@ -7,6 +7,95 @@ const {
   handleError
 } = require('./errors');
 
+const REVERT_SENTINEL = Object.freeze({ _reverted: true });
+
+// Determines which handler a buffer entry belongs to.
+function detectHandlerName(item) {
+  if (!item) return null;
+  if (item.__cascadaPoisonMarker === true) {
+    return item.handler || 'text';
+  }
+  if (Array.isArray(item)) {
+    return 'text';
+  }
+  if (typeof item === 'object') {
+    if ('handler' in item && item.handler) {
+      return item.handler;
+    }
+    if ('text' in item && Object.keys(item).length > 0) {
+      return 'text';
+    }
+    return null;
+  }
+  // primitives/functions count as text output
+  return 'text';
+}
+
+// Identifies buffer command objects representing @_revert() calls.
+function isRevertCommand(item) {
+  return item && typeof item === 'object' && item.command === '_revert';
+}
+
+// Marks a buffer entry as reverted so flattening skips it.
+function markNodeReverted(container, index) {
+  const value = container[index];
+  if (!value || typeof value !== 'object') {
+    container[index] = { ...REVERT_SENTINEL };
+    return;
+  }
+  value._reverted = true;
+}
+
+// Walks recorded linear nodes backwards and reverts those for a handler.
+function revertLinearNodes(linearNodes, handlerName) {
+  for (let i = linearNodes.length - 1; i >= 0; i--) {
+    const info = linearNodes[i];
+    const currentHandler = info.handler || 'text';
+    if (handlerName && handlerName !== currentHandler) {
+      continue;
+    }
+    markNodeReverted(info.container, info.index);
+    linearNodes.splice(i, 1);
+  }
+}
+
+// Performs a single linear scan to apply handler-targeted reverts per buffer.
+function processReverts(buffer) {
+  if (!Array.isArray(buffer) || buffer._revertsProcessed) return;
+  buffer._revertsProcessed = true;
+
+  const linearNodes = [];
+  walkBufferForReverts(buffer, linearNodes);
+}
+
+// Recursively walks a buffer tree collecting nodes for the linear pass.
+function walkBufferForReverts(container, linearNodes) {
+  for (let i = 0; i < container.length; i++) {
+    const item = container[i];
+
+    if (Array.isArray(item)) {
+      walkBufferForReverts(item, linearNodes);
+      continue;
+    }
+
+    if (item && item._reverted) {
+      continue;
+    }
+
+    if (isRevertCommand(item)) {
+      const handlers = Array.isArray(item.handlers) && item.handlers.length > 0 ?
+        item.handlers :
+        [item.handler || 'text'];
+      handlers.forEach(handler => revertLinearNodes(linearNodes, handler));
+      markNodeReverted(container, i);
+      continue;
+    }
+
+    const handlerName = detectHandlerName(item) || 'text';
+    linearNodes.push({ handler: handlerName, container, index: i });
+  }
+}
+
 /**
  * Add poison markers to output buffer for handlers that would have been written
  * in a branch that wasn't executed due to poisoned condition.
@@ -70,6 +159,9 @@ function bufferHasPoison(arr) {
 }
 
 function flattenBuffer(arr, context = null, focusOutput = null) {
+  if (Array.isArray(arr)) {
+    processReverts(arr);
+  }
   // if (arr && arr._reverted) {
   //   return context ? {} : '';
   // }
@@ -83,6 +175,9 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     const errors = [];
 
     const result = arr.reduce((acc, item) => {
+      if (item && item._reverted) {
+        return acc;
+      }
       // Check for poison marker first
       if (item && typeof item === 'object' && item.__cascadaPoisonMarker === true) {
         if (item.errors && Array.isArray(item.errors)) {
@@ -189,6 +284,8 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     }
 
     if (item === null || item === undefined) return;
+
+    if (item && item._reverted) return;
 
     // Check for regular poison value
     if (isPoison(item)) {

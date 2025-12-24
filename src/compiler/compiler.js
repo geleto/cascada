@@ -1261,7 +1261,9 @@ class Compiler extends CompilerBase {
             this.fail('_revert() can only be called on the handler root (e.g. @data._revert())', node.lineno, node.colno, node);
           }
         }
-        this.emit.line(`frame.revertOutputHandler('${handler}');`);
+        this.emit.addToBuffer(node, frame, () => {
+          this.emit(`{ handler: '${handler}', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
+        }, node);
         return;
       }
 

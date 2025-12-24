@@ -2737,7 +2737,7 @@ describe('Cascada Script: Output commands', function () {
         @text(test().text)
       `;
       const result = await env.renderScriptString(script);
-      expect(result).to.equal('D');
+      expect(result).to.equal('CD');
     });
 
     it('should revert capture output', async () => {
@@ -2779,6 +2779,42 @@ describe('Cascada Script: Output commands', function () {
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.be(undefined);
+    });
+
+    it('should keep text output when reverting data handler', async () => {
+      const script = `
+        @text("Hello ")
+        @data.value = 1
+        @data._revert()
+        @text("World")
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result.text).to.equal('Hello World');
+      expect(result.data).to.be(undefined);
+    });
+
+    it('should keep data output when reverting text handler', async () => {
+      const script = `
+        @data.value = 42
+        @text("Hello")
+        @text._revert()
+        @text("Bye")
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result.data.value).to.equal(42);
+      expect(result.text).to.equal('Bye');
+    });
+
+    it('should not revert text output when reverting data handler', async () => {
+      const script = `
+        :text
+        @text("Before")
+        @data.value = 42
+        @data._revert()
+        @text("After")
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('BeforeAfter');
     });
 
     it('should throw error when _revert is called on a subpath', async () => {
