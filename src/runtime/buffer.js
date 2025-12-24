@@ -62,19 +62,40 @@ function revertLinearNodes(linearNodes, handlerName) {
 // Performs a single linear scan to apply handler-targeted reverts per buffer.
 function processReverts(buffer) {
   if (!Array.isArray(buffer) || buffer._revertsProcessed) return;
-  buffer._revertsProcessed = true;
-
-  const linearNodes = [];
-  walkBufferForReverts(buffer, linearNodes);
+  walkBufferForReverts(buffer, true);
 }
 
 // Recursively walks a buffer tree collecting nodes for the linear pass.
-function walkBufferForReverts(container, linearNodes) {
+function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinearNodes = null) {
+  const isScopeRoot = forceScopeRoot || container._outputScopeRoot === true;
+  const linearNodes = isScopeRoot ? [] : inheritedLinearNodes;
+
+  if (!isScopeRoot && !linearNodes) {
+    throw new Error('Non-scope buffers require shared linear nodes');
+  }
+
+  let scopeHasRevert = container._hasRevert === true;
+
   for (let i = 0; i < container.length; i++) {
     const item = container[i];
 
     if (Array.isArray(item)) {
-      walkBufferForReverts(item, linearNodes);
+      const childIsScope = item._outputScopeRoot === true;
+      const childHasRevert = walkBufferForReverts(
+        item,
+        childIsScope,
+        childIsScope ? null : linearNodes
+      );
+
+      if (childIsScope) {
+        if (childHasRevert) {
+          item._hasRevert = true;
+          scopeHasRevert = true;
+        }
+        (linearNodes || []).push({ handler: 'text', container, index: i });
+      } else if (childHasRevert) {
+        scopeHasRevert = true;
+      }
       continue;
     }
 
@@ -86,14 +107,22 @@ function walkBufferForReverts(container, linearNodes) {
       const handlers = Array.isArray(item.handlers) && item.handlers.length > 0 ?
         item.handlers :
         [item.handler || 'text'];
-      handlers.forEach(handler => revertLinearNodes(linearNodes, handler));
+      handlers.forEach(handler => revertLinearNodes(linearNodes || [], handler));
       markNodeReverted(container, i);
+      scopeHasRevert = true;
       continue;
     }
 
     const handlerName = detectHandlerName(item) || 'text';
-    linearNodes.push({ handler: handlerName, container, index: i });
+    (linearNodes || []).push({ handler: handlerName, container, index: i });
   }
+
+  if (isScopeRoot) {
+    container._hasRevert = scopeHasRevert;
+    container._revertsProcessed = true;
+  }
+
+  return scopeHasRevert;
 }
 
 /**

@@ -94,6 +94,12 @@ class Frame {
   }
 
   markOutputBufferScope(buffer) {
+    if (buffer && typeof buffer === 'object') {
+      buffer._outputScopeRoot = true;
+      if (buffer._hasRevert === undefined) {
+        buffer._hasRevert = false;
+      }
+    }
     this._revertBuffer = buffer;
   }
 
