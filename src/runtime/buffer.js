@@ -60,6 +60,9 @@ function revertLinearNodes(linearNodes, handlerName) {
     const info = linearNodes[i];
 
     if (info && info.isRevertMarker) {
+      // Markers belong to the scope where @_revert executed. If it matches the handler
+      // we're currently rewinding, we stop for this scope but keep bubbling up so that
+      // parent scopes (tracked via parentIndexRef) continue their own cleanup.
       const markerHandlers = info.handlers;
       const appliesToHandler = !markerHandlers ||
         markerHandlers.length === 0 ||
