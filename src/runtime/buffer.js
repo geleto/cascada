@@ -9,6 +9,13 @@ const {
 
 const REVERT_SENTINEL = Object.freeze({ _reverted: true });
 
+// Flags a buffer scope so later passes know it contains a @_revert command.
+function markBufferHasRevert(buffer) {
+  if (!Array.isArray(buffer)) return;
+  buffer._hasRevert = true;
+  buffer._revertsProcessed = false;
+}
+
 // Determines which handler a buffer entry belongs to.
 function detectHandlerName(item) {
   if (!item) return null;
@@ -74,26 +81,36 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
     throw new Error('Non-scope buffers require shared linear nodes');
   }
 
-  let scopeHasRevert = container._hasRevert === true;
+  const scopeHasExplicitRevert = container._hasRevert === true;
+  if (isScopeRoot && !forceScopeRoot && !scopeHasExplicitRevert) {
+    container._revertsProcessed = true;
+    return false;
+  }
+
+  let scopeHasRevert = scopeHasExplicitRevert;
 
   for (let i = 0; i < container.length; i++) {
     const item = container[i];
 
     if (Array.isArray(item)) {
       const childIsScope = item._outputScopeRoot === true;
-      const childHasRevert = walkBufferForReverts(
-        item,
-        childIsScope,
-        childIsScope ? null : linearNodes
-      );
 
       if (childIsScope) {
-        if (childHasRevert) {
-          item._hasRevert = true;
-          scopeHasRevert = true;
+        if (item._hasRevert === true) {
+          const childHasRevert = walkBufferForReverts(item, false, null);
+          if (childHasRevert) {
+            item._hasRevert = true;
+            scopeHasRevert = true;
+          }
+        } else {
+          item._revertsProcessed = true;
         }
-        (linearNodes || []).push({ handler: 'text', container, index: i });
-      } else if (childHasRevert) {
+        linearNodes.push({ handler: 'text', container, index: i, scopeRoot: true });
+        continue;
+      }
+
+      const childHasRevert = walkBufferForReverts(item, false, linearNodes);
+      if (childHasRevert) {
         scopeHasRevert = true;
       }
       continue;
@@ -107,14 +124,14 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
       const handlers = Array.isArray(item.handlers) && item.handlers.length > 0 ?
         item.handlers :
         [item.handler || 'text'];
-      handlers.forEach(handler => revertLinearNodes(linearNodes || [], handler));
+      handlers.forEach(handler => revertLinearNodes(linearNodes, handler));
       markNodeReverted(container, i);
       scopeHasRevert = true;
       continue;
     }
 
     const handlerName = detectHandlerName(item) || 'text';
-    (linearNodes || []).push({ handler: handlerName, container, index: i });
+    linearNodes.push({ handler: handlerName, container, index: i });
   }
 
   if (isScopeRoot) {
@@ -537,5 +554,6 @@ module.exports = {
     buffer._reverted = true;
     buffer.length = 0;
   },
+  markBufferHasRevert,
   bufferHasPoison
 };

@@ -1264,6 +1264,7 @@ class Compiler extends CompilerBase {
         this.emit.addToBuffer(node, frame, () => {
           this.emit(`{ handler: '${handler}', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
         }, node);
+        this.emit.line(`runtime.markBufferHasRevert(${this.buffer});`);
         return;
       }
 
