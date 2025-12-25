@@ -2781,6 +2781,19 @@ describe('Cascada Script: Output commands', function () {
       expect(result).to.be(undefined);
     });
 
+    it('should revert all handlers with @_revert', async () => {
+      const script = `
+        @text("T1")
+        @data.value = 1
+        @._revert()
+        @text("T2")
+        @data.value = 2
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result.text).to.equal('T2');
+      expect(result.data.value).to.equal(2);
+    });
+
     it('should keep text output when reverting data handler', async () => {
       const script = `
         @text("Hello ")

@@ -856,7 +856,21 @@ class ScriptTranspiler {
         parseResult.lineType = 'TAG';
         parseResult.tagName = 'output_command';
         parseResult.blockType = null;
-        parseResult.codeContent = commandContent; // The content for the Nunjucks tag
+
+        // Support special @_revert() shorthand that targets all handlers.
+        const trimmedCommand = commandContent.trimStart();
+        if (trimmedCommand.startsWith('._revert')) {
+          const remainder = trimmedCommand.substring('._revert'.length);
+          if (!remainder || remainder.startsWith('(') || remainder.startsWith(' ')) {
+            const leadingWhitespace = commandContent.slice(0, commandContent.length - trimmedCommand.length);
+            const rest = trimmedCommand.substring(1); // remove the leading '.'
+            parseResult.codeContent = `${leadingWhitespace}_.${rest}`;
+          } else {
+            parseResult.codeContent = commandContent;
+          }
+        } else {
+          parseResult.codeContent = commandContent; // The content for the Nunjucks tag
+        }
       }
     }
   }

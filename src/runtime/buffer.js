@@ -137,13 +137,16 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
     }
 
     if (isRevertCommand(item)) {
-      const handlers = Array.isArray(item.handlers) && item.handlers.length > 0 ?
-        item.handlers :
-        [item.handler || 'text'];
-      handlers.forEach(handler => revertLinearNodes(linearNodes, handler));
+      const handlerList = (item.handler === '_')
+        ? [null] // null => revert all handlers in this scope
+        : (Array.isArray(item.handlers) && item.handlers.length > 0 ?
+          item.handlers :
+          [item.handler || 'text']);
+      handlerList.forEach(handler => revertLinearNodes(linearNodes, handler));
       linearNodes.push({
         isRevertMarker: true,
-        handlers: handlers.slice()
+        handlers: item.handler === '_' ? [] : handlerList.slice(),
+        parentIndexRef
       });
       markNodeReverted(container, i);
       scopeHasRevert = true;

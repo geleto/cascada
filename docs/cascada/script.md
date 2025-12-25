@@ -4,7 +4,7 @@
 
 [Markdown for AI Coding Agents](https://raw.githubusercontent.com/geleto/cascada/refs/heads/master/docs/cascada/script-agent.md)
 
-[Github Project](https://github.com/geleto/cascada)
+[Cascada Github](https://github.com/geleto/cascada)
 
 ## Cascada Script — Implicitly Parallel, Explicitly Sequential
 
