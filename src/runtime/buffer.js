@@ -61,12 +61,13 @@ function revertLinearNodes(linearNodes, handlerName) {
 
     if (info && info.isRevertMarker) {
       // Markers belong to the scope where @_revert executed. If it matches the handler
-      // we're currently rewinding, we stop for this scope but keep bubbling up so that
-      // parent scopes (tracked via parentIndexRef) continue their own cleanup.
+      // we're currently rewinding (or was a universal @_revert), we stop for this scope
+      // but keep bubbling up so that parent scopes continue their own cleanup.
       const markerHandlers = info.handlers;
-      const appliesToHandler = !markerHandlers ||
-        markerHandlers.length === 0 ||
-        markerHandlers.includes(handlerName);
+      const targetsAllHandlers = info.targetsAllHandlers === true;
+      const appliesToHandler = targetsAllHandlers ||
+        (handlerName !== null && markerHandlers && markerHandlers.includes(handlerName));
+
       if (appliesToHandler) {
         break; // stop rewinding once we hit a previous _revert on the same handler
       }
@@ -137,7 +138,8 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
     }
 
     if (isRevertCommand(item)) {
-      const handlerList = (item.handler === '_')
+      const targetsAllHandlers = item.handler === '_';
+      const handlerList = targetsAllHandlers
         ? [null] // null => revert all handlers in this scope
         : (Array.isArray(item.handlers) && item.handlers.length > 0 ?
           item.handlers :
@@ -145,7 +147,8 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
       handlerList.forEach(handler => revertLinearNodes(linearNodes, handler));
       linearNodes.push({
         isRevertMarker: true,
-        handlers: item.handler === '_' ? [] : handlerList.slice(),
+        targetsAllHandlers,
+        handlers: targetsAllHandlers ? null : handlerList.slice(),
         parentIndexRef
       });
       markNodeReverted(container, i);
