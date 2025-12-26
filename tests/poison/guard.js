@@ -86,5 +86,19 @@
       });
       expect(res.replace(/\s+/g, ' ').trim()).to.equal('OUTER DONE');
     });
+
+    it('should respect manual @_revert inside guard block', async () => {
+      const tpl = `
+        BEFORE
+        {% guard %}
+          discard
+          {% revert %}
+          keep
+        {% endguard %}
+        AFTER
+      `;
+      const res = await env.renderTemplateString(tpl);
+      expect(res.replace(/\s+/g, ' ').trim()).to.equal('BEFORE keep AFTER');
+    });
   });
 })();

@@ -814,6 +814,15 @@ class Parser extends Obj {
     return new nodes.Guard(tag.lineno, tag.colno, body);
   }
 
+  parseRevert() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('revert')) {
+      this.fail('parseRevert: expected revert', tag.lineno, tag.colno);
+    }
+    this.advanceAfterBlockEnd(tag.value);
+    return new nodes.Revert(tag.lineno, tag.colno);
+  }
+
   parseStatement() {
     var tok = this.peekToken();
     var node;
@@ -873,6 +882,8 @@ class Parser extends Obj {
         return this.parseExtern();
       case 'guard':
         return this.parseGuard();
+      case 'revert':
+        return this.parseRevert();
       default:
         if (this.extensions.length) {
           for (let i = 0; i < this.extensions.length; i++) {

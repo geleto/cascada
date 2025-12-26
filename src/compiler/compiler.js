@@ -544,6 +544,13 @@ class Compiler extends CompilerBase {
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node);
   }
 
+  compileRevert(node, frame) {
+    this.emit.addToBuffer(node, frame, () => {
+      this.emit(`{ handler: '_', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
+    }, node);
+    this.emit.line(`runtime.markBufferHasRevert(${this.buffer});`);
+  }
+
 
   //todo! - get rid of the callback
   compileIf(node, frame, async) {
