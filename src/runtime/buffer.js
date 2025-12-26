@@ -83,6 +83,16 @@ function revertLinearNodes(linearNodes, handlerName) {
   }
 }
 
+function ensureBufferScopeMetadata(buffer) {
+  if (!Array.isArray(buffer)) return;
+  if (buffer._outputScopeRoot === undefined) {
+    buffer._outputScopeRoot = true;
+  }
+  if (buffer._hasRevert === undefined) {
+    buffer._hasRevert = false;
+  }
+}
+
 // Performs a single linear scan to apply handler-targeted reverts per buffer.
 function processReverts(buffer) {
   if (!Array.isArray(buffer) || buffer._revertsProcessed) return;
@@ -232,6 +242,7 @@ function bufferHasPoison(arr) {
 
 function flattenBuffer(arr, context = null, focusOutput = null) {
   if (Array.isArray(arr)) {
+    ensureBufferScopeMetadata(arr);
     processReverts(arr);
   }
   // if (arr && arr._reverted) {

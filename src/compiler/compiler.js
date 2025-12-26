@@ -822,7 +822,6 @@ class Compiler extends CompilerBase {
       this._addDeclaredVar(currFrame, 'caller');
     }
     const bufferId = this._pushBuffer();
-    this.emit.line(`frame.markOutputBufferScope(${bufferId});`);
 
     this.emit.withScopedSyntax(() => {
       this.compile(node.body, currFrame);
@@ -936,7 +935,6 @@ class Compiler extends CompilerBase {
       this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this.emit.line('let output = [];');
-        this.emit.line('frame.markOutputBufferScope(output);');
 
         this.compile(n.body, f);//write to output
 
