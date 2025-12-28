@@ -1205,7 +1205,7 @@ endguard
 By default, a `guard` block (with no arguments) protects:
 
 1. **All Output Handlers** (`@data`, `@text`, etc.)
-   Writes made inside the block are discarded on error using `_revert()`.
+   Writes made inside the block are discarded on error using `_revert()`. Manual calls to `@._revert()` or the `revert` statement inside the guard are scoped to that guard's buffer as well, so they never leak past the guard boundary.
 
 2. **All Sequential Paths** (`!`)
    If a path (such as `db!`) becomes poisoned, it is automatically repaired using `!!` so it can be used again, but - any side-effect calls are not undone.
@@ -1310,18 +1310,38 @@ If present, it runs only if the guard finishes poisoned:
 
 While `guard` provides automatic protection for a block of code, you may sometimes need manual control to "fix" an output handler that has become poisoned within the current flow. Unlike variables (which can be reassigned) or sequential locks (which can be repaired with `!!`), output handlers accumulate changes, so they require a specific reset mechanism.
 
-Calling `@handler._revert()` resets that handler to the state it was in at the beginning of the **current output scope**. This discards all writes (successful or failed) made within that scope and removes the poison status.
+Calling `@handler._revert()` resets that handler to the state it was in at the beginning of the **current output scope**. Use `@._revert()` when you want to revert **all** handlers in the scope at once, or write the `revert` statement, which is the script-language shorthand for the same universal operation. Any of these forms discard all writes (successful or failed) made within that scope and remove the poison status.
+
+**The `revert` Statement (Scripts)**
+`revert` is a standalone statement (no `@`) that immediately behaves as if you called `@._revert()`. It is available anywhere a normal statement can appear, including within `if`/`else`, loop bodies, guards, captures, and macros. Because it resets every handler in the current output scope, reach for `@handler._revert()` when you need to surgically fix just one handler and `revert` when you deliberately want a clean slate for the entire scope.
+
+```javascript
+guard
+  var payload = capture :data
+    @data.value = riskyFetch()
+  endcapture
+
+  if payload is error
+    revert             // clears the guard's buffered output
+    @data.status = "fallback"
+    @data.error = payload#message
+  else
+    @data.status = "ok"
+    @data.payload = payload
+  endif
+endguard
+```
 
 **Output Scopes**
-The "checkpoint" that `_revert()` restores to is the start of the nearest enclosing:
-1.  `guard` block
-2.  `capture` block
-3.  `macro` definition
-4.  The Script root (if none of the above apply)
+The "checkpoint" that `_revert()` restores to is the start of the nearest enclosing scope boundary. These boundaries now include:
+1.  `guard` blocks (including their private buffers when inserted into a parent output)
+2.  `include` and `call` buffers that stage output before merging into the parent scope
+3.  Isolated scopes such as `capture`, `macro`, and `caller` blocks, all of which flatten immediately after they finish
+4.  The Script or Template root (if none of the above apply)
 
 **Usage**
 *   **Supported Handlers:** Works on `@data`, `@text`, and any custom handlers.
-*   **Root Only:** You must call this on the handler itself (e.g., `@data._revert()`), not on a specific path.
+*   **Root Only:** Call `_revert()` on a handler root (e.g., `@data._revert()`) or use the universal `@._revert()` / `revert` forms. Subpaths such as `@data.user._revert()` remain invalid.
 
 **Example: Resetting `@data` on failure**
 
@@ -1336,7 +1356,10 @@ The "checkpoint" that `_revert()` restores to is the start of the nearest enclos
 if @data is error
   // 4. Revert @data to the start of the script/scope
   // This removes 'timestamp' AND the error from 'fetchContent'
-  @data._revert()
+  @data._revert()   // Handler-specific reset
+  // or, to reset every handler at once:
+  // @._revert()
+  // revert
 
   // 5. Write a clean fallback response
   @data.error = "Content unavailable"
@@ -1352,13 +1375,15 @@ var message = capture :text
 
   if result is error
      // Reverts only to the start of this capture block
-     @text._revert()
+     revert          // same as @._revert()
      @text("Operation failed.")
   else
      @text(" Success!")
   endif
 endcapture
 ```
+
+For a deeper dive into how the runtime tracks these buffers and boundaries, see `docs/code/output-revert.md`.
 
 ### Peeking Inside Errors with `#`
 
