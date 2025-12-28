@@ -119,6 +119,8 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
 
     if (Array.isArray(item)) {
       const childIsScope = item._outputScopeRoot === true;
+      const lastValue = item.length > 0 ? item[item.length - 1] : null;
+      const hasPostProcessFn = typeof lastValue === 'function';
 
       if (childIsScope) {
         if (item._hasRevert === true) {
@@ -131,6 +133,11 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
           item._revertsProcessed = true;
         }
         linearNodes.push({ handler: 'text', container, index: i, scopeRoot: true, parentIndexRef });
+        continue;
+      }
+
+      if (hasPostProcessFn) {
+        linearNodes.push({ handler: 'text', container, index: i, parentIndexRef });
         continue;
       }
 
