@@ -7,8 +7,6 @@ const {
   handleError
 } = require('./errors');
 
-const REVERT_SENTINEL = Object.freeze({ _reverted: true });
-
 // Flags a buffer scope so later passes know it contains a @_revert command.
 function markBufferHasRevert(buffer) {
   if (!Array.isArray(buffer)) return;
@@ -47,7 +45,7 @@ function isRevertCommand(item) {
 function markNodeReverted(container, index) {
   const value = container[index];
   if (!value || typeof value !== 'object') {
-    container[index] = { ...REVERT_SENTINEL };
+    container[index] = { _reverted: true };
     return;
   }
   value._reverted = true;
@@ -249,7 +247,6 @@ function bufferHasPoison(arr) {
     }
     // Recursive check for nested arrays
     if (Array.isArray(item)) {
-      if (item._reverted) continue; // Skip if already reverted
       if (bufferHasPoison(item)) {
         return true;
       }
@@ -264,9 +261,6 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     ensureBufferScopeMetadata(arr);
     processReverts(arr);
   }
-  // if (arr && arr._reverted) {
-  //   return context ? {} : '';
-  // }
   // FAST PATH: If no context, it's a simple template. Concatenate strings and arrays.
   if (!context) {
     if (!Array.isArray(arr)) {
@@ -277,9 +271,6 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     const errors = [];
 
     const result = arr.reduce((acc, item) => {
-      if (item && item._reverted) {
-        return acc;
-      }
       // Check for poison marker first
       if (item && typeof item === 'object' && item.__cascadaPoisonMarker === true) {
         if (item.errors && Array.isArray(item.errors)) {
@@ -296,7 +287,6 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
       // Handle nested arrays (recursive call)
       if (Array.isArray(item)) {
-        if (item._reverted) return acc;
         try {
           return acc + flattenBuffer(item, null, null);
         } catch (err) {
@@ -387,8 +377,6 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
     if (item === null || item === undefined) return;
 
-    if (item && item._reverted) return;
-
     // Check for regular poison value
     if (isPoison(item)) {
       collectedErrors.push(...item.errors);
@@ -396,7 +384,6 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     }
 
     if (Array.isArray(item)) {
-      if (item._reverted) return;
       const last = item.length > 0 ? item[item.length - 1] : null;
 
       // Handle arrays with a post-processing function (e.g., from auto-escaping).
