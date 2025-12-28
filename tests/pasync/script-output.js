@@ -2,13 +2,16 @@
 
 let expect;
 let AsyncEnvironment;
+let StringLoader;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
+  StringLoader = require('../util').StringLoader;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
+  StringLoader = window.util.StringLoader;
 }
 
 describe('Cascada Script: Output commands', function () {
@@ -2907,6 +2910,47 @@ describe('Cascada Script: Output commands', function () {
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.be(undefined);
+    });
+  });
+
+  describe('Template @_revert integration', function () {
+    it('should isolate @_revert within included templates', async () => {
+      const loader = new StringLoader();
+      loader.addTemplate('partial.njk', `
+        Include-Start
+        {% revert %}
+        Include-End
+      `);
+      loader.addTemplate('main.njk', `
+        Before
+        {% include "partial.njk" %}
+        After
+      `);
+
+      const includeEnv = new AsyncEnvironment(loader);
+      const result = await includeEnv.renderTemplate('main.njk');
+      expect(result.replace(/\s+/g, ' ').trim()).to.equal('Before Include-End After');
+    });
+
+    it('should isolate @_revert inside caller blocks', async () => {
+      const loader = new StringLoader();
+      loader.addTemplate('caller.njk', `
+        {% macro wrapper() %}
+WRAP-START
+  {{ caller() }}
+WRAP-END
+        {% endmacro %}
+
+        {% call wrapper() %}
+X
+{% revert %}
+Y
+        {% endcall %}
+      `);
+
+      const callerEnv = new AsyncEnvironment(loader);
+      const result = await callerEnv.renderTemplate('caller.njk');
+      expect(result.replace(/\s+/g, ' ').trim()).to.equal('WRAP-START Y WRAP-END');
     });
   });
 
