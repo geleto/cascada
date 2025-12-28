@@ -67,6 +67,8 @@ function revertLinearNodes(linearNodes, handlerName) {
         (handlerName !== null && markerHandlers && markerHandlers.includes(handlerName));
 
       if (appliesToHandler) {
+        // Debug helper: uncomment to confirm early-exit skip logic during tests
+        // console.log('[revert-opt][marker-hit] handler=%s, universal=%s', handlerName === null ? '_' : handlerName, targetsAllHandlers);
         break; // stop rewinding once we hit a previous _revert on the same handler
       }
       continue;

@@ -2922,6 +2922,49 @@ describe('Cascada Script: Output commands', function () {
       const result = await env.renderScriptString(script);
       expect(result).to.equal('2');
     });
+
+    it('should preserve scope output when multiple handler reverts occur', async () => {
+      const script = `
+        :text
+        var section = capture
+          @text("first")
+          @text._revert()
+          @text("second")
+          @text("third")
+          @text._revert()
+          @text("final")
+        endcapture
+        @text("Prefix:")
+        @text(section.text)
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('Prefix:final');
+    });
+
+    it('should isolate nested scopes when using @_revert()', async () => {
+      const script = `
+        :text
+        var outer = capture
+          @text("outer-A")
+          @._revert()
+          @text("outer-B")
+          @._revert()
+          @text("outer-C")
+
+          var inner = capture
+            @text("inner-1")
+            @._revert()
+            @text("inner-2")
+          endcapture
+
+          @text(inner.text)
+        endcapture
+
+        @text(outer.text)
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('outer-Cinner-2');
+    });
   });
 
   describe('Template @_revert integration', function () {
