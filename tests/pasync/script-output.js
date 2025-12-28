@@ -2911,6 +2911,17 @@ describe('Cascada Script: Output commands', function () {
       const result = await env.renderScriptString(script);
       expect(result).to.be(undefined);
     });
+
+    it('should support revert shorthand in script mode', async () => {
+      const script = `
+        :text
+        @text("1")
+        revert
+        @text("2")
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('2');
+    });
   });
 
   describe('Template @_revert integration', function () {

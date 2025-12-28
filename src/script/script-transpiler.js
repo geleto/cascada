@@ -932,7 +932,12 @@ class ScriptTranspiler {
 
     const firstWord = this._getFirstWord(parseResult.codeContent);
     const code = parseResult.codeContent.trim();
+    const isRevertLine = /^revert\s*(\(\s*\))?$/i.test(code);
+
     if (code.startsWith('@')) {
+      this._processOutputCommand(parseResult, lineIndex);
+    } else if (isRevertLine) {
+      parseResult.codeContent = '@._revert()';
       this._processOutputCommand(parseResult, lineIndex);
     } else if (code.startsWith(':')) {
       this._processFocusDirective(parseResult, lineIndex);
