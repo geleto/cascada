@@ -173,6 +173,25 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
   if (isScopeRoot) {
     container._hasRevert = scopeHasRevert;
     container._revertsProcessed = true;
+    const rebuilt = [];
+    if (linearNodes && linearNodes.length > 0) {
+      for (const entry of linearNodes) {
+        if (entry && entry.isRevertMarker) continue;
+        if (!entry || !entry.container) continue;
+        const value = entry.container[entry.index];
+        if (!value || value._reverted) continue;
+        rebuilt.push(value);
+      }
+    } else {
+      for (const item of container) {
+        if (!item || item._reverted) continue;
+        rebuilt.push(item);
+      }
+    }
+    container.length = rebuilt.length;
+    for (let idx = 0; idx < rebuilt.length; idx++) {
+      container[idx] = rebuilt[idx];
+    }
   }
 
   return scopeHasRevert;
