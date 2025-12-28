@@ -2,11 +2,12 @@
 
 ### 1. Overview
 
-`_revert()` resets an output handler back to the state it had at the start of the nearest enclosing **output scope**. Cascada now supports three invocation forms:
+`_revert()` resets an output handler back to the state it had at the start of the nearest enclosing **output scope**. Cascada now supports four invocation forms:
 
 - `@handler._revert()` — handler-specific reset.
 - `@._revert()` — universal reset for all handlers in the current scope.
 - `{% revert %}` — template shorthand that expands to `@._revert()`.
+- `revert` / `revert()` inside Cascada Script — rewritten by the transpiler to `@._revert()`.
 
 An output scope is created whenever the compiler builds a buffer that represents a logical unit of output. These fall into two categories:
 
@@ -24,6 +25,7 @@ Tree-attached scopes (root, guard, include/call that write straight into the par
 1. **Script Transpiler**
    - Converts Cascada Script `@...` syntax to `{% output_command ... %}`.
    - Recognizes `@._revert()` shorthand and rewrites it to call handler `_`.
+   - Treats standalone `revert` / `revert()` lines as `@._revert()` for readability.
 2. **Parser**
    - `parseRevert()` handles `{% revert %}` and emits a `nodes.Revert`.
    - `parseOutputCommand()` (existing) handles explicit `@handler._revert()`.
@@ -72,12 +74,13 @@ Tree-attached scopes (root, guard, include/call) still set these flags eagerly a
    - When `_revert()` is encountered, items are popped from the current scope’s stack until either:
      - Another `_revert` marker for the same handler (or universal marker) is reached, or
      - The stack empties (scope start).
-   - Matching entries are marked `_reverted` so `flattenBuffer` will skip them.
+   - Matching entries are marked `_reverted` on the stack, but the scope buffer is rebuilt immediately afterwards: once the walk finishes, the scope array is replaced with the surviving entries from the stack. This keeps `_reverted` artifacts out of subsequent passes.
    - Universal markers (`targetsAllHandlers`) match both universal and handler-specific rewinds. The helper also records `parentIndexRef` so once the scope-level rewind stops, the traversal resumes precisely at the parent node that owned this child array.
+   - Arrays whose last element is a post-processing function (SafeString wrappers, etc.) are treated as atomic stack entries; they are never flattened into the parent stack so their function payload persists unchanged.
 
 #### 3.4 Flattening
 
-`flattenBuffer` respects `_reverted` entries in both template fast-path and script mode. The final render only contains surviving text/handler results. Focused outputs (`:data`, `:text`, etc.) are applied after the pass completes.
+Because each scope array is rebuilt after rewinding, `_reverted` entries never reach the flattening phase anymore. `flattenBuffer` simply flattens strings/arrays and executes any remaining post-processing functions; focused outputs (`:data`, `:text`, etc.) are applied after the pass completes.
 
 ### 4. Revert Tag (`{% revert %}`)
 
