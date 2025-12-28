@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { ncp } = require('ncp');
 
 // Paths
 const DOCS_SOURCE = path.resolve(__dirname, '../docs/cascada/script.md');
