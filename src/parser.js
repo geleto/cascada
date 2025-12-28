@@ -804,6 +804,46 @@ class Parser extends Obj {
       this.fail('parseGuard: expected guard', tag.lineno, tag.colno);
     }
 
+    const handlerTargets = [];
+    const seenHandlers = new Set();
+
+    while (true) {
+      const nextTok = this.peekToken();
+      if (!nextTok) {
+        this.fail('parseGuard: unexpected end of file', tag.lineno, tag.colno);
+      }
+
+      if (nextTok.type === lexer.TOKEN_BLOCK_END) {
+        break;
+      }
+
+      if (nextTok.type === lexer.TOKEN_COMMA) {
+        this.nextToken();
+        continue;
+      }
+
+      if (nextTok.type !== lexer.TOKEN_SYMBOL) {
+        this.fail(`parseGuard: unexpected token "${nextTok.value}"`, nextTok.lineno, nextTok.colno);
+      }
+
+      const selectorTok = this.nextToken();
+      const rawSelector = selectorTok.value;
+
+      if (rawSelector.startsWith('@')) {
+        const handlerName = rawSelector.slice(1);
+        if (!handlerName) {
+          this.fail('guard: expected handler name after @', selectorTok.lineno, selectorTok.colno);
+        }
+        if (!seenHandlers.has(handlerName)) {
+          handlerTargets.push(handlerName);
+          seenHandlers.add(handlerName);
+        }
+      } else {
+        // Future selector types (e.g., sequential paths, variables) can be handled here.
+        // For now, ignore non-handler selectors.
+      }
+    }
+
     this.advanceAfterBlockEnd(tag.value);
 
     // Parse the body until endguard
@@ -811,7 +851,12 @@ class Parser extends Obj {
 
     this.advanceAfterBlockEnd();
 
-    return new nodes.Guard(tag.lineno, tag.colno, body);
+    return new nodes.Guard(
+      tag.lineno,
+      tag.colno,
+      body,
+      handlerTargets.length > 0 ? handlerTargets : null
+    );
   }
 
   parseRevert() {

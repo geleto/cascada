@@ -156,6 +156,7 @@ module.exports = {
   flattenBuffer: buffer.flattenBuffer,
   addPoisonMarkersToBuffer: buffer.addPoisonMarkersToBuffer,
   markBufferReverted: buffer.markBufferReverted,
+  revertBufferHandlers: buffer.revertBufferHandlers,
   bufferHasPoison: buffer.bufferHasPoison,
   markBufferHasRevert: buffer.markBufferHasRevert,
 

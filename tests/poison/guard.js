@@ -100,5 +100,28 @@
       const res = await env.renderTemplateString(tpl);
       expect(res.replace(/\s+/g, ' ').trim()).to.equal('BEFORE keep AFTER');
     });
+
+    it('should revert only specified handlers in script mode', async () => {
+      const script = `
+        guard @text, @data
+          @text("INNER")
+          @data.guard.value = "DROP"
+          @text(explode())
+        endguard
+
+        @text("OUTER")
+        @data.status = "ok"
+      `;
+
+      const context = {
+        explode: () => {
+          throw new Error('boom');
+        }
+      };
+
+      const result = await env.renderScriptString(script, context);
+      expect(result.text.trim()).to.equal('OUTER');
+      expect(result.data).to.eql({ status: 'ok' });
+    });
   });
 })();

@@ -51,6 +51,16 @@ function markNodeReverted(container, index) {
   value._reverted = true;
 }
 
+function markBufferReverted(buffer) {
+  if (!buffer) {
+    return;
+  }
+  buffer._reverted = true;
+  if (Array.isArray(buffer)) {
+    buffer.length = 0;
+  }
+}
+
 // Walks recorded linear nodes backwards and reverts those for a handler.
 function revertLinearNodes(linearNodes, handlerName) {
   if (!linearNodes) return;
@@ -202,6 +212,28 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
   }
 
   return scopeHasRevert;
+}
+
+function revertBufferHandlers(buffer, handlerNames) {
+  if (!Array.isArray(buffer)) {
+    return;
+  }
+
+  if (!Array.isArray(handlerNames) || handlerNames.length === 0) {
+    markBufferReverted(buffer);
+    return;
+  }
+
+  handlerNames.forEach((handler) => {
+    buffer.push({
+      handler: handler || 'text',
+      command: '_revert',
+      arguments: [],
+      pos: null
+    });
+    markBufferHasRevert(buffer);
+    processReverts(buffer);
+  });
 }
 
 /**
@@ -602,10 +634,8 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 module.exports = {
   addPoisonMarkersToBuffer,
   flattenBuffer,
-  markBufferReverted: (buffer) => {
-    buffer._reverted = true;
-    buffer.length = 0;
-  },
+  markBufferReverted,
+  revertBufferHandlers,
   markBufferHasRevert,
   bufferHasPoison
 };

@@ -536,8 +536,15 @@ class Compiler extends CompilerBase {
     // 5. Check Buffer for Poison
     // If poison is found, we mark this specific buffer node as reverted.
     // We use the runtime helper we just added.
+    const handlerTargets = Array.isArray(node.handlerTargets) && node.handlerTargets.length > 0
+      ? JSON.stringify(node.handlerTargets)
+      : null;
     this.emit.line(`if (runtime.bufferHasPoison(${this.buffer})) {`);
-    this.emit.line(`  runtime.markBufferReverted(${this.buffer});`);
+    if (handlerTargets) {
+      this.emit.line(`  runtime.revertBufferHandlers(${this.buffer}, ${handlerTargets});`);
+    } else {
+      this.emit.line(`  runtime.markBufferReverted(${this.buffer});`);
+    }
     this.emit.line('}');
 
     // 6. End Async Block

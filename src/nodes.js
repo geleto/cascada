@@ -128,13 +128,8 @@ class IfAsync extends If {
 }
 
 class Guard extends Node {
-  constructor(lineno, colno, body) {
-    super(lineno, colno, body);
-    this.body = body;
-  }
-
   get fields() {
-    return ['body'];
+    return ['body', 'handlerTargets'];
   }
 }
 
