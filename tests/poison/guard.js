@@ -123,5 +123,58 @@
       expect(result.text.trim()).to.equal('OUTER');
       expect(result.data).to.eql({ status: 'ok' });
     });
+
+    it('should allow guard @ to revert all handlers', async () => {
+      const script = `
+        guard @
+          @text("INNER")
+          @data.guard.value = "DROP"
+          @text(explode())
+        endguard
+
+        @text("OUTER")
+        @data.status = "ok"
+      `;
+
+      const context = {
+        explode: () => {
+          throw new Error('boom');
+        }
+      };
+
+      const result = await env.renderScriptString(script, context);
+      expect(result.text.trim()).to.equal('OUTER');
+      expect(result.data).to.eql({ status: 'ok' });
+    });
+
+    it('should error when mixing @ with specific handlers', async () => {
+      const script = `
+        guard @, @text
+          @text("X")
+        endguard
+      `;
+
+      try {
+        await env.renderScriptString(script, {});
+        expect().fail('Expected guard selector error');
+      } catch (err) {
+        expect(err.message).to.contain('"@" cannot be combined');
+      }
+    });
+
+    it('should error on duplicate handler selectors', async () => {
+      const script = `
+        guard @text, @text
+          @text("X")
+        endguard
+      `;
+
+      try {
+        await env.renderScriptString(script, {});
+        expect().fail('Expected guard duplicate selector error');
+      } catch (err) {
+        expect(err.message).to.contain('duplicate selector "@text"');
+      }
+    });
   });
 })();

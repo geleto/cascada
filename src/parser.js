@@ -805,7 +805,7 @@ class Parser extends Obj {
     }
 
     const handlerTargets = [];
-    const seenHandlers = new Set();
+    const seenSelectors = new Set();
 
     while (true) {
       const nextTok = this.peekToken();
@@ -829,19 +829,27 @@ class Parser extends Obj {
       const selectorTok = this.nextToken();
       const rawSelector = selectorTok.value;
 
+      if (seenSelectors.has(rawSelector)) {
+        this.fail(`guard: duplicate selector "${rawSelector}"`, selectorTok.lineno, selectorTok.colno);
+      }
+      seenSelectors.add(rawSelector);
+
       if (rawSelector.startsWith('@')) {
         const handlerName = rawSelector.slice(1);
-        if (!handlerName) {
-          this.fail('guard: expected handler name after @', selectorTok.lineno, selectorTok.colno);
-        }
-        if (!seenHandlers.has(handlerName)) {
+        if (handlerName.length === 0) {
+          handlerTargets.push('@');
+        } else {
           handlerTargets.push(handlerName);
-          seenHandlers.add(handlerName);
         }
       } else {
         // Future selector types (e.g., sequential paths, variables) can be handled here.
         // For now, ignore non-handler selectors.
       }
+    }
+
+    const hasAllHandlersSelector = handlerTargets.includes('@');
+    if (hasAllHandlersSelector && handlerTargets.length > 1) {
+      this.fail('guard: "@" cannot be combined with specific handler selectors', tag.lineno, tag.colno);
     }
 
     this.advanceAfterBlockEnd(tag.value);
