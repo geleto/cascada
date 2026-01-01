@@ -129,7 +129,7 @@ class IfAsync extends If {
 
 class Guard extends Node {
   get fields() {
-    return ['body', 'handlerTargets'];
+    return ['body', 'handlerTargets', 'variableTargets', 'sequenceTargets'];
   }
 }
 

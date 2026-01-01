@@ -805,6 +805,8 @@ class Parser extends Obj {
     }
 
     const handlerTargets = [];
+    const variableTargets = [];
+    const sequenceTargets = [];
     const seenSelectors = new Set();
 
     while (true) {
@@ -822,28 +824,46 @@ class Parser extends Obj {
         continue;
       }
 
-      if (nextTok.type !== lexer.TOKEN_SYMBOL) {
+      let rawSelector;
+      let selectorTok;
+
+      if (nextTok.type === lexer.TOKEN_OPERATOR && nextTok.value === '!') {
+        // Handle global sequence lock syntax (!)
+        this.nextToken(); // consume '!'
+        rawSelector = '!';
+        selectorTok = nextTok;
+      } else if (nextTok.type === lexer.TOKEN_SYMBOL) {
+        selectorTok = this.nextToken();
+        rawSelector = selectorTok.value;
+
+        // Check for postfix '!'
+        const afterTok = this.peekToken();
+        if (afterTok && afterTok.type === lexer.TOKEN_OPERATOR && afterTok.value === '!') {
+          this.nextToken(); // consume '!'
+          rawSelector += '!';
+        }
+      } else {
         this.fail(`parseGuard: unexpected token "${nextTok.value}"`, nextTok.lineno, nextTok.colno);
       }
-
-      const selectorTok = this.nextToken();
-      const rawSelector = selectorTok.value;
 
       if (seenSelectors.has(rawSelector)) {
         this.fail(`guard: duplicate selector "${rawSelector}"`, selectorTok.lineno, selectorTok.colno);
       }
       seenSelectors.add(rawSelector);
 
-      if (rawSelector.startsWith('@')) {
+      if (rawSelector === '!') {
+        sequenceTargets.push('!');
+      } else if (rawSelector.startsWith('@')) {
         const handlerName = rawSelector.slice(1);
         if (handlerName.length === 0) {
           handlerTargets.push('@');
         } else {
           handlerTargets.push(handlerName);
         }
+      } else if (rawSelector.endsWith('!')) {
+        sequenceTargets.push(rawSelector);
       } else {
-        // Future selector types (e.g., sequential paths, variables) can be handled here.
-        // For now, ignore non-handler selectors.
+        variableTargets.push(rawSelector);
       }
     }
 
@@ -863,7 +883,9 @@ class Parser extends Obj {
       tag.lineno,
       tag.colno,
       body,
-      handlerTargets.length > 0 ? handlerTargets : null
+      handlerTargets.length > 0 ? handlerTargets : null,
+      variableTargets.length > 0 ? variableTargets : null,
+      sequenceTargets.length > 0 ? sequenceTargets : null
     );
   }
 

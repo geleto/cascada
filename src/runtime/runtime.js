@@ -8,6 +8,7 @@ const call = require('./call');
 const frame = require('./frame');
 const resolve = require('./resolve');
 const buffer = require('./buffer');
+const guard = require('./guard');
 const loop = require('./loop');
 const outputValue = require('./safe-output');
 
@@ -159,6 +160,8 @@ module.exports = {
   revertBufferHandlers: buffer.revertBufferHandlers,
   bufferHasPoison: buffer.bufferHasPoison,
   markBufferHasRevert: buffer.markBufferHasRevert,
+
+  guard,
 
 
   memberLookup: lookup.memberLookup,

@@ -329,7 +329,10 @@ function createPoison(errors/* or 1 error */, lineno = null, colno = null, error
 }
 
 /**
- * Check if a value is poisoned.
+ * Check if a VALUE is a PoisonedValue (before await)
+ * This does not handle regular rejected promises and is not
+ * the same as `is error` which awaits any promises
+ * thus it shall be used only as a shortcut for faster non-async processing
  */
 function isPoison(value) {
   return value != null/*and undefined*/ && value[POISON_KEY] === true;
@@ -341,6 +344,27 @@ function isPoison(value) {
  */
 function isPoisonError(error) {
   return error != null/*and undefined*/ && error[POISON_ERROR_KEY] === true;
+}
+
+/**
+ * Check if a value is an error or a promise that rejects with an error.
+ * Awaits promises and checks if they resolve to poison or reject.
+ */
+async function isError(value) {
+  if (isPoison(value)) {
+    return true;
+  }
+
+  if (value && typeof value.then === 'function') {
+    try {
+      const result = await value;
+      return isPoison(result);
+    } catch (err) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -425,6 +449,7 @@ module.exports = {
   createPoison,
   isPoison,
   isPoisonError,
+  isError,
   collectErrors,
   handleError
 };

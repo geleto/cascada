@@ -48,6 +48,7 @@ class Compiler extends CompilerBase {
     this.buffer = this.bufferStack.pop();
   }
 
+  //@todo - move to compile-base next to _isDeclared
   _addDeclaredVar(frame, varName) {
     if (this.asyncMode || this.scriptMode) {
       if (!frame.declaredVars) {
@@ -515,6 +516,26 @@ class Compiler extends CompilerBase {
       this.fail('guard block only supported in async mode', node.lineno, node.colno);
     }
 
+    const handlerTargets = Array.isArray(node.handlerTargets) ? node.handlerTargets : null;
+    const hasHandlerTargets = handlerTargets && handlerTargets.length > 0;
+    const handlerTargetsAll = hasHandlerTargets && handlerTargets.includes('@');
+    const handlerTargetsList = hasHandlerTargets
+      ? handlerTargets.filter(target => target !== '@')
+      : null;
+
+    const variableTargets = Array.isArray(node.variableTargets) ? node.variableTargets : null;
+    const hasGuardVariables = variableTargets && variableTargets.length > 0;
+    const guardStateVar = hasGuardVariables ? this._tmpid() : null;
+    const declarationFrame = frame;
+
+    if (hasGuardVariables) {
+      for (const varName of variableTargets) {
+        if (!this._isDeclared(declarationFrame, varName)) {
+          this.fail(`guard variable "${varName}" is not declared`, node.lineno, node.colno, node);
+        }
+      }
+    }
+
     // Guard blocks are always async boundaries
     node.isAsync = true;
 
@@ -524,31 +545,50 @@ class Compiler extends CompilerBase {
 
     // 2. Link for explicit reversion (optional, if we want to support manual revert)
     this.emit.line(`frame.markOutputBufferScope(${this.buffer});`);
+    if (guardStateVar) {
+      this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)});`);
+    }
 
     // 3. Compile Body
     this.compile(node.body, frame);
+
+    if (hasGuardVariables) {
+      for (const varName of variableTargets) {
+        if (!frame.writeCounts || !frame.writeCounts[varName]) {
+          this.fail(`guard variable "${varName}" must be modified inside guard`, node.lineno, node.colno, node);
+        }
+      }
+      for (const varName of variableTargets) {
+        this.async.updateFrameWrites(frame, varName);
+      }
+    }
 
     // 4. Inject Logic BEFORE closing the block
     // We need to wait for all inner async operations to complete so the buffer is fully populated
     // We wait for 1 because the current block itself is an active closure
     this.emit.line('await astate.waitAllClosures(1);');
 
-    // 5. Check Buffer for Poison
-    // If poison is found, we mark this specific buffer node as reverted.
-    // We use the runtime helper we just added.
-    const hasHandlerTargets = Array.isArray(node.handlerTargets) && node.handlerTargets.length > 0;
-    const handlerTargetsAll = hasHandlerTargets && node.handlerTargets.includes('@');
-    const handlerTargetsList = hasHandlerTargets
-      ? node.handlerTargets.filter(target => target !== '@')
-      : null;
+    // 5. Check Buffer/Variables for Poison
+    const guardFailedVar = this._tmpid();
+    const guardFailureExpr = guardStateVar
+      ? `runtime.bufferHasPoison(${this.buffer}) || (await runtime.guard.variablesHavePoison(frame, ${guardStateVar}))`
+      : `runtime.bufferHasPoison(${this.buffer})`;
 
-    this.emit.line(`if (runtime.bufferHasPoison(${this.buffer})) {`);
+    // Fail if buffer has poison OR variables have poison
+    this.emit.line(`const ${guardFailedVar} = ${guardFailureExpr};`);
+
+    this.emit.line(`if (${guardFailedVar}) {`);
     if (handlerTargetsAll || !handlerTargetsList || handlerTargetsList.length === 0) {
       this.emit.line(`  runtime.markBufferReverted(${this.buffer});`);
     } else {
       this.emit.line(`  runtime.revertBufferHandlers(${this.buffer}, ${JSON.stringify(handlerTargetsList)});`);
     }
     this.emit.line('}');
+
+    if (guardStateVar) {
+      // guard.complete now handles resolution of write counts too!
+      this.emit.line(`runtime.guard.complete(frame, ${guardStateVar}, ${guardFailedVar});`);
+    }
 
     // 6. End Async Block
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node);
