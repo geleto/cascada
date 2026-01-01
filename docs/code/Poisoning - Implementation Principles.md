@@ -15,7 +15,7 @@
 async function processItems(items) {
   for (const item of items) {
     const result = await process(item);  // If this throws, we stop
-    if (isError(result)) {
+    if (isPoison(result)) {
       return result;  // Return immediately, ignoring remaining items
     }
   }
@@ -34,7 +34,7 @@ async function processItems(items) {
   for (const item of items) {
     try {
       const result = await process(item);
-      if (isError(result)) {
+      if (isPoison(result)) {
         errors.push(result);
         continue;  // KEEP GOING to find more errors
       }
@@ -311,6 +311,9 @@ const result = await poisonValue; // Throws PoisonError
 
 ```javascript
 // Check if a VALUE is a PoisonedValue (before await)
+// This does not handle regular rejected promises and is not
+// the same as `is error` which awaits any promises
+// thus it shall be used only as a shortcut for faster non-async processing
 function isPoison(value) {
   return value != null && value[POISON_KEY] === true;
 }
