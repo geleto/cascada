@@ -47,7 +47,11 @@ async function variablesHavePoison(frame, guardState) {
     }
 
     if (await isError(frame.asyncVars[name])) {
-      return true;
+      const val = frame.asyncVars[name];
+      if (val && val.errors && val.errors.length > 0) {
+        return val.errors[0];
+      }
+      return val;
     }
   }
   return false;

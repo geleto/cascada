@@ -110,8 +110,7 @@ class ScriptTranspiler {
         'elif': ['if'],
         'case': ['switch'],
         'default': ['switch'],
-        'resume': ['try'],
-        'except': ['try']
+        'recover': ['guard']
       },
 
       // Block pairs define how blocks start and end
@@ -127,7 +126,6 @@ class ScriptTranspiler {
         'call': 'endcall',
         'raw': 'endraw',
         'verbatim': 'endverbatim',
-        'try': 'endtry',
         'set': 'endset', //only when no = in the set, then the block has to be closed
         'var': 'endvar', //only when no = in the var, then the block has to be closed
         'guard': 'endguard'
@@ -138,7 +136,7 @@ class ScriptTranspiler {
         'else', 'elif', 'case', 'default',
         'endif', 'endfor', 'endswitch', 'endblock', 'endmacro',
         'endfilter', 'endcall', 'endraw', 'endverbatim',
-        'endwhile', 'endtry', 'endvar'
+        'endwhile', 'endvar', 'recover'
       ],
 
       // Continuation detection

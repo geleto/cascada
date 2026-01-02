@@ -270,26 +270,43 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
   }
 }
 
-function bufferHasPoison(arr) {
+function bufferHasPoison(arr, allowedHandlers = null) {
   if (!arr) return false;
   if (!Array.isArray(arr)) {
-    return isPoison(arr);
+    const isTextPoison = isPoison(arr) || isPoisonError(arr);
+    if (isTextPoison) {
+      // Direct poison (without handler property) is from text/default output.
+      // We check if 'text' handler is allowed (or if allowedHandlers is null/global).
+      if (allowedHandlers && !allowedHandlers.includes('text')) {
+        return false;
+      }
+      return arr;
+    }
+    return false;
   }
 
   for (const item of arr) {
     if (!item) continue;
     // Check for poison marker
     if (item.__cascadaPoisonMarker === true) {
-      return true;
+      if (allowedHandlers && !allowedHandlers.includes(item.handler)) {
+        continue;
+      }
+      return (item.errors && item.errors.length > 0) ? item.errors[0] : true;
     }
     // Check for direct poison value or PoisonError
-    if (isPoison(item) || isPoisonError(item)) {
-      return true;
+    const isTextPoison = isPoison(item) || isPoisonError(item);
+    if (isTextPoison) {
+      if (allowedHandlers && !allowedHandlers.includes('text')) {
+        continue;
+      }
+      return item;
     }
     // Recursive check for nested arrays
     if (Array.isArray(item)) {
-      if (bufferHasPoison(item)) {
-        return true;
+      const res = bufferHasPoison(item, allowedHandlers);
+      if (res) {
+        return res;
       }
     }
   }

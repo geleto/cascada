@@ -1,6 +1,7 @@
 (function () {
   'use strict';
 
+  var cascada;
   var expect;
   var AsyncEnvironment;
   var POISON_SYMBOL = (typeof Symbol !== 'undefined' && Symbol.for)
@@ -9,9 +10,11 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
+    cascada = require('../../src/index');
+    AsyncEnvironment = cascada.AsyncEnvironment;
   } else {
     expect = window.expect;
+    cascada = window.cascada;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
   }
 
@@ -191,7 +194,7 @@
     it('should restore guarded variables on error', async () => {
       const tpl = `
         {% set count = 1 %}
-        {% guard count %}
+        {% guard count, @ %}
           {% set count = count + 1 %}
           {{ error("boom") }}
         {% endguard %}
@@ -208,7 +211,7 @@
     it('should keep guarded variable changes on success', async () => {
       const tpl = `
         {% set count = 1 %}
-        {% guard count %}
+        {% guard count, @ %}
           {% set count = count + 1 %}
         {% endguard %}
         {{ count }}
@@ -440,8 +443,8 @@
 
       const templateB = `{{ lock!.success() }}`;
 
-      let A_in_slow = false;
-      let B_finished = false;
+      let isAinSlow = false;
+      let isBFinished = false;
 
       const context = {
         lock: {
@@ -450,10 +453,10 @@
         },
         getSlow: () => {
           return new Promise(resolve => {
-            A_in_slow = true;
+            isAinSlow = true;
             setTimeout(() => {
               resolve('done_slow');
-              A_in_slow = false;
+              isAinSlow = false;
             }, 200);
           });
         }
@@ -469,14 +472,45 @@
 
       await promB.then(res => {
         expect(res.trim()).to.equal('ok');
-        B_finished = true;
+        isBFinished = true;
       });
 
       // B must finish while A is still in slow
-      expect(A_in_slow).to.be(true);
-      expect(B_finished).to.be(true);
+      expect(isAinSlow).to.be(true);
+      expect(isBFinished).to.be(true);
 
       await promA;
     });
+
+    it('should execute recover block on error', async () => {
+      const script = `
+      var state = "initial"
+      guard state, @data
+        state = "changed"
+        @data.x = error("fail")
+      recover err
+        state = "recovered: " + err.message
+        @data.msg = err.message
+      endguard
+      @data.finalState = state
+      `;
+
+      const context = {
+        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
+      };
+
+      const res = await env.renderScriptString(script, context);
+
+      // Verify finalState indicates successful recovery and variable access
+      expect(res.data.finalState).to.equal('recovered: fail');
+
+      // Verify msg was set in recover block (confirms buffer output works)
+      expect(res.data.msg).to.equal('fail');
+
+      // Verify x was reverted
+      expect(res.data.x).to.be(undefined);
+    });  // 'data' handler: `getHandler` returns instance.
+    // Assuming 'data' handler has some way to check output.
+    // In these tests, usually checking context/variables or throwing.
   });
 })();

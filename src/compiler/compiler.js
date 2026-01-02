@@ -574,25 +574,79 @@ class Compiler extends CompilerBase {
 
     // 5. Check Buffer/Variables for Poison
     const guardFailedVar = this._tmpid();
+
+    // Calculate allowed handlers for poison detection based on selectors
+    let allowedBufferHandlers = '[]';
+
+    // If no specific selectors are provided (neither variables nor handlers),
+    // it functions as a global guard (catch everything).
+    const isGlobalGuard = !hasHandlerTargets && !hasGuardVariables;
+
+    if (isGlobalGuard || handlerTargetsAll) {
+      allowedBufferHandlers = 'null';
+    } else if (handlerTargetsList && handlerTargetsList.length > 0) {
+      allowedBufferHandlers = JSON.stringify(handlerTargetsList);
+    }
+
     const guardFailureExpr = guardStateVar
-      ? `runtime.bufferHasPoison(${this.buffer}) || (await runtime.guard.variablesHavePoison(frame, ${guardStateVar}))`
-      : `runtime.bufferHasPoison(${this.buffer})`;
+      ? `runtime.bufferHasPoison(${this.buffer}, ${allowedBufferHandlers}) || (await runtime.guard.variablesHavePoison(frame, ${guardStateVar}))`
+      : `runtime.bufferHasPoison(${this.buffer}, ${allowedBufferHandlers})`;
 
     // Fail if buffer has poison OR variables have poison
     this.emit.line(`const ${guardFailedVar} = ${guardFailureExpr};`);
+    this.emit.line(`console.log('Guard failed?', ${guardFailedVar});`);
 
     this.emit.line(`if (${guardFailedVar}) {`);
     if (handlerTargetsAll || !handlerTargetsList || handlerTargetsList.length === 0) {
       this.emit.line(`  runtime.markBufferReverted(${this.buffer});`);
+      this.emit.line(`  delete ${this.buffer}._reverted;`);
+      if (this.asyncMode) {
+        this.emit.line(`  ${this.buffer}_index = 0;`);
+      }
     } else {
       this.emit.line(`  runtime.revertBufferHandlers(${this.buffer}, ${JSON.stringify(handlerTargetsList)});`);
+      if (this.asyncMode) {
+        this.emit.line(`  ${this.buffer}_index = ${this.buffer}.length;`);
+      }
     }
-    this.emit.line('}');
 
     if (guardStateVar) {
-      // guard.complete now handles resolution of write counts too!
-      this.emit.line(`runtime.guard.complete(frame, ${guardStateVar}, ${guardFailedVar});`);
+      this.emit.line(`  runtime.guard.complete(frame, ${guardStateVar}, true);`);
     }
+
+    let recoveryWriteCounts;
+    if (node.recoveryBody) {
+      this.emit.asyncBlock(node, frame, true, (f) => {
+        if (node.errorVar) {
+          // Declare the error variable in the compiled scope
+          if (this.scriptMode) {
+            this._addDeclaredVar(f, node.errorVar);
+          }
+          this.async.updateFrameWrites(f, node.errorVar);
+          // Directly set the variable in the frame.
+          // Note: using 'true' for resolveUp is irrelevant here as it's a new variable in new scope (if logic holds),
+          // but we set it in 'f' specifically.
+          // Normalize the error: if it's a PoisonedValue or has .errors array, use the first error.
+          this.emit.line(`let ${node.errorVar}_val = ${guardFailedVar}.errors ? ${guardFailedVar}.errors[0] : ${guardFailedVar};`);
+          // Unwrap RuntimeError to get the original cause if present (better for user logic)
+          this.emit.line(`if (${node.errorVar}_val && ${node.errorVar}_val.cause) { ${node.errorVar}_val = ${node.errorVar}_val.cause; }`);
+          this.emit.line(`frame.set('${node.errorVar}', ${node.errorVar}_val);`);
+        }
+        this.compile(node.recoveryBody, f);
+        recoveryWriteCounts = this.async.countsTo1(f.writeCounts);
+      });
+    }
+
+    this.emit.line('} else {');
+
+    if (recoveryWriteCounts) {
+      this.emit.line(`frame.skipBranchWrites(${JSON.stringify(recoveryWriteCounts)});`);
+    }
+
+    if (guardStateVar) {
+      this.emit.line(`  runtime.guard.complete(frame, ${guardStateVar}, false);`);
+    }
+    this.emit.line('}');
 
     // 6. End Async Block
     frame = this.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node);
