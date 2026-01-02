@@ -600,14 +600,11 @@ class Compiler extends CompilerBase {
     if (handlerTargetsAll || !handlerTargetsList || handlerTargetsList.length === 0) {
       this.emit.line(`  runtime.markBufferReverted(${this.buffer});`);
       this.emit.line(`  delete ${this.buffer}._reverted;`);
-      if (this.asyncMode) {
-        this.emit.line(`  ${this.buffer}_index = 0;`);
-      }
+      this.emit.line(`  ${this.buffer}.length = 0;`);
+      this.emit.line(`  ${this.buffer}_index = 0;`);
     } else {
       this.emit.line(`  runtime.revertBufferHandlers(${this.buffer}, ${JSON.stringify(handlerTargetsList)});`);
-      if (this.asyncMode) {
-        this.emit.line(`  ${this.buffer}_index = ${this.buffer}.length;`);
-      }
+      this.emit.line(`  ${this.buffer}_index = ${this.buffer}.length;`);
     }
 
     if (guardStateVar) {
