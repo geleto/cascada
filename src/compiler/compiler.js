@@ -552,6 +552,10 @@ class Compiler extends CompilerBase {
     // 3. Compile Body
     this.compile(node.body, frame);
 
+    if (node.sequenceTargets && node.sequenceTargets.length > 0) {
+      this.emit.line(`  runtime.guard.repairSequenceLocks(frame, ${JSON.stringify(node.sequenceTargets)});`);
+    }
+
     if (hasGuardVariables) {
       for (const varName of variableTargets) {
         if (!frame.writeCounts || !frame.writeCounts[varName]) {

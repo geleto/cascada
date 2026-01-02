@@ -313,19 +313,170 @@
       expect(res.data.resB).to.equal(20);
     });
 
-    it.skip('should guard and restore sequence locks (postfix !)', async () => {
+    it('should guard and restore sequence locks (postfix !)', async () => {
       const script = `
         guard lock!
-          lock! = "acquired"
-          lock! = poison()
+          var ignore = lock!.fail()
         endguard
-        @data.status = lock!
+        @data.status = lock!.success()
       `;
 
       const res = await env.renderScriptString(script, {
-        poison: () => fakePoison('boom')
+        lock: {
+          fail: () => { throw new Error('lock failure'); },
+          success: () => 'ok'
+        }
       });
-      expect(res.data.status).to.be(undefined);
+      expect(res.data.status).to.equal('ok');
+    });
+
+    it('sequence lock shall not wait on guarded var', async () => {
+      const script = `
+        var slowVar
+        guard lock!, slowVar
+          lock!.op()
+          slowVar = getSlow()
+        endguard
+        @data.status = lock!.success()
+      `;
+
+      var slowResolved = false;
+
+      const res = await env.renderScriptString(script, {
+        lock: {
+          op: () => 'op',
+          success: () => {
+            if (slowResolved) {
+              return 'Not ok';
+            }
+            return 'ok';
+          }
+        },
+        getSlow: () => {
+          return new Promise(resolve => {
+            setTimeout(() => {
+              slowResolved = true;
+              resolve('slow');
+            }, 200);
+          });
+        }
+      });
+      expect(res.data.status).to.equal('ok');
+    });
+
+    it('should guard and restore multiple sequence locks', async () => {
+      const script = `
+        var success
+        guard lock1!, lock2!
+          var _1 = lock1!.op()
+          var _2 = lock2!.op()
+          var _3 = fail()
+        endguard
+        @data.status1 = lock1!.success()
+        @data.status2 = lock2!.success()
+      `;
+
+      const context = {
+        fail: () => { throw new Error('failure'); },
+        lock1: {
+          op: () => 'op1',
+          success: () => 'ok1',
+          fail: () => { throw new Error('fail1'); }
+        },
+        lock2: {
+          op: () => 'op2',
+          success: () => 'ok2',
+          fail: () => { throw new Error('fail2'); }
+        }
+      };
+
+      const res = await env.renderScriptString(script, context);
+      expect(res.data.status1).to.equal('ok1');
+      expect(res.data.status2).to.equal('ok2');
+    });
+
+    it('should repair sequence failure happening after slow sequence operation', async () => {
+      // This ensures that the guard waits for the entire sequence to complete (or fail)
+      // before attempting to repair. If it repaired too early (e.g. while slow() was running),
+      // the subsequent fail() would leave the lock in a broken state.
+      const script = `
+        var ignore
+        guard lock!
+          var _1 = lock!.slow()
+          var _2 = lock!.fail()
+        endguard
+        @data.status = lock!.success()
+      `;
+
+      const context = {
+        lock: {
+          slow: () => new Promise(resolve => setTimeout(() => resolve('slow'), 50)),
+          fail: () => { throw new Error('sequence failed'); },
+          success: () => 'ok'
+        }
+      };
+
+      const res = await env.renderScriptString(script, context);
+      expect(res.data.status).to.equal('ok');
+    });
+
+    it('should allow concurrent access to sequence lock while original owner accepts slow output', async () => {
+      // This is the real proof.
+      // Request A: guard { lock!.op(); {{ getSlow() }} }
+      // 'getSlow()' returns a Promise that is written to the buffer.
+      // The compiler does NOT await output expressions immediately (it buffers them).
+      // So the guard body finishes compilation/execution (sync part).
+      // Then 'finally' executes -> repairSequenceLocks -> lock is released.
+      // Then 'waitAllClosures' executes -> waits for getSlow().
+      //
+      // So Request B should be able to acquire the lock WHILE A is still waiting for getSlow().
+
+      const templateA = `
+         {%- guard lock! -%}
+           {{ lock!.op() }}
+           {{ getSlow() }}
+         {%- endguard -%}
+       `;
+
+      const templateB = `{{ lock!.success() }}`;
+
+      let A_in_slow = false;
+      let B_finished = false;
+
+      const context = {
+        lock: {
+          op: () => 'op',
+          success: () => 'ok'
+        },
+        getSlow: () => {
+          return new Promise(resolve => {
+            A_in_slow = true;
+            setTimeout(() => {
+              resolve('done_slow');
+              A_in_slow = false;
+            }, 200);
+          });
+        }
+      };
+
+      const promA = env.renderTemplateString(templateA, context);
+
+      // Wait 50ms for A to enter slow state
+      await new Promise(r => setTimeout(r, 50));
+
+      // Start B
+      const promB = env.renderTemplateString(templateB, context);
+
+      await promB.then(res => {
+        expect(res.trim()).to.equal('ok');
+        B_finished = true;
+      });
+
+      // B must finish while A is still in slow
+      expect(A_in_slow).to.be(true);
+      expect(B_finished).to.be(true);
+
+      await promA;
     });
   });
 })();

@@ -808,9 +808,10 @@ class Parser extends Obj {
     const variableTargets = [];
     const sequenceTargets = [];
     const seenSelectors = new Set();
+    let first = true;
 
     while (true) {
-      const nextTok = this.peekToken();
+      let nextTok = this.peekToken();
       if (!nextTok) {
         this.fail('parseGuard: unexpected end of file', tag.lineno, tag.colno);
       }
@@ -819,9 +820,13 @@ class Parser extends Obj {
         break;
       }
 
-      if (nextTok.type === lexer.TOKEN_COMMA) {
-        this.nextToken();
-        continue;
+      if (!first) {
+        if (nextTok.type === lexer.TOKEN_COMMA) {
+          this.nextToken();
+          nextTok = this.peekToken();
+        } else {
+          break;
+        }
       }
 
       let rawSelector;
@@ -865,6 +870,8 @@ class Parser extends Obj {
       } else {
         variableTargets.push(rawSelector);
       }
+
+      first = false;
     }
 
     const hasAllHandlersSelector = handlerTargets.includes('@');
@@ -872,12 +879,19 @@ class Parser extends Obj {
       this.fail('guard: "@" cannot be combined with specific handler selectors', tag.lineno, tag.colno);
     }
 
-    this.advanceAfterBlockEnd(tag.value);
+    if (this.peekToken().type === lexer.TOKEN_BLOCK_END) {
+      this.advanceAfterBlockEnd(tag.value);
+    }
 
     // Parse the body until endguard
     const body = this.parseUntilBlocks('endguard');
 
-    this.advanceAfterBlockEnd();
+    // Consume 'endguard'
+    if (this.skipSymbol('endguard')) {
+      if (this.peekToken().type === lexer.TOKEN_BLOCK_END) {
+        this.advanceAfterBlockEnd('endguard');
+      }
+    }
 
     return new nodes.Guard(
       tag.lineno,

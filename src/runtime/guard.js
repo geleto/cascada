@@ -1,6 +1,7 @@
 'use strict';
 
 const { isError } = require('./errors');
+const { withSequenceLock } = require('./sequential');
 
 const DEBUG_GUARD = typeof process !== 'undefined' &&
   process.env &&
@@ -72,8 +73,28 @@ function complete(frame, guardState, shouldRevert) {
   }
 }
 
+function repairSequenceLocks(frame, lockNames) {
+  if (!Array.isArray(lockNames) || lockNames.length === 0) {
+    return;
+  }
+
+  if (DEBUG_GUARD) {
+    // eslint-disable-next-line no-console
+    console.log('[guard-debug] repairing sequence locks', lockNames);
+  }
+
+  for (const lockName of lockNames) {
+    // Unconditional fire-and-forget repair. We don't await this because we want it to
+    // be appended to the sequence immediately.
+    // The operation () => true ensures the lock resolves to a success value (true)
+    // repair: true suppresses any previous error on the lock
+    withSequenceLock(frame, lockName, () => true, null, true);
+  }
+}
+
 module.exports = {
   init,
   variablesHavePoison,
-  complete
+  complete,
+  repairSequenceLocks
 };
