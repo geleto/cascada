@@ -810,87 +810,76 @@ class Parser extends Obj {
     const seenSelectors = new Set();
     let first = true;
 
-    while (true) {
-      let nextTok = this.peekToken();
-      if (!nextTok) {
-        this.fail('parseGuard: unexpected end of file', tag.lineno, tag.colno);
-      }
-
-      if (nextTok.type === lexer.TOKEN_BLOCK_END) {
-        break;
-      }
-
+    while (this.peekToken().type !== lexer.TOKEN_BLOCK_END) {
       if (!first) {
-        if (nextTok.type === lexer.TOKEN_COMMA) {
-          this.nextToken();
-          nextTok = this.peekToken();
-        } else {
+        if (!this.skip(lexer.TOKEN_COMMA)) {
           break;
         }
       }
 
-      let rawSelector;
-      let selectorTok;
+      let rawSelector = '';
+      let selectorTok = this.peekToken();
 
-      if (nextTok.type === lexer.TOKEN_OPERATOR && nextTok.value === '!') {
-        // Handle global sequence lock syntax (!)
-        this.nextToken(); // consume '!'
+      if (this.skipValue(lexer.TOKEN_OPERATOR, '!')) {
+        // Global sequence lock (!)
         rawSelector = '!';
-        selectorTok = nextTok;
-      } else if (nextTok.type === lexer.TOKEN_SYMBOL) {
+        sequenceTargets.push('!');
+      } else if (this.peekToken().type === lexer.TOKEN_SYMBOL) {
+        // Variable, Handler, or Sequence
         selectorTok = this.nextToken();
         rawSelector = selectorTok.value;
 
-        // Check for postfix '!'
-        const afterTok = this.peekToken();
-        if (afterTok && afterTok.type === lexer.TOKEN_OPERATOR && afterTok.value === '!') {
-          this.nextToken(); // consume '!'
+        if (this.skipValue(lexer.TOKEN_OPERATOR, '!')) {
           rawSelector += '!';
         }
+
+        if (rawSelector.startsWith('@')) {
+          const handlerName = rawSelector.slice(1);
+          handlerTargets.push(handlerName.length > 0 ? handlerName : '@');
+        } else if (rawSelector.endsWith('!')) {
+          sequenceTargets.push(rawSelector);
+        } else {
+          variableTargets.push(rawSelector);
+        }
       } else {
-        this.fail(`parseGuard: unexpected token "${nextTok.value}"`, nextTok.lineno, nextTok.colno);
+        this.fail(`parseGuard: unexpected token "${selectorTok.value}"`, selectorTok.lineno, selectorTok.colno);
       }
 
       if (seenSelectors.has(rawSelector)) {
         this.fail(`guard: duplicate selector "${rawSelector}"`, selectorTok.lineno, selectorTok.colno);
       }
       seenSelectors.add(rawSelector);
-
-      if (rawSelector === '!') {
-        sequenceTargets.push('!');
-      } else if (rawSelector.startsWith('@')) {
-        const handlerName = rawSelector.slice(1);
-        if (handlerName.length === 0) {
-          handlerTargets.push('@');
-        } else {
-          handlerTargets.push(handlerName);
-        }
-      } else if (rawSelector.endsWith('!')) {
-        sequenceTargets.push(rawSelector);
-      } else {
-        variableTargets.push(rawSelector);
-      }
-
       first = false;
     }
 
-    const hasAllHandlersSelector = handlerTargets.includes('@');
-    if (hasAllHandlersSelector && handlerTargets.length > 1) {
+    // Validate Handler Targets
+    if (handlerTargets.includes('@') && handlerTargets.length > 1) {
       this.fail('guard: "@" cannot be combined with specific handler selectors', tag.lineno, tag.colno);
     }
 
-    if (this.peekToken().type === lexer.TOKEN_BLOCK_END) {
-      this.advanceAfterBlockEnd(tag.value);
+    this.advanceAfterBlockEnd(tag.value);
+
+    const body = this.parseUntilBlocks('recover', 'endguard');
+    let recoveryBody = null;
+    let errorVar = null;
+
+    if (this.skipSymbol('recover')) {
+      // Optional error variable
+      if (this.peekToken().type === lexer.TOKEN_SYMBOL) {
+        errorVar = this.nextToken().value;
+      }
+
+      this.advanceAfterBlockEnd('recover');
+      recoveryBody = this.parseUntilBlocks('endguard');
     }
 
-    // Parse the body until endguard
-    const body = this.parseUntilBlocks('endguard');
-
     // Consume 'endguard'
-    if (this.skipSymbol('endguard')) {
-      if (this.peekToken().type === lexer.TOKEN_BLOCK_END) {
-        this.advanceAfterBlockEnd('endguard');
-      }
+    if (!this.skipSymbol('endguard')) {
+      this.fail('parseGuard: expected endguard', this.peekToken().lineno, this.peekToken().colno);
+    }
+
+    if (this.peekToken().type === lexer.TOKEN_BLOCK_END) {
+      this.advanceAfterBlockEnd('endguard');
     }
 
     return new nodes.Guard(
@@ -899,7 +888,9 @@ class Parser extends Obj {
       body,
       handlerTargets.length > 0 ? handlerTargets : null,
       variableTargets.length > 0 ? variableTargets : null,
-      sequenceTargets.length > 0 ? sequenceTargets : null
+      sequenceTargets.length > 0 ? sequenceTargets : null,
+      recoveryBody,
+      errorVar
     );
   }
 
