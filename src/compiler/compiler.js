@@ -516,24 +516,22 @@ class Compiler extends CompilerBase {
       this.fail('guard block only supported in async mode', node.lineno, node.colno);
     }
 
-    const variableTargets = Array.isArray(node.variableTargets) ? node.variableTargets : null;
-    const hasGuardVariables = variableTargets && variableTargets.length > 0;
+    const variableTargets = Array.isArray(node.variableTargets) && node.variableTargets.length > 0 ? node.variableTargets : null;
     const hasSequenceTargets = node.sequenceTargets && node.sequenceTargets.length > 0;
-    const hasHandlerSelectors = Array.isArray(node.handlerTargets) && node.handlerTargets.length > 0;
-    let handlerTargets = hasHandlerSelectors ? node.handlerTargets : null;
-    const noSelectors = !hasHandlerSelectors && !hasGuardVariables && !hasSequenceTargets;
-    const handlerTargetsAll = (hasHandlerSelectors && handlerTargets[0] === '@') || noSelectors;
-    if (handlerTargetsAll && hasHandlerSelectors) {
+    let handlerTargets = Array.isArray(node.handlerTargets) && node.handlerTargets.length > 0 ? node.handlerTargets : null;
+    const noSelectors = !handlerTargets && !variableTargets && !hasSequenceTargets;
+    const handlerTargetsAll = (handlerTargets && handlerTargets[0] === '@') || noSelectors;
+    if (handlerTargetsAll && handlerTargets) {
       handlerTargets = null;
     }
     // We need guard state if we have variables OR if we have sequence targets (for error detection)
     // Note: We don't fully resolve sequence targets here yet, but if the user *requested* sequence targets,
     // we should prepare the state. If it turns out they are empty/unused, init() handles empty lists fine.
-    const needsGuardState = hasGuardVariables || hasSequenceTargets;
+    const needsGuardState = !!variableTargets || hasSequenceTargets;
     const guardStateVar = needsGuardState ? this._tmpid() : null;
     const declarationFrame = frame;
 
-    if (hasGuardVariables) {
+    if (variableTargets) {
       for (const varName of variableTargets) {
         if (!this._isDeclared(declarationFrame, varName)) {
           this.fail(`guard variable "${varName}" is not declared`, node.lineno, node.colno, node);
@@ -601,13 +599,13 @@ class Compiler extends CompilerBase {
 
       if (resolvedSequenceTargets.size > 0) {
         // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
-        // Note: guardStateVar is guaranteed to exist because hasGuardVariables OR resolvedSequenceTargets > 0 triggers init
+        // Note: guardStateVar is guaranteed to exist because variableTargets OR resolvedSequenceTargets > 0 triggers init
         this.emit.line(`  runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`);
       }
     }
 
 
-    if (hasGuardVariables) {
+    if (variableTargets) {
       for (const varName of variableTargets) {
         if (!frame.writeCounts || !frame.writeCounts[varName]) {
           this.fail(`guard variable "${varName}" must be modified inside guard`, node.lineno, node.colno, node);
@@ -660,9 +658,7 @@ class Compiler extends CompilerBase {
       this.emit.asyncBlock(node, frame, true, (f) => {
         if (node.errorVar) {
           // Declare the error variable in the compiled scope
-          if (this.scriptMode) {
-            this._addDeclaredVar(f, node.errorVar);
-          }
+          this._addDeclaredVar(f, node.errorVar);
           this.async.updateFrameWrites(f, node.errorVar);
           // Directly set the variable in the frame.
           // Note: using 'true' for resolveUp is irrelevant here as it's a new variable in new scope (if logic holds),
