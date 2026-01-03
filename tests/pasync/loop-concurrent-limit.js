@@ -224,58 +224,7 @@
         expect(context.maxConcurrent).to.be(Object.keys(catalog).length);
       });
 
-      it('5) converts raw Error values to poison across all concurrency modes', async () => {
-        const rawError = new Error('object entry exploded');
-
-        function buildContext() {
-          return {
-            catalog: { clean: 1, broken: rawError },
-            logger: {
-              async capture() {
-                await delay(0);
-                return '';
-              }
-            }
-          };
-        }
-
-        async function renderPoisonStatuses(limit) {
-          const limitClause = typeof limit === 'number' ? ` of ${limit}` : '';
-          const template = `
-          {%- for key, value in catalog${limitClause} -%}
-            {{ key }}:{{ "ERR" if value is error else "OK" }},
-          {%- endfor -%}
-          `;
-          const result = await env.renderTemplateString(template, buildContext());
-          return normalizeOutput(result);
-        }
-
-        async function expectSequentialRuntimePoison() {
-          const template = `
-          {%- for key, value in catalog -%}
-            {{ logger!.capture(key) }}
-            {{ value.errors and "P" or "C" }}
-          {%- endfor -%}
-          `;
-          try {
-            await env.renderTemplateString(template, buildContext());
-            expect().fail('Expected sequential loop to throw on poisoned entry');
-          } catch (err) {
-            expect(err).to.be.an(Error);
-            expect(err).to.not.be(rawError);
-            expect(err.message).to.contain('object entry exploded');
-            expect(isPoisonError(err)).to.be(true);
-            expect(err.errors[0].message).to.contain('object entry exploded');
-          }
-        }
-
-        await expectSequentialRuntimePoison();
-        const expected = 'clean:OK,broken:ERR,';
-        expect(await renderPoisonStatuses(2)).to.be(expected);
-        expect(await renderPoisonStatuses()).to.be(expected);
-      });
-
-      it('6) requires two loop variables regardless of concurrency mode', async () => {
+      it('5) requires two loop variables regardless of concurrency mode', async () => {
         async function expectTwoVarFailure(template, context, label) {
           try {
             await env.renderTemplateString(template, context);
@@ -312,24 +261,24 @@
         );
       });
 
-      it('7) exposes correct metadata in limited object loops', async () => {
+      it('6) exposes correct metadata in limited object loops', async () => {
         const result = await renderMetadataFor('2');
         expect(result).to.be('a:1/0/T/3/F,b:2/1/F/3/F,c:3/2/F/3/T,');
       });
 
-      it('8) preserves legacy metadata when no limit is provided', async () => {
+      it('7) preserves legacy metadata when no limit is provided', async () => {
         const result = await renderMetadataFor('');
         expect(result).to.be('a:1/0/T/3/F,b:2/1/F/3/F,c:3/2/F/3/T,');
       });
 
-      it('9) keeps metadata identical when limit is ignored (0/null/undefined)', async () => {
+      it('8) keeps metadata identical when limit is ignored (0/null/undefined)', async () => {
         const expected = 'a:1/0/T/3/F,b:2/1/F/3/F,c:3/2/F/3/T,';
         expect(await renderMetadataFor('0')).to.be(expected);
         expect(await renderMetadataFor('null')).to.be(expected);
         expect(await renderMetadataFor('undefined')).to.be(expected);
       });
 
-      it('10) nests bounded object loops inside bounded arrays without leaks', async () => {
+      it('9) nests bounded object loops inside bounded arrays without leaks', async () => {
         const context = {
           outerItems: ['O0', 'O1', 'O2', 'O3'],
           innerObject: { alpha: 1, beta: 2, gamma: 3 },
@@ -409,7 +358,7 @@
         });
       });
 
-      it('11) nests bounded object loops under bounded async iterators safely', async () => {
+      it('10) nests bounded object loops under bounded async iterators safely', async () => {
         const context = {
           innerObject: { key0: 0, key1: 1, key2: 2 },
           outerTracker: { current: 0, max: 0 },
@@ -494,7 +443,7 @@
         });
       });
 
-      it('12) poisons object loops when concurrentLimit expression is poisoned', async () => {
+      it('11) poisons object loops when concurrentLimit expression is poisoned', async () => {
         const context = {
           catalog: buildSmallCatalog(),
           events: [],
@@ -532,7 +481,7 @@
         }
       });
 
-      it('13) rejects invalid concurrentLimit values for object loops', async () => {
+      it('12) rejects invalid concurrentLimit values for object loops', async () => {
         function buildInvalidContext() {
           const ctx = {
             catalog: buildCatalog(),
@@ -582,7 +531,7 @@
         }
       });
 
-      it('14) aggregates errors from limited object loops with async bodies', async () => {
+      it('13) aggregates errors from limited object loops with async bodies', async () => {
         const context = {
           catalog: { a: 1, b: 2, c: 3, d: 4 },
           successes: [],
@@ -618,7 +567,7 @@
         }
       });
 
-      it('15) completes large bounded object loops without deadlocks', async function () {
+      it('14) completes large bounded object loops without deadlocks', async function () {
         this.timeout(5000);
         const size = 1200;
         const catalog = {};
@@ -653,7 +602,7 @@
         expect(context.tracker.max).to.be.lessThan(6);
       });
 
-      it('16) treats oversized limits like unbounded object loops', async () => {
+      it('15) treats oversized limits like unbounded object loops', async () => {
         const catalog = { k0: 0, k1: 1, k2: 2 };
         const context = {
           catalog,
@@ -681,7 +630,7 @@
         expect(context.tracker.max).to.be(Object.keys(catalog).length);
       });
 
-      it('17) skips non-enumerable and inherited properties under bounded mode', async () => {
+      it('16) skips non-enumerable and inherited properties under bounded mode', async () => {
         const base = { inherited: 99 };
         const source = Object.create(base);
         Object.defineProperty(source, 'hidden', { value: 'secret', enumerable: false });
@@ -715,7 +664,7 @@
         expect(context.tracker.max).to.be(2);
       });
 
-      it('18) ignores symbol keys regardless of concurrency mode', async () => {
+      it('17) ignores symbol keys regardless of concurrency mode', async () => {
         const symA = Symbol('symA');
         const symB = Symbol('symB');
         const catalog = { alpha: 1, beta: 2 };
@@ -750,7 +699,7 @@
         expect(context.records.parallel).to.eql(['alpha', 'beta']);
       });
 
-      it('19) leaves plain object loops unchanged before and after bounded loops run', async () => {
+      it('18) leaves plain object loops unchanged before and after bounded loops run', async () => {
         const successBefore = await renderBaselineObjectLoop(false);
         await runBoundedObjectLoop();
         const successAfter = await renderBaselineObjectLoop(false);

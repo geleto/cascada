@@ -432,9 +432,7 @@ async function iterateArraySequential(arr, loopBody, loopVars, errorContext) {
     let value = arr[i];
     const isLast = i === arr.length - 1;
 
-    if (value instanceof Error) {
-      value = createPoison(value, errorContext);
-    }
+
 
     let res;
     if (loopVars.length === 1) {
@@ -469,9 +467,7 @@ function iterateArrayParallel(arr, loopBody, loopVars, errorContext) {
     let value = arr[i];
     const isLast = i === arr.length - 1;
 
-    if (value instanceof Error) {
-      value = createPoison(value, errorContext);
-    }
+
 
     if (loopVars.length === 1) {
       loopBody(value, i, len, isLast, errorContext);
@@ -512,9 +508,7 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
   const runIteration = async (index) => {
     let value = arr[index];
 
-    if (value instanceof Error) {
-      value = createPoison(value, errorContext);
-    }
+
 
     const isLast = index === len - 1;
     const res = callLoopBodyLimited(loopBody, loopVars, value, index, len, isLast, errorContext);
@@ -582,11 +576,6 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
         let value = arr[key];
         const isLast = i === len - 1;
 
-        // Convert Error objects to poison for consistency
-        if (value instanceof Error) {
-          value = createPoison(value, errorContext);
-        }
-
         const res = loopBody(key, value, i, len, isLast);
         // In sequential mode we always await the body
         await res;
@@ -598,11 +587,6 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
       for (let i = 0; i < len; i++) {
         const key = keys[i];
         let value = arr[key];
-
-        // Convert Error objects to poison for consistency
-        if (value instanceof Error) {
-          value = createPoison(value, errorContext);
-        }
 
         entries[i] = [key, value];
       }
@@ -624,11 +608,6 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
         const key = keys[i];
         let value = arr[key];
         const isLast = i === len - 1;
-
-        // Convert Error objects to poison for consistency
-        if (value instanceof Error) {
-          value = createPoison(value, errorContext);
-        }
 
         loopBody(key, value, i, len, isLast);
         // Non-sequential bodies may be async; each body registers its own async block.
