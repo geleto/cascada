@@ -525,7 +525,12 @@ class Compiler extends CompilerBase {
 
     const variableTargets = Array.isArray(node.variableTargets) ? node.variableTargets : null;
     const hasGuardVariables = variableTargets && variableTargets.length > 0;
-    const guardStateVar = hasGuardVariables ? this._tmpid() : null;
+    // We need guard state if we have variables OR if we have sequence targets (for error detection)
+    const hasSequenceTargets = node.sequenceTargets && node.sequenceTargets.length > 0;
+    // Note: We don't fully resolve sequence targets here yet, but if the user *requested* sequence targets,
+    // we should prepare the state. If it turns out they are empty/unused, init() handles empty lists fine.
+    const needsGuardState = hasGuardVariables || hasSequenceTargets;
+    const guardStateVar = needsGuardState ? this._tmpid() : null;
     const declarationFrame = frame;
 
     if (hasGuardVariables) {
@@ -552,9 +557,63 @@ class Compiler extends CompilerBase {
     // 3. Compile Body
     this.compile(node.body, frame);
 
-    if (node.sequenceTargets && node.sequenceTargets.length > 0) {
-      this.emit.line(`  runtime.guard.repairSequenceLocks(frame, ${JSON.stringify(node.sequenceTargets)});`);
+    // Resolve and Validate Sequence Targets
+    // We do this by checking frame.writeCounts which contains all variables and sequence locks modified in the block
+    const resolvedSequenceTargets = new Set();
+    const modifiedLocks = new Set();
+
+    if (frame.writeCounts) {
+      for (const key of Object.keys(frame.writeCounts)) {
+        if (key.startsWith('!')) {
+          modifiedLocks.add(key);
+        }
+      }
     }
+
+    if (node.sequenceTargets && node.sequenceTargets.length > 0) {
+      for (const target of node.sequenceTargets) {
+        let matchFound = false;
+
+        if (target === '!') {
+          // Global guard: assumes all modified sequence locks
+          for (const lock of modifiedLocks) {
+            resolvedSequenceTargets.add(lock);
+            matchFound = true;
+          }
+          // If strict validation is required for global guard?
+          // Usually 'guard !' might be used defensively even if no locks are used?
+          // For now, we allow 'guard !' even if empty, similar to an empty try-catch?
+          // But user requested "validation that a sequence lock selector actually has sequence locks inside".
+          // Let's assume ! matches "all or nothing", so if nothing, it's a no-op but valid?
+          // However, for explicit targets like 'lock!', it MUST match.
+        } else {
+          // Specific target: lock! -> !lock
+          // target ends with '!' as per parser
+          const baseKey = '!' + target.slice(0, -1);
+
+          for (const lock of modifiedLocks) {
+            // Check for exact match or child match (e.g. !lock matching !lock or !lock!sub)
+            if (lock === baseKey || lock.startsWith(baseKey + '!')) {
+              resolvedSequenceTargets.add(lock);
+              matchFound = true;
+            }
+          }
+
+          if (!matchFound) {
+            this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
+          }
+        }
+      }
+
+      if (resolvedSequenceTargets.size > 0) {
+        if (resolvedSequenceTargets.size > 0) {
+          // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
+          // Note: guardStateVar is guaranteed to exist because hasGuardVariables OR resolvedSequenceTargets > 0 triggers init
+          this.emit.line(`  runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`);
+        }
+      }
+    }
+
 
     if (hasGuardVariables) {
       for (const varName of variableTargets) {
@@ -566,6 +625,7 @@ class Compiler extends CompilerBase {
         this.async.updateFrameWrites(frame, varName);
       }
     }
+
 
     // 4. Inject Logic BEFORE closing the block
     // We need to wait for all inner async operations to complete so the buffer is fully populated
@@ -588,13 +648,18 @@ class Compiler extends CompilerBase {
       allowedBufferHandlers = JSON.stringify(handlerTargetsList);
     }
 
-    const guardFailureExpr = guardStateVar
-      ? `runtime.bufferHasPoison(${this.buffer}, ${allowedBufferHandlers}) || (await runtime.guard.variablesHavePoison(frame, ${guardStateVar}))`
-      : `runtime.bufferHasPoison(${this.buffer}, ${allowedBufferHandlers})`;
-
     // Fail if buffer has poison OR variables have poison
-    this.emit.line(`const ${guardFailedVar} = ${guardFailureExpr};`);
-    this.emit.line(`console.log('Guard failed?', ${guardFailedVar});`);
+    // Both return arrays of errors now
+    this.emit.line(`const ${guardFailedVar}_bufErrors = runtime.bufferHasPoison(${this.buffer}, ${allowedBufferHandlers});`);
+
+    if (guardStateVar) {
+      this.emit.line(`const ${guardFailedVar}_varErrors = await runtime.guard.variablesHavePoison(frame, ${guardStateVar});`);
+      this.emit.line(`const ${guardFailedVar}_allErrors = ${guardFailedVar}_bufErrors.concat(${guardFailedVar}_varErrors);`);
+    } else {
+      this.emit.line(`const ${guardFailedVar}_allErrors = ${guardFailedVar}_bufErrors;`);
+    }
+
+    this.emit.line(`const ${guardFailedVar} = (${guardFailedVar}_allErrors.length > 0) ? new runtime.PoisonError(${guardFailedVar}_allErrors) : false;`);
 
     this.emit.line(`if (${guardFailedVar}) {`);
     if (handlerTargetsAll || !handlerTargetsList || handlerTargetsList.length === 0) {
@@ -623,8 +688,8 @@ class Compiler extends CompilerBase {
           // Directly set the variable in the frame.
           // Note: using 'true' for resolveUp is irrelevant here as it's a new variable in new scope (if logic holds),
           // but we set it in 'f' specifically.
-          // Normalize the error: if it's a PoisonedValue or has .errors array, use the first error.
-          this.emit.line(`let ${node.errorVar}_val = ${guardFailedVar}.errors ? ${guardFailedVar}.errors[0] : ${guardFailedVar};`);
+          // Normalize the error: ensure it is a proper Error object (PoisonError) if it was poison
+          this.emit.line(`let ${node.errorVar}_val = runtime.guard.normalizeError(${guardFailedVar});`);
           // Unwrap RuntimeError to get the original cause if present (better for user logic)
           this.emit.line(`if (${node.errorVar}_val && ${node.errorVar}_val.cause) { ${node.errorVar}_val = ${node.errorVar}_val.cause; }`);
           this.emit.line(`frame.set('${node.errorVar}', ${node.errorVar}_val);`);

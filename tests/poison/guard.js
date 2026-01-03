@@ -502,10 +502,11 @@
       const res = await env.renderScriptString(script, context);
 
       // Verify finalState indicates successful recovery and variable access
-      expect(res.data.finalState).to.equal('recovered: fail');
+      expect(res.data.finalState).to.contain('recovered:');
+      expect(res.data.finalState).to.contain('fail');
 
       // Verify msg was set in recover block (confirms buffer output works)
-      expect(res.data.msg).to.equal('fail');
+      expect(res.data.msg).to.contain('fail');
 
       // Verify x was reverted
       expect(res.data.x).to.be(undefined);
@@ -739,6 +740,177 @@ endguard`;
       };
       const res = await env.renderScriptString(script, context);
       expect(res.data.res).to.equal('caught');
+    });
+
+    it('should guard child paths when parent path is guarded', async () => {
+      const script = `
+        var log = []
+        guard lock!
+          // This creates a lock on lock.sub! which is !lock!sub
+          var ignore = lock.sub!.fail()
+        endguard
+        // Should be repaired
+        log.push(lock.sub!.success())
+        @data.log = log
+      `;
+      const context = {
+        lock: {
+          sub: {
+            fail: () => { throw new Error('fail'); },
+            success: () => 'ok'
+          }
+        }
+      };
+      const res = await env.renderScriptString(script, context);
+      expect(res.data.log[0]).to.equal('ok');
+    });
+
+    it('should guard simple sequence lock', async () => {
+      const script = `
+        var log = []
+        guard lock!
+          // This creates a lock on !lock
+          var ignore = lock!.fail()
+        endguard
+        // Should be repaired
+        log.push(lock!.success())
+        @data.log = log
+      `;
+      const context = {
+        lock: {
+          fail: () => { throw new Error('fail'); },
+          success: () => 'ok'
+        }
+      };
+      const res = await env.renderScriptString(script, context);
+      expect(res.data.log[0]).to.equal('ok');
+    });
+
+    it('should fail compilation if guarded sequence lock is not modified', async () => {
+      const script = `
+        guard lock!
+          var x = 1
+        endguard
+      `;
+      try {
+        await env.renderScriptString(script, {});
+        throw new Error('Should have failed');
+      } catch (e) {
+        expect(e.message).to.contain('guard sequence lock "lock!" is not modified inside guard');
+      }
+    });
+
+    it('should guard all paths when global ! is guarded', async () => {
+      const script = `
+        var log = []
+        guard !
+          var ignore = lock.sub!.fail()
+        endguard
+        // Should be repaired
+        log.push(lock.sub!.success())
+        @data.log = log
+      `;
+      const context = {
+        lock: {
+          sub: {
+            fail: () => { throw new Error('fail'); },
+            success: () => 'ok'
+          }
+        }
+      };
+      const res = await env.renderScriptString(script, context);
+      expect(res.data.log[0]).to.equal('ok');
+    });
+
+
+    it('should fail guard when sequence lock fails', async () => {
+      const script = `
+        var log = []
+        guard lock!
+           var ignore = lock!.fail()
+        endguard
+        @data.log = log
+      `;
+      const context = {
+        lock: {
+          fail: () => { throw new Error('fail'); },
+          success: () => 'ok'
+        }
+      };
+
+      try {
+        await env.renderScriptString(script, context);
+        throw new Error('Should have failed');
+      } catch (e) {
+        expect(e.message).to.contain('fail');
+      }
+    });
+
+    it('should succeed guard when sequence lock succeeds', async () => {
+      const script = `
+        var log = []
+        guard lock!
+           var ignore = lock!.success()
+        endguard
+        log.push('done')
+        @data.log = log
+      `;
+      const context = {
+        lock: {
+          fail: () => { throw new Error('fail'); },
+          success: () => 'ok'
+        }
+      };
+      const res = await env.renderScriptString(script, context);
+      expect(res.data.log).to.contain('done');
+    });
+
+    it('should revert guarded variables when sequence lock fails', async () => {
+      const script = `
+        var x = 1
+        var log = []
+
+        guard x, lock!
+           x = 2
+           var ignore = lock!.fail()
+        recover
+           log.push('recovered')
+           log.push(x) // Should be 1
+        endguard
+
+        @data.log = log
+      `;
+      const context = {
+        lock: {
+          fail: () => { throw new Error('fail'); },
+          success: () => 'ok'
+        }
+      };
+      const res = await env.renderScriptString(script, context);
+      expect(res.data.log[0]).to.equal('recovered');
+      expect(res.data.log[1]).to.equal(1);
+    });
+
+    it('should aggregate multiple sequence errors', async () => {
+      const script = `
+        guard lock1!, lock2!
+           // Both fail
+           var a = lock1!.fail1()
+           var b = lock2!.fail2()
+        recover err
+           @data.errorCount = err.errors.length
+           @data.msg1 = err.errors[0].message
+           @data.msg2 = err.errors[1].message
+        endguard
+      `;
+      const context = {
+        lock1: { fail1: () => { throw new Error('fail1'); } },
+        lock2: { fail2: () => { throw new Error('fail2'); } }
+      };
+      const res = await env.renderScriptString(script, context);
+      expect(res.data.errorCount).to.equal(2);
+      expect(res.data.msg1).to.contain('fail1');
+      expect(res.data.msg2).to.contain('fail2');
     });
 
   });

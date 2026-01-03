@@ -271,18 +271,24 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
 }
 
 function bufferHasPoison(arr, allowedHandlers = null) {
-  if (!arr) return false;
+  const allErrors = [];
+  if (!arr) return allErrors;
+
   if (!Array.isArray(arr)) {
     const isTextPoison = isPoison(arr) || isPoisonError(arr);
     if (isTextPoison) {
       // Direct poison (without handler property) is from text/default output.
       // We check if 'text' handler is allowed (or if allowedHandlers is null/global).
       if (allowedHandlers && !allowedHandlers.includes('text')) {
-        return false;
+        return allErrors;
       }
-      return arr;
+      if (arr.errors) {
+        allErrors.push(...arr.errors);
+      } else {
+        allErrors.push(arr);
+      }
     }
-    return false;
+    return allErrors;
   }
 
   for (const item of arr) {
@@ -292,7 +298,10 @@ function bufferHasPoison(arr, allowedHandlers = null) {
       if (allowedHandlers && !allowedHandlers.includes(item.handler)) {
         continue;
       }
-      return (item.errors && item.errors.length > 0) ? item.errors[0] : true;
+      if (item.errors && item.errors.length > 0) {
+        allErrors.push(...item.errors);
+      }
+      continue;
     }
     // Check for direct poison value or PoisonError
     const isTextPoison = isPoison(item) || isPoisonError(item);
@@ -300,18 +309,23 @@ function bufferHasPoison(arr, allowedHandlers = null) {
       if (allowedHandlers && !allowedHandlers.includes('text')) {
         continue;
       }
-      return item;
+      if (item.errors) {
+        allErrors.push(...item.errors);
+      } else {
+        allErrors.push(item);
+      }
+      continue;
     }
     // Recursive check for nested arrays
     if (Array.isArray(item)) {
-      const res = bufferHasPoison(item, allowedHandlers);
-      if (res) {
-        return res;
+      const nestedErrors = bufferHasPoison(item, allowedHandlers);
+      if (nestedErrors.length > 0) {
+        allErrors.push(...nestedErrors);
       }
     }
   }
 
-  return false;
+  return allErrors;
 }
 
 function flattenBuffer(arr, context = null, focusOutput = null) {
