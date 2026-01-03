@@ -913,5 +913,37 @@ endguard`;
       expect(res.data.msg2).to.contain('fail2');
     });
 
+    it('should aggregate mixed buffer, variable, and sequence errors', async () => {
+      const script = `
+        guard lock!, @text
+           // 1. Buffer poison
+           @text(error('buffer_fail'))
+           // 2. Sequence poison
+           var lockRes = lock!.fail()
+           // 3. Another Buffer poison
+           @text(error('buffer_fail_2'))
+        recover err
+           @data.errorCount = err.errors.length
+           // We expect:
+           // - buffer_fail
+           // - buffer_fail_2
+           // - sequence_fail
+           for e in err.errors
+             @data.msgs.push(e.message)
+           endfor
+        endguard
+      `;
+      const context = {
+        error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); },
+        lock: { fail: () => { return new cascada.runtime.PoisonedValue([new Error('sequence_fail')]); } }
+      };
+      const res = await env.renderScriptString(script, context);
+
+      expect(res.data.errorCount).to.equal(3);
+      expect(res.data.msgs.some(m => m.includes('buffer_fail'))).to.be(true);
+      expect(res.data.msgs.some(m => m.includes('buffer_fail_2'))).to.be(true);
+      expect(res.data.msgs.some(m => m.includes('sequence_fail'))).to.be(true);
+    });
+
   });
 })();
