@@ -516,17 +516,17 @@ class Compiler extends CompilerBase {
       this.fail('guard block only supported in async mode', node.lineno, node.colno);
     }
 
-    const handlerTargets = Array.isArray(node.handlerTargets) ? node.handlerTargets : null;
-    const hasHandlerTargets = handlerTargets && handlerTargets.length > 0;
-    const handlerTargetsAll = hasHandlerTargets && handlerTargets.includes('@');
-    const handlerTargetsList = hasHandlerTargets
-      ? handlerTargets.filter(target => target !== '@')
-      : null;
-
     const variableTargets = Array.isArray(node.variableTargets) ? node.variableTargets : null;
     const hasGuardVariables = variableTargets && variableTargets.length > 0;
-    // We need guard state if we have variables OR if we have sequence targets (for error detection)
     const hasSequenceTargets = node.sequenceTargets && node.sequenceTargets.length > 0;
+    const hasHandlerSelectors = Array.isArray(node.handlerTargets) && node.handlerTargets.length > 0;
+    let handlerTargets = hasHandlerSelectors ? node.handlerTargets : null;
+    const noSelectors = !hasHandlerSelectors && !hasGuardVariables && !hasSequenceTargets;
+    const handlerTargetsAll = (hasHandlerSelectors && handlerTargets[0] === '@') || noSelectors;
+    if (handlerTargetsAll && hasHandlerSelectors) {
+      handlerTargets = null;
+    }
+    // We need guard state if we have variables OR if we have sequence targets (for error detection)
     // Note: We don't fully resolve sequence targets here yet, but if the user *requested* sequence targets,
     // we should prepare the state. If it turns out they are empty/unused, init() handles empty lists fine.
     const needsGuardState = hasGuardVariables || hasSequenceTargets;
@@ -575,17 +575,11 @@ class Compiler extends CompilerBase {
         let matchFound = false;
 
         if (target === '!') {
-          // Global guard: assumes all modified sequence locks
+          // Global guard: all modified sequence locks
           for (const lock of modifiedLocks) {
             resolvedSequenceTargets.add(lock);
             matchFound = true;
           }
-          // If strict validation is required for global guard?
-          // Usually 'guard !' might be used defensively even if no locks are used?
-          // For now, we allow 'guard !' even if empty, similar to an empty try-catch?
-          // But user requested "validation that a sequence lock selector actually has sequence locks inside".
-          // Let's assume ! matches "all or nothing", so if nothing, it's a no-op but valid?
-          // However, for explicit targets like 'lock!', it MUST match.
         } else {
           // Specific target: lock! -> !lock
           // target ends with '!' as per parser
@@ -606,11 +600,9 @@ class Compiler extends CompilerBase {
       }
 
       if (resolvedSequenceTargets.size > 0) {
-        if (resolvedSequenceTargets.size > 0) {
-          // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
-          // Note: guardStateVar is guaranteed to exist because hasGuardVariables OR resolvedSequenceTargets > 0 triggers init
-          this.emit.line(`  runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`);
-        }
+        // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
+        // Note: guardStateVar is guaranteed to exist because hasGuardVariables OR resolvedSequenceTargets > 0 triggers init
+        this.emit.line(`  runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`);
       }
     }
 
@@ -633,42 +625,29 @@ class Compiler extends CompilerBase {
     this.emit.line('await astate.waitAllClosures(1);');
 
     // 5. Check Buffer/Variables for Poison
-    const guardFailedVar = this._tmpid();
+    const guardErrorsVar = this._tmpid();
 
     // Calculate allowed handlers for poison detection based on selectors
     let allowedBufferHandlers = '[]';
 
     // If no specific selectors are provided (neither variables nor handlers),
     // it functions as a global guard (catch everything).
-    const isGlobalGuard = !hasHandlerTargets && !hasGuardVariables;
-
-    if (isGlobalGuard || handlerTargetsAll) {
+    if (handlerTargetsAll) {
       allowedBufferHandlers = 'null';
-    } else if (handlerTargetsList && handlerTargetsList.length > 0) {
-      allowedBufferHandlers = JSON.stringify(handlerTargetsList);
+    } else if (handlerTargets) {
+      allowedBufferHandlers = JSON.stringify(handlerTargets);
     }
 
-    // Fail if buffer has poison OR variables have poison
-    // Both return arrays of errors now
-    this.emit.line(`const ${guardFailedVar}_bufErrors = runtime.bufferHasPoison(${this.buffer}, ${allowedBufferHandlers});`);
+    this.emit.line(`const ${guardErrorsVar} = await runtime.guard.getErrors(frame, ${guardStateVar || 'null'}, ${this.buffer}, ${allowedBufferHandlers});`);
 
-    if (guardStateVar) {
-      this.emit.line(`const ${guardFailedVar}_varErrors = await runtime.guard.variablesHavePoison(frame, ${guardStateVar});`);
-      this.emit.line(`const ${guardFailedVar}_allErrors = ${guardFailedVar}_bufErrors.concat(${guardFailedVar}_varErrors);`);
-    } else {
-      this.emit.line(`const ${guardFailedVar}_allErrors = ${guardFailedVar}_bufErrors;`);
-    }
-
-    this.emit.line(`const ${guardFailedVar} = (${guardFailedVar}_allErrors.length > 0) ? new runtime.PoisonError(${guardFailedVar}_allErrors) : false;`);
-
-    this.emit.line(`if (${guardFailedVar}) {`);
-    if (handlerTargetsAll || !handlerTargetsList || handlerTargetsList.length === 0) {
+    this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
+    if (handlerTargetsAll) {
       this.emit.line(`  runtime.markBufferReverted(${this.buffer});`);
       this.emit.line(`  delete ${this.buffer}._reverted;`);
       this.emit.line(`  ${this.buffer}.length = 0;`);
       this.emit.line(`  ${this.buffer}_index = 0;`);
-    } else {
-      this.emit.line(`  runtime.revertBufferHandlers(${this.buffer}, ${JSON.stringify(handlerTargetsList)});`);
+    } else if (handlerTargets) {
+      this.emit.line(`  runtime.revertBufferHandlers(${this.buffer}, ${JSON.stringify(handlerTargets)});`);
       this.emit.line(`  ${this.buffer}_index = ${this.buffer}.length;`);
     }
 
@@ -688,11 +667,7 @@ class Compiler extends CompilerBase {
           // Directly set the variable in the frame.
           // Note: using 'true' for resolveUp is irrelevant here as it's a new variable in new scope (if logic holds),
           // but we set it in 'f' specifically.
-          // Normalize the error: ensure it is a proper Error object (PoisonError) if it was poison
-          this.emit.line(`let ${node.errorVar}_val = runtime.guard.normalizeError(${guardFailedVar});`);
-          // Unwrap RuntimeError to get the original cause if present (better for user logic)
-          this.emit.line(`if (${node.errorVar}_val && ${node.errorVar}_val.cause) { ${node.errorVar}_val = ${node.errorVar}_val.cause; }`);
-          this.emit.line(`frame.set('${node.errorVar}', ${node.errorVar}_val);`);
+          this.emit.line(`frame.set('${node.errorVar}', new runtime.PoisonError(${guardErrorsVar}));`);
         }
         this.compile(node.recoveryBody, f);
         recoveryWriteCounts = this.async.countsTo1(f.writeCounts);

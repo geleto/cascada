@@ -1,5 +1,6 @@
 
 const { isError } = require('./errors');
+const { getPosonedBufferErrors } = require('./buffer');
 
 const DEBUG_GUARD = typeof process !== 'undefined' &&
   process.env &&
@@ -30,9 +31,12 @@ function init(frame, varNames) {
   return guardState;
 }
 
-async function variablesHavePoison(frame, guardState) {
+async function collectGuardVariableErrors(frame, guardState) {
+  const variableErrors = [];
+  const sequenceErrors = [];
+
   if (!guardState) {
-    return false;
+    return { variableErrors, sequenceErrors };
   }
 
   if (!frame || !frame.asyncVars) {
@@ -44,11 +48,9 @@ async function variablesHavePoison(frame, guardState) {
     await Promise.all(guardState.detectionPromises);
   }
 
-  const allErrors = [];
-
   // Check for any detected sequence errors
   if (guardState.sequenceErrors && guardState.sequenceErrors.length > 0) {
-    allErrors.push(...guardState.sequenceErrors);
+    sequenceErrors.push(...guardState.sequenceErrors);
   }
 
   // Check guarded variables for poison
@@ -61,12 +63,12 @@ async function variablesHavePoison(frame, guardState) {
       console.log('[guard-debug] checking', name, frame.asyncVars[name]);
     }
 
-    if (await isError(frame.asyncVars[name])) {
-      const val = frame.asyncVars[name];
-      if (val && val.errors && val.errors.length > 0) {
-        allErrors.push(...val.errors);
+    const currentValue = frame.asyncVars[name];
+    if (await isError(currentValue)) {
+      if (currentValue && currentValue.errors && currentValue.errors.length > 0) {
+        variableErrors.push(...currentValue.errors);
       } else {
-        allErrors.push(val);
+        variableErrors.push(currentValue);
       }
     }
   }
@@ -77,15 +79,21 @@ async function variablesHavePoison(frame, guardState) {
       const lockVal = frame.lookup(lockName);
       if (await isError(lockVal)) {
         if (lockVal && lockVal.errors && lockVal.errors.length > 0) {
-          allErrors.push(...lockVal.errors);
+          sequenceErrors.push(...lockVal.errors);
         } else {
-          allErrors.push(lockVal);
+          sequenceErrors.push(lockVal);
         }
       }
     }
   }
 
-  return allErrors;
+  return { variableErrors, sequenceErrors };
+}
+
+async function getErrors(frame, guardState, bufferArr, allowedHandlers) {
+  const bufferErrors = getPosonedBufferErrors(bufferArr, allowedHandlers) || [];
+  const { variableErrors, sequenceErrors } = await collectGuardVariableErrors(frame, guardState);
+  return bufferErrors.concat(variableErrors, sequenceErrors);
 }
 
 function complete(frame, guardState, shouldRevert) {
@@ -164,7 +172,7 @@ function repairSequenceLocks(frame, guardState, lockNames) {
       guardState.sequenceErrors = [];
     }
 
-    // Track this operation so variablesHavePoison can wait for it
+    // Track this operation so guard poison detection can wait for it
     guardState.detectionPromises.push(detectionAndRepairPromise);
 
     // Update the frame so subsequent operations wait for our repair/wrapper
@@ -182,21 +190,10 @@ function repairSequenceLocks(frame, guardState, lockNames) {
   }
 }
 
-
-// Helper to normalize poison values to PoisonError for the recover block
-function normalizeError(val) {
-  const { PoisonError, isPoison } = require('./errors');
-  if (isPoison(val)) {
-    return new PoisonError(val.errors);
-  }
-  // If it's already an error (or PoisonError), return it
-  return val;
-}
-
 module.exports = {
   init,
-  variablesHavePoison,
+  getErrors,
   complete,
-  repairSequenceLocks,
-  normalizeError
+  repairSequenceLocks
 };
+

@@ -158,7 +158,7 @@ module.exports = {
   addPoisonMarkersToBuffer: buffer.addPoisonMarkersToBuffer,
   markBufferReverted: buffer.markBufferReverted,
   revertBufferHandlers: buffer.revertBufferHandlers,
-  bufferHasPoison: buffer.bufferHasPoison,
+  getPosonedBufferErrors: buffer.getPosonedBufferErrors,
   markBufferHasRevert: buffer.markBufferHasRevert,
 
   guard,

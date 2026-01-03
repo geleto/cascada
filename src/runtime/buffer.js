@@ -270,7 +270,7 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
   }
 }
 
-function bufferHasPoison(arr, allowedHandlers = null) {
+function getPosonedBufferErrors(arr, allowedHandlers = null) {
   const allErrors = [];
   if (!arr) return allErrors;
 
@@ -318,7 +318,7 @@ function bufferHasPoison(arr, allowedHandlers = null) {
     }
     // Recursive check for nested arrays
     if (Array.isArray(item)) {
-      const nestedErrors = bufferHasPoison(item, allowedHandlers);
+      const nestedErrors = getPosonedBufferErrors(item, allowedHandlers);
       if (nestedErrors.length > 0) {
         allErrors.push(...nestedErrors);
       }
@@ -668,5 +668,5 @@ module.exports = {
   markBufferReverted,
   revertBufferHandlers,
   markBufferHasRevert,
-  bufferHasPoison
+  getPosonedBufferErrors
 };

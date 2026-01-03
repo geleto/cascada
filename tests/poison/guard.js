@@ -161,6 +161,50 @@
       expect(result.data).to.eql({ status: 'ok' });
     });
 
+    it('should propagate handler poison when only variables are guarded', async () => {
+      const script = `
+        var count = 1
+        guard count
+          @text("INSIDE")
+          count = count + 1
+          @text(explode())
+        endguard
+        @text("AFTER")
+      `;
+
+      const context = {
+        explode: () => fakePoison('boom')
+      };
+
+      try {
+        await env.renderScriptString(script, context);
+        expect().fail('Expected guard to propagate handler poison');
+      } catch (err) {
+        expect(err.message).to.contain('boom');
+      }
+    });
+
+    it('should revert outputs when guard has no selectors', async () => {
+      const script = `
+        guard
+          @text("inside")
+          @data.val = explode()
+        endguard
+
+        @text("outside")
+        @data.final = "ok"
+      `;
+
+      const context = {
+        explode: () => { throw new Error('boom'); }
+      };
+
+      const res = await env.renderScriptString(script, context);
+      expect(res.text.trim()).to.equal('outside');
+      expect(res.data.final).to.equal('ok');
+      expect(res.data.val).to.be(undefined);
+    });
+
     it('should error when mixing @ with specific handlers', async () => {
       const script = `
         guard @, @text
