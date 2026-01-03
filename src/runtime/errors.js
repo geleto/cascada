@@ -138,16 +138,37 @@ class RuntimeError extends Error {
     }
 
     super(messageMetadata + message);
-    this.name = 'RuntimeError';
+    if (cause && cause.name) {
+      this.name = `RuntimeError: ${cause.name}`;
+    } else {
+      this.name = 'RuntimeError';
+    }
     this.lineno = lineno;
     this.colno = colno;
     this.errorContextString = errorContextString;
     this.path = path;
     this.cause = cause;
 
-    // Capture stack trace
+    // Capture stack trace for contextual portion
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
+    }
+
+    if (cause && cause.stack) {
+      this.stack = cause.stack;
+    }
+
+    // Copy all other properties from the cause
+    if (cause && typeof cause === 'object') {
+      const reserved = new Set(['name', 'stack', 'message', 'cause']);
+      for (const key of Object.keys(cause)) {
+        if (reserved.has(key)) {
+          continue;
+        }
+        if (this[key] === undefined) {
+          this[key] = cause[key];
+        }
+      }
     }
   }
 }
