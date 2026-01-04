@@ -807,6 +807,7 @@ class Parser extends Obj {
     const handlerTargets = [];
     const variableTargets = [];
     const sequenceTargets = [];
+    let hasStarSelector = false;
     const seenSelectors = new Set();
     let first = true;
 
@@ -823,6 +824,12 @@ class Parser extends Obj {
       if (this.skipValue(lexer.TOKEN_OPERATOR, '!')) {
         // Global sequence lock (!)
         rawSelector = '!';
+        sequenceTargets.push('!');
+      } else if (this.skipValue(lexer.TOKEN_OPERATOR, '*')) {
+        rawSelector = '*';
+        hasStarSelector = true;
+        // '*' expands to all handlers, all sequences, and marks that we need all variables
+        handlerTargets.push('@');
         sequenceTargets.push('!');
       } else if (this.peekToken().type === lexer.TOKEN_SYMBOL) {
         // Variable, Handler, or Sequence
@@ -850,6 +857,10 @@ class Parser extends Obj {
       }
       seenSelectors.add(rawSelector);
       first = false;
+    }
+
+    if (hasStarSelector && (handlerTargets.length > 1 || variableTargets.length > 0 || sequenceTargets.length > 1)) {
+      this.fail('guard: "*" cannot be combined with other selectors', tag.lineno, tag.colno);
     }
 
     // Validate Handler Targets
@@ -882,9 +893,13 @@ class Parser extends Obj {
       this.advanceAfterBlockEnd('endguard');
     }
 
+    let guardExpandsAllVariables = false;
     if (handlerTargets.length === 0 && variableTargets.length === 0 && sequenceTargets.length === 0) {
       handlerTargets.push('@');
       sequenceTargets.push('!');
+    }
+    if (hasStarSelector) {
+      guardExpandsAllVariables = true;
     }
 
     return new nodes.Guard(
@@ -892,7 +907,7 @@ class Parser extends Obj {
       tag.colno,
       body,
       handlerTargets.length > 0 ? handlerTargets : null,
-      variableTargets.length > 0 ? variableTargets : null,
+      guardExpandsAllVariables ? '*' : (variableTargets.length > 0 ? variableTargets : null),
       sequenceTargets.length > 0 ? sequenceTargets : null,
       recoveryBody,
       errorVar

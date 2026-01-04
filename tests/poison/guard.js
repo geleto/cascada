@@ -296,6 +296,27 @@
       }
     });
 
+    it('should revert everything with guard * in template mode', async () => {
+      const tpl = `
+        {% set count = 1 %}
+        {% guard * %}
+          {% set count = count + 1 %}
+          inside
+          {{ error("fail") }}
+        {% recover err %}
+          RECOVER
+        {% endguard %}
+        {{ count }}
+      `;
+
+      const res = await env.renderTemplateString(tpl, {
+        error: (msg) => { throw new Error(msg); }
+      });
+
+      const cleaned = res.replace(/\s+/g, ' ').trim();
+      expect(cleaned).to.equal('RECOVER 1');
+    });
+
     it('should revert when variable becomes poison without buffer errors', async () => {
       const tpl = `
         {% set status = "ok" %}
@@ -310,6 +331,37 @@
       });
 
       expect(res.replace(/\s+/g, ' ').trim()).to.equal('ok');
+    });
+
+    it('should revert everything with guard * in script mode', async () => {
+      const script = `
+        var count = 1
+        guard *
+          count = count + 1
+          @data.inner = "inside"
+          @text("INNER")
+          count = poison()
+          var ignore = lock!.fail()
+        recover err
+          @data.recovered = true
+        endguard
+        @data.count = count
+        @data.status = lock!.success()
+      `;
+
+      const res = await env.renderScriptString(script, {
+        poison: () => fakePoison('boom'),
+        lock: {
+          fail: () => { throw new Error('lock failure'); },
+          success: () => 'ok'
+        }
+      });
+
+      expect(res.data.count).to.equal(1);
+      expect(res.data.inner).to.be(undefined);
+      expect(res.data.recovered).to.equal(true);
+      expect(res.data.status).to.equal('ok');
+      expect((res.text || '').trim()).to.equal('');
     });
 
     it('should restore guarded variables on error in script mode', async () => {

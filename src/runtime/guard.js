@@ -8,13 +8,13 @@ const DEBUG_GUARD = typeof process !== 'undefined' &&
 
 function init(frame, varNames) {
   const guardState = {
-    names: varNames ? varNames.slice() : [],
+    names: varNames === '*' ? '*' : (varNames ? varNames.slice() : []),
     snapshot: {},
     sequenceErrors: [],
     detectionPromises: []
   };
 
-  if (varNames && varNames.length > 0) {
+  if (varNames && varNames !== '*' && varNames.length > 0) {
     if (!frame || !frame.asyncVars) {
       throw new Error('Guard variables require async frame snapshots to be enabled');
     }
@@ -39,7 +39,8 @@ async function collectGuardVariableErrors(frame, guardState) {
     return { variableErrors, sequenceErrors };
   }
 
-  if (guardState.names.length > 0) {
+  const hasVariableNames = guardState.names === '*' ? true : (guardState.names.length > 0);
+  if (hasVariableNames) {
     if (!frame || !frame.asyncVars) {
       throw new Error('Guard poison detection requires async frame variables');
     }
@@ -56,7 +57,20 @@ async function collectGuardVariableErrors(frame, guardState) {
   }
 
   // Check guarded variables for poison
-  for (const name of guardState.names) {
+  if (guardState.names === '*') {
+    if (!frame || !frame.asyncVars) {
+      throw new Error('Guard completion requires async frame variables');
+    }
+    for (const name of Object.keys(frame.asyncVars)) {
+      if (guardState.ignoredNames && guardState.ignoredNames.has(name)) {
+        continue;
+      }
+      if (guardState.skipVariablesUntil && guardState.skipVariablesUntil.has(name)) {
+        continue;
+      }
+    }
+  }
+  for (const name of guardState.names === '*' ? Object.keys(frame.asyncVars) : guardState.names) {
     if (!(name in frame.asyncVars)) {
       throw new Error(`Guard variable "${name}" missing from async frame`);
     }
@@ -103,10 +117,20 @@ function complete(frame, guardState, shouldRevert) {
     return;
   }
 
-  if (guardState.names.length > 0) {
-    if (!frame || !frame.asyncVars) {
-      throw new Error('Guard completion requires async frame variables');
+  const hasVariableNames = guardState.names === '*' ? true : (guardState.names.length > 0);
+  if (!hasVariableNames) {
+    return;
+  }
+
+  if (!frame || !frame.asyncVars) {
+    throw new Error('Guard completion requires async frame variables');
+  }
+
+  if (guardState.names === '*') {
+    for (const name of Object.keys(frame.asyncVars)) {
+      frame._countdownAndResolveAsyncWrites(name, 1);
     }
+    return;
   }
 
   for (const name of guardState.names) {

@@ -516,7 +516,8 @@ class Compiler extends CompilerBase {
       this.fail('guard block only supported in async mode', node.lineno, node.colno);
     }
 
-    const variableTargets = Array.isArray(node.variableTargets) && node.variableTargets.length > 0 ? node.variableTargets : null;
+    const variableTargets = node.variableTargets === '*' ? '*' :
+      (Array.isArray(node.variableTargets) && node.variableTargets.length > 0 ? node.variableTargets : null);
     const hasSequenceTargets = node.sequenceTargets && node.sequenceTargets.length > 0;
     let handlerTargets = Array.isArray(node.handlerTargets) && node.handlerTargets.length > 0 ? node.handlerTargets : null;
     const handlerTargetsAll = handlerTargets && handlerTargets[0] === '@';
@@ -526,13 +527,12 @@ class Compiler extends CompilerBase {
     // We need guard state if we have variables OR if we have sequence targets (for error detection)
     // Note: We don't fully resolve sequence targets here yet, but if the user *requested* sequence targets,
     // we should prepare the state. If it turns out they are empty/unused, init() handles empty lists fine.
-    const needsGuardState = !!variableTargets || hasSequenceTargets;
+    const needsGuardState = (variableTargets === '*') || !!variableTargets || hasSequenceTargets;
     const guardStateVar = needsGuardState ? this._tmpid() : null;
-    const declarationFrame = frame;
 
-    if (variableTargets) {
+    if (variableTargets && variableTargets !== '*') {
       for (const varName of variableTargets) {
-        if (!this._isDeclared(declarationFrame, varName)) {
+        if (!this._isDeclared(frame, varName)) {
           this.fail(`guard variable "${varName}" is not declared`, node.lineno, node.colno, node);
         }
       }
@@ -547,8 +547,14 @@ class Compiler extends CompilerBase {
 
     // 2. Link for explicit reversion (optional, if we want to support manual revert)
     this.emit.line(`frame.markOutputBufferScope(${this.buffer});`);
+    let guardInitLinePos = null;
     if (guardStateVar) {
-      this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)});`);
+      if (variableTargets === '*') {
+        guardInitLinePos = this.codebuf.length;
+        this.emit.line(``);
+      } else {
+        this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)});`);
+      }
     }
 
     // 3. Compile Body
@@ -604,13 +610,25 @@ class Compiler extends CompilerBase {
     }
 
 
-    if (variableTargets) {
-      for (const varName of variableTargets) {
+    let finalVariableTargets = variableTargets;
+    if (variableTargets === '*') {
+      const writtenVars = frame.writeCounts
+        ? Object.keys(frame.writeCounts).filter((key) => !key.startsWith('!'))
+        : [];
+      finalVariableTargets = writtenVars;
+      if (guardStateVar && guardInitLinePos !== null) {
+        this.emit.insertLine(guardInitLinePos,
+          `const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(writtenVars)});`);
+      }
+    }
+
+    if (finalVariableTargets && finalVariableTargets.length > 0) {
+      for (const varName of finalVariableTargets) {
         if (!frame.writeCounts || !frame.writeCounts[varName]) {
           this.fail(`guard variable "${varName}" must be modified inside guard`, node.lineno, node.colno, node);
         }
       }
-      for (const varName of variableTargets) {
+      for (const varName of finalVariableTargets) {
         this.async.updateFrameWrites(frame, varName);
       }
     }

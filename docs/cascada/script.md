@@ -1251,12 +1251,16 @@ guard @data, db!, status
 
 ##### Selectors
 
-* **`@handlerName`** — protects a specific output handler
-* **`@`** — protects all output handlers
-* **`path!`** — protects a specific sequential path
-* **`!`** — protects all sequential paths
-* **`variableName`** — protects a specific variable
-* **`*`** — protects everything (all outputs, paths, and variables)
+| Selector | Meaning |
+|----------|---------|
+| `@handler1, @handler2` | Protect a specific output handler (`@text`, `@data`, etc.). |
+| `@` | Protect all output handlers (`@text`, `@data`, etc.). Cannot be combined with other handler selectors. |
+| `path1!, path2!` | Protect specific sequential paths (e.g. `db!`, `cache.sub!`). |
+| `!` | Protect all sequential paths touched inside the guard. |
+| `var1, var2` | Protect specific script variables. |
+| `*` | Protect everything (all handlers, all sequence paths, and every variable written inside the guard). Cannot be combined with any other selector. |
+
+> `@` cannot be mixed with other handler selectors, and `*` cannot be combined with any other selector.
 
 ##### Example: Protecting a Specific Variable
 
