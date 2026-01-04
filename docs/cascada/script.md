@@ -489,6 +489,28 @@ account!.withdraw(50)
 
 For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
 
+#### Hierarchical Paths
+
+Sequential paths work hierarchically: marking a parent path makes **all child paths** sequential too.
+
+```javascript
+// Marking 'api!' makes all its properties sequential
+api!.connect()
+api.db.insert(user)        // Waits for connect() (no ! needed)
+api.cache.set(key, val)    // Waits for insert()
+
+// Child paths can have their own sub-sequences
+api.db!.beginTransaction()
+api.db!.insert(data)
+api.db!.commit()
+```
+
+This applies to both method calls and property reads:
+```javascript
+api!.initialize()
+@text(api.connection.state)  // Waits for initialize()
+```
+
 #### Context Requirement for Sequential Paths
 
 Sequential paths must reference objects from the context, not local variables.
@@ -1208,7 +1230,8 @@ By default, a `guard` block (with no arguments) protects:
    Writes made inside the block are discarded on error using `_revert()`. Manual calls to `@._revert()` or the `revert` statement inside the guard are scoped to that guard's buffer as well, so they never leak past the guard boundary.
 
 2. **All Sequential Paths** (`!`)
-   If a path (such as `db!`) becomes poisoned, it is automatically repaired using `!!` so it can be used again, but - any side-effect calls are not undone.
+   If a path (such as `db!`) becomes poisoned, it is automatically repaired using `!!`.
+   Note: Paths are hierarchical—guarding `api!` also guards `api.db!`, `api.connection!`, etc.
 
 **Variables are NOT protected by default.**
 This is a deliberate design choice to preserve parallel execution.
@@ -1261,6 +1284,20 @@ guard @data, db!, status
 | `*` | Protect everything (all handlers, all sequence paths, and every variable written inside the guard). Cannot be combined with any other selector. |
 
 > `@` cannot be mixed with other handler selectors, and `*` cannot be combined with any other selector.
+
+**Hierarchical Protection of Sequential Paths:**
+```javascript
+guard api!
+  api!.connect()
+  api.db!.insert(data)         // Also protected (child of api!)
+  api.connection!.setState(s)  // Also protected (child of api!)
+endguard
+```
+
+Guarding `api!` protects all child paths. To guard only a specific child:
+```javascript
+guard api.db!  // Only protects api.db! and its children
+```
 
 ##### Example: Protecting a Specific Variable
 
