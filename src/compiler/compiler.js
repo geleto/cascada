@@ -519,8 +519,7 @@ class Compiler extends CompilerBase {
     const variableTargets = Array.isArray(node.variableTargets) && node.variableTargets.length > 0 ? node.variableTargets : null;
     const hasSequenceTargets = node.sequenceTargets && node.sequenceTargets.length > 0;
     let handlerTargets = Array.isArray(node.handlerTargets) && node.handlerTargets.length > 0 ? node.handlerTargets : null;
-    const noSelectors = !handlerTargets && !variableTargets && !hasSequenceTargets;
-    const handlerTargetsAll = (handlerTargets && handlerTargets[0] === '@') || noSelectors;
+    const handlerTargetsAll = handlerTargets && handlerTargets[0] === '@';
     if (handlerTargetsAll && handlerTargets) {
       handlerTargets = null;
     }

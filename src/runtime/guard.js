@@ -39,8 +39,10 @@ async function collectGuardVariableErrors(frame, guardState) {
     return { variableErrors, sequenceErrors };
   }
 
-  if (!frame || !frame.asyncVars) {
-    throw new Error('Guard poison detection requires async frame variables');
+  if (guardState.names.length > 0) {
+    if (!frame || !frame.asyncVars) {
+      throw new Error('Guard poison detection requires async frame variables');
+    }
   }
 
   // Wait for all sequence lock repair/detection operations to complete
@@ -101,8 +103,10 @@ function complete(frame, guardState, shouldRevert) {
     return;
   }
 
-  if (!frame || !frame.asyncVars) {
-    throw new Error('Guard completion requires async frame variables');
+  if (guardState.names.length > 0) {
+    if (!frame || !frame.asyncVars) {
+      throw new Error('Guard completion requires async frame variables');
+    }
   }
 
   for (const name of guardState.names) {

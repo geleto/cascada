@@ -882,6 +882,11 @@ class Parser extends Obj {
       this.advanceAfterBlockEnd('endguard');
     }
 
+    if (handlerTargets.length === 0 && variableTargets.length === 0 && sequenceTargets.length === 0) {
+      handlerTargets.push('@');
+      sequenceTargets.push('!');
+    }
+
     return new nodes.Guard(
       tag.lineno,
       tag.colno,
