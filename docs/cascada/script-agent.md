@@ -1,56 +1,31 @@
-# Cascada Script - Compressed Reference
+# Cascada Script - AI Agent Reference
 
-**Technology**: Cascada Script - Data orchestration language for JavaScript/TypeScript async workflows
-**Baseline**: JavaScript/TypeScript syntax familiarity, standard programming constructs
-**Target Use**: AI code generation for async orchestration, LLM workflows, data pipelines
+## Core Description
+Parallel-by-default scripting language for JavaScript/TypeScript async orchestration. Data-driven execution engine that automatically resolves dependencies, maximizes concurrency, and guarantees deterministic output assembly.
 
-## Core Differentials Summary
-
-1. **Parallel-by-default** — Independent operations execute concurrently automatically
-2. **Data-driven execution** — Code runs when inputs are ready, eliminating race conditions
-3. **Explicit sequencing with `!`** — Sequential order only when needed for side effects
-4. **Deterministic output assembly** — Final outputs ordered as written despite concurrent execution
-5. **Errors as data** — Failures propagate through dataflow without throwing exceptions
+## Core Differentials (vs Standard JavaScript)
+- **Parallel-first execution**: Independent operations run concurrently by default (no `await` needed)
+- **Data-driven flow**: Code executes when inputs available (automatic dependency resolution)
+- **Sequential marker (`!`)**: Explicit ordering only for side-effectful operations
+- **Dataflow poisoning**: Errors propagate as values (no exceptions in dataflow)
+- **Deterministic outputs**: Concurrent execution, sequential assembly guarantees
+- **Scope isolation**: Control blocks create isolated scopes in async mode
 
 ## UID Schema
-
 ```
-EXEC-xxx: Execution model rules
-VAR-xxx: Variable declaration and scoping
-EXPR-xxx: Expression and operator behavior
-CTRL-xxx: Control flow (if/for/while/each)
-OUT-xxx: Output command system (@data/@text)
-ERR-xxx: Error handling and propagation
-SEQ-xxx: Sequential execution control (!)
-MOD-xxx: Modularity (import/include/extends)
-MAC-xxx: Macros and reusability
-API-xxx: API and extension points
+EXEC-xxx   : Execution model invariants
+VAR-xxx    : Variable declaration and scope rules
+OUT-xxx    : Output building (@data syntax)
+CAPT-xxx   : Capture blocks and output focus
+CTRL-xxx   : Control flow (if/else, loops, switch)
+ERR-xxx    : Error handling and poison values
+FN-xxx     : Functions, filters, operators
+MACRO-xxx  : Macro definition and invocation
+MOD-xxx    : Module system (import, include, extends)
+API-xxx    : Runtime API and compilation
+TEMP-xxx   : Template integration
+LIMIT-xxx  : Constraints and limitations
 ```
-
----
-
-## Core Execution Model
-
-**[EXEC-001] Parallel-by-Default Execution**
-DIFFERENTIAL: Operations execute concurrently unless dependencies exist
-Independent operations (API calls, async functions) run automatically in parallel without `await` keyword
-
-**[EXEC-002] Data-Driven Flow**
-Operations wait for their required inputs before executing
-Dependency analysis ensures correct execution order while maximizing parallelism
-
-**[EXEC-003] Deterministic Output Ordering**
-DIFFERENTIAL: Execution is concurrent and out-of-order; outputs assembled in source-code order
-Final result identical to sequential execution despite parallel processing
-
-**[EXEC-004] Three-Phase Execution: Collect-Execute-Assemble**
-1. **Collect**: `@` commands buffered in source order
-2. **Execute**: All logic (`var`, functions, loops) runs to completion concurrently
-3. **Assemble**: Buffered `@` commands dispatched sequentially to build final result
-
-**[EXEC-005] Implicit Promise Resolution**
-Any variable can be a promise; no explicit await needed
-Pass promises into functions, use in expressions without async ceremony
 
 ---
 
@@ -58,1109 +33,1843 @@ Pass promises into functions, use in expressions without async ceremony
 
 | Symbol | Name | Differential | Constraint | Example |
 |:-------|:-----|:-------------|:-----------|:--------|
-| `var` | Variable declaration | Must declare before assign | No shadowing allowed | `var user = fetch()` |
-| `extern` | External variable | For included/imported scripts | Cannot initialize | `extern currentUser` |
-| `!` | Sequential execution | Forces sequential order | Only on context objects | `db!.insert(data)` |
-| `!!` | Path repair | Clears poison on seq path | Sequential paths only | `db!!.rollback()` |
-| `@` | Output command | Deferred assembly | Runs after scope completes | `@data.x = 5` |
-| `:data` | Output focus | Returns single handler | At scope start or call | `:data` |
-| `none` | Null/undefined | Explicit null value | Default for uninitialized | `var x` → `none` |
-| `is error` | Error test | Tests for Error Value | Only way to detect errors | `if x is error` |
-| `#message` | Error property | Access error message | Only on Error Values | `err#message` |
-| `guard` | Transactional rollback | Auto-restores on error | Protects outputs/sequences | `guard` |
-| `recover` | Error recovery block | Runs if guard fails | Follows guard block | `recover err` |
-| `capture` | Block assignment | Assigns block result | Right side of `=` only | `var x = capture :data` |
-| `call` | Dynamic macro call | Passes code block | With `caller()` in macro | `call wrapper()` |
-| `caller()` | Execute call block | From inside macro | Returns block result | `var result = caller()` |
+| `!` | Sequential marker | Forces strict ordering on operation chain | Only on context properties, not variables | `!context.saveUser()` |
+| `!!` | Repair operator | Repairs poisoned sequential path before operation | Only on sequential paths | `!!context.db.rollback()` |
+| `@data` | Output builder | Declares output construction intent | Creates isolated scope per assignment | See OUT-001 |
+| `@data.path=` | Output assignment | Assigns value to output path | No `set`/`var` needed | `@data.user.name = "Alice"` |
+| `@data.path.method()` | Output method | Invokes built-in method on path | Returns new value, doesn't mutate | `@data.items.push(x)` |
+| `@handler._revert()` / `revert` | Handler revert | Resets handler(s) to scope start | Specific handler or all (revert = all) | `@data._revert()` or `revert` |
+| `#` | Peek operator | Accesses error properties without propagation | Must check `is error` first | `if x is error: x#message` |
+| `var` | Variable declaration | Creates local variable | Scope rules differ in async mode | See VAR-001 |
+| `set` | Variable assignment | Assigns to existing variable | Can cross scope boundaries | See VAR-002 |
+| `capture` | Capture block | Executes scope and returns result | Right side of assignment only | See CAPT-001 |
+| `:data`, `:text` | Output focus | Extracts single handler from result | Script, macro, capture, call | See CAPT-002 |
+| `guard` | Guard block | Transaction-like state protection | Auto-reverts on failure | See ERR-008 |
+| `recover` | Recovery block | Runs if guard finishes poisoned | Optional, follows guard | See ERR-008 |
+| `~macro_name` | Tilde-macro | Captures entire block as string | Must be defined with `captureblock` | See MACRO-005 |
+| `{% ... %}` | Template syntax | Fallback to template mode | Nests within script blocks | See TEMP-001 |
+| `.` (dot) | Property access | Auto-awaits promises | Works on any value | See EXEC-003 |
+| `\|` | Pipe/filter | Applies transformation | Chainable, left-to-right | `value \| upper \| trim` |
 
 ---
 
 ## Semantic Library
 
-### Core Concepts & Differentials
+### Category: Execution Model & Concurrency
 
+#### [EXEC-001] Parallel-by-default execution
 ```javascript
-// [EXEC-001] DIFFERENTIAL: Parallel-by-default execution
-// Independent async operations run concurrently without await
-// ✅ Valid: These three fetches run in parallel automatically
+// RULE: Independent operations run concurrently automatically
+// DIFFERENTIAL: No await/Promise.all needed
+var user = fetchUser(id)        // Starts immediately
+var posts = fetchPosts(userId)  // Starts immediately, parallel with user
+var profile = fetchProfile(id)  // Starts immediately, parallel with both
+
+// ✅ Valid: All three fetches run concurrently
+var result = {
+  user: user,
+  posts: posts,
+  profile: profile
+}
+
+// ❌ Invalid: No way to force sequential without ! marker
+// If you write:
+var a = fetchA()
+var b = fetchB()  // Still runs in parallel with a
+```
+
+#### [EXEC-002] Data-driven execution waits for dependencies
+```javascript
+// RULE: Operations wait for their inputs before executing
+// DIFFERENTIAL: Engine tracks dependencies
 var user = fetchUser(123)
-var posts = fetchPosts(123)
-var comments = fetchComments(456)
-// All three execute concurrently, no await needed
+var greeting = "Hello, " + user.name
 
-// ❌ Invalid: Don't use await (throws syntax error)
-var user = await fetchUser(123)  // SyntaxError
+// ✅ Valid: greeting waits for user.name to resolve
+@data.message = greeting
+
+// ✅ Valid: Chained dependencies resolve automatically
+var profile = fetchProfile(user.id)
+var posts = fetchPosts(user.id)
+var combined = profile.bio + posts[0].title
+
+// ❌ Invalid: No construct to force execution before input ready
+// The engine never executes code with unresolved dependencies
 ```
 
+#### [EXEC-003] Automatic promise resolution on access
 ```javascript
-// [EXEC-002] DIFFERENTIAL: Data-driven execution
-// Operations automatically wait for dependencies
-// ✅ Valid: Dependent operations wait for inputs
-var user = fetchUser(123)
-var fullName = user.firstName + " " + user.lastName
-// fullName waits for user automatically
-
-// ✅ Valid: No race condition - dependency detected
-var data = fetchData()
-var processed = transform(data)  // Waits for data
-```
-
-```javascript
-// [EXEC-003] DIFFERENTIAL: Deterministic output despite concurrent execution
-// Outputs assembled in source order regardless of completion order
-// ✅ Valid: Array built in source order
-for id in [1, 2, 3]
-  var item = fetchItem(id)  // May complete out of order
-  @data.items.push(item)     // But pushed in order 1,2,3
-endfor
-```
-
-```javascript
-// [EXEC-004] Three-phase execution model
-// DIFFERENTIAL: @commands run after scope completes
-// ✅ Valid: @data runs after loop finishes
-for id in employeeIds
-  var details = fetchEmployeeDetails(id)  // Execute phase
-  @data.employees.push(details)            // Collect phase
-endfor
-// Assemble phase: all @data commands execute sequentially
-
-// ❌ Invalid: Cannot read @data during execution
-var name = @data.user.name  // Error: @data not available yet
-```
-
-```javascript
-// [EXEC-005] DIFFERENTIAL: Implicit promise resolution
-// Variables can be promises, no async/await syntax
-// ✅ Valid: Pass promise into function
+// RULE: Property access, function args, operators auto-await promises
+// DIFFERENTIAL: No await/then needed
 var user = fetchUser(123)  // Returns promise
-var result = processUser(user)  // user auto-resolved
 
-// ✅ Valid: Use promise in expression
-var greeting = "Hello, " + user.name  // user.name auto-resolved
+// ✅ Valid: Dot notation auto-awaits
+var name = user.name
+
+// ✅ Valid: Function arguments auto-await
+var formatted = formatName(user.name)
+
+// ✅ Valid: Operators auto-await operands
+var fullName = user.firstName + " " + user.lastName
+
+// ✅ Valid: Nested access chains auto-await at each step
+var city = user.address.city
+
+// ❌ Invalid: Cannot access promise metadata or force manual await
+// No .catch(), .finally(), Promise.race(), etc.
 ```
 
-### Variable Declaration & Scoping
-
+#### [EXEC-004] Sequential marker (!) scope is call-chain only
 ```javascript
-// [VAR-001] RULE: var declares new local variable
-// CONSTRAINT: Re-declaring existing variable causes compile error
-// ✅ Valid: Declare and initialize
-var user = fetchUser(1)
+// RULE: ! enforces ordering within marked chain, not globally
+// DIFFERENTIAL: Scoped sequencing vs global blocking
+// CONSTRAINT: Only works on context properties, not variables (LIMIT-001)
 
-// ✅ Valid: Declare without init (defaults to none)
-var report
+// ✅ Valid: Sequential chain via context
+!context.step1()
+!context.step2()
+!context.step3()
 
-// ✅ Valid: Multiple variables, single value
-var x, y = 100
+// ✅ Valid: Parallel operations unaffected by sequential chain
+!context.saveUser(user)
+var posts = fetchPosts()  // Still runs in parallel with saveUser
 
-// ❌ Invalid: Re-declare existing variable
-var user = fetchUser(1)
-var user = fetchUser(2)  // Compile error
+// ✅ Valid: Sequential marker on method chain
+!context.db.connect()
+!context.db.createTable()
+!context.db.insertRow()
+
+// ❌ Invalid: Cannot use ! on script variables
+var result = step1()
+!result  // Error: ! only works on context properties
 ```
 
+#### [EXEC-005] Deterministic output assembly order
 ```javascript
-// [VAR-002] RULE: extern declares expected external variable
-// DIFFERENTIAL: For variables from including script, not context
-// CONSTRAINT: Cannot initialize, can reassign later
-// ✅ Valid: In component.script
-extern currentUser, theme
-theme = "dark"  // Reassignment OK
+// RULE: Outputs assemble in source code order despite concurrent execution
+// DIFFERENTIAL: Order guarantee despite concurrent execution
+// CONSTRAINT: Only applies to @data assignments
 
-// ❌ Invalid: Cannot initialize extern
-extern user = fetchUser()  // Compile error
+// ✅ Valid: Items appear in source order
+@data.items.push(fetchSlow())   // May complete last
+@data.items.push(fetchFast())   // May complete first
+@data.items.push(fetchMedium()) // May complete second
+// Result: [slow, fast, medium] - always in source order
+
+// ✅ Valid: Object properties maintain declaration order
+@data.first = slowOperation()
+@data.second = fastOperation()
+@data.third = mediumOperation()
+// Result: { first, second, third } in source order
+
+// ❌ Invalid: Variables have no order guarantee
+var arr = []
+arr.push(fetchSlow())
+arr.push(fetchFast())
+// Result: Race condition - undefined order
 ```
 
+#### [EXEC-006] Unordered side-effects race
 ```javascript
-// [VAR-003] RULE: Assignment requires prior declaration
-// CONSTRAINT: Using = on undeclared variable causes compile error
-// ✅ Valid: Reassign declared variable
-var name = "Alice"
-name = "Bob"  // OK
+// RULE: Operations without ! have no ordering guarantee
+// CONSTRAINT: Dangerous for side-effectful operations
+// DIFFERENTIAL: Must explicitly mark sequential dependencies
 
-// ✅ Valid: Multiple reassignment
-var x, y = 100
-x, y = 200  // OK if both declared
+// ❌ Invalid: Race condition on side-effectful operations
+context.deleteUser(userId)
+context.sendEmail(userId, "deleted")  // May run before delete
 
-// ❌ Invalid: Assign to undeclared variable
-username = "Charlie"  // Compile error: not declared
+// ✅ Valid: Use ! to enforce order
+!context.deleteUser(userId)
+!context.sendEmail(userId, "deleted")  // Guaranteed after delete
+
+// ✅ Valid: Read-only operations can be parallel
+var users = fetchUsers()
+var posts = fetchPosts()
+var comments = fetchComments()  // All safe in parallel
 ```
 
+#### [EXEC-007] Context vs variables - ! compatibility
 ```javascript
-// [VAR-004] RULE: No variable shadowing
-// DIFFERENTIAL: Child scopes cannot redeclare parent variables
-// CONSTRAINT: Prevents common bugs
-// ✅ Valid: Unique names in nested scopes
-var item = "parent"
-for i in range(2)
-  var other = "child " + i  // Different name
-endfor
+// RULE: Sequential marker (!) only works on context properties
+// CONSTRAINT: See LIMIT-001 for planned variable support
+// DIFFERENTIAL: Distinction between context and script locals
 
-// ❌ Invalid: Redeclare in child scope
-var item = "parent"
-for i in range(2)
-  var item = "child " + i  // Compile error: shadows parent
-endfor
+// ✅ Valid: Context properties support !
+!context.apiCall()
+!context.db.save()
+!context.service.method()
+
+// ❌ Invalid: Variables don't support ! (current limitation)
+var api = context.api
+!api.call()  // Error: ! doesn't work on variables
+
+// Workaround: Use context directly
+!context.api.call()  // Works
 ```
 
+#### [EXEC-008] Error propagation as data (poison values)
 ```javascript
-// [VAR-005] RULE: capture block assigns block result
-// CONSTRAINT: Only on right side of =
-// DIFFERENTIAL: Orchestrates logic to create single value
-// ✅ Valid: Transform data with capture
-var user = capture :data
-  @data.id = rawData.id
-  @data.name = rawData.name | title
-  @data.status = "active" if rawData.isActive == 1 else "inactive"
-endcapture
-// user is clean data object
+// RULE: Failed operations produce Error values that propagate
+// DIFFERENTIAL: Errors flow through dataflow
+// CONSTRAINT: Unrelated parallel work continues unaffected
 
-// ❌ Invalid: capture not on right side
-capture :data
-  @data.x = 5
-endcapture  // Error: must be assigned to variable
-```
+// ✅ Valid: Error propagates to dependents
+var user = fetchUser(123)  // Fails -> Error value
+var name = user.name       // Becomes Error (depends on user)
+var greeting = "Hello " + name  // Becomes Error (depends on name)
 
-```javascript
-// [VAR-006] RULE: Strict null handling
-// DIFFERENTIAL: Throws errors on null/undefined access (unlike Nunjucks)
-// CONSTRAINT: Use none for null values
-// ✅ Valid: Declare with none
-var x  // Defaults to none
+// ✅ Valid: Independent operations continue
+var user = fetchUser(123)  // Fails
+var posts = fetchPosts()   // Still executes, unaffected
 
-// ✅ Valid: Assign none explicitly
-var y = none
-
-// ❌ Invalid: Access property of null throws error
-var user = none
-var name = user.name  // Runtime error (Nunjucks returns undefined)
-```
-
-### Expressions & Operators
-
-```javascript
-// [EXPR-001] RULE: Multiline expressions via unclosed syntax
-// DIFFERENTIAL: Auto-detects continuation without explicit marker
-// ✅ Valid: Multiline with unclosed operator
-var result = 5 + 10 *
-  20 - 3
-
-// ✅ Valid: Unclosed parentheses
-var total = (
-  price + shipping
-) * 1.05
-
-// ❌ Invalid: Complete expression on each line
-var result = 5 + 10
-  * 20  // Treated as new statement, error
-```
-
-```javascript
-// [EXPR-002] RULE: Inline if expression (ternary)
-// ✅ Valid: Syntax is value_if_true if condition else value_if_false
-var theme = "dark" if user.darkMode else "light"
-
-// ✅ Valid: Nested inline if
-var status = "admin" if user.role == "admin" else ("user" if user.verified else "guest")
-```
-
-```javascript
-// [EXPR-003] RULE: Regular expressions with r prefix
-// ✅ Valid: Create regex with r/pattern/
-var emailRegex = r/^[^\s@]+@[^\s@]+\.[^\s@]+$/
-if emailRegex.test(user.email)
-  @text("Valid")
+// ✅ Valid: Check for errors before use
+var user = fetchUser(id)
+if user is error
+  @data.error = "Failed to fetch user"
+else
+  @data.name = user.name
 endif
+
+// ❌ Invalid: Cannot catch or handle errors mid-expression
+var name = try user.name catch "Unknown"  // No such construct
 ```
 
-```javascript
-// [EXPR-004] RULE: Filters with pipe operator
-// ✅ Valid: Chain filters
-var title = "a tale of two cities" | title
-@text(title)  // "A Tale Of Two Cities"
+---
 
-// ✅ Valid: Filter in expression
-@text("Users: " + (users | join(", ")))
+### Category: Variables & Scope
+
+#### [VAR-001] var creates local variable in current scope
+```javascript
+// RULE: var declares variable in current block scope
+// DIFFERENTIAL: Isolated scopes vs JS var hoisting
+// CONSTRAINT: Cannot redeclare same name in scope
+
+// ✅ Valid: Basic declaration
+var x = 10
+var name = "Alice"
+var user = fetchUser(123)
+
+// ✅ Valid: Scoped to block in async mode
+if condition
+  var local = "value"  // Only visible inside if
+endif
+// local is undefined here
+
+// ❌ Invalid: Redeclaration in same scope
+var x = 1
+var x = 2  // Error: x already declared
+
+// ❌ Invalid: Access before declaration
+var y = x + 1
+var x = 10  // Error: x used before declaration
 ```
 
-### Control Flow
-
+#### [VAR-002] set assigns to existing variable
 ```javascript
-// [CTRL-001] RULE: for loops execute concurrently by default
-// DIFFERENTIAL: Loop iterations run in parallel automatically
-// ✅ Valid: Parallel iteration (default)
-for userId in userIds
-  var user = fetchUserDetails(userId)  // All fetch concurrently
-  @data.users.push(user)
-endfor
+// RULE: set modifies existing variable from outer scope
+// DIFFERENTIAL: Can cross scope boundaries (unlike var)
+// CONSTRAINT: Variable must exist in an outer scope
 
-// ✅ Valid: Concurrency limit with of
-for item in largeCollection of 5
-  processItem(item)  // Max 5 concurrent
-endfor
+// ✅ Valid: Modify outer variable from inner scope
+var counter = 0
+if condition
+  set counter = counter + 1  // Modifies outer counter
+endif
 
-// ❌ Invalid: Concurrency limit on plain objects (ignored)
-for key, val in { a: 1, b: 2 } of 5  // of ignored for objects
-  @text(key)
-endfor
-```
-
-```javascript
-// [CTRL-002] RULE: for auto-fallback to sequential
-// DIFFERENTIAL: Automatic sequential when dependencies detected
-// CONSTRAINT: Triggered by shared variable modification or ! usage
-// ✅ Valid: Auto-sequential from shared variable
+// ✅ Valid: Multiple scope levels
 var total = 0
 for item in items
-  total = total + item.value  // Modifies shared var → sequential
-endfor
-
-// ✅ Valid: Auto-sequential from ! operator
-for item in items
-  db!.insert(item)  // Sequential path → sequential loop
-endfor
-```
-
-```javascript
-// [CTRL-003] RULE: while loops always sequential
-// DIFFERENTIAL: Body executes sequentially, condition re-evaluated after
-// ✅ Valid: Sequential iteration
-var count = 0
-while count < 3
-  count = count + 1
-  @text("Count: " + count)
-endwhile
-```
-
-```javascript
-// [CTRL-004] RULE: each loops always sequential
-// DIFFERENTIAL: Like for but guarantees sequential order
-// ✅ Valid: Sequential over collection
-each item in collection
-  db.insert(item)  // Waits for previous
-endeach
-```
-
-```javascript
-// [CTRL-005] RULE: for else block for empty collections
-// ✅ Valid: else executes if collection empty
-for item in []
-  @text("Item")
-else
-  @text("Empty")  // Executes
-endfor
-```
-
-```javascript
-// [CTRL-006] RULE: loop variable properties
-// CONSTRAINT: Some properties unavailable based on context
-// ✅ Valid: Always available
-for item in items
-  @text(loop.index)   // 1-indexed
-  @text(loop.index0)  // 0-indexed
-  @text(loop.first)   // true on first
-endfor
-
-// ✅ Valid: Available on arrays/objects
-for item in [1, 2, 3]
-  @text(loop.length)  // 3
-  @text(loop.last)    // true on last
-endfor
-
-// ❌ Invalid: Not available on sequential async iterators
-for item in asyncGen() of 5
-  @text(loop.length)  // undefined (can't know length)
-endfor
-```
-
-```javascript
-// [CTRL-007] RULE: if with error condition skips both branches
-// DIFFERENTIAL: Error in condition poisons both if and else
-// CONSTRAINT: Error propagates to variables modified in either branch
-// ✅ Valid: Both branches skipped
-var errorVal = fetchError()  // Returns error
-if errorVal
-  result = "yes"
-else
-  result = "no"
-endif
-// result is now an Error Value
-```
-
-```javascript
-// [CTRL-008] RULE: Iterate various collection types
-// ✅ Valid: Arrays
-for item in [1, 2, 3]
-  @text(item)
-endfor
-
-// ✅ Valid: Objects (key, value)
-for key, val in { a: 1, b: 2 }
-  @text(key + ": " + val)
-endfor
-
-// ✅ Valid: Array unpacking
-for x, y in [[1, 2], [3, 4]]
-  @text(x + "," + y)
-endfor
-
-// ✅ Valid: Async iterators
-for num in generateNumbers()
-  @text(num)
-endfor
-```
-
-### Sequential Execution Control
-
-```javascript
-// [SEQ-001] RULE: ! forces sequential order on object path
-// DIFFERENTIAL: Creates ordered sequence for side-effect operations
-// CONSTRAINT: Must reference context objects, not local variables
-// ✅ Valid: Sequential on context object
-db!.insert(data)      // 1. Executes first
-db.getStatus()        // 2. Waits for insert
-db!.update(moreData)  // 3. Waits for getStatus
-
-// ❌ Invalid: Sequential on local variable
-var database = db
-database!.insert(data)  // Error: must be context object
-```
-
-```javascript
-// [SEQ-002] RULE: Sequential path applies to all subsequent calls
-// DIFFERENTIAL: Once ! used, all calls on path are sequential
-// ✅ Valid: First ! makes entire path sequential
-account!.deposit(100)  // Creates sequence
-account.getStatus()    // Waits even without !
-account.withdraw(50)   // Also waits
-```
-
-```javascript
-// [SEQ-003] RULE: Nested context access allowed
-// ✅ Valid: Path from context property
-services.database!.insert(data)  // OK if services in context
-
-// ✅ Valid: Deep nesting from context
-app.modules.db!.connect()
-```
-
-```javascript
-// [SEQ-004] RULE: Macro parameters can use !
-// CONSTRAINT: Argument must originate from context when calling
-// ✅ Valid: Macro with sequential parameter
-macro performWork(database)
-  database!.insert(data)
-endmacro
-
-performWork(db)  // OK: db from context
-
-// ❌ Invalid: Pass local variable to macro using !
-var myDb = db
-performWork(myDb)  // Error: must be context object
-```
-
-```javascript
-// [SEQ-005] RULE: !! repairs poisoned sequential path
-// DIFFERENTIAL: Clears poison state or repairs and executes
-// ✅ Valid: Repair path only
-db!.insert(data)  // Fails, poisons path
-db!!  // Repairs path
-db!.insert(other)  // Now executes
-
-// ✅ Valid: Repair and execute
-db!.beginTransaction()
-db!.insert(userData)      // Fails
-db!.insert(profileData)   // Skipped
-db!!.rollback()           // Repairs and executes rollback
-```
-
-```javascript
-// [SEQ-006] RULE: Check sequential path poison state
-// ✅ Valid: Test if path poisoned
-db!.sendRequest(data)  // Might fail
-if db! is error
-  @data.error = db!#message
-  db!!  // Repair
-endif
-```
-
-### Output Commands System
-
-```javascript
-// [OUT-001] RULE: @data builds structured data
-// DIFFERENTIAL: Commands buffered, executed after scope completes
-// ✅ Valid: Simple assignment
-@data.user.name = "Alice"
-@data.user.id = 123
-
-// ✅ Valid: Creates nested structures automatically
-@data.company.employees.push({ name: "Bob" })
-
-// ❌ Invalid: Cannot read @data during execution
-var x = @data.user.name  // Error: not yet assembled
-```
-
-```javascript
-// [OUT-002] RULE: @data operations executed in source order
-// DIFFERENTIAL: Deterministic despite concurrent execution
-// ✅ Valid: Sequential assembly
-@data.items.push(1)
-@data.items.push(2)
-@data.items.push(3)
-// Always results in [1, 2, 3]
-```
-
-```javascript
-// [OUT-003] RULE: @text appends to text stream
-// ✅ Valid: Build text output
-@text("Processing...")
-for item in items
-  @text("Item: " + item.name)
-endfor
-@text("Done.")
-```
-
-```javascript
-// [OUT-004] RULE: :focus directive returns single handler
-// DIFFERENTIAL: Changes return from full object to single property
-// CONSTRAINT: Placed at scope start or on call/capture
-// ✅ Valid: Focus entire script
-:data
-@data.report.title = "Q3"
-@text("Done")
-// Returns: { report: { title: "Q3" } } not { data: {...}, text: "..." }
-
-// ✅ Valid: Focus macro
-macro buildUser() : data
-  @data.user.name = "Alice"
-endmacro
-
-// ✅ Valid: Focus call block
-call processor() : data
-  @data.value = 100
-endcall
-
-// ✅ Valid: Focus capture
-var result = capture :data
-  @data.x = 5
-endcapture
-```
-
-```javascript
-// [OUT-005] RULE: @data.path = value creates structure
-// ✅ Valid: Nested path creation
-@data.a.b.c.d = "deep"  // Creates all intermediate objects
-
-// ✅ Valid: Root replacement
-@data = { status: "complete" }
-
-// ✅ Valid: Change root type
-@data = []
-@data.push("item")
-```
-
-```javascript
-// [OUT-006] RULE: @data array operations
-// ✅ Valid: Array methods
-@data.items.push(value)           // Append
-@data.items.concat([1, 2])        // Concatenate
-@data.items.pop()                 // Remove last
-@data.items.shift()               // Remove first
-@data.items.unshift(value)        // Prepend
-@data.items.reverse()             // Reverse in-place
-@data.items.at(2)                 // Replace with element at index
-@data.items.sort()                // Sort in-place
-@data.items.arraySlice(1, 3)      // Replace with slice
-
-// CONSTRAINT: Creates empty array if path doesn't exist
-@data.newArray.push(1)  // newArray created automatically
-```
-
-```javascript
-// [OUT-007] RULE: @data object operations
-// ✅ Valid: Merge objects
-@data.user.merge({ name: "Alice", age: 30 })      // Shallow
-@data.user.deepMerge({ nested: { value: 5 } })   // Deep
-```
-
-```javascript
-// [OUT-008] RULE: @data arithmetic operations
-// CONSTRAINT: Target must be number or throws error
-// ✅ Valid: Numeric operations
-@data.counter = 0
-@data.counter += 5       // Add
-@data.counter -= 2       // Subtract
-@data.counter *= 3       // Multiply
-@data.counter /= 2       // Divide
-@data.counter++          // Increment
-@data.counter--          // Decrement
-
-// ❌ Invalid: Arithmetic on undefined/null throws error
-@data.newCounter++  // Error: must initialize first
-```
-
-```javascript
-// [OUT-009] RULE: @data string operations
-// ✅ Valid: String methods
-@data.text = "hello"
-@data.text += " world"              // Append
-@data.text.append(" more")          // Append
-@data.text.toUpperCase()            // Convert
-@data.text.toLowerCase()            // Convert
-@data.text.slice(0, 5)              // Extract
-@data.text.trim()                   // Trim
-@data.text.replace("old", "new")    // Replace first
-@data.text.replaceAll("a", "b")     // Replace all
-@data.text.split(" ")               // Split to array
-
-// CONSTRAINT: Creates empty string if path doesn't exist
-@data.newText.append("hello")  // newText created automatically
-```
-
-```javascript
-// [OUT-010] RULE: @data array index targeting
-// DIFFERENTIAL: [] refers to last added in source order
-// ✅ Valid: Specific index
-@data.users[0].name = "Alice"
-
-// ✅ Valid: Last added in source order
-@data.users.push({ name: "Bob" })
-@data.users[].age = 25  // Affects Bob's object
-
-// CONSTRAINT: Order is source order, not completion order
-for id in [1, 2, 3]
-  @data.items.push(fetchItem(id))  // May complete out of order
-endfor
-@data.items[].highlight = true  // Affects item 3 (last pushed in source)
-```
-
-```javascript
-// [OUT-011] RULE: @data.delete() removes value
-// ✅ Valid: Delete property
-@data.user.tempField = "temp"
-@data.user.tempField.delete()  // Sets to undefined, removed from JSON
-```
-
-```javascript
-// [OUT-012] RULE: Custom output handlers
-// DIFFERENTIAL: Define domain-specific command sequences
-// ✅ Valid: Use custom handler
-@turtle.forward(100)
-@turtle.turn(90)
-@turtle.forward(50)
-// Result: { turtle: { x: 50, y: 100, angle: 90 } }
-```
-
-### Error Handling & Recovery
-
-```javascript
-// [ERR-001] DIFFERENTIAL: Errors are data, not exceptions
-// RULE: Failed operations produce Error Value that propagates
-// ✅ Valid: Error propagates to dependents
-var user = fetchUser(999)      // Returns Error Value
-var name = user.name           // name becomes Error Value
-@data.username = name          // @data poisoned
-
-// ✅ Valid: Independent work continues
-var posts = fetchPosts()    // ❌ Fails
-var comments = fetchComments()  // ✅ Continues anyway
-```
-
-```javascript
-// [ERR-002] RULE: is error test detects Error Values
-// DIFFERENTIAL: Only way to check for errors
-// ✅ Valid: Detect and repair
-var user = fetchUser(999)
-if user is error
-  @data.log = user#message  // Access error message
-  user = { name: "Guest" }  // Repair by reassigning
-endif
-@data.username = user.name  // Now succeeds
-```
-
-```javascript
-// [ERR-003] RULE: Error in expression poisons result
-// ✅ Valid: Any operand error propagates
-var myError = fetchError()
-var total = myError + 5     // total becomes myError
-var result = 10 * myError   // result becomes myError
-```
-
-```javascript
-// [ERR-004] RULE: Error as argument skips function
-// DIFFERENTIAL: Function never executes, returns error immediately
-// ✅ Valid: Function skipped
-var myError = fetchError()
-var result = processData(myError)  // processData not called
-
-// ✅ Valid: Any error argument skips
-var output = transform(validData, myError, more)  // Skipped
-```
-
-```javascript
-// [ERR-005] RULE: Error in loop iterable skips loop body
-// CONSTRAINT: Error propagates to all loop outputs
-// ✅ Valid: Loop skipped, outputs poisoned
-var errorList = fetchError()
-for item in errorList
-  @data.items.push(item)  // Never executes
-endfor
-// @data is now poisoned
-```
-
-```javascript
-// [ERR-006] RULE: Error in if condition skips both branches
-// CONSTRAINT: Error propagates to all variables modified in either branch
-// ✅ Valid: Both branches skipped
-if myErrorCondition
-  result = "yes"
-else
-  result = "no"
-endif
-// result is now Error Value
-```
-
-```javascript
-// [ERR-007] RULE: Error written to output handler poisons handler
-// DIFFERENTIAL: Handler poisoned, script/macro/capture fails
-// ✅ Valid: Handler poisoned
-@data.user = myError  // Poisons @data handler
-// Render promise rejects with error
-```
-
-```javascript
-// [ERR-008] RULE: Error in sequential path poisons path
-// CONSTRAINT: Later operations on path return error without executing
-// ✅ Valid: Path poisoned
-db!.connect()      // ❌ Fails
-db!.insert(record) // ❌ Skipped, returns error
-db!.commit()       // ❌ Skipped, returns error
-```
-
-```javascript
-// [ERR-009] RULE: guard block protects outputs and sequences
-// DIFFERENTIAL: Transaction-like rollback on error
-// CONSTRAINT: Variables not protected by default
-// ✅ Valid: Default protection (outputs + sequences)
-guard
-  @data.status = "processing"
-  db!.insert(user)
-  db!.update(account)  // ❌ Fails
-recover err
-  // @data reverted, db! repaired
-  @data.status = "failed"
-  @data.error = err#message
-endguard
-```
-
-```javascript
-// [ERR-010] RULE: guard with explicit targets protects variables
-// ✅ Valid: Protect specific variables
-guard total, summary
-  total = total + fetchValue()  // ❌ Fails
-  summary = buildSummary()
-recover err
-  // total and summary restored to pre-guard values
-  @data.error = err#message
-endguard
-```
-
-```javascript
-// [ERR-011] RULE: Manual handler recovery with _revert()
-// ✅ Valid: Manually revert handler
-@data.status = "processing"
-var result = riskyOperation()
-if result is error
-  @data._revert()  // Reverts all @data changes
-  @data.status = "failed"
-endif
-```
-
-```javascript
-// [ERR-012] RULE: Retry pattern with error detection
-// ✅ Valid: Retry loop
-var retries = 0
-var user = none
-while retries < 3 and user is error
-  user = fetchUser(123)
-  if user is not error
-    break
+  if item.valid
+    set total = total + item.value  // Reaches outer total
   endif
-  retries = retries + 1
-endwhile
-if user is error
-  user = { name: "Guest" }
+endfor
+
+// ❌ Invalid: set without prior declaration
+set newVar = 10  // Error: newVar doesn't exist
+
+// ❌ Invalid: set in same scope (use var or just assign)
+var x = 1
+set x = 2  // Unnecessary, but works
+```
+
+#### [VAR-003] Scope isolation in async mode
+```javascript
+// RULE: Control blocks create isolated scopes in async mode
+// DIFFERENTIAL: Prevents race conditions; differs from JS/Nunjucks
+// CONSTRAINT: Use 'set' to modify outer variables
+
+// ✅ Valid: Each iteration has isolated scope
+for item in items
+  var temp = process(item)  // Local to this iteration
+  @data.results.push(temp)
+endfor
+
+// ✅ Valid: if/else blocks are isolated
+if condition
+  var result = "A"
+else
+  var result = "B"  // Different variable, same name OK
 endif
+// result undefined here
+
+// ❌ Invalid: Assuming shared scope (JS habit)
+var sum = 0
+for item in items
+  var sum = sum + item.value  // Creates new local sum
+endfor
+// Outer sum unchanged
+
+// ✅ Valid: Correct accumulation
+var sum = 0
+for item in items
+  set sum = sum + item.value  // Modifies outer sum
+endfor
 ```
 
-### Macros & Reusability
-
+#### [VAR-004] Sync mode behaves like classic templates
 ```javascript
-// [MAC-001] RULE: macro defines reusable component
-// ✅ Valid: Simple macro
-macro greet(name)
-  @text("Hello, " + name)
-endmacro
+// RULE: With asyncMode: false, no scope isolation
+// DIFFERENTIAL: Legacy Nunjucks behavior for compatibility
+// CONSTRAINT: Only use for fully synchronous templates
 
-greet("Alice")  // Call
+// ✅ Valid in sync mode: var modifies parent scope
+var x = 0
+{% for i in [1,2,3] %}
+  {% set x = x + i %}  // Modifies parent x
+{% endfor %}
+// x is 6
+
+// ❌ Invalid: Sync mode cannot handle promises safely
+// Race conditions possible without scope isolation
 ```
 
-```javascript
-// [MAC-002] RULE: Macros support keyword arguments
-// ✅ Valid: Keyword args with defaults
-macro input(name, value="", type="text") : data
-  @data.field.name = name
-  @data.field.value = value
-  @data.field.type = type
-endmacro
+---
 
-var field = input("username", type="email")  // Mixed args
+### Category: Capture Blocks & Output Focus
+
+#### [CAPT-001] capture block for inline scope execution
+```javascript
+// RULE: capture ... endcapture runs logic and returns result
+// DIFFERENTIAL: Isolated output scope per assignment
+// CONSTRAINT: Used only on right side of assignment (=)
+
+// ✅ Valid: Basic capture
+var user = capture :data
+  var raw = fetchUser(id)
+  @data.id = raw.id
+  @data.name = raw.name | upper
+endcapture
+// user = { id: 123, name: "ALICE" }
+
+// ✅ Valid: Capture with complex logic
+var summary = capture :data
+  var posts = fetchPosts()
+  for post in posts
+    @data.count++
+    @data.titles.push(post.title)
+  endfor
+  @data.total = posts | length
+endcapture
+
+// ❌ Invalid: Capture without assignment
+capture :data
+  @data.value = 1
+endcapture  // Error: must be on right side of =
+
+// ❌ Invalid: Capture in expression
+var x = capture :data @data.v = 1 endcapture + 5  // Syntax error
 ```
 
+#### [CAPT-002] Output focus directives (:data, :text, :handler)
 ```javascript
-// [MAC-003] RULE: Macro output focus with :handler
-// ✅ Valid: Return focused output
+// RULE: :handler focuses result to single handler property
+// DIFFERENTIAL: Returns value, not {handler: value}
+// CONSTRAINT: Applies to scripts, macros, captures, call blocks
+
+// ✅ Valid: Script-level focus
+:data
+@data.user.name = "Alice"
+@text("Processing...")
+// Returns: { user: { name: "Alice" } } not { data: {...}, text: "..." }
+
+// ✅ Valid: Capture focus
+var result = capture :data
+  @data.value = 42
+  @text("Ignored due to :data focus")
+endcapture
+// result = { value: 42 } only
+
+// ✅ Valid: Macro focus
 macro buildUser(name) : data
   @data.user.name = name
-  @data.user.active = true
+  @text("Building...")  // Ignored
 endmacro
+var user = buildUser("Alice")
+// user = { user: { name: "Alice" } }
 
-var user = buildUser("Alice")  // Returns just data, not { data: ... }
-```
-
-```javascript
-// [MAC-004] RULE: call block passes code to macro
-// DIFFERENTIAL: Pass executable block as argument
-// ✅ Valid: Call with block
-macro wrapper(title)
-  @text("Before: " + title)
-  caller()  // Execute the block
-  @text("After")
-endmacro
-
-call wrapper("Title")
-  @text("Content")
-endcall
-```
-
-```javascript
-// [MAC-005] RULE: caller() executes call block
-// ✅ Valid: Invoke and capture result
+// ✅ Valid: call block focus
 macro processor()
-  var result = caller()  // Execute block, get result
-  @data.processed = result
+  var data = caller()  // Gets focused result
+  @data.processed = data
 endmacro
-
 call processor() : data
   @data.value = 100
+  @text("Ignored")
 endcall
+// processor receives: { value: 100 }
+
+// ✅ Valid: Unfocused returns all handlers
+@data.value = 1
+@text("Done")
+// Returns: { data: { value: 1 }, text: "Done" }
 ```
 
+#### [CAPT-003] Output scope boundaries and revert
 ```javascript
-// [MAC-006] RULE: call block has caller's context
-// DIFFERENTIAL: Block accesses variables from call site, not macro
-// ✅ Valid: Block sees call-site variables
-var userCount = 5
+// RULE: Capture creates revert boundary
+// SEE: ERR-009 for complete scope boundary list
 
-macro wrapper()
-  caller()
-endmacro
+// ✅ Valid: Revert in capture
+var result = capture :data
+  if @data is error
+    revert  // To capture start, not script
+  endif
+endcapture
 
-call wrapper()
-  @text("Users: " + userCount)  // Accesses userCount from outer scope
-endcall
+// For other boundaries: guard, macro, caller, include → see ERR-009
 ```
 
-### Modularity & Composition
-
+#### [CAPT-004] Capture scope variable access
 ```javascript
-// [MOD-001] RULE: extern declares expected external variables
-// DIFFERENTIAL: For cross-file variable contracts
-// CONSTRAINT: Used in called script (include/import/extends)
-// ✅ Valid: In component.script
-extern user, theme
+// RULE: Capture can access outer scope variables
+// DIFFERENTIAL: Read outer, but var creates local
+// CONSTRAINT: Use set to modify outer variables
 
-if not user.isAuthenticated
-  theme = "guest"
+// ✅ Valid: Read outer variables
+var userId = 123
+var user = capture :data
+  @data.id = userId  // Access outer userId
+  @data.name = fetchUser(userId).name
+endcapture
+
+// ✅ Valid: Modify outer with set
+var counter = 0
+var result = capture :data
+  set counter = counter + 1  // Modify outer
+  @data.count = counter
+endcapture
+
+// ❌ Invalid: var creates local, doesn't modify outer
+var total = 0
+var result = capture :data
+  var total = 10  // Creates local total
+endcapture
+// Outer total still 0
+
+// ✅ Valid: Correct outer modification
+var total = 0
+var result = capture :data
+  set total = 10  // Modifies outer total
+  @data.total = total
+endcapture
+// Outer total now 10
+```
+
+---
+
+### Category: Output Building (@data)
+
+#### [OUT-001] @data declares output construction
+```javascript
+// RULE: @data assignments build the final output object
+// DIFFERENTIAL: Separate from variable space; isolated scope per assignment
+// CONSTRAINT: Each @data expression runs in own scope
+
+// ✅ Valid: Building output object
+@data.user.name = "Alice"
+@data.user.email = "alice@example.com"
+@data.status = "success"
+// Output: { user: { name: "Alice", email: "..." }, status: "success" }
+
+// ✅ Valid: Using variables in @data
+var user = fetchUser(id)
+@data.result.name = user.name
+@data.result.id = user.id
+
+// ✅ Valid: Each assignment is independent
+@data.items.push(slowOperation())
+@data.items.push(fastOperation())
+// Order preserved despite parallel execution
+```
+
+#### [OUT-002] @data creates nested paths automatically
+```javascript
+// RULE: @data auto-creates intermediate objects/arrays
+// DIFFERENTIAL: No need to initialize containers
+// CONSTRAINT: Final path segment determines type
+
+// ✅ Valid: Auto-creates nested objects
+@data.user.profile.settings.theme = "dark"
+// Creates: { user: { profile: { settings: { theme: "dark" } } } }
+
+// ✅ Valid: Array access auto-creates array
+@data.items[0] = "first"
+@data.items[2] = "third"
+// Creates: { items: ["first", undefined, "third"] }
+
+// ✅ Valid: Mixed nesting
+@data.users[0].name = "Alice"
+@data.users[0].posts[0] = "Post 1"
+```
+
+#### [OUT-003] @data methods are immutable operations
+```javascript
+// RULE: @data methods return new value without mutating
+// DIFFERENTIAL: Functional style; concurrent-safe
+// CONSTRAINT: Must assign result back to @data path
+
+// ✅ Valid: push returns new array
+@data.items.push("new")  // Creates/extends items array
+
+// ✅ Valid: Chaining methods
+@data.text.upper().trim()  // Returns transformed text
+
+// ✅ Valid: concat creates new array
+@data.all.concat(moreItems)
+
+// ❌ Invalid: Methods don't mutate in place
+var arr = [1, 2, 3]
+arr.push(4)  // arr is still [1,2,3] - push returns new array
+```
+
+#### [OUT-004] Built-in @data methods
+```javascript
+// RULE: Standard methods available on @data paths
+// TYPES: push, concat, append (arrays); upper, lower, trim (strings)
+
+// ✅ Valid: Array methods
+@data.items.push(item)           // Append single
+@data.items.concat(arrayOfItems) // Merge arrays
+@data.items.append(item)         // Alias for push
+
+// ✅ Valid: String methods
+@data.text.upper()  // Uppercase
+@data.text.lower()  // Lowercase
+@data.text.trim()   // Remove whitespace
+
+// ✅ Valid: Custom methods via addDataMethods
+// env.addDataMethods({ incrementBy: (target, n) => (target || 0) + n })
+@data.count.incrementBy(5)
+```
+
+#### [OUT-005] @data scope isolation per assignment
+```javascript
+// RULE: Each @data assignment executes in isolated scope
+// DIFFERENTIAL: No shared variables between @data expressions
+// CONSTRAINT: Use regular variables for shared computation
+
+// ❌ Invalid: Cannot share variables across @data assignments
+@data.first = var temp = process()  // Syntax error
+@data.second = temp  // temp not accessible
+
+// ✅ Valid: Use regular variables for sharing
+var temp = process()
+@data.first = temp
+@data.second = temp
+
+// ✅ Valid: Each @data is independent expression
+@data.user.name = fetchUser().name
+@data.user.email = fetchUser().email  // Fetches again
+```
+
+---
+
+### Category: Control Flow
+
+#### [CTRL-001] if/else creates isolated scope (async mode)
+```javascript
+// RULE: if/elif/else branches execute in isolated scope
+// DIFFERENTIAL: Variables don't leak; use set for outer
+// CONSTRAINT: Async mode only; sync mode shares scope
+
+// ✅ Valid: Isolated branch scopes
+var result = null
+if condition
+  var result = "A"  // Local to if branch
+endif
+// result is still null
+
+// ✅ Valid: Modify outer variable
+var result = null
+if condition
+  set result = "A"  // Modifies outer result
+endif
+// result is "A"
+
+// ✅ Valid: elif/else also isolated
+if x > 10
+  var msg = "high"
+elif x > 5
+  var msg = "medium"  // Different local variable
+else
+  var msg = "low"     // Different local variable
 endif
 ```
 
+#### [CTRL-002] for loop iterations execute in parallel
 ```javascript
-// [MOD-002] RULE: reads grants read-only permission
-// CONSTRAINT: Used in calling script on import/include/block
-// ✅ Valid: Grant read access
-include "component.script" reads user, theme
+// RULE: for loop iterations run concurrently unless using !
+// DIFFERENTIAL: Not sequential like traditional loops
+// CONSTRAINT: Each iteration has isolated scope
+
+// ✅ Valid: Parallel iterations
+for item in items
+  var processed = processItem(item)  // All run in parallel
+  @data.results.push(processed)
+endfor
+
+// ✅ Valid: Accessing loop variable
+for user in users
+  @data.names.push(user.name)  // Each iteration independent
+endfor
+
+// ✅ Valid: Accumulating with set
+var total = 0
+for item in items
+  set total = total + item.value  // Shared accumulator
+endfor
+
+// ❌ Invalid: Assuming sequential execution
+for i in range(5)
+  !context.log(i)  // Error: ! doesn't work on loop variable
+endfor
 ```
 
+#### [CTRL-003] while loop syntax (limited use case)
 ```javascript
-// [MOD-003] RULE: modifies grants read-write permission
-// ✅ Valid: Grant write access
-include "component.script" reads user modifies theme
+// RULE: while condition ... endwhile supported
+// CONSTRAINT: Rarely useful due to parallel execution model
+// DIFFERENTIAL: Condition must become false via external state
+
+// ✅ Valid: while with external state change
+while context.hasMore
+  var item = !context.fetchNext()
+  @data.items.push(item)
+endwhile
+
+// ❌ Invalid: Internal loop variable doesn't work
+var i = 0
+while i < 5
+  set i = i + 1  // Parallel execution - unpredictable
+endwhile
+
+// Note: Traditional counting loops should use 'for' with range
+for i in range(5)
+  @data.items.push(i)
+endfor
 ```
 
+#### [CTRL-004] switch/case for multi-way branching
 ```javascript
-// [MOD-004] RULE: import loads library as namespace
-// DIFFERENTIAL: Stateless by default, no execution
-// ✅ Valid: Import as namespace
-import "utils.script" as utils
-var formatted = utils.formatUser(user)
+// RULE: switch value ... case x ... case y ... default ... endswitch
+// DIFFERENTIAL: Each case branch isolated scope (async mode)
+// CONSTRAINT: No fall-through (unlike C/JS switch)
 
-// ✅ Valid: Import specific macros
-from "utils.script" import formatUser
-var formatted = formatUser(user)
+// ✅ Valid: Basic switch
+switch status
+  case "active"
+    @data.message = "User is active"
+  case "pending"
+    @data.message = "User is pending"
+  default
+    @data.message = "Unknown status"
+endswitch
+
+// ✅ Valid: Isolated case scopes
+switch type
+  case "user"
+    var entity = fetchUser(id)
+  case "post"
+    var entity = fetchPost(id)  // Different local 'entity'
+endswitch
+
+// ❌ Invalid: Case fall-through doesn't exist
+switch value
+  case 1
+    @data.result = "one"
+    // No break needed, no fall-through possible
+  case 2
+    @data.result = "two"
+endswitch
 ```
 
+#### [CTRL-005] Nested control flow
 ```javascript
-// [MOD-005] RULE: Stateful import with permissions
-// DIFFERENTIAL: Import can access parent state
-// ✅ Valid: Import with variable access
-from "logger.script" import add as log modifies log_messages
+// RULE: Control structures nest with isolated scopes per block
+// DIFFERENTIAL: Each level maintains scope isolation
 
-// ✅ Valid: Import with context access
-import "api.script" as api reads context
+// ✅ Valid: Nested if in for
+for user in users
+  if user.active
+    var posts = fetchPosts(user.id)
+    @data.active.push({ user: user, posts: posts })
+  endif
+endfor
+
+// ✅ Valid: for in if
+if shouldProcess
+  for item in items
+    @data.processed.push(process(item))
+  endfor
+endif
+
+// ✅ Valid: switch in for
+for item in items
+  switch item.type
+    case "A"
+      @data.typeA.push(item)
+    case "B"
+      @data.typeB.push(item)
+  endswitch
+endfor
 ```
 
-```javascript
-// [MOD-006] RULE: reads context grants context access
-// DIFFERENTIAL: Special syntax for global context in import only
-// CONSTRAINT: Only on import statement
-// ✅ Valid: Grant context read access
-import "api.script" as api reads context
+---
 
-// ❌ Invalid: reads context on include (include auto-shares context)
-include "component.script" reads context  // Error: redundant
+### Category: Error Handling
+
+#### [ERR-001] Errors propagate as poison values
+```javascript
+// RULE: Failed operations produce Error objects that propagate
+// DIFFERENTIAL: No exceptions thrown; errors are data values
+// CONSTRAINT: Dependent operations become errors automatically
+
+// ✅ Valid: Error propagation chain
+var user = fetchUser(id)  // Fails -> Error
+var name = user.name      // Error (depends on user)
+var greeting = "Hello " + name  // Error (depends on name)
+@data.result = greeting   // @data.result becomes Error
+
+// ✅ Valid: Independent operations unaffected
+var user = fetchUser(id)  // Fails
+var posts = fetchPosts()  // Still executes successfully
+@data.posts = posts       // Not affected by user error
+
+// ❌ Invalid: Cannot catch errors mid-dataflow
+var user = fetchUser(id)
+var name = user.name || "Unknown"  // Error propagates through ||
 ```
 
+#### [ERR-002] is error checks for poison values
 ```javascript
-// [MOD-007] RULE: include executes script in current scope
-// DIFFERENTIAL: Automatically shares global context
-// ✅ Valid: Include with permissions
-var user = fetchUser(1)
-var stats = { widgetLoads: 0 }
+// RULE: 'is error' tests if value is an Error object
+// DIFFERENTIAL: Predicate for error detection without try/catch
 
-include "widget.script" reads user modifies stats
+// ✅ Valid: Basic error check
+var user = fetchUser(id)
+if user is error
+  @data.error = "Failed to fetch user"
+else
+  @data.name = user.name
+endif
+
+// ✅ Valid: Multiple error checks
+var users = fetchUsers()
+var posts = fetchPosts()
+if users is error or posts is error
+  @data.error = "Data fetch failed"
+endif
+
+// ✅ Valid: Negation
+if user is not error
+  @data.success = true
+endif
+
+// ❌ Invalid: Cannot catch specific error types
+if user is NetworkError  // No such syntax
 ```
 
+#### [ERR-003] Recovering from errors with fallbacks
 ```javascript
-// [MOD-008] RULE: extends for template inheritance
-// DIFFERENTIAL: Child provides block implementations
-// ✅ Valid: Base script with block
-// base.script:
-block process_data reads inputData modifies result
-  result.defaultProcessed = true
+// RULE: Use 'is error' checks to provide fallback values
+// PATTERN: Test before use to prevent error propagation
+
+// ✅ Valid: Fallback value
+var user = fetchUser(id)
+if user is error
+  set user = { name: "Guest", id: 0 }
+endif
+@data.greeting = "Hello, " + user.name
+
+// ✅ Valid: Conditional output
+var data = fetchData()
+if data is error
+  @data.error = "Failed to load"
+  @data.fallback = defaultData
+else
+  @data.result = data
+endif
+
+// ✅ Valid: Error logging without stopping flow
+var result = riskyOperation()
+if result is error
+  !context.logError(result)
+  set result = defaultValue
+endif
+```
+
+#### [ERR-004] Peek operator (#) for error introspection
+```javascript
+// RULE: # operator accesses error properties without propagation
+// DIFFERENTIAL: Normal access (err.message) propagates; # does not
+// CONSTRAINT: Must check 'is error' before peeking
+
+// ✅ Valid: Peek at error message
+var user = fetchUser(id)
+if user is error
+  @data.errorMsg = user#message  // Access message property
+  @data.errorName = user#name
+  @data.errorLine = user#lineno
+endif
+
+// ✅ Valid: Peek at sequential path error
+!context.db.insert(data)  // Fails
+if context.db! is error
+  var msg = context.db!#message  // Peek at path error
+  !context.logger.error(msg)
+endif
+
+// ❌ Invalid: Peek without checking is error first
+var user = fetchUser(id)  // Succeeds
+var msg = user#message  // Returns poison value - user not error
+
+// ❌ Invalid: Peek on handler without check
+@data.value = 42
+var msg = @data#message  // Poison - @data not poisoned
+```
+
+#### [ERR-005] Handler poisoning by error assignment
+```javascript
+// RULE: Assigning Error to @handler poisons that handler
+// DIFFERENTIAL: Handler becomes unusable until reverted
+// CONSTRAINT: All subsequent operations on handler become errors
+
+// ✅ Valid: Handler poisoning
+var user = fetchUser(id)  // Fails -> Error
+@data.user = user  // Poisons @data handler
+@data.status = "ok"  // Also becomes Error (handler poisoned)
+
+// ✅ Valid: Check before assignment to prevent poisoning
+var user = fetchUser(id)
+if user is not error
+  @data.user = user  // Only assign if valid
+endif
+
+// ✅ Valid: Mixed handler states
+@data.success = true  // @data OK
+@text("Processing...")  // @text OK
+@data.result = fetchData()  // Might poison @data
+// @text remains unaffected even if @data poisoned
+```
+
+#### [ERR-006] Repairing sequential paths with !!
+```javascript
+// RULE: !! repairs poisoned sequential path before operation
+// DIFFERENTIAL: Single ! continues poison; !! clears and executes
+// CONSTRAINT: Only works on sequential paths (!), not handlers/variables
+
+// ✅ Valid: Repair poisoned path
+!context.db.connect()
+!context.db.insert(data)  // Fails, poisons db!
+!context.db.update(other)  // Skipped (path poisoned)
+!!context.db.disconnect()  // Repairs path, then executes
+
+// ✅ Valid: Check then repair
+if context.api! is error
+  var msg = context.api!#message  // Peek at error
+  !!context.api.reset()  // Repair and reset
+endif
+
+// ❌ Invalid: !! on non-sequential path
+var x = fetchData()
+!!x.retry()  // Error: !! only for sequential paths
+
+// ❌ Invalid: !! on handler
+@data.value = failedOp()  // Poisons @data
+!!@data.retry()  // Error: use _revert() for handlers
+```
+
+#### [ERR-007] Handler revert with _revert() and revert statement
+```javascript
+// RULE: @handler._revert() resets handler to scope start
+// DIFFERENTIAL: Clears all writes and poison status
+// CONSTRAINT: Revert point is current output scope boundary
+
+// ✅ Valid: Revert specific handler
+@data.timestamp = now()
+@data.content = fetchContent()  // Fails, poisons @data
+if @data is error
+  @data._revert()  // Clears all @data writes
+  @data.error = "Content unavailable"
+endif
+
+// ✅ Valid: Revert all handlers
+@data.value = 1
+@text("Started")
+var result = riskyOp()  // Fails
+if result is error
+  @._revert()  // Clears all handlers (@data and @text)
+  revert  // Same as @._revert()
+endif
+
+// ✅ Valid: Revert in capture scope
+var message = capture :text
+  @text("Processing...")
+  var result = riskyOp()
+  if result is error
+    revert  // Reverts to start of this capture
+    @text("Operation failed")
+  endif
+endcapture
+
+// ❌ Invalid: Cannot revert subpaths
+@data.user.name = "Alice"
+@data.user._revert()  // Error: only root handlers
+```
+
+#### [ERR-008] guard block for transaction-like recovery
+```javascript
+// RULE: guard [targets...] protects state, auto-restores on failure
+// DIFFERENTIAL: Automatic rollback vs manual error checking
+// CONSTRAINT: recover block runs only if guard finishes poisoned
+
+// ✅ Valid: Guard with default protection
+guard  // Protects all handlers and sequential paths
+  !context.db.beginTransaction()
+  !context.db.insert(userData)
+  !context.db.insert(profileData)
+  @data.userId = userData.id
+recover err
+  // @data reverted, db! repaired automatically
+  !context.db.rollback()
+  @data.error = err#message
+endguard
+
+// ✅ Valid: Protection selector syntax
+guard @             // All handlers
+guard !             // All sequential paths
+guard @data         // Specific handler
+guard context.api!  // Specific path (hierarchical)
+guard var1, var2    // Specific variables
+guard *             // Everything (LIMIT-017)
+
+// ✅ Valid: Selective protection
+guard @data, context.db!, attempts
+  set attempts = attempts + 1
+  !context.db.save(data)
+  @data.saved = true
+recover err
+  // Only @data, db!, and 'attempts' restored
+  @data.error = "Save failed"
+endguard
+
+// ✅ Valid: No recover block (silent restore)
+guard
+  var result = riskyOperation()
+  @data.result = result
+endguard
+// If poisoned, guard restores state and continues
+
+// ❌ Invalid: Cannot access unguarded state in recover
+var temp = "value"
+guard @data
+  @data.result = riskyOp()
+recover err
+  @data.temp = temp  // OK - temp not guarded
+endguard
+```
+
+#### [ERR-009] Output scope boundaries for _revert()
+```javascript
+// RULE: _revert() restores to nearest scope boundary
+// BOUNDARIES: guard, capture, macro, caller, include, script root
+// DIFFERENTIAL: Revert checkpoint determined by scope nesting
+
+// ✅ Valid: Revert in nested scopes
+macro process()
+  @data.start = now()
+  var result = riskyOp()
+  if result is error
+    @data._revert()  // Reverts to macro start
+    @data.error = "Failed"
+  endif
+endmacro
+
+// ✅ Valid: Guard creates revert boundary
+guard
+  @data.attempt = 1
+  var result = riskyOp()
+  if result is error
+    revert  // Reverts to guard start, not script start
+  endif
+recover
+  // Guard buffer already reverted
+endguard
+
+// ✅ Valid: Capture creates boundary
+var result = capture :data
+  @data.value = compute()
+  if @data.value is error
+    revert  // Reverts to capture start
+    @data.value = defaultValue
+  endif
+endcapture
+
+// ✅ Valid: Nested revert scopes
+guard
+  var result = capture :data
+    @data.inner = riskyOp()
+    if @data.inner is error
+      revert  // Reverts capture, not guard
+    endif
+  endcapture
+  @data.outer = result
+endguard
+```
+
+---
+
+### Category: Functions & Operators
+
+#### [FN-001] Function calls auto-await arguments
+```javascript
+// RULE: All function arguments automatically await promises
+// DIFFERENTIAL: No manual await needed on any argument
+
+// ✅ Valid: Promise arguments auto-await
+var user = fetchUser(id)
+var formatted = formatName(user.name)
+
+// ✅ Valid: Multiple promise arguments
+var result = combine(fetchA(), fetchB(), fetchC())
+
+// ✅ Valid: Nested function calls
+var text = upper(trim(user.name))
+```
+
+#### [FN-002] Operators auto-await operands
+```javascript
+// RULE: All operators (+, -, *, /, %, <, >, ==, etc.) await operands
+// DIFFERENTIAL: Works on promises without .then()
+
+// ✅ Valid: Arithmetic operators
+var a = fetchNumber()
+var b = fetchNumber()
+var sum = a + b
+
+// ✅ Valid: Comparison operators
+var user = fetchUser(id)
+if user.age > 18
+  @data.adult = true
+endif
+
+// ✅ Valid: String concatenation
+var first = fetchFirst()
+var last = fetchLast()
+var full = first + " " + last
+```
+
+#### [FN-003] Pipe operator (|) for transformations
+```javascript
+// RULE: | pipes value through chain of filters left-to-right
+// DIFFERENTIAL: Auto-awaits input value before applying filter
+
+// ✅ Valid: Single filter
+var text = user.name | upper
+
+// ✅ Valid: Chained filters
+var clean = rawText | trim | lower | replace(" ", "_")
+
+// ✅ Valid: Filters with arguments
+var formatted = date | dateformat("YYYY-MM-DD")
+var limited = items | slice(0, 5)
+
+// ✅ Valid: Pipe on promise
+var name = fetchUser(id) | upper
+
+// ❌ Invalid: Cannot pipe into non-filter
+var result = value | someFunction  // Error if not registered filter
+```
+
+#### [FN-004] Built-in filters
+```javascript
+// RULE: Standard filters available by default
+// TYPES: upper, lower, trim, replace, length, default, safe
+
+// ✅ Valid: String filters
+@data.name = name | upper
+@data.clean = text | trim
+@data.slug = title | lower | replace(" ", "-")
+
+// ✅ Valid: Utility filters
+@data.count = items | length
+@data.safe = userInput | default("N/A")
+@data.html = content | safe  // Mark as safe HTML
+
+// ✅ Valid: Custom filters via addFilter
+// env.addFilter('double', x => x * 2)
+@data.doubled = value | double
+```
+
+#### [FN-005] Defining custom filters
+```javascript
+// RULE: Register filters via env.addFilter(name, fn, isAsync)
+// CONSTRAINT: Async filters must be marked with isAsync: true
+
+// ✅ Valid: Sync filter
+env.addFilter('capitalize', (str) => {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+});
+// Usage: @data.title = name | capitalize
+
+// ✅ Valid: Async filter
+env.addFilter('fetchData', async (id) => {
+  return await database.fetch(id);
+}, true);  // Must specify isAsync: true
+
+// ❌ Invalid: Async filter without isAsync flag
+env.addFilter('asyncOp', async (x) => await process(x));
+// Missing isAsync: true causes incorrect execution
+```
+
+#### [FN-006] Logical operators short-circuit
+```javascript
+// RULE: and, or operators short-circuit evaluation
+// DIFFERENTIAL: Right side not evaluated if result known from left
+
+// ✅ Valid: and short-circuits
+if user and user.active  // If user is falsy, user.active never evaluated
+
+// ✅ Valid: or short-circuits
+var name = user.name or "Guest"  // If user.name truthy, "Guest" not used
+
+// ✅ Valid: Chained short-circuit
+if a and b and c  // Stops at first falsy
+
+// Note: Even with promises, short-circuit still applies
+if fetchA() and fetchB()  // fetchB() not called if fetchA() is falsy
+```
+
+#### [FN-007] Ternary operator (condition ? true : false)
+```javascript
+// RULE: Ternary operator for inline conditionals
+// DIFFERENTIAL: Auto-awaits condition and selected branch
+
+// ✅ Valid: Basic ternary
+var status = user.active ? "Active" : "Inactive"
+
+// ✅ Valid: Ternary with promises
+var display = fetchUser(id) ? "Has user" : "No user"
+
+// ✅ Valid: Nested ternary
+var level = score > 90 ? "A" : score > 80 ? "B" : "C"
+
+// ✅ Valid: In @data assignment
+@data.status = isValid ? "success" : "error"
+```
+
+---
+
+### Category: Macros
+
+#### [MACRO-001] Macro definition with parameters
+```javascript
+// RULE: macro name(param1, param2, ...) ... endmacro
+// DIFFERENTIAL: Supports keyword arguments unlike JS functions
+// CONSTRAINT: Parameters are local to macro scope
+
+// ✅ Valid: Basic macro
+macro greet(name)
+  @data.greeting = "Hello, " + name
+endmacro
+
+// ✅ Valid: Multiple parameters
+macro formatUser(firstName, lastName, age)
+  @data.user.name = firstName + " " + lastName
+  @data.user.age = age
+endmacro
+
+// ✅ Valid: Default parameter values
+macro fetch(id, limit=10)
+  var items = fetchItems(id, limit)
+  @data.items = items
+endmacro
+
+// ❌ Invalid: Cannot use same parameter name twice
+macro test(x, x)  // Error: duplicate parameter
+```
+
+#### [MACRO-002] Macro invocation with positional arguments
+```javascript
+// RULE: Call macros with arguments in definition order
+// DIFFERENTIAL: Arguments auto-await like functions
+
+// ✅ Valid: Positional arguments
+macro greet(name)
+  @data.message = "Hello, " + name
+endmacro
+
+greet("Alice")  // Positional
+
+// ✅ Valid: Promise arguments auto-await
+var user = fetchUser(id)
+greet(user.name)
+
+// ✅ Valid: Multiple arguments
+macro format(first, last)
+  @data.full = first + " " + last
+endmacro
+
+format("Alice", "Smith")
+```
+
+#### [MACRO-003] Macro invocation with keyword arguments
+```javascript
+// RULE: Call macros with name=value syntax for any/all parameters
+// DIFFERENTIAL: Can skip parameters with defaults; order-independent
+
+// ✅ Valid: Keyword arguments
+macro greet(name, greeting="Hello")
+  @data.message = greeting + ", " + name
+endmacro
+
+greet(name="Alice")  // Uses default greeting
+greet(name="Bob", greeting="Hi")  // Override greeting
+greet(greeting="Hey", name="Charlie")  // Order independent
+
+// ✅ Valid: Mix positional and keyword (positional first)
+macro format(first, last, middle="")
+  @data.name = first + " " + middle + " " + last
+endmacro
+
+format("Alice", last="Smith", middle="M")
+
+// ❌ Invalid: Keyword before positional
+format(last="Smith", "Alice")  // Error: positional after keyword
+```
+
+#### [MACRO-004] Macros execute in isolated scope
+```javascript
+// RULE: Macro body has its own scope, can't access caller variables
+// CONSTRAINT: Use parameters or context to pass data in
+
+// ✅ Valid: Parameters pass data in
+var userName = "Alice"
+macro display(name)
+  @data.user = name
+endmacro
+display(userName)
+
+// ❌ Invalid: Cannot access caller's variables directly
+var userName = "Alice"
+macro display()
+  @data.user = userName  // Error: userName not in scope
+endmacro
+
+// ✅ Valid: Access context properties
+macro save()
+  !context.db.save(context.currentUser)
+endmacro
+```
+
+#### [MACRO-005] Tilde macros capture blocks
+```javascript
+// RULE: ~macroname syntax captures entire block as string
+// CONSTRAINT: Macro must be defined with 'captureblock' parameter
+// DIFFERENTIAL: Defers evaluation; useful for templates
+
+// ✅ Valid: Define captureblock macro
+macro template(captureblock)
+  @data.html = "<div>" + captureblock + "</div>"
+endmacro
+
+// ✅ Valid: Invoke with tilde
+~template
+  <h1>Title</h1>
+  <p>Content</p>
+
+// Result: @data.html = "<div>\n  <h1>Title</h1>\n  <p>Content</p>\n</div>"
+
+// ✅ Valid: Combine with regular parameters
+macro wrap(tag, captureblock)
+  @data.html = "<" + tag + ">" + captureblock + "</" + tag + ">"
+endmacro
+
+~wrap tag="section"
+  Content here
+
+// ❌ Invalid: Tilde on non-captureblock macro
+macro normal(param)
+  @data.value = param
+endmacro
+~normal  // Error: macro doesn't accept captureblock
+```
+
+#### [MACRO-006] Macro return values
+```javascript
+// RULE: Macros don't have explicit return; produce effects
+// CONSTRAINT: Effects are @data assignments or context mutations
+
+// ✅ Valid: Macro builds output
+macro buildUser(id)
+  var user = fetchUser(id)
+  @data.user.id = user.id
+  @data.user.name = user.name
+endmacro
+
+// ✅ Valid: Macro with side effects
+macro log(message)
+  !context.logger.log(message)
+endmacro
+
+// ❌ Invalid: No 'return' statement
+macro compute(x)
+  return x * 2  // Error: return not supported
+endmacro
+
+// Workaround: Use @data for output
+macro compute(x)
+  @data.result = x * 2
+endmacro
+```
+
+---
+
+### Category: Modules (Import, Include, Extends)
+
+#### [MOD-001] import loads external script
+```javascript
+// RULE: import 'path/to/file.cas' brings in definitions
+// DIFFERENTIAL: Imported macros/variables available in current scope
+// CONSTRAINT: Path relative to current file or configured paths
+
+// ✅ Valid: Import macros
+// file: utils.cas
+macro formatDate(date)
+  @data.formatted = date | dateformat("YYYY-MM-DD")
+endmacro
+
+// file: main.cas
+import 'utils.cas'
+formatDate(now())  // formatDate available after import
+
+// ✅ Valid: Multiple imports
+import 'helpers.cas'
+import 'formatters.cas'
+import 'api.cas'
+
+// ❌ Invalid: Cannot import non-existent file
+import 'missing.cas'  // Runtime error
+```
+
+#### [MOD-002] include injects file content
+```javascript
+// RULE: include 'path' inserts file content at that point
+// DIFFERENTIAL: Runs in current scope; shares variables
+// CONSTRAINT: Included code has access to parent scope
+
+// ✅ Valid: Include template fragment
+// file: header.cas
+@data.html.header = "<header>Site Header</header>"
+
+// file: main.cas
+include 'header.cas'  // @data.html.header now set
+@data.html.body = "<body>Content</body>"
+
+// ✅ Valid: Include can reference parent variables
+// file: process.cas
+var result = doSomething(inputVar)
+@data.processed = result
+
+// file: main.cas
+var inputVar = fetchData()
+include 'process.cas'  // Can access inputVar
+
+// ❌ Invalid: Include doesn't isolate scope
+// Changes in included file affect parent
+```
+
+#### [MOD-003] extends for template inheritance
+```javascript
+// RULE: extends 'base' + block definitions for template inheritance
+// CONSTRAINT: extends must be first statement in file
+// DIFFERENTIAL: Base template defines blocks, child overrides
+
+// ✅ Valid: Base template
+// file: base.cas
+@data.html = "<html><head>"
+block head
+  @data.html += "<title>Default Title</title>"
 endblock
-
-// child.script:
-extends "base.script"
-extern inputData, result
-
-block process_data
-  result.customProcessed = true
+@data.html += "</head><body>"
+block content
+  @data.html += "Default content"
 endblock
-```
+@data.html += "</body></html>"
 
-```javascript
-// [MOD-009] RULE: block contract with reads/modifies
-// CONSTRAINT: Child must declare with extern
-// ✅ Valid: Block with contract
-// base.script:
-block process reads input modifies output
-  output.default = true
+// ✅ Valid: Child template
+// file: page.cas
+extends 'base.cas'
+
+block head
+  @data.html += "<title>My Page</title>"
 endblock
-
-// child.script:
-extends "base.script"
-extern input, output
-
-block process
-  output.custom = input.value
-endblock
-```
-
-```javascript
-// [MOD-010] RULE: Top-level var in child available to base
-// DIFFERENTIAL: Variables set before base execution
-// ✅ Valid: Child sets variable
-// child.script:
-extends "base.script"
-
-var pageTitle = "Custom Page"  // Available to base
 
 block content
-  @text("Content")
+  @data.html += "<h1>Hello World</h1>"
 endblock
+
+// ❌ Invalid: extends not first
+import 'utils.cas'
+extends 'base.cas'  // Error: extends must be first
 ```
 
+#### [MOD-004] block definition and override
 ```javascript
-// [MOD-011] RULE: var inside block is local
-// CONSTRAINT: Not visible to base or other blocks
-// ✅ Valid: Block-local variable
-block process
-  var tempData = enhance(input)  // Local to this block
-  output.result = tempData
+// RULE: block name ... endblock defines overridable section
+// DIFFERENTIAL: Child templates override by redefining block
+// CONSTRAINT: Block names must match between base and child
+
+// ✅ Valid: Block in base
+block sidebar
+  @data.sidebar = "Default sidebar"
 endblock
+
+// ✅ Valid: Override in child
+extends 'base.cas'
+block sidebar
+  @data.sidebar = "Custom sidebar"
+endblock
+
+// ✅ Valid: Call parent block content
+block content
+  super()  // Include base template's content block
+  @data.html += "Additional content"
+endblock
+
+// ❌ Invalid: Block name mismatch
+// Base: block sidebar ... endblock
+// Child: block sideBar ... endblock  // Case-sensitive, won't override
+```
+
+#### [MOD-005] Variable scope in imports/includes
+```javascript
+// RULE: import creates new scope; include shares scope
+// DIFFERENTIAL: import isolates; include exposes
+// CONSTRAINT: Use import for encapsulation, include for injection
+
+// ✅ Valid: import isolation
+// file: module.cas
+var localVar = "secret"
+macro exported()
+  @data.value = "visible"
+endmacro
+
+// file: main.cas
+import 'module.cas'
+exported()  // Works
+@data.test = localVar  // Error: localVar not accessible
+
+// ✅ Valid: include sharing
+// file: fragment.cas
+var sharedVar = "value"
+
+// file: main.cas
+include 'fragment.cas'
+@data.test = sharedVar  // Works: sharedVar accessible
+
+// ❌ Invalid: Mixing expectations
+import 'module.cas'
+set localVar = "new"  // Error: localVar not in scope
+```
+
+---
+
+### Category: Template Integration
+
+#### [TEMP-001] Template syntax fallback
+```javascript
+// RULE: {% ... %} escapes to Nunjucks template syntax
+// DIFFERENTIAL: Allows mixing script and template modes
+// CONSTRAINT: Template syntax operates differently
+
+// ✅ Valid: Inline template syntax
+var name = "Alice"
+{% if legacy_condition %}
+  @data.legacy = true
+{% endif %}
+
+// ✅ Valid: Template for in script
+var items = fetchItems()
+{% for item in items %}
+  @data.html += "<li>{{ item.name }}</li>"
+{% endfor %}
+
+// ❌ Invalid: Mixing syntaxes incorrectly
+if condition  // Script syntax
+  {% set x = 1 %}  // Template syntax (works but confusing)
+endif
+```
+
+#### [TEMP-002] Variable interpolation {{ }}
+```javascript
+// RULE: {{ expression }} outputs value as string
+// DIFFERENTIAL: Primarily for template mode; rare in script mode
+// CONSTRAINT: Auto-escapes HTML unless marked safe
+
+// ✅ Valid: In template string (uncommon in pure script)
+var name = "Alice"
+var html = "<h1>Hello {{ name }}</h1>"
+// Better: Use concatenation in script mode
+var html = "<h1>Hello " + name + "</h1>"
+
+// ✅ Valid: Template mode interpolation
+{% for user in users %}
+  <li>{{ user.name }}</li>
+{% endfor %}
+
+// ✅ Valid: Safe HTML
+var html = content | safe
+{{ html }}  // Renders without escaping
+```
+
+#### [TEMP-003] Comments {# #}
+```javascript
+// RULE: {# ... #} for multi-line template comments
+// DIFFERENTIAL: Alternative to // for legacy compatibility
+
+// ✅ Valid: Script comment
+// This is a comment
+
+// ✅ Valid: Template comment
+{# This is also a comment #}
+{# Can span
+   multiple lines #}
+
+// ✅ Valid: Both in same file
+var x = 10  // Script comment
+{# Template comment #}
+```
+
+#### [TEMP-004] Raw blocks {% raw %} {% endraw %}
+```javascript
+// RULE: {% raw %} ... {% endraw %} disables template processing
+// DIFFERENTIAL: Useful for literal {{ }} or {% %} in output
+
+// ✅ Valid: Literal template syntax in output
+@data.example = "{% raw %}Use {{ variable }} in templates{% endraw %}"
+
+// ✅ Valid: Code examples in docs
+{% raw %}
+  var x = {{ value }}  // This won't be processed
+{% endraw %}
+```
+
+---
+
+### Category: API Reference
+
+#### [API-001] AsyncEnvironment creation
+```javascript
+// RULE: new AsyncEnvironment(loaderPath, opts) creates engine instance
+// CONSTRAINT: loaderPath optional; defaults to current directory
+
+// ✅ Valid: Basic environment
+const env = new AsyncEnvironment();
+
+// ✅ Valid: With custom loader path
+const env = new AsyncEnvironment('./scripts');
+
+// ✅ Valid: With options
+const env = new AsyncEnvironment('.', {
+  autoescape: true,    // Auto-escape HTML
+  throwOnUndefined: false,
+  trimBlocks: true,
+  lstripBlocks: true
+});
+
+// ✅ Valid: Add custom globals
+env.addGlobal('API_KEY', process.env.API_KEY);
+env.addGlobal('utils', { format: (x) => x.toUpperCase() });
+```
+
+#### [API-002] Script execution methods
+```javascript
+// RULE: renderScriptString(script, context, opts) executes inline script
+// RETURNS: Promise<output> based on opts.output setting
+// CONSTRAINT: script is string; context is object
+
+// ✅ Valid: Execute with data output
+const result = await env.renderScriptString(`
+  var user = context.fetchUser(123)
+  @data.greeting = "Hello, " + user.name
+`, { fetchUser: async (id) => ({ name: "Alice" }) }, { output: 'data' });
+// result: { greeting: "Hello, Alice" }
+
+// ✅ Valid: Execute with text output
+const html = await env.renderScriptString(`
+  @data.html += "<h1>Title</h1>"
+`, {}, { output: 'text' });
+// html: "<h1>Title</h1>"
+
+// ✅ Valid: Execute with custom handler
+const result = await env.renderScriptString(script, context, {
+  output: 'custom'
+});
+```
+
+#### [API-003] renderScriptFile(path, context, opts)
+```javascript
+// RULE: Loads and executes script from file
+// DIFFERENTIAL: Path resolution via loader configuration
+
+// ✅ Valid: Execute file
+const result = await env.renderScriptFile('scripts/main.cas', {
+  userId: 123,
+  apiKey: 'secret'
+}, { output: 'data' });
+
+// ✅ Valid: With relative paths
+const env = new AsyncEnvironment('./scripts');
+const result = await env.renderScriptFile('utils/process.cas', context);
+
+// ❌ Invalid: File must exist
+await env.renderScriptFile('nonexistent.cas', {});  // Throws error
+```
+
+#### [API-004] Compilation for reuse
+```javascript
+// RULE: compileScript(path, env, opts) compiles to reusable object
+// RETURNS: AsyncScript with .render(context) method
+// DIFFERENTIAL: Compile once, render multiple times for performance
+
+// ✅ Valid: Compile and reuse
+const compiled = await env.compileScript('main.cas');
+const result1 = await compiled.render({ input: 'data1' });
+const result2 = await compiled.render({ input: 'data2' });
+const result3 = await compiled.render({ input: 'data3' });
+
+// ✅ Valid: Compile string
+const compiled = await env.compileScriptString(`
+  @data.output = context.input | upper
+`);
+
+// Performance: Compilation is expensive; rendering is fast
+```
+
+#### [API-005] addGlobal(name, value)
+```javascript
+// RULE: Adds global variable/function accessible in all scripts
+// DIFFERENTIAL: Available without context parameter
+
+// ✅ Valid: Global variable
+env.addGlobal('APP_VERSION', '1.0.0');
+// In script: @data.version = APP_VERSION
+
+// ✅ Valid: Global function
+env.addGlobal('formatDate', (date) => {
+  return date.toISOString().split('T')[0];
+});
+// In script: @data.date = formatDate(now())
+
+// ✅ Valid: Global object with methods
+env.addGlobal('utils', {
+  slugify: (str) => str.toLowerCase().replace(/\s+/g, '-'),
+  truncate: (str, len) => str.slice(0, len) + '...'
+});
+// In script: @data.slug = utils.slugify(title)
+```
+
+#### [API-006] addFilter(name, fn, isAsync)
+```javascript
+// RULE: Registers custom filter for | operator
+// CONSTRAINT: Async filters must have isAsync: true
+
+// ✅ Valid: Sync filter
+env.addFilter('double', (x) => x * 2);
+// Usage: @data.doubled = value | double
+
+// ✅ Valid: Filter with arguments
+env.addFilter('multiply', (x, factor) => x * factor);
+// Usage: @data.result = value | multiply(3)
+
+// ✅ Valid: Async filter
+env.addFilter('fetchData', async (id) => {
+  return await database.get(id);
+}, true);  // isAsync: true required
+// Usage: @data.item = itemId | fetchData
+
+// ❌ Invalid: Async without flag
+env.addFilter('asyncOp', async (x) => await fn(x));
+// Missing isAsync: true - incorrect behavior
+```
+
+#### [API-007] addDataMethods(methods)
+```javascript
+// RULE: Extends @data with custom methods
+// SIGNATURE: method(currentValue, ...args) => newValue
+// CONSTRAINT: Must return value; no mutation
+
+// ✅ Valid: Custom accumulator
+env.addDataMethods({
+  incrementBy: (current, amount) => (current || 0) + amount
+});
+// Usage: @data.counter.incrementBy(5)
+
+// ✅ Valid: Multiple methods
+env.addDataMethods({
+  append: (current, item) => [...(current || []), item],
+  prepend: (current, item) => [item, ...(current || [])],
+  merge: (current, obj) => ({ ...(current || {}), ...obj })
+});
+
+// ✅ Valid: Method receives current value
+env.addDataMethods({
+  double: (current) => current * 2
+});
+// Usage: @data.value.double()  // If value is 5, becomes 10
+```
+
+#### [API-008] addCommandHandler / addCommandHandlerClass
+```javascript
+// RULE: Registers custom output handler for script results
+// DIFFERENTIAL: Class creates new instance per run; instance is singleton
+
+// ✅ Valid: Singleton handler
+const myHandler = {
+  start() { this.output = []; },
+  handleData(path, value) { this.output.push({ path, value }); },
+  finish() { return this.output; }
+};
+env.addCommandHandler('myhandler', myHandler);
+
+// ✅ Valid: Factory class
+class CustomHandler {
+  constructor() { this.data = {}; }
+  start() { /* init */ }
+  handleData(path, value) {
+    this.data[path.join('.')] = value;
+  }
+  finish() { return this.data; }
+}
+env.addCommandHandlerClass('custom', CustomHandler);
+
+// Usage in script:
+const result = await env.renderScriptString(script, context, {
+  output: 'myhandler'
+});
+```
+
+#### [API-009] Precompilation for production
+```javascript
+// RULE: precompileScript(path, opts) generates JS string
+// DIFFERENTIAL: Eliminates parsing overhead; load with PrecompiledLoader
+// CONSTRAINT: opts.env should match runtime environment
+
+// ✅ Valid: Precompile to file
+const { precompileScript } = require('cascada-engine');
+const js = precompileScript('./scripts/main.cas', { env });
+await fs.writeFile('./compiled/main.js', js);
+
+// ✅ Valid: Load precompiled
+const { PrecompiledLoader } = require('cascada-engine');
+const loader = new PrecompiledLoader('./compiled');
+const env = new AsyncEnvironment(loader);
+
+const compiled = env.getPrecompiled('main');
+const result = await compiled.render(context);
+
+// ✅ Valid: Include env customizations
+env.addGlobal('VERSION', '1.0');
+env.addFilter('custom', customFn);
+const js = precompileScript(path, { env });  // Includes customizations
+```
+
+#### [API-010] Context object requirements
+```javascript
+// RULE: Context is plain object passed to render methods
+// DIFFERENTIAL: Properties can be values, promises, or async functions
+// CONSTRAINT: Functions invoked automatically; promises awaited automatically
+
+// ✅ Valid: Mixed context types
+const context = {
+  user: { name: "Alice", id: 123 },          // Plain object
+  posts: fetchPosts(),                        // Promise
+  fetchComments: async (id) => { /* */ },    // Async function
+  config: {
+    apiKey: process.env.API_KEY,
+    timeout: 5000
+  }
+};
+
+// ✅ Valid: Context with methods
+const context = {
+  db: {
+    query: async (sql) => database.execute(sql),
+    save: async (data) => database.insert(data)
+  },
+  logger: {
+    log: (msg) => console.log(msg),
+    error: (msg) => console.error(msg)
+  }
+};
+
+// Script usage:
+// var posts = context.fetchComments(postId)
+// !context.db.save(userData)
 ```
 
 ---
 
 ## Constraint Index
 
-| ID | Constraint | Category |
-|:---|:-----------|:---------|
-| EXEC-004 | @commands execute after scope completes | Execution |
-| EXEC-005 | No explicit await keyword | Execution |
-| VAR-001 | No variable redeclaration | Variables |
-| VAR-002 | extern cannot initialize | Variables |
-| VAR-003 | Assignment requires declaration | Variables |
-| VAR-004 | No variable shadowing | Variables |
-| VAR-005 | capture only on right side of = | Variables |
-| VAR-006 | Accessing null/undefined throws error | Variables |
-| EXPR-001 | Multiline via unclosed syntax only | Expressions |
-| CTRL-001 | of concurrency ignored on plain objects | Control Flow |
-| CTRL-006 | loop.length unavailable on sequential async | Control Flow |
-| SEQ-001 | ! only on context objects | Sequential |
-| SEQ-004 | Macro ! parameters must receive context objects | Sequential |
-| OUT-001 | Cannot read @data during execution | Output |
-| OUT-004 | :focus at scope start or on call/capture | Output |
-| OUT-008 | Arithmetic requires initialized number | Output |
-| ERR-007 | Error to output handler fails scope | Error |
-| ERR-010 | guard default doesn't protect variables | Error |
-| MOD-001 | extern in called script | Modularity |
-| MOD-002 | reads in calling script | Modularity |
-| MOD-006 | reads context only on import | Modularity |
-| MOD-007 | include auto-shares context | Modularity |
-| MOD-009 | block child must declare with extern | Modularity |
+| UID | Constraint | Reference |
+|:----|:-----------|:----------|
+| LIMIT-001 | `!` only on context properties | EXEC-007 |
+| LIMIT-002 | Cannot read @data on right side | OUT-001 |
+| LIMIT-003 | No direct property assignment on vars | VAR-002 |
+| LIMIT-004 | Compound assignment only on @data | OUT-003 |
+| LIMIT-005 | No root-level ! operator | EXEC-004 |
+| LIMIT-006 | while loops rarely useful | CTRL-003 |
+| LIMIT-007 | No explicit return in macros | MACRO-006 |
+| LIMIT-008 | No try/catch/throw | ERR-001 |
+| LIMIT-009 | extends must be first | MOD-003 |
+| LIMIT-010 | No promise introspection | EXEC-003 |
+| LIMIT-011 | Scope isolation in async mode | VAR-003 |
+| LIMIT-012 | for iterations parallel | CTRL-002 |
+| LIMIT-013 | capture only on right of = | CAPT-001 |
+| LIMIT-014 | # peek requires is error | ERR-004 |
+| LIMIT-015 | _revert() only on root | ERR-007 |
+| LIMIT-016 | !! only on sequential paths | ERR-006 |
+| LIMIT-017 | guard * reduces parallelism | ERR-008 |
 
 ---
 
-## API Reference
+## Document Usage Guide
 
-### AsyncEnvironment
+**For AI code generation:**
+1. Use semantic atoms as templates
+2. Combine atoms following dependencies
+3. Check constraint index for limitations
 
-```javascript
-// [API-001] Create environment with loaders
-const env = new AsyncEnvironment(
-  [new FileSystemLoader('scripts')],
-  { autoescape: true, trimBlocks: false }
-)
+**For query resolution:**
+- Use Sigil Table for syntax lookup
+- Use Semantic Library for specific features
+- Use Constraint Index for what's not possible
 
-// [API-002] Execute script from file
-const result = await env.renderScript('main.casc', { userId: 123 })
-
-// [API-003] Execute script from string
-const result = await env.renderScriptString(':data\n@data.x = 5')
-
-// [API-004] Compile and cache
-const compiled = await env.getScript('main.casc')
-const r1 = await compiled.render({ input: 'a' })
-const r2 = await compiled.render({ input: 'b' })
-
-// [API-005] Add global variable/function
-env.addGlobal('utils', { formatDate: (d) => d.toISOString() })
-
-// [API-006] Add custom filter
-env.addFilter('double', (x) => x * 2)
-
-// [API-007] Extend @data with methods
-env.addDataMethods({
-  incrementBy: (target, amount) => (target || 0) + amount
-})
-
-// [API-008] Register custom handler (factory)
-env.addCommandHandlerClass('turtle', TurtleHandler)
-
-// [API-009] Register custom handler (singleton)
-env.addCommandHandler('logger', loggerInstance)
-```
-
-### Loaders
-
-```javascript
-// [API-010] Built-in loaders
-const env = new AsyncEnvironment([
-  new FileSystemLoader('scripts'),    // Node.js only
-  new WebLoader('https://cdn.com/'),  // Browser only
-  new PrecompiledLoader(precompiled)  // Production
-])
-
-// [API-011] Custom loader function
-const customLoader = async (name) => {
-  const src = await fetch(`https://api.com/${name}`)
-  return { src: await src.text(), path: name, noCache: false }
-}
-
-// [API-012] Custom loader class
-class DatabaseLoader {
-  async load(name) {
-    const record = await db.scripts.findByName(name)
-    if (!record) return null
-    return { src: record.code, path: name }
-  }
-
-  isRelative(filename) {
-    return filename.startsWith('./')
-  }
-
-  resolve(from, to) {
-    const fromDir = from.substring(0, from.lastIndexOf('/'))
-    return `${fromDir}/${to}`
-  }
-}
-
-// [API-013] Race loaders (concurrent fallback)
-const fastLoader = raceLoaders([
-  new WebLoader('https://cdn.com/'),
-  new FileSystemLoader('backup/')
-])
-```
-
-### Custom Output Handlers
-
-```javascript
-// [API-014] Handler class structure
-class CustomHandler {
-  constructor(env) {
-    this.env = env
-  }
-
-  init() {
-    // Called at scope start
-    this.commands = []
-  }
-
-  invoke(name, args) {
-    // Called during assembly phase
-    this.commands.push({ name, args })
-  }
-
-  finalize() {
-    // Return final value
-    return { result: this.commands }
-  }
-}
-```
-
-### Precompilation
-
-```javascript
-// [API-015] Precompile for production
-const js = precompileScript('main.casc', { env })
-// Save js to file, load with PrecompiledLoader
-```
-
----
-
-## Appendix: UID Index
-
-**Execution Model**: EXEC-001 to EXEC-005
-**Variables**: VAR-001 to VAR-006
-**Expressions**: EXPR-001 to EXPR-004
-**Control Flow**: CTRL-001 to CTRL-008
-**Sequential**: SEQ-001 to SEQ-006
-**Output**: OUT-001 to OUT-012
-**Errors**: ERR-001 to ERR-012
-**Macros**: MAC-001 to MAC-006
-**Modularity**: MOD-001 to MOD-011
-**API**: API-001 to API-015
-
-**Total UIDs**: 82
+**For validation:**
+- Match generated code against ✅ examples
+- Check for ❌ anti-patterns
+- Verify constraints not violated
+- Confirm UID-referenced rules followed
