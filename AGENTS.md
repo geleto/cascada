@@ -467,6 +467,16 @@ const result = await script.render(context);
 
 ### Key Files and Directories
 
+#### Source Directories
+-   `src/compiler/`: Core compiler logic including AST transformation, async analysis, and code generation.
+-   `src/environment/`: Public API, environment configuration, and wrapper classes (`AsyncEnvironment`, `AsyncTemplate`).
+-   `src/loader/`: Template loading mechanisms (FileSystem, String, etc.).
+-   `src/runtime/`: Runtime helpers, async state machine, and error handling (Poison system).
+-   `src/script/`: Cascada Script specifics and the script-to-template transpiler.
+
+#### Key Files
+
+
 -   `src/environment/environment.js`: **User-facing API & Test Setup**. This is the entry point for users. Tests will instantiate `AsyncEnvironment` from here. Contains `AsyncTemplate` and `AsyncScript` classes.
 -   `src/runtime/runtime.js`: **Runtime helpers.** Contains `resolveAll`, `flattenBuffer`, `isPoison`, `PoisonError`, and all functions called by the compiled code.
 -   `src/compiler/compiler.js`: **Main compiler.** Handles statements (`if`, `for`, `block`, etc.) and orchestrates code generation.
@@ -482,8 +492,28 @@ const result = await script.render(context);
 
 ### Documentation
 
+#### Documentation Directories
 -   **User Docs**: `docs/cascada/` (e.g., `script.md`)
 -   **Implementation Guides**: `docs/code/` (e.g., `Async - Implementation.md`)
+
+#### Documentation
+-   **User Docs** (`docs/cascada/`):
+    -   `script-agent.md`: More concise guide to Cascada Script syntax and features for AI agents, may not be up-to-date on the very latest features being developed.
+    -   `script.md`: Comprehensive, human-readable guide to Cascada Script syntax and features, almost always up-to-date with the latest features even before they are developed.
+    -   `template.md`: Very outdated guide to Cascada Template syntax (Nunjucks-compatible). Use your nunjucks knowledge and the scripting docs instead.
+
+-   **Implementation Guides** (`docs/code/`), may not be up-to-date on the latest implementation details:
+    -   `Tests.md`: General testing guidelines and philosophy.
+    -   `Async - Implementation.md`: Deep dive into the async runtime and promise handling.
+    -   `Error Handling Guide.md`: Overview of the "Poison" error system.
+    -   `Error Handling Patterns In Script.md`: Common patterns for handling errors in scripts.
+    -   `Poisoning - Implementation Principles.md`: Detailed mechanics of error propagation.
+    -   `Poisoning - Output Handler Implementation.md`: How output handlers deal with poison values.
+    -   `Sequential Operations - Execution.md`: How `!` operations are serialized.
+    -   `Sequential Operations - In Expressions.md`: Implementation of sequential operations within expressions.
+    -   `Loops - Implementation.md`: Parallel loop execution details.
+    -   `Loops - Implementation Principles.md`: Theoretical principles behind loop implementation.
+    -   `Output - Revert Implementation.md`: Details on the output revert mechanism.
 
 ---
 **Package**: `cascada-engine`
