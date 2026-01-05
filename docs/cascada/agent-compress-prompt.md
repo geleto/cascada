@@ -1,4 +1,4 @@
-# Generic Documentation Compression Prompt for AI Agents
+# Documentation Compression for AI Agents Instructions
 
 ## Your Task
 
