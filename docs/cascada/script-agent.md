@@ -37,11 +37,11 @@ LIMIT-xxx  : Constraints and limitations
 | `!!` | Repair operator | Repairs poisoned sequential path before operation | Only on sequential paths | `!!context.db.rollback()` |
 | `@data` | Output builder | Declares output construction intent | Creates isolated scope per assignment | See OUT-001 |
 | `@data.path=` | Output assignment | Assigns value to output path | No `set`/`var` needed | `@data.user.name = "Alice"` |
-| `@data.path.method()` | Output method | Invokes built-in method on path | Returns new value, doesn't mutate | `@data.items.push(x)` |
+| `@data.path.method()` | Output method |Invokes built-in @data operation on the target path | Returns new value, doesn't mutate | `@data.items.push(x)` |
 | `@handler._revert()` / `revert` | Handler revert | Resets handler(s) to scope start | Specific handler or all (revert = all) | `@data._revert()` or `revert` |
 | `#` | Peek operator | Accesses error properties without propagation | Must check `is error` first | `if x is error: x#message` |
 | `var` | Variable declaration | Creates local variable | Scope rules differ in async mode | See VAR-001 |
-| `set` | Variable assignment | Assigns to existing variable | Can cross scope boundaries | See VAR-002 |
+| `=` | Variable assignment | Reassigns an existing variable | Can cross scope boundaries | See VAR-002 |
 | `capture` | Capture block | Executes scope and returns result | Right side of assignment only | See CAPT-001 |
 | `:data`, `:text` | Output focus | Extracts single handler from result | Script, macro, capture, call | See CAPT-002 |
 | `guard` | Guard block | Transaction-like state protection | Auto-reverts on failure | See ERR-008 |
@@ -265,32 +265,27 @@ var y = x + 1
 var x = 10  // Error: x used before declaration
 ```
 
-#### [VAR-002] set assigns to existing variable
+#### [VAR-002] Assigning to existing variables with =
 ```javascript
-// RULE: set modifies existing variable from outer scope
-// DIFFERENTIAL: Can cross scope boundaries (unlike var)
-// CONSTRAINT: Variable must exist in an outer scope
+// [VAR-002] RULE: Existing variables are reassigned using `=`
+// DIFFERENTIAL: No `set` keyword in Script syntax
+// CONSTRAINT: Variable must be previously declared with `var` or `extern`
 
-// ✅ Valid: Modify outer variable from inner scope
-var counter = 0
+// ✅ Valid: Re-assign existing variable
+var total = 0
+total = total + 1
+
+// ✅ Valid: Modify outer variable inside block
+var count = 0
 if condition
-  set counter = counter + 1  // Modifies outer counter
+  count = count + 1
 endif
 
-// ✅ Valid: Multiple scope levels
-var total = 0
-for item in items
-  if item.valid
-    set total = total + item.value  // Reaches outer total
-  endif
-endfor
+// ❌ Invalid: Assignment to undeclared variable
+value = 10  // Error: value not declared
 
-// ❌ Invalid: set without prior declaration
-set newVar = 10  // Error: newVar doesn't exist
-
-// ❌ Invalid: set in same scope (use var or just assign)
-var x = 1
-set x = 2  // Unnecessary, but works
+// ❌ Invalid: Template-only syntax leaked into Script
+set total = total + 1
 ```
 
 #### [VAR-003] Scope isolation in async mode
@@ -342,6 +337,23 @@ var x = 0
 
 // ❌ Invalid: Sync mode cannot handle promises safely
 // Race conditions possible without scope isolation
+```
+
+#### [VAR-005] none as the null/undefined value
+```javascript
+// RULE: `none` represents null/undefined in Cascada Script
+// DIFFERENTIAL: Uses `none` instead of JS `null`/`undefined`
+// CONSTRAINT: Declaring `var x` without initialization defaults to `none`
+
+// ✅ Valid: Uninitialized variables default to none
+var report
+// report === none
+
+// ✅ Valid: Explicit none assignment
+var value = none
+
+// ❌ Invalid: `null` is not the Cascada Script literal for missing values
+var value = null
 ```
 
 ---
@@ -523,44 +535,58 @@ var user = fetchUser(id)
 @data.users[0].posts[0] = "Post 1"
 ```
 
-#### [OUT-003] @data methods are immutable operations
+#### [OUT-003] @data method calls write back to the target path
 ```javascript
-// RULE: @data methods return new value without mutating
-// DIFFERENTIAL: Functional style; concurrent-safe
-// CONSTRAINT: Must assign result back to @data path
+// RULE: Calling a method on an @data path updates (writes) the value at that path
+// DIFFERENTIAL: These are output-assembly commands, not normal JS method calls
+// CONSTRAINT: If the target path does not exist, some methods initialize a default container (see OUT-004)
 
-// ✅ Valid: push returns new array
-@data.items.push("new")  // Creates/extends items array
+// ✅ Valid: Array structure-building methods create container if missing
+@data.user.roles.push("editor")   // roles becomes ["editor"]
 
-// ✅ Valid: Chaining methods
-@data.text.upper().trim()  // Returns transformed text
+// ✅ Valid: String methods replace the string value at the path
+@data.title = " hello "
+@data.title.trim()               // title becomes "hello"
 
-// ✅ Valid: concat creates new array
-@data.all.concat(moreItems)
-
-// ❌ Invalid: Methods don't mutate in place
-var arr = [1, 2, 3]
-arr.push(4)  // arr is still [1,2,3] - push returns new array
+// ❌ Invalid: Treating @data as a readable value / normal JS object
+var roles = @data.user.roles     // Error (cannot read from @data on RHS)
+roles.push("x")                  // Not applicable
 ```
 
-#### [OUT-004] Built-in @data methods
+#### [OUT-004] Built-in @data operations and method families
 ```javascript
-// RULE: Standard methods available on @data paths
-// TYPES: push, concat, append (arrays); upper, lower, trim (strings)
+// RULE: Built-in @data operations apply to the value at the target path
+// DIFFERENTIAL: Many operations "replace the value at path" with the operation result
+// CONSTRAINT: Structure-building methods initialize missing targets; arithmetic/logical ops may throw if target is null/undefined (see NOTE)
 
-// ✅ Valid: Array methods
-@data.items.push(item)           // Append single
-@data.items.concat(arrayOfItems) // Merge arrays
-@data.items.append(item)         // Alias for push
+// ✅ Valid: Assignment replaces the value at path
+@data.user.name = "Alice"
 
-// ✅ Valid: String methods
-@data.text.upper()  // Uppercase
-@data.text.lower()  // Lowercase
-@data.text.trim()   // Remove whitespace
+// ✅ Valid: Array operations (create empty array if missing)
+@data.items.push("a")
+@data.items.concat(["b", "c"])
+@data.items.pop()
+@data.items.unshift("first")
+@data.items.sort()
 
-// ✅ Valid: Custom methods via addDataMethods
-// env.addDataMethods({ incrementBy: (target, n) => (target || 0) + n })
-@data.count.incrementBy(5)
+// ✅ Valid: Object operations
+@data.user.merge({ role: "admin" })
+@data.user.deepMerge({ prefs: { theme: "dark" } })
+
+// ✅ Valid: Numeric operators (require number at target)
+@data.counter = 0
+@data.counter++
+@data.counter += 5
+
+// ✅ Valid: String operations (create empty string if missing)
+@data.title.append("!")
+@data.title.toUpperCase()
+@data.title.trim()
+@data.title.replace("A", "B")
+@data.title.split(" ")
+
+// NOTE: Some operators (e.g., +=, ++, &&=) are strict and may throw if the target is undefined/null.
+// Initialize first (e.g., @data.counter = 0) before incrementing.
 ```
 
 #### [OUT-005] @data scope isolation per assignment
@@ -594,14 +620,14 @@ var temp = process()
 // CONSTRAINT: Async mode only; sync mode shares scope
 
 // ✅ Valid: Isolated branch scopes
-var result = null
+var result = none
 if condition
   var result = "A"  // Local to if branch
 endif
-// result is still null
+// result is still none
 
 // ✅ Valid: Modify outer variable
-var result = null
+var result = none
 if condition
   set result = "A"  // Modifies outer result
 endif
@@ -1161,22 +1187,23 @@ if a and b and c  // Stops at first falsy
 if fetchA() and fetchB()  // fetchB() not called if fetchA() is falsy
 ```
 
-#### [FN-007] Ternary operator (condition ? true : false)
+#### [FN-007] Inline if expression
 ```javascript
-// RULE: Ternary operator for inline conditionals
-// DIFFERENTIAL: Auto-awaits condition and selected branch
+// [FN-007] RULE: Inline conditional expressions use Python-style syntax
+// DIFFERENTIAL: Uses `value_if_true if condition else value_if_false`
+// CONSTRAINT: This is the ONLY valid inline conditional expression form
 
-// ✅ Valid: Basic ternary
-var status = user.active ? "Active" : "Inactive"
-
-// ✅ Valid: Ternary with promises
-var display = fetchUser(id) ? "Has user" : "No user"
-
-// ✅ Valid: Nested ternary
-var level = score > 90 ? "A" : score > 80 ? "B" : "C"
+// ✅ Valid: Basic inline if
+var theme = "dark" if user.darkMode else "light"
 
 // ✅ Valid: In @data assignment
-@data.status = isValid ? "success" : "error"
+@data.status = "success" if isValid else "error"
+
+// ✅ Valid: Condition auto-awaits
+var label = "ready" if fetchState().ready else "pending"
+
+// ❌ Invalid: JavaScript-style ternary is NOT supported
+var theme = user.darkMode ? "dark" : "light"
 ```
 
 ---
@@ -1717,28 +1744,44 @@ env.addFilter('asyncOp', async (x) => await fn(x));
 
 #### [API-007] addDataMethods(methods)
 ```javascript
-// RULE: Extends @data with custom methods
-// SIGNATURE: method(currentValue, ...args) => newValue
-// CONSTRAINT: Must return value; no mutation
+// RULE: env.addDataMethods({...}) registers/overrides @data methods callable as @data.path.method(...)
+// SIGNATURE: method(target, ...args) => returnValue
+// CONSTRAINT:
+//   - Returning any value replaces the target value at that path
+//   - For in-place mutation, return the mutated target to persist changes
+//   - Returning undefined deletes the property at that path
 
-// ✅ Valid: Custom accumulator
+// ✅ Valid: Custom method that handles undefined target and returns updated value
 env.addDataMethods({
-  incrementBy: (current, amount) => (current || 0) + amount
+  incrementBy: (target, amount) => (target || 0) + amount
 });
-// Usage: @data.counter.incrementBy(5)
+// In script: @data.counter.incrementBy(5)
 
-// ✅ Valid: Multiple methods
+// ✅ Valid: In-place mutation is allowed if you return the mutated target
 env.addDataMethods({
-  append: (current, item) => [...(current || []), item],
-  prepend: (current, item) => [item, ...(current || [])],
-  merge: (current, obj) => ({ ...(current || {}), ...obj })
+  upsert: (target, item) => {
+    if (!Array.isArray(target)) target = []
+    const idx = target.findIndex(x => x.id === item.id)
+    if (idx >= 0) Object.assign(target[idx], item)
+    else target.push(item)
+    return target
+  }
 });
 
-// ✅ Valid: Method receives current value
+// ✅ Valid: Returning undefined deletes the path
 env.addDataMethods({
-  double: (current) => current * 2
+  clear: (_target) => undefined
 });
-// Usage: @data.value.double()  // If value is 5, becomes 10
+
+// ❌ Invalid: Mutating but not returning anything (changes are not persisted)
+env.addDataMethods({
+  brokenAppend: (target, value) => {
+    if (!Array.isArray(target)) target = []
+    target.push(value)
+    // missing return target
+  }
+});
+
 ```
 
 #### [API-008] addCommandHandler / addCommandHandlerClass
