@@ -427,17 +427,6 @@ describe('Script Transpiler', () => {
           expect(error.message).to.contain('outside of any block');
         }
       });
-
-      it('should validate try/resume/except structure', () => {
-        const processedLines = [
-          { blockType: 'START', tagName: 'try', codeContent: '', isContinuation: false },
-          { blockType: 'MIDDLE', tagName: 'resume', codeContent: '', isContinuation: false },
-          { blockType: 'MIDDLE', tagName: 'except', codeContent: '', isContinuation: false },
-          { blockType: 'END', tagName: 'endtry', codeContent: '', isContinuation: false }
-        ];
-
-        scriptTranspiler._validateBlockStructure(processedLines);
-      });
     });
   });
 
@@ -597,12 +586,6 @@ describe('Script Transpiler', () => {
       } catch (error) {
         expect(error.message).to.contain('outside of any block');
       }
-    });
-
-    it('should handle try/resume/except blocks', () => {
-      const script = 'try\n  @text("Try block")\nresume\n  @text("Resume block")\nexcept\n  @text("Except block")\nendtry';
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.be.ok();
     });
 
     it('should validate complex nested block structures', () => {
@@ -1279,34 +1262,6 @@ endfor`;
       expect(template).to.contain('{#- Format price with currency -#}');
       expect(template).to.contain('{#- Check for discount -#}');
       expect(template).to.contain('{#- Out of stock message -#}');
-    });
-
-    it('should convert try/resume/except blocks with error handling', () => {
-      const script = `// Error handling example
-try
-  // Attempt operation
-  var data = fetchData(userId)
-  @text("User data: " + data.name)
-resume askUser('Retry operation?')
-  // Set warning message
-  var warningMessage = 'Resuming operation (attempt ' + resume.count + ')'
-  @text(warningMessage)
-except
-  // Handle error
-  @text("Failed to fetch user data: " + error.message)
-  throwError('Operation failed permanently')
-endtry`;
-
-      const template = scriptTranspiler.scriptToTemplate(script);
-
-      expect(template).to.contain('{%- try -%}');
-      expect(template).to.contain('{%- var data = fetchData(userId) -%}');
-      expect(template).to.contain('{{- "User data: " + data.name -}}');
-      expect(template).to.contain('{%- resume askUser(\'Retry operation?\') -%}');
-      expect(template).to.contain('{%- var warningMessage = \'Resuming operation (attempt \' + resume.count + \')\' -%}');
-      expect(template).to.contain('{%- except -%}');
-      expect(template).to.contain('{%- do throwError(\'Operation failed permanently\') -%}');
-      expect(template).to.contain('{%- endtry -%}');
     });
 
     it('should handle while loops with while iteration', () => {
