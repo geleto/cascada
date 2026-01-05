@@ -17,6 +17,9 @@ Transform the provided documentation into a token-efficient, AI-optimized refere
 - What baseline knowledge the target AI already possesses (e.g., standard JavaScript, Python conventions)
 - Which behaviors/features are **differentials** (novel or different from standard)
 - Which behaviors are standard and should be excluded
+- Treat the source document as the single authoritative grammar, API and syntax reference; syntax is semantic.
+- When identifying baseline knowledge for exclusion purposes, NEVER use it to replace, normalize, or rewrite syntax forms from the source, even if an equivalent exists in another language or API (e.g., JS, Python).
+- Identify all language/API/operational modes present in the source (e.g., Script syntax, Template syntax, different APIs, different modes of operation, etc.) and treat each mode separately. Do NOT translate, normalize, or import constructs across modes unless the source explicitly defines such mapping.
 
 ---
 
@@ -32,6 +35,7 @@ Transform the provided documentation into a token-efficient, AI-optimized refere
    - Conditionals: if...then, when...then, unless
    - Constraints: requires, depends on, limited to
    - Boundaries: cannot, prohibited, restricted
+   - Syntax forms, grammar constructs, and expression shapes shown in the source (e.g. inline if expressions, operators, keywords, ordering, for loops, etc.) are NORMATIVE and MUST receive UIDs if they define valid language syntax.
 
 2. **Create UID Pattern Index:**
    ```
@@ -71,6 +75,14 @@ Transform the provided documentation into a token-efficient, AI-optimized refere
    THEN remove Rule-C, reference Rule-A and Rule-B
    ```
 
+4. **Semantic deduplication MUST NOT:**
+- Canonicalize or normalize syntax forms
+- Replace one expression grammar with another
+- Merge rules that differ in syntactic form, even if behavior appears equivalent
+
+If two constructs differ in syntax, they are NOT duplicates.
+They must remain separate UIDs or be marked explicitly as invalid alternatives.
+
 ---
 
 ### Phase 3: Atomic Encoding
@@ -96,6 +108,12 @@ Transform the provided documentation into a token-efficient, AI-optimized refere
 - Show both valid and invalid usage
 - State rules in comments, not narrate code flow
 - Include DIFFERENTIAL only if behavior differs from standard
+- Code examples MUST use the exact syntax and mode shown in the source
+
+**Each atom MUST NOT:**
+- Substitute equivalent usage or syntax from other languages, APIs or technologies
+- Rewrite expression forms for brevity or familiarity
+- Substitute equivalent constructs from other modes (Script vs Template, etc.)
 
 **Quality checklist per atom:**
 - [ ] UID referenced
@@ -105,6 +123,7 @@ Transform the provided documentation into a token-efficient, AI-optimized refere
 - [ ] Invalid example shows common mistake
 - [ ] No mixed concepts
 - [ ] No narrative prose
+- [ ] No changed usage or syntax forms
 
 ---
 
@@ -276,6 +295,18 @@ Transformation VALID only if:
 - Scope and visibility rules
 - Shared state access
 - Custom extensions
+
+**Syntax Normalization Prohibited**
+
+The transformation MUST NOT:
+- Rewrite Python-style expressions into JavaScript syntax
+- Rewrite JavaScript-style expressions into Python syntax
+- Replace one conditional expression form with another
+- “Improve”, “simplify”, or “modernize” syntax
+- Introduce keywords, operators, control structures, or expression forms not present in the source document.
+
+If multiple syntaxes appear equivalent, preserve the one used in the source
+and mark others as INVALID if necessary.
 
 ---
 
