@@ -4,27 +4,6 @@ const { createPoison, isPoison, PoisonError } = require('./errors');
 const { memberLookupAsync, memberLookupScriptAsync, contextOrFrameLookup } = require('./lookup');
 const { callWrapAsync } = require('./call');
 
-/**
- * Await a sequence lock on a frame.
- * @todo - rename to lookupSequenceLock
- *
- * @param {AsyncFrame} frame - The async frame
- * @param {string} lockKeyToAwait - The lock variable name to await
- * @returns {Promise|null} The lock promise if it exists, null otherwise
- */
-function awaitSequenceLock(frame, lockKeyToAwait) {
-  if (!lockKeyToAwait) {
-    return undefined;
-  }
-
-  const lockState = frame.lookup(lockKeyToAwait);
-
-  if (lockState && typeof lockState.then === 'function') {
-    return lockState; // return the lock promise
-  } else {
-    return null;//currently the lockState value can only be `true`
-  }
-}
 
 /**
  * Execute an operation with sequence lock coordination.
@@ -41,7 +20,18 @@ function awaitSequenceLock(frame, lockKeyToAwait) {
  */
 function withSequenceLock(frame, lockKey, operation, errorContext = null, repair = false) {
   // Get lock state (undefined, Promise, or PoisonedValue)
-  let lockPromise = awaitSequenceLock(frame, lockKey);//returns null if no promise to await
+  let lockPromise;
+  if (lockKey) {
+    const lockState = frame.lookup(lockKey);
+    if (lockState && typeof lockState.then === 'function') {
+      lockPromise = lockState;
+    } else {
+      lockPromise = null;
+    }
+  } else {
+    lockPromise = null;
+  }
+
   if (lockPromise) {
     // Check for existing poison on the lock
     if (isPoison(lockPromise)) {

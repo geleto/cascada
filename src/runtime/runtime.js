@@ -190,7 +190,6 @@ module.exports = {
   whileConditionIterator: loop.whileConditionIterator,
   setLoopBindings: loop.setLoopBindings,
 
-  awaitSequenceLock: sequential.awaitSequenceLock,
   sequentialContextLookup: sequential.sequentialContextLookup,
   sequentialMemberLookupScriptAsync: sequential.sequentialMemberLookupScriptAsync,
   sequentialMemberLookupAsync: sequential.sequentialMemberLookupAsync,
