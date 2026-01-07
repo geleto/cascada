@@ -1,6 +1,6 @@
 'use strict';
 
-const { createPoison, isPoison, PoisonError } = require('./errors');
+const { createPoison, isPoison } = require('./errors');
 const { memberLookupAsync, memberLookupScriptAsync, contextOrFrameLookup } = require('./lookup');
 const { callWrapAsync } = require('./call');
 
@@ -192,7 +192,7 @@ function withSequenceLock(frame, lockKey, operation, errorContext = null, repair
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} Result of the function call
  */
-async function sequentialCallWrap(func, funcName, context, args, frame, lockKey, errorContext, repair = false) {
+function sequentialCallWrap(func, funcName, context, args, frame, lockKey, errorContext, repair = false) {
   return withSequenceLock(frame, lockKey, () =>
     callWrapAsync(func, funcName, context, args, errorContext), errorContext, repair
   );
@@ -207,7 +207,7 @@ async function sequentialCallWrap(func, funcName, context, args, frame, lockKey,
  * @param {string} lockKey - The lock variable name
  * @returns {Promise} The lookup result
  */
-async function sequentialContextLookup(context, frame, name, lockKey, repair = false) {
+function sequentialContextLookup(context, frame, name, lockKey, repair = false) {
   return withSequenceLock(frame, lockKey, () =>
     contextOrFrameLookup(context, frame, name), null, repair
   );
@@ -223,7 +223,7 @@ async function sequentialContextLookup(context, frame, name, lockKey, repair = f
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} The lookup result
  */
-async function sequentialMemberLookupAsync(frame, target, key, lockKey, errorContext, repair = false) {
+function sequentialMemberLookupAsync(frame, target, key, lockKey, errorContext, repair = false) {
   return withSequenceLock(frame, lockKey, () =>
     memberLookupAsync(target, key, errorContext), errorContext, repair
   );
@@ -239,7 +239,7 @@ async function sequentialMemberLookupAsync(frame, target, key, lockKey, errorCon
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} The lookup result
  */
-async function sequentialMemberLookupScriptAsync(frame, target, key, lockKey, errorContext, repair = false) {
+function sequentialMemberLookupScriptAsync(frame, target, key, lockKey, errorContext, repair = false) {
   return withSequenceLock(frame, lockKey, () =>
     memberLookupScriptAsync(target, key, errorContext), errorContext, repair
   );
