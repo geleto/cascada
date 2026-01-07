@@ -167,7 +167,7 @@ class Compiler extends CompilerBase {
         // Tag arguments are passed normally to the call. Note
         // that keyword arguments are turned into a single js
         // object as the last argument, if they exist.
-        this.compile(arg, frame);
+        this._compileExpression(arg, frame, false);
 
         if (i !== args.children.length - 1 || contentArgs.length) {
           this.emit(',');
