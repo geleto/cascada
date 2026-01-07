@@ -1090,7 +1090,7 @@ var res4 = db!.insert('after')
         const context = {
           service: {
             doSomething: function () { throw new Error('fail'); },
-            reset: function () { },
+            reset: function () { return 'good'; },
             status: 'ok'
           }
         };
