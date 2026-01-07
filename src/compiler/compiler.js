@@ -1467,15 +1467,14 @@ class Compiler extends CompilerBase {
 
         const pathArg = originalArgs[0];
 
-        // A temporary, "virtual" node to wrap the path:
-        const dataPathNode = {
-          typename: 'DataPath',
-          pathNode: pathArg,
-          // Propagate async flag so _compileAggregate can handle it correctly.
-          isAsync: pathArg.isAsync
-        };
+        // Convert the path argument into a flat array of segments (Literal/Symbol)
+        // expected by the runtime @data handlers.
+        const pathNodeList = this._flattenPathToNodeList(pathArg);
+        const dataPathNode = new nodes.Array(pathArg.lineno, pathArg.colno, pathNodeList.children);
+        dataPathNode.isAsync = pathNodeList.isAsync;
+        dataPathNode.mustResolve = true;
 
-        // Our virtual node at the front.
+        // Our array node at the front.
         const newArgs = [dataPathNode, ...originalArgs.slice(1)];
 
         argList = new nodes.NodeList(node.call.args.lineno, node.call.args.colno, newArgs);

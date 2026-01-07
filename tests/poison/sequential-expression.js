@@ -33,10 +33,10 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = nunjucks.AsyncEnvironment;
 }
 
-describe('Sequential Expression Poisoning', function() {
+describe('Sequential Expression Poisoning', function () {
   let env;
 
-  beforeEach(function() {
+  beforeEach(function () {
     env = new AsyncEnvironment();
   });
 
@@ -44,8 +44,8 @@ describe('Sequential Expression Poisoning', function() {
   // 1. BASIC SEQUENTIAL OPERATIONS (Success Cases)
   // ============================================================================
 
-  describe('Basic Sequential Operations - Success', function() {
-    it('should handle simple sequential method call', async function() {
+  describe('Basic Sequential Operations - Success', function () {
+    it('should handle simple sequential method call', async function () {
       const context = {
         account: {
           async getValue() {
@@ -190,7 +190,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle sequential method chain', async function() {
+    it('should handle sequential method chain', async function () {
       const context = {
         data: {
           async process() {
@@ -211,7 +211,7 @@ describe('Sequential Expression Poisoning', function() {
       expect(result.trim()).to.equal('Result: 42');
     });
 
-    it('should handle multiple sequential operations in sequence', async function() {
+    it('should handle multiple sequential operations in sequence', async function () {
       const context = {
         counter: {
           value: 0,
@@ -237,8 +237,8 @@ describe('Sequential Expression Poisoning', function() {
   // 2. SEQUENTIAL OPERATIONS WITH FAILURES
   // ============================================================================
 
-  describe('Sequential Operations with Failures', function() {
-    it('should poison sequential path when operation fails', async function() {
+  describe('Sequential Operations with Failures', function () {
+    it('should poison sequential path when operation fails', async function () {
       const context = {
         account: {
           async getValue() {
@@ -261,7 +261,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should poison when sequential operation argument fails', async function() {
+    it('should poison when sequential operation argument fails', async function () {
       const context = {
         processor: {
           async process(value) {
@@ -286,7 +286,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should poison when method in sequential chain fails', async function() {
+    it('should poison when method in sequential chain fails', async function () {
       const context = {
         data: {
           async step1() {
@@ -312,7 +312,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should poison when array push with sequential path fails', async function() {
+    it('should poison when array push with sequential path fails', async function () {
       const context = {
         items: [],
         async errorFunc() {
@@ -338,8 +338,8 @@ describe('Sequential Expression Poisoning', function() {
   // 3. MIXED SUCCESS/FAILURE IN EXPRESSIONS
   // ============================================================================
 
-  describe('Mixed Success/Failure in Expressions', function() {
-    it('should handle sequential success + regular failure', async function() {
+  describe('Mixed Success/Failure in Expressions', function () {
+    it('should handle sequential success + regular failure', async function () {
       const context = {
         account: {
           async getValue() {
@@ -365,7 +365,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle sequential failure + regular success', async function() {
+    it('should handle sequential failure + regular success', async function () {
       const context = {
         account: {
           async getValue() {
@@ -390,7 +390,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle both sequential, different paths, one fails', async function() {
+    it('should handle both sequential, different paths, one fails', async function () {
       const context = {
         account1: {
           async getValue() {
@@ -417,7 +417,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle both sequential, same path accessed twice, one fails', async function() {
+    it('should handle both sequential, same path accessed twice, one fails', async function () {
       const context = {
         account: {
           async getBalance() {
@@ -443,7 +443,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should collect errors from both sides when both fail', async function() {
+    it('should collect errors from both sides when both fail', async function () {
       const context = {
         account1: {
           async getValue() {
@@ -474,7 +474,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle three-way expression with mixed success/failure', async function() {
+    it('should handle three-way expression with mixed success/failure', async function () {
       const context = {
         a: {
           async getValue() {
@@ -505,14 +505,34 @@ describe('Sequential Expression Poisoning', function() {
         expect(err.message).to.contain('B failed');
       }
     });
+
+    it('should verify basic locking inside output handler', async function () {
+      const script = `
+      :data
+      api.users!.fail()
+      @data.u = api.users!.success() is error
+    `;
+
+      const context = {
+        api: {
+          users: {
+            fail: () => { throw new Error('Users Error'); },
+            success: () => 'Users Success'
+          }
+        }
+      };
+
+      const result = await env.renderScriptString(script, context);
+      expect(result.u).to.be(true);
+    });
   });
 
   // ============================================================================
   // 4. OPERATIONS ON ALREADY POISONED PATHS
   // ============================================================================
 
-  describe('Operations on Already Poisoned Paths', function() {
-    it('should propagate poison when reading from poisoned sequential path', async function() {
+  describe('Operations on Already Poisoned Paths', function () {
+    it('should propagate poison when reading from poisoned sequential path', async function () {
       const context = {
         account: {
           async getValue() {
@@ -535,7 +555,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should propagate poison when writing to poisoned sequential path', async function() {
+    it('should propagate poison when writing to poisoned sequential path', async function () {
       const context = {
         data: {
           items: [],
@@ -559,7 +579,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should propagate poison through expression using poisoned path', async function() {
+    it('should propagate poison through expression using poisoned path', async function () {
       const context = {
         x: {
           async getValue() {
@@ -587,7 +607,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle multiple reads from poisoned sequential path', async function() {
+    it('should handle multiple reads from poisoned sequential path', async function () {
       const context = {
         config: {
           async load() {
@@ -612,7 +632,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should propagate poison when chaining on poisoned path', async function() {
+    it('should propagate poison when chaining on poisoned path', async function () {
       const context = {
         obj: {
           async getChild() {
@@ -640,8 +660,8 @@ describe('Sequential Expression Poisoning', function() {
   // 5. COMPLEX EXPRESSION PATTERNS
   // ============================================================================
 
-  describe('Complex Expression Patterns', function() {
-    it('should handle nested expressions with sequential', async function() {
+  describe('Complex Expression Patterns', function () {
+    it('should handle nested expressions with sequential', async function () {
       const context = {
         a: {
           async getValue() {
@@ -668,7 +688,7 @@ describe('Sequential Expression Poisoning', function() {
       expect(result.trim()).to.equal('Result: 30');
     });
 
-    it('should handle nested expressions with failure', async function() {
+    it('should handle nested expressions with failure', async function () {
       const context = {
         a: {
           async getValue() {
@@ -700,7 +720,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle sequential in ternary operator', async function() {
+    it('should handle sequential in ternary operator', async function () {
       const context = {
         condition: true,
         success: {
@@ -723,7 +743,7 @@ describe('Sequential Expression Poisoning', function() {
       expect(result.trim()).to.equal('Result: 100');
     });
 
-    it('should handle sequential in ternary with failure in taken branch', async function() {
+    it('should handle sequential in ternary with failure in taken branch', async function () {
       const context = {
         condition: true,
         branch: {
@@ -751,7 +771,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle sequential in logical AND operator', async function() {
+    it('should handle sequential in logical AND operator', async function () {
       const context = {
         check: {
           async isValid() {
@@ -773,7 +793,7 @@ describe('Sequential Expression Poisoning', function() {
       expect(result.trim()).to.equal('Result: 42');
     });
 
-    it('should handle sequential in logical OR with failure', async function() {
+    it('should handle sequential in logical OR with failure', async function () {
       const context = {
         first: {
           async getValue() {
@@ -800,7 +820,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle multiple sequential paths in single expression', async function() {
+    it('should handle multiple sequential paths in single expression', async function () {
       const context = {
         account: {
           async getBalance() {
@@ -827,7 +847,7 @@ describe('Sequential Expression Poisoning', function() {
       expect(result.trim()).to.equal('Net: 850');
     });
 
-    it('should handle multiple sequential paths with one failure', async function() {
+    it('should handle multiple sequential paths with one failure', async function () {
       const context = {
         account: {
           async getBalance() {
@@ -864,8 +884,8 @@ describe('Sequential Expression Poisoning', function() {
   // 6. EDGE CASES AND ERROR AGGREGATION
   // ============================================================================
 
-  describe('Edge Cases and Error Aggregation', function() {
-    it('should aggregate multiple synchronous errors', async function() {
+  describe('Edge Cases and Error Aggregation', function () {
+    it('should aggregate multiple synchronous errors', async function () {
       const context = {
         func1() {
           throw new Error('Sync error 1');
@@ -896,7 +916,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should aggregate sync and async errors', async function() {
+    it('should aggregate sync and async errors', async function () {
       const context = {
         syncFunc() {
           throw new Error('Sync error');
@@ -926,7 +946,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle deeply nested sequential operations', async function() {
+    it('should handle deeply nested sequential operations', async function () {
       const context = {
         level1: {
           async getLevel2() {
@@ -951,7 +971,7 @@ describe('Sequential Expression Poisoning', function() {
       expect(result.trim()).to.equal('Result: deep value');
     });
 
-    it('should handle deeply nested sequential operations with failure', async function() {
+    it('should handle deeply nested sequential operations with failure', async function () {
       const context = {
         level1: {
           async getLevel2() {
@@ -977,7 +997,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should handle sequential operation returning promise that resolves to poison', async function() {
+    it('should handle sequential operation returning promise that resolves to poison', async function () {
       const context = {
         obj: {
           async getValue() {
@@ -1000,7 +1020,7 @@ describe('Sequential Expression Poisoning', function() {
       }
     });
 
-    it('should not deadlock when sequential path accessed after failure', async function() {
+    it('should not deadlock when sequential path accessed after failure', async function () {
       const context = {
         data: {
           async process() {

@@ -230,12 +230,11 @@ class CompilerBase extends Obj {
       if (i > 0) {
         this.emit(',');
       }
-      /*if (expressionRoot && startChar !== '{') {
-        //arguments can only be in expression child nodes? So we should use regular compile?
-        this._compileExpression(child, frame);
-      } else {*/
-      this.compile(child, frame);
-      /*}*/
+      if (expressionRoot && startChar !== '{') {
+        this._compileExpression(child, frame, false);
+      } else {
+        this.compile(child, frame);
+      }
     });
   }
 
@@ -372,19 +371,19 @@ class CompilerBase extends Obj {
   // or better - return a promise
   //maybe resolve the unused/not-last elements?
   compileGroup(node, frame) {
-    this._compileAggregate(node, frame, '(', ')', true, true);
+    this._compileAggregate(node, frame, '(', ')', true, false);
   }
 
   //todo - do not resolve, instead resolve it at the point of use: output or argument to functions, filters. Add tests
   //do not return a promise for the whole thing so that resolved elements can be used as soon as possible
   compileArray(node, frame) {
-    this._compileAggregate(node, frame, '[', ']', false, true);
+    this._compileAggregate(node, frame, '[', ']', !!node.mustResolve, false);
   }
 
   //todo - Add other usage tests - function argument, filter argument, output
   compileDict(node, frame) {
     //do not resolve dictionary values, this is handled by memberLookupAsync
-    this._compileAggregate(node, frame, '{', '}', false, true);
+    this._compileAggregate(node, frame, '{', '}', false, false);
   }
 
   compilePair(node, frame) {
