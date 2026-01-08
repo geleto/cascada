@@ -489,28 +489,6 @@ account!.withdraw(50)
 
 For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
 
-#### Hierarchical Paths
-
-Sequential paths work hierarchically: marking a parent path makes **all child paths** sequential too.
-
-```javascript
-// Marking 'api!' makes all its properties sequential
-api!.connect()
-api.db.insert(user)        // Waits for connect() (no ! needed)
-api.cache.set(key, val)    // Waits for insert()
-
-// Child paths can have their own sub-sequences
-api.db!.beginTransaction()
-api.db!.insert(data)
-api.db!.commit()
-```
-
-This applies to both method calls and property reads:
-```javascript
-api!.initialize()
-@text(api.connection.state)  // Waits for initialize()
-```
-
 #### Context Requirement for Sequential Paths
 
 Sequential paths must reference objects from the context, not local variables.
@@ -2580,13 +2558,12 @@ So: async builds get safer block-local semantics; fully synchronous templates ke
 This roadmap outlines key features and enhancements that are planned or currently in progress.
 
 
--   **Resilient Error Handling: An Error is Just Data**
-    Tne error-handling construct designed for asynchronous workflows. This will allow for conditional retries and graceful failure management.
+-   **Streaming support** - see the [Streaming Proposal]()
 
 -   **Declaring Cross-Script Dependencies for (`import`, `include`, `extends`)**
     Support declaring variable dependencies wtih the `extern`, `reads`, and `modifies` keywords.
 
--   **Reading from the `@data` Object**
+-   **Reading from the `@data` Object** in output operations
     Enabling the ability to read from the `@data` object on the right side of `@data` expressions (e.g., `@data.user.name = @data.form.firstName + ' ' + @data.form.lastName`). This will allow for more powerfull data composition.
 
 -   **Expanded Sequential Execution (`!`) Support**
@@ -2602,7 +2579,7 @@ This roadmap outlines key features and enhancements that are planned or currentl
     Allowing the sequential execution operator `!` to be used directly on root-level function calls (e.g., `!.saveToDatabase(data)`), simplifying syntax for global functions with side effects.
 
 -   **Expanded Built-in `@data` Methods**
-    Adding comprehensive support for standard JavaScript array and string methods (e.g., `map`, `filter`, `slice`, `replace`) as first-class operations within the `@data` handler.
+    Adding comprehensive support for standard JavaScript array and string methods (e.g., `map`, `filter`, `slice`, `replace`, `min`, `max`) as first-class operations within the `@data` handler.
 
 -   **Enhanced Error Reporting**
     Improving the debugging experience by providing detailed syntax and runtime error messages that include code snippets, file names, and line/column numbers to pinpoint issues quickly.
@@ -2613,7 +2590,7 @@ This roadmap outlines key features and enhancements that are planned or currentl
 -   **Execution Replay and Debugging**
     Creating an advanced logging system, via a dedicated output handler, to capture the entire execution trace. This will allow developers to replay and inspect the sequence of operations and variable states for complex debugging.
 
--   **OpenTelemetry and MLflow Integration for Observability**
+-   **OpenTelemetry Integration for Observability**
     Implementing native support for tracing using the OpenTelemetry standard. This will capture the inputs and outputs of scripts and templates, as well as the arguments and return values of individual function calls. This integration is designed for high-level observability, enabling developers to monitor data flow, analyze performance, and track costs (e.g., token usage in LLM calls) with platforms like MLflow's tracing system. It focuses on key I/O points rather than a complete execution trace.
 
 -   **Robustness and Concurrency Validation**
