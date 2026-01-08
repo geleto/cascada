@@ -2558,7 +2558,7 @@ So: async builds get safer block-local semantics; fully synchronous templates ke
 This roadmap outlines key features and enhancements that are planned or currently in progress.
 
 
--   **Streaming support** - see the [Streaming Proposal]()
+-   **Streaming support** - see the [Streaming Proposal](https://github.com/geleto/cascada/blob/master/docs/cascada/streaming.md)
 
 -   **Declaring Cross-Script Dependencies for (`import`, `include`, `extends`)**
     Support declaring variable dependencies wtih the `extern`, `reads`, and `modifies` keywords.
