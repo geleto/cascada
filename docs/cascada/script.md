@@ -85,6 +85,14 @@ console.log(data);
 
 The syntax is familiar, but the execution is fundamentally different. To understand how Cascada achieves effortless concurrency, read the next section on Cascada's execution model.
 
+## ⚠️ Features Currently Not Implemented
+
+The following feature is documented in this guide but is **not yet implemented**:
+
+- **Cross-Script Dependencies (`extern`, `reads`, `modifies`)** - Declaring variable dependencies across script boundaries: `extern` to declare expected variables in child scripts, and `reads`/`modifies` to grant access from parent scripts with `import`, `include`, and `extends` (see [Declaring Cross-Script Dependencies](#declaring-cross-script-dependencies))
+
+These features are planned for future releases, check out the [Development Status and Roadmap](#development-status-and-roadmap) section.
+
 ## Cascada's Execution Model
 
 Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts—it explains why the language behaves the way it does and how to leverage its parallel capabilities.
@@ -150,6 +158,9 @@ var x, y = 100
 ```
 
 #### Declaring External Variables with `extern`
+
+> **⚠️ NOT IMPLEMENTED:** This part of the scross-script dependencies feature that is not yet implemented, see [Development Status and Roadmap](#development-status-and-roadmap) for details.
+
 Use `extern` to declare a variable that is expected to be provided by an including script (via `include` or `extends`), not from the global context. External variables cannot be initialized at declaration but can be changed later.
 
 ```javascript
@@ -1808,6 +1819,9 @@ endcall
 Cascada provides powerful tools for composing scripts, promoting code reuse and the separation of concerns. This allows you to break down complex workflows into smaller, maintainable files. The three primary mechanisms for this are [`import`](#importing-libraries-with-import) for namespaced libraries, [`include`](#including-scripts-with-include) for embedding content, and [`extends`/`block`](#script-inheritance-with-extends-and-block) for script inheritance.
 
 ### Declaring Cross-Script Dependencies
+
+> **⚠️ NOT IMPLEMENTED:** This feature is not yet available in the current version of Cascada. See [Development Status and Roadmap](#development-status-and-roadmap) for details.
+
 To enable its powerful parallel execution model, Cascada's compiler must understand all variable dependencies at compile time. When you split your logic across multiple files, you must explicitly declare how these files share variables. This creates a clear "contract" between scripts and allows the engine to understand the variable dependencies for concurrent execution.
 
 This contract is formed by three keywords:
