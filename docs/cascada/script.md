@@ -349,6 +349,8 @@ As described in [Error Handling](#error-handling), if the condition of an `if` s
 ### Loops
 Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
 
+As described in [Error Handling](#error-handling), if a loop's iterable evaluates to an Error Value, the loop body is skipped and the error propagates to affected variables and outputs. See [Control Flow error handling](#control-flow) for details.
+
 ##### `for` Loops: Iterate Concurrently
 Use a `for` loop to iterate over arrays, dictionaries (objects), async iterators, and other iterable data structures. By default, the body of the `for` loop executes **in parallel for each item**, maximizing I/O throughput for independent operations.
 
