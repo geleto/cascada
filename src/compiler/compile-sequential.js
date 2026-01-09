@@ -69,9 +69,10 @@ module.exports = class CompileSequential {
       }
 
       if (!funCallLockKey) {
-        if (!node.sequentialRepair) {
+        if (!node.sequentialRepair && !node.isSequenceErrorCheck) {
           this.compiler.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
         }
+        node.lockKey = currentPathKey;
       } else if (funCallLockKey !== currentPathKey) {
         this.compiler.fail('Cannot use more than one sequence marker (!) in a single effective path segment.', node.lineno, node.colno, node);
       }
@@ -180,8 +181,8 @@ module.exports = class CompileSequential {
     }
 
     if (node.isFunCallLocked) {
-      // We have unwrapped FunCall - always wrap
-      node.wrapInAsyncBlock = true;
+      // Wrap FunCall unless it is part of a sequence error check.
+      node.wrapInAsyncBlock = !node.isSequenceErrorCheck;
 
       if (!haveContended && lockCount === 1) {
         return;//no more wrapping needed for the children
@@ -417,33 +418,64 @@ module.exports = class CompileSequential {
    * @returns {Set<string>} Set of lock names (e.g., '!account', '!db')
    */
   collectSequenceLocks(node) {
-    const locks = new Set();
-    const visited = new WeakSet();
+    const definedVars = new Set();
+    const atomicUsage = new Map();
 
     const walk = (n) => {
-      if (!n || visited.has(n)) {
+      if (!n) {
         return;
       }
-      visited.add(n);
 
-      // Check if this node has a sequence marker
-      // Adjust this condition based on actual AST structure
-      if (n.sequential === true) {
-        const lockName = this._extractBaseLockName(n);
-        if (lockName) {
-          locks.add(lockName);
+      // 1. Check for Sequence Definition (FunCall)
+      if (n.typename === 'FunCall') {
+        // Check if this function call defines a sequence
+        const lock = this._getSequenceKey(n.name);
+        if (lock) {
+          definedVars.add(lock);
+          // Only recurse into arguments; do not recurse into the name (callee)
+          // because it contains the sequence markers that are DEFINING this lock.
+          // We don't want to count them as "usages".
+          if (n.args) {
+            n.args.children.forEach(walk);
+          }
+          return;
         }
       }
 
-      // Recursively walk children
-      const children = this.compiler._getImmediateChildren(n);
-      for (const child of children) {
-        walk(child);
+      // 2. Check for Sequence Usage (Independent !)
+      // Unlike standard usage (that does not employ the `!` symbol),
+      // FunCall can use the `!` marker explicitly to define a sequence lock.
+      // Checking a sequence status (e.g. `service! is error`) also uses the `!` marker
+      // and is a "Usage" of the lock, which requires the lock to have been defined.
+      if (n.sequential) {
+        const lock = this._getSequenceKey(n);
+        if (lock) {
+          atomicUsage.set(n, lock);
+        }
+        // We treat the sequential node (e.g. path!) as an atomic usage unit and do not recurse.
+        return;
       }
+
+      // 3. Default Recursion
+      // Handles NodeList, Block, Expressions, etc.
+      // Use _getImmediateChildren to safely traverse custom node structures
+      const children = this.compiler._getImmediateChildren(n);
+      children.forEach(child => walk(child));
     };
 
     walk(node);
-    return locks;
+
+    // Validate: All used locks must have been defined by a FunCall
+    for (const [n, lock] of atomicUsage) {
+      if (!definedVars.has(lock)) {
+        this.compiler.fail(
+          `Sequence path '${lock}' does not exist. You must define a sequential path (e.g. path!.method()) before checking it.`,
+          n.lineno, n.colno, n
+        );
+      }
+    }
+
+    return definedVars;
   }
 
   /**

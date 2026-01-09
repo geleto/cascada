@@ -1212,6 +1212,237 @@ var res4 = db!.insert('after')
         await env.renderScriptString(script, context);
         expect(context.processor.processed).to.eql([1, 2, 3]);
       });
+
+      it('should handle obj.prop! is error correctly for sequential recovery', async () => {
+        const context = {
+          service: {
+            calls: [],
+            badMethod: async function () {
+              this.calls.push('badMethod');
+              throw new Error('Something went wrong');
+            },
+            goodMethod: async function () {
+              this.calls.push('goodMethod');
+              return 'ok';
+            },
+            reset: function () {
+              // Should not be called if lock is poisoned
+              this.calls.push('reset');
+            }
+          }
+        };
+
+        const script = `
+        :data
+        // 1. Call a method that throws, poisoning the sequence lock '!service'
+        // We use 'is error' to catch the runtime error and avoid script termination
+        @data.initialCallFailed = service!.badMethod() is error
+
+        // 2. Check if the sequence is in error state using obj.prop! is error
+        // This confirms the lock '!service' itself is poisoned
+        @data.isPoisoned = service! is error
+
+        // 3. Verify normal lookup fails/is skipped (poison propagation)
+        // using a standard call without repair. Accessing it directly would throw, so we check 'is error'
+        @data.skippedHadError = service!.reset() is error
+
+        // 4. Manual repair to prove we can continue
+        service!!
+
+        // 5. Verify we are good again
+        @data.finalResult = service!.goodMethod()
+
+        // 6. Verify healthy check returns false
+        @data.isPoisonedHealthy = service! is error
+      `;
+
+        const result = await env.renderScriptString(script, context);
+
+        expect(result.initialCallFailed).to.be(true);
+        expect(result.isPoisoned).to.be(true);
+        expect(result.skippedHadError).to.be(true);
+        expect(context.service.calls).to.eql(['badMethod', 'goodMethod']); // reset should be skipped
+        expect(result.finalResult).to.equal('ok');
+        expect(result.isPoisonedHealthy).to.be(false);
+      });
+    });
+
+    describe('Sequential Syntax Strictness and Logic', () => {
+      it('should detect poison on a sequential path after a failure', async () => {
+        const script = `
+          :data
+          service!.fail()
+
+          @data.isErr = service! is error
+        `;
+
+        const ctx = {
+          service: {
+            fail: async () => { throw new Error('database down'); }
+          }
+        };
+
+        const res = await env.renderScriptString(script, ctx);
+
+        expect(res).to.have.property('isErr', true);
+      });
+
+      it('should detect poison on a sequential path via strict property access after failure', async () => {
+        const script = `
+          :data
+          service.db!.fail()
+
+          @data.isErr = service.db! is error
+        `;
+
+        const ctx = {
+          service: {
+            db: {
+              fail: async () => { throw new Error('db down'); }
+            }
+          }
+        };
+
+        const res = await env.renderScriptString(script, ctx);
+        expect(res).to.have.property('isErr', true);
+      });
+
+      it('should throw compilation error for non-existing/unused sequence path', async () => {
+        const script = `
+          :data
+          @data.isErr = service! is error
+        `;
+
+        try {
+          await env.renderScriptString(script, { service: {} });
+          expect().fail('Should have thrown compilation error');
+        } catch (e) {
+          expect(e.message).to.contain('Sequence path \'!service\' does not exist');
+        }
+      });
+
+      it('should allow successful sequence operations implicitly (healthy path)', async () => {
+        const script = `
+          :data
+          service!.ok()
+          @data.isErr = service! is error
+        `;
+
+        const ctx = {
+          service: {
+            ok: async () => 'success'
+          }
+        };
+
+        const res = await env.renderScriptString(script, ctx);
+        expect(res).to.have.property('isErr', false);
+      });
+
+      it('should fail compilation for invalid syntax (buried marker in is error)', async () => {
+        // 'service!.val is error' is invalid because '!' is buried.
+        const script = `
+          service!.method()
+          var x = service!.val is error
+        `;
+        const ctx = { service: { method: async () => { }, val: 1 } };
+        try {
+          await env.renderScriptString(script, ctx);
+          expect().fail('Should have thrown compilation error');
+        } catch (e) {
+          expect(e.message).to.contain('Sequence marker (!) is not allowed in non-call paths');
+        }
+      });
+
+      it('should verify scope independence: parent lock is not created by child lock', async () => {
+        const script = `
+            :data
+            service.db!.fail()
+            @data.serviceErr = service! is error
+          `;
+
+        const ctx = {
+          service: {
+            db: {
+              fail: async () => { throw new Error('db down'); }
+            }
+          }
+        };
+
+        try {
+          await env.renderScriptString(script, ctx);
+          expect().fail('Should have thrown compilation error for undefined parent lock');
+        } catch (e) {
+          expect(e.message).to.contain('Sequence path \'!service\' does not exist');
+        }
+      });
+
+      it('should verify scope independence: child lock IS created and checkable', async () => {
+        const script = `
+            :data
+            service.db!.fail()
+            @data.dbErr = service.db! is error
+          `;
+
+        const ctx = {
+          service: {
+            db: {
+              fail: async () => { throw new Error('db down'); }
+            }
+          }
+        };
+
+        const res = await env.renderScriptString(script, ctx);
+        expect(res).to.have.property('dbErr', true);
+      });
+
+      it('should repair a poisoned sequence path using !! operator', async () => {
+        // 1. Fail and Poison
+        // 2. Check is error -> true
+        // 3. Repair with !!
+        // 4. Check is error -> false
+        const script = `
+          :data
+          service!.fail()
+          @data.step1 = service! is error
+          service!!.repair()
+          @data.step2 = service! is error
+        `;
+
+        const ctx = {
+          service: {
+            fail: async () => { throw new Error('fail'); },
+            repair: async () => 'fixed'
+          }
+        };
+
+        const res = await env.renderScriptString(script, ctx);
+        expect(res.step1).to.be(true);
+        expect(res.step2).to.be(false);
+      });
+
+      it('should verify scope independence: parent lock defined does not create child lock', async () => {
+        const script = `
+            :data
+            service!.fail()
+            // !service is defined, but !service.db is NOT.
+            // Docs say !paths are strict.
+            @data.dbErr = service.db! is error
+        `;
+
+        const ctx = {
+          service: {
+            fail: async () => { throw new Error('fail'); },
+            db: {}
+          }
+        };
+
+        try {
+          await env.renderScriptString(script, ctx);
+          expect().fail('Should have thrown compilation error for undefined child lock');
+        } catch (e) {
+          expect(e.message).to.contain('Sequence path \'!service!db\' does not exist');
+        }
+      });
     });
   });
 }());

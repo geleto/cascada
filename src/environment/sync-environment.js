@@ -67,6 +67,7 @@ class Environment extends BaseEnvironment {
       cb = ctx;
       ctx = {};
     }
+    opts = opts || {};
 
     // Convert script to template
     let template;

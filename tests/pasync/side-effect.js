@@ -540,7 +540,10 @@
         });
 
         it('should REJECT ! on property access (object.path!.property)', async () => {
-          const template = `{{ sequencer!.value }}`;
+          const template = `
+            {% do sequencer!.runOp('def', 0) %}
+            {{ sequencer!.value }}
+          `;
           await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-call paths');
           });
@@ -588,7 +591,7 @@
               async runOpOther(id, ms) { await delay(ms); constraintContext.logs.push(`${id} OTHER on ${this.id}`); return id; },
               value: 'should-not-allow'
             },
-            items: [{ id: 'item1', async runOp() {} }],
+            items: [{ id: 'item1', async runOp() { } }],
             i: 0,
             getObj: () => constraintContext.sequencer,
             dynamicKey: 'runOp',
@@ -626,7 +629,10 @@
         });
 
         it('should reject ! on property access (object.path!.property)', async () => {
-          const template = `{{ sequencer!.value }}`;
+          const template = `
+            {% do sequencer!.runOp('def', 0) %}
+            {{ sequencer!.value }}
+          `;
           await expectAsyncError(() => env.renderTemplateString(template, constraintContext), err => {
             expect(err.message).to.contain('Sequence marker (!) is not allowed in non-call paths');
           });
@@ -902,9 +908,9 @@
 
       //@todo - line numbering
       it('should provide detailed error message for invalid ! usage', async () => {
-        const template = `Line 1\n{% do sequencer!.value %}`;
+        const template = `Line 1\n{% do sequencer!.runOp('def', 0) %}\n{% do sequencer!.value %}`;
         await expectAsyncError(() => env.renderTemplateString(template, context), err => {
-          expect(err.message).to.contain('Line 2');
+          expect(err.message).to.contain('Line 3'); // Adjusted line number
           expect(err.message).to.contain('not allowed in non-call paths');
         });
       });

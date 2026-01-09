@@ -1215,6 +1215,38 @@ class Parser extends Obj {
       const node2 = this.parseCompare();
       // create an Is node using the next node and the info from our Is node.
       node = new nodes.Is(node.lineno, node.colno, node, node2);
+      // Check for 'is error' to flag it for sequential path validation
+      const testName = node2.name ? node2.name.value : node2.value;
+      if (testName === 'error') {
+        // Enforce strict pure path: left node must be a sequential Symbol or chain of LookupVals ending in a Symbol
+        if (node.left.sequential) {
+          let n = node.left;
+          let isPurePath = true;
+          while (n.typename === 'LookupVal') {
+            n = n.target;
+          }
+          if (n.typename !== 'Symbol') {
+            isPurePath = false;
+          }
+
+          if (isPurePath) {
+            node.isSequenceErrorCheck = true;
+            // Also mark the Symbol and all LookupVals in the chain
+            n = node.left;
+            while (n) {
+              if (n.typename === 'LookupVal') {
+                n.isSequenceErrorCheck = true;
+                n = n.target;
+              } else if (n.typename === 'Symbol') {
+                n.isSequenceErrorCheck = true;
+                n = null; // Done
+              } else {
+                break;
+              }
+            }
+          }
+        }
+      }
       // if we have a Not, create a Not node from our Is node.
       if (not) {
         node = new nodes.Not(node.lineno, node.colno, node);
