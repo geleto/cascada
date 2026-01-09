@@ -367,18 +367,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
       }
     });
 
-    it('should throw error for undefined targets', async () => {
-      const script = `
-        :data
-        @data.undefined.toUpperCase()
-      `;
-      try {
-        await env.renderScriptString(script);
-        expect().fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.contain('Target for \'toUpperCase\' cannot be undefined or null');
-      }
-    });
+
   });
 
   describe('Number Methods', function () {

@@ -735,8 +735,6 @@ Here's a simple example of how it works:
 </tr>
 </table>
 
-Of course. Here is a more concise version:
-
 ---
 
 **Note:** Currently, `@data` commands can only be used on the left side of an expression to **write** data. Reading from `@data` on the right side is not yet supported, as the final data object is assembled *after* the main script logic runs.
@@ -752,6 +750,67 @@ Of course. Here is a more concise version:
 @data.user.alias = @data.user.name
 ```
 This functionality will be implemented in a future release.
+
+##### Implicit Initialization in `@data`
+
+The `@data` output handler automatically initializes **structural values** when assembling output. This allows data to be built declaratively without manual setup, while preventing silent type coercion for scalars.
+
+###### What `@data` Initializes Automatically
+
+Within the `@data` handler, missing paths are initialized on first **structural operation**:
+
+* **Objects (`{}`)**
+  Created on first property write or object operation (`merge`, `deepMerge`).
+
+  ```cascada
+  @data.user.name = "Alice"
+  @data.settings.merge({ theme: "dark" })
+  ```
+
+* **Arrays (`[]`)**
+  Created on first array operation.
+
+  ```cascada
+  @data.items.push("a")
+  ```
+
+* **Strings (`""`) — string operations only**
+  Created on first string-specific operation.
+
+  ```cascada
+  @data.log.append("Started\n")
+  @data.title += "!"
+  ```
+
+###### What `@data` Does *Not* Initialize
+
+Scalar values must be explicitly initialized before use:
+
+* **Numbers**
+
+  ```cascada
+  @data.count = 0
+  @data.count++
+  ```
+
+* **Booleans / logical values**
+
+  ```cascada
+  @data.ready = false
+  @data.ready ||= true
+  ```
+
+Attempting numeric or logical operations on an uninitialized `@data` path results in a runtime error.
+
+###### Summary
+
+| Type    | Auto-initialized by `@data` | Notes                  |
+| ------- | --------------------------- | ---------------------- |
+| Object  | Yes                         | Structural operations  |
+| Array   | Yes                         | Structural operations  |
+| String  | Yes                         | String operations only |
+| Number  | No                          | Must initialize        |
+| Boolean | No                          | Must initialize        |
 
 ##### `@data` Operations
 Below is a detailed list of all available commands and operators.

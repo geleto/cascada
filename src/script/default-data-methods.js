@@ -1,4 +1,37 @@
+// ------------------------------
+// Internal helpers (not exported)
+// ------------------------------
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function assertNonNullPlainObject(v, label, opName) {
+  if (v === undefined || v === null) {
+    throw new Error(`Error: ${label} for '${opName}' must be a non-null object.`);
+  }
+  if (!isPlainObject(v)) {
+    throw new Error(`Error: ${label} for '${opName}' must be a plain object.`);
+  }
+}
+
+function deepClone(v) {
+  if (Array.isArray(v)) {
+    return v.map((x) => deepClone(x));
+  }
+  if (isPlainObject(v)) {
+    const out = {};
+    for (const k in v) {
+      if (Object.prototype.hasOwnProperty.call(v, k)) {
+        out[k] = deepClone(v[k]);
+      }
+    }
+    return out;
+  }
+  return v;
+}
+
 module.exports = {
+
   /**
    * Appends an element to an array. This is an in-place mutation.
    * Corresponds to the Cascada command: `@push path value`
@@ -26,15 +59,22 @@ module.exports = {
    * @param {Object} value The source object whose properties will be merged.
    */
   merge: function (target, value) {
+    // Validate source first (even if target doesn't exist yet)
+    assertNonNullPlainObject(value, 'Value', 'merge');
+
+    // Auto-initialize missing target to a new object
     if (target === undefined) {
-      return value;
+      // Avoid aliasing the caller's object by returning a shallow clone
+      return Object.assign({}, value);
     }
-    if (typeof target === 'object' && target !== null && !Array.isArray(target) && typeof value === 'object' && value !== null) {
+    if (target === null) {
+      throw new Error('Error: Target for \'merge\' cannot be null.');
+    }
+    if (isPlainObject(target)) {
       Object.assign(target, value);
       return target;
-    } else {
-      throw new Error('Error: Both target and value for \'merge\' must be non-null objects.');
     }
+    throw new Error('Error: Target for \'merge\' must be a non-null plain object.');
   },
 
   /**
@@ -48,38 +88,30 @@ module.exports = {
    * @param {Object} value The source object whose properties will be merged.
    */
   deepMerge: function (target, value) {
-    if (target === undefined) {
-      return value;
-    }
-    const isObject = (item) => {
-      return (item && typeof item === 'object' && !Array.isArray(item));
-    };
+    // Validate source first
+    assertNonNullPlainObject(value, 'Value', 'deepMerge');
 
-    if (!value) {
-      throw new Error('Error: Value for \'deepMerge\' must be a non-null object.');
+    // Auto-initialize missing target to a new object
+    if (target === undefined) {
+      return deepClone(value);
     }
-    if (!isObject(value)) {
-      throw new Error(`Error: Value for \'deepMerge\' can not be ${typeof value}.`);
+    if (target === null) {
+      throw new Error('Error: Target for \'deepMerge\' cannot be null.');
     }
-    if (!isObject(target)) {
-      throw new Error(`Error: Target for \'deepMerge\' can not be ${typeof target}.`);
+    if (!isPlainObject(target)) {
+      throw new Error(`Error: Target for \'deepMerge\' must be a non-null plain object.`);
     }
 
     for (const key in value) {
-      // We only want to merge own properties from the source
-      if (Object.prototype.hasOwnProperty.call(value, key)) {
-        const targetValue = target[key];
-        const sourceValue = value[key];
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      const targetValue = target[key];
+      const sourceValue = value[key];
 
-        // If both the target and source values for this key are objects, recurse
-        if (isObject(targetValue) && isObject(sourceValue)) {
-          // 'this' refers to the module.exports object, allowing the recursive call
-          this.deepMerge(targetValue, sourceValue);
-        } else {
-          // Otherwise, just assign the source value to the target.
-          // This will overwrite primitives or arrays, or set new properties.
-          target[key] = sourceValue;
-        }
+      if (isPlainObject(targetValue) && isPlainObject(sourceValue)) {
+        this.deepMerge(targetValue, sourceValue);
+      } else {
+        // Overwrite primitives/arrays; clone objects to avoid aliasing
+        target[key] = deepClone(sourceValue);
       }
     }
     return target;
@@ -504,8 +536,11 @@ module.exports = {
    * @returns {string} The uppercase string.
    */
   toUpperCase: function (target) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'toUpperCase\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'toUpperCase\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.toUpperCase();
@@ -522,8 +557,11 @@ module.exports = {
    * @returns {string} The lowercase string.
    */
   toLowerCase: function (target) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'toLowerCase\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'toLowerCase\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.toLowerCase();
@@ -542,8 +580,11 @@ module.exports = {
    * @returns {string} The sliced string.
    */
   slice: function (target, start, end) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'slice\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'slice\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.slice(Number(start), end !== undefined ? Number(end) : undefined);
@@ -562,8 +603,11 @@ module.exports = {
    * @returns {string} The substring.
    */
   substring: function (target, start, end) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'substring\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'substring\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.substring(Number(start), end !== undefined ? Number(end) : undefined);
@@ -582,8 +626,11 @@ module.exports = {
    * @returns {string} The trimmed string.
    */
   trim: function (target) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'trim\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'trim\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.trim();
@@ -600,8 +647,11 @@ module.exports = {
    * @returns {string} The string with leading whitespace removed.
    */
   trimStart: function (target) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'trimStart\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'trimStart\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.trimStart();
@@ -618,8 +668,11 @@ module.exports = {
    * @returns {string} The string with trailing whitespace removed.
    */
   trimEnd: function (target) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'trimEnd\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'trimEnd\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.trimEnd();
@@ -638,8 +691,11 @@ module.exports = {
    * @returns {string} The string with the replacement.
    */
   replace: function (target, searchValue, replaceValue) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'replace\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'replace\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.replace(String(searchValue), String(replaceValue));
@@ -658,8 +714,11 @@ module.exports = {
    * @returns {string} The string with all replacements.
    */
   replaceAll: function (target, searchValue, replaceValue) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'replaceAll\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'replaceAll\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.replaceAll(String(searchValue), String(replaceValue));
@@ -677,8 +736,11 @@ module.exports = {
    * @returns {Array<string>} The array of substrings.
    */
   split: function (target, separator) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'split\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'split\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.split(separator !== undefined ? String(separator) : undefined);
@@ -696,8 +758,11 @@ module.exports = {
    * @returns {string} The character at the specified index.
    */
   charAt: function (target, index) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'charAt\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'charAt\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.charAt(Number(index));
@@ -715,8 +780,11 @@ module.exports = {
    * @returns {string} The repeated string.
    */
   repeat: function (target, count) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'repeat\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = '';
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'repeat\' cannot be null.');
     }
     if (typeof target === 'string') {
       return target.repeat(Number(count));
@@ -736,8 +804,11 @@ module.exports = {
    * @returns {any} The element at the specified index.
    */
   at: function (target, index) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'at\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = [];
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'at\' cannot be null.');
     }
     if (Array.isArray(target)) {
       return target.at(Number(index));
@@ -756,8 +827,11 @@ module.exports = {
    * @returns {Array<any>} The sorted array.
    */
   sort: function (target) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'sort\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = [];
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'sort\' cannot be null.');
     }
     if (Array.isArray(target)) {
       target.sort();
@@ -776,8 +850,11 @@ module.exports = {
    * @returns {Array<any>} The sorted array.
    */
   sortWith: function (target, compareFunction) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'sortWith\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = [];
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'sortWith\' cannot be null.');
     }
     if (Array.isArray(target)) {
       target.sort(compareFunction);
@@ -799,8 +876,11 @@ module.exports = {
    * @returns {Array<any>} The sliced array.
    */
   arraySlice: function (target, start, end) {
-    if (target === undefined || target === null) {
-      throw new Error('Error: Target for \'arraySlice\' cannot be undefined or null.');
+    if (target === undefined) {
+      target = [];
+    }
+    if (target === null) {
+      throw new Error('Error: Target for \'arraySlice\' cannot be null.');
     }
     if (Array.isArray(target)) {
       return target.slice(Number(start), end !== undefined ? Number(end) : undefined);

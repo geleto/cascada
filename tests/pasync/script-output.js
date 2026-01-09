@@ -1553,14 +1553,14 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data with invalid data; focus', async () => {
         const script = `
-          :data;
+          :data_invalid
           @data.counter = 10
         `;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
         } catch (error) {
-          expect(error.message).to.contain(`Data output focus target not found: 'data;'`);
+          expect(error.message).to.contain(`Data output focus target not found: 'data_invalid'`);
         }
       });
 
