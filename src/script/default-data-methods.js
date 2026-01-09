@@ -6,7 +6,7 @@ module.exports = {
    * @param {Array<any>} target The array at the specified `path`.
    * @param {any} value The value to append to the array.
    */
-  push : function(target, value) {
+  push: function (target, value) {
     if (target === undefined) {
       target = [];
     }
@@ -25,7 +25,7 @@ module.exports = {
    * @param {Object} target The target object at the specified `path`.
    * @param {Object} value The source object whose properties will be merged.
    */
-  merge : function(target, value) {
+  merge: function (target, value) {
     if (target === undefined) {
       return value;
     }
@@ -47,7 +47,7 @@ module.exports = {
    * @param {Object} target The target object at the specified `path` that will be mutated.
    * @param {Object} value The source object whose properties will be merged.
    */
-  deepMerge : function(target, value) {
+  deepMerge: function (target, value) {
     if (target === undefined) {
       return value;
     }
@@ -92,7 +92,7 @@ module.exports = {
    *
    * @param {Array<any>} target The array at the specified `path`.
    */
-  pop : function(target) {
+  pop: function (target) {
     if (target === undefined) {
       return [];
     }
@@ -111,7 +111,7 @@ module.exports = {
    *
    * @param {Array<any>} target The array at the specified `path`.
    */
-  shift : function(target) {
+  shift: function (target) {
     if (target === undefined) {
       return [];
     }
@@ -130,7 +130,7 @@ module.exports = {
    * @param {Array<any>} target The array at the specified `path`.
    * @param {any} value The value to add to the beginning of the array.
    */
-  unshift : function(target, value) {
+  unshift: function (target, value) {
     if (target === undefined) {
       target = [];
     }
@@ -149,7 +149,7 @@ module.exports = {
    *
    * @param {Array<any>} target The array at the specified `path`.
    */
-  reverse : function(target) {
+  reverse: function (target) {
     if (target === undefined) {
       return [];
     }
@@ -170,7 +170,7 @@ module.exports = {
    * @param {Array<any>} target The array at the specified `path`.
    * @param {Array<any>|any} value The array or value to concatenate.
    */
-  concat : function(target, value) {
+  concat: function (target, value) {
     if (target === undefined) {
       target = [];
     }
@@ -192,7 +192,7 @@ module.exports = {
    * @param {Object | Array |string} value The source object to replace the target.
    * @returns {Object | Array | string} The target
    */
-  set : function(target, value) {
+  set: function (target, value) {
     return value;
   },
 
@@ -206,7 +206,7 @@ module.exports = {
    * @param {any} value The value to append or push.
    * @returns {string|undefined} The new concatenated string if the target was a string, otherwise just the target.
    */
-  text : function(target, value) {
+  text: function (target, value) {
     if (target === undefined) {
       target = '';
     }
@@ -228,7 +228,7 @@ module.exports = {
    * @param {any} value The value to append to the string.
    * @returns {string} The new concatenated string.
    */
-  append : function(target, value) {
+  append: function (target, value) {
     if (target === undefined) {
       target = '';
     }
@@ -248,7 +248,7 @@ module.exports = {
    * @param {any} value The value to add or append.
    * @returns {number|string} The result of the addition or concatenation.
    */
-  add : function(target, value) {
+  add: function (target, value) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'add\' cannot be undefined or null.');
     }
@@ -269,7 +269,7 @@ module.exports = {
    * @param {any} value The value to subtract from the target.
    * @returns {number} The result of the subtraction.
    */
-  subtract : function(target, value) {
+  subtract: function (target, value) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'subtract\' cannot be undefined or null.');
     }
@@ -287,7 +287,7 @@ module.exports = {
    * @param {number} target The number at the specified `path`.
    * @returns {number} The incremented value.
    */
-  increment : function(target) {
+  increment: function (target) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'increment\' cannot be undefined or null.');
     }
@@ -305,7 +305,7 @@ module.exports = {
    * @param {number} target The number at the specified `path`.
    * @returns {number} The decremented value.
    */
-  decrement : function(target) {
+  decrement: function (target) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'decrement\' cannot be undefined or null.');
     }
@@ -324,7 +324,7 @@ module.exports = {
    * @param {any} value The value to multiply by.
    * @returns {number} The result of the multiplication.
    */
-  multiply : function(target, value) {
+  multiply: function (target, value) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'multiply\' cannot be undefined or null.');
     }
@@ -343,7 +343,7 @@ module.exports = {
    * @param {any} value The value to divide by.
    * @returns {number} The result of the division.
    */
-  divide : function(target, value) {
+  divide: function (target, value) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'divide\' cannot be undefined or null.');
     }
@@ -359,6 +359,44 @@ module.exports = {
   },
 
   /**
+   * Returns the smaller of the target and the value.
+   * Corresponds to the Cascada command: `@min path value`
+   *
+   * @param {number} target The number at the specified `path`.
+   * @param {any} value The value to compare.
+   * @returns {number} The smaller value.
+   */
+  min: function (target, value) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'min\' cannot be undefined or null.');
+    }
+    if (typeof target === 'number') {
+      return Math.min(target, Number(value));
+    } else {
+      throw new Error('Error: Target for \'min\' must be a number.');
+    }
+  },
+
+  /**
+   * Returns the larger of the target and the value.
+   * Corresponds to the Cascada command: `@max path value`
+   *
+   * @param {number} target The number at the specified `path`.
+   * @param {any} value The value to compare.
+   * @returns {number} The larger value.
+   */
+  max: function (target, value) {
+    if (target === undefined || target === null) {
+      throw new Error('Error: Target for \'max\' cannot be undefined or null.');
+    }
+    if (typeof target === 'number') {
+      return Math.max(target, Number(value));
+    } else {
+      throw new Error('Error: Target for \'max\' must be a number.');
+    }
+  },
+
+  /**
    * Performs logical AND operation using JavaScript && operator.
    * Corresponds to the Cascada command: `@and path value`
    *
@@ -366,7 +404,7 @@ module.exports = {
    * @param {any} value The value to perform AND operation with.
    * @returns {any} The result of the logical AND operation.
    */
-  and : function(target, value) {
+  and: function (target, value) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'and\' cannot be undefined or null.');
     }
@@ -381,7 +419,7 @@ module.exports = {
    * @param {any} value The value to perform OR operation with.
    * @returns {any} The result of the logical OR operation.
    */
-  or : function(target, value) {
+  or: function (target, value) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'or\' cannot be undefined or null.');
     }
@@ -396,7 +434,7 @@ module.exports = {
    * @param {any} value The value to perform bitwise AND operation with.
    * @returns {number} The result of the bitwise AND operation.
    */
-  bitAnd : function(target, value) {
+  bitAnd: function (target, value) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'bitAnd\' cannot be undefined or null.');
     }
@@ -415,7 +453,7 @@ module.exports = {
    * @param {any} value The value to perform bitwise OR operation with.
    * @returns {number} The result of the bitwise OR operation.
    */
-  bitOr : function(target, value) {
+  bitOr: function (target, value) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'bitOr\' cannot be undefined or null.');
     }
@@ -433,7 +471,7 @@ module.exports = {
    * @param {number} target The number at the specified `path`.
    * @returns {number} The result of the bitwise NOT operation.
    */
-  bitNot : function(target) {
+  bitNot: function (target) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'bitNot\' cannot be undefined or null.');
     }
@@ -451,7 +489,7 @@ module.exports = {
    * @param {any} target The value at the specified `path`.
    * @returns {boolean} The result of the logical NOT operation.
    */
-  not : function(target) {
+  not: function (target) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'not\' cannot be undefined or null.');
     }
@@ -465,7 +503,7 @@ module.exports = {
    * @param {string} target The string at the specified `path`.
    * @returns {string} The uppercase string.
    */
-  toUpperCase : function(target) {
+  toUpperCase: function (target) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'toUpperCase\' cannot be undefined or null.');
     }
@@ -483,7 +521,7 @@ module.exports = {
    * @param {string} target The string at the specified `path`.
    * @returns {string} The lowercase string.
    */
-  toLowerCase : function(target) {
+  toLowerCase: function (target) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'toLowerCase\' cannot be undefined or null.');
     }
@@ -503,7 +541,7 @@ module.exports = {
    * @param {number} end The end index (optional).
    * @returns {string} The sliced string.
    */
-  slice : function(target, start, end) {
+  slice: function (target, start, end) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'slice\' cannot be undefined or null.');
     }
@@ -523,7 +561,7 @@ module.exports = {
    * @param {number} end The end index (optional).
    * @returns {string} The substring.
    */
-  substring : function(target, start, end) {
+  substring: function (target, start, end) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'substring\' cannot be undefined or null.');
     }
@@ -543,7 +581,7 @@ module.exports = {
    * @param {string} target The string at the specified `path`.
    * @returns {string} The trimmed string.
    */
-  trim : function(target) {
+  trim: function (target) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'trim\' cannot be undefined or null.');
     }
@@ -561,7 +599,7 @@ module.exports = {
    * @param {string} target The string at the specified `path`.
    * @returns {string} The string with leading whitespace removed.
    */
-  trimStart : function(target) {
+  trimStart: function (target) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'trimStart\' cannot be undefined or null.');
     }
@@ -579,7 +617,7 @@ module.exports = {
    * @param {string} target The string at the specified `path`.
    * @returns {string} The string with trailing whitespace removed.
    */
-  trimEnd : function(target) {
+  trimEnd: function (target) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'trimEnd\' cannot be undefined or null.');
     }
@@ -599,7 +637,7 @@ module.exports = {
    * @param {string} replaceValue The replacement string.
    * @returns {string} The string with the replacement.
    */
-  replace : function(target, searchValue, replaceValue) {
+  replace: function (target, searchValue, replaceValue) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'replace\' cannot be undefined or null.');
     }
@@ -619,7 +657,7 @@ module.exports = {
    * @param {string} replaceValue The replacement string.
    * @returns {string} The string with all replacements.
    */
-  replaceAll : function(target, searchValue, replaceValue) {
+  replaceAll: function (target, searchValue, replaceValue) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'replaceAll\' cannot be undefined or null.');
     }
@@ -638,7 +676,7 @@ module.exports = {
    * @param {string} separator The separator string (optional).
    * @returns {Array<string>} The array of substrings.
    */
-  split : function(target, separator) {
+  split: function (target, separator) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'split\' cannot be undefined or null.');
     }
@@ -657,7 +695,7 @@ module.exports = {
    * @param {number} index The character index.
    * @returns {string} The character at the specified index.
    */
-  charAt : function(target, index) {
+  charAt: function (target, index) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'charAt\' cannot be undefined or null.');
     }
@@ -676,7 +714,7 @@ module.exports = {
    * @param {number} count The number of times to repeat.
    * @returns {string} The repeated string.
    */
-  repeat : function(target, count) {
+  repeat: function (target, count) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'repeat\' cannot be undefined or null.');
     }
@@ -697,7 +735,7 @@ module.exports = {
    * @param {number} index The index of the element.
    * @returns {any} The element at the specified index.
    */
-  at : function(target, index) {
+  at: function (target, index) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'at\' cannot be undefined or null.');
     }
@@ -717,7 +755,7 @@ module.exports = {
    * @param {Array<any>} target The array at the specified `path`.
    * @returns {Array<any>} The sorted array.
    */
-  sort : function(target) {
+  sort: function (target) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'sort\' cannot be undefined or null.');
     }
@@ -737,7 +775,7 @@ module.exports = {
    * @param {Function} compareFunction The comparison function.
    * @returns {Array<any>} The sorted array.
    */
-  sortWith : function(target, compareFunction) {
+  sortWith: function (target, compareFunction) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'sortWith\' cannot be undefined or null.');
     }
@@ -760,7 +798,7 @@ module.exports = {
    * @param {number} end The end index (optional).
    * @returns {Array<any>} The sliced array.
    */
-  arraySlice : function(target, start, end) {
+  arraySlice: function (target, start, end) {
     if (target === undefined || target === null) {
       throw new Error('Error: Target for \'arraySlice\' cannot be undefined or null.');
     }
@@ -780,7 +818,7 @@ module.exports = {
    * @param {any} target The value at the specified `path` (ignored).
    * @returns {undefined} Always returns undefined.
    */
-  delete : function(target) {
+  delete: function (target) {
     return undefined;
   }
 };

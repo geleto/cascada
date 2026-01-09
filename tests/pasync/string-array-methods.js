@@ -19,7 +19,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
     env = new AsyncEnvironment();
   });
 
-  describe('Auto-initialization of sub-properties', function() {
+  describe('Auto-initialization of sub-properties', function () {
     it('should auto-initialize an array for push on an undefined path', async () => {
       const script = `
         :data
@@ -66,7 +66,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
   });
 
-  describe('Root @data Modification', function() {
+  describe('Root @data Modification', function () {
     it('should allow pushing to the root object after it is set to an array', async () => {
       const script = `
         :data
@@ -119,8 +119,8 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
   });
 
-  describe('String Methods', function() {
-    describe('Case Conversion', function() {
+  describe('String Methods', function () {
+    describe('Case Conversion', function () {
       it('should handle @data.toUpperCase', async () => {
         const script = `
           :data
@@ -146,7 +146,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
       });
     });
 
-    describe('String Extraction', function() {
+    describe('String Extraction', function () {
       it('should handle @data.slice', async () => {
         const script = `
           :data
@@ -172,7 +172,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
       });
     });
 
-    describe('String Trimming', function() {
+    describe('String Trimming', function () {
       it('should handle @data.trim', async () => {
         const script = `
           :data
@@ -210,7 +210,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
       });
     });
 
-    describe('String Replacement', function() {
+    describe('String Replacement', function () {
       it('should handle @data.replace', async () => {
         const script = `
           :data
@@ -236,7 +236,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
       });
     });
 
-    describe('String Splitting', function() {
+    describe('String Splitting', function () {
       it('should handle @data.split', async () => {
         const script = `
           :data
@@ -250,7 +250,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
       });
     });
 
-    describe('Character Access', function() {
+    describe('Character Access', function () {
       it('should handle @data.charAt', async () => {
         const script = `
           :data
@@ -264,7 +264,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
       });
     });
 
-    describe('String Repetition', function() {
+    describe('String Repetition', function () {
       it('should handle @data.repeat', async () => {
         const script = `
           :data
@@ -279,8 +279,8 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
   });
 
-  describe('Array Methods', function() {
-    describe('Array Access', function() {
+  describe('Array Methods', function () {
+    describe('Array Access', function () {
       it('should handle @data.at', async () => {
         const script = `
           :data
@@ -294,7 +294,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
       });
     });
 
-    describe('Array Sorting', function() {
+    describe('Array Sorting', function () {
       it('should handle @data.sort', async () => {
         const script = `
           :data
@@ -323,7 +323,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
       });
     });
 
-    describe('Array Slicing', function() {
+    describe('Array Slicing', function () {
       it('should handle @data.arraySlice', async () => {
         const script = `
           :data
@@ -338,7 +338,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
   });
 
-  describe('Error Handling', function() {
+  describe('Error Handling', function () {
     it('should throw error for string methods on non-strings', async () => {
       const script = `
         :data
@@ -381,7 +381,51 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
   });
 
-  describe('Complex Scenarios', function() {
+  describe('Number Methods', function () {
+    describe('Min/Max', function () {
+      it('should support min', async function () {
+        const script = `
+          :data
+          @data.val = 10
+          @data.val.min(5)
+        `;
+        const result = await env.renderScriptString(script, {});
+        expect(result.val).to.be(5);
+      });
+
+      it('should support min with larger value', async function () {
+        const script = `
+          :data
+          @data.val = 3
+          @data.val.min(5)
+        `;
+        const result = await env.renderScriptString(script, {});
+        expect(result.val).to.be(3);
+      });
+
+      it('should support max', async function () {
+        const script = `
+          :data
+          @data.val = 10
+          @data.val.max(20)
+        `;
+        const result = await env.renderScriptString(script, {});
+        expect(result.val).to.be(20);
+      });
+
+      it('should support max with smaller value', async function () {
+        const script = `
+          :data
+          @data.val = 100
+          @data.val.max(20)
+        `;
+        const result = await env.renderScriptString(script, {});
+        expect(result.val).to.be(100);
+      });
+    });
+  });
+
+  describe('Complex Scenarios', function () {
     it('should handle chained string and array methods', async () => {
       const script = `
         :data
