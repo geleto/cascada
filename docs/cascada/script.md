@@ -2582,7 +2582,7 @@ This roadmap outlines key features and enhancements that are planned or currentl
     Allowing the sequential execution operator `!` to be used directly on root-level function calls (e.g., `!.saveToDatabase(data)`), simplifying syntax for global functions with side effects.
 
 -   **Expanded Built-in `@data` Methods**
-    Adding comprehensive support for standard JavaScript array and string methods (e.g., `map`, `filter`, `slice`, `replace`, `min`, `max`) as first-class operations within the `@data` handler.
+    Adding comprehensive support for standard JavaScript array and string methods (e.g., `slice`, `replace`, `min`, `max`) as first-class operations within the `@data` handler.
 
 -   **Enhanced Error Reporting**
     Improving the debugging experience by providing detailed syntax and runtime error messages that include code snippets, file names, and line/column numbers to pinpoint issues quickly.
