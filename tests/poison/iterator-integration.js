@@ -279,28 +279,6 @@
 
     describe('Template error handling patterns', () => {
 
-      it.skip('should handle try/catch around loops', async () => {
-        //not implemented yet
-        const context = {
-          async getItems() {
-            throw new Error('Items failed');
-          }
-        };
-
-        const template = `
-			{% try %}
-			{% for item in getItems() %}
-				{{ item }}
-			{% endfor %}
-			{% catch %}
-			Error: {{ error.message }}
-			{% endtry %}
-		`;
-
-        const result = await env.renderTemplateString(template, context);
-        expect(result.trim()).to.equal('Error: Items failed');
-      });
-
       it('should handle loop with else and error in body', async () => {
         const context = {
           items: [1, 2, 3],

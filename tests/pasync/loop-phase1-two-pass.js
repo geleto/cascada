@@ -87,7 +87,7 @@
         `;
 
         // test body
-        const result = await env.renderScriptString(script, {items: [1, 2, 3]});
+        const result = await env.renderScriptString(script, { items: [1, 2, 3] });
         expect(result.sum).to.be(12);
         expect(result.body).to.be(14);
         expect(result.els).to.be(0);
@@ -95,7 +95,7 @@
         expect(result.els2).to.be(2);
 
         // test else
-        const result2 = await env.renderScriptString(script, {items: []});
+        const result2 = await env.renderScriptString(script, { items: [] });
         expect(result2.sum).to.be(100);
         expect(result2.body).to.be(0);
         expect(result2.els).to.be(50);
@@ -466,8 +466,7 @@
         expect(output.result).to.be(27000);
       });
 
-      // @todo - side-effect poisoning is not supported yet
-      it.skip('should handle for loop with nested while loop (Phase 3/5)', async () => {
+      it('should handle for loop with nested while loop (Phase 3/5)', async () => {
         const context = {
           outerItems: [1, 2],
           state: {

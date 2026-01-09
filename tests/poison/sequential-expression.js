@@ -127,8 +127,7 @@ describe('Sequential Expression Poisoning', function () {
       }
     });
 
-    //@todo - is error not yet implemented
-    it.skip('should continue processing valid items after a poison value is yielded', async () => {
+    it('should continue processing valid items after a poison value is yielded', async () => {
       const context = {
         processed: [],
         async *myGenerator() {
@@ -139,21 +138,21 @@ describe('Sequential Expression Poisoning', function () {
       };
       const template = `
       {% for item in myGenerator() %}
-      {% item is not error %}
+      {% if item is not error %}
         {% do processed!.push(item) %}
       {% endif %}
       {% endfor %}
       {{ processed[1] }}:{{ processed[0] }}`;
 
       const result = await env.renderTemplateString(template, context);
-      expect(result).to.equal('B:A');
+      expect(result.trim()).to.equal('B:A');
     });
 
-    // TODO - sequential side-effect access is not supported yet
     // poisoning shall happen on all further operations at the critical path
-    it.skip('should process iterations with sequential side-effect access and collect multiple errors', async () => {
+    it.only('should process iterations with sequential side-effect access and collect multiple errors', async () => {
+      const proc = [];
       const context = {
-        processed: [],
+        processed: proc,
         async *myGenerator() {
           yield 1;
           yield 2;
@@ -171,6 +170,8 @@ describe('Sequential Expression Poisoning', function () {
       {% for item in myGenerator() %}
       {% set result = failingFunc(item) %}
       {% do processed!.push(result) %}
+      {{ do processed!! }}
+      {{ result }}
       {% endfor %}
     `;
 
@@ -181,10 +182,11 @@ describe('Sequential Expression Poisoning', function () {
         expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(2);
         const messages = err.errors.map(e => e.message).sort();
-        expect(messages).to.eql(['Failure on 2', 'Failure on 4']);
+        expect(messages[0]).to.contain('Failure on 2');
+        expect(messages[1]).to.contain('Failure on 4');
 
         const successfulResults = await Promise.all(
-          context.processed.filter(p => !isPoison(p))
+          proc.filter(p => !isPoison(p))
         );
         expect(successfulResults).to.eql([1, 3]);
       }

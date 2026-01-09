@@ -510,6 +510,24 @@
           expect(e.message).to.contain('A fetch failed');
         }
       });
+
+      it('should verify explicit template logic recovery', async () => {
+        const template = `
+          {% set value = getValue() %}
+          {% if heal and value is error %}
+            {% set value = "fallback" %}
+          {% endif %}
+          {{ value }}
+        `;
+
+        const context = {
+          heal: true,
+          getValue: () => Promise.reject(new Error('Value fetch failed'))
+        };
+
+        let output = await env.renderTemplateString(template, context);
+        expect(output.trim()).to.equal('fallback');
+      });
     });
 
     describe('Loop soft error healing', () => {
@@ -583,15 +601,16 @@
     });
 
     // not implemented yet
-    describe.skip('@data Output Error Recovery', () => {
+    describe('@data Output Error Recovery', () => {
       const errorPromise = (msg) => Promise.reject(new Error(msg));
 
-      it('should recover from error in simple @data output assignment', async () => {
+      it('should recover from error in simple assignment', async () => {
         const script = `
-          {% set value = getValue() %}
-          {% if heal and value is error %}
-            {% set value = "fallback" %}
-          {% endif %}
+          :data
+          var value = getValue()
+          if heal and value is error
+            value = "fallback"
+          endif
           @data.result = value
         `;
 
@@ -616,10 +635,11 @@
 
       it('should recover from error in nested @data output assignment', async () => {
         const script = `
-          {% set user = getUser() %}
-          {% if heal and user is error %}
-            {% set user = {name: "Guest", id: 0} %}
-          {% endif %}
+          :data
+          var user = getUser()
+          if heal and user is error
+            user = {name: "Guest", id: 0}
+          endif
           @data.user.name = user.name
           @data.user.id = user.id
         `;
@@ -646,10 +666,11 @@
 
       it('should recover from error in @data output with computed expression', async () => {
         const script = `
-          {% set price = getPrice() %}
-          {% if heal and price is error %}
-            {% set price = 100 %}
-          {% endif %}
+          :data
+          var price = getPrice()
+          if heal and price is error
+            price = 100
+          endif
           @data.total = price * 1.2
           @data.currency = "USD"
         `;
@@ -676,10 +697,11 @@
 
       it('should recover from error in @data output with filter', async () => {
         const script = `
-          {% set text = getText() %}
-          {% if heal and text is error %}
-            {% set text = "default text" %}
-          {% endif %}
+          :data
+          var text = getText()
+          if heal and text is error
+            text = "default text"
+          endif
           @data.message = text | upper
         `;
 
@@ -704,13 +726,14 @@
 
       it('should recover from error in @data array output', async () => {
         const script = `
-          {% set items = getItems() %}
-          {% if heal and items is error %}
-            {% set items = ["item1", "item2"] %}
-          {% endif %}
-          {% for item in items %}
+          :data
+          var items = getItems()
+          if heal and items is error
+            items = ["item1", "item2"]
+          endif
+          for item in items
             @data.list.push(item)
-          {% endfor %}
+          endfor
         `;
 
         const context = {
@@ -720,7 +743,7 @@
 
         // Test with healing
         let data = await env.renderScriptString(script, context, { output: 'data' });
-        expect(data.list).to.deep.equal(['item1', 'item2']);
+        expect(data.list).to.eql(['item1', 'item2']);
 
         // Test without healing
         context.heal = false;
@@ -734,15 +757,12 @@
 
       it('should recover from error in @data output with object construction', async () => {
         const script = `
-          {% set config = getConfig() %}
-          {% if heal and config is error %}
-            {% set config = {theme: "light", lang: "en"} %}
-          {% endif %}
-          @data.settings = {
-            theme: config.theme,
-            language: config.lang,
-            version: "1.0"
-          }
+          :data
+          var config = getConfig()
+          if heal and config is error
+            config = {theme: "light", lang: "en"}
+          endif
+          @data.settings = { theme: config.theme, language: config.lang, version: "1.0" }
         `;
 
         const context = {
@@ -768,11 +788,12 @@
 
       it('should recover from error in multiple @data outputs with partial errors', async () => {
         const script = `
-          {% set validData = getValid() %}
-          {% set errorData = getError() %}
-          {% if heal and errorData is error %}
-            {% set errorData = "recovered" %}
-          {% endif %}
+          :data
+          var validData = getValid()
+          var errorData = getError()
+          if heal and errorData is error
+            errorData = "recovered"
+          endif
           @data.valid = validData
           @data.recovered = errorData
         `;
@@ -799,8 +820,7 @@
       });
     });
 
-    // not implemented yet
-    describe.skip('! Sequential Operator Error Recovery', () => {
+    describe('! Sequential Operator Error Recovery', () => {
       const errorPromise = (msg) => Promise.reject(new Error(msg));
       let callOrder;
 
@@ -810,27 +830,31 @@
 
       it('should recover from error in sequential operation chain', async () => {
         const script = `
-          {% set step1 = getStep1() %}
-          {% if heal and step1 is error %}
-            {% set step1 = "step1-fallback" %}
-          {% endif %}
-          {% set step2 = getStep2(step1) %}
+          :data
+          var step1 = ops!.getStep1()
+          ops!!
+          if heal and step1 is error
+            step1 = "step1-fallback"
+          endif
+          var step2 = ops!.getStep2(step1)
           @data.result = step2
         `;
 
         const context = {
           heal: true,
-          getStep1: () => errorPromise('Step 1 failed'),
-          getStep2: (val) => {
-            callOrder.push('step2');
-            return Promise.resolve(val + '-processed');
+          ops: {
+            getStep1: () => errorPromise('Step 1 failed'),
+            getStep2: (val) => {
+              callOrder.push('step2');
+              return Promise.resolve(val + '-processed');
+            }
           }
         };
 
         // Test with healing
         let data = await env.renderScriptString(script, context, { output: 'data' });
         expect(data.result).to.equal('step1-fallback-processed');
-        expect(callOrder).to.deep.equal(['step2']);
+        expect(callOrder).to.eql(['step2']);
 
         // Test without healing
         callOrder = [];
@@ -845,21 +869,25 @@
 
       it('should recover from error in sequential database writes', async () => {
         const script = `
-          {% set user = createUser() %}
-          {% if heal and user is error %}
-            {% set user = {id: 999, name: "FallbackUser"} %}
-          {% endif %}
-          {% set profile = createProfile(user.id) %}
+          :data
+          var user = db!.createUser()
+          if heal and user is error
+            user = {id: 999, name: "FallbackUser"}
+          endif
+          db!!
+          var profile = db!.createProfile(user.id)
           @data.user = user
           @data.profile = profile
         `;
 
         const context = {
           heal: true,
-          createUser: () => errorPromise('User creation failed'),
-          createProfile: (userId) => {
-            callOrder.push('profile');
-            return Promise.resolve({ userId, bio: 'Default bio' });
+          db: {
+            createUser: () => errorPromise('User creation failed'),
+            createProfile: (userId) => {
+              callOrder.push('profile');
+              return Promise.resolve({ userId, bio: 'Default bio' });
+            }
           }
         };
 
@@ -867,7 +895,7 @@
         let data = await env.renderScriptString(script, context, { output: 'data' });
         expect(data.user.id).to.equal(999);
         expect(data.profile.userId).to.equal(999);
-        expect(callOrder).to.deep.equal(['profile']);
+        expect(callOrder).to.eql(['profile']);
 
         // Test without healing
         callOrder = [];
@@ -882,32 +910,36 @@
 
       it('should recover from error in sequential API calls', async () => {
         const script = `
-          {% set token = authenticate() %}
-          {% if heal and token is error %}
-            {% set token = "fallback-token" %}
-          {% endif %}
-          {% set data = fetchData(token) %}
-          {% set processed = processData(data) %}
+          :data
+          var token = api!.authenticate()
+          if heal and token is error
+            token = "fallback-token"
+          endif
+          api!!
+          var data = api!.fetchData(token)
+          var processed = api!.processData(data)
           @data.result = processed
         `;
 
         const context = {
           heal: true,
-          authenticate: () => errorPromise('Auth failed'),
-          fetchData: (token) => {
-            callOrder.push('fetch');
-            return Promise.resolve({ token, value: 'data' });
-          },
-          processData: (data) => {
-            callOrder.push('process');
-            return Promise.resolve(data.value.toUpperCase());
+          api: {
+            authenticate: () => errorPromise('Auth failed'),
+            fetchData: (token) => {
+              callOrder.push('fetch');
+              return Promise.resolve({ token, value: 'data' });
+            },
+            processData: (data) => {
+              callOrder.push('process');
+              return Promise.resolve(data.value.toUpperCase());
+            }
           }
         };
 
         // Test with healing
         let data = await env.renderScriptString(script, context, { output: 'data' });
         expect(data.result).to.equal('DATA');
-        expect(callOrder).to.deep.equal(['fetch', 'process']);
+        expect(callOrder).to.eql(['fetch', 'process']);
 
         // Test without healing
         callOrder = [];
@@ -922,33 +954,37 @@
 
       it('should recover from error in middle of sequential chain', async () => {
         const script = `
-          {% set step1 = getStep1() %}
-          {% set step2 = getStep2() %}
-          {% if heal and step2 is error %}
-            {% set step2 = "step2-recovered" %}
-          {% endif %}
-          {% set step3 = getStep3(step1, step2) %}
+          :data
+          var step1 = ops!.getStep1()
+          var step2 = ops!.getStep2()
+          if heal and step2 is error
+            step2 = "step2-recovered"
+          endif
+          ops!!
+          var step3 = ops!.getStep3(step1, step2)
           @data.result = step3
         `;
 
         const context = {
           heal: true,
-          getStep1: () => {
-            callOrder.push('step1');
-            return Promise.resolve('step1-success');
-          },
-          getStep2: () => errorPromise('Step 2 failed'),
-          getStep3: (s1, s2) => {
-            callOrder.push('step3');
-            return Promise.resolve(s1 + '-' + s2);
+          ops: {
+            getStep1: () => {
+              callOrder.push('step1');
+              return Promise.resolve('step1-success');
+            },
+            getStep2: () => errorPromise('Step 2 failed'),
+            getStep3: (s1, s2) => {
+              callOrder.push('step3');
+              return Promise.resolve(s1 + '-' + s2);
+            }
           }
         };
 
         // Test with healing
         let data = await env.renderScriptString(script, context, { output: 'data' });
         expect(data.result).to.equal('step1-success-step2-recovered');
-        expect(callOrder).to.include('step1');
-        expect(callOrder).to.include('step3');
+        expect(callOrder).to.contain('step1');
+        expect(callOrder).to.contain('step3');
 
         // Test without healing
         callOrder = [];
@@ -963,28 +999,32 @@
 
       it('should recover from error in sequential loop iterations', async () => {
         const script = `
-          {% set items = getItems() %}
-          {% if heal and items is error %}
-            {% set items = [1, 2, 3] %}
-          {% endif %}
-          {% for item in items %}
-            {% set processed = processItem(item) %}
+          :data
+          var items = ops!.getItems()
+          if heal and items is error
+            items = [1, 2, 3]
+          endif
+          ops!!
+          for item in items
+            var processed = ops!.processItem(item)
             @data.results.push(processed)
-          {% endfor %}
+          endfor
         `;
 
         const context = {
           heal: true,
-          getItems: () => errorPromise('Items fetch failed'),
-          processItem: (item) => {
-            callOrder.push('process-' + item);
-            return Promise.resolve(item * 2);
+          ops: {
+            getItems: () => errorPromise('Items fetch failed'),
+            processItem: (item) => {
+              callOrder.push('process-' + item);
+              return Promise.resolve(item * 2);
+            }
           }
         };
 
         // Test with healing
         let data = await env.renderScriptString(script, context, { output: 'data' });
-        expect(data.results).to.deep.equal([2, 4, 6]);
+        expect(data.results).to.eql([2, 4, 6]);
         expect(callOrder.length).to.equal(3);
 
         // Test without healing
@@ -1000,35 +1040,40 @@
 
       it('should recover from error in conditional sequential operations', async () => {
         const script = `
-          {% set condition = checkCondition() %}
-          {% if heal and condition is error %}
-            {% set condition = true %}
-          {% endif %}
-          {% if condition %}
-            {% set result = executeTrue() %}
-          {% else %}
-            {% set result = executeFalse() %}
-          {% endif %}
+          :data
+          var condition = ops!.checkCondition()
+          if heal and condition is error
+            condition = true
+          endif
+          ops!!
+          var result
+          if condition
+            result = ops!.executeTrue()
+          else
+            result = ops!.executeFalse()
+          endif
           @data.result = result
         `;
 
         const context = {
           heal: true,
-          checkCondition: () => errorPromise('Condition check failed'),
-          executeTrue: () => {
-            callOrder.push('true');
-            return Promise.resolve('true-branch');
-          },
-          executeFalse: () => {
-            callOrder.push('false');
-            return Promise.resolve('false-branch');
+          ops: {
+            checkCondition: () => errorPromise('Condition check failed'),
+            executeTrue: () => {
+              callOrder.push('true');
+              return Promise.resolve('true-branch');
+            },
+            executeFalse: () => {
+              callOrder.push('false');
+              return Promise.resolve('false-branch');
+            }
           }
         };
 
         // Test with healing
         let data = await env.renderScriptString(script, context, { output: 'data' });
         expect(data.result).to.equal('true-branch');
-        expect(callOrder).to.deep.equal(['true']);
+        expect(callOrder).to.eql(['true']);
 
         // Test without healing
         callOrder = [];

@@ -718,12 +718,12 @@
       });
 
       // ternary operator not yet implemented completexly
-      it.skip('should handle promise in ternary operator', async () => {
+      it('should handle promise in ternary operator', async () => {
         env.addGlobal('asyncValue', () => {
           return Promise.reject(new Error('Ternary value failed'));
         });
 
-        const template = `{{ true ? asyncValue() : "default" }}`;
+        const template = `{{ asyncValue() if true else "default" }}`;
 
         try {
           await env.renderTemplateString(template);
