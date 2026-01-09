@@ -1321,4 +1321,43 @@ endblock`;
       expect(template).to.contain('{%- endblock -%}');
     });
   });
+  describe('Syntax Validation', () => {
+    it('should throw an error if a line ends with a semicolon', () => {
+      const script = 'var x = 1;';
+      try {
+        scriptTranspiler.scriptToTemplate(script);
+        expect().fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.contain('Semicolons are not allowed in Cascada Script');
+      }
+    });
+
+    it('should throw an error if a semicolon is in the middle of code', () => {
+      const script = 'var x = 1; + 2';
+      try {
+        scriptTranspiler.scriptToTemplate(script);
+        expect().fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.contain('Semicolons are not allowed in Cascada Script');
+      }
+    });
+
+    it('should NOT throw an error if semicolon is in a string', () => {
+      const script = 'var x = "value;"';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.contain('{%- var x = "value;" -%}');
+    });
+
+    it('should NOT throw an error if semicolon is in a string (middle)', () => {
+      const script = 'var x = "val;ue"';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.contain('{%- var x = "val;ue" -%}');
+    });
+
+    it('should NOT throw an error if semicolon is in a comment', () => {
+      const script = 'var x = 1 // comment;';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.contain('{%- var x = 1 -%}{#- comment; -#}');
+    });
+  });
 });

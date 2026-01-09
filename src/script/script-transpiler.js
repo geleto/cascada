@@ -930,6 +930,14 @@ class ScriptTranspiler {
 
     const firstWord = this._getFirstWord(parseResult.codeContent);
     const code = parseResult.codeContent.trim();
+
+    // Check for semicolons in CODE tokens
+    for (const token of parseResult.tokens) {
+      if (token.type === 'CODE' && token.value.includes(';')) {
+        throw new Error(`Semicolons are not allowed in Cascada Script: "${code}" at line ${lineIndex + 1}`);
+      }
+    }
+
     const isRevertLine = /^revert\s*(\(\s*\))?$/i.test(code);
 
     if (code.startsWith('@')) {
