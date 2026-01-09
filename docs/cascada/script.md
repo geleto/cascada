@@ -1369,10 +1369,11 @@ The "checkpoint" that `_revert()` restores to is the start of the nearest enclos
 @data.timestamp = now()
 
 // 2. This operation fails and poisons the @data handler
-@data.content = fetchContent()
+var content = fetchContent()
+@data.content = content
 
 // 3. Check if the handler is poisoned
-if @data is error
+if content is error
   // 4. Revert @data to the start of the script/scope
   // This removes 'timestamp' AND the error from 'fetchContent'
   @data._revert()   // Handler-specific reset
@@ -1430,20 +1431,6 @@ var msg = context.db!#message
 // ✅ CORRECT: Check first, then peek
 if context.db! is error
   var msg = context.db!#message  // Safe
-endif
-```
-
-The same applies to output handlers:
-
-```javascript
-@data.value = 42  // ✅ Success
-
-// ❌ WRONG: Returns poison
-var msg = @data#message
-
-// ✅ CORRECT: Check first
-if @data is error
-  var msg = @data#message
 endif
 ```
 
