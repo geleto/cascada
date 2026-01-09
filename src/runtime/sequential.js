@@ -118,7 +118,7 @@ function withSequenceLock(frame, lockKey, operation, errorContext = null, repair
           if (frame.lookup(lockKey) === lockPromise) {
             frame.set(lockKey, p, true);
           }
-          throw err;
+          return p;
         }
       );
 
