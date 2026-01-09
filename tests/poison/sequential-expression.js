@@ -149,7 +149,7 @@ describe('Sequential Expression Poisoning', function () {
     });
 
     // poisoning shall happen on all further operations at the critical path
-    it.only('should process iterations with sequential side-effect access and collect multiple errors', async () => {
+    it('should process iterations with sequential side-effect access and collect multiple errors', async () => {
       const proc = [];
       const context = {
         processed: proc,
@@ -170,7 +170,7 @@ describe('Sequential Expression Poisoning', function () {
       {% for item in myGenerator() %}
       {% set result = failingFunc(item) %}
       {% do processed!.push(result) %}
-      {{ do processed!! }}
+      {% do processed!! %}
       {{ result }}
       {% endfor %}
     `;
