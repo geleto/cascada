@@ -46,6 +46,7 @@ In short, Cascada lets developers **write clear, linear logic** while the engine
 - [Language Fundamentals](#language-fundamentals)
 - [Control Flow](#control-flow)
 - [Building Outputs Declaratively](#building-outputs-declaratively)
+- [Managing Side Effects: Sequential Execution](#managing-side-effects-sequential-execution)
 - [Error Handling](#error-handling)
 - [Macros and Reusability](#macros-and-reusability)
 - [Imports and Modules](#imports-and-modules)
@@ -408,7 +409,7 @@ You can iterate over various collection types:
 **Automatic Sequential Fallback**
 For safety, a `for` loop will automatically switch to **sequential execution** (waiting for one iteration to finish before starting the next) if you introduce dependencies between iterations. This happens if you:
 1.  **Modify a shared variable** (e.g., `total = total + 1`).
-2.  Use the sequential execution operator (`!`) on a function call inside the loop (see [Sequential Execution Control](#sequential-execution-control-)).
+2.  Use the sequential execution operator (`!`) on a function call inside the loop (see [Sequential Execution Control](#managing-side-effects-sequential-execution)).
 
 **The `else` block**
 A `for` loop can have an `else` block that is executed only if the collection is empty:
@@ -469,66 +470,6 @@ Use the following guidelines to determine if these properties are available:
 
 4.  **`while` Loops:**
     ❌ **Not Available.** Since a `while` loop runs until a condition changes, the total number of iterations is never known before all iterations are complete.
-
-### Sequential Execution Control (`!`)
-
-For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
-
-```javascript
-// The `!` on deposit() creates a
-// sequence for the 'account' path.
-var account = getBankAccount()
-
-//1. Set initial Deposit:
-account!.deposit(100)
-//2. Get updated status after initial deposit:
-account.getStatus()
-//3. Withdraw money after getStatus()
-account!.withdraw(50)
-```
-
-For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
-
-#### Context Requirement for Sequential Paths
-
-Sequential paths must reference objects from the context, not local variables.
-The JS context object:
-```javascript
-// Assuming 'db' is provided in the context object:
-const context = { db: connectToDatabase() };
-```
-The script:
-```javascript
-// ✅ CORRECT: Direct reference to context property
-db!.insert(data)
-
-// ❌ WRONG: Local variable copy
-var database = db
-database!.insert(data)  // Error: sequential paths must be from context
-```
-
-Nested access from context properties works fine:
-```javascript
-services.database!.insert(data)  // ✅ CORRECT (if 'services' is in context)
-```
-
-**Why this restriction?** The engine uses object identity from the context to guarantee sequential ordering. Copying context objects to local variables breaks this tracking, which is why it's not allowed.
-
-**Exception for macros:** When a macro uses `!` on a parameter, that argument must originate from the context when calling the macro:
-```javascript
-macro performWork(database)
-  database!.insert(data)
-endmacro
-
-// ✅ CORRECT: Pass context object
-performWork(db)  // 'db' is from context
-
-// ❌ WRONG: Pass local variable
-var myDb = db
-performWork(myDb)
-```
-
-The engine uses object identity from the context to guarantee sequential ordering. Copying to local variables breaks this guarantee, which is why the restriction exists.
 
 
 ## Building Outputs Declaratively with `@`
@@ -945,7 +886,69 @@ It is crucial to understand the difference between these two features, as they s
     *   **Timing:** It forces one async call to wait for another to finish *during* the main script evaluation, ensuring operations run as early as possible.
     *   **Nature:** It manages the real-time execution flow of asynchronous functions, and their results are immediately available to the next line of code.
 
-For details on the `!` operator, see [Sequential Execution Control](#sequential-execution-control-).
+For details on the `!` operator, see [Sequential Execution Control](#managing-side-effects-sequential-execution).
+
+
+## Managing Side Effects: Sequential Execution
+
+For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
+
+```javascript
+// The `!` on deposit() creates a
+// sequence for the 'account' path.
+var account = getBankAccount()
+
+//1. Set initial Deposit:
+account!.deposit(100)
+//2. Get updated status after initial deposit:
+account.getStatus()
+//3. Withdraw money after getStatus()
+account!.withdraw(50)
+```
+
+For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
+
+### Context Requirement for Sequential Paths
+
+Sequential paths must reference objects from the context, not local variables.
+The JS context object:
+```javascript
+// Assuming 'db' is provided in the context object:
+const context = { db: connectToDatabase() };
+```
+The script:
+```javascript
+// ✅ CORRECT: Direct reference to context property
+db!.insert(data)
+
+// ❌ WRONG: Local variable copy
+var database = db
+database!.insert(data)  // Error: sequential paths must be from context
+```
+
+Nested access from context properties works fine:
+```javascript
+services.database!.insert(data)  // ✅ CORRECT (if 'services' is in context)
+```
+
+**Why this restriction?** The engine uses object identity from the context to guarantee sequential ordering. Copying context objects to local variables breaks this tracking, which is why it's not allowed.
+
+**Exception for macros:** When a macro uses `!` on a parameter, that argument must originate from the context when calling the macro:
+```javascript
+macro performWork(database)
+  database!.insert(data)
+endmacro
+
+// ✅ CORRECT: Pass context object
+performWork(db)  // 'db' is from context
+
+// ❌ WRONG: Pass local variable
+var myDb = db
+performWork(myDb)
+```
+
+The engine uses object identity from the context to guarantee sequential ordering. Copying to local variables breaks this guarantee, which is why the restriction exists.
+
 
 ## Error Handling
 
@@ -1040,7 +1043,7 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   ```
 
 * **Sequential Side-Effect Paths:**
-  If a call in a sequential execution path (marked with `!`) fails, that path becomes **poisoned**. Any later operations using the same `!path` will instantly yield an Error Value without executing, preserving the sequential guarantee even in failure. For details on sequential execution, see [Sequential Execution Control](#sequential-execution-control-).
+  If a call in a sequential execution path (marked with `!`) fails, that path becomes **poisoned**. Any later operations using the same `!path` will instantly yield an Error Value without executing, preserving the sequential guarantee even in failure. For details on sequential execution, see [Sequential Execution Control](#managing-side-effects-sequential-execution).
 
   ```javascript
   context.database!.connect()      // ❌ fails
@@ -1534,7 +1537,7 @@ endcapture
 For a deeper dive into how the runtime tracks these buffers and boundaries, see `docs/code/output-revert.md`.
 #### Error Handling with Sequential Operations
 
-When using [sequential execution paths](#sequential-execution-control-) marked with `!`, error handling follows the same principles described above but respects the sequential guarantee.
+When using [sequential execution paths](#managing-side-effects-sequential-execution) marked with `!`, error handling follows the same principles described above but respects the sequential guarantee.
 
 ```javascript
 var db = context.db
