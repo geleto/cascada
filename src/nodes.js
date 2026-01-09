@@ -290,6 +290,10 @@ class Not extends UnaryOp {
   get typename() { return 'Not'; }
 }
 
+class PeekError extends UnaryOp {
+  get typename() { return 'PeekError'; }
+}
+
 class Add extends BinOp {
   get typename() { return 'Add'; }
 }
@@ -481,6 +485,7 @@ module.exports = {
   Or: Or,
   And: And,
   Not: Not,
+  PeekError: PeekError,
   Add: Add,
   Concat: Concat,
   Sub: Sub,

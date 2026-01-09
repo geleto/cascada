@@ -1087,6 +1087,19 @@ class Parser extends Obj {
           tok.colno,
           node,
           lookup);
+      } else if (tok.type === lexer.TOKEN_OPERATOR && tok.value === '#') {
+        // Handle # peek operator
+        this.nextToken();
+        node = new nodes.PeekError(tok.lineno, tok.colno, node);
+
+        // Check for shorthand property access (e.g. val#message)
+        // We only consume the symbol if it is NOT a keyword that would start another expression structure (like inline 'if')
+        const nextTok = this.peekToken();
+        if (nextTok.type === lexer.TOKEN_SYMBOL && nextTok.value !== 'if' && nextTok.value !== 'else') {
+          this.nextToken();
+          const peekLookup = new nodes.Literal(nextTok.lineno, nextTok.colno, nextTok.value);
+          node = new nodes.LookupVal(nextTok.lineno, nextTok.colno, node, peekLookup);
+        }
       } else if (tok.type === lexer.TOKEN_OPERATOR && (tok.value === '!' || tok.value === '!!')) {
         // Handle the ! and !! marker for sequencing
         const isRepair = tok.value === '!!';

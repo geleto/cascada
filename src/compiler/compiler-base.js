@@ -516,6 +516,12 @@ class CompilerBase extends Obj {
     return this._unaryOpEmitter(node, frame, '!');
   }
 
+  compilePeekError(node, frame) {
+    this.emit('runtime.peekError(');
+    this.compile(node.target, frame);
+    this.emit(')');
+  }
+
   compileFloorDiv(node, frame) {
     this._binFuncEmitter(node, frame, 'Math.floor', ' / ');
   }
@@ -903,6 +909,7 @@ class CompilerBase extends Obj {
       nodes.Pow,
       nodes.Neg,
       nodes.Pos,
+      nodes.PeekError,
       nodes.Compare,
       nodes.NodeList
     );

@@ -145,6 +145,7 @@ module.exports = {
   isPoisonError: errors.isPoisonError,
   collectErrors: errors.collectErrors,
   isError: errors.isError,
+  peekError: errors.peekError,
 
   resolveAll: resolve.resolveAll,
   resolveDuo: resolve.resolveDuo,

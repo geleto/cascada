@@ -461,6 +461,39 @@ function handleError(error, lineno, colno, errorContextString = null, path = nul
   }
 }
 
+/**
+ * Peeks inside a value (which might be a promise or a PoisonedValue)
+ * and returns the underlying PoisonError object if it is an error.
+ * If the value is healthy, returns a PoisonedValue (invalid peek).
+ *
+ * @param {any} value - The value to peek at
+ * @returns {Promise<PoisonError|PoisonedValue>|PoisonError|PoisonedValue}
+ */
+function peekError(value) {
+  // Sync check
+  if (isPoison(value)) {
+    return new PoisonError(value.errors);
+  }
+
+  // Promise check
+  if (value && typeof value.then === 'function') {
+    return value.then((result) => {
+      if (isPoison(result)) {
+        return new PoisonError(result.errors);
+      }
+      return createPoison(new Error('Peeking at a non-poisoned, healthy value.'));
+    }, (err) => {
+      if (isPoisonError(err)) {
+        return err;
+      }
+      return new PoisonError([err]);
+    });
+  }
+
+  // Healthy value - return poison
+  return createPoison(new Error('Peeking at a non-poisoned, healthy value.'));
+}
+
 module.exports = {
   PoisonedValue,
   PoisonError,
@@ -472,5 +505,6 @@ module.exports = {
   isPoisonError,
   isError,
   collectErrors,
-  handleError
+  handleError,
+  peekError
 };

@@ -3,7 +3,7 @@ const OPTIMIZE_ASYNC = true;//optimize async operations
 // these are nodes that may perform async operations even if their children do not
 const asyncOperationNodes = new Set([
   //expression nodes
-  'LookupVal', 'Symbol', 'FunCall', 'Filter', 'Caller', 'CallExtension', 'CallExtensionAsync', 'Is',
+  'LookupVal', 'Symbol', 'FunCall', 'Filter', 'Caller', 'CallExtension', 'CallExtensionAsync', 'Is', 'PeekError',
   //control nodes
   'Extends', 'Include', 'Import', 'FromImport', 'Super'
 ]);
