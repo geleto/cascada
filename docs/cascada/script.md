@@ -6,7 +6,7 @@
 
 [Cascada Github](https://github.com/geleto/cascada)
 
-## Cascada Script — Implicitly Parallel, Explicitly Sequential
+## Cascada Script  -  Implicitly Parallel, Explicitly Sequential
 
 **Cascada Script** is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a **data-orchestration layer** for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
 
@@ -14,11 +14,11 @@ It uses syntax and language constructs that are instantly familiar to Python and
 
 Cascada inverts the traditional async model:
 
-* ⚡ **Parallel by default** — Independent operations execute concurrently without `async`, `await`, or promise management.
-* 🚦 **Data-driven execution** — Code runs automatically when its input data becomes available, eliminating race conditions by design.
-* ➡️ **Explicit sequencing only when needed** — A simple marker (`!`) is used to enforce strict ordering for side-effectful operations, without reducing overall parallelism.
-* 📋 **Deterministic outputs** — Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
-* ☣️ **Errors are data** — Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated parallel work to continue safely.
+* ⚡ **Parallel by default**  -  Independent operations execute concurrently without `async`, `await`, or promise management.
+* 🚦 **Data-driven execution**  -  Code runs automatically when its input data becomes available, eliminating race conditions by design.
+* ➡️ **Explicit sequencing only when needed**  -  A simple marker (`!`) is used to enforce strict ordering for side-effectful operations, without reducing overall parallelism.
+* 📋 **Deterministic outputs**  -  Even though execution is concurrent and often out-of-order, Cascada guarantees that final outputs are assembled exactly as if the script ran sequentially.
+* ☣️ **Errors are data**  -  Failures propagate through the dataflow instead of throwing exceptions, allowing unrelated parallel work to continue safely.
 
 Cascada Script is particularly well suited for:
 
@@ -95,7 +95,7 @@ These features are planned for future releases, check out the [Development Statu
 
 ## Cascada's Execution Model
 
-Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts—it explains why the language behaves the way it does and how to leverage its parallel capabilities.
+Cascada's approach to concurrency inverts the traditional programming model. Understanding this execution model is essential to writing effective Cascada scripts - it explains why the language behaves the way it does and how to leverage its parallel capabilities.
 
 #### ⚡ Parallel by default
 Cascada Script is a scripting language for **JavaScript** and **TypeScript** applications, purpose-built for **effortless concurrency and asynchronous workflow orchestration**. It fundamentally inverts the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
@@ -344,12 +344,8 @@ else
 endif
 ```
 
-As described in [Error Handling](#error-handling), if the condition of an `if` statement evaluates to an error, both the `if` and `else` branches are skipped, and the error is propagated to any variables or outputs that would have been modified within them.
-
 ### Loops
 Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
-
-As described in [Error Handling](#error-handling), if a loop's iterable evaluates to an Error Value, the loop body is skipped and the error propagates to affected variables and outputs. See [Control Flow error handling](#control-flow) for details.
 
 ##### `for` Loops: Iterate Concurrently
 Use a `for` loop to iterate over arrays, dictionaries (objects), async iterators, and other iterable data structures. By default, the body of the `for` loop executes **in parallel for each item**, maximizing I/O throughput for independent operations.
@@ -476,13 +472,58 @@ Use the following guidelines to determine if these properties are available:
 
 2.  **Parallel Async Iterators:**
     ✅ **Available (Async).** When iterating over an async iterator in default parallel mode, Cascada resolves `loop.length` and `loop.last` only after the **iteration** (fetching all items) has finished.
-    *Note:* This does **not** block the execution of the loop bodies—they will still run concurrently as items arrive—but expressions dependent on `loop.length` will wait until the end of the stream to evaluate.
+    *Note:* This does **not** block the execution of the loop bodies - they will still run concurrently as items arrive - but expressions dependent on `loop.length` will wait until the end of the stream to evaluate.
 
 3.  **Sequential or Constrained Async Iterators:**
-    ❌ **Not Available.** When an async iterator is restricted—either by an explicit `each`, a concurrency limit (`of N`), or an [automatic sequential fallback](#automatic-sequential-fallback)—it behaves like a stream or a `while` loop. Cascada cannot see the end of the stream in advance, so `loop.length` and `loop.last` are undefined.
+    ❌ **Not Available.** When an async iterator is restricted - either by an explicit `each`, a concurrency limit (`of N`), or an [automatic sequential fallback](#automatic-sequential-fallback) - it behaves like a stream or a `while` loop. Cascada cannot see the end of the stream in advance, so `loop.length` and `loop.last` are undefined.
 
 4.  **`while` Loops:**
     ❌ **Not Available.** Since a `while` loop runs until a condition changes, the total number of iterations is never known before all iterations are complete.
+
+
+### Error handling and recovery with conditionals and loops
+
+When an Error Value affects a conditional or loop, Cascada ensures that corrupted data never silently produces incorrect results by propagating the error to any variables or outputs that would have been modified.
+
+#### Error handling with `if` statements
+
+If the condition of an `if` statement evaluates to an Error Value, both the `if` and `else` branches are skipped, and the error is propagated to any variables or outputs that would have been modified within either branch.
+
+```javascript
+var user = fetchUser(userId)  // May fail
+
+// If user is an Error Value, both branches are skipped
+// and any variables/outputs they modify become poisoned
+if user.role == "admin"
+  @data.accessLevel = "full"
+else
+  @data.accessLevel = "limited"
+endif
+
+// If user was an error, @data.accessLevel is now poisoned
+```
+
+This behavior is important to understand: it's not just that the code doesn't execute - any outputs or variables that would have been assigned in either the `if` or `else` branch become poisoned. This ensures you can detect downstream that something went wrong, rather than having undefined or stale values.
+
+#### Error handling with loops
+
+If a loop's iterable evaluates to an Error Value, the loop body is skipped and the error propagates to any variables or outputs that would have been modified by the loop.
+
+```javascript
+var posts = fetchPosts()  // May fail
+
+// If posts is an Error Value, loop body is skipped
+// and any variables/outputs it modifies become poisoned
+for post in posts
+  @data.titles.push(post.title)
+endfor
+
+// If posts was an error, @data.titles is now poisoned
+```
+
+Similar to conditionals, the loop doesn't just skip execution - any outputs or variables that the loop body would have modified become poisoned, ensuring error detection downstream.
+
+For details on detecting and recovering from errors in your scripts, see the [Error Handling](#error-handling) section.
 
 
 ## Building Outputs Declaratively with `@`
@@ -554,7 +595,7 @@ var userSettings = { notifications: true, theme: "light" }
 Instead of being executed immediately, `@` commands are stored in order and applied at the end of each **execution scope** (the main script, a [macro](#macros-and-reusable-components),or a [`capture` block](#block-assignment-with-capture)):
 
 1.  **Collect:** As your script runs, Cascada collects `@` commands into a buffer, preserving their source-code order.
-2.  **Execute:** All other logic—`var` assignments, `async` function calls, `for` loops—runs to completion. Independent async operations happen concurrently, maximizing performance.
+2.  **Execute:** All other logic - `var` assignments, `async` function calls, `for` loops - runs to completion. Independent async operations happen concurrently, maximizing performance.
 3.  **Assemble:** Once all other logic in the current scope has finished, Cascada dispatches the buffered `@` commands **sequentially** to their handlers to build the final result for that scope.
 
 This model is especially powerful for parallel operations, as shown below. The `for` loop dispatches all `fetchEmployeeDetails` calls in parallel. Only after they have *all* completed does the engine begin executing the buffered `@data.push` commands, using the data that was fetched.
@@ -610,13 +651,11 @@ Every `@` command is directed to an **output handler**. The handler determines w
 *   **`@text`**: The built-in handler for generating a simple string of text.
 *   **Custom Handlers**: You can define your own handlers for domain-specific tasks where a sequence of operations is important, such as drawing graphics (`@turtle.forward(50)`), logging, or writing to a database (`@db.users.insert(...)`).
 
-As described in [Error Handling](#error-handling), when an error is written to an output handler, the handler becomes "poisoned." You can use `guard` blocks or manually reset the handler using `_revert()` to manage this. For more information, see the sections on [Protecting State with `guard`](#protecting-state-with-guard) and [Manually Recovering Output Handlers](#manually-recovering-output-handlers-with-_revert).
-
 Handler methods are executed synchronously during the "Assemble" step. For asynchronous tasks, your handler can use internal buffering or other state management techniques to collect commands and dispatch them asynchronously.
 
 ### Understanding the Result Object
 
-Any block of logic—the entire script, a macro, or a `capture` block—produces a result object. The keys of this object correspond to the **names of the output handlers** used within that scope. After the "Assemble" phase, the engine populates this object using values from each handler.
+Any block of logic - the entire script, a macro, or a `capture` block - produces a result object. The keys of this object correspond to the **names of the output handlers** used within that scope. After the "Assemble" phase, the engine populates this object using values from each handler.
 
 For example, a scope that uses the `data`, `text`, and a [custom `turtle` handler](#creating-custom-output-command-handlers) will produce a result object like this:
 ```json
@@ -776,7 +815,7 @@ Within the `@data` handler, missing paths are initialized on first **structural 
   @data.items.push("a")
   ```
 
-* **Strings (`""`) — string operations only**
+* **Strings (`""`)  -  string operations only**
   Created on first string-specific operation.
 
   ```cascada
@@ -961,6 +1000,53 @@ It is crucial to understand the difference between these two features, as they s
 For details on the `!` operator, see [Sequential Execution Control](#managing-side-effects-sequential-execution).
 
 
+### Error handling and recovery with output handlers
+
+When an Error Value is written to an output handler (such as `@data` or `@text`), that handler becomes **poisoned**. This means the handler's final output will be an Error Value, which causes the capture block, macro, or script's render promise to be rejected.
+
+```javascript
+var user = fetchUser(userId)  // May fail
+
+// If user is an Error Value, this write poisons @data
+@data.userName = user.name
+
+// The script will now fail with a rejected promise
+```
+
+You can protect output handlers from poisoning and recover from errors using two mechanisms:
+
+#### Using `guard` blocks
+
+The `guard` block automatically protects output handlers within its scope. If any error occurs inside the guard, the handlers are automatically reverted to their state at the start of the guard block:
+
+```javascript
+guard
+  var payload = fetchData()  // May fail
+  @data.result = payload
+recover
+  @data.result = "fallback value"
+endguard
+```
+
+For details, see [Protecting State with `guard`](#protecting-state-with-guard).
+
+#### Using `_revert()`
+
+You can manually reset a handler using `@handler._revert()` or the `revert` statement:
+
+```javascript
+var content = fetchContent()  // May fail
+@data.page = content
+
+if content is error
+  @data._revert()  // Reset @data to its state before the assignment
+  @data.page = "Error loading content"
+endif
+```
+
+For details, see [Manually Recovering Output Handlers with `_revert()`](#manually-recovering-output-handlers-with-_revert).
+
+
 ## Managing Side Effects: Sequential Execution
 
 For functions with **side effects** (e.g., database writes), the `!` marker enforces a **sequential execution order** for a specific object path. Once a path is marked, *all* subsequent method calls on that path (even those without a `!`) will wait for the preceding operation to complete, while other independent operations continue to run in parallel.
@@ -1028,7 +1114,7 @@ The engine uses object identity from the context to guarantee sequential orderin
 
 Cascada's parallel-by-default execution creates a unique challenge: when multiple operations run concurrently and one fails, traditional exception-based error handling would need to interrupt the entire execution graph, halting all independent work. Also, there may already be code that executes after the try statement. Instead, Cascada treats **errors as just another type of data** that flows through your script. Failed operations produce a special **Error Value** that is stored in variables, passed to functions, and can be inspected.
 
-This data-centric model allows independent operations to continue running while failures are isolated to only the variables and operations that depend on the failed result. When an operation in one part of your script fails, it has no effect on unrelated parallel operations—they continue executing, maximizing throughput and resilience.
+This data-centric model allows independent operations to continue running while failures are isolated to only the variables and operations that depend on the failed result. When an operation in one part of your script fails, it has no effect on unrelated parallel operations - they continue executing, maximizing throughput and resilience.
 
 ### Error Handling Fundamentals
 
@@ -1059,7 +1145,7 @@ In this example, the failure of `fetchPosts()` only affects operations that depe
 
 #### The Core Mechanism: Error Propagation
 
-Once an Error Value is created, it automatically spreads to any dependent operation or variable—this process is known as **error propagation**, **dataflow poisoning**, or just **poisoning**. This ensures that corrupted data never silently produces incorrect results.
+Once an Error Value is created, it automatically spreads to any dependent operation or variable - this process is known as **error propagation**, **dataflow poisoning**, or just **poisoning**. This ensures that corrupted data never silently produces incorrect results.
 
 #### Data Operations
 
@@ -1412,7 +1498,7 @@ By default, a `guard` block (with no arguments) protects:
 
 2. **All Sequential Paths** (`!`)
    If a path (such as `db!`) becomes poisoned, it is automatically repaired using `!!`.
-   Note: Paths are hierarchical—guarding `api!` also guards `api.db!`, `api.connection!`, etc.
+   Note: Paths are hierarchical - guarding `api!` also guards `api.db!`, `api.connection!`, etc.
 
 **Variables are NOT protected by default.**
 This is a deliberate design choice to preserve parallel execution.
@@ -1644,8 +1730,6 @@ Macros implicitly return the structured object built by the [Output Commands](#t
 
 A macro can perform its own internal, parallel async operations and then assemble a return value.
 
-As described in [Error Handling](#error-handling), if an Error Value is passed as an argument to a macro, the macro is skipped and immediately returns the error.
-
 <table>
 <tr>
 <td width="50%" valign="top">
@@ -1753,7 +1837,7 @@ var userObject = buildUser("Alice")
 
 ### Dynamic Call Blocks (`call`)
 
-Think of a `call` block as a way to pass a "callback" to a macro—a chunk of logic that the macro can invoke at just the right moment. This pattern is incredibly powerful for creating wrapper components that need to process, decorate, or transform content you provide.
+Think of a `call` block as a way to pass a "callback" to a macro - a chunk of logic that the macro can invoke at just the right moment. This pattern is incredibly powerful for creating wrapper components that need to process, decorate, or transform content you provide.
 
 #### The Pattern: Wrapping Your Logic
 
@@ -1772,7 +1856,7 @@ endmacro
 // Call the macro with a callback block
 call wrapper("My Title")
   // This block is your "callback"
-  // It doesn't run immediately—it waits for the macro to invoke it
+  // It doesn't run immediately - it waits for the macro to invoke it
   @data.items.push(someValue)
   @text("Some content")
 endcall
@@ -1784,7 +1868,7 @@ Inside the macro, `caller()` is your handle to the wrapped content:
 
 *   **Invokes the block**: When the macro calls `caller()`, the wrapped code executes
 *   **Caller's context**: The block runs with access to variables from where the `call` was written, not the macro's internal scope
-*   **Returns the result**: `caller()` returns whatever the block produces—could be data, text, or both
+*   **Returns the result**: `caller()` returns whatever the block produces - could be data, text, or both
 
 #### Example: A Layout Wrapper
 
@@ -1823,7 +1907,7 @@ endcall
 
 #### Example: Data Processing Wrapper
 
-The pattern isn't limited to text—it works beautifully for data workflows too:
+The pattern isn't limited to text - it works beautifully for data workflows too:
 
 ```javascript
 macro withErrorHandling()
@@ -1873,6 +1957,13 @@ endcall
 - Implement conditional rendering based on the caller's logic
 - Process or transform a block of logic before including it in output
 - Any scenario where a macro needs to control *when* and *how* some logic executes
+
+
+### Error handling and recovery with macros
+
+When an Error Value is passed as an argument to a macro, the macro body is skipped entirely and the macro immediately returns a poisoned value.
+For comprehensive information on error handling, see the [Error Handling](#error-handling) section.
+
 
 ## Modular Scripts
 **Note:** This functionality is under active development. Currently you can not safely access mutable fariables from a parent script.
@@ -2614,7 +2705,7 @@ Cascada is a new project and is evolving quickly! This is exciting, but it also 
 ### Differences from classic Nunjucks
 
 - **Async templates & Cascada Script:** `if`, `for`/`each`/`while`, and `switch` branches run in their own scope, so `set`/`var` stay local unless you intentionally write to an outer variable. This avoids race conditions and keeps loops parallel.
-- **Sync templates (`asyncMode: false`):** No scope isolation—control-flow blocks share the parent frame exactly like Nunjucks.
+- **Sync templates (`asyncMode: false`):** No scope isolation - control-flow blocks share the parent frame exactly like Nunjucks.
 
 So: async builds get safer block-local semantics; fully synchronous templates keep the legacy behavior.
 
