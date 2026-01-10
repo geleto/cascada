@@ -927,11 +927,11 @@ These operators are shortcuts for common logical and bitwise operations.
 | Command | Description |
 |---|---|
 | `@data.path &&= value` | Performs a logical AND assignment (`target = target && value`). |
-| `@data.path ||= value` | Performs a logical OR assignment (`target = target || value`). |
+| `@data.path \|\|= value` | Performs a logical OR assignment (`target = target || value`). |
 | `@data.path &= value` | Performs a bitwise AND assignment. |
-| `@data.path |= value` | Performs a bitwise OR assignment. |
+| `@data.path \|= value` | Performs a bitwise OR assignment. |
 | `@data.path.not()` | Replaces the target with its logical NOT (`!target`). |
-| `@data.path.bitNot()`| Replaces the target number with its bitwise NOT (`~target`). |
+| `@data.path.bitNot()` | Replaces the target number with its bitwise NOT (`~target`). |
 
 ##### Handling `undefined` and `null` Targets
 The `@data` handler is designed to be robust but also safe. Its behavior with non-existent (`undefined`) or `null` targets depends on the type of operation:
@@ -2260,9 +2260,9 @@ All shortcut operators (`+=`, `++`, `&&=`, etc.) are mapped to underlying method
 | `@...++` | `increment(target)` |
 | `@...--` | `decrement(target)` |
 | `@... &&= value` | `and(target, value)` |
-| `@... ||= value` | `or(target, value)` |
+| `@... \|\|= value` | `or(target, value)` |
 | `@... &= value` | `bitAnd(target, value)` |
-| `@... |= value` | `bitOr(target, value)` |
+| `@... \|= value` | `bitOr(target, value)` |
 
 
 **Example: Adding a custom `@data.upsert` command.**
