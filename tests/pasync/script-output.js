@@ -762,6 +762,30 @@ describe('Cascada Script: Output commands', function () {
         }
       });
     });
+
+    it('should support capture in assignment to existing variables', async () => {
+      const script = `
+        :data
+
+        // 1. Declare variable
+        var capturedContent = "initial"
+
+        // 2. Assign using capture (must work on existing variable)
+        capturedContent = capture :data
+             @data.status = "updated"
+             @data.value = 123
+        endcapture
+
+        @data.result = capturedContent
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        result: {
+          status: `updated`,
+          value: 123
+        }
+      });
+    });
   });
 
   it('should allow input focusing in capture blocks', async () => {
