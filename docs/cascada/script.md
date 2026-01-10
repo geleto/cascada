@@ -344,6 +344,42 @@ else
 endif
 ```
 
+### Switch Statements
+```javascript
+switch expression
+case value1
+  // statements
+case value2
+  // statements
+default
+  // statements
+endswitch
+```
+
+Switch statements provide a clean way to handle multiple conditional branches based on a single expression. Each branch creates its own scope, similar to `if` statements.
+
+**Example:**
+```javascript
+var orderStatus = order.status
+
+switch orderStatus
+case "pending"
+  @data.nextStep = "process_payment"
+  @data.notification = "awaiting_payment"
+case "confirmed"
+  @data.nextStep = "prepare_shipment"
+  @data.notification = "order_confirmed"
+case "shipped"
+  @data.nextStep = "track_delivery"
+  @data.trackingUrl = getTrackingUrl(order.id)
+default
+  @data.nextStep = "review_order"
+  @data.notification = "unknown_status"
+endswitch
+```
+
+**Important:** Unlike many languages, Cascada's `switch` does not have fall-through behavior. Each `case` branch is independent and automatically breaks after execution. Variables declared within a `case` or `default` branch are scoped to that branch.
+
 ### Loops
 Cascada provides `for`, `while`, and `each` loops for iterating over collections and performing repeated actions, with powerful built-in support for asynchronous operations.
 
@@ -485,9 +521,9 @@ Use the following guidelines to determine if these properties are available:
 
 When an Error Value affects a conditional or loop, Cascada ensures that corrupted data never silently produces incorrect results by propagating the error to any variables or outputs that would have been modified.
 
-#### Error handling with `if` statements
+#### Error handling with `if` and `switch` statements
 
-If the condition of an `if` statement evaluates to an Error Value, both the `if` and `else` branches are skipped, and the error is propagated to any variables or outputs that would have been modified within either branch.
+If the condition of an `if` statement (or the expression of a `switch` statement) evaluates to an Error Value, all branches are skipped, and the error is propagated to any variables or outputs that would have been modified within any branch.
 
 ```javascript
 var user = fetchUser(userId)  // May fail
@@ -503,7 +539,9 @@ endif
 // If user was an error, @data.accessLevel is now poisoned
 ```
 
-This behavior is important to understand: it's not just that the code doesn't execute - any outputs or variables that would have been assigned in either the `if` or `else` branch become poisoned. This ensures you can detect downstream that something went wrong, rather than having undefined or stale values.
+This behavior is important to understand: it's not just that the code doesn't execute - any outputs or variables that would have been assigned in any of the branches (`if`/`else` or `case`/`default`) become poisoned. This ensures you can detect downstream that something went wrong, rather than having undefined or stale values.
+
+**Note:** `switch` statements behave identically - if the switch expression is an Error Value, all `case` and `default` branches are skipped and their outputs become poisoned.
 
 #### Error handling with loops
 
