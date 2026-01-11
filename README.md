@@ -5,8 +5,8 @@
 
 **Cascada** is a data-orchestration engine for JavaScript and TypeScript applications, designed to make complex asynchronous workflows clear and low-boilerplate. It comes in two flavors sharing the same powerful execution model:
 
-- **[Cascada Script](docs/cascada/script.md)** — A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls
-- **Cascada Template** — Template syntax with the same parallel execution capabilities for dynamic content generation
+- **[Cascada Script](https://geleto.github.io/cascada-script/)** — A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls
+- **[Cascada Template](docs/cascada/templating.md)** — Template syntax with the same parallel execution capabilities for dynamic content generation
 
 Both share the same core philosophy: **write clear, linear logic while the engine handles parallel execution, ordering guarantees, and error propagation automatically.**
 
@@ -28,7 +28,7 @@ Both share the same core philosophy: **write clear, linear logic while the engin
 
 **In short:** Cascada is a data-orchestration layer that handles the complexity of parallel async execution while you focus on business logic—whether you're building data structures with Script or generating dynamic content with Templates.
 
-The most **up-to-date and complete information** on the features of Cascada can be found in the **[Cascada Script Documentation](docs/cascada/script.md)**!
+The most **up-to-date and complete information** on the features of Cascada can be found in the **[Cascada Script Documentation](https://geleto.github.io/cascada-script/)**!
 
 ## Read First
 
@@ -43,7 +43,7 @@ The most **up-to-date and complete information** on the features of Cascada can 
 ## Overview
 
 ### ⚡ Parallel by default
-Cascada is a powerful engine for **JavaScript** and **TypeScript** applications, providing both a [scripting language](docs/cascada/script.md) and a [template syntax](docs/cascada/template.md). It is designed to dramatically simplify complex, asynchronous workflows by fundamentally inverting the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
+Cascada is a powerful engine for **JavaScript** and **TypeScript** applications, providing both a [scripting language](https://geleto.github.io/cascada-script/) and a [template syntax](docs/cascada/template.md). It is designed to dramatically simplify complex, asynchronous workflows by fundamentally inverting the traditional programming model: instead of being sequential by default, Cascada is **parallel by default**.
 
 ### 🚦 Data-Driven Flow: Code runs when its inputs are ready.
 The engine intelligently analyzes your code, automatically executing independent asynchronous operations - like API calls, LLM requests, and database queries - concurrently. It guarantees that **operations will wait for their required inputs** before executing, a smart orchestration that **eliminates race conditions by design** while delivering high performance without the complexity and boilerplate of manual async handling.
@@ -54,7 +54,7 @@ This "just works" approach means that while any variable can be a promise under 
 
 ### 🎭 One Engine, Two Modes
 This parallel-first philosophy is the foundation for both of its powerful modes:
-* 🚀   A purpose-built **[scripting language](docs/cascada/script.md)** for orchestrating complex data pipelines. Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable. It offers a complete toolset for sophisticated logic with `variable declarations`, `conditionals`, `loops,` and `standard operators`. Create reusable components with `macros` and build modular applications using `import` and `extends`.
+* 🚀   A purpose-built **[scripting language](https://geleto.github.io/cascada-script/)** for orchestrating complex data pipelines. Use it as the backbone for your data layer to compose complex workflows, wiring together LLMs, APIs, databases, and external services in parallel with maximum I/O throughput, all while keeping the logic clean and readable. It offers a complete toolset for sophisticated logic with `variable declarations`, `conditionals`, `loops,` and `standard operators`. Create reusable components with `macros` and build modular applications using `import` and `extends`.
 * 📜    A familiar **[template syntax](docs/cascada/template.md)** - Cascada is based on the popular [Nunjucks](https://mozilla.github.io/nunjucks/) template engine, for generating text-based output, ideal for dynamic websites, writing emails or crafting detailed LLM prompts.
 
 ### ➡️ Implicitly Parallel, Explicitly Sequential
@@ -719,9 +719,9 @@ console.log(JSON.stringify(result, null, 2));
 
 ## Further Reading
 
-- **Cascada Script Documentation:** [docs/cascada/script.md](docs/cascada/script.md)
+- **Cascada Script Documentation:** [https://geleto.github.io/cascada-script/](https://geleto.github.io/cascada-script/)
 - **Cascada Template Documentation:** [docs/cascada/template.md](docs/cascada/template.md)
 - **Nunjucks (Original Engine):** [https://mozilla.github.io/nunjucks/](https://mozilla.github.io/nunjucks/)
 
 ## Development Status and Roadmap
-See the roadmap section in the Cascada Script docsumentation: [docs/cascada/script.md#development-status-and-roadmap](docs/cascada/script.md#development-status-and-roadmap)
+See the roadmap section in the Cascada Script docsumentation: [https://geleto.github.io/cascada-script/#development-status-and-roadmap](https://geleto.github.io/cascada-script/#development-status-and-roadmap)
