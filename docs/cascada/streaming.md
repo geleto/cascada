@@ -5,7 +5,7 @@ This document details a future, not yet implemented feature of Cascada
 Cascada provides **streaming types** for producing ordered sequences of values or text under concurrent execution.
 
 Unlike `@text` and `@data`, **streams support iteration and index access**.
-Streams preserve **deterministic, source-order semantics** while allowing concurrent execution.
+Streams preserve **deterministic, source-order semantics** while allowing concurrent execution and out-of-order processing.
 
 Streams are available as:
 
@@ -306,6 +306,71 @@ Returns the item or `none` if out of range.
 
 ---
 
+## Stream Initialization
+
+Streams can be assigned at initialization from other streams or context object properties.
+
+Assigned streams are read-only and stream all items from the source. Unlike with variables, the assignment is not a snapshot - the stream remains connected to its source until the source completes.
+
+### From Another Stream
+
+<table>
+<tr>
+<th width="50%" valign="top">Stream Variable Assignment</th>
+<th width="50%" valign="top">Variable Assignment (Snapshot)</th>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+```javascript
+stream source
+source(1, 2, 3)
+
+stream dest = source
+// dest is read-only
+// streams continuously from source
+// waits for source to complete
+```
+
+</td>
+<td width="50%" valign="top">
+
+```javascript
+stream source
+source(1, 2, 3)
+
+var snapshot = source
+// snapshot captures items visible
+// at assignment point
+```
+
+</td>
+</tr>
+</table>
+
+**Stream assignment semantics:**
+* The assigned stream is **read-only**
+* **Does not snapshot** - streams all items from source
+* Remains connected to source until source completes
+
+**Variable assignment semantics:**
+* **Snapshots** the stream at assignment point
+* Captures only items visible at that moment in source order
+
+### From Context Object
+
+```javascript
+stream results = context.stream
+// read-only, continuous streaming
+
+var results = context.stream
+// identical behavior - read-only, continuous streaming
+```
+
+When initializing from the context object, `stream` and `var` behave identically - both create read-only streams that continuously reflect the source. Source-order visibility rules do not apply to context properties.
+
+---
+
 ### Iteration
 
 Iteration traverses the items visible at the start of the loop, in deterministic source order.
@@ -377,6 +442,71 @@ endfor
 </td>
 </tr>
 </table>
+
+---
+
+**Iteration semantics:**
+* Direct stream iteration waits for the stream to complete
+* All items are processed, even those emitted after the loop begins
+* To iterate only currently visible items, assign to a variable first
+
+<table>
+<tr>
+<th width="50%" valign="top">Full Iteration (Wait for Completion)</th>
+<th width="50%" valign="top">Snapshot Iteration (Current Items Only)</th>
+</tr>
+<tr>
+<td width="50%" valign="top">
+```javascript
+for item of @stream
+  // Processes all items
+  // Waits for stream completion
+  @text(item)
+endfor
+```
+
+</td>
+<td width="50%" valign="top">
+```javascript
+var snapshot = @stream
+for item of snapshot
+  // Processes only items
+  // visible at assignment
+  @text(item)
+endfor
+```
+
+</td>
+</tr>
+</table>
+
+---
+
+## Loop Object Properties
+
+During iteration, the `loop` object provides index-related properties:
+
+* `loop.index`: the current iteration of the loop (1-indexed)
+* `loop.index0`: the current iteration of the loop (0-indexed)
+* `loop.revindex`: number of iterations until the end (1-indexed)
+* `loop.revindex0`: number of iterations until the end (0-indexed)
+
+### With Nested Concurrent Contexts
+
+When iterating streams with nested concurrent contexts (e.g., parallel tasks each emitting independently), reading these properties **blocks until the position is determined**:
+
+```javascript
+for item of @stream
+  var idx = loop.index  // blocks until source-order position is known
+  var remaining = loop.revindex  // blocks until total count is determined
+  @text("Item #{idx}: #{item}")
+endfor
+```
+
+**Behavior:**
+* `loop.index` and `loop.index0` block until the item's source-order position is resolved
+* `loop.revindex` and `loop.revindex0` block until both the item's position and the total stream length are known
+* This ensures deterministic results while allowing concurrent execution
 
 ---
 
@@ -586,7 +716,7 @@ The same behavior applies when `:stream` or `:textStream` is used as the result 
 
 ## `guard`-ing streams
 
-Streams fully participate in Cascada’s transactional recovery model.
+Streams fully participate in Cascada's transactional recovery model.
 
 When a stream is written to inside a `guard`, **all emissions made within that guard are provisional**.
 
@@ -647,4 +777,105 @@ results(3)
 
 Conceptually, a `guard` creates a **temporary stream buffer** that is merged only if the guard succeeds.
 
+---
+
+## JavaScript Stream Integration
+
+Cascada streams can be consumed in JavaScript as async iterables, and JavaScript can create unordered streams for Cascada to consume.
+
+### Ordered Iteration
+
+```javascript
+for await (const chunk of result.textStream) {
+  console.log(chunk)
+}
+```
+
+Streams are iterated in source order, with each chunk delivered as it becomes available.
+
+---
+
+### Unordered Iteration with Index
+
+When streams are written asynchronously, chunks may become available out of order. Unordered iteration allows processing chunks as soon as they arrive:
+
+```javascript
+for await (const { chunk, index } of result.textStream.indexed()) {
+  console.log(`[${index}]: ${chunk}`)
+}
+```
+
+**Index semantics:**
+* When emissions occur sequentially in source code, `index` is a `number`
+* When emissions occur through nested concurrent contexts (e.g., parallel tasks each emitting independently), `index` is a `Promise<number>`
+* The index resolves once the chunk's source-order position is determined
+
+**When to use:**
+* Ordered iteration guarantees source-order delivery but may wait for slow chunks
+* Unordered iteration processes chunks immediately as they arrive, useful for incremental display or streaming output
+
+---
+
+### Creating Unordered Streams from JavaScript
+
+JavaScript code can create unordered streams for Cascada to consume using the `at()` function.
+
+#### Basic Usage
+
+```javascript
+async function* createUnorderedStream() {
+  yield at("world", 1)
+  yield at("Hello ", 0)
+  // Cascada reconstructs source order: "Hello world"
+}
+```
+
+#### Index Types
+
+<table>
+<tr>
+<th width="50%" valign="top">Sequential Emissions</th>
+<th width="50%" valign="top">Nested Concurrent Emissions</th>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+```javascript
+async function* linearStream() {
+  // Index is a number
+  yield at("A", 0)
+  yield at("B", 1)
+  yield at("C", 2)
+}
+```
+
+</td>
+<td width="50%" valign="top">
+
+```javascript
+async function* hierarchicalStream() {
+  // Index is a Promise<number>
+  const idx = determinePositionAsync()
+  yield at("data", idx)
+}
+```
+
+</td>
+</tr>
+</table>
+
+**Rules:**
+* `index` can be a `number` or `Promise<number>`
+* Cascada waits for all index promises to resolve before determining final order
+* Chunks are assembled in source-order regardless of arrival order
+
+#### Usage in Cascada
+
+```javascript
+textStream output = getInfoStream()
+// Items are processed as they arrive, output assembled in source order
+for chunk of output
+  @text(chunk)
+endfor
+```
 ---
