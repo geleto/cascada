@@ -44,6 +44,10 @@ function _setSinglePathSync(obj, key, value) {
   return newObj;
 }
 
+/*
+ * We are not using resolveAll because of the deep resolution.
+ * TODO - once the deep resolution is removed, use resolveAll.
+*/
 async function _setSinglePathAsync(objSyncOrPromise, keySyncOrPromise, valueSyncOrPromise) {
   // Resolve all inputs
   const errors = await collectErrors([objSyncOrPromise, keySyncOrPromise, valueSyncOrPromise]);
@@ -52,16 +56,6 @@ async function _setSinglePathAsync(objSyncOrPromise, keySyncOrPromise, valueSync
   }
 
   const [obj, key, value] = await Promise.all([objSyncOrPromise, keySyncOrPromise, valueSyncOrPromise]);
-
-  // Re-check for poison after resolution (if promises resolved to poison)
-  if (isPoison(obj) || isPoison(key) || isPoison(value)) {
-    const combinedErrors = [];
-    if (isPoison(obj)) combinedErrors.push(...obj.errors);
-    if (isPoison(key)) combinedErrors.push(...key.errors);
-    if (isPoison(value)) combinedErrors.push(...value.errors);
-    return createPoison(combinedErrors);
-  }
-
   return _setSinglePathSync(obj, key, value);
 }
 
@@ -80,17 +74,25 @@ function setPath(root, segments, value) {
     return value;
   }
 
-  // Sync check for poison before async fork
-  if (isPoison(root)) return root;
-  if (isPoison(segments)) return segments;
-
   const [head, ...tail] = segments;
 
-  if (isPoison(head)) return head;
+  // Collect sync errors
+  const errors = [];
+  if (isPoison(root)) errors.push(...root.errors);
+  if (isPoison(head)) errors.push(...head.errors);
+  if (isPoison(value)) errors.push(...value.errors);
 
-  if ((root && typeof root.then === 'function') ||
-    (head && typeof head.then === 'function') ||
-    isPoison(root) || isPoison(head)) {
+  const isRootAsync = root && typeof root.then === 'function' && !isPoison(root);
+  const isHeadAsync = head && typeof head.then === 'function' && !isPoison(head);
+  const isValueAsync = value && typeof value.then === 'function' && !isPoison(value);
+
+  // If strictly sync and we have errors: return combined poison immediately
+  if (errors.length > 0 && !isRootAsync && !isHeadAsync && !isValueAsync) {
+    return createPoison(errors);
+  }
+
+  // If async involved (or errors + async), go async
+  if (errors.length > 0 || isRootAsync || isHeadAsync || isValueAsync) {
     return _setPathAsync(root, head, tail, value);
   }
 
@@ -114,15 +116,15 @@ function setPath(root, segments, value) {
   return setSinglePath(root, key, newChild);
 }
 
-async function _setPathAsync(rootPromise, headPromise, tail, value) {
-  // Resolve root and head
-  const errors = await collectErrors([rootPromise, headPromise]);
+/*
+ * TODO - once the deep resolution is removed, use resolveAll.
+*/
+async function _setPathAsync(rootPromise, headPromise, tail, valuePromise) {
+  // Resolve root, head, and value
+  const errors = await collectErrors([rootPromise, headPromise, valuePromise]);
   if (errors.length > 0) return createPoison(errors);
 
-  const [root, head] = await Promise.all([rootPromise, headPromise]);
-
-  if (isPoison(root)) return root;
-  if (isPoison(head)) return head;
+  const [root, head, value] = await Promise.all([rootPromise, headPromise, valuePromise]);
 
   // Handle mid-path '[]' as access to last element
   let key = head;

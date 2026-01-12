@@ -393,5 +393,132 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         expect(e.message).to.contain('Cannot access property');
       }
     });
+    it('should collect multiple errors from sync inputs', () => {
+      const poison1 = createPoison(new Error('Error 1'));
+      const poison2 = createPoison(new Error('Error 2'));
+      // setPath(poison1, [poison2], 1)
+      const result = runtime.setPath(poison1, [poison2], 1);
+
+      expect(isPoison(result)).to.be(true);
+      expect(result.errors).to.have.length(2);
+      expect(result.errors[0].message).to.be('Error 1');
+      expect(result.errors[1].message).to.be('Error 2');
+    });
+
+    it('should collect multiple errors from async inputs', async () => {
+      const p1 = Promise.reject(new Error('Async Error 1'));
+      const p2 = Promise.reject(new Error('Async Error 2'));
+      p1.catch(() => { });
+      p2.catch(() => { });
+
+      const resultPromise = runtime.setPath(p1, [p2], 1);
+
+      try {
+        await resultPromise;
+        expect().fail('Should have rejected');
+      } catch (e) {
+        expect(isPoisonError(e)).to.be(true);
+        expect(e.errors).to.have.length(2);
+        const msgs = e.errors.map(err => err.message);
+        expect(msgs).to.contain('Async Error 1');
+        expect(msgs).to.contain('Async Error 2');
+      }
+    });
+
+    it('should collect errors from mixed sync poison and async rejection', async () => {
+      const poison = createPoison(new Error('Sync Error'));
+      const p = Promise.reject(new Error('Async Error'));
+      p.catch(() => { });
+
+      const resultPromise = runtime.setPath(poison, [p], 1);
+
+      try {
+        await resultPromise;
+        expect().fail('Should have rejected');
+      } catch (e) {
+        expect(isPoisonError(e)).to.be(true);
+        expect(e.errors).to.have.length(2);
+        const msgs = e.errors.map(err => err.message);
+        expect(msgs).to.contain('Sync Error');
+        expect(msgs).to.contain('Async Error');
+      }
+    });
+    it('should collect errors from both root and value (Sync Verify)', function () {
+      const error1 = new Error('Root Error');
+      const error2 = new Error('Value Error');
+      const root = createPoison(error1);
+      const value = createPoison(error2);
+
+      const result = runtime.setPath(root, ['prop'], value);
+
+      expect(isPoison(result)).to.be(true);
+      expect(result.errors).to.have.length(2);
+      expect(result.errors.map(e => e.message)).to.contain('Root Error');
+      expect(result.errors.map(e => e.message)).to.contain('Value Error');
+    });
+
+    it('should collect errors from both root and value (Async Root, Sync Value Verify)', async function () {
+      const error1 = new Error('Root Error');
+      const error2 = new Error('Value Error');
+      const rootPromise = Promise.resolve(createPoison(error1));
+      const value = createPoison(error2);
+
+      const result = runtime.setPath(rootPromise, ['prop'], value);
+
+      try {
+        await result;
+        throw new Error('Should have thrown PoisonError');
+      } catch (e) {
+        expect(isPoisonError(e)).to.be(true);
+        expect(e.errors).to.have.length(2);
+        expect(e.errors.map(err => err.message)).to.contain('Root Error');
+        expect(e.errors.map(err => err.message)).to.contain('Value Error');
+      }
+    });
+
+    it('should collect errors from both root and value (Sync Root, Async Value Verify)', async function () {
+      const error1 = new Error('Root Error');
+      const error2 = new Error('Value Error');
+      const root = createPoison(error1);
+      const valuePromise = Promise.resolve(createPoison(error2));
+
+      const result = runtime.setPath(root, ['prop'], valuePromise);
+
+      try {
+        await result;
+        throw new Error('Should have thrown PoisonError');
+      } catch (e) {
+        expect(isPoisonError(e)).to.be(true);
+        expect(e.errors).to.have.length(2);
+        expect(e.errors.map(err => err.message)).to.contain('Root Error');
+        expect(e.errors.map(err => err.message)).to.contain('Value Error');
+      }
+    });
+
+
+    it('should return value reference if segments is empty', () => {
+      const obj = { x: 1 };
+      const val = { y: 2 };
+      const result = runtime.setPath(obj, [], val);
+      expect(result).to.be(val);
+      expect(obj).to.eql({ x: 1 });
+    });
+
+    it('should throw error when accessing [] on empty array (sync)', () => {
+      const list = [];
+      expect(() => runtime.setPath(list, ['[]', 'prop'], 1)).to.throwError(/Cannot access last element/);
+    });
+
+    it('should return poison when accessing [] on empty array (async)', async () => {
+      const listPromise = Promise.resolve([]);
+      const resultPromise = runtime.setPath(listPromise, ['[]', 'prop'], 1);
+      try {
+        await resultPromise;
+        expect().fail('Should have rejected');
+      } catch (e) {
+        expect(e.message).to.contain('Cannot access last element');
+      }
+    });
+
   });
 });
