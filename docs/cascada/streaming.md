@@ -90,13 +90,13 @@ out("world")
 All streams in Cascada follow these rules:
 
 * **Source-order visibility**
-  Reads see only values emitted by source code at or before the read location.
+  Stream reads (including iteration, indexing, and helper methods) see only values emitted by source code at or before the read location. Values emitted later in the script are never visible at earlier read points.
 
   **Definition (source order):**
   Source order is defined as the order that would result from executing the script **sequentially, top to bottom**, including all nested scopes and loop iterations. Streams behave as if values were appended in that sequential order, even if work runs concurrently.
 
 * **Chronological freedom**
-  Earlier source code may execute later in real time. Reads wait automatically.
+  Earlier source code may execute later in real time. Reads wait automatically for their visible items to become available.
 
 * **Deterministic behavior**
   Streams behave exactly as if executed sequentially.
@@ -105,7 +105,7 @@ All streams in Cascada follow these rules:
   Stream contents cannot be modified or reordered.
 
 * **Visibility lifetime**
-  Stream items remain visible after the scope that emitted them, for the duration of the script. Only **variable-assigned snapshots** (see Iteration and Initialization) restrict visibility to “what is visible now”.
+  Stream items remain visible for the duration of the script. Once emitted, an item is visible to all reads that appear after it in source order.
 
 * **No mutation during iteration (compile-time error)**
   A stream must not be written to while it is being iterated.
@@ -177,6 +177,8 @@ Rules:
 
 The following operations apply identically to `@stream` and `stream`.
 
+All read operations respect source-order visibility: they see only items emitted at or before the read point in the script.
+
 ---
 
 ### `toArray()`
@@ -210,10 +212,10 @@ Returns all items visible at the read point (source-order bounded).
 
 ### `slice(start, end?)` — Stream
 
-Returns a **snapshot array** of items currently visible in the stream, restricted to the range `[start, end)`.
+Returns an array of items currently visible in the stream, restricted to the range `[start, end)`.
 
 * `slice()` **does not** return a stream.
-* The snapshot is taken at the read point, respecting source-order visibility.
+* The result respects source-order visibility.
 * Equivalent to slicing the result of `toArray()`.
 
 #### Semantics
@@ -287,7 +289,7 @@ var count = results.length
 </tr>
 </table>
 
-Returns the current known item count (non-blocking).
+Returns the count of items visible at the read point (source-order bounded).
 
 ---
 
@@ -316,7 +318,7 @@ var value = results[2]
 </tr>
 </table>
 
-Returns the item or `none` if out of range.
+Returns the item at the specified index, or `none` if the index is beyond the visible range.
 
 ---
 
@@ -324,75 +326,35 @@ Returns the item or `none` if out of range.
 
 Streams can be assigned at initialization from other streams or context object properties.
 
-Assigned streams are read-only and stream all items from the source. Unlike with variables, the assignment is not a snapshot - the stream remains connected to its source until the source’s final item is determined.
-
 ### From Another Stream
-
-<table>
-<tr>
-<th width="50%" valign="top">Stream Variable Assignment</th>
-<th width="50%" valign="top">Variable Assignment (Snapshot)</th>
-</tr>
-<tr>
-<td width="50%" valign="top">
 
 ```javascript
 stream source
 source(1, 2, 3)
 
 stream dest = source
-// dest is read-only
-// streams continuously from source
-// remains connected until the source's final item is determined
+// dest streams from source
+// respects source-order visibility
 ```
 
-</td>
-<td width="50%" valign="top">
+The assigned stream reads from its source according to source-order visibility rules.
+
+### From Context
 
 ```javascript
-stream source
-source(1, 2, 3)
-
-var snapshot = source
-// snapshot captures items visible
-// at assignment point
+// context.items is an async iterable
+stream contextStream = items
 ```
 
-</td>
-</tr>
-</table>
-
-**Stream assignment semantics:**
-
-* The assigned stream is **read-only**
-* **Does not snapshot** - streams all items from source
-* Remains connected until the source’s final item is determined
-
-**Variable assignment semantics:**
-
-* **Snapshots** the stream at assignment point
-* Captures only items visible at that moment in source order
-
-### From Context Object
-
-```javascript
-stream results = context.stream
-// read-only, continuous streaming
-
-var results = context.stream
-// identical behavior - read-only, continuous streaming
-```
-
-When initializing from the context object, `stream` and `var` behave identically - both create read-only streams that continuously reflect the source. Source-order visibility rules do not apply to context properties (the stream is external), but index ordering remains deterministic.
+When a stream is initialized from a context property, it consumes the async iterable according to source-order visibility.
 
 ---
 
-### Iteration
+## Iteration
 
 Direct iteration traverses stream items in deterministic source order.
 
-* Iterating a **live stream** (an output stream, or a stream variable not created by snapshot assignment) ranges over **all items in the stream**, including items emitted “later” in real time. The iterator waits as needed until the stream’s final item is determined.
-* To iterate only the items visible at a specific point in the script, create a **snapshot** by assigning the stream to a `var` first.
+Iteration sees only items visible at the iteration statement's position in the script, waiting as needed for those items to become available.
 
 <table>
 <tr>
@@ -403,140 +365,75 @@ Direct iteration traverses stream items in deterministic source order.
 <td width="50%" valign="top">
 
 ```javascript
-for item of @stream
-  @text(item)
+@stream(1)
+@stream(2)
+
+for x of @stream
+  @text(x)
 endfor
+
+@stream(3)
 ```
 
 </td>
 <td width="50%" valign="top">
 
 ```javascript
-stream results = getResults()
-for item of results
-  @text(item)
+stream results
+
+results(1)
+results(2)
+
+for x of results
+  @text(x)
 endfor
+
+results(3)
 ```
 
 </td>
 </tr>
 </table>
 
-The loop processes each element in order, as if the stream were a regular sequence.
+In both examples, the loop iterates over `[1, 2]`. The value `3` is added after the iteration statement in source order and is therefore not visible to the loop.
 
 **Concurrency note:**
-The loop body is **not executed sequentially**. Each element is processed **as soon as it becomes available**, and different iterations may run concurrently. Despite this, the **observable results are equivalent to sequential execution**: iteration order, visibility, and final output remain deterministic.
+The loop body is **not executed sequentially**. Each item is processed **as soon as it becomes available**, and different iterations may run concurrently. Despite this, the **observable results are equivalent to sequential execution**: iteration order, visibility, and final output remain deterministic.
 
 > **Restriction (compile-time error)**
 > A stream must not be written to while it is being iterated.
 
-<table>
-<tr>
-<th width="50%" valign="top">Invalid (Mutation During Iteration)</th>
-<th width="50%" valign="top">Correct Pattern</th>
-</tr>
-<tr>
-<td width="50%" valign="top">
+---
+
+### Example: Source-Order Prevents Circular Dependencies
 
 ```javascript
-@stream(1, 2, 3)
+stream results
+results(1)
+results(2)
 
-for item of @stream
-  // ❌ DO NOT mutate the iterated stream
-  @stream(item * 10)
+// toArray() sees only items at or before this source position: [1, 2]
+var allItems = results.toArray()
+
+// This addition occurs AFTER the toArray() in source order
+// No circular dependency
+results(allItems.length)  // Adds 2
+
+// Later iteration sees [1, 2, 2]
+for x of results
+  @text(x)
 endfor
 ```
-
-</td>
-<td width="50%" valign="top">
-
-```javascript
-@stream(1, 2, 3)
-
-for item of @stream
-  // ✅ OK: write to a different stream
-  @text(item)
-endfor
-```
-
-</td>
-</tr>
-</table>
 
 ---
 
-**Iteration semantics:**
+## `:textStream`/`@textStream` — Output Text Streams
 
-* Direct stream iteration waits until the stream’s **final item is determined**
-* All items are processed, including those emitted “later” in real time
-* To iterate only currently visible items, assign to a variable first
+Text streams are **output streams** for text concatenation with chunk-level visibility.
 
-<table>
-<tr>
-<th width="50%" valign="top">Full Iteration (To End of Stream)</th>
-<th width="50%" valign="top">Snapshot Iteration (Current Items Only)</th>
-</tr>
-<tr>
-<td width="50%" valign="top">
-```javascript
-for item of @stream
-  // Processes all items
-  // Waits until the final item is determined
-  @text(item)
-endfor
-```
+The default output text stream is accessed via `@textStream` and has result type `:textStream`.
 
-</td>
-<td width="50%" valign="top">
-```javascript
-var snapshot = @stream
-for item of snapshot
-  // Processes only items
-  // visible at assignment
-  @text(item)
-endfor
-```
-
-</td>
-</tr>
-</table>
-
----
-
-## Loop Object Properties
-
-During iteration, the `loop` object provides index-related properties:
-
-* `loop.index`: the current iteration of the loop (1-indexed)
-* `loop.index0`: the current iteration of the loop (0-indexed)
-* `loop.revindex`: number of iterations until the end (1-indexed)
-* `loop.revindex0`: number of iterations until the end (0-indexed)
-
-### With Nested Concurrent Contexts
-
-When iterating streams with nested concurrent contexts (e.g., parallel tasks each emitting independently), reading these properties **blocks until the position is determined**:
-
-```javascript
-for item of @stream
-  var idx = loop.index  // blocks until source-order position is known
-  var remaining = loop.revindex  // blocks until total count is determined
-  @text("Item #{idx}: #{item}")
-endfor
-```
-
-**Behavior:**
-
-* `loop.index` and `loop.index0` block until the item's source-order position is resolved
-* `loop.revindex` and `loop.revindex0` block until both the item's position and the total stream length are known
-* This ensures deterministic results while allowing concurrent execution
-
----
-
-## `:textStream`/`@textStream` — Text Streams
-
-Text streams represent incrementally produced text assembled into a final string.
-
-Like item streams, text streams support iteration and index access.
+Text streams follow the same source-order visibility rules as item streams.
 
 ---
 
@@ -573,6 +470,8 @@ output("Cascada")
 
 ## Reading & Helpers (Text)
 
+All read operations respect source-order visibility: they see only chunks emitted at or before the read point in the script.
+
 ---
 
 ### `toString()`
@@ -600,11 +499,13 @@ output("Cascada")
 </tr>
 </table>
 
+Returns the concatenation of all text chunks visible at the read point.
+
 ---
 
 ### `slice(start, end?)` — Text Stream
 
-Returns a **snapshot string** of text currently visible in the text stream, restricted to the range `[start, end)`.
+Returns a substring of text currently visible in the text stream, restricted to the range `[start, end)`.
 
 * `slice()` **does not** return a text stream.
 * Operates on the concatenated visible text.
@@ -614,7 +515,7 @@ Returns a **snapshot string** of text currently visible in the text stream, rest
 
 * `@textStream.slice(start, end?) → string`
 * Does **not** affect the text stream.
-* Snapshot is taken at the read point.
+* Respects source-order visibility.
 * `@textStream.toString()` is equivalent to slicing the full visible text.
 
 #### Examples
@@ -658,8 +559,7 @@ var u = ts.slice(8)
 
 Direct iteration traverses text chunks in deterministic source order.
 
-* Iterating a **live text stream** ranges over **all emitted chunks**, waiting as needed until the stream’s final chunk is determined.
-* To iterate only currently visible chunks, snapshot by assigning to a `var` first.
+Iteration sees only chunks visible at the iteration statement's position in the script, waiting as needed for those chunks to become available.
 
 <table>
 <tr>
@@ -670,23 +570,37 @@ Direct iteration traverses text chunks in deterministic source order.
 <td width="50%" valign="top">
 
 ```javascript
+@textStream("Hello")
+@textStream(" ")
+
 for chunk of @textStream
   @text(chunk)
 endfor
+
+@textStream("World")
 ```
 
 </td>
 <td width="50%" valign="top">
 
 ```javascript
+textStream output
+
+output("Hello")
+output(" ")
+
 for chunk of output
   @text(chunk)
 endfor
+
+output("World")
 ```
 
 </td>
 </tr>
 </table>
+
+In both examples, the loop iterates over `["Hello", " "]`. The chunk `"World"` is added after the iteration statement in source order and is therefore not visible to the loop.
 
 The loop processes each text chunk as if the stream were a regular sequence.
 
