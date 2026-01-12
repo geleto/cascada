@@ -227,25 +227,17 @@ class ScriptTranspiler {
    * @returns {Object} { segments, endIndex, append, remainingBuffer, operator }
    */
   _parsePathSegments(tokens, startIndex, stopAtArgs, detectAssignment, wrapAssignmentValue, lineIndex) {
-    let segments = [];
-    let currentSegment = '';
-    let bracketLevel = 0;
-    let skippingWhitespace = true;
-    let state = 'PARSING_PATH';
-    let remainingBuffer = '';
-    let append = '';
-    let operator = null;
-
-    const finishCurrentSegment = () => {
-      if (currentSegment) {
-        segments.push(currentSegment);
-        currentSegment = '';
-      } else {
-        if (state === 'PARSING_PATH' && segments.length === 0) {
-          // It's allowed to have no segments yet if we are just starting
-        } else {
-          throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Empty path segment.`);
-        }
+    const context = {
+      segments: [],
+      currentSegment: '',
+      bracketLevel: 0,
+      skippingWhitespace: true,
+      state: 'PARSING_PATH',
+      remainingBuffer: '',
+      append: '',
+      operator: null,
+      config: {
+        stopAtArgs, detectAssignment, wrapAssignmentValue, lineIndex
       }
     };
 
@@ -255,13 +247,13 @@ class ScriptTranspiler {
       if (token.type === 'COMMENT') continue;
 
       if (token.type !== 'CODE') {
-        if (state === 'COLLECTING_REMAINING') {
-          remainingBuffer += token.value;
+        if (context.state === 'COLLECTING_REMAINING') {
+          this._parsePathSegmentsCollectingRemaining(context, token.value);
           continue;
         }
-        if (state === 'PARSING_PATH') {
-          if (bracketLevel > 0) {
-            currentSegment += token.value;
+        if (context.state === 'PARSING_PATH') {
+          if (context.bracketLevel > 0) {
+            context.currentSegment += token.value;
           } else {
             // Unexpected non-code token at root level (e.g. string literal not in brackets)
             throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Unexpected token in path.`);
@@ -274,86 +266,117 @@ class ScriptTranspiler {
       for (let charIdx = 0; charIdx < token.value.length; charIdx++) {
         const char = token.value[charIdx];
 
-        if (state === 'COLLECTING_REMAINING') {
-          remainingBuffer += char;
+        if (context.state === 'COLLECTING_REMAINING') {
+          this._parsePathSegmentsCollectingRemaining(context, char);
           continue;
         }
 
-        if (skippingWhitespace) {
-          if (char.trim() === '') continue;
-          skippingWhitespace = false;
-        }
-
-        if (char === '[') {
-          if (bracketLevel === 0) finishCurrentSegment();
-          currentSegment += char;
-          bracketLevel++;
-        } else if (char === ']') {
-          currentSegment += char;
-          bracketLevel--;
-          if (bracketLevel < 0) {
-            throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched closing bracket ']'.`);
-          }
-        } else if (char === '.' && bracketLevel === 0) {
-          finishCurrentSegment();
-          currentSegment = char;
-        } else if (stopAtArgs && char === '(' && bracketLevel === 0) {
-          finishCurrentSegment();
-          state = 'COLLECTING_REMAINING';
-          remainingBuffer = char;
-        } else if (detectAssignment && this.DATA_COMMANDS.operatorStart.includes(char) && bracketLevel === 0) {
-          // Check valid operators
-          // =, +=, -=, etc.
-          finishCurrentSegment();
-
-          let op = char + (token.value[charIdx + 1] || '');
-          let opCommand = this.DATA_COMMANDS.operators[op];
-
-          if (op === '==') {
-            // Comparison (==) is invalid in these contexts (LHS assignment or @data command).
-            throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${op} is not a valid operator.`);
-          }
-
-          if (opCommand) {
-            if (opCommand === true) {
-              // 3-char operator (&&=)
-              op = op + (token.value[charIdx + 2] || '');
-              opCommand = this.DATA_COMMANDS.operators[op];
-              if (!opCommand) throw new Error(`Invalid command operator ${op}`);
-              charIdx++;
-            }
-            charIdx++;
-            operator = opCommand;
-            // Map operators to commands (e.g., += to .add) for @data usage. set_path currently only supports = (.set).
-
-          } else if (char === '=') {
-            operator = '.set';
-          } else {
-            throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${op}`);
-          }
-          state = 'COLLECTING_REMAINING';
-          if (wrapAssignmentValue) {
-            remainingBuffer = '(';
-            append = ')';
-          }
-        } else if (char.trim() === '') {
-          if (bracketLevel > 0) currentSegment += char;
-        } else {
-          currentSegment += char;
+        if (context.state === 'PARSING_PATH') {
+          charIdx = this._parsePathSegmentsParsingPath(context, char, token, charIdx);
         }
       }
     }
 
     // Check final state
-    if (state === 'PARSING_PATH' && currentSegment) {
-      segments.push(currentSegment);
+    if (context.state === 'PARSING_PATH' && context.currentSegment) {
+      context.segments.push(context.currentSegment);
     }
 
-    if (bracketLevel > 0) {
+    if (context.bracketLevel > 0) {
       throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched opening bracket '['.`);
     }
 
-    return { segments, endIndex: i, append, remainingBuffer, operator };
+    return { segments: context.segments, endIndex: i, append: context.append, remainingBuffer: context.remainingBuffer, operator: context.operator };
+  }
+
+  _parsePathSegmentsFinishSegment(context) {
+    if (context.currentSegment) {
+      context.segments.push(context.currentSegment);
+      context.currentSegment = '';
+    } else {
+      if (context.state === 'PARSING_PATH' && context.segments.length === 0) {
+        // It's allowed to have no segments yet if we are just starting
+      } else {
+        throw new Error(`Invalid path syntax at line ${context.config.lineIndex + 1}: Empty path segment.`);
+      }
+    }
+  }
+
+  _parsePathSegmentsCollectingRemaining(context, text) {
+    context.remainingBuffer += text;
+  }
+
+  _parsePathSegmentsParsingPath(context, char, token, charIdx) {
+    if (context.skippingWhitespace) {
+      if (char.trim() === '') return charIdx;
+      context.skippingWhitespace = false;
+    }
+
+    if (char === '[') {
+      // Start of a bracket access (e.g. `[index]`). If not nested, this starts a new segment.
+      if (context.bracketLevel === 0) this._parsePathSegmentsFinishSegment(context);
+      context.currentSegment += char;
+      context.bracketLevel++;
+    } else if (char === ']') {
+      // End of a bracket access.
+      context.currentSegment += char;
+      context.bracketLevel--;
+      if (context.bracketLevel < 0) {
+        throw new Error(`Invalid path syntax at line ${context.config.lineIndex + 1}: Unmatched closing bracket ']'.`);
+      }
+    } else if (char === '.' && context.bracketLevel === 0) {
+      // Dot separator starts a new property segment (e.g. `.prop`). Only valid if we are not inside brackets.
+      this._parsePathSegmentsFinishSegment(context);
+      context.currentSegment = char;
+    } else if (context.config.stopAtArgs && char === '(' && context.bracketLevel === 0) {
+      // Function call start. If parsing arguments (`stopAtArgs`), this marks the end of the path and start of the arguments (remaining buffer).
+      this._parsePathSegmentsFinishSegment(context);
+      context.state = 'COLLECTING_REMAINING';
+      context.remainingBuffer = char;
+    } else if (context.config.detectAssignment && this.DATA_COMMANDS.operatorStart.includes(char) && context.bracketLevel === 0) {
+      // Assignment operator start (e.g. `=`). If verifying assignment (`detectAssignment`), this transitions to collecting the value.
+      // Check valid operators
+      // =, +=, -=, etc.
+      this._parsePathSegmentsFinishSegment(context);
+
+      let op = char + (token.value[charIdx + 1] || '');
+      let opCommand = this.DATA_COMMANDS.operators[op];
+
+      if (op === '==') {
+        // Comparison (==) is invalid in these contexts (LHS assignment or @data command).
+        throw new Error(`Invalid command operator at line ${context.config.lineIndex + 1}: ${op} is not a valid operator.`);
+      }
+
+      if (opCommand) {
+        if (opCommand === true) {
+          // 3-char operator (&&=)
+          op = op + (token.value[charIdx + 2] || '');
+          opCommand = this.DATA_COMMANDS.operators[op];
+          if (!opCommand) throw new Error(`Invalid command operator ${op}`);
+          charIdx++;
+        }
+        charIdx++;
+        context.operator = opCommand;
+        // Map operators to commands (e.g., += to .add) for @data usage. set_path currently only supports = (.set).
+
+      } else if (char === '=') {
+        context.operator = '.set';
+      } else {
+        throw new Error(`Invalid command operator at line ${context.config.lineIndex + 1}: ${op}`);
+      }
+      context.state = 'COLLECTING_REMAINING';
+      if (context.config.wrapAssignmentValue) {
+        context.remainingBuffer = '(';
+        context.append = ')';
+      }
+    } else if (char.trim() === '') {
+      // Handling spaces: Inside brackets, spaces are part of the content. Outside, they are ignored.
+      if (context.bracketLevel > 0) context.currentSegment += char;
+    } else {
+      // Regular character part of an identifier.
+      context.currentSegment += char;
+    }
+    return charIdx;
   }
 
   /**
