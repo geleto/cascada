@@ -92,6 +92,9 @@ All streams in Cascada follow these rules:
 * **Source-order visibility**
   Reads see only values emitted by source code at or before the read location.
 
+  **Definition (source order):**
+  Source order is defined as the order that would result from executing the script **sequentially, top to bottom**, including all nested scopes and loop iterations. Streams behave as if values were appended in that sequential order, even if work runs concurrently.
+
 * **Chronological freedom**
   Earlier source code may execute later in real time. Reads wait automatically.
 
@@ -101,8 +104,18 @@ All streams in Cascada follow these rules:
 * **Append-only**
   Stream contents cannot be modified or reordered.
 
-* **No mutation during iteration**
+* **Visibility lifetime**
+  Stream items remain visible after the scope that emitted them, for the duration of the script. Only **variable-assigned snapshots** (see Iteration and Initialization) restrict visibility to “what is visible now”.
+
+* **No mutation during iteration (compile-time error)**
   A stream must not be written to while it is being iterated.
+
+#### Poisoned items (Error Values)
+
+Streams may contain **poisoned values** (Error Values) as items/chunks.
+
+* Reading or iterating a stream **does not throw** because an item is poisoned.
+* Instead, the yielded element/chunk is itself a poisoned value, following the same semantics as yielding poison from async iterators.
 
 ---
 
@@ -194,6 +207,7 @@ var items = results.toArray()
 Returns all items visible at the read point (source-order bounded).
 
 ---
+
 ### `slice(start, end?)` — Stream
 
 Returns a **snapshot array** of items currently visible in the stream, restricted to the range `[start, end)`.
@@ -310,7 +324,7 @@ Returns the item or `none` if out of range.
 
 Streams can be assigned at initialization from other streams or context object properties.
 
-Assigned streams are read-only and stream all items from the source. Unlike with variables, the assignment is not a snapshot - the stream remains connected to its source until the source completes.
+Assigned streams are read-only and stream all items from the source. Unlike with variables, the assignment is not a snapshot - the stream remains connected to its source until the source’s final item is determined.
 
 ### From Another Stream
 
@@ -329,7 +343,7 @@ source(1, 2, 3)
 stream dest = source
 // dest is read-only
 // streams continuously from source
-// waits for source to complete
+// remains connected until the source's final item is determined
 ```
 
 </td>
@@ -349,11 +363,13 @@ var snapshot = source
 </table>
 
 **Stream assignment semantics:**
+
 * The assigned stream is **read-only**
 * **Does not snapshot** - streams all items from source
-* Remains connected to source until source completes
+* Remains connected until the source’s final item is determined
 
 **Variable assignment semantics:**
+
 * **Snapshots** the stream at assignment point
 * Captures only items visible at that moment in source order
 
@@ -367,13 +383,16 @@ var results = context.stream
 // identical behavior - read-only, continuous streaming
 ```
 
-When initializing from the context object, `stream` and `var` behave identically - both create read-only streams that continuously reflect the source. Source-order visibility rules do not apply to context properties.
+When initializing from the context object, `stream` and `var` behave identically - both create read-only streams that continuously reflect the source. Source-order visibility rules do not apply to context properties (the stream is external), but index ordering remains deterministic.
 
 ---
 
 ### Iteration
 
-Iteration traverses the items visible at the start of the loop, in deterministic source order.
+Direct iteration traverses stream items in deterministic source order.
+
+* Iterating a **live stream** (an output stream, or a stream variable not created by snapshot assignment) ranges over **all items in the stream**, including items emitted “later” in real time. The iterator waits as needed until the stream’s final item is determined.
+* To iterate only the items visible at a specific point in the script, create a **snapshot** by assigning the stream to a `var` first.
 
 <table>
 <tr>
@@ -393,7 +412,7 @@ endfor
 <td width="50%" valign="top">
 
 ```javascript
-stream resuts = getResults()
+stream results = getResults()
 for item of results
   @text(item)
 endfor
@@ -408,8 +427,9 @@ The loop processes each element in order, as if the stream were a regular sequen
 **Concurrency note:**
 The loop body is **not executed sequentially**. Each element is processed **as soon as it becomes available**, and different iterations may run concurrently. Despite this, the **observable results are equivalent to sequential execution**: iteration order, visibility, and final output remain deterministic.
 
-> **Restriction**
+> **Restriction (compile-time error)**
 > A stream must not be written to while it is being iterated.
+
 <table>
 <tr>
 <th width="50%" valign="top">Invalid (Mutation During Iteration)</th>
@@ -446,13 +466,14 @@ endfor
 ---
 
 **Iteration semantics:**
-* Direct stream iteration waits for the stream to complete
-* All items are processed, even those emitted after the loop begins
+
+* Direct stream iteration waits until the stream’s **final item is determined**
+* All items are processed, including those emitted “later” in real time
 * To iterate only currently visible items, assign to a variable first
 
 <table>
 <tr>
-<th width="50%" valign="top">Full Iteration (Wait for Completion)</th>
+<th width="50%" valign="top">Full Iteration (To End of Stream)</th>
 <th width="50%" valign="top">Snapshot Iteration (Current Items Only)</th>
 </tr>
 <tr>
@@ -460,7 +481,7 @@ endfor
 ```javascript
 for item of @stream
   // Processes all items
-  // Waits for stream completion
+  // Waits until the final item is determined
   @text(item)
 endfor
 ```
@@ -504,6 +525,7 @@ endfor
 ```
 
 **Behavior:**
+
 * `loop.index` and `loop.index0` block until the item's source-order position is resolved
 * `loop.revindex` and `loop.revindex0` block until both the item's position and the total stream length are known
 * This ensures deterministic results while allowing concurrent execution
@@ -634,7 +656,10 @@ var u = ts.slice(8)
 
 ### Iteration (Text Chunks)
 
-Iteration traverses the emitted text chunks visible at the start of the loop, in deterministic source order.
+Direct iteration traverses text chunks in deterministic source order.
+
+* Iterating a **live text stream** ranges over **all emitted chunks**, waiting as needed until the stream’s final chunk is determined.
+* To iterate only currently visible chunks, snapshot by assigning to a `var` first.
 
 <table>
 <tr>
@@ -668,7 +693,7 @@ The loop processes each text chunk as if the stream were a regular sequence.
 **Concurrency note:**
 The loop body is **not executed sequentially**. Each chunk is processed **as soon as it becomes available**, and different iterations may run concurrently. Despite this, the **observable results are equivalent to sequential execution**: iteration order, visibility, and final output remain deterministic.
 
-> **Restriction**
+> **Restriction (compile-time error)**
 > A stream must not be written to while it is being iterated.
 
 ---
@@ -678,6 +703,12 @@ The loop body is **not executed sequentially**. Each chunk is processed **as soo
 Macros, captures, and full scripts may declare a stream type as their result.
 
 When a block returns `:stream` or `:textStream`, all values emitted using the corresponding output handler become part of the returned stream, ordered by source code position.
+
+### Output restriction: no Error Values in returned streams
+
+Returned output streams (`:stream`, `:textStream`) must not contain Error Values.
+
+If any emitted item/chunk in a returned output stream is a poisoned value, the script throws (the render promise rejects). Iteration and reads can still observe poisoned items while running, but final output streams cannot contain them.
 
 ---
 
@@ -806,11 +837,13 @@ for await (const { chunk, index } of result.textStream.indexed()) {
 ```
 
 **Index semantics:**
+
 * When emissions occur sequentially in source code, `index` is a `number`
 * When emissions occur through nested concurrent contexts (e.g., parallel tasks each emitting independently), `index` is a `Promise<number>`
 * The index resolves once the chunk's source-order position is determined
 
 **When to use:**
+
 * Ordered iteration guarantees source-order delivery but may wait for slow chunks
 * Unordered iteration processes chunks immediately as they arrive, useful for incremental display or streaming output
 
@@ -865,6 +898,7 @@ async function* hierarchicalStream() {
 </table>
 
 **Rules:**
+
 * `index` can be a `number` or `Promise<number>`
 * Cascada waits for all index promises to resolve before determining final order
 * Chunks are assembled in source-order regardless of arrival order
