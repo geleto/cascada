@@ -19,8 +19,8 @@ class NodeStatsReporter extends Mocha.reporters.Spec {
         const outFile = path.join(outDir, 'node-tests-stats.json');
         try {
           fs.mkdirSync(outDir, { recursive: true });
-		  // eslint-disable-next-line no-empty
-        } catch (_) {}
+          // eslint-disable-next-line no-empty
+        } catch (_) { }
         fs.writeFileSync(outFile, JSON.stringify({
           tests: stats.tests || 0,
           passes: stats.passes || 0,
@@ -29,7 +29,6 @@ class NodeStatsReporter extends Mocha.reporters.Spec {
           duration: stats.duration || 0
         }));
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.error('Failed to write node test stats:', err);
       }
     });

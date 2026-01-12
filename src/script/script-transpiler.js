@@ -128,7 +128,8 @@ class ScriptTranspiler {
         'verbatim': 'endverbatim',
         'set': 'endset', //only when no = in the set, then the block has to be closed
         'var': 'endvar', //only when no = in the var, then the block has to be closed
-        'guard': 'endguard'
+        'guard': 'endguard',
+        'capture': 'endcapture'
       },
 
       // Tags that should never be treated as multi-line
@@ -193,7 +194,7 @@ class ScriptTranspiler {
   }
 
   /**
-   * Validates path segments for the new @data command syntax
+   * Validates path segments for the @data command syntax
    * @param {Array} segments - Array of path segments
    * @throws {Error} If any segment is invalid
    */
@@ -214,226 +215,231 @@ class ScriptTranspiler {
   }
 
   /**
-   * Breaks down a new @data command syntax into its components
-   * @param {Array} tokens - Array of tokens from script-lexer
-   * @param {number} lineIndex - Current line index for error reporting
-   * @return {Object} Object with path, command, and args properties. Args may not be ')' terminated in a multi-line command.
+   * Robustly parses path segments from tokens, handling strings, brackets, and comments.
+   * Can optionally stop at assignment operators or argument start.
+   *
+   * @param {Array} tokens - Tokens to parse
+   * @param {number} startIndex - Index to start parsing from
+   * @param {boolean} stopAtArgs - Whether to stop at '('
+   * @param {boolean} detectAssignment - Whether to detect assignment operators and return them
+   * @param {Boolean} wrapAssignmentValue - Whether to wrap assignment value in parens (for @data)
+   * @param {number} lineIndex - For error reporting
+   * @returns {Object} { segments, endIndex, append, remainingBuffer, operator }
    */
-  _deconstructDataCommand(tokens, lineIndex) {
-    let state = 'PARSING_PREFIX';
-    let prefixBuffer = '';
-    let segments = []; // Array of strings: 'user', '.name', '[user.id]', '[]', etc.
+  _parsePathSegments(tokens, startIndex, stopAtArgs, detectAssignment, wrapAssignmentValue, lineIndex) {
+    let segments = [];
     let currentSegment = '';
-    let remainingBuffer = ''; // Everything after we start looking for args
     let bracketLevel = 0;
     let skippingWhitespace = true;
+    let state = 'PARSING_PATH';
+    let remainingBuffer = '';
     let append = '';
+    let operator = null;
 
-    const setState = (newState) => {
-      state = newState;
-      skippingWhitespace = true;
-    };
-
-    const finishCurrentSegment = (s) => {
+    const finishCurrentSegment = () => {
       if (currentSegment) {
         segments.push(currentSegment);
         currentSegment = '';
       } else {
-        if (s === 'PARSING_PATH_START') {
-          return 'PARSING_PATH_AND_COMMAND';
+        if (state === 'PARSING_PATH' && segments.length === 0) {
+          // It's allowed to have no segments yet if we are just starting
+        } else {
+          throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Empty path segment.`);
         }
-        throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Empty path segment.`);
       }
-      return s;
     };
 
-    for (const token of tokens) {
+    let i = startIndex;
+    for (; i < tokens.length; i++) {
+      const token = tokens[i];
       if (token.type === 'COMMENT') continue;
 
       if (token.type !== 'CODE') {
-        // Handle strings, regexes, etc. - process them as complete tokens
-        switch (state) {
-          case 'PARSING_PREFIX':
-            throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected @data prefix.`);
-          case 'PARSING_PATH_AND_COMMAND':
-            if (bracketLevel > 0) {
-              currentSegment += token.value;
-            } else {
-              throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Unexpected string in command path.`);
-            }
-            break;
-          case 'COLLECTING_REMAINING':
-            remainingBuffer += token.value;
-            break;
+        if (state === 'COLLECTING_REMAINING') {
+          remainingBuffer += token.value;
+          continue;
+        }
+        if (state === 'PARSING_PATH') {
+          if (bracketLevel > 0) {
+            currentSegment += token.value;
+          } else {
+            // Unexpected non-code token at root level (e.g. string literal not in brackets)
+            throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Unexpected token in path.`);
+          }
         }
         continue;
       }
 
-      // Process CODE tokens character by character
-      //for (const char of token.value) {
-      for (let i = 0; i < token.value.length; i++) {
-        const char = token.value[i];
+      // CODE token
+      for (let charIdx = 0; charIdx < token.value.length; charIdx++) {
+        const char = token.value[charIdx];
+
         if (state === 'COLLECTING_REMAINING') {
           remainingBuffer += char;
           continue;
         }
 
         if (skippingWhitespace) {
-          if (char.trim() === '') {
-            continue;
-          }
+          if (char.trim() === '') continue;
           skippingWhitespace = false;
         }
 
-        switch (state) {
-          case 'PARSING_PREFIX':
-            prefixBuffer += char;
-            if (prefixBuffer === '@data') {
-              setState('PARSING_PATH_START');
-              currentSegment = '';
-            } else if (!('@data'.startsWith(prefixBuffer))) {
-              throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected @data prefix.`);
+        if (char === '[') {
+          if (bracketLevel === 0) finishCurrentSegment();
+          currentSegment += char;
+          bracketLevel++;
+        } else if (char === ']') {
+          currentSegment += char;
+          bracketLevel--;
+          if (bracketLevel < 0) {
+            throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched closing bracket ']'.`);
+          }
+        } else if (char === '.' && bracketLevel === 0) {
+          finishCurrentSegment();
+          currentSegment = char;
+        } else if (stopAtArgs && char === '(' && bracketLevel === 0) {
+          finishCurrentSegment();
+          state = 'COLLECTING_REMAINING';
+          remainingBuffer = char;
+        } else if (detectAssignment && this.DATA_COMMANDS.operatorStart.includes(char) && bracketLevel === 0) {
+          // Check valid operators
+          // =, +=, -=, etc.
+          finishCurrentSegment();
+
+          let op = char + (token.value[charIdx + 1] || '');
+          let opCommand = this.DATA_COMMANDS.operators[op];
+
+          if (op === '==') {
+            // Comparison (==) is invalid in these contexts (LHS assignment or @data command).
+            throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${op} is not a valid operator.`);
+          }
+
+          if (opCommand) {
+            if (opCommand === true) {
+              // 3-char operator (&&=)
+              op = op + (token.value[charIdx + 2] || '');
+              opCommand = this.DATA_COMMANDS.operators[op];
+              if (!opCommand) throw new Error(`Invalid command operator ${op}`);
+              charIdx++;
             }
-            break;
-          case 'PARSING_PATH_START':
-          case 'PARSING_PATH_AND_COMMAND':
-            if (char === '[') {
-              // If we have a current segment, finish it first
-              if (bracketLevel === 0) {
-                state = finishCurrentSegment(state);
-              }
-              currentSegment += char;
-              bracketLevel++;
-            } else if (char === ']') {
-              currentSegment += char;
-              bracketLevel--;
-              if (bracketLevel < 0) {
-                throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched closing bracket ']'.`);
-              }
-            } else if (char === '.' && bracketLevel === 0) {
-              // Finish current segment and start new one
-              state = finishCurrentSegment(state);
-              currentSegment = char;
-            } else if (char === '(' && bracketLevel === 0) {
-              // Found start of arguments - finish current segment first, then collect remainder
-              state = finishCurrentSegment(state);
-              state = 'COLLECTING_REMAINING';
-              remainingBuffer = char;
-              /*} else if (char === '=' && bracketLevel === 0) {
-                // TEMP
-                // replace = with .set(
-                state = finishCurrentSegment(state);
-                currentSegment = '.set';
-                state = finishCurrentSegment(state);
-                state = 'COLLECTING_REMAINING';
-                remainingBuffer = '(';
-                append = ')';//find the last continuation line and ')' at the end of it*/
-            } else if (this.DATA_COMMANDS.operatorStart.includes(char) && bracketLevel === 0) {
-              // =, +=, -=, ++, --, *=, /=, &=, |=, &&=, ||=
-              state = finishCurrentSegment(state);
-              let operator = char + token.value[i + 1];
-              let operatorCommand = this.DATA_COMMANDS.operators[operator];
-              if (operatorCommand) {
-                if (operatorCommand === true) {
-                  //one more char
-                  operator = operator + token.value[i + 2];
-                  operatorCommand = this.DATA_COMMANDS.operators[operator];
-                  if (!operatorCommand) {
-                    throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${operator} is not a valid operator.`);
-                  }
-                  i++;
-                }
-                i++;
-                currentSegment = operatorCommand;
-              } else if (operatorCommand === '==') {
-                throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${operator} is not a valid operator.`);
-              } else if (char === '=') {
-                //assume it's an assignment operator
-                currentSegment = '.set';
-              } else {
-                throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${operator}`);
-              }
-              state = finishCurrentSegment(state);
-              state = 'COLLECTING_REMAINING';
-              remainingBuffer = '(';
-              append = ')';
-            }
-            else if (char.trim() === '') {
-              // Handle whitespace in path/command
-              if (bracketLevel === 0) {
-                //ignore the whitespace in the path
-              } else {
-                currentSegment += char;
-              }
+            charIdx++;
+            operator = opCommand;
+            // Map operators to commands (e.g., += to .add) for @data usage. set_path currently only supports = (.set).
+
+          } else if (char === '=') {
+            operator = '.set';
+          } else {
+            throw new Error(`Invalid command operator at line ${lineIndex + 1}: ${op}`);
+          }
+          state = 'COLLECTING_REMAINING';
+          if (wrapAssignmentValue) {
+            remainingBuffer = '(';
+            append = ')';
+          }
+        } else if (char.trim() === '') {
+          if (bracketLevel > 0) currentSegment += char;
+        } else {
+          currentSegment += char;
+        }
+      }
+    }
+
+    // Check final state
+    if (state === 'PARSING_PATH' && currentSegment) {
+      segments.push(currentSegment);
+    }
+
+    if (bracketLevel > 0) {
+      throw new Error(`Invalid path syntax at line ${lineIndex + 1}: Unmatched opening bracket '['.`);
+    }
+
+    return { segments, endIndex: i, append, remainingBuffer, operator };
+  }
+
+  /**
+   * Breaks down a new @data command syntax into its components
+   * @param {Array} tokens - Array of tokens from script-lexer
+   * @param {number} lineIndex - Current line index for error reporting
+   * @return {Object} Object with path, command, and args properties. Args may not be ')' terminated in a multi-line command.
+   */
+  _deconstructDataCommand(tokens, lineIndex) {
+    let prefixBuffer = '';
+
+    // Find where @data ends
+    let i = 0;
+    for (; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token.type === 'COMMENT') continue;
+      if (token.type !== 'CODE') throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected @data prefix.`);
+
+      let found = false;
+      for (let j = 0; j < token.value.length; j++) {
+        const char = token.value[j];
+        if (char.trim() === '') continue;
+        prefixBuffer += char;
+
+        if (prefixBuffer === '@data') {
+          // Found prefix in current token. The rest of this token, and subsequent tokens,
+          // contain the path/command. We create a transient token list for the helper.
+
+          let remainingInToken = token.value.slice(j + 1);
+          const nextTokens = [{ type: 'CODE', value: remainingInToken }, ...tokens.slice(i + 1)];
+
+          const result = this._parsePathSegments(nextTokens, 0, true, true, true, lineIndex);
+
+          let { segments, remainingBuffer, append, operator } = result;
+
+          // reconstruct logic
+
+          if (remainingBuffer) {
+            // Parse args...
+            const remaining = remainingBuffer;
+            if (!remaining.startsWith('(')) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected '(...)' for arguments.`);
+
+            const args = remaining.substring(1);
+            let command, path;
+
+            if (operator) {
+              // It was an operator (+= etc or =)
+              command = operator.slice(1); // remove dot
+              // segments is the path
+              path = segments.join('');
             } else {
-              currentSegment += char;
+              if (segments.length === 0) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Missing command.`);
+              const commandSegment = segments.pop();
+              if (!commandSegment.startsWith('.')) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Command cannot be a bracket expression.`);
+              command = commandSegment.slice(1);
+              path = segments.length ? segments.join('') : null;
             }
-            break;
+
+            if (path && path.startsWith('.')) path = path.substring(1);
+            if (!this._isValidIdentifier(command)) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: '${command}' is not a valid identifier.`);
+
+            // Validation
+            try {
+              if (path) {
+                // Need to re-split path for validation?
+                // _validatePathSegments expects array of segments.
+                // Our helper returned segments array.
+                this._validatePathSegments(segments);
+              }
+            } catch (e) {
+              throw new Error(`Invalid path syntax at line ${lineIndex + 1}: ${e.message}`);
+            }
+
+            return { path, command, args, append, segments };
+          } else {
+            throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Incomplete command.`);
+          }
         }
+
+        if (!'@data'.startsWith(prefixBuffer)) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected @data prefix.`);
       }
+      if (found) break;
     }
 
-    if (state === 'COLLECTING_REMAINING') {
-      // Parse the remaining buffer to extract args
-      const remaining = remainingBuffer;
-
-      // Must start with '(' and end with ')'
-      if (!remaining.startsWith('(')) {
-        throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected '(...)' for arguments.`);
-      }
-
-      // Extract args (everything after the '('
-      const args = remaining.substring(1);
-
-      // Command is the last segment - pop it off
-      if (segments.length === 0) {
-        throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Missing command.`);
-      }
-
-      const commandSegment = segments.pop();
-      if (!commandSegment.startsWith('.')) {
-        throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Command cannot be a bracket expression.`);
-      }
-
-      const command = commandSegment.slice(1); // Remove leading dot
-
-      // Validate command is a valid identifier
-      if (!this._isValidIdentifier(command)) {
-        throw new Error(`Invalid command syntax at line ${lineIndex + 1}: '${command}' is not a valid identifier.`);
-      }
-
-      // Validate remaining path segments
-      try {
-        this._validatePathSegments(segments);
-      } catch (error) {
-        throw new Error(`Invalid path syntax at line ${lineIndex + 1}: ${error.message}`);
-      }
-
-      // Build path string from remaining segments (simple concatenation, remove leading dot)
-      let path = null;
-      if (segments.length > 0) {
-        path = segments.join('');
-        // Remove leading dot since path shouldn't start with '.'
-        if (path.startsWith('.')) {
-          path = path.substring(1);
-        }
-      }
-
-      return {
-        path: path,
-        command: command,
-        args: args || null,
-        append,
-        segments
-      };
-    }
-
-    // Handle case where we finished parsing but never found arguments
-    if (currentSegment) {
-      throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected '(' after command '${currentSegment}'.`);
-    }
-
-    throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Incomplete command.`);
+    // If loop finishes without returning, we failed
+    throw new Error(`Invalid command syntax at line ${lineIndex + 1}: incomplete @data command.`);
   }
 
   /**
@@ -702,20 +708,86 @@ class ScriptTranspiler {
     return true;
   }
 
+  /**
+   * Identifies logical sections of the statement using path parsing logic
+   * @param {string} codeContent - The code to parse
+   * @param {number} lineIndex - For error reporting
+   * @returns {Object|null} result object or null if not a path assignment
+   */
+  _deconstructPathAssignment(codeContent, lineIndex) {
+    const { lex } = require('./script-lexer');
+    // Lex the codeContent to get tokens.
+    // This might be expensive for every line, but we only call it if standard var assignment check fails.
+    const tokens = lex(codeContent);
+
+    if (tokens.length === 0) return null;
+
+    // Parse segments starting from token 0
+    try {
+      const result = this._parsePathSegments(tokens, 0, false, true, false, lineIndex);
+
+      const { segments, operator, remainingBuffer } = result;
+
+      if (!operator || operator !== '.set') {
+        return null;
+      }
+
+      if (segments.length < 2) {
+        // Path assignment requires at least a root and one segment (e.g. `root.prop = val`)
+        // Simple assignments `root = val` are handled by standard variable processing.
+        return null;
+      }
+
+      const rootSegment = segments[0];
+      // root segment shouldn't start with dot or bracket
+      if (rootSegment.startsWith('.') || rootSegment.startsWith('[')) return null;
+      if (!this._isValidIdentifier(rootSegment)) return null;
+
+      const root = rootSegment;
+      const pathSegments = segments.slice(1);
+
+      const value = remainingBuffer ? remainingBuffer.trim() : '';
+
+      // Convert segments to string array representation
+      const segsArr = [];
+      for (const seg of pathSegments) {
+        if (seg.startsWith('.')) {
+          segsArr.push(JSON.stringify(seg.slice(1)));
+        } else if (seg.startsWith('[')) {
+          const inner = seg.slice(1, -1).trim();
+          if (inner === '') segsArr.push('"[]"');
+          else segsArr.push(inner);
+        } else {
+          // Should not happen for path segments (must be . or [])
+          segsArr.push(JSON.stringify(seg));
+        }
+      }
+      const segmentsStr = `[${segsArr.join(', ')}]`;
+
+      return { target: root, segments: segmentsStr, value: value };
+    } catch (e) {
+      return null;
+    }
+  }
+
   _isAssignment(code, lineIndex) {
     const assignPos = code.indexOf('=');
     if (assignPos === -1) return false;
 
-    // for now we only support assignment to a variable
-    if (!this._isValidIdentifierList(code.substring(0, assignPos).trim())) return false;
+    const lhs = code.substring(0, assignPos).trim();
+
+    // Standard variable assignment
+    if (this._isValidIdentifierList(lhs)) return true;
+
+    // Path assignment
+    if (this._deconstructPathAssignment(code, lineIndex)) return true;
 
     const expr = code.substring(assignPos + 1).trim();
 
     if (expr.startsWith('=')) {
-      // This is probablya comparison operator, not an assignment and we don't want a line with just a comparison
       throw new Error(`Invalid assignment/comparison: "${code}" at line ${lineIndex + 1}`);
     }
-    return true;
+    return true; // Simple assignment that failed validIdentifierList checks (e.g. destructuring? Not supported yet) or maybe standard LHS invalid
   }
 
   _processVar(parseResult, lineIndex, isAssignment = false) {
@@ -748,25 +820,45 @@ class ScriptTranspiler {
     } else {
       // CASE: Has assignment (e.g., `var x, y = 10` or `var x, y = capture...`)
       const targetsStr = content.substring(0, assignPos).trim();
-      const exprStr = content.substring(assignPos + 1).trim();
 
       if (!this._isValidIdentifierList(targetsStr)) {
-        throw new Error(`Invalid variable name in declaration: "${targetsStr}" at line ${lineIndex + 1}`);
+        const pathResult = this._deconstructPathAssignment(content, lineIndex);
+        if (pathResult) {
+          if (this._getFirstWord(pathResult.value) === 'capture') {
+            throw new Error('Capture block not supported for path assignment');
+          }
+          parseResult.lineType = 'TAG';
+          parseResult.tagName = 'set_path';
+          parseResult.codeContent = `${pathResult.target}, ${pathResult.segments} = ${pathResult.value}`;
+          parseResult.blockType = null;
+          return;
+        }
+        // If it looks like assignment but failed path parsing/identifier check
+        throw new Error(`Invalid variable name or path: "${targetsStr}" at line ${lineIndex + 1}`);
       }
 
-      parseResult.lineType = 'TAG';
-      parseResult.tagName = isAssignment ? 'set' : 'var';
+      // Check for capture block
+      const exprStr = content.substring(assignPos + 1).trim();
+      const firstExprWord = this._getFirstWord(exprStr);
 
-      if (this._getFirstWord(exprStr) === 'capture') {
-        // Handle block assignment (`= capture`)
+      if (firstExprWord === 'capture') {
         const captureContent = exprStr.substring('capture'.length).trim();
-        // The content of the tag is the list of variables and the focus directive
+        parseResult.lineType = 'TAG';
+        parseResult.blockType = 'START';
+        parseResult.tagName = isAssignment ? 'set' : 'var';
+        // For capture, the valid syntax is {% capture varName %} content {% endcapture %}
+        // But here we support `var x = capture` or `x = capture`.
+        // The transpiler usually emits `{% capture x %}...`
+
+        // We need to pass the variable name to the capture tag
         parseResult.codeContent = `${targetsStr} ${captureContent}`;
-        parseResult.blockType = this.BLOCK_TYPE.START;
         this.setBlockStack.push(parseResult.tagName);
       } else {
-        // Handle value assignment (`= value`)
-        parseResult.codeContent = content; // The full "targets = expression" string
+        // Standard variable/set
+        parseResult.lineType = 'TAG';
+        parseResult.tagName = isAssignment ? 'set' : 'var';
+        // content is already correct: "x = 10" or "var x = 10" -> "x = 10"
+        parseResult.codeContent = content; // If isAssignment checks passed, this is fine
         parseResult.blockType = null;
       }
     }

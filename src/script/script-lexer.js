@@ -228,15 +228,15 @@ function processNormalState(state) {
 
   // Check for $ followed by { in a template literal - should be part of the string
   if (state.currentState === STATES.STRING && state.stringDelimiter === '`' &&
-      char === '$' && nextChar === '{') {
+    char === '$' && nextChar === '{') {
     state.currentToken.value += char;
     return;
   }
 
   // Check for the start of a regex
   if (char === 'r' && nextChar === '/' &&
-      isValidRegexContext(line, index) &&
-      hasCompleteRegexPattern(line, index)) {
+    isValidRegexContext(line, index) &&
+    hasCompleteRegexPattern(line, index)) {
 
     finalizeCodeToken(state);
     state.currentState = STATES.REGEX;
@@ -538,7 +538,7 @@ function finalizeEndOfLine(state) {
         // For regular unterminated strings without escape characters at the end,
         // we set stringState to continue the string
         else if (currentToken.value.charAt(0) === state.stringDelimiter &&
-                !currentToken.value.endsWith(state.stringDelimiter)) {
+          !currentToken.value.endsWith(state.stringDelimiter)) {
           result.stringState = {
             escaped: false,
             delimiter: state.stringDelimiter
@@ -706,12 +706,19 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
   return result;
 }
 
+// Helper for one-off lexing of a string
+function lex(content) {
+  const result = parseTemplateLine(content);
+  return result.tokens;
+}
+
 // Export
 module.exports = {
   STATES,
   TOKEN_TYPES,
   TOKEN_SUBTYPES,
   parseTemplateLine,
+  lex,
   isValidRegexContext,
   hasCompleteRegexPattern,
   extractIndentation

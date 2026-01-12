@@ -195,4 +195,5 @@ module.exports = {
   sequentialContextLookup: sequential.sequentialContextLookup,
   sequentialMemberLookupScriptAsync: sequential.sequentialMemberLookupScriptAsync,
   sequentialMemberLookupAsync: sequential.sequentialMemberLookupAsync,
+  setPath: require('./set-path').setPath,
 };

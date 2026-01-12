@@ -587,6 +587,33 @@ class Parser extends Obj {
     return node;
   }
 
+  parseSetPath() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('set_path')) {
+      this.fail('parseSet: expected set_path', tag.lineno, tag.colno);
+    }
+
+    const node = new nodes.Set(tag.lineno, tag.colno, [], null, 'assignment');
+
+    // Parse target (single target for now as paths imply specific object update)
+    const target = this.parsePrimary();
+    node.targets.push(target);
+
+    // Parse path segments if provided (comma separated after target)
+    if (this.skip(lexer.TOKEN_COMMA)) {
+      node.path = this.parseExpression(); // Expecting an Array expression here
+    }
+
+    if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+      this.fail('parseSetPath: expected =', tag.lineno, tag.colno);
+    }
+
+    node.value = this.parseExpression();
+    this.advanceAfterBlockEnd(tag.value);
+
+    return node;
+  }
+
   parseVar() {
     const tag = this.peekToken();
     if (!this.skipSymbol('var')) {
@@ -958,6 +985,8 @@ class Parser extends Obj {
         return this.parseInclude();
       case 'set':
         return this.parseSet();
+      case 'set_path':
+        return this.parseSetPath();
       case 'var':
         return this.parseVar();
       case 'macro':

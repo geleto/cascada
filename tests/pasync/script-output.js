@@ -317,12 +317,12 @@ describe('Cascada Script: Output commands', function () {
         @data.users[].role = "Guest" // Affects Charlie
 
         @data.users[1].status = "active" // Affects Bob
-        @data.users[0].tasks[] = "task3" //change the last task of Alice
+        @data.users[0].tasks[] = "task3" // append task to Alice
       `;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         users: [
-          { name: 'Alice', role: 'Admin', tasks: ['task1', 'task3'] },
+          { name: 'Alice', role: 'Admin', tasks: ['task1', 'task2', 'task3'] },
           { name: 'Bob', status: 'active' },
           { name: 'Charlie', role: 'Guest' }
         ]
@@ -3109,6 +3109,67 @@ Y
       };
       const result = await env.renderScriptString(script, context);
       expect(result).to.equal('10,20');
+    });
+  });
+
+  describe('Async and Error Handling', function () {
+    it('should handle async path segments in @data', async () => {
+      const context = {
+        getIndex: async () => 0
+      };
+      const script = `
+            :data
+            @data.items = [100]
+            @data.items[getIndex()] = 200
+        `;
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.eql({ items: [200] });
+    });
+
+    it('should handle async values in @data assignments', async () => {
+      const context = {
+        getValue: async () => 10
+      };
+      const script = `
+            :data
+            @data.obj = { x: 1 }
+            @data.obj.x = getValue()
+        `;
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.eql({ obj: { x: 10 } });
+    });
+
+    it('should handle poison propagation from path segments', async () => {
+      const context = {
+        getErrorIndex: async () => { throw new Error('Index Poison'); }
+      };
+      const script = `
+            :data
+            @data.list = [1]
+            @data.list[getErrorIndex()] = 2
+        `;
+      try {
+        await env.renderScriptString(script, context);
+        throw new Error('Should have failed');
+      } catch (e) {
+        expect(e.message).to.contain('Index Poison');
+      }
+    });
+
+    it('should handle poison propagation from value resolution', async () => {
+      const context = {
+        getPoison: async () => { throw new Error('Value Poison'); }
+      };
+      const script = `
+            :data
+            @data.val = getPoison()
+        `;
+      try {
+        await env.renderScriptString(script, context);
+        throw new Error('Should have failed');
+      } catch (e) {
+        expect(e.message).to.contain('Value Poison');
+      }
     });
   });
 });

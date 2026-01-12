@@ -318,16 +318,44 @@ class Compiler extends CompilerBase {
 
     // 2. Compile the value/body assignment.
     if (node.varType !== 'extern') { // `extern` has no value.
-      if (node.value) { // e.g., set x = 123
+      if (node.path) {
+        // Validation for set_path
+        if (ids.length !== 1) {
+          this.fail('set_path only supports a single target.', node.lineno, node.colno, node);
+        }
+        this.emit(ids[0] + ' = ');
+
+        if (this.asyncMode) {
+          this.emit('runtime.setPath(');
+          this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
+          // Compile path array WITHOUT resolving items (so promises are passed to setPath)
+          this._compileAggregate(node.path, frame, '[', ']', false, false);
+          this.emit(', ');
+          // Compile value expression WITH force-wrapping to ensure it's handled in async context if needed
+          // The result will be a Promise, which setPath handles.
+          this._compileExpression(node.value, frame, true);
+          this.emit(')');
+        } else {
+          // Sync mode
+          this.emit('runtime.setPath(');
+          this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
+          this.compile(node.path, frame);
+          this.emit(', ');
+          this.compile(node.value, frame);
+          this.emit(')');
+        }
+        this.emit.line(';');
+      } else if (node.value) { // e.g., set x = 123
         this.emit(ids.join(' = ') + ' = ');
         this._compileExpression(node.value, frame, true, node.value);
+        this.emit.line(';');
       } else { // e.g., set x = capture ...
         this.emit(ids.join(' = ') + ' = ');
         this.emit.asyncBlockValue(node, frame, (n, f) => {
           this.compile(n.body, f);
         }, undefined, node.body);
+        this.emit.line(';');
       }
-      this.emit.line(';');
     }
 
 
