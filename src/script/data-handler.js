@@ -39,17 +39,29 @@ class DataHandler {
       // Find the target location in the data object
       const { target, key } = this._findPathTarget(this.data, path);
 
-      // Get the current value at the target location
-      const currentValue = target[key];
+      // Get the current value at the target location (undefined if appending)
+      const currentValue = (key === '[]') ? undefined : target[key];
 
       // Call the original method with the correct context and arguments
       const result = func.apply(this.methods, [currentValue, ...args]);
 
-      // Update the target with the result, delete if undefined
+      // Update the target with the result
       if (result !== undefined) {
-        target[key] = result;
+        if (key === '[]') {
+          // If the key is specifically '[]', it means append/push
+          if (Array.isArray(target)) {
+            target.push(result);
+          } else {
+            // Should have been caught by _findPathTarget but safety check
+            throw new Error('Cannot append to non-array');
+          }
+        } else {
+          target[key] = result;
+        }
       } else {
-        delete target[key];
+        if (key !== '[]') {
+          delete target[key];
+        }
       }
 
       return result;
@@ -86,6 +98,14 @@ class DataHandler {
         if (!Array.isArray(current)) {
           throw new Error(`Path target for '[]' is not an array.`);
         }
+
+        // If it's the last segment, we return the special key '[]' which signals append/push
+        // to the caller.
+        if (i === path.length - 1) {
+          return { target: current, key: '[]' };
+        }
+
+        // Mid-path '[]' means access the last element (existing behavior)
         key = current.length - 1;
         if (key === -1) {
           throw new Error(`Cannot set last element ('[]') on empty array.`);
