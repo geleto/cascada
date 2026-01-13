@@ -459,5 +459,243 @@
 
     }); // End Nested Structure
 
+    describe('Lazy Deep Resolve Verification', () => {
+      it('should handle deeply nested arrays with promises', async () => {
+        const context = {
+          async getDeep() { await delay(5); return 'DeepValue'; }
+        };
+        const template = `
+          {% set nested = [[[[getDeep()]]]] %}
+          {{ nested[0][0][0][0] }}
+        `;
+        const result = await env.renderTemplateString(template, context);
+        expect(normalizeWhitespace(result)).to.equal('DeepValue');
+      });
+
+      it('should handle deeply nested objects with promises', async () => {
+        const context = {
+          async getDeep() { await delay(5); return 'DeepObjectValue'; }
+        };
+        const template = `
+          {% set nested = { a: { b: { c: { d: getDeep() } } } } %}
+          {{ nested.a.b.c.d }}
+        `;
+        const result = await env.renderTemplateString(template, context);
+        expect(normalizeWhitespace(result)).to.equal('DeepObjectValue');
+      });
+
+      it('should handle mixed structures with multiple async levels', async () => {
+        const context = {
+          async getL1() { await delay(5); return 'L1'; },
+          async getL2() { await delay(10); return 'L2'; },
+          async getL3() { await delay(15); return 'L3'; }
+        };
+        const template = `
+          {% set mixed = {
+             level1: getL1(),
+             deep: [
+               { level2: getL2(), deeper: [getL3()] }
+             ]
+          } %}
+          {{ mixed.level1 }}-{{ mixed.deep[0].level2 }}-{{ mixed.deep[0].deeper[0] }}
+        `;
+        const result = await env.renderTemplateString(template, context);
+        expect(normalizeWhitespace(result)).to.equal('L1-L2-L3');
+      });
+
+      it('should correctly propagate errors from deep nested promises', async () => {
+        const context = {
+          async getSuccess() { return 'ok'; },
+          async getFail() { throw new Error('DeepFailure'); }
+        };
+        const template = `
+          {% set item = {
+             good: getSuccess(),
+             bad: {
+                nested: {
+                   fail: getFail()
+                }
+             }
+          } %}
+          {{ item.good }}
+        `;
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail('Should have thrown an error');
+        } catch (err) {
+          expect(err.message).to.contain('DeepFailure');
+        }
+      });
+
+      it('should collect ALL errors from multiple failing branches', async () => {
+        const context = {
+          async fail1() { await delay(2); throw new Error('ErrorOne'); },
+          async fail2() { await delay(2); throw new Error('ErrorTwo'); }
+        };
+        const template = `
+          {% set item = {
+             a: fail1(),
+             b: [ fail2() ]
+          } %}
+          {{ item.a }}
+        `;
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail('Should have thrown an error');
+        } catch (err) {
+          expect(err.message).to.contain('ErrorOne');
+          expect(err.message).to.contain('ErrorTwo');
+        }
+      });
+
+      it('should resolve lazy structures passed to functions', async () => {
+        const context = {
+          async val() { return 'lazy'; },
+          check(obj) {
+            if (obj.prop !== 'lazy') return 'fail';
+            return 'pass';
+          }
+        };
+        const template = `{% set o = { prop: val() } %}{{ check(o) }}`;
+        const result = await env.renderTemplateString(template, context);
+        expect(normalizeWhitespace(result)).to.equal('pass');
+      });
+
+      it('should not resolve external context objects deeply', async () => {
+        let accessCount = 0;
+        const externalObj = {
+          get prop() { accessCount++; return 'static'; },
+          asyncProp: Promise.resolve('async')
+        };
+        const context = {
+          ext: externalObj,
+          async val() { return 'dynamic'; }
+        };
+
+        const template = `{% set newObj = { wrapper: ext, val: val() } %}{{ newObj.val }}`;
+
+        const result = await env.renderTemplateString(template, context);
+        expect(normalizeWhitespace(result)).to.equal('dynamic');
+
+        expect(accessCount).to.be.lessThan(2);
+      });
+    });
+
+  });
+
+  describe('Async Structures and Functions in Scripts', function () {
+    let env;
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+    it('should handle promise properties at different levels in script', async () => {
+      const context = {
+        async getA() { await delay(2); return 'A'; },
+        async getB() { await delay(10); return 'B'; },
+        async getC() { await delay(5); return 'C'; }
+      };
+      const script = `
+          :data
+          var complex = {
+             l1: getA(),
+             nested: {
+                l2: getB(),
+                deep: [getC()]
+             }
+          }
+
+          // Access individual promises (triggers lazy resolve for specific paths if needed,
+          // or just standard property access if resolving later)
+
+          // In scripts, 'var' assignment of object literal creates the marked object.
+          // Accessing 'complex.nested.l2' should wait for resolution if it's used in an output or operation?
+          // Actually, in Cascada Script, variables hold the raw values (promises/markers).
+          // They are resolved when:
+          // 1. Used in @output commands (like @data, @text)
+          // 2. Used in expressions that require values (like math, string concat) - handled by compiler-base expression compilation
+
+          @data.val1 = complex.l1
+          @data.val2 = complex.nested.l2
+          @data.val3 = complex.nested.deep[0]
+        `;
+
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.eql({
+        val1: 'A',
+        val2: 'B',
+        val3: 'C'
+      });
+    });
+
+    it('should pass lazy-resolved structures to functions in script', async () => {
+      const context = {
+        async getName() { return 'Alice'; },
+        async getRole() { return 'Admin'; },
+
+        formatUser(user) {
+          // The function receives the object. If the object passed is a Lazy Object,
+          // the runtime (resolveArguments) MUST ensure it is resolved before calling this function?
+          // OR the function receives the promise/marker?
+
+          // Current design: resolveArguments (used by call usage) triggers resolving of arguments.
+          // So 'user' should be a plain object with 'name' and 'role' fully resolved.
+          return user.name + ':' + user.role;
+        }
+      };
+
+      const script = `
+           :data
+           var user = { name: getName(), role: getRole() }
+
+           // Passing 'user' to formatUser.
+           // The compiler generates code that wraps args in runtime.resolveArguments or resolves them before call.
+           @data.formatted = formatUser(user)
+         `;
+
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.eql({ formatted: 'Alice:Admin' });
+    });
+
+    it('should handle array iteration in script with lazy elements', async () => {
+      const context = {
+        async getItems() { return ['i1', 'i2']; }, // async return of array
+        async getOne() { return 'one'; },
+        async getTwo() { return 'two'; }
+      };
+
+      const script = `
+            :text
+            var list = [getOne(), getTwo()]
+
+            // Loop over lazy array
+            for item in list
+               @text(item + "-")
+            endfor
+         `;
+
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.equal('one-two-');
+    });
+
+
+    it('should handle deeply nested promises in function calls', async () => {
+      const context = {
+        async getDeep() { return 'found'; },
+        inspect(obj) {
+          return obj.a.b.c;
+        }
+      };
+
+      const script = `
+            :data
+            var obj = { a: { b: { c: getDeep() } } }
+            @data.result = inspect(obj)
+          `;
+
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.eql({ result: 'found' });
+    });
   });
 }());

@@ -2,7 +2,7 @@
 
 var lib = require('../lib');
 const errors = require('./errors');
-const resolve = require('./resolve');
+
 
 // A SafeString object indicates that the string should not be
 // autoescaped. This happens magically because autoescaping only
@@ -157,15 +157,22 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
 
     if (hasPromises) {
       try {
-        let resolvedArray = await resolve.deepResolveArray(val);
+        if (hasPromises) {
+          // Flatten promises
+          val = await Promise.all(val);
+        }
 
-        if (resolvedArray.length > 0) {
-          resolvedArray = [resolvedArray.join(',')];
+        // We assume deep structures are lazily resolved by the compiler
+        // or handled by custom formatters if passed directly.
+        // For basic template output, we just need to wait for the top-level items.
+
+        if (val.length > 0) {
+          val = [val.join(',')];
         }
         if (autoescape) {
-          resolvedArray.push((value) => suppressValue(value, true));
+          val.push((value) => suppressValue(value, true));
         }
-        return resolvedArray;
+        return val;
       } catch (err) {
         if (errors.isPoisonError(err)) {
           throw err;

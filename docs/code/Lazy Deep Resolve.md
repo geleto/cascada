@@ -26,5 +26,27 @@ You may also have a look at the runtime setPath function which in the future wil
 
 Evaluate this and let us decide how the parent relationship can be maintained, I gues this can happen when compileAggregate is called recursively?
 
-Do not update any code, let us just discuss.
+## Implementation Status: Completed
 
+The Lazy Deep Resolution mechanism has been fully implemented and integrated.
+
+### 1. Runtime Helpers (`src/runtime/resolve.js`)
+- **`RESOLVE_MARKER`**: A private Symbol (`Symbol('cascada.resolve')`) is used to attach a hidden "resolver promise" to objects and arrays that contain pending operations.
+- **`createObject(obj)` / `createArray(arr)`**: New factory functions that scan shallow properties. If they find a Promise or a child with a `RESOLVE_MARKER`, they create a master resolver promise for the new object.
+  - This resolver uses `collectErrors` to await all dependencies.
+  - Upon success, it **mutates the object in-place**, replacing promises/markers with their final values.
+  - Upon failure, it throws a `PoisonError` containing all collected errors.
+- **Legacy Removal**: The inefficient, recursive `deepResolveObject` and `deepResolveArray` functions (and their helper `isPlainObject`) have been removed entirely. Resolution now relies strictly on the marker system.
+
+### 2. Compiler Integration (`src/compiler/compiler-base.js`)
+- **`_compileAggregate`**: Modified to wrap object (`{}`) and array (`[]`) literals with `runtime.createObject` and `runtime.createArray` respectively, but **only in async mode**.
+- This ensures that any data structure created by Cascada script that *might* contain a promise is automatically equipped with the self-resolving marker.
+- Synchronous code remains unaffected and optimal.
+
+### 3. Resolution Logic
+- **`resolveAll` / `resolveSingle`**: Updated to check for `RESOLVE_MARKER`. If found, they await it. This replaces the need to crawl the object tree.
+- **Performance**: Objects passed from the external context (Host Application) are standard JavaScript objects without markers. The runtime skips them immediately, avoiding the expensive deep scans that plagued the previous implementation.
+
+### 4. Safety & Error Handling
+- **Context Safety**: Only objects composed by Cascada are marked. External context objects are never mutated or deeply scanned, preventing side-effects.
+- **Poison Propagation**: If a nested dependency fails, the `createObject` resolver catches it, creating a `PoisonedValue` (or throwing a `PoisonError` if part of a chain). The error bubbes up the marker chain, ensuring the top-level resolution captures all failures.

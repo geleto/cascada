@@ -209,18 +209,27 @@ class CompilerBase extends Obj {
         this.emit(' })');
       }
     } else {
+      let wrapper = null;
+      if (this.asyncMode) {
+        if (startChar === '[') wrapper = 'runtime.createArray';
+        if (startChar === '{') wrapper = 'runtime.createObject';
+      }
+
       if (compileThen) {
         const result = this._tmpid();
         this.emit.line(`(${asyncThen ? 'async ' : ''}function(${result}){`);
         compileThen.call(this, result, node.children.length);
         this.emit('})(');
-        this.emit(startChar);
-        this._compileArguments(node, frame, expressionRoot, startChar);
-        this.emit(endChar + ')');
-      } else {
-        this.emit(startChar);
-        this._compileArguments(node, frame, expressionRoot, startChar);
-        this.emit(endChar);
+      }
+
+      if (wrapper) this.emit(wrapper + '(');
+      this.emit(startChar);
+      this._compileArguments(node, frame, expressionRoot, startChar);
+      this.emit(endChar);
+      if (wrapper) this.emit(')');
+
+      if (compileThen) {
+        this.emit(')');
       }
     }
   }

@@ -153,8 +153,9 @@ module.exports = {
   resolveSingleArr: resolve.resolveSingleArr,
   resolveObjectProperties: resolve.resolveObjectProperties,
   resolveArguments: resolve.resolveArguments,
-  deepResolveArray: resolve.deepResolveArray,
-  deepResolveObject: resolve.deepResolveObject,
+
+  createObject: resolve.createObject,
+  createArray: resolve.createArray,
 
   flattenBuffer: buffer.flattenBuffer,
   addPoisonMarkersToBuffer: buffer.addPoisonMarkersToBuffer,
