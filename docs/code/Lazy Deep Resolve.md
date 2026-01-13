@@ -1,3 +1,5 @@
+#The Initial Task:
+
 Cascada can initialize variables with objects and arrays:
 var x = { a: [1,2,3], b:7, c:’hello’ };
 
@@ -26,7 +28,43 @@ You may also have a look at the runtime setPath function which in the future wil
 
 Evaluate this and let us decide how the parent relationship can be maintained, I gues this can happen when compileAggregate is called recursively?
 
-## Implementation Status: Completed
+# The Overview - Lazy Deep Resolution
+
+Cascada implements a powerful optimization strategy called **Lazy Deep Resolution** for handling asynchronous data structures. This mechanism ensures that complex objects and arrays containing Promises are resolved only when absolutely necessary (e.g., when passed to a function or rendered), rather than during initialization.
+
+## Context & Problem
+
+In standard asynchronous execution, initializing variables with Promise properties can lead to performance bottlenecks if those promises are awaited immediately or if the runtime blindly recursively scans every object for promises.
+
+```javascript
+// A heavy object with pending data
+var x = {
+  data: [1, 2, 3],
+  details: slowDbCall() // Promise
+};
+```
+
+Previous iterations of the engine used recursive deep-scanning (`resolveAll` -> `deepResolveObject`), which had significant downsides:
+1.  **Performance**: Scanning large objects (especially external context objects) is expensive.
+2.  **Safety**: Deeply scanning host-provided objects is risky and can lead to unintended side-effects.
+3.  **Immutability**: Mutating external objects is forbidden, but creating deep copies is slow.
+
+## The Solution: Marker-Based Lazy Resolution
+
+Cascada solves this using a **Marker-Based System**. Instead of scanning objects, the runtime *marks* objects that it creates (`createObject`, `createArray`) if they are known to contain promises.
+
+1.  **Marking**: When Cascada creates an object literal `{ ... }` or array `[ ... ]` that contains a Promise or another marked object, it attaches a hidden `RESOLVE_MARKER`.
+2.  **Deferral**: The object remains synchronous. The Promises inside are *not* awaited yet.
+3.  **Resolution**: When the object is finally used (e.g., passed as an argument `func(x)`), the runtime checks for the inner `RESOLVE_MARKER`. If present, it awaits the marker's internal promise.
+4.  **Optimization**: The marker's resolution logic waits for all internal promises, then mutates the object *in-place* to replace promises with final values, and removes the marker. Subsequent accesses are instant.
+
+## Key Benefits
+
+*   **Zero Overhead for Sync Data**: Objects without promises are never marked and never scanned.
+*   **Context Safety**: External objects (from the host app) are never marked or scanned, preserving their integrity.
+*   **Correctness**: Ensures data is fully consistent before it reaches user functions, while allowing "fire-and-forget" assignment patterns in scripts.
+
+## The Implementation:
 
 The Lazy Deep Resolution mechanism has been fully implemented and integrated.
 
@@ -87,9 +125,12 @@ The Lazy Deep Resolution mechanism has been fully implemented and integrated.
     - **Optimization**: It uses `resolveAll([root, head])` to resolve the current container and the next key *in parallel*.
 
 6.  **Copy-On-Write (COW) via Path Copying**:
-    Cascada structures obey Copy-On-Write semantics. `setPath` implements **Path Copying**:
-    - It creates a shallow copy of the `root` object (or array).
-    - It recursively creates shallow copies of every nested object/array *along the path*.
+    Cascada structures obey Copy-On-Write semantics. `setPath` implements a **Deep Copy for the Path**:
+    - updates never mutate the original object.
+    - It creates a **shallow copy** of:
+      - The `root` object (or array).
+      - Every nested object/array *along the path*.
+    - This effectively results in a deep copy *only* along the modified path, leaving unaffected branches shared (structural sharing).
     - **Arrays**: Setting `key='[]'` triggers an array append (copy + push).
     - **Lazy Preservation**: If a copied node was Lazy, the new copy is re-evaluated. If it still contains promises (from siblings), it gets a new `RESOLVE_MARKER`.
 
