@@ -70,11 +70,13 @@ The Lazy Deep Resolution mechanism has been fully implemented and integrated.
 
 ### 1. Runtime Helpers (`src/runtime/resolve.js`)
 - **`RESOLVE_MARKER`**: A private Symbol (`Symbol('cascada.resolve')`) is used to attach a hidden "resolver promise" to objects and arrays that contain pending operations.
-- **`createObject(obj)` / `createArray(arr)`**: New factory functions that scan shallow properties. If they find a Promise or a child with a `RESOLVE_MARKER`, they create a master resolver promise for the new object.
-  - This resolver uses `collectErrors` to await all dependencies.
-  - Upon success, it **mutates the object in-place**, replacing promises/markers with their final values.
-  - Upon failure, it throws a `PoisonError` containing all collected errors.
-- **Legacy Removal**: The inefficient, recursive `deepResolveObject` and `deepResolveArray` functions (and their helper `isPlainObject`) have been removed entirely. Resolution now relies strictly on the marker system.
+- **`createObject(obj)` / `createArray(arr)`**: Factory functions used by the **Compiler** (for literals) and **`setPath`** (for updates).
+  - They scan shallow properties for Promises or Markers.
+  - If found, they attach a `RESOLVE_MARKER` that coordinates **Self-Resolution**:
+    - Awaits all dependencies (children).
+    - Mutates the object **in-place** upon success, swapping placeholders for real values.
+    - Propagates errors via `PoisonError`.
+- **Legacy Removal**: The inefficient, recursive `deepResolve` functions have been removed. Resolution is now granular and on-demand.
 
 ### 2. Compiler Integration (`src/compiler/compiler-base.js`)
 - **`_compileAggregate`**: Modified to wrap object (`{}`) and array (`[]`) literals with `runtime.createObject` and `runtime.createArray` respectively, but **only in async mode**.
@@ -82,8 +84,10 @@ The Lazy Deep Resolution mechanism has been fully implemented and integrated.
 - Synchronous code remains unaffected and optimal.
 
 ### 3. Resolution Logic
-- **`resolveAll` / `resolveSingle`**: Updated to check for `RESOLVE_MARKER`. If found, they await it. This replaces the need to crawl the object tree.
-- **Performance**: Objects passed from the external context (Host Application) are standard JavaScript objects without markers. The runtime skips them immediately, avoiding the expensive deep scans that plagued the previous implementation.
+- **`resolveAll` / `resolveSingle`**: Updated to check for `RESOLVE_MARKER`.
+- Instead of crawling the object tree, they simply await this marker.
+- The marker's promise handles the logic of waiting for all children and finalizing the object in-place (**Self-Resolution**).
+- **Performance**: Host objects (external context) are skipped immediately (no marker), avoiding expensive scans.
 
 ### 4. Safety & Error Handling
 - **Context Safety**: Only objects composed by Cascada are marked. External context objects are never mutated or deeply scanned, preventing side-effects.
@@ -111,8 +115,8 @@ The Lazy Deep Resolution mechanism has been fully implemented and integrated.
 3.  **Lazy Value Assignment (Lazy Objects)**:
     When assigning an asynchronous value (Promise or Lazy Object) to a property (e.g., `obj.x = fetchAsync()`), `setPath` does **not** await the value.
     - It assigns the promise directly to the property.
-    - It wraps the container using `createObject` (or `createArray`).
-    - **Result**: Immediate return of a Lazy Object.
+    - It **delegates** to `createObject` (or `createArray`) to attach the `RESOLVE_MARKER` which coordinates the future resolution.
+    - **Result**: Immediate return of a Lazy Object (synchronous wrapper).
 
 4.  **Sequential Resolution on Mutation**:
     If `setPath` targets a container that is *already* a Lazy Object (marked), it treats the container as undetermined.
