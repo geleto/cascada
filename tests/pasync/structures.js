@@ -6,6 +6,7 @@
   var AsyncEnvironment;
   //var Environment;
   var delay;
+  //var runtime;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -13,12 +14,13 @@
     //Environment = require('../../src/environment/environment').Environment;
     //unescape = require('he').unescape;
     delay = require('../util').delay;
+    //runtime = require('../../src/runtime/runtime');
   } else {
-    expect = window.expect;
     //unescape = window.he.unescape;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     //Environment = nunjucks.Environment;
     delay = window.util.delay;
+    //runtime = nunjucks.runtime;
   }
 
   // Helper function to normalize whitespace for consistent test comparisons
@@ -34,6 +36,15 @@
       // Add inspectArray function to the environment
       env.addGlobal('inspectArray', (arr) => {
         return `First: ${arr[0]}, Length: ${arr.length}`;
+      });
+
+      env.addGlobal('isPromise', (val) => {
+        return val && typeof val.then === 'function';
+      });
+
+      env.addGlobal('isLazyObject', (val) => {
+        // Check for the marker symbol
+        return val && !!val[Symbol.for('cascada.resolve')];
       });
     });
 
@@ -589,6 +600,14 @@
     let env;
     beforeEach(() => {
       env = new AsyncEnvironment();
+      env.addGlobal('isPromise', (val) => {
+        return val && typeof val.then === 'function';
+      });
+
+      env.addGlobal('isLazyObject', (val) => {
+        // Check for the marker symbol
+        return val && !!val[Symbol.for('cascada.resolve')];
+      });
     });
     it('should handle promise properties at different levels in script', async () => {
       const context = {
@@ -718,5 +737,111 @@
       const result = await env.renderScriptString(script, context);
       expect(result.res).to.eql({ '1': 1, '2': 2, '3': 3 });
     });
+
+    describe('Lazy Deep Resolve: setPath Consistency', () => {
+
+      it('should verify Async Value assignment allows immediate property access (Lazy Object)', async () => {
+        const context = {
+          asyncVal: async () => { await delay(50); return 'foo'; },
+          now: () => Date.now()
+        };
+        const script = `
+          :data
+          var obj = { x: 1 }
+
+          var t0 = now()
+          // Assign Async Value - should return Lazy Object (Sync)
+          obj.y = asyncVal()
+          var t1 = now()
+
+          // Accessing existing property 'x' should be immediate
+          var val = obj.x
+          var t2 = now()
+
+          @data.assignmentTime = t1 - t0
+          @data.accessTime = t2 - t1
+          @data.val = val
+          @data.y = obj.y
+        `;
+
+        const result = await env.renderScriptString(script, context);
+
+        // Assignment should be fast (it's just wrapping)
+        expect(result.assignmentTime).to.be.lessThan(20);
+        // Access should be fast (it's a sync property on Lazy Object)
+        expect(result.accessTime).to.be.lessThan(20);
+
+        expect(result.val).to.be(1);
+        expect(result.y).to.be('foo');
+      });
+
+      it('should verify Async Key assignment makes container a Promise (Non-blocking assignment)', async () => {
+        const context = {
+          asyncInd: async () => { await delay(50); return 0; },
+          now: () => Date.now()
+        };
+        const script = `
+          :data
+          var list = [10, 20]
+
+          var t0 = now()
+          // Assign using Async Key - list becomes a Promise
+          // The function asyncInd takes 50ms.
+          // setPath returns a Promise immediately (non-blocking).
+          list[asyncInd()] = 30
+          var t1 = now()
+
+          // Accessing property on a Promise works (awaits resolution)
+          var val = list[0]
+
+          @data.assignmentTime = t1 - t0
+          @data.val = val
+        `;
+
+        const result = await env.renderScriptString(script, context);
+
+        // Assignment itself is fast (returns promise) - this PROVES it returned a Promise and didn't await the key synchronously
+        expect(result.assignmentTime).to.be.lessThan(50);
+
+        // Value is correct (awaited implicitly)
+        expect(result.val).to.be(30);
+      });
+
+      it('should verify Sequential Consistency: Async Key allows chained non-blocking assignments', async () => {
+        const context = {
+          asyncKey: async () => { await delay(50); return 'b'; },
+          now: () => Date.now()
+        };
+
+        const script = `
+            :data
+            var obj = { a: 1 }
+
+            var t0 = now()
+            // Async Key -> obj becomes Promise
+            obj[asyncKey()] = 2
+
+            // Sequential Sync assignment
+            // obj is a Promise so setPath(Promise, ...) returns a Promise chained to it.
+            // This does NOT block execution flow.
+            obj.c = 3
+            var t1 = now()
+
+            // Reading 'c'
+            var val = obj.c
+
+            @data.operationsTime = t1 - t0
+            @data.res = obj
+         `;
+        const result = await env.renderScriptString(script, context);
+
+        // Operations are just chaining promises, should be fast
+        expect(result.operationsTime).to.be.lessThan(50);
+
+        expect(result.res).to.eql({ a: 1, b: 2, c: 3 });
+      });
+
+    });
+
   });
 }());
