@@ -187,6 +187,50 @@ x, y = 200 // OK, if x and y were previously declared
 username = "Charlie"
 ```
 
+#### Value Semantics
+
+Assignment creates an independent copy. Objects and arrays are deep copied, not shared by reference.
+
+```javascript
+var a = {x: 1, y: 2}
+var b = a              // b receives a deep copy
+a.x = 10
+@text(b.x)  // 1 - b is independent
+
+var nums = [1, 2, 3]
+var copy = nums        // copy receives a deep copy
+nums[0] = 99
+@text(copy[0])  // 1 - copy is independent
+```
+
+This ensures parallel operations never interfere—each variable owns its data independently.
+
+#### Property Assignment
+
+You can directly assign to object properties and array elements:
+
+```javascript
+var point = {x: 1, y: 2}
+point.x = 10
+
+var items = [1, 2, 3]
+items[0] = 100
+```
+
+**\* Performance note:** Property and element assignments schedule work against the entire object or array, not just the property or element being changed. This means any operation using the object or array will wait if `obj.x = slowOperation()` or `arr[0] = slowOperation()` is still running, even when accessing unrelated properties or elements. This is a known limitation and will be improved in future versions.
+
+```javascript
+var point = {x: 1, y: 2}
+point.x = slowApiCall()
+@text(point.y)  // Waits for point.x to complete
+
+var items = [1, 2, 3]
+items[0] = slowApiCall()
+@text(items[1])  // Waits for items[0] to complete
+```
+
+**\* *Note:** Property Assignment is a **script-only feature** and is not available in the Cascada template language. Similar to Nunjucks, templates can access object properties and array elements for reading, but cannot modify them directly.
+
 #### Block Assignment with `capture`
 The `capture...endcapture` block is a special construct used **exclusively on the right side of an assignment (`=`)** to orchestrate logic and assemble a value. It's perfect for transforming data or running a set of parallel operations to create a single variable.
 
@@ -2761,9 +2805,6 @@ This roadmap outlines key features and enhancements that are planned or currentl
 
 -   **Expanded Sequential Execution (`!`) Support**
     Enhancing the `!` marker to work on variables and not just objects from the global context. This is especially important for macro arguments as macros don't have access to the context object.
-
--   **Direct Property Assignment on Variables**
-    Adding support for direct property modification on variables (e.g., `myObject.property = "new value"`). This is currently possible only for `@data` assignments
 
 -   **Compound Assignment for Variables (`+=`, `-=`, etc.)**
     Extending support for compound assignment operators (`+=`, `*=`, etc.) to regular variables (this is currently supported only for `@data` assignments). Like their `@data` counterparts, the default behavior of each operator will be overridable with custom methods.
