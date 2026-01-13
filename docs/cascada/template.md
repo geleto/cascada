@@ -11,6 +11,8 @@ This document focuses on the **differences** between Cascada Script and Cascada 
 
 Cascada Templates provide an alternative syntax for writing Cascada workflows using a template-based approach similar to Nunjucks/Jinja2. While Cascada Script is optimized for data orchestration with explicit output commands, Cascada Templates are ideal for text generation with embedded logic.
 
+Cascada maintains full compatibility with Nunjucks when running in non-async mode.
+
 ## Template vs Script: Key Differences
 
 Cascada Templates are built on top of Nunjucks and support most Cascada Script **control-flow and expression** features, but with these key differences:
@@ -113,13 +115,16 @@ Templates use Nunjucks' block assignment syntax:
 {% endset %}
 ```
 
-**Key difference:**
+**Key differences:**
 
-* Templates don’t use the `capture` keyword or any focus directive — **text output is the only mode**
+* Templates don't use the `capture` keyword — use `{% set %}...{% endset %}` instead
+* Text output is the only mode — no focus directives needed
 
 ## The `do` Tag
 
 The `{% do %}` tag executes expressions without rendering any output. Use it when you want something to **run**, not render.
+
+In Script mode, the equivalent is simply writing the expression on its own line (without a keyword or assignment).
 
 ### Execution-only Calls
 
@@ -168,14 +173,21 @@ An optional `recover` block may render alternative text on failure.
 
 `revert` unconditionally skips text output from the current capture, macro, or script scope.
 
+## Variable Scoping in Async Mode
+
+In Nunjucks and non-async Cascada templates, conditional statements (`if` and `switch`) do not create a variable scope. Variables set within these blocks are created in the parent scope.
+
+In async Cascada templates, `if` and `switch` create local variable scopes. Variables set within these blocks are local to the block and not visible in the parent scope.
+
 ## Unsupported Features
 
 The following Cascada Script features are **not available** in templates:
 
 * **Output handlers**: `@data`, `@text`, and custom `@` commands (including all `@data.path` operations)
 * **Output focus directives**: `:data`, `:text`, `:handlerName`
+* **Property assignment**: `obj.prop = value` is not supported
 
-**Note:** Templates only output text, so focus directives are not needed. Block captures use `{% set var %}...{% endset %}` without any focus directive.
+**Note:** Templates only output text, so focus directives are not needed. Block captures use `{% set var %}...{% endset %}` without any focus directive. Like Nunjucks, property assignment is not supported—use `{% set %}` to reassign entire variables.
 
 ## When to Use Templates vs Script
 
