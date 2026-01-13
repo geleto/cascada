@@ -10,9 +10,10 @@ const {
 
 const RESOLVE_MARKER = Symbol.for('cascada.resolve');
 
-// It's ok to use consequitive awaits when promises have been already in progress by the time you start awaiting them,
-// Thus using sequential await in a loop does not introduce significant delays compared to Promise.all.
-// not so if the promise is cteated right before the await, e.g. await fetch(url)
+// Helper to resolve multiple values (Arguments, Array elements).
+// 1. Awaits all to collect potential errors (parallel wait via collectErrors).
+// 2. If any fail, returns Poison (containing all collected errors).
+// 3. If all succeed, unwraps values and ensures nested Lazy Objects are also resolved.
 async function resolveAll(args) {
   // Collect all errors first (awaits all promises)
   const errors = await collectErrors(args);
@@ -21,7 +22,7 @@ async function resolveAll(args) {
     return createPoison(errors); // Errors already have position info from collectErrors
   }
 
-  // No errors - proceed with normal resolution
+  // No errors - proceed with normal resolution (unwrapping)
   const resolvedArgs = [];
   for (let i = 0; i < args.length; i++) {
     let arg = args[i];
@@ -148,6 +149,16 @@ function resolveArguments(fn, skipArguments = 0) {
   };
 }
 
+/**
+ * Enhances an object with specific runtime capabilities (Lazy Resolution).
+ * Scans shallow properties for Promises or other Lazy Objects.
+ * If any are found, attaches a hidden RESOLVE_MARKER promise that:
+ * 1. Awaits all dependencies.
+ * 2. Mutates the object in-place with resolved values.
+ * 3. Propagates errors via rejection (PoisonError).
+ *
+ * If no async properties are found, returns the object as-is (Sync optimization).
+ */
 function createObject(obj) {
   // Basic checks
   if (!obj || typeof obj !== 'object') return obj;
@@ -213,6 +224,12 @@ function createObject(obj) {
   return obj;
 }
 
+/**
+ * Enhances an array with specific runtime capabilities (Lazy Resolution).
+ * Similar to createObject, but for Arrays.
+ * Scans elements for Promises/Marked items.
+ * If found, attaches RESOLVE_MARKER to resolve/mutate in-place.
+ */
 function createArray(arr) {
   if (!Array.isArray(arr)) return arr;
 
