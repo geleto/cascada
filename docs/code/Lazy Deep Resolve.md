@@ -50,3 +50,44 @@ The Lazy Deep Resolution mechanism has been fully implemented and integrated.
 ### 4. Safety & Error Handling
 - **Context Safety**: Only objects composed by Cascada are marked. External context objects are never mutated or deeply scanned, preventing side-effects.
 - **Poison Propagation**: If a nested dependency fails, the `createObject` resolver catches it, creating a `PoisonedValue` (or throwing a `PoisonError` if part of a chain). The error bubbes up the marker chain, ensuring the top-level resolution captures all failures.
+
+### 5. Path Assignment Integration (`src/runtime/set-path.js`)
+
+`setPath` is the runtime utility for variable modification (e.g., `obj.a.b = val`). It has been fully integrated with the Lazy Deep Resolution system to support asynchronous values, chaining, and error collection.
+
+**Functional Principles:**
+
+1.  **Lazy Polymorphism (Return Types)**:
+    `setPath` dynamically adapts its return type based on the operation state:
+    - **Synchronous Value**: If all inputs are sync and result is sync -> returns direct value (Object/Array).
+    - **Lazy Object (Sync)**: If inputs are sync but value is async -> returns a synchronous *Lazy Wrapper* (Object/Array with `RESOLVE_MARKER`).
+    - **Promise**: If inputs require async resolution (e.g. resolving a parent Lazy Object) -> returns a Promise resolving to the final container.
+    - **PoisonedValue**: If any input is a sync error -> returns Poison synchronously.
+
+2.  **Lazy Value Assignment (Lazy Objects)**:
+    When assigning an asynchronous value (Promise or Lazy Object) to a property (e.g., `obj.x = fetchAsync()`), `setPath` does **not** await the value.
+    - It assigns the promise directly to the property.
+    - It wraps the container using `createObject` (or `createArray`).
+    - **Result**: Immediate return of a Lazy Object.
+
+3.  **Sequential Resolution on Mutation**:
+    If `setPath` targets a container that is *already* a Lazy Object (marked), it treats the container as undetermined.
+    - It triggers `_setPathAsync` to resolve the container *first*.
+    - **Implication**: Chained assignments (`obj.a = async; obj.b = 1`) serialize operations. `obj.b` waits for `obj.a` to settle. This ensures structural integrity.
+
+4.  **Deep Lazy Resolution**:
+    If intermediate path segments are Promises (e.g. `obj[asyncKey] = val`) or require traversing a Promise (e.g. `lazyObj.child.prop = val`), `setPath` performs **Segment-by-Segment Resolution**.
+    - It resolves the path up to the target container.
+    - **Optimization**: It uses `resolveAll([root, head])` to resolve the current container and the next key *in parallel*.
+
+5.  **Copy-On-Write (COW) via Path Copying**:
+    Cascada structures obey Copy-On-Write semantics. `setPath` implements **Path Copying**:
+    - It creates a shallow copy of the `root` object (or array).
+    - It recursively creates shallow copies of every nested object/array *along the path*.
+    - **Arrays**: Setting `key='[]'` triggers an array append (copy + push).
+    - **Lazy Preservation**: If a copied node was Lazy, the new copy is re-evaluated. If it still contains promises (from siblings), it gets a new `RESOLVE_MARKER`.
+
+6.  **Poison Handling & Error Collection**:
+    - **Synchronous Input**: `PoisonedValue` inputs trigger immediate synchronous return of Poison (bypassing async queue).
+    - **Async Rejection**: Rejections during resolution return Poison found in the barrier.
+    - **Resolution Barrier**: A failed Lazy Object cannot be modified. Accessing it triggers its cached failure (collected errors).
