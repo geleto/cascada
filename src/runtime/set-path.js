@@ -1,3 +1,37 @@
+/**
+ * Deep Path Assignment with Lazy Resolution Support
+ *
+ * This module provides the `setPath` function, which is the core mechanism for
+ * updating values within nested data structures in Cascada (a.position[getIndex()] = 10)
+ *
+ * KEY FEATURES:
+ * 1. **Copy-On-Write (Immutability)**:
+ *    - Updates never mutate the original object.
+ *    - It returns a deep copy but only for the path, doing shallow copy at each path segment.
+ *    - Example: `setPath(obj, ['a', 'b'], 1)` returns a new `obj` reference/copy.
+ *
+ * 2. **Transparent Async Support**:
+ *    - Handles Promises at any level: root object, path segments (keys), or the value itself.
+ *    - If any part of the path traversal (root or key) is async, the operation returns a Promise
+ *      resolving to the new container.
+ *
+ * 3. **The "Consistency Rule" (Async Keys vs Async Values)**:
+ *    - **Async Value**: If you assign an async value to a synchronous path (e.g. `obj.x = asyncVal()`),
+ *      the result is a synchronous "Lazy Object" with the value marked for resolution.
+ *      - Why? The structure is known immediately, only the leaf value is pending.
+ *    - **Async Key**: If you use an async key (e.g. `arr[asyncIdx()] = val`),
+ *      the result is a **Promise** for the entire container.
+ *      - Why? We cannot write to the container until we know *where* to write.
+ *      - This guarantees consistency by preventing reads of the container until the write is fully resolved.
+ *
+ * 4. **Lazy Resolution Integration**:
+ *    - When an async value is assigned to a synchronous object/array, `setPath` does NOT wait for it.
+ *    - **setPath's Role**: It updates the structure and then delegates to `createObject`/`createArray`.
+ *    - **createObject/Array's Role**: These helpers inspect the container and attach a hidden `RESOLVE_MARKER`.
+ *      - The marker holds a Promise that coordinates the resolution.
+ *      - It waits for all async children to settle.
+ *      - Upon completion, it mutates the object in-place, swapping Promises for real values.
+ */
 'use strict';
 
 const { isPoison, createPoison } = require('./errors');
