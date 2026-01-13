@@ -205,6 +205,8 @@ nums[0] = 99
 
 This ensures parallel operations never interfere—each variable owns its data independently.
 
+**Context objects follow the same value semantics:** When you assign a context object property to a variable, you get an independent deep copy. Any subsequent changes to that variable will not affect the original context object. However, changes to the variable are live and will be visible to all code that uses that variable.
+
 #### Property Assignment
 
 You can directly assign to object properties and array elements:
