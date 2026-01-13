@@ -517,15 +517,9 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
     });
 
     it('should contain error in Lazy Object when deep async path fails', async () => {
-      // Setup: obj.a is a promise that resolves to empty object {}.
-      // We try to set obj.a.b = 1.
-      // This requires accessing 'b' on 'a's result.
-      // Wait, 'a' resolves to {}. 'b' is valid assignment target?
-      // Yes. obj.a.b = 1 means resolve a, then set b on it.
-      // If a={} -> a.b = 1 -> a={b:1}.
-      // I generally want a failure.
-      // Try obj.a.b.c = 1 where obj.a -> { b: undefined }.
-      // 'b' is undefined. Access 'c' on undefined -> Error.
+      // Test deep setting on a lazy resolved object.
+      // obj.a is async { b: undefined }. We set obj.a.b.c = 1.
+      // This should fail because 'b' defaults to undefined, and we access 'c' on it.
 
       const obj = { a: Promise.resolve({ b: undefined }) };
 
@@ -642,8 +636,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         fetchProfile: async (id) => ({ id, name: 'User ' + id, stats: { score: 10 } }),
         fetchScore: async (id) => id * 100,
         updateScore: function (profile, bonus) {
-          // Accessing profile.stats.score needs it to be resolved
-          return profile.stats.score + bonus;
+          return profile.stats.score + bonus; // Implicitly awaits lazy profile stats
         }
       };
 
@@ -652,7 +645,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         user.stats.extra = fetchScore(5)
 
         var currentScore = updateScore(user, 50)
-        // user.stats.score is 10. + 50 = 60.
+        // user.stats.score (10) + 50 = 60.
 
         user.finalScore = currentScore
         var res = user
@@ -683,10 +676,9 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
       expect(res).to.have.length(3);
 
-      // Cascada uses Copy-On-Write logic.
-      // 'last.val = 99' updates the 'last' variable's reference, not the list's element.
-      expect(res[2].val).to.be(0); // Unchanged
-      expect(res[0].ref.val).to.be(0); // Unchanged
+      // 'last.val = 99' updates 'last' variable only (Copy-On-Write), not the list ref.
+      expect(res[2].val).to.be(0);
+      expect(res[0].ref.val).to.be(0);
     });
 
     it('should correctly sequence dependent async updates', async () => {
@@ -694,8 +686,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         delayVal: async (v, ms) => new Promise(r => setTimeout(() => r(v), ms)),
       };
 
-      // Check race conditions / sequencing.
-      // Lazy setPath preserves order by synchronous execution of statements.
+      // Lazy setPath preserves order by sequencing async resolution of the container.
       const res = await evalScript(`
          var obj = { x: 0 }
          obj.x = delayVal(1, 20)
@@ -843,6 +834,72 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         }
       });
 
+    });
+
+    describe('Context Isolation (COW)', () => {
+
+      it('should fail when attempting to modify deep context object directly', async () => {
+        const deepObj = { val: 1 };
+        const context = { wrapper: { obj: deepObj } };
+
+        try {
+          await evalScript(`
+            wrapper.obj.val = 2
+          `, context);
+          throw new Error('Should have failed');
+        } catch (e) {
+          expect(e.message).to.contain('Cannot assign to undeclared variable');
+        }
+
+        // Verify isolation
+        expect(deepObj.val).to.be(1);
+      });
+
+      it('should fail when attempting to append to deep context array directly', async () => {
+        const list = [1, 2];
+        const context = { wrapper: { list } };
+
+        try {
+          await evalScript(`
+             wrapper.list[] = 3
+           `, context);
+          throw new Error('Should have failed');
+        } catch (e) {
+          expect(e.message).to.contain('Cannot assign to undeclared variable');
+        }
+
+        expect(list).to.have.length(2);
+      });
+
+      it('should not modify context when aliasing and updating (Object COW)', async () => {
+        const shared = { nested: { x: 10 } };
+        const context = { source: shared };
+
+        // Assign to variable 'alias' first
+        const res = await evalScript(`
+          var alias = source
+          alias.nested.x = 20
+          var res = alias
+        `, context);
+
+        expect(res.nested.x).to.be(20);
+        // Original untouched
+        expect(shared.nested.x).to.be(10);
+      });
+
+      it('should not modify context when aliasing and appending (Array COW)', async () => {
+        const originalList = [1, 2];
+        const context = { list: originalList };
+
+        const res = await evalScript(`
+           var myList = list
+           myList[] = 3
+           var res = myList
+         `, context);
+
+        expect(res).to.eql([1, 2, 3]);
+        expect(originalList).to.eql([1, 2]);
+      });
     });
 
   });
