@@ -217,8 +217,6 @@ var items = [1, 2, 3]
 items[0] = 100
 ```
 
-**\* Performance note:** Property and element assignments schedule work against the entire object or array, not just the property or element being changed. This means any operation using the object or array will wait if `obj.x = slowOperation()` or `arr[0] = slowOperation()` is still running, even when accessing unrelated properties or elements. This is a known limitation and will be improved in future versions.
-
 ```javascript
 var point = {x: 1, y: 2}
 point.x = slowApiCall()
