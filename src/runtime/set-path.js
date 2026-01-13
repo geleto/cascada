@@ -174,10 +174,10 @@ function setPath(root, segments, value) {
 
   const newChild = setPath(child, tail, value);
 
-  // Note: setPath recursive call returns newChild.
-  // If newChild is async/lazy (Marked or Promise), setSinglePath will detect it via needsResolution check in sync path
-  // (because setSinglePath calls _setSinglePathSync which calls needsResolution(value))
-  // and mark the result accordingly.
+  // Recursion & Lazy Propagation:
+  // If the newChild is "Lazy" (Async or Marked), `setSinglePath` detects this
+  // and marks the current container as well. This ensures the "Lazy" status propagates
+  // cleanly up the tree without explicit handling here.
   return setSinglePath(root, key, newChild);
 }
 
