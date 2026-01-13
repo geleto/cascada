@@ -791,7 +791,7 @@
             yield -1;
             yield 4;
           },
-          async *makeEmptyItems() {},
+          async *makeEmptyItems() { },
           async formatValue(v) {
             return `VAL-${v},`;
           }
@@ -850,7 +850,7 @@
 
       it('should return false for didIterate with empty async iterator and limit', async () => {
         const context = {
-          async *emptyGen() {}
+          async *emptyGen() { }
         };
 
         const template = '{% for x in emptyGen() of 3 %}X{% else %}ELSE{% endfor %}';
@@ -954,7 +954,7 @@
       });
 
       // @todo - the compileFor sets near _addDeclaredVar
-      it.skip('should support destructured looping in async mode', async () => {
+      it('should support destructured looping in async mode', async () => {
         const context = { arr: [['x', 'y', 'z'], ['1', '2', '3']] };
         const template = '{% for a, b, c in arr %}' +
           '{{ a }},{{ b }},{{ c }}.{% endfor %}';

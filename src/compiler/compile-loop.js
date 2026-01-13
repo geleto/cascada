@@ -224,20 +224,19 @@ class CompileLoop {
     this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
 
     // Handle array unpacking within the loop body
-    if (loopVars.length === 2 && !Array.isArray(arr)) {
-      // Object key/value iteration
-      const [keyVar, valueVar] = loopVars;
-      this.compiler.emit.line(`frame.set("${keyVar}", ${keyVar});`);
-      this.compiler.emit.line(`frame.set("${valueVar}", ${valueVar});`);
-
-      if (node.isAsync) {
-        frame.set(keyVar, keyVar);
-        frame.set(valueVar, valueVar);
-        this.compiler._addDeclaredVar(frame, keyVar);
-        this.compiler._addDeclaredVar(frame, valueVar);
-      }
+    if (loopVars.length > 1) {
+      // Runtime unpacks arguments (array destructuring or object key/value)
+      loopVars.forEach((varName) => {
+        this.compiler.emit.line(`frame.set("${varName}", ${varName});`);
+        if (node.isAsync) {
+          frame.set(varName, varName);
+          this.compiler._addDeclaredVar(frame, varName);
+        }
+      });
     } else if (node.name instanceof nodes.Array) {
-      // Array destructuring
+      // Single variable destructuring: for [a] in arr
+      // Runtime passes the item as-is (e.g. array), we destructure locally
+      // Note: loopVars.length is 1 here
       node.name.children.forEach((child, index) => {
         const varName = child.value;
         const tid = this.compiler._tmpid();
@@ -249,7 +248,7 @@ class CompileLoop {
         }
       });
     } else {
-      // Single variable loop
+      // Single variable loop (Symbol)
       const varName = node.name.value;
       this.compiler.emit.line(`frame.set("${varName}", ${varName});`);
       if (node.isAsync) {
