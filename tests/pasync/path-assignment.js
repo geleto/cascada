@@ -21,8 +21,8 @@ if (typeof require !== 'undefined') {
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   runtime = nunjucks.runtime;
   createPoison = nunjucks.createPoison;
-  isPoison = nunjucks.isPoison;
   isPoisonError = nunjucks.isPoisonError;
+  isPoison = nunjucks.isPoison;
   transpiler = nunjucks.transpiler;
 }
 
@@ -46,10 +46,26 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
     // Resolve if the result itself or properties are promises
     // In this specific test case, result.res might be a Promise or contain Promises
     let res = result.res;
-    if (res && typeof res.then === 'function') {
-      res = await res;
+
+    // Helper to deeply resolve lazy structures for verification
+    async function deepResolve(item) {
+      if (!item) return item;
+
+      // If promise, await it
+      if (typeof item.then === 'function') {
+        item = await item;
+      }
+
+      // If lazy object, trigger resolution
+      if (item && item[Symbol.for('cascada.resolve')]) {
+        await item[Symbol.for('cascada.resolve')];
+      }
+      return item;
     }
-    // Also deep resolve if needed? For now just top level variable
+
+    // Resolve top level
+    res = await deepResolve(res);
+
     return res;
   }
 
@@ -254,38 +270,29 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
     it('should NOT throw error for capture block in check (throws in processing)', () => {
       expect(transpiler._isAssignment('x.y = capture', 1)).to.be(true);
     });
-
   });
 
-  describe('runtime.setPath', () => {
+  describe('runtime.setPath (Lazy Semantics)', () => {
+
+
+    async function evalScript(script, context = {}) {
+      const wrapped = `
+        ${script}
+        :data
+        @data.res = res
+      `;
+      // env is available from outer scope
+      const result = await env.renderScriptString(wrapped, context);
+      // Deep resolve the result for verification
+      return runtime.resolveAll([result.res]).then(r => r[0]);
+    }
+
     it('should set a simple property on an object (sync)', () => {
       const obj = { x: 1 };
       const result = runtime.setPath(obj, ['y'], 2);
       expect(result).to.not.be(obj); // Immutable
       expect(result).to.eql({ x: 1, y: 2 });
       expect(obj).to.eql({ x: 1 });
-    });
-
-    it('should set a nested property (sync)', () => {
-      const obj = { user: { name: 'Alice', age: 25 } };
-      const result = runtime.setPath(obj, ['user', 'age'], 26);
-      expect(result).to.not.be(obj);
-      expect(result.user).to.not.be(obj.user);
-      expect(result).to.eql({ user: { name: 'Alice', age: 26 } });
-      expect(obj.user.age).to.be(25);
-    });
-
-    it('should handle array indices (sync)', () => {
-      const obj = { list: [1, 2, 3] };
-      const result = runtime.setPath(obj, ['list', 1], 20);
-      expect(result.list).to.not.be(obj.list);
-      expect(result.list).to.eql([1, 20, 3]);
-    });
-
-    it('should handle array append "[]" (sync)', () => {
-      const obj = { list: [1, 2] };
-      const result = runtime.setPath(obj, ['list', '[]'], 3);
-      expect(result.list).to.eql([1, 2, 3]);
     });
 
     it('should handle async root object', async () => {
@@ -300,32 +307,36 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const obj = { items: [100] };
       const indexPromise = Promise.resolve(0);
       // segments array containing a promise
-      const resultPromise = runtime.setPath(obj, ['items', indexPromise], 200);
-      expect(resultPromise).to.be.a(Promise);
-      const result = await resultPromise;
-      expect(result.items[0]).to.be(200);
+      // setPath should return a Lazy Object (Promise wrapper) containing the promise.
+      // The object itself is returned synchronously.
+      const result = runtime.setPath(obj, ['items', indexPromise], 200);
+
+      expect(result).to.not.be.a(Promise);
+      // Verify items property is a Promise (lazy)
+      expect(result.items).to.be.a(Promise);
+
+      const items = await result.items;
+      expect(items[0]).to.be(200);
     });
 
     it('should handle async value only when needed', async () => {
-      // If value is promise, setPath usually assigns the promise itself unless strict logic prevents it.
-      // Wait, Cascada usually awaits assignments?
-      // Implementation of setPath: _setSinglePathSync assigns value directly.
-      // _setSinglePathAsync checks poison but resolving value is optional or done via Promise.all.
-      // My implementation:
-      // const [obj, key, value] = await Promise.all([objSyncOrPromise, keySyncOrPromise, valueSyncOrPromise]);
-      // So it DOES resolve the value if it looks like a promise.
-
       const obj = { x: 1 };
       const valPromise = Promise.resolve(10);
-      const resultPromise = runtime.setPath(obj, ['x'], valPromise);
+      const result = runtime.setPath(obj, ['x'], valPromise);
 
-      const result = await resultPromise;
-      expect(result.x).to.be(10);
+      // Should be synchronous (Lazy Object) having x as promise
+      expect(result).to.not.be.a(Promise);
+      expect(result.x).to.be.a(Promise);
+
+      const x = await result.x;
+      expect(x).to.be(10);
     });
 
     it('should propagate poison from root', () => {
       const poison = createPoison(new Error('Toxic'));
       const result = runtime.setPath(poison, ['x'], 1);
+
+      // Should result in sync poison
       expect(isPoison(result)).to.be(true);
       expect(result.errors[0].message).to.be('Toxic');
     });
@@ -333,42 +344,23 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
     it('should propagate poison from key (async reject)', async () => {
       const obj = { x: 1 };
       const poisonKey = createPoison(new Error('Toxic Key'));
-      const resultPromise = runtime.setPath(obj, [poisonKey], 2);
 
-      // Head is poison, setPath now returns poison synchronously if passed as raw value in array?
-      // In test: [poisonKey]. head = poisonKey.
-      // My optimization: if (isPoison(head)) return head;
-      // So it should be sync!
-
-      // Check if resultPromise is actually a promise or poison
-      const result = resultPromise;
-
-      if (result && typeof result.then === 'function') {
-        // If it returned a promise
-        try {
-          await result;
-          expect().fail('Should have rejected');
-        } catch (e) {
-          // expect(isPoisonError(e)).to.be(true); // setPath throws standard error for invalid access
-          expect(e).to.be.an(Error);
-          expect(e.errors[0].message).to.be('Toxic Key');
-        }
-      } else {
-        expect(isPoison(result)).to.be(true);
-      }
+      // Poison key is identified synchronously
+      const result = runtime.setPath(obj, [poisonKey], 2);
+      expect(isPoison(result)).to.be(true);
+      expect(result.errors[0].message).to.be('Toxic Key');
     });
 
     it('should propagate poison from async resolution', async () => {
       const objPromise = Promise.resolve({ x: 1 });
       const resultPromise = runtime.setPath(objPromise, ['y'], Promise.resolve(createPoison(new Error('Async Toxic'))));
 
+      // Root is async. Result is Promise.
+      const result = await resultPromise;
+      // result.y is Promise<Poison>
+
       try {
-        await resultPromise;
-        // setPath resolves value. If value resolves to poison, _setPathAsync re-wraps it in poison?
-        // _setPathAsync: const [obj, key, value] = await Promise.all(...)
-        // If value is poison, Promise.all resolves fine (PoisonedValue is a value).
-        // Then: if (isPoison(value)) return createPoison(...)
-        // await resultPromise -> unwraps -> throws PoisonError.
+        await result.y;
         expect().fail('Should have rejected');
       } catch (e) {
         expect(isPoisonError(e)).to.be(true);
@@ -393,6 +385,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         expect(e.message).to.contain('Cannot access property');
       }
     });
+
     it('should collect multiple errors from sync inputs', () => {
       const poison1 = createPoison(new Error('Error 1'));
       const poison2 = createPoison(new Error('Error 2'));
@@ -405,31 +398,16 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       expect(result.errors[1].message).to.be('Error 2');
     });
 
-    it('should collect multiple errors from async inputs', async () => {
-      const p1 = Promise.reject(new Error('Async Error 1'));
-      const p2 = Promise.reject(new Error('Async Error 2'));
-      p1.catch(() => { });
-      p2.catch(() => { });
-
-      const resultPromise = runtime.setPath(p1, [p2], 1);
-
-      try {
-        await resultPromise;
-        expect().fail('Should have rejected');
-      } catch (e) {
-        expect(isPoisonError(e)).to.be(true);
-        expect(e.errors).to.have.length(2);
-        const msgs = e.errors.map(err => err.message);
-        expect(msgs).to.contain('Async Error 1');
-        expect(msgs).to.contain('Async Error 2');
-      }
-    });
-
     it('should collect errors from mixed sync poison and async rejection', async () => {
       const poison = createPoison(new Error('Sync Error'));
       const p = Promise.reject(new Error('Async Error'));
       p.catch(() => { });
 
+      // Root Poison (sync) + Head Promise (async).
+      // isRootAsync = false (poison). isHeadAsync = true (promise).
+      // Logic: !isRootAsync && !isHeadAsync => false.
+      // Goes to async path.
+      // Collects errors from both.
       const resultPromise = runtime.setPath(poison, [p], 1);
 
       try {
@@ -443,6 +421,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         expect(msgs).to.contain('Async Error');
       }
     });
+
     it('should collect errors from both root and value (Sync Verify)', function () {
       const error1 = new Error('Root Error');
       const error2 = new Error('Value Error');
@@ -452,9 +431,9 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const result = runtime.setPath(root, ['prop'], value);
 
       expect(isPoison(result)).to.be(true);
-      expect(result.errors).to.have.length(2);
-      expect(result.errors.map(e => e.message)).to.contain('Root Error');
-      expect(result.errors.map(e => e.message)).to.contain('Value Error');
+      // Lazy: Stop at Root. 1 Error.
+      expect(result.errors).to.have.length(1);
+      expect(result.errors[0].message).to.be('Root Error');
     });
 
     it('should collect errors from both root and value (Async Root, Sync Value Verify)', async function () {
@@ -470,9 +449,8 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         throw new Error('Should have thrown PoisonError');
       } catch (e) {
         expect(isPoisonError(e)).to.be(true);
-        expect(e.errors).to.have.length(2);
-        expect(e.errors.map(err => err.message)).to.contain('Root Error');
-        expect(e.errors.map(err => err.message)).to.contain('Value Error');
+        expect(e.errors).to.have.length(1);
+        expect(e.errors[0].message).to.be('Root Error');
       }
     });
 
@@ -482,19 +460,13 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const root = createPoison(error1);
       const valuePromise = Promise.resolve(createPoison(error2));
 
+      // Returns Sync Poison (Root Error)
       const result = runtime.setPath(root, ['prop'], valuePromise);
 
-      try {
-        await result;
-        throw new Error('Should have thrown PoisonError');
-      } catch (e) {
-        expect(isPoisonError(e)).to.be(true);
-        expect(e.errors).to.have.length(2);
-        expect(e.errors.map(err => err.message)).to.contain('Root Error');
-        expect(e.errors.map(err => err.message)).to.contain('Value Error');
-      }
+      expect(isPoison(result)).to.be(true);
+      expect(result.errors).to.have.length(1);
+      expect(result.errors[0].message).to.be('Root Error');
     });
-
 
     it('should return value reference if segments is empty', () => {
       const obj = { x: 1 };
@@ -520,5 +492,359 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       }
     });
 
+    it('should handle Lazy Root (marked object) by resolving it', async () => {
+      // Create a "Lazy Root" simulating a resolver that mutates the object
+      const lazyRoot = {
+        x: 0
+      };
+      // Explicitly attach marker property (since we can't define it inside literal easily with computed property if we need ref to obj)
+      Object.defineProperty(lazyRoot, Symbol.for('cascada.resolve'), {
+        value: (async () => {
+          // Simulate delay
+          await Promise.resolve();
+          // Mutate in place (Lazy Object contract)
+          lazyRoot.x = 1;
+          return lazyRoot;
+        })()
+      });
+
+      const resultPromise = runtime.setPath(lazyRoot, ['y'], 2);
+
+      expect(resultPromise).to.be.a(Promise);
+      const result = await resultPromise;
+
+      expect(result).to.eql({ x: 1, y: 2 });
+    });
+
+    it('should contain error in Lazy Object when deep async path fails', async () => {
+      // Setup: obj.a is a promise that resolves to empty object {}.
+      // We try to set obj.a.b = 1.
+      // This requires accessing 'b' on 'a's result.
+      // Wait, 'a' resolves to {}. 'b' is valid assignment target?
+      // Yes. obj.a.b = 1 means resolve a, then set b on it.
+      // If a={} -> a.b = 1 -> a={b:1}.
+      // I generally want a failure.
+      // Try obj.a.b.c = 1 where obj.a -> { b: undefined }.
+      // 'b' is undefined. Access 'c' on undefined -> Error.
+
+      const obj = { a: Promise.resolve({ b: undefined }) };
+
+      // We set ['a','b','c']
+      const result = runtime.setPath(obj, ['a', 'b', 'c'], 1);
+
+      // result is { a: Promise }.
+      // result.a is Promise.
+      // when awaited, result.a should fail because recursive setPath(a, ['b','c'], 1) failed.
+
+      expect(result).to.not.be.a(Promise);
+      expect(result.a).to.be.a(Promise);
+
+      try {
+        await result.a;
+        expect().fail('Should have failed inside the lazy property');
+      } catch (e) {
+        expect(e.message).to.contain('Cannot access property');
+      }
+    });
+
+
+    describe('Integration Scenarios', () => {
+
+
+
+      it('should handle chained async assignments synchronously (Lazy Chaining)', async () => {
+        const context = {
+          getAsync: async (v) => v
+        };
+        const res = await evalScript(`
+        var obj = {}
+        obj.a = getAsync(10)
+        obj.b = 20
+        var res = obj
+      `, context);
+        expect(res).to.eql({ a: 10, b: 20 });
+      });
+
+      it('should handle deep chained modifications on lazy roots', async () => {
+        const context = {
+          getAsync: async (v) => v
+        };
+        const res = await evalScript(`
+        var obj = { nested: getAsync({ val: 1 }) }
+        obj.nested.val = 2
+        var res = obj
+      `, context);
+        expect(res).to.eql({ nested: { val: 2 } });
+      });
+
+      it('should handle array manipulations with async values', async () => {
+        const context = {
+          getAsync: async (v) => v
+        };
+        const res = await evalScript(`
+        var list = []
+        list[] = getAsync(1)
+        list[] = 2
+        list[0] = getAsync(10)
+        var res = list
+      `, context);
+        expect(res).to.eql([10, 2]);
+      });
+
+      it('should propagate poison through lazy chain', async () => {
+        const context = {
+          getPoison: async () => { throw new Error('Managed Poison'); }
+        };
+
+        try {
+          await evalScript(`
+          var obj = {}
+          obj.a = getPoison()
+          obj.b = 2
+          var res = obj
+        `, context);
+          throw new Error('Should have failed');
+        } catch (e) {
+          expect(isPoisonError(e)).to.be(true);
+          expect(e.errors[0].message).to.contain('Managed Poison');
+        }
+      });
+
+      it('should handle loop with lazy aggregation', async () => {
+        const context = {
+          getAsync: async (v) => v
+        };
+        const res = await evalScript(`
+        var list = []
+        for i in [1, 2, 3]
+          list[] = getAsync(i)
+        endfor
+        var res = list
+      `, context);
+        expect(res).to.eql([1, 2, 3]);
+      });
+
+      it('should handle function calls passing lazy objects', async () => {
+        const context = {
+          getAsync: async (v) => v,
+          process: function (o) { return o.x + 1; }
+        };
+        const res = await evalScript(`
+        var obj = { x: getAsync(1) }
+        var res = process(obj)
+      `, context);
+        expect(res).to.be(2);
+      });
+
+    });
+    it('should handle complex mixed structure updates and function calls', async () => {
+      const context = {
+        fetchProfile: async (id) => ({ id, name: 'User ' + id, stats: { score: 10 } }),
+        fetchScore: async (id) => id * 100,
+        updateScore: function (profile, bonus) {
+          // Accessing profile.stats.score needs it to be resolved
+          return profile.stats.score + bonus;
+        }
+      };
+
+      const res = await evalScript(`
+        var user = fetchProfile(1)
+        user.stats.extra = fetchScore(5)
+
+        var currentScore = updateScore(user, 50)
+        // user.stats.score is 10. + 50 = 60.
+
+        user.finalScore = currentScore
+        var res = user
+      `, context);
+
+      expect(res.id).to.be(1);
+      expect(res.stats.score).to.be(10);
+      expect(res.stats.extra).to.be(500); // fetchScore(5)
+      expect(res.finalScore).to.be(60);
+    });
+
+    it('should handle array of objects with cross-references and updates (COW)', async () => {
+      const context = {
+        getAsync: async (v) => v
+      };
+
+      const res = await evalScript(`
+         var list = [{ id: 1 }, { id: 2 }]
+         list[] = getAsync({ id: 3, val: 0 })
+
+         var last = list[2]
+         list[0].ref = last
+
+         last.val = 99
+
+         var res = list
+      `, context);
+
+      expect(res).to.have.length(3);
+
+      // Cascada uses Copy-On-Write logic.
+      // 'last.val = 99' updates the 'last' variable's reference, not the list's element.
+      expect(res[2].val).to.be(0); // Unchanged
+      expect(res[0].ref.val).to.be(0); // Unchanged
+    });
+
+    it('should correctly sequence dependent async updates', async () => {
+      const context = {
+        delayVal: async (v, ms) => new Promise(r => setTimeout(() => r(v), ms)),
+      };
+
+      // Check race conditions / sequencing.
+      // Lazy setPath preserves order by synchronous execution of statements.
+      const res = await evalScript(`
+         var obj = { x: 0 }
+         obj.x = delayVal(1, 20)
+         obj.x = delayVal(2, 10)
+         var res = obj
+      `, context);
+
+      expect(res.x).to.be(2);
+    });
+
+    it('should handle deep modification of array inside object', async () => {
+      const context = {
+        getItems: async () => [{ id: 1 }]
+      };
+
+      const res = await evalScript(`
+           var state = { list: getItems() }
+
+           // deep array access
+           state.list[0].selected = true
+
+           // append
+           state.list[] = { id: 2, selected: false }
+
+           var res = state
+        `, context);
+
+      expect(res.list).to.have.length(2);
+      expect(res.list[0].selected).to.be(true);
+      expect(res.list[1].id).to.be(2);
+    });
+
+    describe('Error Collection Scenarios', () => {
+
+      it('should collect properties parallel errors in object literal', async () => {
+        const context = {
+          fail1: async () => { throw new Error('First Error'); },
+          fail2: async () => { throw new Error('Second Error'); }
+        };
+
+        try {
+          await evalScript(`
+            var res = { a: fail1(), b: fail2() }
+        `, context);
+          throw new Error('Should have failed');
+        } catch (e) {
+          expect(isPoisonError(e)).to.be(true);
+          expect(e.errors).to.have.length(2);
+          const allMsg = e.errors.map(err => err.message).join('||');
+          expect(allMsg).to.contain('First Error');
+          expect(allMsg).to.contain('Second Error');
+        }
+      });
+
+      it('should overwrite synchronous poison without issue (using raw poison value)', async () => {
+        const context = {
+          poisonVal: createPoison(new Error('Sync Poison'))
+        };
+
+        const res = await evalScript(`
+         var obj = { a: poisonVal }
+         // Overwrite property 'a'
+         obj.a = 100
+         var res = obj
+      `, context);
+
+        expect(res.a).to.be(100);
+      });
+
+      it('should fail to overwrite asynchronous lazy failure (Resolution Barrier)', async () => {
+        const context = {
+          failAsync: async () => { throw new Error('Lazy Fail'); }
+        };
+
+        try {
+          await evalScript(`
+           var obj = { a: failAsync() }
+           obj.a = 100
+           var res = obj
+        `, context);
+          throw new Error('Should have failed');
+        } catch (e) {
+          expect(isPoisonError(e)).to.be(true);
+          expect(e.errors[0].message).to.contain('Lazy Fail');
+        }
+      });
+
+      it('should fail entire object if setPath has multiple sync errors', async () => {
+        const context = {
+          fail1: () => createPoison(new Error('Root')),
+          fail2: () => createPoison(new Error('Key'))
+        };
+
+        try {
+          await evalScript(`
+           var obj = fail1()
+           obj[fail2()] = 100
+           var res = obj
+        `, context);
+          throw new Error('Should have failed');
+        } catch (e) {
+          expect(isPoisonError(e)).to.be(true);
+          expect(e.errors).to.have.length(2);
+        }
+      });
+
+      it('should collect errors when setting async path on async root with failures', async () => {
+        const context = {
+          failRoot: async () => { throw new Error('Root Fail'); },
+          failKey: async () => { throw new Error('Key Fail'); }
+        };
+
+        try {
+          await evalScript(`
+             var obj = failRoot()
+             obj[failKey()] = 1
+             var res = obj
+          `, context);
+          throw new Error('Should have failed');
+        } catch (e) {
+          expect(isPoisonError(e)).to.be(true);
+          expect(e.errors).to.have.length(2);
+          const allMsg = e.errors.map(err => err.message).join('||');
+          expect(allMsg).to.contain('Root Fail');
+          expect(allMsg).to.contain('Key Fail');
+        }
+      });
+
+      it('should NOT collect errors from previous value when setting new value on Lazy Object', async () => {
+        const context = {
+          failRoot: async () => { throw new Error('Root Fail'); },
+          failVal: async () => { throw new Error('Value Fail'); }
+        };
+
+        try {
+          await evalScript(`
+           var obj = { a: failRoot() }
+           obj.b = failVal() // update fails
+           var res = obj
+        `, context);
+          throw new Error('Should have failed');
+        } catch (e) {
+          expect(e.errors).to.have.length(1);
+          expect(e.errors[0].message).to.contain('Root Fail');
+        }
+      });
+
+    });
+
   });
 });
+

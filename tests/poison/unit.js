@@ -648,16 +648,15 @@
 
       arr[1] = runtime.createArray(arr[1]);
 
-      try {
-        const marked = runtime.createArray(arr);
-        const resolver = Object.getOwnPropertySymbols(marked).find(s => s.toString() === 'Symbol(cascada.resolve)');
-        await marked[resolver];
+      const marked = runtime.createArray(arr);
+      // Sync poison is valid value, so no resolver is attached
+      const resolver = Object.getOwnPropertySymbols(marked).find(s => s.toString() === 'Symbol(cascada.resolve)');
+      expect(resolver).to.be(undefined);
 
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(runtime.isPoisonError(err)).to.be(true);
-        expect(err.errors[0].message).to.equal('Inner error');
-      }
+      // Verify poison is preserved
+      const innerArr = marked[1];
+      expect(runtime.isPoison(innerArr[1])).to.be(true);
+      expect(innerArr[1].errors[0].message).to.equal('Inner error');
     });
 
     it('should handle poison values (not promises) in createObject', async () => {
@@ -670,75 +669,40 @@
 
       obj.nested = runtime.createObject(obj.nested);
 
+      const marked = runtime.createObject(obj);
+      // Sync poison -> no resolver
+      const r1 = Object.getOwnPropertySymbols(marked).find(s => s.toString() === 'Symbol(cascada.resolve)');
+      expect(r1).to.be(undefined);
+      expect(runtime.isPoison(marked.bad)).to.be(true);
+      expect(runtime.isPoison(marked.nested.deeper)).to.be(true);
+
+      // Part 2: Async Poison (should be caught)
+      const delayedPoison = Promise.resolve().then(() => { throw poison; });
+      const obj2 = {
+        val: delayedPoison
+      };
+
+      const marked2 = runtime.createObject(obj2);
+      const resolver = Object.getOwnPropertySymbols(marked2).find(s => s.toString() === 'Symbol(cascada.resolve)');
+
       try {
-        const marked = runtime.createObject(obj);
-        // Note: For immediate poison values, createObject might not attach a promise if
-        // it doesn't see them as 'pending' things to resolve, but let's check our implementation.
-        // Actually createObject checks for val[RESOLVE_MARKER]. Poison values don't have that.
-        // They are just values. So createObject might return the object as-is if no promises/markers found.
-        // BUT wait, createObject implementation just checks for .then or [RESOLVE_MARKER].
-        // Poison values are NOT thenables (unless wrapped/polymorphic) AND don't have markers.
-        // So createObject returns 'obj' directly.
+        await marked2[resolver];
+        expect().fail('Should have thrown');
+      } catch (e) {
+        expect(runtime.isPoisonError(e)).to.be(true);
+        // e is PoisonError. e.errors[0] matches the rejection value -> 'poison' (PoisonedValue)
+        const inner = e.errors[0];
 
-        // This test actually verifies that *if* we wanted safe deep resolution, we'd need to manually check?
-        // Or essentially that poison flows when ACCESSED deep down, or checking explicitly?
-
-        // Re-reading createObject:
-        // if (val[RESOLVE_MARKER]) promises.push(val[RESOLVE_MARKER]);
-
-        // So simple poison values sitting in properties are NOT collected by createObject.
-        // This is intentional: "Lazy Deep Resolve". The poison is sitting there safely.
-        // It will explode only when accessed or if we explicitly check for it.
-
-        // However, if we WANT to test collection, we should wrap it in a structure that has a marker?
-        // No, createObject is for RESOLVING async things. Poison is already resolved (failed).
-
-        // Let's adapt the test to expectation: createObject should pass-through.
-        // But if we have a Resolver that involves poison, it should catch it.
-
-        // Let's modify the test to verify pass-through behavior OR correct usage.
-        // If we want to verify deep poison detection, we might need a promise that REJECTS with poison.
-
-        const delayedPoison = Promise.resolve().then(() => { throw poison; });
-        const obj2 = {
-          val: delayedPoison
-        };
-
-        const marked2 = runtime.createObject(obj2);
-        const resolver = Object.getOwnPropertySymbols(marked2).find(s => s.toString() === 'Symbol(cascada.resolve)');
-
-        try {
-          await marked2[resolver];
-          expect().fail('Should have thrown');
-        } catch (e) {
-          expect(runtime.isPoisonError(e)).to.be(true);
-          const msg = e.errors[0].message || '';
-          if (msg.indexOf('Object poison') === -1) {
-            // try deeper?
-            // The test failure said: expected undefined to equal 'Object poison'
-            // This implies e.errors[0].message was undefined.
-            // A created poison from createPoison(new Error('...')) has errors=[Error].
-            // If that poison is THROWN inside a promise catch, it might be wrapped.
-
-            // Let's inspect the error structure more loosely for the test passes
-            // The goal is just to confirm we caught the right rejection.
-            const found = JSON.stringify(e).indexOf('Object poison') !== -1 || e.toString().indexOf('Object poison') !== -1 || (e.errors && e.errors[0] && e.errors[0].message && e.errors[0].message.indexOf('Object poison') !== -1);
-            if (!found && e.errors[0]) {
-              // Check if the error itself IS the error object with the message
-              if (e.errors[0].message && e.errors[0].message.includes('Object poison')) return;
-            }
-            if (!found) throw e;
-          }
-        }
-
-      } catch (err) {
-        // Fallback expectation if logic differs
-        if (err.name === 'PoisonError') {
-          expect(err.errors).to.have.length(1);
+        // Check if inner is the poison object or related error
+        if (runtime.isPoison(inner)) {
+          expect(inner.errors[0].message).to.contain('Object poison');
         } else {
-          throw err;
+          // Maybe it unwrapped?
+          expect(inner.message).to.contain('Object poison');
         }
       }
+
+
     });
 
     it('should return synchronously for resolveDuo with non-promises', async () => {

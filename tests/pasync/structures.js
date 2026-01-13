@@ -697,5 +697,26 @@
       const result = await env.renderScriptString(script, context);
       expect(result).to.eql({ result: 'found' });
     });
+    it('should handle loop with intermediate usage and mixed aggregation', async () => {
+      const context = {
+        getVal: async (i) => i
+      };
+
+      const script = `
+         :data
+         var data = {}
+         var total = 0
+
+         for i in [1, 2, 3]
+           var v = getVal(i)
+           data[i] = v
+         endfor
+
+         @data.res = data
+      `;
+
+      const result = await env.renderScriptString(script, context);
+      expect(result.res).to.eql({ '1': 1, '2': 2, '3': 3 });
+    });
   });
 }());

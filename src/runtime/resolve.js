@@ -8,7 +8,7 @@ const {
   PoisonError
 } = require('./errors');
 
-const RESOLVE_MARKER = Symbol('cascada.resolve');
+const RESOLVE_MARKER = Symbol.for('cascada.resolve');
 
 // It's ok to use consequitive awaits when promises have been already in progress by the time you start awaiting them,
 // Thus using sequential await in a loop does not introduce significant delays compared to Promise.all.
@@ -158,7 +158,7 @@ function createObject(obj) {
   for (const key in obj) {
     const val = obj[key];
     if (val) {
-      if (typeof val.then === 'function') {
+      if (typeof val.then === 'function' && !isPoison(val)) {
         promises.push(val);
       } else if (val[RESOLVE_MARKER]) {
         promises.push(val[RESOLVE_MARKER]); // Dependency on child resolution
@@ -179,7 +179,7 @@ function createObject(obj) {
       for (const key in obj) {
         let val = obj[key];
         if (val) {
-          if (typeof val.then === 'function') {
+          if (typeof val.then === 'function' && !isPoison(val)) {
             try {
               obj[key] = await val;
             } catch (e) {
@@ -220,7 +220,7 @@ function createArray(arr) {
   for (let i = 0; i < arr.length; i++) {
     const val = arr[i];
     if (val) {
-      if (typeof val.then === 'function') {
+      if (typeof val.then === 'function' && !isPoison(val)) {
         promises.push(val);
       } else if (val[RESOLVE_MARKER]) {
         promises.push(val[RESOLVE_MARKER]);
@@ -238,7 +238,7 @@ function createArray(arr) {
       for (let i = 0; i < arr.length; i++) {
         const val = arr[i];
         if (val) {
-          if (typeof val.then === 'function') {
+          if (typeof val.then === 'function' && !isPoison(val)) {
             try {
               arr[i] = await val;
             } catch (e) {
@@ -279,5 +279,6 @@ module.exports = {
 
 
   createObject,
-  createArray
+  createArray,
+  RESOLVE_MARKER
 };
