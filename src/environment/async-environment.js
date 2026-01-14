@@ -1,6 +1,7 @@
 'use strict';
 
 const DataHandler = require('../script/data-handler');
+const ValueHandler = require('../script/value-handler');
 const { BaseEnvironment } = require('./base-environment');
 const { AsyncTemplate } = require('./template');
 const { AsyncScript } = require('./script');
@@ -16,6 +17,8 @@ class AsyncEnvironment extends BaseEnvironment {
 
     // Register the DataHandler as a default command handler
     this.addCommandHandlerClass('data', DataHandler);
+    // Register the ValueHandler to support @value(x) and @value = x
+    this.addCommandHandlerClass('value', ValueHandler);
   }
 
   /**

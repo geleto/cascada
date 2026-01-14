@@ -890,7 +890,25 @@ class ScriptTranspiler {
   _processOutputCommand(parseResult, lineIndex) {
     // Find the @ symbol position and preserve all whitespace after it
     const atIndex = parseResult.codeContent.indexOf('@');
-    const commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
+    let commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
+
+    // Handle special syntax @value = ... -> @value(...)
+    if (commandContent.trim().startsWith('value')) {
+      const trimmed = commandContent.trim();
+      const afterValue = trimmed.substring(5).trim(); // 5 is length of 'value'
+      if (afterValue.startsWith('=')) {
+        const expr = afterValue.substring(1).trim();
+        // Preserve indentation/whitespace before 'value'
+        const leadingSpace = commandContent.substring(0, commandContent.indexOf('value'));
+        // Transform to function call syntax.
+        // We add the closing parenthesis. If the expression is multiline,
+        // we might ideally want the ')' at the end of the block.
+        // Simple transformation: value(expr)
+        // If expr contains newlines (e.g. from a prior transformation?), it keeps them.
+        // Here we are processing a single logical line from the parser's perspective (though it might be continued later).
+        commandContent = `${leadingSpace}value(${expr})`;
+      }
+    }
 
     // Check if this is a @text command (the current command for text output)
     let ccontent = commandContent.trim();
