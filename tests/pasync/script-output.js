@@ -335,6 +335,79 @@ describe('Cascada Script: Output commands', function () {
       expect(result).to.eql({ value: 42 });
     });
 
+    it('should access outer variables in call block', async () => {
+      const script = `
+        :data
+        var outer = 10
+        macro runner()
+          var res = caller()
+          @data.val = res.val
+        endmacro
+
+        call runner() :data
+          @data.val = outer
+        endcall
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ val: 10 });
+    });
+
+    it('should resolve variables from caller site (lexical scope)', async () => {
+      const script = `
+        :data
+        var x = "outer"
+        macro runner()
+          var x = "inner"
+          var res = caller()
+          @data.val = res.val
+        endmacro
+
+        call runner() :data
+          @data.val = x
+        endcall
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ val: 'outer' });
+    });
+
+    it('should allow call arguments to shadow outer variables', async () => {
+      const script = `
+        :data
+        var x = "outer"
+        macro runner()
+          var res = caller("arg")
+          @data.val = res.val
+        endmacro
+
+        call runner() (x) :data
+          @data.val = x
+        endcall
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ val: 'arg' });
+    });
+
+    it('should fail to access variables defined purely inside the macro (isolation)', async () => {
+      const script = `
+        :data
+        macro runner()
+          var secret = "inner"
+          var res = caller()
+          @data.val = res.val
+        endmacro
+
+        call runner() :data
+           @data.val = secret
+        endcall
+      `;
+      try {
+        await env.renderScriptString(script);
+        throw new Error('Should have thrown');
+      } catch (e) {
+        expect(e.message).to.contain('secret');
+      }
+    });
+
     it('should handle null path with merge to combine with existing root data', async () => {
       const script = `
         :data
