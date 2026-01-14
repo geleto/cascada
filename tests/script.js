@@ -47,7 +47,7 @@ describe('Cascada Script: Variables', function () {
       `;
 
       const result = await env.renderScriptString(script, {});
-	    expect(result.result.hasReportValue).to.be(false);
+      expect(result.result.hasReportValue).to.be(false);
       expect(result.result.reportValue).to.be(null);
       expect(result.result.value).to.be(1);
       expect(result.result.hasValue).to.be(true);
@@ -181,7 +181,8 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         var rawUserData = fetchUser(123)
-        var user = capture :data
+        var user = capture
+          : data
           @data.id = rawUserData.id
           @data.username = rawUserData.name | title
           @data.status = "active" if rawUserData.isActive == 1 else "inactive"
@@ -205,7 +206,8 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         var user
-        user = capture :data
+        user = capture
+          : data
           @data.name = "Bob"
           @data.role = "admin"
         endcapture
@@ -223,7 +225,8 @@ describe('Cascada Script: Variables', function () {
       const script = `
         :data
         var baseUrl = "https://api.example.com"
-        var user = capture :data
+        var user = capture
+          : data
           @data.apiUrl = baseUrl + "/users"
           @data.name = "Alice"
         endcapture
@@ -424,9 +427,11 @@ describe('Cascada Script: Variables', function () {
     it('should handle nested capture blocks', async function () {
       const script = `
         :data
-        var outer = capture :data
+        var outer = capture
+          : data
           @data.level = "outer"
-          var inner = capture :data
+          var inner = capture
+            : data
             @data.level = "inner"
             @data.parentLevel = "outer"
           endcapture
@@ -450,7 +455,8 @@ describe('Cascada Script: Variables', function () {
         :data
         extern user, settings, theme
         theme = "dark"
-        settings = capture :data
+        settings = capture
+          : data
           @data.notifications = true
           @data.language = "en"
         endcapture
@@ -479,7 +485,8 @@ describe('Cascada Script: Variables', function () {
         :data
         var userData = fetchUser(1)
         var settings = fetchSettings(1)
-        var profile = capture :data
+        var profile = capture
+          : data
           @data.name = userData.name
           @data.email = userData.email
           @data.theme = settings.theme
@@ -507,7 +514,8 @@ describe('Cascada Script: Variables', function () {
     it('should handle errors in capture block gracefully', async function () {
       const script = `
         :data
-        var result = capture :data
+        var result = capture
+          : data
           // This would cause an error if not handled
           @data.value = someUndefinedFunction()
         endcapture

@@ -1091,7 +1091,7 @@ class ScriptTranspiler {
     }
 
     parseResult.continuesToNext = parseResult.continuesToNext || this._willContinueToNextLine(codeTokens, parseResult.codeContent, firstWord);
-    parseResult.continuesFromPrev = this._continuesFromPrevious(parseResult.codeContent);
+    parseResult.continuesFromPrev = this._continuesFromPrevious(code);
 
     //update the state used by the parser (it works only with state + current line)
     state.inMultiLineComment = parseResult.inMultiLineComment;
@@ -1104,7 +1104,13 @@ class ScriptTranspiler {
     let tagLineParseResult;
     for (let i = 0; i < parseResults.length; i++) {
       const presult = parseResults[i];
-      if (presult.lineType === 'TAG' || presult.lineType === 'TEXT') {
+
+      // Check if this is an option tag that should continue the previous macro/var/set definition
+      const isOptionContinuation = presult.tagName === 'option' &&
+        prevLineIndex !== -1 &&
+        ['macro', 'var', 'set'].includes(parseResults[prevLineIndex].tagName);
+
+      if ((presult.lineType === 'TAG' && !isOptionContinuation) || presult.lineType === 'TEXT') {
         //start of a new tag or text, save it for continuation
         tagLineParseResult = presult;
       } else {
@@ -1115,6 +1121,11 @@ class ScriptTranspiler {
         }
         if (prevLineIndex != -1 && (parseResults[prevLineIndex].continuesToNext || presult.continuesFromPrev)) {
           //this is continuation
+          if (isOptionContinuation) {
+            // Revert option tag to raw content for continuation (e.g. ": data" instead of focusing directive)
+            presult.codeContent = this._tokensToCode(this._filterOutComments(presult.tokens));
+          }
+
           //mark everything between prevLineIndex+1 and i as continuation
           for (let j = prevLineIndex + 1; j <= i; j++) {
             parseResults[j].isContinuation = true;

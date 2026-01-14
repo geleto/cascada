@@ -1360,4 +1360,47 @@ endblock`;
       expect(template).to.contain('{%- var x = 1 -%}{#- comment; -#}');
     });
   });
+  describe('Macro and Capture Focus Continuation', () => {
+    it('should continue macro definition with : data', () => {
+      const script = `
+macro myMacro(x, y)
+: data
+  set_data(x, y)
+endmacro
+      `;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      // {%- macro myMacro(x, y) : data -%}
+      expect(template).to.contain('macro myMacro(x, y)');
+      expect(template).to.contain(': data');
+      expect(template).not.to.contain('focus="data"');
+    });
+
+    it('should continue capture with : text', () => {
+      const script = `
+x = capture
+: text
+  output(x)
+endcapture
+      `;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      // {%- set x \n : text -%}
+      expect(template).to.contain('set x');
+      expect(template).to.contain(': text');
+      expect(template).not.to.contain('focus="text"');
+    });
+
+    it('should skip empty lines between macro and focus directive', () => {
+      const script = `
+macro myMacro(x, y)
+
+: data
+  set_data(x, y)
+endmacro
+      `;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.contain('macro myMacro(x, y)');
+      expect(template).to.contain(': data');
+      expect(template).not.to.contain('focus="data"');
+    });
+  });
 });

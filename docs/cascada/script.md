@@ -234,7 +234,7 @@ items[0] = slowApiCall()
 #### Block Assignment with `capture`
 The `capture...endcapture` block is a special construct used **exclusively on the right side of an assignment (`=`)** to orchestrate logic and assemble a value. It's perfect for transforming data or running a set of parallel operations to create a single variable.
 
-The block runs its own logic and uses [Output Commands](#the-handler-system-using--output-commands) to build a result, which is then assigned to the variable. You can use an [output focus directive](#focusing-the-output-data-text-handlername) like `:data` to assign a clean data object.
+The block runs its own logic and uses [Output Commands](#the-handler-system-using--output-commands) to build a result, which is then assigned to the variable. You can use an [output focus directive](#focusing-the-output-data-text-handlername) like `:data` to assign a clean data object. This directive can be placed on the same line as `capture` or on the first line of the block body.
 
 ```javascript
 // First, fetch some raw data from an async source.
@@ -243,7 +243,7 @@ var rawUserData = fetchUser(123) // e.g., returns { id: 123, name: "alice", isAc
 
 // Use a 'capture' block for declaration and assignment.
 // It transforms the raw data into a clean 'user' object.
-var user = capture :data
+var user = capture : data
   // Logic inside the block can access variables from the outer scope.
   @data.id = rawUserData.id
   @data.username = rawUserData.name | title // Use a filter for formatting
@@ -1810,7 +1810,7 @@ Macros implicitly return the structured object built by the [Output Commands](#t
 
 ### Defining and Calling a Macro
 
-A macro can perform its own internal, parallel async operations and then assemble a return value.
+A macro can perform its own internal, parallel async operations and then assemble a return value. You can specify an output focus directive (like `:data`) either on the macro definition line or on the first line of the body.
 
 <table>
 <tr>
@@ -1861,7 +1861,8 @@ Macros support keyword arguments, allowing for more explicit and flexible calls.
 
 ```javascript
 // Macro with default arguments
-macro input(name, value="", type="text") : data
+macro input(name, value="", type="text")
+  : data
   @data.field.name = name
   @data.field.value = value
   @data.field.type = type
@@ -1885,7 +1886,8 @@ Like the main script body, a macro's output can be focused using a directive suc
 ```javascript
 // The :data directive filters the macro's
 // return value to be just the data object.
-macro buildUser(name) : data
+macro buildUser(name)
+  : data
   @data.user.name = name
   @data.user.active = true
 endmacro
