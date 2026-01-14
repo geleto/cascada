@@ -2013,8 +2013,8 @@ This ensures the call block remains decoupled from the macro's implementation de
 #### How Call Blocks Work
 
 - **Parameters**: Explicitly passed via `caller(args)` and declared in `(params)`
-- **Return value**: Controlled by output focus (`:data`, `:text`)
-- **Isolation**: Call block output doesn't write to parent scope
+- **Return value**: The object, text or other handler result produced by the block (controlled by focus), captured by `caller()`
+- **Result Construction**: Output writes (like `@data`) build this return value instead of modifying the parent scope
 - **Caller's context**: Block accesses variables from where it was written, not the macro's scope
 - **Execution control**: Macro decides when and how many times to invoke `caller()`
 
