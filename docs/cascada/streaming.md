@@ -130,7 +130,9 @@ The default output item stream is accessed via `@stream` and has result type `:s
 ### Mental Model: Source-Order Visibility
 
 When reading from a stream, think in terms of **where you are in the script**, not when code happens to run.
-A stream read sees all values emitted by source code **above it**, and never values emitted **below it**—even if later code runs earlier due to concurrency. Cascada may execute work out of order for performance, but it always assembles stream values **as if the script were executed top to bottom**. This guarantees that iteration, indexing, and snapshots behave deterministically while still allowing full parallel execution.
+A stream read sees all values emitted by source code **above it**, or from code in previous loop iterations, and never values emitted **below it** — even if later code runs earlier due to concurrency.
+
+Cascada may execute work out of order for performance, but it always assembles stream values **as if the script were executed top to bottom**. This guarantees that iteration, indexing, and snapshots behave deterministically while still allowing full parallel execution.
 
 ---
 
@@ -170,6 +172,206 @@ Rules:
 * `@stream(item)` emits a single item
 * `@stream(...items)` emits multiple items
 * Arrays expand **only when spread**
+
+---
+
+## Stream Initialization
+
+Streams can be assigned at initialization from other streams or context object properties.
+
+Assigned streams are read-only and stream all items from the source.
+
+### From Another Stream
+
+<table>
+<tr>
+<th width="50%" valign="top">Stream Variable Assignment</th>
+<th width="50%" valign="top">Variable Assignment (Snapshot)</th>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+```javascript
+stream source
+source(1, 2, 3)
+
+stream dest = source
+// dest is read-only
+// streams continuously from source
+// remains connected, but visibility
+// respects source-order rules
+```
+
+</td>
+<td width="50%" valign="top">
+
+```javascript
+stream source
+source(1, 2, 3)
+
+var snapshot = source
+// snapshot captures items visible
+// at assignment point
+```
+
+</td>
+</tr>
+</table>
+
+### From Context Object
+
+```javascript
+stream results = context.stream
+// read-only, continuous streaming
+var results = context.stream
+// identical behavior - read-only, continuous streaming
+```
+
+When initializing from the context object, `stream` and `var` behave identically - both create read-only streams that continuously reflect the source.
+---
+
+## Iteration
+
+Direct iteration traverses stream items in deterministic source order.
+
+Iteration sees only items visible at the iteration statement's position in the script, processing the items as they become available.
+
+<table>
+<tr>
+<th width="50%" valign="top">Output Stream</th>
+<th width="50%" valign="top">Stream Variable</th>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+```javascript
+@stream(1)
+@stream(2)
+
+for x of @stream
+  @text(x)
+endfor
+
+@stream(3)
+```
+
+</td>
+<td width="50%" valign="top">
+
+```javascript
+stream results
+
+results(1)
+results(2)
+
+for x of results
+  @text(x)
+endfor
+
+results(3)
+```
+
+</td>
+</tr>
+</table>
+
+In both examples, the loop iterates over `[1, 2]`. The value `3` is added after the iteration statement in source order and is therefore not visible to the loop.
+
+**Concurrency note:**
+The loop body is **not executed sequentially**. Each item is processed **as soon as it becomes available**, and different iterations may run concurrently. Despite this, the **observable results are equivalent to sequential execution**: iteration order, visibility, and final output remain deterministic.
+
+> **Restriction (compile-time error)**
+> A stream must not be written to while it is being iterated.
+
+<table>
+<tr>
+<th width="50%" valign="top">Invalid (Mutation During Iteration)</th>
+<th width="50%" valign="top">Correct Pattern</th>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+```javascript
+@stream(1, 2, 3)
+
+for item of @stream
+  // ❌ DO NOT mutate the iterated stream
+  @stream(item * 10)
+endfor
+```
+
+</td>
+<td width="50%" valign="top">
+
+```javascript
+@stream(1, 2, 3)
+
+for item of @stream
+  // ✅ OK: write to a different stream
+  @text(item)
+endfor
+```
+
+</td>
+</tr>
+</table>
+
+---
+
+## Loop Object Properties
+
+ During iteration, the `loop` object provides index-related properties, this is the same as the regular Cascada iterators.:
+
+* `loop.index`: the current iteration of the loop (1-indexed)
+* `loop.index0`: the current iteration of the loop (0-indexed)
+* `loop.revindex`: number of iterations from current position to the end of visible items (1-indexed)
+* `loop.revindex0`: number of iterations from current position to the end of visible items (0-indexed)
+
+### With Nested Concurrent Contexts
+
+When iterating streams with nested concurrent contexts (e.g., parallel tasks each emitting independently), reading these properties **blocks until the position is determined**:
+
+```javascript
+for item of @stream
+  var idx = loop.index  // blocks until source-order position is known
+  var remaining = loop.revindex  // blocks until total count of visible items is determined
+  @text("Item #{idx}: #{item}")
+endfor
+```
+
+**Behavior:**
+* `loop.index` and `loop.index0` block until the item's source-order position is resolved
+* `loop.revindex` and `loop.revindex0` block until both the item's position and the total count of visible items are known
+* "Visible items" means items visible at the iteration statement's source position
+* This ensures deterministic results while allowing concurrent execution
+
+### Index Path for Immediate Position Access
+
+Unlike `index`, which may need to wait for previous iterations to determine position, `loop.indexpath` is available immediately and provides hierarchical position information:
+
+**Property:**
+* `loop.indexpath`: An array of numbers representing hierarchical position: `[1, 4, 7, 8]`
+
+**Key characteristics:**
+* Each number represents the position at that nesting level
+* Index paths are always immediately available—all positions are known at emission time
+* Useful for determining element position without blocking
+
+**Comparison semantics:**
+```javascript
+[1, 8, 9] < [2, 0]        // First element differs (1 < 2)
+[1, 2, 5] < [1, 3, 0]     // Second element differs (2 < 3)
+[1, 2]    < [1, 2, 0]     // Parent before child (prefix)
+```
+
+**Example:**
+```javascript
+for item of @stream
+  var path = loop.indexpath  // available immediately
+  var idx = loop.index       // may block until position is determined
+  @text("Path #{path.join('.')}: #{item}")
+endfor
+```
 
 ---
 
@@ -322,178 +524,6 @@ Returns the item at the specified index, or `none` if the index is beyond the vi
 
 ---
 
-## Stream Initialization
-
-Streams can be assigned at initialization from other streams or context object properties.
-
-Assigned streams are read-only and stream all items from the source.
-
-### From Another Stream
-
-<table>
-<tr>
-<th width="50%" valign="top">Stream Variable Assignment</th>
-<th width="50%" valign="top">Variable Assignment (Snapshot)</th>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-```javascript
-stream source
-source(1, 2, 3)
-
-stream dest = source
-// dest is read-only
-// streams continuously from source
-// remains connected, but visibility
-// respects source-order rules
-```
-
-</td>
-<td width="50%" valign="top">
-
-```javascript
-stream source
-source(1, 2, 3)
-
-var snapshot = source
-// snapshot captures items visible
-// at assignment point
-```
-
-</td>
-</tr>
-</table>
-
-### From Context Object
-
-```javascript
-stream results = context.stream
-// read-only, continuous streaming
-var results = context.stream
-// identical behavior - read-only, continuous streaming
-```
-
-When initializing from the context object, `stream` and `var` behave identically - both create read-only streams that continuously reflect the source.
----
-
-## Iteration
-
-Direct iteration traverses stream items in deterministic source order.
-
-Iteration sees only items visible at the iteration statement's position in the script, processing the items as they become available.
-
-<table>
-<tr>
-<th width="50%" valign="top">Output Stream</th>
-<th width="50%" valign="top">Stream Variable</th>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-```javascript
-@stream(1)
-@stream(2)
-
-for x of @stream
-  @text(x)
-endfor
-
-@stream(3)
-```
-
-</td>
-<td width="50%" valign="top">
-
-```javascript
-stream results
-
-results(1)
-results(2)
-
-for x of results
-  @text(x)
-endfor
-
-results(3)
-```
-
-</td>
-</tr>
-</table>
-
-In both examples, the loop iterates over `[1, 2]`. The value `3` is added after the iteration statement in source order and is therefore not visible to the loop.
-
-**Concurrency note:**
-The loop body is **not executed sequentially**. Each item is processed **as soon as it becomes available**, and different iterations may run concurrently. Despite this, the **observable results are equivalent to sequential execution**: iteration order, visibility, and final output remain deterministic.
-
-> **Restriction (compile-time error)**
-> A stream must not be written to while it is being iterated.
-
-<table>
-<tr>
-<th width="50%" valign="top">Invalid (Mutation During Iteration)</th>
-<th width="50%" valign="top">Correct Pattern</th>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-```javascript
-@stream(1, 2, 3)
-
-for item of @stream
-  // ❌ DO NOT mutate the iterated stream
-  @stream(item * 10)
-endfor
-```
-
-</td>
-<td width="50%" valign="top">
-
-```javascript
-@stream(1, 2, 3)
-
-for item of @stream
-  // ✅ OK: write to a different stream
-  @text(item)
-endfor
-```
-
-</td>
-</tr>
-</table>
-
----
-
-## Loop Object Properties
-
-During iteration, the `loop` object provides index-related properties:
-
-* `loop.index`: the current iteration of the loop (1-indexed)
-* `loop.index0`: the current iteration of the loop (0-indexed)
-* `loop.revindex`: number of iterations from current position to the end of visible items (1-indexed)
-* `loop.revindex0`: number of iterations from current position to the end of visible items (0-indexed)
-
-### With Nested Concurrent Contexts
-
-When iterating streams with nested concurrent contexts (e.g., parallel tasks each emitting independently), reading these properties **blocks until the position is determined**:
-
-```javascript
-for item of @stream
-  var idx = loop.index  // blocks until source-order position is known
-  var remaining = loop.revindex  // blocks until total count of visible items is determined
-  @text("Item #{idx}: #{item}")
-endfor
-```
-
-**Behavior:**
-* `loop.index` and `loop.index0` block until the item's source-order position is resolved
-* `loop.revindex` and `loop.revindex0` block until both the item's position and the total count of visible items are known
-* "Visible items" means items visible at the iteration statement's source position
-* This ensures deterministic results while allowing concurrent execution
-
----
-
 ## `:textStream`/`@textStream` — Output Text Streams
 
 Text streams are **output streams** for text concatenation with chunk-level visibility.
@@ -532,6 +562,63 @@ output("Cascada")
 </td>
 </tr>
 </table>
+
+---
+
+## Iteration (Text Chunks)
+
+Direct iteration traverses text chunks in deterministic source order.
+
+Iteration sees only chunks visible at the iteration statement's position in the script, waiting as needed for those chunks to become available.
+
+<table>
+<tr>
+<th width="50%" valign="top">Output Text Stream</th>
+<th width="50%" valign="top">Text Stream Variable</th>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+```javascript
+@textStream("Hello")
+@textStream(" ")
+
+for chunk of @textStream
+  @text(chunk)
+endfor
+
+@textStream("World")
+```
+
+</td>
+<td width="50%" valign="top">
+
+```javascript
+textStream output
+
+output("Hello")
+output(" ")
+
+for chunk of output
+  @text(chunk)
+endfor
+
+output("World")
+```
+
+</td>
+</tr>
+</table>
+
+In both examples, the loop iterates over `["Hello", " "]`. The chunk `"World"` is added after the iteration statement in source order and is therefore not visible to the loop.
+
+The loop processes each text chunk as if the stream were a regular sequence.
+
+**Concurrency note:**
+The loop body is **not executed sequentially**. Each chunk is processed **as soon as it becomes available**, and different iterations may run concurrently. Despite this, the **observable results are equivalent to sequential execution**: iteration order, visibility, and final output remain deterministic.
+
+> **Restriction (compile-time error)**
+> A stream must not be written to while it is being iterated.
 
 ---
 
@@ -622,63 +709,6 @@ var u = ts.slice(8)
 
 ---
 
-### Iteration (Text Chunks)
-
-Direct iteration traverses text chunks in deterministic source order.
-
-Iteration sees only chunks visible at the iteration statement's position in the script, waiting as needed for those chunks to become available.
-
-<table>
-<tr>
-<th width="50%" valign="top">Output Text Stream</th>
-<th width="50%" valign="top">Text Stream Variable</th>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-```javascript
-@textStream("Hello")
-@textStream(" ")
-
-for chunk of @textStream
-  @text(chunk)
-endfor
-
-@textStream("World")
-```
-
-</td>
-<td width="50%" valign="top">
-
-```javascript
-textStream output
-
-output("Hello")
-output(" ")
-
-for chunk of output
-  @text(chunk)
-endfor
-
-output("World")
-```
-
-</td>
-</tr>
-</table>
-
-In both examples, the loop iterates over `["Hello", " "]`. The chunk `"World"` is added after the iteration statement in source order and is therefore not visible to the loop.
-
-The loop processes each text chunk as if the stream were a regular sequence.
-
-**Concurrency note:**
-The loop body is **not executed sequentially**. Each chunk is processed **as soon as it becomes available**, and different iterations may run concurrently. Despite this, the **observable results are equivalent to sequential execution**: iteration order, visibility, and final output remain deterministic.
-
-> **Restriction (compile-time error)**
-> A stream must not be written to while it is being iterated.
-
----
-
 ## Stream Result Types
 
 Macros, captures, and full scripts may declare a stream type as their result.
@@ -687,9 +717,9 @@ When a block returns `:stream` or `:textStream`, all values emitted using the co
 
 ### Output restriction: no Error Values in returned streams
 
-Returned output streams (`:stream`, `:textStream`) must not contain Error Values.
+Returned output streams (`:stream`, `:textStream`) from the **script's main output** must not contain Error Values.
 
-If any emitted item/chunk in a returned output stream is a poisoned value, the script throws (the render promise rejects). Iteration and reads can still observe poisoned items while running, but final output streams cannot contain them.
+If any emitted item/chunk in a script's returned output stream is a poisoned value, the script throws (the render promise rejects). Iteration and reads can still observe poisoned items while running, but final script output streams cannot contain them.
 
 ---
 
@@ -827,6 +857,34 @@ for await (const { chunk, index } of result.textStream.indexed()) {
 
 * Ordered iteration guarantees source-order delivery but may wait for slow chunks
 * Unordered iteration processes chunks immediately as they arrive, useful for incremental display or streaming output
+
+---
+
+### Unordered Iteration with Index Path
+
+For immediate position access without blocking, use `indexedPath()`:
+
+```javascript
+for await (const { chunk, indexpath } of result.textStream.indexedPath()) {
+  console.log(`[${indexpath.join('.')}]: ${chunk}`)
+}
+```
+
+**Index path semantics:**
+
+* `indexpath` is an array of numbers representing hierarchical position: `[1, 4, 7, 8]`
+* Each number represents the position at that nesting level
+* Index paths are always immediately available—all positions are known at emission time
+* Comparison semantics:
+  ```javascript
+  [1, 8, 9] < [2, 0]        // First element differs (1 < 2)
+  [1, 2, 5] < [1, 3, 0]     // Second element differs (2 < 3)
+  [1, 2]    < [1, 2, 0]     // Parent before child (prefix)
+  ```
+
+**When to use:**
+
+With this, JavaScript code can determine the chunk position as it arrives and preview the data immediately, without waiting for previous chunks to determine numeric index positions.
 
 ---
 
