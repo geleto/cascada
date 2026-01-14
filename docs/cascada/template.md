@@ -45,6 +45,8 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 | **Switch**               | `switch value`<br>  `case 1`<br>    `...`<br>`endswitch`   | `{% switch value %}`<br>  `{% case 1 %}`<br>    `...`<br>`{% endswitch %}`   |
 | **Macro Definition**     | `macro greet(name)`<br>  `...`<br>`endmacro`               | `{% macro greet(name) %}`<br>  `...`<br>`{% endmacro %}`                     |
 | **Macro Calls**          | `greet("Alice")`                                           | `{{ greet("Alice") }}`                                                       |
+| **Call Block**           | `call wrapper()`<br>  `(x) :data`<br>  `...`<br>`endcall`  | `{% call wrapper() %}`<br>  `...`<br>`{% endcall %}`                         |
+| **Caller Invocation**    | `var result = caller(value)`                               | `{{ caller() }}` `                                    |
 | **Block Capture**        | `var html = capture :text`<br>  `...`<br>`endcapture`      | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
 | **Template Inheritance** | `extends "base.html"`                                      | `{% extends "base.html" %}`                                                  |
 | **Include**              | `include "header.html"`                                    | `{% include "header.html" %}`                                                |
@@ -148,6 +150,65 @@ The sequence path repair operator `!!` repairs poisoned sequence paths. In templ
 {# Now safe to use #}
 Database: {{ config.database.connection.host }}
 ```
+
+
+## Call Blocks and `caller()`
+
+Call blocks allow passing executable code to macros as callbacks. The key difference between Script and Template modes is **what `caller()` returns**.
+
+### Script Mode: Returns Isolated Results
+
+In Script mode, `caller()` returns an isolated result controlled by the focus directive (`:data`, `:text`, etc.):
+
+```javascript
+macro map(items)
+  for item in items
+    var result = caller(item)  // Captures isolated result
+    @data.results.push(result)
+  endfor
+endmacro
+
+call map([1, 2, 3])
+  (n) :data  // Focus directive specifies return type
+  @data.squared = n * n
+endcall
+```
+
+**Key points:**
+- Call block builds output in **isolation**
+- Result is **captured** by the macro using `var result = caller()`
+- Focus directive (`:data`) determines what is returned
+- Used for data processing, filtering, and transformations
+
+### Template Mode: Writes to Parent Output
+
+In Template mode, `caller()` writes **directly to the parent's output** (no isolation):
+
+```nunjucks
+{% macro card(title) %}
+<div class="card">
+  <h2>{{ title }}</h2>
+  {{ caller() }}  {# Inline output #}
+</div>
+{% endmacro %}
+
+{% call card("Welcome") %}
+  <p>Hello!</p>  {# No focus, no isolation #}
+{% endcall %}
+```
+
+**Output:**
+```html
+<div class="card">
+  <h2>Welcome</h2>
+  <p>Hello!</p>
+</div>
+```
+
+**Key points:**
+- Call block output appears **inline** where `caller()` is invoked
+- No return value or focus directive
+- Used for layout composition and content wrapping
 
 ## `guard`, `recover`, and `revert`
 
