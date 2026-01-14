@@ -99,7 +99,7 @@ All streams in Cascada follow these rules:
   Earlier source code may execute later in real time. Reads wait automatically for their visible items to become available.
 
 * **Deterministic behavior**
-  Streams behave exactly as if executed sequentially.
+  Output from streams behave exactly as if processing was done sequentially.
 
 * **Append-only**
   Stream contents cannot be modified or reordered.
@@ -326,35 +326,62 @@ Returns the item at the specified index, or `none` if the index is beyond the vi
 
 Streams can be assigned at initialization from other streams or context object properties.
 
+Assigned streams are read-only and stream all items from the source.
+
 ### From Another Stream
+
+<table>
+<tr>
+<th width="50%" valign="top">Stream Variable Assignment</th>
+<th width="50%" valign="top">Variable Assignment (Snapshot)</th>
+</tr>
+<tr>
+<td width="50%" valign="top">
 
 ```javascript
 stream source
 source(1, 2, 3)
 
 stream dest = source
-// dest streams from source
-// respects source-order visibility
+// dest is read-only
+// streams continuously from source
+// remains connected, but visibility
+// respects source-order rules
 ```
 
-The assigned stream reads from its source according to source-order visibility rules.
-
-### From Context
+</td>
+<td width="50%" valign="top">
 
 ```javascript
-// context.items is an async iterable
-stream contextStream = items
+stream source
+source(1, 2, 3)
+
+var snapshot = source
+// snapshot captures items visible
+// at assignment point
 ```
 
-When a stream is initialized from a context property, it consumes the async iterable according to source-order visibility.
+</td>
+</tr>
+</table>
 
+### From Context Object
+
+```javascript
+stream results = context.stream
+// read-only, continuous streaming
+var results = context.stream
+// identical behavior - read-only, continuous streaming
+```
+
+When initializing from the context object, `stream` and `var` behave identically - both create read-only streams that continuously reflect the source.
 ---
 
 ## Iteration
 
 Direct iteration traverses stream items in deterministic source order.
 
-Iteration sees only items visible at the iteration statement's position in the script, waiting as needed for those items to become available.
+Iteration sees only items visible at the iteration statement's position in the script, processing the items as they become available.
 
 <table>
 <tr>
@@ -403,27 +430,67 @@ The loop body is **not executed sequentially**. Each item is processed **as soon
 > **Restriction (compile-time error)**
 > A stream must not be written to while it is being iterated.
 
----
-
-### Example: Source-Order Prevents Circular Dependencies
+<table>
+<tr>
+<th width="50%" valign="top">Invalid (Mutation During Iteration)</th>
+<th width="50%" valign="top">Correct Pattern</th>
+</tr>
+<tr>
+<td width="50%" valign="top">
 
 ```javascript
-stream results
-results(1)
-results(2)
+@stream(1, 2, 3)
 
-// toArray() sees only items at or before this source position: [1, 2]
-var allItems = results.toArray()
-
-// This addition occurs AFTER the toArray() in source order
-// No circular dependency
-results(allItems.length)  // Adds 2
-
-// Later iteration sees [1, 2, 2]
-for x of results
-  @text(x)
+for item of @stream
+  // ❌ DO NOT mutate the iterated stream
+  @stream(item * 10)
 endfor
 ```
+
+</td>
+<td width="50%" valign="top">
+
+```javascript
+@stream(1, 2, 3)
+
+for item of @stream
+  // ✅ OK: write to a different stream
+  @text(item)
+endfor
+```
+
+</td>
+</tr>
+</table>
+
+---
+
+## Loop Object Properties
+
+During iteration, the `loop` object provides index-related properties:
+
+* `loop.index`: the current iteration of the loop (1-indexed)
+* `loop.index0`: the current iteration of the loop (0-indexed)
+* `loop.revindex`: number of iterations from current position to the end of visible items (1-indexed)
+* `loop.revindex0`: number of iterations from current position to the end of visible items (0-indexed)
+
+### With Nested Concurrent Contexts
+
+When iterating streams with nested concurrent contexts (e.g., parallel tasks each emitting independently), reading these properties **blocks until the position is determined**:
+
+```javascript
+for item of @stream
+  var idx = loop.index  // blocks until source-order position is known
+  var remaining = loop.revindex  // blocks until total count of visible items is determined
+  @text("Item #{idx}: #{item}")
+endfor
+```
+
+**Behavior:**
+* `loop.index` and `loop.index0` block until the item's source-order position is resolved
+* `loop.revindex` and `loop.revindex0` block until both the item's position and the total count of visible items are known
+* "Visible items" means items visible at the iteration statement's source position
+* This ensures deterministic results while allowing concurrent execution
 
 ---
 
