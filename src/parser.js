@@ -259,9 +259,18 @@ class Parser extends Obj {
       this.fail('expected call');
     }
 
-    const callerArgs = this.parseSignature(true) || new nodes.NodeList();
+    let callerArgs = this.parseSignature(true);
+    if (!callerArgs) callerArgs = new nodes.NodeList();
 
-    const macroCall = this.parsePrimary();
+    let macroCall = this.parsePrimary();
+
+    // Support "call macro(args) (signature)" syntax which is parsed as FunCall(FunCall(macro, args), signature)
+    if (callerArgs.children.length === 0 &&
+      macroCall instanceof nodes.FunCall &&
+      macroCall.name instanceof nodes.FunCall) {
+      callerArgs = macroCall.args;
+      macroCall = macroCall.name;
+    }
 
     let focus;
     if (this.skip(lexer.TOKEN_COLON)) {

@@ -1108,7 +1108,7 @@ class ScriptTranspiler {
       // Check if this is an option tag that should continue the previous macro/var/set definition
       const isOptionContinuation = presult.tagName === 'option' &&
         prevLineIndex !== -1 &&
-        ['macro', 'var', 'set'].includes(parseResults[prevLineIndex].tagName);
+        ['macro', 'var', 'set', 'call'].includes(parseResults[prevLineIndex].tagName);
 
       if ((presult.lineType === 'TAG' && !isOptionContinuation) || presult.lineType === 'TEXT') {
         //start of a new tag or text, save it for continuation
