@@ -725,12 +725,13 @@ endfor
 </tr>
 </table>
 
-### Output Handlers: `@data`, `@text`, and Custom Logic
+### Output Handlers: `@data`, `@text`, `@value`, and Custom Logic
 
-Every `@` command is directed to an **output handler**. The handler determines what action is performed. Cascada provides two built-in handlers and allows you to [define your own for custom logic](#creating-custom-output-command-handlers).
+Every `@` command is directed to an **output handler**. The handler determines what action is performed. Cascada provides three built-in handlers and allows you to [define your own for custom logic](#creating-custom-output-command-handlers).
 
 *   **`@data`**: The built-in handler for building structured data (objects, arrays, strings and numbers).
 *   **`@text`**: The built-in handler for generating a simple string of text.
+*   **`@value`**: The built-in handler for capturing a single value. The last value set becomes the output.
 *   **Custom Handlers**: You can define your own handlers for domain-specific tasks where a sequence of operations is important, such as drawing graphics (`@turtle.forward(50)`), logging, or writing to a database (`@db.users.insert(...)`).
 
 Handler methods are executed synchronously during the "Assemble" step. For asynchronous tasks, your handler can use internal buffering or other state management techniques to collect commands and dispatch them asynchronously.
@@ -1064,6 +1065,92 @@ Paths in `@data` commands are highly flexible.
     // The path 'users[]' now refers to Charlie's object
     @data.users[].permissions.push("read") // Affects "Charlie"
     ```
+
+#### The `@value` Handler: Capturing a Single Value
+
+The `@value` handler provides a simple way to return a single value from a scope (script, macro, or capture block). Unlike `@data`, which builds up a structured object, `@value` simply captures whatever value you last set.
+
+**Key characteristics:**
+- **Simple assignment**: The last value set becomes the output
+- **Two syntax options**: Function call style `@value(expr)` or assignment style `@value = expr`
+- **Returns the raw value**: When focused with `:value`, returns just the value (not wrapped in an object)
+- **Useful for macros**: Perfect for macros that compute and return a single result
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Cascada Script</strong></summary>
+
+```javascript
+:value
+
+var x = 5
+var y = 10
+
+// Both syntaxes work:
+@value(x + y)
+
+// Or using assignment syntax:
+// @value = x * 2
+```
+</details>
+</td>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Final Return Value</strong></summary>
+
+```javascript
+15
+```
+</details>
+</td>
+</tr>
+</table>
+
+**Example: Macro returning a computed value**
+
+```javascript
+macro computeTotal(items) :value
+  var sum = 0
+  for item in items
+    sum = sum + item.price
+  endfor
+  @value = sum
+endmacro
+
+var total = computeTotal([
+  { price: 10 },
+  { price: 20 },
+  { price: 30 }
+])
+
+@data.total = total.value  // Without :value focus on macro
+```
+
+With the `:value` focus directive on the macro, the macro returns just the computed number directly:
+
+```javascript
+macro computeTotal(items) :value
+  var sum = 0
+  for item in items
+    sum = sum + item.price
+  endfor
+  @value = sum
+endmacro
+
+var total = computeTotal([...])
+@data.total = total  // Direct value, no .value property needed
+```
+
+**Comparison with `@data`:**
+
+| Feature | `@data` | `@value` |
+|---------|---------|----------|
+| **Purpose** | Build complex structured data | Return a single value |
+| **Syntax** | `@data.path.to.property = value` | `@value(value)` or `@value = value` |
+| **Output** | Object with nested structure | Single value of any type |
+| **Best for** | Assembling reports, APIs, configs | Simple computations, utilities |
 
 ### Important Distinction: `@` Commands vs. `!` Sequential Execution
 
@@ -1955,12 +2042,36 @@ macro grid(rows, cols)
 endmacro
 
 call grid(3, 3)
-  (x, y) :data  // Accept x and y, return data
+  (x, y) :data  // Use :data when building a structured object
   @data.position = [x, y]
   @data.value = x * 10 + y
 endcall
 
 // Result: { cells: [{ position: [0,0], value: 0 }, ...] }
+```
+
+**Tip:** Use `:value` when the callback computes a single value, and `:data` when building a structured object.
+
+#### Example: Simple Value Transformation
+
+When each callback returns a single computed value, use `:value` for cleaner code:
+
+```javascript
+macro sum(items)
+  var total = 0
+  for item in items
+    var value = caller(item)
+    total = total + value
+  endfor
+  @data.sum = total
+endmacro
+
+call sum([{price: 10}, {price: 20}, {price: 30}])
+  (item) :value
+  @value = item.price
+endcall
+
+// Result: { sum: 60 }
 ```
 
 #### Example: Error Handling
@@ -2075,23 +2186,20 @@ macro map(items)
 endmacro
 
 call map([1, 2, 3])
-  (n) :data
-  @data.squared = n * n
+  (n) :value
+  @value = n * n
 endcall
 ```
 
 **Output:**
 ```json
 {
-  "results": [
-    { "squared": 1 },
-    { "squared": 4 },
-    { "squared": 9 }
-  ]
+  "results": [ 1, 4, 9 ]
 }
 ```
 
 Call block returns isolated data via parameters.
+
 </details>
 </td>
 </tr>
