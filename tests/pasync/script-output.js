@@ -3340,4 +3340,145 @@ Y
       }
     });
   });
+
+  describe('@value Output Handler', function () {
+    it('should support @value(val) syntax', async () => {
+      const script = `
+          @value(10)
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result.value).to.equal(10);
+    });
+
+    it('should support @value = val syntax', async () => {
+      const script = `
+          @value = 20
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result.value).to.equal(20);
+    });
+
+    it('should return the last set value', async () => {
+      const script = `
+          @value(1)
+          @value = 2
+          @value(3)
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result.value).to.equal(3);
+    });
+
+    it('should work with expressions', async () => {
+      const script = `
+          var x = 5
+          @value = x * 2
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result.value).to.equal(10);
+    });
+
+    it('should work with macros returning value', async () => {
+      const script = `
+          macro getValue()
+              @value = 42
+          endmacro
+
+          var res = getValue()
+          @value = res.value
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result.value).to.equal(42);
+    });
+
+    it('should work with :value focus on macro', async () => {
+      const script = `
+          macro computeSum(a, b) :value
+              @value = a + b
+          endmacro
+
+          var result = computeSum(10, 20)
+          @value = result
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result.value).to.equal(30);
+    });
+
+    it('should support :value focus to return unwrapped value', async () => {
+      const script = `
+          :value
+          @value = 42
+      `;
+      const result = await env.renderScriptString(script);
+      // With :value focus, the result is the raw value, not { value: 42 }
+      expect(result).to.equal(42);
+    });
+
+    it('should support :value focus with expressions', async () => {
+      const script = `
+          :value
+          var x = 10
+          var y = 20
+          @value = x + y
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal(30);
+    });
+
+    it('should support :value focus with object values', async () => {
+      const script = `
+          :value
+          @value = { name: "Alice", age: 30 }
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ name: 'Alice', age: 30 });
+    });
+
+    it('should support :value focus with array values', async () => {
+      const script = `
+          :value
+          @value = [1, 2, 3, 4, 5]
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql([1, 2, 3, 4, 5]);
+    });
+
+    it('should support :value focus with string values', async () => {
+      const script = `
+          :value
+          @value = "Hello, World!"
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal('Hello, World!');
+    });
+
+    it('should return last value when multiple @value commands with :value focus', async () => {
+      const script = `
+          :value
+          @value(10)
+          @value = 20
+          @value(30)
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.equal(30);
+    });
+
+    it('should work with :value focus in macros returning computed values', async () => {
+      const script = `
+          macro factorial(n) :value
+              var result = 1
+              var i = 1
+              while i <= n
+                  result = result * i
+                  i = i + 1
+              endwhile
+              @value = result
+          endmacro
+
+          var fact5 = factorial(5)
+          @data.result = fact5
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result.data.result).to.equal(120);
+    });
+  });
 });
