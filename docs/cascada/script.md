@@ -1921,127 +1921,181 @@ var userObject = buildUser("Alice")
 
 ### Dynamic Call Blocks (`call`)
 
-Think of a `call` block as a way to pass a "callback" to a macro - a chunk of logic that the macro can invoke at just the right moment. This pattern is incredibly powerful for creating wrapper components that need to process, decorate, or transform content you provide.
-
-#### The Pattern: Wrapping Your Logic
-
-Instead of calling a macro with simple arguments, you can pass it an entire block of code. The macro decides when and how to execute that code by calling the special `caller()` function.
+A `call` block lets you pass a chunk of code to a macro as a callback. The macro controls when and how that code executes by calling `caller()` with explicit arguments.
 
 #### Syntax
 
 ```javascript
-// Define a macro that will invoke the callback
-macro wrapper(title)
-  @text("Before: " + title)
-  caller()  // Execute the callback here
-  @text("After")
-endmacro
-
-// Call the macro with a callback block
-call wrapper("My Title")
-  // This block is your "callback"
-  // It doesn't run immediately - it waits for the macro to invoke it
-  @data.items.push(someValue)
-  @text("Some content")
+call macroName(args)
+  (param1, param2) :data    // Declare parameters and return type
+  // Block body
 endcall
 ```
 
-#### The `caller()` Function
-
-Inside the macro, `caller()` is your handle to the wrapped content:
-
-*   **Invokes the block**: When the macro calls `caller()`, the wrapped code executes
-*   **Caller's context**: The block runs with access to variables from where the `call` was written, not the macro's internal scope
-*   **Returns the result**: `caller()` returns whatever the block produces - could be data, text, or both
-
-#### Example: A Layout Wrapper
-
-Here's a macro that wraps content with a header and footer, executing your block in between:
+The macro invokes the callback by passing arguments:
 
 ```javascript
-macro card(title) : text
-  @text("<div class='card'>")
-  @text("  <h1>" + title + "</h1>")
-  @text("  <div class='body'>")
+macro macroName(args)
+  var result = caller(value1, value2)
+endmacro
+```
 
-  // Your content goes here
-  caller()
+If no parameters are needed, the `()` can be omitted from the call block.
 
-  @text("  </div>")
-  @text("</div>")
+#### Example: Grid Generator
+
+```javascript
+macro grid(rows, cols)
+  for y in range(rows)
+    for x in range(cols)
+      var cell = caller(x, y)  // Pass coordinates
+      @data.cells.push(cell)
+    endfor
+  endfor
 endmacro
 
-// Usage
-call card("Welcome")
-  @text("Hello, World!")
-  @text("This is the card content.")
+call grid(3, 3)
+  (x, y) :data  // Accept x and y, return data
+  @data.position = [x, y]
+  @data.value = x * 10 + y
 endcall
+
+// Result: { cells: [{ position: [0,0], value: 0 }, ...] }
+```
+
+#### Example: Error Handling
+
+```javascript
+macro withRetry(maxAttempts)
+  var attempts = 0
+  var result = null
+
+  while attempts < maxAttempts and result is null
+    result = caller()  // No parameters
+    if result is error
+      result = null
+      attempts += 1
+    endif
+  endwhile
+
+  @data.result = result
+endmacro
+
+call withRetry(3)
+  :data  // No () needed when no parameters
+  @data.user = fetchUser(userId)
+endcall
+```
+
+#### Variable Scope
+
+The call block runs with access to variables from where it was written, not the macro's internal scope:
+
+```javascript
+macro processItem(transformer)
+  var internalVar = "macro scope"
+  var result = caller(transformer)
+  @data.result = result
+endmacro
+
+var outerVar = "call scope"
+
+call processItem(item)
+  (item) :data
+  @data.item = item
+  @data.context = outerVar      // ✅ Can access outerVar
+  @data.internal = internalVar  // ❌ Cannot access internalVar
+endcall
+```
+
+This ensures the call block remains decoupled from the macro's implementation details.
+
+#### How Call Blocks Work
+
+- **Parameters**: Explicitly passed via `caller(args)` and declared in `(params)`
+- **Return value**: Controlled by output focus (`:data`, `:text`)
+- **Isolation**: Call block output doesn't write to parent scope
+- **Caller's context**: Block accesses variables from where it was written, not the macro's scope
+- **Execution control**: Macro decides when and how many times to invoke `caller()`
+
+## Templates vs Scripts
+
+In **templates**, `caller()` is used for layout composition where the call block writes directly to the parent's output handlers.
+
+In **scripts**, `caller()` works as a callback that receives parameters and returns isolated results - useful for data processing, filtering, and transformation patterns.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Template Mode: Layout Composition</strong></summary>
+
+```njk
+{% macro card(title) %}
+<div class="card">
+  <h2>{{ title }}</h2>
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{% call card("Welcome") %}
+  <p>Hello!</p>
+{% endcall %}
 ```
 
 **Output:**
 ```html
-<div class='card'>
-  <h1>Welcome</h1>
-  <div class='body'>
-    Hello, World!
-    This is the card content.
-  </div>
+<div class="card">
+  <h2>Welcome</h2>
+  <p>Hello!</p>
 </div>
 ```
 
-#### Example: Data Processing Wrapper
+**Output:**
+```html
+<div class="card">
+  <h2>Welcome</h2>
+  <p>Hello!</p>
+</div>
+```
 
-The pattern isn't limited to text - it works beautifully for data workflows too:
+Call block output goes directly to parent handlers.
+</details>
+</td>
+<td width="50%" valign="top">
+<details open>
+<summary><strong>Script Mode: Data Callbacks</strong></summary>
 
 ```javascript
-macro withErrorHandling()
-  guard
-    var result = caller()
-    @data.result = result
-    @data.status = "success"
-  recover(err)
-    @data.status = "failed"
-    @data.error = err#message
-  endguard
+macro map(items)
+  for item in items
+    var result = caller(item)
+    @data.results.push(result)
+  endfor
 endmacro
 
-// Usage
-call withErrorHandling()
-  var user = fetchUser(123)  // Might fail
-  @data.userData = user
+call map([1, 2, 3])
+  (n) :data
+  @data.squared = n * n
 endcall
 ```
 
-#### Focusing the Output
-
-When you need fine control over what the `call` block returns, use an output focus directive (like `:data` or `:text`). This is especially useful in Script Mode to extract specific results or suppress unwanted output.
-
-**Example: Extracting Just the Data**
-
-```javascript
-macro dataProcessor()
-  var result = caller()  // Get only the data object
-  @data.processed = result
-  @data.timestamp = now()
-endmacro
-
-// The :data filter means caller() returns only the data object,
-// ignoring any @text() commands in the block
-call dataProcessor() : data
-  @data.value = 100
-  @text("This text is ignored")
-endcall
+**Output:**
+```json
+{
+  "results": [
+    { "squared": 1 },
+    { "squared": 4 },
+    { "squared": 9 }
+  ]
+}
 ```
 
-#### When to Use `call` Blocks
-
-`call` blocks shine when you need to:
-- Create layout wrappers that decorate content
-- Build error-handling patterns that wrap risky operations
-- Implement conditional rendering based on the caller's logic
-- Process or transform a block of logic before including it in output
-- Any scenario where a macro needs to control *when* and *how* some logic executes
-
+Call block returns isolated data via parameters.
+</details>
+</td>
+</tr>
+</table>
 
 ### Error handling and recovery with macros
 
