@@ -1027,7 +1027,7 @@ class Compiler extends CompilerBase {
       const errorCheck = `if (${err}) throw ${err};`;
       let bufferArgs = bufferId;
       if (this.scriptMode) {
-        bufferArgs += ', context';
+        bufferArgs += ', this';
       }
       if (node.focus) {
         bufferArgs += `, "${node.focus}"`;
@@ -1406,19 +1406,19 @@ class Compiler extends CompilerBase {
 
       if (staticPath && staticPath.length >= 1) {
         commandTarget = staticPath[0]; // First segment is always the handler
-      } else if (node.call.name.value === 'text') {
+      } /* else if (node.call.name.value === 'text') {
         // Special case for text command
         commandTarget = 'text';
-      }
+      }*/
 
       // If we identified a specific target and it doesn't match the focus, skip compilation.
       if (commandTarget && this.outputFocus !== commandTarget) {
         return;
       }
-      // If the focus is on 'data', we can safely skip all OutputCommands.
+      /*// If the focus is on 'data', we can safely skip all OutputCommands.
       if (this.outputFocus === 'data') {
         return;
-      }
+      }*/
     }
 
     // Validate the static path

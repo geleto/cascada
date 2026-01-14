@@ -1106,9 +1106,22 @@ class ScriptTranspiler {
       const presult = parseResults[i];
 
       // Check if this is an option tag that should continue the previous macro/var/set definition
-      const isOptionContinuation = presult.tagName === 'option' &&
-        prevLineIndex !== -1 &&
-        ['macro', 'var', 'set', 'call'].includes(parseResults[prevLineIndex].tagName);
+      // Check if this is an option tag that should continue the previous macro/var/set definition
+      let isOptionContinuation = false;
+      if (presult.tagName === 'option' && prevLineIndex !== -1) {
+        const prevTag = parseResults[prevLineIndex].tagName;
+        if (['macro', 'call'].includes(prevTag)) {
+          isOptionContinuation = true;
+        } else if (['var', 'set'].includes(prevTag)) {
+          // Only allow if it's a block set/var (no =) or capture assignment
+          const prevTokens = parseResults[prevLineIndex].tokens;
+          const hasEquals = prevTokens.some(t => t.type === 'CODE' && t.value.includes('='));
+          const hasCapture = prevTokens.some(t => t.type === 'CODE' && /\bcapture\b/.test(t.value));
+          if (!hasEquals || hasCapture) {
+            isOptionContinuation = true;
+          }
+        }
+      }
 
       if ((presult.lineType === 'TAG' && !isOptionContinuation) || presult.lineType === 'TEXT') {
         //start of a new tag or text, save it for continuation
@@ -1119,7 +1132,7 @@ class ScriptTranspiler {
           //skip for now, we may add isContinuation = true later
           continue;
         }
-        if (prevLineIndex != -1 && (parseResults[prevLineIndex].continuesToNext || presult.continuesFromPrev)) {
+        if (prevLineIndex != -1 && (parseResults[prevLineIndex].continuesToNext || presult.continuesFromPrev || isOptionContinuation)) {
           //this is continuation
           if (isOptionContinuation) {
             // Revert option tag to raw content for continuation (e.g. ": data" instead of focusing directive)

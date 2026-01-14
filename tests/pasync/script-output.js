@@ -240,6 +240,101 @@ describe('Cascada Script: Output commands', function () {
       expect(result).to.contain('Inner text: Generic text');
     });
 
+    it('should support explicit callbacks with parameters and return focus', async () => {
+      const script = `
+        :data
+        macro recursive(list, initial)
+          var acc = initial
+          for item in list
+            acc = caller(acc, item)
+          endfor
+          @data.value = acc
+        endmacro
+
+        call recursive([1, 2, 3], 0) (sum, num) :data
+          @data = sum + num
+        endcall
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ value: 6 });
+    });
+
+    it('should support explicit callbacks with no arguments, only focusing', async () => {
+      const script = `
+        :data
+        macro recursive(list)
+          var acc = 0
+          for item in list
+            var res = caller()
+            acc = acc + res.value
+          endfor
+          @data.value = acc
+        endmacro
+
+        call recursive([1, 2, 3]) :data
+          @data.value = 1
+        endcall
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ value: 3 });
+    });
+
+    it('should support explicit callbacks with arguments but no focusing', async () => {
+      const script = `
+        :data
+        macro recursive(list)
+          var acc = 0
+          for item in list
+            var res = caller(item)
+            acc = acc + res.data.val
+          endfor
+          @data.value = acc
+        endmacro
+
+        call recursive([1, 2, 3]) (item)
+          @data.val = item * 2
+        endcall
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ value: 12 });
+    });
+
+    it('should support explicit callbacks with no arguments and no focusing', async () => {
+      const script = `
+        :data
+        macro recursive(list)
+          var acc = 0
+          for item in list
+             var res = caller()
+             acc = acc + res.data.val
+          endfor
+          @data.value = acc
+        endmacro
+
+        call recursive([1, 2, 3])
+          @data.val = 1
+        endcall
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ value: 3 });
+    });
+
+    it('should support explicit callbacks with empty arguments and focusing', async () => {
+      const script = `
+        :data
+        macro runner()
+          var res = caller()
+          @data.value = res.val
+        endmacro
+
+        call runner() () :data
+           @data.val = 42
+        endcall
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ value: 42 });
+    });
+
     it('should handle null path with merge to combine with existing root data', async () => {
       const script = `
         :data
