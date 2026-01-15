@@ -1050,6 +1050,38 @@
         await env.renderTemplateString(template, cont);
         expect(cont.logs).to.eql(['s1', 's2']);
       });
+      it('should support object path repair (e.g. obj!!.method)', async () => {
+        const logs = [];
+        const ctx = {
+          obj: {
+            async init(id, ms) {
+              await delay(ms);
+              return 1;
+              //throw new Error('Init failed');
+            },
+            async repair(id, ms) {
+              await delay(ms);
+              logs.push(`repaired ${id}`);
+              return `repaired ${id}`;
+            },
+            async after(id, ms) {
+              await delay(ms);
+              logs.push(`after ${id}`);
+              return `after ${id}`;
+            }
+          }
+        };
+
+        const script = `
+                var a = obj!.init('A', 5)
+                var b = obj!!.repair('B', 5)
+                var c = obj!.after('C', 5)
+                @data = c
+             `;
+        const result = await env.renderScriptString(script, ctx);
+        expect(logs).to.eql(['repaired B', 'after C']);
+        expect(result.data).to.eql('after C');
+      });
     });
   });
   //End additional side effect tests
