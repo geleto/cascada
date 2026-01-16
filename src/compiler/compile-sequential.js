@@ -100,6 +100,9 @@ module.exports = class CompileSequential {
         funCallLockKey = lockKey;//this wil stop the node.name path from registering as a PATH waiter for the same key
         node.isFunCallLocked = true;
         node.lockKey = lockKey;
+        if (this._hasSequentialRepair(node.name)) {
+          node.sequentialRepair = true;
+        }
       }
     }
 
@@ -590,5 +593,22 @@ module.exports = class CompileSequential {
     }
 
     return null;
+  }
+
+  _hasSequentialRepair(node) {
+    let current = node;
+    while (current) {
+      if (current.sequential && current.sequentialRepair) {
+        return true;
+      }
+      if (current.typename === 'LookupVal') {
+        current = current.target;
+      } else if (current.typename === 'Symbol') {
+        break;
+      } else {
+        break;
+      }
+    }
+    return false;
   }
 };

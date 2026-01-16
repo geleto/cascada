@@ -1083,8 +1083,38 @@
         expect(result.data).to.eql('after C');
       });
     });
+
+    it('should support standalone repair on object path (obj!!.method) when guard does not auto-repair', async () => {
+      const logs = [];
+      const ctx = {
+        obj: {
+          async init(id, ms) {
+            await delay(ms);
+            throw new Error('Init failed');
+          },
+          async after(id, ms) {
+            await delay(ms);
+            logs.push('after');
+          },
+          async repairCheck() {
+            logs.push('repair called');
+            return 'val';
+          }
+        }
+      };
+
+      // guard(a) disables implicit sequence lock repair.
+      // The sequence lock '!obj' (implied by obj!.init) must be manually repaired by obj!!.repairCheck()
+      const script = `
+               obj!.init('A', 5)
+               obj!!.repairCheck()
+               obj!.after('B', 5)
+          `;
+
+      await env.renderScriptString(script, ctx);
+      expect(logs).to.eql(['repair called', 'after']);
+    });
   });
-  //End additional side effect tests
 
   describe('Cascada Sequencing with Macro and Caller', function () {
     let env;
