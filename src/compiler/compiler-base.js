@@ -417,22 +417,80 @@ class CompilerBase extends Obj {
 
   compileInlineIf(node, frame) {
     if (node.isAsync) {
-      this.emit('runtime.resolveSingle');
-    }
-    this.emit('(');
-    this.compile(node.cond, frame);
-    if (node.isAsync) {
-      this.emit(').then(async function(cond) { return cond');
-    }
-    this.emit('?');
-    this.compile(node.body, frame);
-    this.emit(':');
-    if (node.else_ !== null) {
-      this.compile(node.else_, frame);
+      this.emit('runtime.resolveSingle(');
+      this.compile(node.cond, frame);
+      this.emit(').then(async function(cond) {');
+
+      this.emit('  if(cond) {');
+      const trueBlockStart = this.codebuf.length;
+
+      // Compile True Branch
+      let trueBranchWrites = null;
+      if (node.body.wrapInAsyncBlock) {
+        // Disable auto-wrapping by compile() since we do it manually
+        node.body.wrapInAsyncBlock = false;
+        const resVar = this._tmpid();
+        this.emit.asyncBlockValue(node.body, frame, (n, f) => {
+          this.compile(n, f);
+          trueBranchWrites = this.async.countsTo1(f.writeCounts);
+        }, resVar, node.body);
+        node.body.wrapInAsyncBlock = true; // Restore
+        this.emit(`    return ${resVar};`);
+      } else {
+        this.emit('    return ');
+        this.compile(node.body, frame);
+        this.emit(';');
+      }
+
+      this.emit('  } else {');
+
+      // Skip true branch writes
+      if (trueBranchWrites) {
+        this.emit(`    frame.skipBranchWrites(${JSON.stringify(trueBranchWrites)});`);
+      }
+
+      // Compile False Branch
+      let falseBranchWrites = null;
+      if (node.else_) {
+        if (node.else_.wrapInAsyncBlock) {
+          node.else_.wrapInAsyncBlock = false;
+          const resVar = this._tmpid();
+          this.emit.asyncBlockValue(node.else_, frame, (n, f) => {
+            this.compile(n, f);
+            falseBranchWrites = this.async.countsTo1(f.writeCounts);
+          }, resVar, node.else_);
+          node.else_.wrapInAsyncBlock = true;
+          this.emit(`    return ${resVar};`);
+        } else {
+          this.emit('    return ');
+          this.compile(node.else_, frame);
+          this.emit(';');
+        }
+      } else {
+        this.emit('    return "";');
+      }
+      this.emit('  }'); // End else
+
+      // Back-patch: Skip false branch writes in true branch
+      if (falseBranchWrites) {
+        this.emit.insertLine(trueBlockStart, `    frame.skipBranchWrites(${JSON.stringify(falseBranchWrites)});`);
+      }
+
+      this.emit('})');
     } else {
-      this.emit('""');
+      // Sync execution
+      this.emit('(');
+      this.compile(node.cond, frame);
+      this.emit('?');
+      this.compile(node.body, frame);
+      this.emit(':');
+      if (node.else_ !== null) {
+        this.compile(node.else_, frame);
+      } else {
+        this.emit('""');
+      }
+      this.emit(')');
     }
-    this.emit(node.isAsync ? '})' : ')');
   }
 
   compileIn(node, frame) {
@@ -490,11 +548,60 @@ class CompilerBase extends Obj {
   // ensure concatenation instead of addition
   // by adding empty string in between
   compileOr(node, frame) {
-    return this._binOpEmitter(node, frame, ' || ');
+    if (this.asyncMode) {
+      this._compileBinOpShortCircuit(node, frame, true);
+    } else {
+      this._binOpEmitter(node, frame, ' || ');
+    }
   }
 
   compileAnd(node, frame) {
-    return this._binOpEmitter(node, frame, ' && ');
+    if (this.asyncMode) {
+      this._compileBinOpShortCircuit(node, frame, false);
+    } else {
+      this._binOpEmitter(node, frame, ' && ');
+    }
+  }
+
+  _compileBinOpShortCircuit(node, frame, isOr) {
+    // left || right -> if (left) return left; else return right;
+    // left && right -> if (!left) return left; else return right;
+
+    this.emit('runtime.resolveSingle(');
+    this.compile(node.left, frame);
+    this.emit(').then(async function(left) {');
+
+    const check = isOr ? 'left' : '!left';
+    this.emit(`  if (${check}) {`);
+    const skipPos = this.codebuf.length;
+    this.emit('    return left;');
+    this.emit('  }');
+    this.emit('  else {');
+
+    // Compile right
+    let rightWrites = null;
+    if (node.right.wrapInAsyncBlock) {
+      node.right.wrapInAsyncBlock = false;
+      const resVar = this._tmpid();
+      this.emit.asyncBlockValue(node.right, frame, (n, f) => {
+        this.compile(n, f);
+        rightWrites = this.async.countsTo1(f.writeCounts);
+      }, resVar, node.right);
+      node.right.wrapInAsyncBlock = true;
+      this.emit(`    return ${resVar};`);
+    } else {
+      this.emit('    return ');
+      this.compile(node.right, frame);
+      this.emit(';');
+    }
+
+    this.emit('  }'); // End else
+    this.emit('})');
+
+    // Insert skipwrites if needed
+    if (rightWrites) {
+      this.emit.insertLine(skipPos, `    frame.skipBranchWrites(${JSON.stringify(rightWrites)});`);
+    }
   }
 
   compileAdd(node, frame) {

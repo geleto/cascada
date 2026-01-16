@@ -139,6 +139,26 @@ module.exports = class CompileSequential {
   _assignAsyncWrappersAndReleases(node, frame) {
     node.wrapInAsyncBlock = false;
 
+    if (node.typename === 'And' || node.typename === 'Or' || node.typename === 'InlineIf') {
+      const children = this.compiler._getImmediateChildren(node);
+      for (const child of children) {
+        if (child.sequenceOperations) {
+          this._assignAsyncWrappersAndReleases(child, frame);
+        }
+      }
+
+      const branches = (node.typename === 'InlineIf')
+        ? [node.body, node.else_]
+        : [node.right];
+
+      for (const branch of branches) {
+        if (branch && branch.sequenceOperations) {
+          branch.wrapInAsyncBlock = true;
+        }
+      }
+      return;
+    }
+
     if (!node.sequenceOperations) {
       return;
     }

@@ -1,23 +1,28 @@
-(function () {
-  'use strict';
+'use strict';
 
-  var expect;
-  var AsyncEnvironment;
-  var delay;
-  var expectAsyncError;
+var expect;
+var AsyncEnvironment;
+var Template;
+var delay;
+var expectAsyncError;
 
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    delay = require('../util').delay;
-    expectAsyncError = require('../util').expectAsyncError;
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    delay = window.util.delay;
-    expectAsyncError = window.util.expectAsyncError;
-  }
+if (typeof require !== 'undefined') {
+  expect = require('expect.js');
+  const index = require('../../src/index');
+  AsyncEnvironment = index.AsyncEnvironment;
+  Template = index.Template;
+  const util = require('../util');
+  delay = util.delay;
+  expectAsyncError = util.expectAsyncError;
+} else {
+  expect = window.expect;
+  AsyncEnvironment = nunjucks.AsyncEnvironment;
+  delay = window.util.delay;
+  expectAsyncError = window.util.expectAsyncError;
+  Template = nunjucks.Template;
+}
 
+describe('Sequential Operations in Expressions', function () {
   describe('Sequential Expressions with ! Marker', () => {
     let env;
     let context;
@@ -310,7 +315,7 @@
         const template = `{{ data.obj!.prop1.opA("1", 10) + data.obj!.prop2.opB("2", 5) + data.obj!.commonOp("3", 3) }}`;
 
         // Add commonOp method to obj
-        context.data.obj.commonOp = async function(id, ms) {
+        context.data.obj.commonOp = async function (id, ms) {
           await delay(ms);
           context.logs.push(`commonOp${id} on obj`);
           return `commonResult${id}`;
@@ -466,15 +471,15 @@
         const template = `{{ (data.item!.getHandler())() + (data.item!.getAnotherHandler())() }}`;
 
         // Add getHandler and getAnotherHandler methods
-        context.data.item.getHandler = async function() {
+        context.data.item.getHandler = async function () {
           await delay(5);
           context.logs.push('getHandler called');
-          return function() { return 'handler1'; };
+          return function () { return 'handler1'; };
         };
-        context.data.item.getAnotherHandler = async function() {
+        context.data.item.getAnotherHandler = async function () {
           await delay(3);
           context.logs.push('getAnotherHandler called');
-          return function() { return 'handler2'; };
+          return function () { return 'handler2'; };
         };
 
         const result = await env.renderTemplateString(template, context);
@@ -551,7 +556,7 @@
       });
 
       it('should propagate errors from sequential operations', async () => {
-        context.data.item.errorOp = async function() {
+        context.data.item.errorOp = async function () {
           await delay(5);
           throw new Error('Sequential operation failed');
         };
@@ -590,4 +595,132 @@
 
   });
 
-})();
+  describe('If, And, Or, Ternary Sequential Expressions', () => {
+    it('should skip sequential operations in short-circuited AND (false && seq)', function (done) {
+      const src = `
+    {% set res = (false and account!.deposit(10)) %}
+    {{ res }}
+    `;
+      const env = new AsyncEnvironment(null, { asyncControl: true });
+      const tmpl = new Template(src, env);
+
+      // account mock
+      const account = {
+        value: 0,
+        deposit: function (amount) {
+          this.value += amount;
+          return true;
+        }
+      };
+
+      tmpl.render({ account: account }, function (err, res) {
+        if (err) return done(err);
+        expect(account.value).to.be(0); // Should be skipped
+        expect(res.trim()).to.be('false');
+        done();
+      });
+    });
+
+    it('should skip sequential operations in short-circuited OR (true || seq)', function (done) {
+      const src = `
+    {% set res = (true or account!.deposit(10)) %}
+    {{ res }}
+    `;
+      const env = new AsyncEnvironment(null, { asyncControl: true });
+      const tmpl = new Template(src, env);
+
+      const account = {
+        value: 0,
+        deposit: function (amount) {
+          this.value += amount;
+          return true;
+        }
+      };
+
+      tmpl.render({ account: account }, function (err, res) {
+        if (err) return done(err);
+        expect(account.value).to.be(0); // Should be skipped
+        expect(res.trim()).to.be('true');
+        done();
+      });
+    });
+
+    it('should skip sequential operations in ternary true branch (false ? seq : other)', function (done) {
+      const src = `
+    {% set res = (account!.deposit(10) if false else 'skipped') %}
+    {{ res }}
+    `;
+      const env = new AsyncEnvironment(null, { asyncControl: true });
+      const tmpl = new Template(src, env);
+
+      const account = {
+        value: 0,
+        deposit: function (amount) {
+          this.value += amount;
+          return true;
+        }
+      };
+
+      tmpl.render({ account: account }, function (err, res) {
+        if (err) return done(err);
+        expect(account.value).to.be(0);
+        expect(res.trim()).to.be('skipped');
+        done();
+      });
+    });
+
+    it('should skip sequential operations in ternary false branch (true ? other : seq)', function (done) {
+      const src = `
+    {% set res = ('skipped' if true else account!.deposit(10)) %}
+    {{ res }}
+    `;
+      const env = new AsyncEnvironment(null, { asyncControl: true });
+      const tmpl = new Template(src, env);
+
+      const account = {
+        value: 0,
+        deposit: function (amount) {
+          this.value += amount;
+          return true;
+        }
+      };
+
+      tmpl.render({ account: account }, function (err, res) {
+        if (err) return done(err);
+        expect(account.value).to.be(0);
+        expect(res.trim()).to.be('skipped');
+        done();
+      });
+    });
+
+    it('should not hang when skipping sequential operations (write counting check)', function (done) {
+      // This test primarily checks for deadlocks. If write counts aren't skipped, it might hang.
+      const src = `
+    {% if true %}
+      {{ (false and account!.deposit(10)) }}
+    {% endif %}
+    OK
+    `;
+      const env = new AsyncEnvironment(null, { asyncControl: true });
+      const tmpl = new Template(src, env);
+      const account = {
+        deposit: function (amount) { return true; }
+      };
+
+      // Set a timeout to fail fast if it hangs
+      let completed = false;
+      const timer = setTimeout(() => {
+        if (!completed) done(new Error('Test timed out - potential deadlock due to missing skipBranchWrites'));
+      }, 1000);
+
+      tmpl.render({ account: account }, function (err, res) {
+        completed = true;
+        clearTimeout(timer);
+        if (err) return done(err);
+        expect(res.trim()).to.contain('false');
+        expect(res.trim()).to.contain('OK');
+        done();
+      });
+    });
+  });
+});
