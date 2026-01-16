@@ -1,23 +1,25 @@
-(function () {
-  'use strict';
+'use strict';
 
-  var expect;
-  var AsyncEnvironment;
-  var delay;
-  var expectAsyncError;
+var expect;
+var AsyncEnvironment;
+var delay;
+var expectAsyncError;
 
-  if (typeof require !== 'undefined') {
-    expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-    delay = require('../util').delay;
-    expectAsyncError = require('../util').expectAsyncError;
-  } else {
-    expect = window.expect;
-    AsyncEnvironment = nunjucks.AsyncEnvironment;
-    delay = window.util.delay;
-    expectAsyncError = window.util.expectAsyncError;
-  }
+if (typeof require !== 'undefined') {
+  expect = require('expect.js');
+  const index = require('../../src/index');
+  AsyncEnvironment = index.AsyncEnvironment;
+  const util = require('../util');
+  delay = util.delay;
+  expectAsyncError = util.expectAsyncError;
+} else {
+  expect = window.expect;
+  AsyncEnvironment = nunjucks.AsyncEnvironment;
+  delay = window.util.delay;
+  expectAsyncError = window.util.expectAsyncError;
+}
 
+describe('Sequential Operations in Expressions', function () {
   describe('Sequential Expressions with ! Marker', () => {
     let env;
     let context;
@@ -310,7 +312,7 @@
         const template = `{{ data.obj!.prop1.opA("1", 10) + data.obj!.prop2.opB("2", 5) + data.obj!.commonOp("3", 3) }}`;
 
         // Add commonOp method to obj
-        context.data.obj.commonOp = async function(id, ms) {
+        context.data.obj.commonOp = async function (id, ms) {
           await delay(ms);
           context.logs.push(`commonOp${id} on obj`);
           return `commonResult${id}`;
@@ -466,15 +468,15 @@
         const template = `{{ (data.item!.getHandler())() + (data.item!.getAnotherHandler())() }}`;
 
         // Add getHandler and getAnotherHandler methods
-        context.data.item.getHandler = async function() {
+        context.data.item.getHandler = async function () {
           await delay(5);
           context.logs.push('getHandler called');
-          return function() { return 'handler1'; };
+          return function () { return 'handler1'; };
         };
-        context.data.item.getAnotherHandler = async function() {
+        context.data.item.getAnotherHandler = async function () {
           await delay(3);
           context.logs.push('getAnotherHandler called');
-          return function() { return 'handler2'; };
+          return function () { return 'handler2'; };
         };
 
         const result = await env.renderTemplateString(template, context);
@@ -551,7 +553,7 @@
       });
 
       it('should propagate errors from sequential operations', async () => {
-        context.data.item.errorOp = async function() {
+        context.data.item.errorOp = async function () {
           await delay(5);
           throw new Error('Sequential operation failed');
         };
@@ -590,4 +592,196 @@
 
   });
 
-})();
+  describe('If, And, Or, Ternary Sequential Expressions', () => {
+    let env;
+
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+    it('should skip sequential operations in short-circuited AND (false && seq)', async function () {
+      const src = `
+    {% set res = (false and account!.deposit(10)) %}
+    {{ res }}
+    `;
+
+      // account mock
+      const account = {
+        value: 0,
+        deposit: function (amount) {
+          this.value += amount;
+          return true;
+        }
+      };
+
+      const res = await env.renderTemplateString(src, { account: account });
+      expect(account.value).to.be(0); // Should be skipped
+      expect(res.trim()).to.be('false');
+    });
+
+    it('should skip sequential operations in short-circuited OR (true || seq)', async function () {
+      const src = `
+    {% set res = (true or account!.deposit(10)) %}
+    {{ res }}
+    `;
+
+      const account = {
+        value: 0,
+        deposit: function (amount) {
+          this.value += amount;
+          return true;
+        }
+      };
+
+      const res = await env.renderTemplateString(src, { account: account });
+      expect(account.value).to.be(0); // Should be skipped
+      expect(res.trim()).to.be('true');
+    });
+
+    it('should skip sequential operations in ternary true branch (false ? seq : other)', async function () {
+      const src = `
+    {% set res = (account!.deposit(10) if false else 'skipped') %}
+    {{ res }}
+    `;
+
+      const account = {
+        value: 0,
+        deposit: function (amount) {
+          this.value += amount;
+          return true;
+        }
+      };
+
+      const res = await env.renderTemplateString(src, { account: account });
+      expect(account.value).to.be(0);
+      expect(res.trim()).to.be('skipped');
+    });
+
+    it('should skip sequential operations in ternary false branch (true ? other : seq)', async function () {
+      const src = `
+    {% set res = ('skipped' if true else account!.deposit(10)) %}
+    {{ res }}
+    `;
+
+      const account = {
+        value: 0,
+        deposit: function (amount) {
+          this.value += amount;
+          return true;
+        }
+      };
+
+      const res = await env.renderTemplateString(src, { account: account });
+      expect(account.value).to.be(0);
+      expect(res.trim()).to.be('skipped');
+    });
+
+    it('should not hang when skipping sequential operations (write counting check)', async function () {
+      // This test primarily checks for deadlocks. If write counts aren't skipped, it might hang.
+      const src = `
+      {% if true %}
+        {{ (false and account!.deposit(10)) }}
+      {% endif %}
+      OK
+      `;
+      const account = {
+        deposit: function (amount) { return true; }
+      };
+
+      // Set a timeout to fail fast if it hangs
+      const racePromise = new Promise((resolve, reject) => {
+        setTimeout(() => reject(new Error('Test timed out - potential deadlock due to missing skipBranchWrites')), 1000);
+      });
+
+      const renderPromise = env.renderTemplateString(src, { account: account });
+
+      const res = await Promise.race([renderPromise, racePromise]);
+
+      expect(res.trim()).to.contain('false');
+      expect(res.trim()).to.contain('OK');
+    });
+
+    it('should handle sequence operation in condition (true case)', async function () {
+      const src = `
+    {% set res = ('yes' if account!.check() else 'no') %}
+    {{ res }}
+    `;
+
+      const account = {
+        check: async function () { return true; }
+      };
+
+      const res = await env.renderTemplateString(src, { account: account });
+      expect(res.trim()).to.be('yes');
+    });
+
+    it('should handle sequence operation in condition (false case)', async function () {
+      const src = `
+    {% set res = ('yes' if account!.check() else 'no') %}
+    {{ res }}
+    `;
+
+      const account = {
+        check: async function () { return false; }
+      };
+
+      const res = await env.renderTemplateString(src, { account: account });
+      expect(res.trim()).to.be('no');
+    });
+
+    it('should propagate error from sequence operation inside condition', async function () {
+      const src = `
+    {% set res = ('yes' if account!.broken() else 'no') %}
+    {{ res }}
+    `;
+
+      const account = {
+        broken: async function () { throw new Error('Condition Failed'); }
+      };
+
+      try {
+        await env.renderTemplateString(src, { account: account });
+        expect().fail('Should have thrown an error');
+      } catch (err) {
+        expect(err.message).to.contain('Condition Failed');
+      }
+    });
+
+    it('should handle sequence in condition AND branch (lock contention check)', async function () {
+      const src = `
+    {% set res = (account!.op('B') if account!.op('A') else 'no') %}
+    {{ res }}
+    `;
+
+      const ops = [];
+      const account = {
+        op: async function (name) {
+          await delay(10);
+          ops.push(name);
+          return true;
+        }
+      };
+
+      const res = await env.renderTemplateString(src, { account: account });
+      expect(res.trim()).to.not.contain('[object Promise]'); // Should resolve
+      expect(res.trim()).to.be('true');
+      expect(ops).to.eql(['A', 'B']); // Must be sequential
+    });
+
+    it('should fail if sequential operation in AND right-hand side fails (executed path)', async function () {
+      const src = `
+    {{ true and account!.fail() }}
+    `;
+
+      const account = {
+        fail: async function () { throw new Error('Right Side Error'); }
+      };
+
+      try {
+        await env.renderTemplateString(src, { account: account });
+        expect().fail('Should have thrown an error');
+      } catch (err) {
+        expect(err.message).to.contain('Right Side Error');
+      }
+    });
+  });
+});
