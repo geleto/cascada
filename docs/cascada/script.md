@@ -1235,6 +1235,22 @@ account!.withdraw(50)
 
 For details on how to handle errors within a sequential path, see [Repairing Sequential Paths with `!!`](#repairing-sequential-paths-with-) in the Errors Are Data section.
 
+### Method-Specific Sequencing
+
+You can also sequence calls to a **specific method** on an object, rather than locking the whole object. Place the `!` after the method name:
+
+```javascript
+// Only calls to 'log' are sequential
+logger.log!("Entry 1")
+logger.log!("Entry 2")
+
+// Unmarked methods run in parallel
+logger.getStatus()
+```
+
+This is useful for rate-limiting or ordering specific actions (like "append") while keeping the rest of the object non-blocking. Note that unlike object-path sequencing (`obj!.method()`), unmarked calls to the same method (`logger.log()`) will **not** wait for the sequence.
+
+
 ### Context Requirement for Sequential Paths
 
 Sequential paths must reference objects from the context, not local variables.
