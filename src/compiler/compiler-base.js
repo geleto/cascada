@@ -343,6 +343,7 @@ class CompilerBase extends Obj {
 
       let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame, nodeStaticPathKey)) {
+        const readLockKey = this.sequential._getReadLockKey(nodeStaticPathKey);
         // This node accesses a declared sequence lock path.
         // Register the static path key as variable write so the next lock would wait for it
         // Multiple static path keys can be in the same block
@@ -350,10 +351,10 @@ class CompilerBase extends Obj {
         // we can use _updateFrameReads. The last funCall can record false in the lock value
         // to indicate all further paths locked by it that they don't need to make a lock for further funCalls
         // hence we can use _updateFrameReads for all of them
-        this.async.updateFrameWrites(frame, nodeStaticPathKey);
+        this.async.updateFrameWrites(frame, readLockKey);
         // Use sequential lookup as a lock for this node exists
         // sequentialContextLookup will `set` the path key, thus releasing it (by decrementing the lock writeCount)
-        this.emit(`runtime.sequentialContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)}, ${!!node.sequentialRepair})`);
+        this.emit(`runtime.sequentialContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)}, ${JSON.stringify(readLockKey)}, ${!!node.sequentialRepair})`);
         return;
       }
     }
@@ -696,10 +697,11 @@ class CompilerBase extends Obj {
       // Check if this is a sequential lookup (marked with `!`).
       let nodeStaticPathKey = node.lockKey; // this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isDeclared(frame /*.sequenceLockFrame*/, nodeStaticPathKey)) {
+        const readLockKey = this.sequential._getReadLockKey(nodeStaticPathKey);
         // This is a sequential lookup.
         // Register the static path key as a variable write so the next lock waits for it.
         // Multiple static path keys can be in the same block.
-        this.async.updateFrameWrites(frame, nodeStaticPathKey);
+        this.async.updateFrameWrites(frame, readLockKey);
 
         // Create the error context and pass it to the runtime function.
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
@@ -711,9 +713,9 @@ class CompilerBase extends Obj {
         this.compile(node.target, frame); // Compile the object being accessed.
         this.emit('),');
         this.compile(node.val, frame); // Compile the property/key expression.
-        // Pass the static path key and the error context.
+        // Pass the static path key and the read lock key with error context.
         // The runtime function will also release the lock.
-        this.emit(`, ${JSON.stringify(nodeStaticPathKey)}, ${errorContextJson}, ${!!node.sequentialRepair})`);
+        this.emit(`, ${JSON.stringify(nodeStaticPathKey)}, ${JSON.stringify(readLockKey)}, ${errorContextJson}, ${!!node.sequentialRepair})`);
         return;
       }
 
@@ -758,12 +760,14 @@ class CompilerBase extends Obj {
 
       const sequenceLockKey = node.lockKey;//this.sequential._getSequenceKey(node.name, frame);
       if (sequenceLockKey) {
+        const readLockKey = this.sequential._getReadLockKey(sequenceLockKey);
         let index = sequenceLockKey.indexOf('!', 1);
         const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
         if (this._isDeclared(frame, keyRoot)) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }
         this.async.updateFrameWrites(frame, sequenceLockKey);
+        this.async.updateFrameWrites(frame, readLockKey);
       }
       let asyncName = node.name.isAsync;
       if (node.name.typename === 'Symbol' && !frame.lookup(node.name.value)) {
@@ -781,7 +785,8 @@ class CompilerBase extends Obj {
           if (!sequenceLockKey) {
             this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson});`);
           } else {
-            this.emit(`return runtime.sequentialCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}", ${errorContextJson}, ${!!node.sequentialRepair});`);
+            const readLockKey = this.sequential._getReadLockKey(sequenceLockKey);
+            this.emit(`return runtime.sequentialCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}", "${readLockKey}", ${errorContextJson}, ${!!node.sequentialRepair});`);
           }
         });
       } else {

@@ -144,7 +144,8 @@
             frame,
             { prop: 'value' },
             'prop',
-            '!lockKey'
+            '!lockKey',
+            '!lockKey~'
           );
           expect().fail('Should have thrown');
         } catch (err) {
@@ -160,14 +161,15 @@
             frame,
             poison,
             'prop',
-            '!lockKey'
+            '!lockKey',
+            '!lockKey~'
           );
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
-          const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be(true);
+          const readLock = frame.lookup('!lockKey~');
+          expect(isPoison(readLock)).to.be(true);
         }
       });
 
@@ -180,14 +182,15 @@
             frame,
             promise,
             'prop',
-            '!lockKey'
+            '!lockKey',
+            '!lockKey~'
           );
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
-          const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be(true);
+          const readLock = frame.lookup('!lockKey~');
+          expect(isPoison(readLock)).to.be(true);
         }
       });
 
@@ -199,14 +202,15 @@
             frame,
             promise,
             'prop',
-            '!lockKey'
+            '!lockKey',
+            '!lockKey~'
           );
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
-          const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be(true);
+          const readLock = frame.lookup('!lockKey~');
+          expect(isPoison(readLock)).to.be(true);
         }
       });
 
@@ -216,13 +220,14 @@
           frame,
           obj,
           'name',
-          '!lockKey'
+          '!lockKey',
+          '!lockKey~'
         );
 
         expect(result).to.equal('test');
 
-        const lock = frame.lookup('!lockKey');
-        expect(lock).to.equal(true);
+        const readLock = frame.lookup('!lockKey~');
+        expect(readLock).to.equal(true);
       });
     });
 
@@ -248,7 +253,8 @@
             context,
             frame,
             'myVar',
-            '!lockKey'
+            '!lockKey',
+            '!lockKey~'
           );
           expect().fail('Should have thrown');
         } catch (err) {
@@ -265,7 +271,8 @@
             context,
             frame,
             'myVar',
-            '!lockKey'
+            '!lockKey',
+            '!lockKey~'
           );
           expect().fail('Should have thrown');
         } catch (err) {
@@ -281,13 +288,14 @@
           context,
           frame,
           'myVar',
-          '!lockKey'
+          '!lockKey',
+          '!lockKey~'
         );
 
         expect(result).to.equal('test value');
 
-        const lock = frame.lookup('!lockKey');
-        expect(lock).to.equal(true);
+        const readLock = frame.lookup('!lockKey~');
+        expect(readLock).to.equal(true);
       });
     });
 

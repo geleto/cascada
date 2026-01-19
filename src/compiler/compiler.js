@@ -618,7 +618,8 @@ class Compiler extends CompilerBase {
 
           for (const lock of modifiedLocks) {
             // Check for exact match or child match (e.g. !lock matching !lock or !lock!sub)
-            if (lock === baseKey || lock.startsWith(baseKey + '!')) {
+            // Also include read-lock keys (suffix '~') for the same base.
+            if (lock === baseKey || lock.startsWith(baseKey + '!') || lock.startsWith(baseKey + '~')) {
               resolvedSequenceTargets.add(lock);
               matchFound = true;
             }

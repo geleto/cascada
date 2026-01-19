@@ -1,181 +1,161 @@
 'use strict';
 
-const { createPoison, isPoison } = require('./errors');
+const { createPoison, isPoison, collectErrors } = require('./errors');
 const { memberLookupAsync, memberLookupScriptAsync, contextOrFrameLookup } = require('./lookup');
 const { callWrapAsync } = require('./call');
 
 
-/**
- * Execute an operation with sequence lock coordination.
- *
- * Optimized to avoid unnecessary microtask scheduling:
- * - Only awaits lock if it's actually a promise
- * - Only awaits result if operation is async
- *
- * @param {AsyncFrame} frame - The async frame
- * @param {string} lockKey - The lock variable name (e.g., "!processed")
- * @param {Function} operation - The operation to execute (may be sync or async)
- * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
- * @returns {Promise|*} Result of the operation (Promise if async or contended, Value if sync and free)
- */
-function withSequenceLock(frame, lockKey, operation, errorContext = null, repair = false) {
-  // Get lock state (undefined, Promise, or PoisonedValue)
-  let lockPromise;
-  if (lockKey) {
-    const lockState = frame.lookup(lockKey);
-    if (lockState && typeof lockState.then === 'function') {
-      lockPromise = lockState;
-    } else {
-      lockPromise = null;
+function createLockPromise(frame, promise, writeKey, readKey, errorContext, updateWrite, updateRead) {
+  let lockPromise = promise.then(
+    (res) => {
+      if (updateWrite && writeKey && frame.lookup(writeKey) === lockPromise) {
+        frame.set(writeKey, true, true);
+      }
+      if (updateRead && readKey && frame.lookup(readKey) === lockPromise) {
+        frame.set(readKey, true, true);
+      }
+      return res;
+    },
+    (err) => {
+      const poison = createPoison(err, errorContext);
+      if (updateWrite && writeKey && frame.lookup(writeKey) === lockPromise) {
+        frame.set(writeKey, poison, true);
+      }
+      if (updateRead && readKey && frame.lookup(readKey) === lockPromise) {
+        frame.set(readKey, poison, true);
+      }
+      return poison;
     }
-  } else {
-    lockPromise = null;
+  );
+
+  if (updateWrite && writeKey) {
+    frame.set(writeKey, lockPromise, true);
+  }
+  if (updateRead && readKey) {
+    frame.set(readKey, lockPromise, true);
   }
 
-  if (lockPromise) {
-    // Check for existing poison on the lock
-    if (isPoison(lockPromise)) {
-      // Fast path, no need to await we know it's poison
-      if (!repair) {
-        // Do not run the operation, keep path poisoned
-        return lockPromise;//return now, do not run the operation
-      } else {
-        // Run the operation, update the lock
-        const result = operation();
-        // Handle result directly if it's sync
-        if (!result || typeof result.then !== 'function') {
-          // A final non-promise result, update the lock now
-          if (isPoison(result)) {
-            // poison the lock
-            frame.set(lockKey, result, true);
-          } else {
-            //sucessfull completion of the operation
-            frame.set(lockKey, true, true);
-          }
-          return result;
-        }
-        // If operation returns a promise, flow into the promise handling logic below
-        lockPromise = result;
-        // Wrap the new result (after lockPromise resolution)
-        const wrapped = lockPromise.then(
-          (res) => {
-            // Optimization: Release the lock in the frame to 'true' so subsequent
-            // isPoison() checks are synchronous and faster.
-            // Safety: We use an identity check to ensure we don't overwrite a
-            // new lock promise if another operation has already begun.
-            if (frame.lookup(lockKey) === wrapped) {
-              frame.set(lockKey, true, true);
-            }
-            return res;
-          },
-          (err) => {
-            const poison = createPoison(err, errorContext);
-            // Optimization: Poison the lock in the frame.
-            // Safety: Only if we are still the lock holder.
-            if (frame.lookup(lockKey) === wrapped) {
-              frame.set(lockKey, poison, true);
-            }
-            // Return poison so the 'wrapped' promise adopts its state (rejects with PoisonError).
-            // This ensures awaiters receive the correct error.
-            return poison;
-          }
-        );
-        frame.set(lockKey, wrapped, true);
-        return wrapped;
+  return lockPromise;
+}
+
+function updateReadLock(frame, readKey, newPromise, errorContext) {
+  if (!readKey) {
+    return null;
+  }
+  const current = frame.lookup(readKey);
+  if (current && typeof current.then === 'function') {
+    const combined = (async () => {
+      const errors = await collectErrors([current, newPromise]);
+      if (errors.length > 0) {
+        return createPoison(errors);
+      }
+      return true;
+    })();
+    return createLockPromise(frame, combined, null, readKey, errorContext, false, true);
+  }
+  return createLockPromise(frame, newPromise, null, readKey, errorContext, false, true);
+}
+
+function withSequenceLocks(frame, waitKey, writeKey, readKey, operation, errorContext = null, repair = false, mode = 'write') {
+  let waitState = null;
+  if (waitKey) {
+    waitState = frame.lookup(waitKey);
+  }
+
+  if (!repair) {
+    if (waitState && isPoison(waitState)) {
+      return waitState;
+    }
+    if (writeKey && writeKey !== waitKey) {
+      const writeState = frame.lookup(writeKey);
+      if (writeState && isPoison(writeState)) {
+        return writeState;
       }
     }
-
-    if (typeof lockPromise.then === 'function') {
-      // Promisify lockPromise
-      if (repair) {
-        // Continue with the operation,
-        // it still has to be chained after the old promise
-        // no matter whether it resolves or rejects
-        lockPromise = lockPromise.then(
-          () => operation(),
-          () => operation()
-        );
-      } else {
-        // Run operation only if lock resolves succesfully
-        lockPromise = lockPromise.then(
-          () => operation()
-        );
+    if (readKey && readKey !== waitKey) {
+      const readState = frame.lookup(readKey);
+      if (readState && isPoison(readState)) {
+        return readState;
       }
-
-      // Chain the frame update logic
-      lockPromise = lockPromise.then(
-        (res) => {
-          // Optimization: Release the lock in the frame to 'true' if we are the current holder.
-          if (frame.lookup(lockKey) === lockPromise) {
-            frame.set(lockKey, true, true);
-          }
-          return res;
-        },
-        (err) => {
-          const p = createPoison(err, errorContext);
-          // Optimization: Poison the lock in the frame.
-          // Safety: Only if we are still the lock holder.
-          if (frame.lookup(lockKey) === lockPromise) {
-            frame.set(lockKey, p, true);
-          }
-          return p;
-        }
-      );
-
-      // Resolve with the new lock promise (that wraps the previous lockPromise value)
-      frame.set(lockKey, lockPromise, true);
-      return lockPromise;
     }
   }
 
-  // No lock to .then(), just run the operation
-  // and set the lock to the operation result
+  const waitPromise = (waitState && typeof waitState.then === 'function')
+    ? waitState
+    : null;
+
+  if (waitPromise) {
+    const chained = repair
+      ? waitPromise.then(() => operation(), () => operation())
+      : waitPromise.then(() => operation());
+
+    if (mode === 'write' || (mode === 'read' && repair)) {
+      return createLockPromise(frame, chained, writeKey, readKey, errorContext, true, true);
+    }
+    updateReadLock(frame, readKey, chained, errorContext);
+    return chained;
+  }
+
+  // @todo - shouldn't we check for poison first?
   let result;
   try {
     result = operation();
   } catch (err) {
-    // Operation throws synchronously, poison the lock
     const poison = createPoison(err, errorContext);
-    frame.set(lockKey, poison, true);
+    //@todo - isn't this a race condition?
+    // Another async block may modify it
+    // shouldn't we promisify the read/write key immediately
+    // and resolve it to true if necessary?
+    // and if it has not changed - replace that promise
+    // with the real value
+    if (writeKey) {
+      frame.set(writeKey, poison, true);
+    }
+    if (readKey) {
+      frame.set(readKey, poison, true);
+    }
     return poison;
   }
 
   // Check for poison FIRST, because PoisonedValue has a .then method
   // but we want to treat it as a static value for frame optimization
   if (isPoison(result)) {
-    frame.set(lockKey, result, true);
+    if (writeKey) {
+      frame.set(writeKey, result, true);
+    }
+    if (readKey) {
+      frame.set(readKey, result, true);
+    }
     return result;
   }
 
   if (result && typeof result.then === 'function') {
-    // Operation returned a promise. We must wrap it to update frame on completion.
-    const wrapped = result.then(
-      (res) => {
-        // Optimization: Release the lock in the frame to 'true' if we are the current holder.
-        if (frame.lookup(lockKey) === wrapped) {
-          frame.set(lockKey, true, true);
-        }
-        return res;
-      },
-      (err) => {
-        const poison = createPoison(err, errorContext);
-        // Optimization: Poison the lock in the frame.
-        // Safety: Only if we are still the lock holder.
-        if (frame.lookup(lockKey) === wrapped) {
-          frame.set(lockKey, poison, true);
-        }
-        // Return poison so the 'wrapped' promise adopts its state (rejects with PoisonError).
-        // This ensures awaiters receive the correct error.
-        return poison;
-      }
-    );
-    frame.set(lockKey, wrapped, true);
-    return wrapped;
-  } else {
-    // Sync result (not poison, not promise)
-    frame.set(lockKey, true, true);
+    if (mode === 'write' || (mode === 'read' && repair)) {
+      return createLockPromise(frame, result, writeKey, readKey, errorContext, true, true);
+    }
+    updateReadLock(frame, readKey, result, errorContext);
     return result;
   }
+
+  // Sync result (not poison, not promise)
+  if (mode === 'write' || (mode === 'read' && repair)) {
+    if (writeKey) {
+      frame.set(writeKey, true, true);
+    }
+    if (readKey) {
+      frame.set(readKey, true, true);
+    }
+  } else if (readKey) {
+    const current = frame.lookup(readKey);
+    if (!(current && typeof current.then === 'function') && !isPoison(current)) {
+      frame.set(readKey, true, true);
+    }
+  }
+  return result;
+}
+
+function withSequenceLock(frame, lockKey, operation, errorContext = null, repair = false) {
+  return withSequenceLocks(frame, lockKey, lockKey, lockKey, operation, errorContext, repair, 'write');
 }
 
 /**
@@ -188,13 +168,21 @@ function withSequenceLock(frame, lockKey, operation, errorContext = null, repair
  * @param {Object} context - The context object
  * @param {Array} args - The arguments to pass to the function
  * @param {AsyncFrame} frame - The async frame
- * @param {string} lockKey - The lock variable name
+ * @param {string} writeKey - The write lock variable name
+ * @param {string} readKey - The read lock variable name
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} Result of the function call
  */
-function sequentialCallWrap(func, funcName, context, args, frame, lockKey, errorContext, repair = false) {
-  return withSequenceLock(frame, lockKey, () =>
-    callWrapAsync(func, funcName, context, args, errorContext), errorContext, repair
+function sequentialCallWrap(func, funcName, context, args, frame, writeKey, readKey, errorContext, repair = false) {
+  return withSequenceLocks(
+    frame,
+    readKey,
+    writeKey,
+    readKey,
+    () => callWrapAsync(func, funcName, context, args, errorContext),
+    errorContext,
+    repair,
+    'write'
   );
 }
 
@@ -204,12 +192,20 @@ function sequentialCallWrap(func, funcName, context, args, frame, lockKey, error
  * @param {Object} context - The context object
  * @param {AsyncFrame} frame - The async frame
  * @param {string} name - The name to lookup
- * @param {string} lockKey - The lock variable name
+ * @param {string} writeKey - The write lock variable name
+ * @param {string} readKey - The read lock variable name
  * @returns {Promise} The lookup result
  */
-function sequentialContextLookup(context, frame, name, lockKey, repair = false) {
-  return withSequenceLock(frame, lockKey, () =>
-    contextOrFrameLookup(context, frame, name), null, repair
+function sequentialContextLookup(context, frame, name, writeKey, readKey, repair = false) {
+  return withSequenceLocks(
+    frame,
+    writeKey,
+    writeKey,
+    readKey,
+    () => contextOrFrameLookup(context, frame, name),
+    null,
+    repair,
+    'read'
   );
 }
 
@@ -219,13 +215,21 @@ function sequentialContextLookup(context, frame, name, lockKey, repair = false) 
  * @param {AsyncFrame} frame - The async frame
  * @param {*} target - The target object
  * @param {string|number} key - The key to lookup
- * @param {string} lockKey - The lock variable name
+ * @param {string} writeKey - The write lock variable name
+ * @param {string} readKey - The read lock variable name
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} The lookup result
  */
-function sequentialMemberLookupAsync(frame, target, key, lockKey, errorContext, repair = false) {
-  return withSequenceLock(frame, lockKey, () =>
-    memberLookupAsync(target, key, errorContext), errorContext, repair
+function sequentialMemberLookupAsync(frame, target, key, writeKey, readKey, errorContext, repair = false) {
+  return withSequenceLocks(
+    frame,
+    writeKey,
+    writeKey,
+    readKey,
+    () => memberLookupAsync(target, key, errorContext),
+    errorContext,
+    repair,
+    'read'
   );
 }
 
@@ -235,18 +239,27 @@ function sequentialMemberLookupAsync(frame, target, key, lockKey, errorContext, 
  * @param {AsyncFrame} frame - The async frame
  * @param {*} target - The target object
  * @param {string|number} key - The key to lookup
- * @param {string} lockKey - The lock variable name
+ * @param {string} writeKey - The write lock variable name
+ * @param {string} readKey - The read lock variable name
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} The lookup result
  */
-function sequentialMemberLookupScriptAsync(frame, target, key, lockKey, errorContext, repair = false) {
-  return withSequenceLock(frame, lockKey, () =>
-    memberLookupScriptAsync(target, key, errorContext), errorContext, repair
+function sequentialMemberLookupScriptAsync(frame, target, key, writeKey, readKey, errorContext, repair = false) {
+  return withSequenceLocks(
+    frame,
+    writeKey,
+    writeKey,
+    readKey,
+    () => memberLookupScriptAsync(target, key, errorContext),
+    errorContext,
+    repair,
+    'read'
   );
 }
 
 module.exports = {
   withSequenceLock,
+  withSequenceLocks,
   sequentialCallWrap,
   sequentialContextLookup,
   sequentialMemberLookupAsync,

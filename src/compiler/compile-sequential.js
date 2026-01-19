@@ -53,7 +53,7 @@ module.exports = class CompileSequential {
 
   // Traverses the AST to identify all LOCK and PATH operations and aggregates them up, marking CONTENDED states.
   // It also handles the funCallLockKey propagation to avoid self-contention.
-  _collectSequenceKeysAndOperations(node, frame, funCallLockKey = null) {
+  _collectSequenceKeysAndOperations(node, frame, funCallLockKey = null, parent = null) {
     node.sequenceOperations = new Map();
     node.isFunCallLocked = false;
     node.lockKey = null;
@@ -83,6 +83,8 @@ module.exports = class CompileSequential {
     } else if ((node instanceof nodes.Symbol || node instanceof nodes.LookupVal)) {
       // Still need to identify PATH waiters for nodes that are *not* `node.sequential` themselves
       // but are on a path that *is* sequential by a FunCall elsewhere.
+
+      // 1) Prefer an exact static path lock for this node (most specific wins).
       const pathKey = this._extractStaticPathKey(node);
       if (pathKey && pathKey !== funCallLockKey && this.compiler._isDeclared(frame, pathKey)) {
         // this is a path that is static
@@ -91,6 +93,31 @@ module.exports = class CompileSequential {
         // in the later case the key will be handled by the funCall, not the path to it
         node.sequenceOperations.set(pathKey, SequenceOperationType.PATH);
         node.lockKey = pathKey;
+      } else if (node instanceof nodes.LookupVal) {
+        // 2) If no exact lock, fall back to the base symbol's lock so any read
+        // under a sequenced object (db.*) respects !db.
+        // Only the outermost lookup in a chain should claim the base lock.
+        const isOutermostLookup = !parent || !(parent instanceof nodes.LookupVal) || parent.target !== node;
+        if (isOutermostLookup) {
+          let root = node;
+          while (root && root.typename === 'LookupVal') {
+            root = root.target;
+          }
+          if (root && root.typename === 'Symbol') {
+            const baseKey = '!' + root.value;
+            if (baseKey !== funCallLockKey && this.compiler._isDeclared(frame, baseKey)) {
+              node.sequenceOperations.set(baseKey, SequenceOperationType.PATH);
+              node.lockKey = baseKey;
+            }
+          }
+        }
+      } else if (node instanceof nodes.Symbol && parent instanceof nodes.LookupVal) {
+        // If the parent lookup already claimed the base lock, skip registering the symbol again.
+        const parentLockKey = parent.lockKey;
+        if (parentLockKey && parentLockKey === '!' + node.value) {
+          // Skip PATH registration for this symbol.
+          return;
+        }
       }
     } else if (node instanceof nodes.FunCall) {
       // Identify FunCall LOCK
@@ -113,7 +140,7 @@ module.exports = class CompileSequential {
       // pass down the funCall lock key down the node.name FunCall child
       // so that we won't register the path part as a separate PATH waiter for the same key as the FunCall LOCK
       const lockKey = (node.isFunCallLocked && child === node.name) ? node.lockKey : funCallLockKey;
-      this._collectSequenceKeysAndOperations(child, frame, lockKey);
+      this._collectSequenceKeysAndOperations(child, frame, lockKey, node);
 
       if (!child.sequenceOperations || child.sequenceOperations.size === 0) {
         continue;
@@ -187,6 +214,12 @@ module.exports = class CompileSequential {
     }
 
     if (singleChildWithOperations) {
+      // If this is a lookup relying on a sequenced symbol, wrap the lookup itself
+      // so the lock is created before the member access runs.
+      if (node.typename === 'LookupVal' && singleChildWithOperations === node.target) {
+        node.wrapInAsyncBlock = true;
+        return;
+      }
       // there is a single child with sequence operations
       // move the wrap test down to that child
       this._assignAsyncWrappersAndReleases(singleChildWithOperations, frame);
@@ -283,6 +316,10 @@ module.exports = class CompileSequential {
   _getSequenceKey(node) {
     let path = this._getSequentialPath(node);
     return path ? '!' + path.join('!') : null;
+  }
+
+  _getReadLockKey(lockKey) {
+    return lockKey ? `${lockKey}~` : null;
   }
 
   // @todo - inline in _getSequenceKey
@@ -563,6 +600,8 @@ module.exports = class CompileSequential {
   preDeclareSequenceLocks(rootFrame, locks) {
     for (const lockName of locks) {
       this.compiler._addDeclaredVar(rootFrame, lockName);
+      const readLockName = this._getReadLockKey(lockName);
+      this.compiler._addDeclaredVar(rootFrame, readLockName);
     }
   }
 

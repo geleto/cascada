@@ -392,6 +392,7 @@
             [poison],
             frame,
             '!lockKey',
+            '!lockKey~',
             mockErrorContext
           );
           expect().fail('Should have thrown');
@@ -414,6 +415,7 @@
             [],
             frame,
             '!lockKey',
+            '!lockKey~',
             mockErrorContext
           );
           expect().fail('Should have thrown');
@@ -436,6 +438,7 @@
             [],
             frame,
             '!lockKey',
+            '!lockKey~',
             mockErrorContext
           );
           expect().fail('Should have thrown');
@@ -459,6 +462,7 @@
             [5],
             frame,
             '!lockKey',
+            '!lockKey~',
             mockErrorContext
           );
           expect().fail('Should have thrown');
@@ -480,6 +484,7 @@
             [],
             frame,
             '!lockKey',
+            '!lockKey~',
             mockErrorContext
           );
           expect().fail('Should have thrown');
@@ -502,6 +507,7 @@
             [rejectingPromise],
             frame,
             '!lockKey',
+            '!lockKey~',
             mockErrorContext
           );
           expect().fail('Should have thrown');
@@ -521,6 +527,7 @@
           [5, 3],
           frame,
           '!lockKey',
+          '!lockKey~',
           mockErrorContext
         );
 
@@ -543,6 +550,7 @@
           [],
           frame,
           '!lockKey',
+          '!lockKey~',
           mockErrorContext
         );
 

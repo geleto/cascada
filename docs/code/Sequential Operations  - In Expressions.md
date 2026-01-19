@@ -62,6 +62,14 @@ The process of ensuring sequential execution within an expression involves both 
     *   To provide `async` context for PATH operations when necessary.
     *   To serialize parts of an expression that genuinely *contend* for the *same* sequence key by putting them into separate `async` IIFEs, effectively queuing them.
     *   To place these wrappers as close as possible to the actual sequential operation to minimize overhead.
+    *   **Symbol vs LookupVal (PATH selection):**
+        Start with a base lock, e.g. `db!.open()` creates `!db`.
+        Step by step for a read like `db.users.read`:
+        1. Check if the **full path** has a declared lock (e.g. `!db!users!read`). If yes, the **LookupVal** for that path owns the PATH op.
+        2. If there is **no exact lock** (no `db.users.read!` or `db.users!`), but there **is** a base lock like `db!`, the **outermost LookupVal** claims the **base symbol lock** (`!db`). This ensures the read runs inside the async block that creates the lock.
+        3. The **Symbol** itself cannot own the PATH op here, because only the lookup is the point where the read happens. If we only wrap the Symbol, the lookup can run before the lock promise exists (the write hasn’t started yet), so the read bypasses sequencing.
+        4. Once the lookup owns the PATH op, the **base Symbol** does **not** register another PATH op for the same lock (avoids double‑locking).
+        Rationale: reads must wait on the write lock and update the read lock between writes. The lookup is where the read happens, so it must be the node that runs inside the lock‑creating async block.
 
 **3. Interaction with Cascada's Asynchronous Engine**
 

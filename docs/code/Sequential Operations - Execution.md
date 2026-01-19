@@ -6,10 +6,11 @@
 ## 1. Introduction
 Cascada automatically executes independent operations in parallel to maximize performance. However, operations with side effects (like database writes) require a guaranteed order of execution. The `!` marker allows developers to enforce this order explicitly for specific method calls and context property paths.
 
-## 2. Core Concept: Sequence Keys as Locks
+## 2. Core Concept: Sequence Keys as Two Locks
 The system uses **implicit locks** based on static object paths to coordinate execution.
-*   **Sequence Key**: A unique string derived from the static path (e.g., `!db!users`).
-*   **Lock Mechanism**: Each key corresponds to a Promise chain in the runtime. Operations on the same key are queued; operation B waits for operation A's promise to resolve (or settle) before starting.
+*   **Write Lock**: A unique string derived from the static path (e.g., `!db!users`).
+*   **Read Lock**: A derived internal key (e.g., `!db!users~`) that aggregates **reads** (and is also set by writes).
+*   **Lock Mechanism**: The write lock is updated only by **writes**. The read lock is updated by **reads and writes**. Writes wait on the read lock; reads wait on the write lock. This allows parallel reads between writes while preserving ordering with writes.
 
 ## 3. Architecture Overview
 
@@ -23,11 +24,11 @@ The compiler performs a static analysis pass before generating code. It does not
     *   It automatically wraps conflicting segments in **Async Blocks** (IIFEs). This ensures `a()` completes and releases the lock before `b()` attempts to acquire it, preventing deadlocks and race conditions.
 
 ### B. The Runtime: The "Pass the Baton" System
-The runtime manages execution using a centralized helper `withSequenceLock` that orchestrates a Promise chain.
+The runtime manages execution using a centralized helper `withSequenceLocks` that orchestrates the read/write lock promises.
 
 1.  **Check & Queue**:
-    *   **Call Paths** (`obj!.method()`): The sequence is managed at the *method call* level. The runtime queues the call behind the current lock promise.
-    *   **Lookup Paths** (`obj!.prop`): The sequence is managed at the *property access* level. The runtime queues the lookup itself. Crucially, **all** sequential operations (whether calls or lookups) both *wait for* the lock and *update* (write to) the lock with a new completion promise. This ensures strictly ordered access.
+    *   **Call Paths** (`obj!.method()`): Treated as **writes**. The runtime queues the call behind the current **read lock**, then updates **both** locks on completion.
+    *   **Lookup Paths** (`obj.prop` on a sequenced path): Treated as **reads**. The runtime queues the lookup behind the **write lock**, then updates the **read lock** by merging with any in-flight reads (so reads do not serialize each other).
 2.  **Execution**: Once the lock is acquired, the operation executes.
 3.  **Release**: Immediately after execution (success or failure), the runtime updates the lock variable with a new/resolved Promise. This signals the next waiting operation to proceed.
 
@@ -44,10 +45,11 @@ This enforces sequencing **only** for calls to a specific method.
 *   **Scope**: The lock key is specific to the method path (e.g., `!obj!method`).
 *   **Behavior**: `obj.method!()` calls are sequenced with each other. However, `obj.otherMethod()` (unmarked) or `obj.otherMethod!()` (different method) run in parallel.
 
-### Sequential Lookups (`obj!.prop`)
-Used when the property access itself has side effects or needs to be ordered.
-*   The system waits for the `!obj` lock before reading.
-*   The lock is updated immediately after reading, ensuring subsequent operations wait for this lookup to finish.
+### Sequential Lookups (`obj.prop` on a sequenced path)
+Reads do **not** require `!!`. Once a path has been sequenced with a `!` call, normal property reads on that path become ordered relative to writes:
+*   The system waits for the **write lock** before reading.
+*   The **read lock** is updated immediately after reading (merged with any other reads), ensuring subsequent writes wait for all reads to finish.
+*   Read failures only poison the **read lock**; the **write lock** is only poisoned by write operations.
 
 ### Error Handling & Repair (`!!`)
 In Cascada, errors "poison" data flows. If a sequential operation fails, the lock becomes "poisoned," preventing subsequent operations on that path from running (to protect data integrity).
