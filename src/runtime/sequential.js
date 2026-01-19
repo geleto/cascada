@@ -6,6 +6,9 @@ const { callWrapAsync } = require('./call');
 
 
 function createLockPromise(frame, promise, writeKey, readKey, errorContext, updateWrite, updateRead) {
+  // We do change the read/write keys in the frame to their resolved values
+  // but only if the lock promise is still the same to avoid race conditions,
+  // e.g. it has not been changed by another async block
   let lockPromise = promise.then(
     (res) => {
       if (updateWrite && writeKey && frame.lookup(writeKey) === lockPromise) {
@@ -96,18 +99,12 @@ function withSequenceLocks(frame, waitKey, writeKey, readKey, operation, errorCo
     return chained;
   }
 
-  // @todo - shouldn't we check for poison first?
   let result;
   try {
     result = operation();
   } catch (err) {
+    //caught a non-async error
     const poison = createPoison(err, errorContext);
-    //@todo - isn't this a race condition?
-    // Another async block may modify it
-    // shouldn't we promisify the read/write key immediately
-    // and resolve it to true if necessary?
-    // and if it has not changed - replace that promise
-    // with the real value
     if (writeKey) {
       frame.set(writeKey, poison, true);
     }
