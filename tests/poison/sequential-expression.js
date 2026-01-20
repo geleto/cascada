@@ -161,16 +161,18 @@ describe('Sequential Expression Poisoning', function () {
         },
         async failingFunc(val) {
           if (val === 2 || val === 4) {
+            console.log(`Failure on ${val}`);
             throw new Error(`Failure on ${val}`);
           }
+          console.log(`Success on ${val}`);
           return val;
         }
       };
       const template = `
       {% for item in myGenerator() %}
       {% set result = failingFunc(item) %}
-      {% do processed!.push(result) %}
       {% do processed!! %}
+      {% do processed!.push(result) %}
       {{ result }}
       {% endfor %}
     `;

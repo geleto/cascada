@@ -303,18 +303,28 @@ class AsyncFrame extends Frame {
     let reachedZero = (count === decrementVal);
     if (reachedZero) {
       //this variable will no longer be modified, time to resolve it
-      this._resolveAsyncVar(varName);
+      if (!this.sequentialLoopBody) {
+        // Parallel mode: Resolve the parent's pending promise
+        this._resolveAsyncVar(varName);
 
-      //optional cleanup:
-      delete this.writeCounters[varName];
-      if (Object.keys(this.writeCounters).length === 0) {
-        this.writeCounters = undefined;
+        //optional cleanup:
+        delete this.writeCounters[varName];
+        if (Object.keys(this.writeCounters).length === 0) {
+          this.writeCounters = undefined;
+        }
+      } else {
+        /*if (this.parent) {
+          // Sequential mode: Commit value to parent immediately
+          this._comitSequentialWrite(varName);
+        }*/
+        // The value will be comitted after the frame waitAllClosures
+        // As by that time some promises may have already been resolved
+        this.writeCounters[varName] = 0;
       }
 
-      if (!this.sequentialLoopBody && this.parent) {
+      if (this.parent && !this.sequentialLoopBody) {
         // propagate upwards because this frame's work is fully done (counter hit zero)
-        // but only if this frame is NOT itself a loop body
-        // in which case the writes will be propagated in finalizeLoopWrites once the loop is done
+        // but only if this frame is NOT itself a loop body (sequentialLoopBody)
 
         // Find the declaring frame to ensure we stop propagation there.
         if (!scopeFrame) {
@@ -452,20 +462,45 @@ class AsyncFrame extends Frame {
     }
   }*/
 
-  pushAsyncBlock(reads, writeCounters) {
-    let asyncBlockFrame = new AsyncFrame(this, false);//this.isolateWrites);//@todo - should isolateWrites be passed here?
+  pushAsyncBlock(reads, writeCounters, sequentialLoopBody = false) {
+    let asyncBlockFrame = new AsyncFrame(this, false);
     asyncBlockFrame.isAsyncBlock = true;
+    asyncBlockFrame.sequentialLoopBody = sequentialLoopBody;
     if (reads || writeCounters) {
       asyncBlockFrame.asyncVars = {};
       if (reads) {
         asyncBlockFrame._snapshotVariables(reads);
       }
       if (writeCounters) {
-        asyncBlockFrame._promisifyParentVariables(writeCounters);
+        if (sequentialLoopBody) {
+          // Sequential mode: Snapshot values locally (NO promisification of parent).
+          // We work on local copies and commit them to parent immediately when writes complete.
+          asyncBlockFrame.writeCounters = writeCounters;
+          asyncBlockFrame._snapshotVariables(Object.keys(writeCounters));
+        } else {
+          // Parallel mode: Promisify parent variables to coordinate async writes.
+          asyncBlockFrame._promisifyParentVariables(writeCounters);
+        }
       }
     }
     return asyncBlockFrame;
   }
+
+  commitSequentialWrites() {
+    if (!this.writeCounters) {
+      return;
+    }
+
+    for (const varName in this.writeCounters) {
+      if (varName in this.parent.asyncVars) {
+        this.parent.asyncVars[varName] = this.asyncVars[varName];
+      }
+    }
+  }
+
+  /*_comitSequentialWrite(varName) {
+    this.parent.asyncVars[varName] = this.asyncVars[varName];
+  }*/
 
   _snapshotVariables(reads) {
     for (const varName of reads) {

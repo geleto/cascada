@@ -140,7 +140,8 @@ module.exports = class CompileEmit {
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
       const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", false, ${sequentialLoopBody})`);
+      this.line(';');
     }
     if (createScope && !node.isAsync) {
       this.line('frame = frame.pop();');
@@ -365,10 +366,10 @@ module.exports = class CompileEmit {
     return frame;
   }
 
-  asyncBlockBufferNodeEnd(node, frame, createScope = false, sequentialLoopBody = false, positionNode = node) {
+  asyncBlockBufferNodeEnd(node, frame, createScope = false, sequential = false, positionNode = node) {
     if (node.isAsync) {
       // End the async closure
-      frame = this.asyncBlockEnd(node, frame, createScope, sequentialLoopBody, positionNode);
+      frame = this.asyncBlockEnd(node, frame, createScope, sequential, positionNode);
 
       // Restore the previous buffer from the stack
       this.compiler.buffer = this.compiler.bufferStack.pop();

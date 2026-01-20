@@ -152,10 +152,11 @@ If multiple iterations write to the same outer variable, they MUST run one-at-a-
 - Final value: `count=1` (wrong! should be 3)
 
 **How it's enforced:**
-The `sequential` flag is passed to `iterate()`, which then:
-- Awaits each iteration before starting the next
-- Uses `sequentialLoopBody = true` to suppress immediate write propagation
-- Calls `finalizeLoopWrites()` after the entire loop completes
+The `sequential` flag is passed to `iterate()`, which then passes it to the `AsyncFrame`. This triggers the **Snapshot-Commit Model**:
+- **Snapshot:** Loop body captures current values of variables (not promises)
+- **Local Writes:** Updates happen locally within the frame
+- **Commit:** At the end of each iteration, `commitSequentialWrites()` flushes values back to the parent frame synchronously
+- **No Promises:** Avoids the overhead of creating promises for every variable write in every iteration
 
 ### Step 6: Collect Body Handlers
 
@@ -203,8 +204,8 @@ let loop_else_456 = (async function() {
 
 **Difference from body:**
 - No parameters (doesn't receive iteration values)
-- No `sequentialLoopBody` flag (runs once, not iterated)
-- Writes propagate normally (not suppressed)
+- No `sequential` flag (runs once, not iterated)
+- Writes propagate normally (not buffer/commit)
 
 **Why collect else metadata?**
 If array is poisoned, we don't know if it would've been empty or not:
@@ -751,35 +752,30 @@ if (!didIterate && loopElse) {
 ### Phase 6: Write Finalization
 
 ```javascript
-if (bodyWriteCounts && sequential) {
-  loopFrame.finalizeLoopWrites(bodyWriteCounts);
+// Step 3: Always skip body write counters (regardless of didIterate)
+if (bodyWriteCounts && Object.keys(bodyWriteCounts).length > 0) {
+  loopFrame.skipBranchWrites(bodyWriteCounts);
 }
 ```
 
 **What this does:**
 
-During the loop:
-- `sequentialLoopBody = true` suppressed write propagation
-- Each `set x = ...` updated `frame.asyncVars['x']` but didn't signal completion
-- Parent's promise for `x` is still pending
+During the loop (Sequential Mode):
+- Each iteration creates a snapshot of parent variables.
+- Writes update the local snapshot.
+- **Immediate Commit:** When a variable's write count reaches zero (meaning no more writes will occur for this iteration), the final value is **immediately committed** to the parent frame. This works exactly like the parallel mode's promise resolution, just with direct values.
 
 After the loop:
-```javascript
-finalizeLoopWrites(bodyWriteCounts) {
-  for (const varName in bodyWriteCounts) {
-    // Signal completion: loop finished all its writes to varName
-    this._countdownAndResolveAsyncWrites(varName, 1);
-  }
-}
-```
+- We just need to signal that "The Loop Body" as a structural unit has finished its potential writes.
+- We call `skipBranchWrites` on the loop frame.
+- This decrements counters for any variables that weren't written (e.g. skipped branches), causing them to hit zero and commit their (unchanged) snapshot values to the parent.
+- This ensures the Loop Frame's write counts eventually reach zero, allowing *its* parent to proceed.
 
-This:
-1. Resolves the parent's promise for `x` with the final value
-2. Decrements parent's write counter
-3. Propagates the "loop finished" signal upward
+**Note:** The old `finalizeLoopWrites` mechanism (resolving pending promises) is obsolete. Also, there is no longer a bulk `commitSequentialWrites` step at the end of the block; commits are granular and immediate.
 
 **Why only for sequential loops?**
-Non-sequential loops with writes don't exist (we force `sequential = true` if there are writes).
+Non-sequential (parallel) loops work differently - they rely on parallel promise resolution chains (`createPoison`, `_promisifyParentVariables`) and are handled via standard completion paths.
+
 
 ---
 

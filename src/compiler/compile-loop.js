@@ -45,7 +45,7 @@ class CompileLoop {
     this._compileFor(node, frame, false);
   }
 
-  _compileFor(node, frame, sequential = false, iteratorCompiler = null, whileConditionNode = null) {
+  _compileFor(node, frame, sequentialLoopBody = false, iteratorCompiler = null, whileConditionNode = null) {
     // Use node.arr as the position for the outer async block (evaluating the array)
     frame = this.compiler.emit.asyncBlockBufferNodeBegin(node, frame, true, node.arr);
 
@@ -93,12 +93,12 @@ class CompileLoop {
 
     //compile the loop body function
     const hasConcurrentLimit = Boolean(node.concurrentLimit);
-    const bodyFrame = this._compileLoopBody(node, frame, arr, loopVars, sequential, hasConcurrentLimit, whileConditionNode);
+    const bodyFrame = this._compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, hasConcurrentLimit, whileConditionNode);
     const bodyWriteCounts = bodyFrame.writeCounts;
     if (bodyWriteCounts) {
       // @todo - in the future will require writes+reads to be sequential,
       // update _compileLoopBody too as it handles sequential differently
-      sequential = true;
+      sequentialLoopBody = true;
     }
 
     // Collect body handlers for poison handling
@@ -113,7 +113,7 @@ class CompileLoop {
       elseFuncId = this.compiler._tmpid();
       this.compiler.emit(`let ${elseFuncId} = `);
 
-      const elseFrame = this._compileLoopElse(node, frame, sequential);
+      const elseFrame = this._compileLoopElse(node, frame, sequentialLoopBody);
 
       // Collect metadata from else compilation
       elseWriteCounts = this.compiler.async.countsTo1(elseFrame.writeCounts);
@@ -137,7 +137,7 @@ class CompileLoop {
     let asyncOptionsCode = 'null';
     if (node.isAsync) {
       asyncOptionsCode = `{
-        sequential: ${sequential},
+        sequential: ${sequentialLoopBody},
         bodyWriteCounts: ${JSON.stringify(this.compiler.async.countsTo1(bodyWriteCounts) || {})},
         bodyHandlers: ${JSON.stringify(bodyHandlers ? Array.from(bodyHandlers) : [])},
         elseWriteCounts: ${JSON.stringify(elseWriteCounts || {})},
@@ -173,7 +173,7 @@ class CompileLoop {
     frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
   }
 
-  _compileLoopBody(node, frame, arr, loopVars, sequential, forceAwaitLoopBody = false, whileConditionNode = null) {
+  _compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, forceAwaitLoopBody = false, whileConditionNode = null) {
     const bodyCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
     if (node.isAsync) {
       this.compiler.emit('(async function(');//@todo - think this over, does it need async block?
@@ -202,7 +202,7 @@ class CompileLoop {
     }
     frame = this.compiler.emit.asyncBlockBufferNodeBegin(node, frame, bodyCreatesScope, node.body);
 
-    const makeSequentialPos = this.compiler.codebuf.length;// we will know later if it's sequential or not
+    //const makeSequentialPos = this.compiler.codebuf.length;// we will know later if it's sequential or not
     this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
 
     // Handle array unpacking within the loop body
@@ -273,15 +273,15 @@ class CompileLoop {
     }
 
     // Collect metadata from body compilation
-    if (frame.writeCounts || sequential) {
+    if (frame.writeCounts || sequentialLoopBody) {
       //@todo - in the future will require writes+reads to be sequential
       //only writes - will save the last write to the loop frame
-      this.compiler.emit.insertLine(makeSequentialPos, 'frame.sequentialLoopBody = true;');
     }
 
     // End buffer block for the loop body (using node.body position)
     let bodyFrame = frame;
-    const shouldAwaitLoopBody = Boolean(frame.writeCounts) || sequential || forceAwaitLoopBody;
+    const shouldAwaitLoopBody = Boolean(frame.writeCounts) || sequentialLoopBody || forceAwaitLoopBody;
+    // Pass sequential as the 'sequentialLoopBody' argument to asyncBlockBufferNodeEnd
     frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, bodyCreatesScope, shouldAwaitLoopBody, node.body);
 
     // Close the loop body function

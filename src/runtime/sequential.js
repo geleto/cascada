@@ -5,6 +5,13 @@ const { memberLookupAsync, memberLookupScriptAsync, contextOrFrameLookup } = req
 const { callWrapAsync } = require('./call');
 
 
+/**
+ * Creates a promise that manages the lock lifecycle and error handling.
+ * @param {AsyncFrame} frame - The frame containing the lock variable
+ * @param {Promise} promise - The operation promise (resolves to result 'res')
+ * @returns {Promise} A promise that resolves to the operation result ('res'), or Poison.
+ *                    Side effect: Updates the frame lock variable (if updateWrite/Read is true).
+ */
 function createLockPromise(frame, promise, writeKey, readKey, errorContext, updateWrite, updateRead) {
   // We do change the read/write keys in the frame to their resolved values
   // but only if the lock promise is still the same to avoid race conditions,
@@ -41,6 +48,11 @@ function createLockPromise(frame, promise, writeKey, readKey, errorContext, upda
   return lockPromise;
 }
 
+/**
+ * Updates a read lock by combining the current state with a new dependency.
+ * @returns {Promise} The new lock promise (resolving to true or poison).
+ * Side Effect: Updates the frame variable (readKey) with the new lock state.
+ */
 function updateReadLock(frame, readKey, newPromise, errorContext) {
   if (!readKey) {
     return null;
@@ -59,6 +71,14 @@ function updateReadLock(frame, readKey, newPromise, errorContext) {
   return createLockPromise(frame, newPromise, null, readKey, errorContext, false, true);
 }
 
+/**
+ * Coordinator for sequential locks.
+ * Manages the acquisition of read/write locks, execution of the operation, and error handling (poisoning).
+ *
+ * @returns {Promise|*} Resolves to the result of the operation (not the lock state).
+ * Side Effect: Updates the frame variables (writeKey/readKey) with a promise that resolves
+ * to the lock state (true or poison), independent of the return value.
+ */
 function withSequenceLocks(frame, waitKey, writeKey, readKey, operation, errorContext = null, repair = false, mode = 'write') {
   let waitState = null;
   if (waitKey) {
@@ -93,7 +113,13 @@ function withSequenceLocks(frame, waitKey, writeKey, readKey, operation, errorCo
       : waitPromise.then(() => operation());
 
     if (mode === 'write' || (mode === 'read' && repair)) {
-      return createLockPromise(frame, chained, writeKey, readKey, errorContext, true, true);
+      // Split the promises:
+      // 1. The frame lock should hold a promise that resolves to true (or poison)
+      const lockStatePromise = chained.then(() => true);
+      createLockPromise(frame, lockStatePromise, writeKey, readKey, errorContext, true, true);
+
+      // 2. Return the result directly (consistent with Read mode and standard propagation)
+      return chained;
     }
     updateReadLock(frame, readKey, chained, errorContext);
     return chained;
@@ -151,6 +177,11 @@ function withSequenceLocks(frame, waitKey, writeKey, readKey, operation, errorCo
   return result;
 }
 
+/**
+ * Convenience wrapper for withSequenceLocks using a single key for wait, write, and read.
+ * @returns {Promise|*} Resolves to the result of the operation.
+ * Side Effect: Updates the frame variable (lockKey) with the lock state.
+ */
 function withSequenceLock(frame, lockKey, operation, errorContext = null, repair = false) {
   return withSequenceLocks(frame, lockKey, lockKey, lockKey, operation, errorContext, repair, 'write');
 }
@@ -168,7 +199,8 @@ function withSequenceLock(frame, lockKey, operation, errorContext = null, repair
  * @param {string} writeKey - The write lock variable name
  * @param {string} readKey - The read lock variable name
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
- * @returns {Promise} Result of the function call
+ * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
+ * @returns {Promise} Resolves to the return value of the function call. The lock variable is updated to 'true' (or poison) internally.
  */
 function sequentialCallWrap(func, funcName, context, args, frame, writeKey, readKey, errorContext, repair = false) {
   return withSequenceLocks(
@@ -191,7 +223,7 @@ function sequentialCallWrap(func, funcName, context, args, frame, writeKey, read
  * @param {string} name - The name to lookup
  * @param {string} writeKey - The write lock variable name
  * @param {string} readKey - The read lock variable name
- * @returns {Promise} The lookup result
+ * @returns {Promise} Resolves to the resolved value of the lookup (e.g. the variable value). Lock side-effects are handled internally.
  */
 function sequentialContextLookup(context, frame, name, writeKey, readKey, repair = false) {
   return withSequenceLocks(
@@ -215,7 +247,7 @@ function sequentialContextLookup(context, frame, name, writeKey, readKey, repair
  * @param {string} writeKey - The write lock variable name
  * @param {string} readKey - The read lock variable name
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
- * @returns {Promise} The lookup result
+ * @returns {Promise} Resolves to the value of the member property. Lock side-effects are handled internally.
  */
 function sequentialMemberLookupAsync(frame, target, key, writeKey, readKey, errorContext, repair = false) {
   return withSequenceLocks(
@@ -239,7 +271,9 @@ function sequentialMemberLookupAsync(frame, target, key, writeKey, readKey, erro
  * @param {string} writeKey - The write lock variable name
  * @param {string} readKey - The read lock variable name
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
- * @returns {Promise} The lookup result
+ * @param {string} readKey - The read lock variable name
+ * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
+ * @returns {Promise} Resolves to the value of the member property. Lock side-effects are handled internally.
  */
 function sequentialMemberLookupScriptAsync(frame, target, key, writeKey, readKey, errorContext, repair = false) {
   return withSequenceLocks(
