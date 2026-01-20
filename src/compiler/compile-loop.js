@@ -20,29 +20,12 @@ class CompileLoop {
     }
 
     // Asynchronous case:
-    // Two-pass approach: The iterator compiler evaluates the condition,
-    // which can have writes from sequential operations. These are tracked
-    // during compilation and passed through to _compileFor.
+    // We use an infinite iterator and inject the condition check inside the loop body
+    // so it shares the same async block and isolates writes correctly.
+
+    // Use runtime helper to create the infinite iterator
     const iteratorCompiler = (arrNode, loopFrame, arrVarName) => {
-      // the condition expression can write if (!) sequential operations are used
-      // it runs in the same frame as the loop body which writes are isolated with the sequentialLoopBody flag
-
-      // the write counts from the below compilation are saved to the loopFrame (in the compiler)
-      // these will be capped to 1 when passed to the runtime.iterate() and will be released by finalizeLoopWrites
-
-      // Create a condition evaluator function that will be passed to runtime
-      const conditionEvaluatorName = 'while_condition_evaluator_' + this.compiler._tmpid();
-
-      // Generate the condition evaluator function
-      this.compiler.emit.line(`let ${conditionEvaluatorName} = async (frame) => {`);
-      this.compiler.emit('  return ');
-      this.compiler._compileAwaitedExpression(node.cond, loopFrame, false);
-      this.compiler.emit.line(';');
-      this.compiler.emit.line('};');
-      this.compiler.emit.line('');
-
-      // Use runtime helper to create the iterator
-      this.compiler.emit.line(`let ${arrVarName} = runtime.whileConditionIterator(frame, ${conditionEvaluatorName});`);
+      this.compiler.emit.line(`let ${arrVarName} = runtime.whileIterator();`);
     };
 
     const fakeForNode = new nodes.For(
@@ -54,16 +37,15 @@ class CompileLoop {
     );
     fakeForNode.isAsync = true;
 
-    // Delegate to the modified `_compileFor`, which now uses two-pass compilation
-    // and collects metadata from both the iterator (condition) and body
-    this._compileFor(fakeForNode, frame, true, iteratorCompiler);
+    // Delegate to _compileFor, passing the condition node to be injected into the body
+    this._compileFor(fakeForNode, frame, true, iteratorCompiler, node.cond);
   }
 
   compileFor(node, frame) {
     this._compileFor(node, frame, false);
   }
 
-  _compileFor(node, frame, sequential = false, iteratorCompiler = null) {
+  _compileFor(node, frame, sequential = false, iteratorCompiler = null, whileConditionNode = null) {
     // Use node.arr as the position for the outer async block (evaluating the array)
     frame = this.compiler.emit.asyncBlockBufferNodeBegin(node, frame, true, node.arr);
 
@@ -111,7 +93,7 @@ class CompileLoop {
 
     //compile the loop body function
     const hasConcurrentLimit = Boolean(node.concurrentLimit);
-    const bodyFrame = this._compileLoopBody(node, frame, arr, loopVars, sequential, hasConcurrentLimit);
+    const bodyFrame = this._compileLoopBody(node, frame, arr, loopVars, sequential, hasConcurrentLimit, whileConditionNode);
     const bodyWriteCounts = bodyFrame.writeCounts;
     if (bodyWriteCounts) {
       // @todo - in the future will require writes+reads to be sequential,
@@ -191,7 +173,7 @@ class CompileLoop {
     frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
   }
 
-  _compileLoopBody(node, frame, arr, loopVars, sequential, forceAwaitLoopBody = false) {
+  _compileLoopBody(node, frame, arr, loopVars, sequential, forceAwaitLoopBody = false, whileConditionNode = null) {
     const bodyCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
     if (node.isAsync) {
       this.compiler.emit('(async function(');//@todo - think this over, does it need async block?
@@ -247,6 +229,7 @@ class CompileLoop {
           this.compiler._addDeclaredVar(frame, varName);
         }
       });
+
     } else {
       // Single variable loop (Symbol)
       const varName = node.name.value;
@@ -257,10 +240,37 @@ class CompileLoop {
       }
     }
 
+    // Compile Loop Condition (if while loop)
+    // We do this after destructuring but before body, in the same async block
+    let preBodyWriteCounts = null;
+    let skipBranchWritesPos = -1;
+
+    if (whileConditionNode) {
+      this.compiler.emit('const whileCond = ');
+      this.compiler._compileAwaitedExpression(whileConditionNode, frame, false);
+      this.compiler.emit.line(';');
+
+      this.compiler.emit.line('if (!whileCond) {');
+      skipBranchWritesPos = this.compiler.codebuf.length;
+      this.compiler.emit.line(''); // Placeholder for skipBranchWrites
+      this.compiler.emit.line('  return runtime.STOP_WHILE;');
+      this.compiler.emit.line('}');
+
+      // Snapshot writes including condition and destructuring
+      preBodyWriteCounts = frame.writeCounts ? { ...frame.writeCounts } : {};
+    }
+
     // Compile the loop body with the updated frame
     this.compiler.emit.withScopedSyntax(() => {
       this.compiler.compile(node.body, frame);
     });
+
+    if (whileConditionNode) {
+      const bodyOnlyWrites = this._diffWriteCounts(frame.writeCounts, preBodyWriteCounts);
+      if (Object.keys(bodyOnlyWrites).length > 0) {
+        this.compiler.emit.insertLine(skipBranchWritesPos, `  frame.skipBranchWrites(${JSON.stringify(bodyOnlyWrites)});`);
+      }
+    }
 
     // Collect metadata from body compilation
     if (frame.writeCounts || sequential) {
@@ -440,6 +450,20 @@ class CompileLoop {
 
   compileAsyncAll(node, frame) {
     this._compileAsyncLoop(node, frame, true);
+  }
+
+
+  _diffWriteCounts(total, subset) {
+    const diff = {};
+    if (!total) return diff;
+    for (const k in total) {
+      const t = total[k];
+      const s = subset ? subset[k] || 0 : 0;
+      if (t > s) {
+        diff[k] = t - s;
+      }
+    }
+    return diff;
   }
 }
 

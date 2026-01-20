@@ -198,4 +198,6 @@ module.exports = {
   sequentialMemberLookupScriptAsync: sequential.sequentialMemberLookupScriptAsync,
   sequentialMemberLookupAsync: sequential.sequentialMemberLookupAsync,
   setPath: require('./set-path').setPath,
+  STOP_WHILE: loop.STOP_WHILE,
+  whileIterator: loop.whileIterator
 };
