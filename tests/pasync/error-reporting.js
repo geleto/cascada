@@ -963,4 +963,80 @@
       });
     });
   });
+
+  describe('Manual RuntimeFatalError Simulation', function () {
+    // NOTE: This test manually simulates logic internal to the compiler/runtime interaction
+    // involving AsyncState, Frame, and RuntimeFatalError. It verifies that critical
+    // runtime errors (like sequential loop contract violations) are correctly propagated
+    // via the callback mechanism even when promises might otherwise swallow or delay them.
+
+    const { AsyncState } = require('../../src/runtime/async-state');
+    const runtime = require('../../src/runtime/runtime');
+    const { AsyncFrame } = require('../../src/runtime/frame');
+
+    it('should propagate RuntimeFatalError to callback from simulateAsyncBlock', function (done) {
+      const astate = new AsyncState();
+      const frame = new AsyncFrame(null, false);
+
+      // Simulate an async block that throws RuntimeFatalError
+      const fatalMsg = 'Simulated Fatal Error';
+
+      // Logic that simulates what happens inside the compiled async IIFE
+      const asyncBody = async (childState, childFrame) => {
+        // ... some async work
+        await new Promise(r => setTimeout(r, 10));
+
+        // Throw our fatal error
+        // We pass dummy values for line/col/ctx as this is a simulation
+        throw new runtime.RuntimeFatalError(fatalMsg, 1, 1, 'test execution', 'test.njk');
+      };
+
+      let callbackCalled = false;
+      const cb = (err) => {
+        callbackCalled = true;
+        expect(err).to.be.a(runtime.RuntimeFatalError);
+        expect(err.message).to.contain(fatalMsg);
+      };
+
+      // Use astate.asyncBlock exactly as the compiler would emit it
+      astate.asyncBlock(
+        asyncBody,
+        runtime,
+        frame,
+        null, // readVars
+        null, // writeCounts
+        cb,
+        1, 1, // lineno, colno
+        { path: 'test.njk' } // context
+      ).then(() => {
+        done(new Error('asyncBlock should have rejected'));
+      }).catch(err => {
+        try {
+          // If the callback assertions failed, err will be the Assertion Error (if cb ran synchronously which isn't the case here, but just in case)
+          // Actually, since cb catches nothing, if expect throws, it might bubble depending on caller.
+          // In async-state.js, cb(err) is plain call. If it throws, it's caught by the catch block there and re-rejected.
+
+          if (err.name === 'AssertionError' || (expect.AssertionError && err instanceof expect.AssertionError)) {
+            throw err;
+          }
+
+          if (!callbackCalled) {
+            throw new Error('Callback was not called before promise rejection');
+          }
+
+          // If we got here, callback was called. Verify the rejection is indeed the FatalError (or an assertion error wrapped)
+          if (err instanceof runtime.RuntimeFatalError) {
+            // Success path
+            done();
+          } else {
+            // Some other error
+            done(err);
+          }
+        } catch (e) {
+          done(e);
+        }
+      });
+    });
+  });
 })();
+

@@ -134,6 +134,7 @@ module.exports = class CompileEmit {
         // Wait for child async blocks spawned within this iteration
         // before proceeding to finally/catch.
         this.line('await astate.waitAllClosures(1);');
+        this.line('if (frame.writeCounters && Object.values(frame.writeCounters).some(v => v > 0)) { throw new runtime.RuntimeFatalError("Sequential loop iteration finished with pending writes: " + JSON.stringify(frame.writeCounters), ' + positionNode.lineno + ', ' + positionNode.colno + ', "sequential loop check", context.path); }');
       }
       this.asyncClosureDepth--;
       this.line('}');

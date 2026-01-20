@@ -174,6 +174,18 @@ class RuntimeError extends Error {
 }
 
 /**
+ * Fatal runtime error that should be reported to the callback even for async blocks.
+ * Used for critical failures like broken sequential loop contracts.
+ */
+class RuntimeFatalError extends RuntimeError {
+  constructor(message, lineno, colno, errorContextString = null, path = null) {
+    super(message, lineno, colno, errorContextString, path);
+    this.name = 'RuntimeFatalError';
+  }
+}
+
+
+/**
  * Wraps a Promise to add contextual error information the *first time* it rejects.
  * - Does NOT attach a catch in the constructor, so global unhandled rejections still fire.
  * - Adds context only when a rejection handler is actually invoked (then/catch/await).
@@ -498,6 +510,7 @@ module.exports = {
   PoisonedValue,
   PoisonError,
   RuntimeError,
+  RuntimeFatalError,
   RuntimePromise,
   ErrorContext,
   createPoison,

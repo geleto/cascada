@@ -52,6 +52,13 @@ class AsyncState {
       // 1. Invoke the async function to get the promise.
       const promise = func(childState, childFrame);
 
+      // Check for fatal errors to report them immediately to the render which will reject the promise
+      promise.catch(err => {
+        if (err instanceof runtime.RuntimeFatalError) {
+          cb(err);
+        }
+      });
+
       // Add error handler to fulfill writeCounts contract even on failure
       const handled = (isExpression && writeCounts)//asyncBlockValue
         ? promise.catch(err => {

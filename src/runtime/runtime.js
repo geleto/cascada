@@ -140,6 +140,7 @@ module.exports = {
   PoisonedValue: errors.PoisonedValue,
   PoisonError: errors.PoisonError,
   RuntimeError: errors.RuntimeError,
+  RuntimeFatalError: errors.RuntimeFatalError,
   createPoison: errors.createPoison,
   isPoison: errors.isPoison,
   isPoisonError: errors.isPoisonError,
