@@ -253,6 +253,7 @@
 
         // Set up async var with poison
         frame.asyncVars = { testVar: poison };
+        frame.writeCounters = { testVar: 1 };
         frame.promiseResolves = { testVar: () => { } };
 
         // Should not throw when resolving poison

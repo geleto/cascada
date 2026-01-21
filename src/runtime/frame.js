@@ -184,7 +184,7 @@ class AsyncFrame extends Frame {
   //or maybe reentrant frames should keep vars in the parent scope, at least for loops
   set(name, val, resolveUp) {
     if (resolveUp) {
-      //only set tags use resolveUp
+      //only set tags and lock variable operationsuse resolveUp
       //set tags do not have variables with dots, so the name is the whole variable name
       if (name.indexOf('.') !== -1) {
         throw new Error('resolveUp should not be used for variables with dots');
@@ -206,8 +206,9 @@ class AsyncFrame extends Frame {
         }
       }
 
-      //go up the chain until we reach the scope frame or an asyncVar with the same name
-      //and store the value there (poison values are stored just like any other value)
+      // go up the chain until we reach the scope frame or an asyncVar with the same name
+      // and store the value there (poison values are stored just like any other value)
+      // when reaching asyncVars, we set the value and don't go further up
       let frame = this;
       while (true) {
         if (frame.asyncVars && name in frame.asyncVars) {
@@ -319,12 +320,6 @@ class AsyncFrame extends Frame {
       if (!this.sequentialLoopBody) {
         // Parallel mode: Resolve the parent's pending promise
         this._resolveAsyncVar(varName);
-
-        //optional cleanup:
-        delete this.writeCounters[varName];
-        if (Object.keys(this.writeCounters).length === 0) {
-          this.writeCounters = undefined;
-        }
       } else {
         /*if (this.parent) {
           // Sequential mode: Commit value to parent immediately
@@ -402,7 +397,12 @@ class AsyncFrame extends Frame {
     // Resolve with the value (which may be poison - that's ok, it will propagate)
     resolveFunc(value);
 
-    // Cleanup
+    //optional cleanup, counters and resolves only:
+    delete this.writeCounters[varName];
+    if (Object.keys(this.writeCounters).length === 0) {
+      this.writeCounters = undefined;
+    }
+
     delete this.promiseResolves[varName];
     if (Object.keys(this.promiseResolves).length === 0) {
       this.promiseResolves = undefined;
