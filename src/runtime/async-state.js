@@ -63,6 +63,9 @@ class AsyncState {
     const checkInfo = ENABLE_WRITECOUNTER_CHECK ? { cb, runtime, lineno, colno, errorContextString, context } : null;
     const childState = this._enterAsyncBlock(childFrame);
     childState.checkInfo = checkInfo;
+    if (checkInfo) {
+      childFrame.checkInfo = checkInfo;
+    }
 
     try {
       // 1. Invoke the async function to get the promise.

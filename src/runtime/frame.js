@@ -3,7 +3,8 @@
 const {
   createPoison,
   isPoison,
-  isPoisonError
+  isPoisonError,
+  RuntimeFatalError
 } = require('./errors');
 
 // Frames keep track of scoping both at compile-time and run-time so
@@ -297,7 +298,19 @@ class AsyncFrame extends Frame {
     }
     let count = this.writeCounters[varName];
     if (count < decrementVal) {
-      throw new Error(`Variable ${varName} write counter ${count === undefined ? 'is undefined' : 'turned negative'} in _trackAsyncWrites`);
+      const message = `Variable ${varName} write counter ${count === undefined ? 'is undefined' : 'turned negative'} in _trackAsyncWrites`;
+      if (this.checkInfo && this.checkInfo.cb) {
+        const fatal = new RuntimeFatalError(
+          message,
+          this.checkInfo.lineno,
+          this.checkInfo.colno,
+          this.checkInfo.errorContextString,
+          this.checkInfo.context ? this.checkInfo.context.path : null
+        );
+        this.checkInfo.cb(fatal);
+        throw fatal;
+      }
+      throw new RuntimeFatalError(message);
     }
 
     let reachedZero = (count === decrementVal);
