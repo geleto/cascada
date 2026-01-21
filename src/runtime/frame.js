@@ -315,7 +315,7 @@ class AsyncFrame extends Frame {
       } else {
         /*if (this.parent) {
           // Sequential mode: Commit value to parent immediately
-          this._comitSequentialWrite(varName);
+          this._commitSequentialWrite(varName);
         }*/
         // The value will be comitted after the frame waitAllClosures
         // As by that time some promises may have already been resolved
@@ -498,9 +498,9 @@ class AsyncFrame extends Frame {
     }
   }
 
-  /*_comitSequentialWrite(varName) {
+  _commitSequentialWrite(varName) {
     this.parent.asyncVars[varName] = this.asyncVars[varName];
-  }*/
+  }
 
   _snapshotVariables(reads) {
     for (const varName of reads) {

@@ -1,5 +1,7 @@
 'use strict';
 
+const ENABLE_WRITECOUNTER_CHECK = false;
+
 class AsyncState {
   constructor(parent = null) {
     this.activeClosures = 0;
@@ -37,6 +39,18 @@ class AsyncState {
       throw new Error('Negative activeClosures count detected');
     }
 
+    if (this.activeClosures === 0 && this.checkInfo && this.asyncBlockFrame && this.asyncBlockFrame.writeCounters) {
+      if (Object.values(this.asyncBlockFrame.writeCounters).some(v => v > 0)) {
+        this.checkInfo.cb(new this.checkInfo.runtime.RuntimeFatalError(
+          'Async block finished with pending writes: ' + JSON.stringify(this.asyncBlockFrame.writeCounters),
+          this.checkInfo.lineno,
+          this.checkInfo.colno,
+          this.checkInfo.errorContextString,
+          this.checkInfo.context ? this.checkInfo.context.path : null
+        ));
+      }
+    }
+
     if (this.parent) {
       return this.parent._leaveAsyncBlock();
     }
@@ -46,7 +60,9 @@ class AsyncState {
 
   asyncBlock(func, runtime, f, readVars, writeCounts, cb, lineno, colno, context, errorContextString = null, isExpression = false, sequentialAsyncBlock = false) {
     const childFrame = f.pushAsyncBlock(readVars, writeCounts, sequentialAsyncBlock);
+    const checkInfo = ENABLE_WRITECOUNTER_CHECK ? { cb, runtime, lineno, colno, errorContextString, context } : null;
     const childState = this._enterAsyncBlock(childFrame);
+    childState.checkInfo = checkInfo;
 
     try {
       // 1. Invoke the async function to get the promise.

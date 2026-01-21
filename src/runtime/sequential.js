@@ -19,9 +19,11 @@ function createLockPromise(frame, promise, writeKey, readKey, errorContext, upda
   let lockPromise = promise.then(
     (res) => {
       if (updateWrite && writeKey && frame.lookup(writeKey) === lockPromise) {
+        // This is purely an optimization - replacing the unchanged promise with the resolved value
         frame.set(writeKey, true, true);
       }
       if (updateRead && readKey && frame.lookup(readKey) === lockPromise) {
+        // This is purely an optimization - replacing the unchanged promise with the resolved value
         frame.set(readKey, true, true);
       }
       return res;
@@ -29,9 +31,11 @@ function createLockPromise(frame, promise, writeKey, readKey, errorContext, upda
     (err) => {
       const poison = createPoison(err, errorContext);
       if (updateWrite && writeKey && frame.lookup(writeKey) === lockPromise) {
+        // This is purely an optimization - replacing the unchanged promise with the poisoned value
         frame.set(writeKey, poison, true);
       }
       if (updateRead && readKey && frame.lookup(readKey) === lockPromise) {
+        // This is purely an optimization - replacing the unchanged promise with the poisoned value
         frame.set(readKey, poison, true);
       }
       return poison;
