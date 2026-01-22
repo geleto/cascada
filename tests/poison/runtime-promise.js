@@ -770,7 +770,7 @@
         const script = `
         var i = 0
         while poisonCond()
-          i = 1
+          i = i + 1
         endwhile
         @value(i is error)
       `;

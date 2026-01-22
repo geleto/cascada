@@ -823,7 +823,14 @@
 
       it('should report error in while loop condition', async () => {
         const templateName = 'error-while-condition.njk';
-        loader.addTemplate(templateName, '{% set counter = 0 %}{% while checkCondition(counter) %}{{ counter }}{% set counter = counter + 1 %}{% endwhile %}');
+        loader.addTemplate(templateName, `
+          {% set counter = 0 %}
+          {% while checkCondition(counter) %}
+            {{ counter }}
+            {% set counter = counter + 1 %}
+          {% endwhile %}
+          {{ counter }}
+        `);
 
         try {
           await env.renderTemplate(templateName, {
