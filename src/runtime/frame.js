@@ -179,49 +179,10 @@ class AsyncFrame extends Frame {
     return nf;
   }
 
-  //@todo?. - handle reentrant frames, count the writes even if the frame is the scope frame,
   //second parameter to pushAsyncBlock only for recursive frames
-  //or maybe reentrant frames should keep vars in the parent scope, at least for loops
   set(name, val, resolveUp) {
     if (resolveUp) {
-      //only set tags and lock variable operationsuse resolveUp
-      //set tags do not have variables with dots, so the name is the whole variable name
-      if (name.indexOf('.') !== -1) {
-        throw new Error('resolveUp should not be used for variables with dots');
-      }
-
-      //find or create the variable scope:
-      let scopeFrame = this.resolve(name, true);
-      if (!scopeFrame) {
-        //add the variable here unless !createScope in which case try adding in a parent frame that can createScope
-        if (!this.createScope) {
-          this.parent.set(name, val);//set recursively ti
-          scopeFrame = this.resolve(name, true);
-          if (!scopeFrame) {
-            throw new Error('Variable should have been added in a parent frame');
-          }
-        }
-        else {
-          scopeFrame = this;//create the variable in this frame
-        }
-      }
-
-      // go up the chain until we reach the scope frame or an asyncVar with the same name
-      // and store the value there (poison values are stored just like any other value)
-      // when reaching asyncVars, we set the value and don't go further up
-      let frame = this;
-      while (true) {
-        if (frame.asyncVars && name in frame.asyncVars) {
-          frame.asyncVars[name] = val; // Store poison if val is poison
-          break;
-        }
-        if (frame === scopeFrame) {
-          scopeFrame.variables[name] = val; // Store poison if val is poison
-          break;
-        }
-        frame = frame.parent;
-      }
-
+      const scopeFrame = this.assign(name, val);
       this._countdownAndResolveAsyncWrites(name, 1, scopeFrame);
     } else {
       //not for set tags
@@ -229,6 +190,48 @@ class AsyncFrame extends Frame {
       //@todo - handle for recursive frames
       //name = name.substring(0, name.indexOf('.'));
     }
+  }
+
+  /** Works like set with resolveUp, but without updating the writeCounts */
+  assign(name, val) {
+    //only set tags and lock variable operations use resolveUp
+    //set tags do not have variables with dots, so the name is the whole variable name
+    if (name.indexOf('.') !== -1) {
+      throw new Error('resolveUp can only be used for variables, not for properties/paths');
+    }
+
+    //find or create the variable scope:
+    let scopeFrame = this.resolve(name, true);
+    if (!scopeFrame) {
+      //add the variable here unless !createScope in which case try adding in a parent frame that can createScope
+      if (!this.createScope) {
+        this.parent.set(name, val);//set recursively ti
+        scopeFrame = this.resolve(name, true);
+        if (!scopeFrame) {
+          throw new Error('Variable should have been added in a parent frame');
+        }
+      }
+      else {
+        scopeFrame = this;//create the variable in this frame
+      }
+    }
+
+    // go up the chain until we reach the scope frame or an asyncVar with the same name
+    // and store the value there (poison values are stored just like any other value)
+    // when reaching asyncVars, we set the value and don't go further up
+    let frame = this;
+    while (true) {
+      if (frame.asyncVars && name in frame.asyncVars) {
+        frame.asyncVars[name] = val; // Store poison if val is poison
+        break;
+      }
+      if (frame === scopeFrame) {
+        scopeFrame.variables[name] = val; // Store poison if val is poison
+        break;
+      }
+      frame = frame.parent;
+    }
+    return scopeFrame;
   }
 
   //@todo when we start skipping block promisify - do complete get implementation here to check asyncVars at all levels

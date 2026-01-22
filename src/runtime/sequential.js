@@ -18,13 +18,15 @@ function createLockPromise(frame, promise, writeKey, readKey, errorContext, upda
   // e.g. it has not been changed by another async block
   let lockPromise = promise.then(
     (res) => {
-      if (updateWrite && writeKey && frame.lookup(writeKey) === lockPromise) {
+      const { value: writeVal, frame: writeFrame } = frame.lookupAndLocate(writeKey);
+      const { value: readVal, frame: readFrame } = frame.lookupAndLocate(readKey);
+      if (updateWrite && writeKey && writeVal === lockPromise) {
         // This is purely an optimization - replacing the unchanged promise with the resolved value
-        //frame.set(writeKey, true, true);
+        writeFrame.assign(writeKey, true);
       }
-      if (updateRead && readKey && frame.lookup(readKey) === lockPromise) {
+      if (updateRead && readKey && readVal === lockPromise) {
         // This is purely an optimization - replacing the unchanged promise with the resolved value
-        //frame.set(readKey, true, true);
+        readFrame.assign(readKey, true);
       }
       return res;
     },
@@ -32,11 +34,11 @@ function createLockPromise(frame, promise, writeKey, readKey, errorContext, upda
       const poison = createPoison(err, errorContext);
       if (updateWrite && writeKey && frame.lookup(writeKey) === lockPromise) {
         // This is purely an optimization - replacing the unchanged promise with the poisoned value
-        //frame.set(writeKey, poison, true);
+        frame.assign(writeKey, poison);
       }
       if (updateRead && readKey && frame.lookup(readKey) === lockPromise) {
         // This is purely an optimization - replacing the unchanged promise with the poisoned value
-        //frame.set(readKey, poison, true);
+        frame.assign(readKey, poison);
       }
       return poison;
     }
