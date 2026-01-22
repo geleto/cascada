@@ -755,14 +755,15 @@ class Compiler extends CompilerBase {
     let poisonCheckPos, catchPoisonPos;
 
     if (this.asyncMode) {
+      const condResultId = this._tmpid();
       // Async mode: Add try-catch wrapper for poison condition handling
       this.emit('try {');
-      this.emit('const condResult = ');//@todo - use a temporary variable for the condition result
+      this.emit(`const ${condResultId} = `);
       this._compileAwaitedExpression(node.cond, frame, false);
       this.emit(';');
       this.emit('');
 
-      this.emit('if (condResult) {');
+      this.emit(`if (${condResultId}) {`);
 
       trueBranchCodePos = this.codebuf.length;
       this.emit('');
@@ -824,7 +825,7 @@ class Compiler extends CompilerBase {
         // Variable poisoning
         if (hasVariables) {
           this.emit.insertLine(poisonCheckPos,
-            `  frame.poisonBranchWrites(condResult, ${JSON.stringify(combinedCounts)});`);
+            `  frame.poisonBranchWrites(${condResultId}, ${JSON.stringify(combinedCounts)});`);
           this.emit.insertLine(catchPoisonPos,
             `    frame.poisonBranchWrites(contextualError, ${JSON.stringify(combinedCounts)});`);
         }
@@ -833,7 +834,7 @@ class Compiler extends CompilerBase {
         if (hasHandlers) {
           const handlerArray = Array.from(allHandlers);
           this.emit.insertLine(poisonCheckPos,
-            `  runtime.addPoisonMarkersToBuffer(${this.buffer}, condResult, ${JSON.stringify(handlerArray)});`);
+            `  runtime.addPoisonMarkersToBuffer(${this.buffer}, ${condResultId}, ${JSON.stringify(handlerArray)});`);
           this.emit.insertLine(catchPoisonPos,
             `    runtime.addPoisonMarkersToBuffer(${this.buffer}, contextualError, ${JSON.stringify(handlerArray)});`);
         }
