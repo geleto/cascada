@@ -29,6 +29,28 @@
     AsyncFrame = nunjucks.runtime.AsyncFrame;
   }
 
+  async function expectLockPoison(lock) {
+    if (lock && typeof lock.then === 'function') {
+      try {
+        await lock;
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+      }
+    } else {
+      expect(isPoison(lock)).to.be(true);
+    }
+  }
+
+  async function expectLockTrue(lock) {
+    if (lock && typeof lock.then === 'function') {
+      const resolved = await lock;
+      expect(resolved).to.equal(true);
+    } else {
+      expect(lock).to.equal(true);
+    }
+  }
+
   describe('Lookup Functions Poison Handling', () => {
 
     describe('memberLookupAsync - Sync-First Hybrid', () => {
@@ -128,16 +150,21 @@
     });
 
     describe('sequentialMemberLookupAsync - Pure Async', () => {
-      let frame;
+      let frame, root;
 
       beforeEach(() => {
-        frame = new AsyncFrame();
-        frame.set('!lockKey', undefined, true);
+        root = new AsyncFrame();
+        root.set('!lockKey', undefined, true);
+        root.set('!lockKey~', undefined, true);
+        frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
       });
 
       it('should throw PoisonError for poisoned lock', async () => {
         const lockPoison = createPoison(new Error('Lock poisoned'));
-        frame.set('!lockKey', lockPoison, true);
+        root = new AsyncFrame();
+        root.set('!lockKey', lockPoison, true);
+        root.set('!lockKey~', undefined, true);
+        frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
 
         try {
           await runtime.sequentialMemberLookupAsync(
@@ -168,8 +195,8 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
-          const readLock = frame.lookup('!lockKey~');
-          expect(isPoison(readLock)).to.be(true);
+          const readLock = root.lookup('!lockKey~');
+          await expectLockPoison(readLock);
         }
       });
 
@@ -189,8 +216,8 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
-          const readLock = frame.lookup('!lockKey~');
-          expect(isPoison(readLock)).to.be(true);
+          const readLock = root.lookup('!lockKey~');
+          await expectLockPoison(readLock);
         }
       });
 
@@ -209,8 +236,8 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
-          const readLock = frame.lookup('!lockKey~');
-          expect(isPoison(readLock)).to.be(true);
+          const readLock = root.lookup('!lockKey~');
+          await expectLockPoison(readLock);
         }
       });
 
@@ -226,18 +253,20 @@
 
         expect(result).to.equal('test');
 
-        const readLock = frame.lookup('!lockKey~');
-        expect(readLock).to.equal(true);
+        const readLock = root.lookup('!lockKey~');
+        await expectLockTrue(readLock);
       });
     });
 
     describe('sequentialContextLookup - Pure Async', () => {
-      let frame, context;
+      let frame, root, context;
 
       beforeEach(() => {
-        frame = new AsyncFrame();
-        frame.set('!lockKey', undefined, true);
-        frame.set('myVar', 'test value', true);
+        root = new AsyncFrame();
+        root.set('!lockKey', undefined, true);
+        root.set('!lockKey~', undefined, true);
+        root.set('myVar', 'test value', true);
+        frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
 
         context = {
           lookup: (name) => undefined
@@ -246,7 +275,11 @@
 
       it('should throw PoisonError for poisoned lock', async () => {
         const lockPoison = createPoison(new Error('Lock poisoned'));
-        frame.set('!lockKey', lockPoison, true);
+        root = new AsyncFrame();
+        root.set('!lockKey', lockPoison, true);
+        root.set('!lockKey~', undefined, true);
+        root.set('myVar', 'test value', true);
+        frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
 
         try {
           await runtime.sequentialContextLookup(
@@ -264,7 +297,11 @@
 
       it('should throw PoisonError when variable is poisoned', async () => {
         const poison = createPoison(new Error('Variable poisoned'));
-        frame.set('myVar', poison, true);
+        root = new AsyncFrame();
+        root.set('!lockKey', undefined, true);
+        root.set('!lockKey~', undefined, true);
+        root.set('myVar', poison, true);
+        frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
 
         try {
           await runtime.sequentialContextLookup(
@@ -278,8 +315,8 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
-          const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be(true);
+          const readLock = root.lookup('!lockKey~');
+          await expectLockPoison(readLock);
         }
       });
 
@@ -294,8 +331,8 @@
 
         expect(result).to.equal('test value');
 
-        const readLock = frame.lookup('!lockKey~');
-        expect(readLock).to.equal(true);
+        const readLock = root.lookup('!lockKey~');
+        await expectLockTrue(readLock);
       });
     });
 

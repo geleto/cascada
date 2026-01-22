@@ -31,6 +31,37 @@
 
   const mockErrorContext = { lineno: 1, colno: 1, errorContextString: 'test', path: 'test' };
 
+  async function expectLockPoison(lock) {
+    if (lock && typeof lock.then === 'function') {
+      try {
+        await lock;
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+      }
+    } else {
+      expect(isPoison(lock)).to.be(true);
+    }
+  }
+
+  async function expectLockTrue(lock) {
+    if (lock && typeof lock.then === 'function') {
+      const resolved = await lock;
+      expect(resolved).to.equal(true);
+    } else {
+      expect(lock).to.equal(true);
+    }
+  }
+
+  async function expectLockValue(lock, value) {
+    if (lock && typeof lock.then === 'function') {
+      const resolved = await lock;
+      expect(resolved).to.equal(value);
+    } else {
+      expect(lock).to.equal(value);
+    }
+  }
+
   describe('Call and Suppression Function Poison Handling', () => {
 
     describe('callWrap - Sync Function (original behavior)', () => {
@@ -369,11 +400,13 @@
     });
 
     describe('sequentialCallWrap - Pure Async Function', () => {
-      let frame, mockContext;
+      let frame, root, mockContext;
 
       beforeEach(() => {
-        frame = new AsyncFrame();
-        frame.set('!lockKey', undefined, true);
+        root = new AsyncFrame();
+        root.set('!lockKey', undefined, true);
+        root.set('!lockKey~', undefined, true);
+        frame = root.pushAsyncBlock(null, { '!lockKey': 1, '!lockKey~': 1 });
         mockContext = {
           env: { globals: {} },
           ctx: {}
@@ -401,8 +434,8 @@
           expect(thrown.errors[0]).to.equal(err);
 
           // Lock should be poisoned
-          const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be(true);
+          const lock = root.lookup('!lockKey');
+          await expectLockPoison(lock);
         }
       });
 
@@ -422,8 +455,8 @@
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
 
-          const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be(true);
+          const lock = root.lookup('!lockKey');
+          await expectLockPoison(lock);
         }
       });
 
@@ -445,14 +478,17 @@
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
 
-          const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be(true);
+          const lock = root.lookup('!lockKey');
+          await expectLockPoison(lock);
         }
       });
 
       it('should throw PoisonError for poisoned lock', async () => {
         const lockPoison = createPoison(new Error('Lock poisoned'));
-        frame.set('!lockKey', lockPoison, true);
+        root = new AsyncFrame();
+        root.set('!lockKey', lockPoison, true);
+        root.set('!lockKey~', undefined, true);
+        frame = root.pushAsyncBlock(null, { '!lockKey': 1, '!lockKey~': 1 });
 
         try {
           await runtime.sequentialCallWrap(
@@ -491,8 +527,8 @@
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
 
-          const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be(true);
+          const lock = root.lookup('!lockKey');
+          await expectLockPoison(lock);
         }
       });
 
@@ -514,8 +550,8 @@
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
 
-          const lock = frame.lookup('!lockKey');
-          expect(isPoison(lock)).to.be(true);
+          const lock = root.lookup('!lockKey');
+          await expectLockPoison(lock);
         }
       });
 
@@ -534,8 +570,8 @@
         expect(result).to.equal(8);
 
         // Lock should be released (set to true)
-        const lock = frame.lookup('!lockKey');
-        expect(lock).to.equal(true);
+        const lock = root.lookup('!lockKey');
+        await expectLockTrue(lock);
       });
 
       it('should handle async function that resolves', async () => {
@@ -556,8 +592,8 @@
 
         expect(result).to.equal(42);
 
-        const lock = frame.lookup('!lockKey');
-        expect(lock).to.equal(true);
+        const lock = root.lookup('!lockKey');
+        await expectLockValue(lock, 42);
       });
     });
 
