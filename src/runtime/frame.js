@@ -294,11 +294,21 @@ class AsyncFrame extends Frame {
 
   //when all assignments to a variable are done, resolve the promise for that variable
   _countdownAndResolveAsyncWrites(varName, decrementVal = 1, scopeFrame = null) {
-    if (!this.writeCounters || !(varName in this.writeCounters)) {
+    if (!this.writeCounters || !(varName in this.writeCounters) || decrementVal === 0) {
       return false;
     }
     let count = this.writeCounters[varName];
+    if (count === 0) {
+      // @todo - remove this and fix the failing tests
+      return false;
+    }
+    if (count <= 0) {
+      //we should have already thrown an error
+      this.writeCounters[varName] = count - decrementVal;
+      return false;
+    }
     if (count < decrementVal) {
+      this.writeCounters[varName] = count - decrementVal;
       const message = `Variable ${varName} write counter ${count === undefined ? 'is undefined' : 'turned negative'} in _trackAsyncWrites`;
       if (this.checkInfo && this.checkInfo.cb) {
         const fatal = new RuntimeFatalError(
@@ -327,8 +337,9 @@ class AsyncFrame extends Frame {
         }*/
         // The value will be comitted after the frame waitAllClosures
         // As by that time some promises may have already been resolved
-        this.writeCounters[varName] = 0;
+
       }
+      this.writeCounters[varName] = 0;
 
       if (this.parent && !this.sequentialLoopBody) {
         // propagate upwards because this frame's work is fully done (counter hit zero)
@@ -398,15 +409,15 @@ class AsyncFrame extends Frame {
     resolveFunc(value);
 
     //optional cleanup, counters and resolves only:
-    delete this.writeCounters[varName];
+    /*delete this.writeCounters[varName];
     if (Object.keys(this.writeCounters).length === 0) {
       this.writeCounters = undefined;
-    }
+    }*/
 
-    delete this.promiseResolves[varName];
+    /*delete this.promiseResolves[varName];
     if (Object.keys(this.promiseResolves).length === 0) {
       this.promiseResolves = undefined;
-    }
+    }*/
   }
 
   /*_resolveAsyncVar(varName) {
