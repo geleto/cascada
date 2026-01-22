@@ -1,6 +1,6 @@
 'use strict';
 
-const ENABLE_WRITECOUNTER_CHECK = false;
+const ENABLE_WRITECOUNTER_CHECK = true;
 
 class AsyncState {
   constructor(parent = null) {

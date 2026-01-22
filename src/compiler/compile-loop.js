@@ -244,13 +244,35 @@ class CompileLoop {
     // We do this after destructuring but before body, in the same async block
     let preBodyWriteCounts = null;
     let skipBranchWritesPos = -1;
+    let catchPoisonPos = null;
+    let whileCondId;
 
     if (whileConditionNode) {
-      this.compiler.emit('const whileCond = ');
-      this.compiler._compileAwaitedExpression(whileConditionNode, frame, false);
-      this.compiler.emit.line(';');
+      whileCondId = this.compiler._tmpid();
 
-      this.compiler.emit.line('if (!whileCond) {');
+      if (node.isAsync) {
+        this.compiler.emit(`let ${whileCondId};`);
+        this.compiler.emit('try {');
+        this.compiler.emit(`${whileCondId} = `);
+        this.compiler._compileAwaitedExpression(whileConditionNode, frame, false);
+        this.compiler.emit.line(';');
+        const whileErrorContext = this.compiler._createErrorContext(node, whileConditionNode);
+        this.compiler.emit('} catch (e) {');
+        this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${whileErrorContext.lineno}, ${whileErrorContext.colno}, "${whileErrorContext.errorContextString}", context.path);`);
+        catchPoisonPos = this.compiler.codebuf.length;
+        this.compiler.emit.line(''); // Placeholder for poison injection
+
+        // We set whileCond to false so the loop logic (if !whileCond) below triggers termination
+        // But first we ensure 'return runtime.STOP_WHILE' is reached to stop iteration cleanly
+        this.compiler.emit(`  ${whileCondId} = false;`);
+        this.compiler.emit('}');
+      } else {
+        this.compiler.emit(`const ${whileCondId} = `);
+        this.compiler._compileAwaitedExpression(whileConditionNode, frame, false);
+        this.compiler.emit.line(';');
+      }
+
+      this.compiler.emit(`if (!${whileCondId}) {`);
       skipBranchWritesPos = this.compiler.codebuf.length;
       this.compiler.emit.line(''); // Placeholder for skipBranchWrites
       this.compiler.emit.line('  return runtime.STOP_WHILE;');
@@ -269,6 +291,9 @@ class CompileLoop {
       const bodyOnlyWrites = this._diffWriteCounts(frame.writeCounts, preBodyWriteCounts);
       if (Object.keys(bodyOnlyWrites).length > 0) {
         this.compiler.emit.insertLine(skipBranchWritesPos, `  frame.skipBranchWrites(${JSON.stringify(bodyOnlyWrites)});`);
+        if (catchPoisonPos !== null) {
+          this.compiler.emit.insertLine(catchPoisonPos, `  frame.poisonBranchWrites(contextualError, ${JSON.stringify(bodyOnlyWrites)});`);
+        }
       }
     }
 

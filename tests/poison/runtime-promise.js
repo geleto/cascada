@@ -739,7 +739,7 @@
         env.addGlobal('checkCondition', () => {
           count++;
           if (count > 1) {
-            return Promise.reject(new Error('While condition failed'));
+            throw new Error('While condition failed');
           }
           return true;
         });
@@ -747,11 +747,10 @@
         const script = `
         var i = 0
         while checkCondition()
-          i = i + 1
-          if i > 10
-            break
-          endif
+          //i = i + 1
+          i = 1
         endwhile
+        @value(i)
       `;
 
         try {
@@ -761,6 +760,23 @@
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('While condition failed');
         }
+      });
+
+      it('should poison loop variables when while condition is poison', async () => {
+        env.addGlobal('poisonCond', () => {
+          throw new Error('While condition poisoning');
+        });
+
+        const script = `
+        var i = 0
+        while poisonCond()
+          i = 1
+        endwhile
+        @value(i is error)
+      `;
+
+        const result = await env.renderScriptString(script, {}, { output: 'data' });
+        expect(result.value).to.be(true);
       });
 
       it('should only report error from first ! operation when both are poisoned', async () => {
