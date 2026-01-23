@@ -4,7 +4,6 @@
   var cascada;
   var expect;
   var AsyncEnvironment;
-  var createPoison;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
