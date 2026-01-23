@@ -74,21 +74,16 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        :data
         var count = 0
         while throwingCondition()
           count = count + 1
         endwhile
+        @value(count is error)
       `;
 
-      try {
-        await env.renderScriptString(script, context);
-        expect().fail('Should have thrown PoisonError');
-      } catch (err) {
-        expect(isPoisonError(err)).to.be(true);
-        expect(err.errors[0].message).to.contain('Condition threw error');
-        expect(callCount).to.be(1); // Called once, then stopped
-      }
+      const result = await env.renderScriptString(script, context);
+      expect(result.value).to.be(true);
+      expect(callCount).to.be(1); // Called once, then stopped
     });
 
     it('should handle async function throwing error', async () => {
@@ -126,7 +121,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       const context = {
         counter: {
           value: 0,
-          incrementAndCheck: function() {
+          incrementAndCheck: function () {
             this.value++;
             return this.value < 3;
           }
@@ -152,20 +147,15 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        :data
         var count = 0
         while obj!.method()
           count = count + 1
         endwhile
+        @value(count is error)
       `;
 
-      try {
-        await env.renderScriptString(script, context);
-        expect().fail('Should have thrown PoisonError');
-      } catch (err) {
-        expect(isPoisonError(err)).to.be(true);
-        expect(err.errors[0].message).to.contain('Object is poisoned');
-      }
+      const result = await env.renderScriptString(script, context);
+      expect(result.value).to.be(true);
     });
   });
 
@@ -173,7 +163,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
     it('should work with normal boolean condition', async () => {
       const context = {
         shouldContinue: true,
-        checkCondition: function() {
+        checkCondition: function () {
           const result = this.shouldContinue;
           this.shouldContinue = false;
           return result;
@@ -251,7 +241,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
     it('should handle poison after several iterations', async () => {
       const context = {
         callCount: 0,
-        checkCondition: function() {
+        checkCondition: function () {
           this.callCount++;
           if (this.callCount <= 2) return true;
           // Return poison instead of throwing

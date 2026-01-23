@@ -1746,11 +1746,16 @@ class Parser extends Obj {
           data = data.replace(/\s*$/, '');
         }
 
-        buf.push(new nodes.Output(tok.lineno,
-          tok.colno,
-          [new nodes.TemplateData(tok.lineno,
+        // Only create Output node if data is non-empty after whitespace stripping
+        // This prevents empty TemplateData nodes in the AST that would cause
+        // unnecessary 'text' handler poisoning in script mode
+        if (data.length > 0) {
+          buf.push(new nodes.Output(tok.lineno,
             tok.colno,
-            data)]));
+            [new nodes.TemplateData(tok.lineno,
+              tok.colno,
+              data)]));
+        }
       } else if (tok.type === lexer.TOKEN_BLOCK_START) {
         this.dropLeadingWhitespace = false;
         const n = this.parseStatement();

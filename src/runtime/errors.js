@@ -385,13 +385,14 @@ function isPoisonError(error) {
  */
 async function isError(value) {
   if (isPoison(value)) {
-    return true;
+    return true;//quick path
   }
 
   if (value && typeof value.then === 'function') {
     try {
-      const result = await value;
-      return isPoison(result);
+      await value;
+      //awaited value can not be PoisonedValue as it poisoned values are a thenable
+      return false;
     } catch (err) {
       return true;
     }
