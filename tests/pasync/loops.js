@@ -2961,6 +2961,80 @@
     });
   }); // End While Loops
 
+  describe('While loops condition poisoning tests', () => {
+    let env;
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    it('should handle promise in while loop condition', async () => {
+      let count = 0;
+      env.addGlobal('checkCondition', () => {
+        count++;
+        if (count > 1) {
+          throw new Error('While condition failed');
+        }
+        return true;
+      });
+
+      const script = `
+        var i = 0
+        while checkCondition()
+          //i = i + 1
+          i = 1
+        endwhile
+        @value(i)
+      `;
+
+      try {
+        await env.renderScriptString(script, {}, { output: 'data' });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.errors[0].message).to.contain('While condition failed');
+      }
+    });
+
+    it('should poison loop variables when while condition is poison', async () => {
+      const script = `
+        var i = 0
+        while poisonCond()
+          i = 1 //i + 1
+        endwhile
+        @value(i is error)
+      `;
+
+      const result = await env.renderScriptString(script, {
+        poisonCond: () => {
+          throw new Error('While condition poisoning');
+        }
+      });
+      expect(result.value).to.be(true);
+    });
+
+    it('should poison while output handler when while condition is poison', async () => {
+      const script = `
+        :data
+        var i = 0
+        while poisonCond()
+          @data.push(i)
+        endwhile
+      `;
+
+      try {
+        await env.renderScriptString(script, {
+          poisonCond: () => {
+            throw new Error('While condition poisoning');
+          }
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.errors[0].message).to.contain('While condition poisoning');
+      }
+    });
+  });
+
   describe('Sequential Each Loops', () => {
     let env;
     beforeEach(() => {

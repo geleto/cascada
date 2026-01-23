@@ -39,6 +39,50 @@
       }
     });
 
+    it('should poison handlers when if condition fails with @data output only, in script', async () => {
+      const script = `
+        if asyncReject()
+          @data.value = "yes"
+        endif
+      `;
+
+      const context = {
+        async asyncReject() {
+          throw new Error('Condition failed');
+        }
+      };
+
+      try {
+        await env.renderScriptString(script, context, { output: 'data' });
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.message).to.contain('Condition failed');
+      }
+    });
+
+    it('should poison handlers when while condition fails with @data output only, in script', async () => {
+      const script = `
+        while asyncReject()
+          @data.push("yes")
+        endwhile
+      `;
+
+      const context = {
+        async asyncReject() {
+          throw new Error('Condition failed');
+        }
+      };
+
+      try {
+        await env.renderScriptString(script, context);
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.message).to.contain('Condition failed');
+      }
+    });
+
     it('should poison handlers when if-else both have output', async () => {
       const template = `{% if asyncReject() %}yes{% else %}no{% endif %}`;
 

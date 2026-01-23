@@ -848,7 +848,11 @@
 
       it('should report error in while condition on first check', async () => {
         const templateName = 'error-while-first-condition.njk';
-        loader.addTemplate(templateName, '{% while getCondition() %}never executed{% endwhile %}');
+        loader.addTemplate(templateName, `
+          {% while getCondition() %}
+            never executed
+          {% endwhile %}
+        `);
 
         try {
           await env.renderTemplate(templateName, {

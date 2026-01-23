@@ -295,6 +295,14 @@ class CompileLoop {
           this.compiler.emit.insertLine(catchPoisonPos, `  frame.poisonBranchWrites(contextualError, ${JSON.stringify(bodyOnlyWrites)});`);
         }
       }
+
+      if (catchPoisonPos !== null) {
+        const bodyHandlers = node.isAsync ? this.compiler._collectBranchHandlers(node.body) : null;
+        if (bodyHandlers && bodyHandlers.size > 0) {
+          const handlerArray = Array.from(bodyHandlers);
+          this.compiler.emit.insertLine(catchPoisonPos, `  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer}, contextualError, ${JSON.stringify(handlerArray)});`);
+        }
+      }
     }
 
     // Collect metadata from body compilation

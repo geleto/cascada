@@ -637,6 +637,25 @@
         expect(err.message).to.contain('Condition failed');
       }
     });
+
+    //later fix ('should poison loop variables when while condition is poison')
+    it('should poison if body variables when condition is poison', async () => {
+      //Temp test for comparing
+      const script = `
+        var i = 0
+        if poisonCond()
+          i = 1 //i + 1
+        endif
+        @value(i is error)
+      `;
+
+      const result = await env.renderScriptString(script, {
+        poisonCond: () => {
+          throw new Error('If condition poisoning');
+        }
+      });
+      expect(result.value).to.be(true);
+    });
   });
 
 })();
