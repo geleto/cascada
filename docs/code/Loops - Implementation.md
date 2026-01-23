@@ -771,8 +771,6 @@ After the loop:
 - This decrements counters for any variables that weren't written (e.g. skipped branches), causing them to hit zero and commit their (unchanged) snapshot values to the parent.
 - This ensures the Loop Frame's write counts eventually reach zero, allowing *its* parent to proceed.
 
-**Note:** The old `finalizeLoopWrites` mechanism (resolving pending promises) is obsolete. Also, there is no longer a bulk `commitSequentialWrites` step at the end of the block; commits are granular and immediate.
-
 **Why only for sequential loops?**
 Non-sequential (parallel) loops work differently - they rely on parallel promise resolution chains (`createPoison`, `_promisifyParentVariables`) and are handled via standard completion paths.
 

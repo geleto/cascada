@@ -518,7 +518,7 @@ class AsyncFrame extends Frame {
     return asyncBlockFrame;
   }
 
-  commitSequentialWrites() {
+  _commitSequentialWrites() {
     if (!this.writeCounters) {
       return;
     }
@@ -530,9 +530,9 @@ class AsyncFrame extends Frame {
     }
   }
 
-  _commitSequentialWrite(varName) {
+  /*_commitSequentialWrite(varName) {
     this.parent.asyncVars[varName] = this.asyncVars[varName];
-  }
+  }*/
 
   _snapshotVariables(reads) {
     for (const varName of reads) {

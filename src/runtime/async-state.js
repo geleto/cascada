@@ -98,8 +98,8 @@ class AsyncState {
         if (sequentialAsyncBlock) {
           // This is the best place to do it rather than when the counter reaches 0
           // because by this time some promises may have already been resolved
-          // and we will write the final values to the parent frame
-          childFrame.commitSequentialWrites();
+          // and we will write the final values to the parent frame rather than the promises
+          childFrame._commitSequentialWrites();
         }
         childState._leaveAsyncBlock();
       });
@@ -120,7 +120,7 @@ class AsyncState {
       cb(handledError);
       ////////
       if (sequential) {
-        //childFrame.commitSequentialWrites();
+        //childFrame._commitSequentialWrites();
       }
       ////////
       childState._leaveAsyncBlock();// Ensure cleanup even on sync failure.
