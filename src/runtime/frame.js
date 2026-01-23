@@ -416,16 +416,16 @@ class AsyncFrame extends Frame {
     // Resolve with the value (which may be poison - that's ok, it will propagate)
     resolveFunc(value);
 
-    //optional cleanup, counters and resolves only:
+    //optional cleanup, counters and resolves only, helpful for finding bugs
     /*delete this.writeCounters[varName];
     if (Object.keys(this.writeCounters).length === 0) {
       this.writeCounters = undefined;
     }*/
 
-    /*delete this.promiseResolves[varName];
+    delete this.promiseResolves[varName];
     if (Object.keys(this.promiseResolves).length === 0) {
       this.promiseResolves = undefined;
-    }*/
+    }
   }
 
   /*_resolveAsyncVar(varName) {
