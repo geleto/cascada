@@ -332,7 +332,7 @@ Practical instructions for writing and testing code.
 ### Running Tests
 
 -   **Quick Test (No Build)**: `npm run test:quick`
--   **Single File (Recommended)**: `npm run mocha:single -- tests/pasync/loop-phase1-two-pass.js --timeout 5000`
+-   **Single File (Recommended)**: `npx mocha tests/pasync/loop-phase1-two-pass.js --timeout 5000`
 -   **Node Only (from source, with coverage)**: `npm run test:node`
 -   **Browser Only (bundled from source)**: `npm run test:browser`
 -   **Full Suite (build + precompile + Node + Browser)**: `npm test`
