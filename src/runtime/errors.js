@@ -312,12 +312,30 @@ function resolveErrorContextArgs(lineno = null, colno = null, errorContextString
   return { lineno, colno, errorContextString, path };
 }
 
+/**
+ * erros can be either:
+ * - a string
+ * - an Error
+ * - a PoisonError that may have many errors in it
+ * - an array of Errors or strings
+ */
 function normalizeErrorsWithContext(errors, lineno = null, colno = null, errorContextString = null, path = null) {
   const context = resolveErrorContextArgs(lineno, colno, errorContextString, path);
   let normalized = errors;
 
   if (!Array.isArray(normalized)) {
+    if (typeof normalized === 'string') {
+      normalized = [new RuntimeError(normalized, context.lineno, context.colno, context.errorContextString, context.path)];
+    }
     normalized = isPoisonError(normalized) ? normalized.errors : [normalized];
+  } else {
+    //convert any strings to RuntimeError
+    normalized = normalized.map(err => {
+      if (typeof err === 'string') {
+        return new RuntimeError(err, context.lineno, context.colno, context.errorContextString, context.path);
+      }
+      return err;
+    });
   }
 
   const hasContext = context.lineno !== null ||

@@ -4,9 +4,7 @@
   var cascada;
   var expect;
   var AsyncEnvironment;
-  var POISON_SYMBOL = (typeof Symbol !== 'undefined' && Symbol.for)
-    ? Symbol.for('cascada.poison')
-    : '__cascadaPoisonError';
+  var createPoison;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -18,12 +16,8 @@
     AsyncEnvironment = nunjucks.AsyncEnvironment;
   }
 
-  function fakePoison(message) {
-    const poison = {
-      errors: [new Error(message)]
-    };
-    poison[POISON_SYMBOL] = true;
-    return poison;
+  function throwError(message) {
+    throw new Error(message);
   }
 
   describe('Guard Block', () => {
@@ -173,7 +167,7 @@
       `;
 
       const context = {
-        explode: () => fakePoison('boom')
+        explode: () => throwError('boom')
       };
 
       try {
@@ -327,7 +321,7 @@
       `;
 
       const res = await env.renderTemplateString(tpl, {
-        poison: () => fakePoison('boom')
+        poison: () => throwError('boom')
       });
 
       expect(res.replace(/\s+/g, ' ').trim()).to.equal('ok');
@@ -350,7 +344,7 @@
       `;
 
       const res = await env.renderScriptString(script, {
-        poison: () => fakePoison('boom'),
+        poison: () => throwError('boom'),
         lock: {
           fail: () => { throw new Error('lock failure'); },
           success: () => 'ok'
@@ -375,7 +369,7 @@
       `;
 
       const res = await env.renderScriptString(script, {
-        poison: () => fakePoison('boom')
+        poison: () => throwError('boom')
       });
       expect(res.data.res).to.equal(1);
     });
@@ -406,7 +400,7 @@
       `;
 
       const res = await env.renderScriptString(script, {
-        poison: () => fakePoison('boom')
+        poison: () => throwError('boom')
       });
       expect(res.data.resA).to.equal(10);
       expect(res.data.resB).to.equal(20);
@@ -635,7 +629,7 @@
       `;
 
       const context = {
-        poison: () => fakePoison('text-error'),
+        poison: () => throwError('text-error'),
         track: (val) => { trackedState = val; }
       };
 
