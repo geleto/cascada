@@ -298,6 +298,11 @@ class AsyncFrame extends Frame {
   //when all assignments to a variable are done, resolve the promise for that variable
   _countdownAndResolveAsyncWrites(varName, decrementVal = 1, scopeFrame = null) {
     if (!this.writeCounters || !(varName in this.writeCounters) || decrementVal === 0) {
+      if (this.parent && this.parent !== scopeFrame) {
+        // Search for the proper frame (from async block)
+        return this.parent._countdownAndResolveAsyncWrites(varName, decrementVal, scopeFrame);
+      }
+      // @todo - throw error, cb argument or frame.checkInfo.cb
       return false;
     }
     let count = this.writeCounters[varName];
