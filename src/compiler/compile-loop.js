@@ -291,12 +291,13 @@ class CompileLoop {
       const bodyOnlyWrites = this._diffWriteCounts(frame.writeCounts, preBodyWriteCounts);
       if (Object.keys(bodyOnlyWrites).length > 0) {
         this.compiler.emit.insertLine(skipBranchWritesPos, `  frame.skipBranchWrites(${JSON.stringify(bodyOnlyWrites)});`);
-        if (catchPoisonPos !== null) {
-          this.compiler.emit.insertLine(catchPoisonPos, `  frame.poisonBranchWrites(contextualError, ${JSON.stringify(bodyOnlyWrites)});`);
-        }
       }
 
       if (catchPoisonPos !== null) {
+        const totalWrites = this.compiler.async.countsTo1(frame.writeCounts);
+        if (totalWrites && Object.keys(totalWrites).length > 0) {
+          this.compiler.emit.insertLine(catchPoisonPos, `  frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
+        }
         const bodyHandlers = node.isAsync ? this.compiler._collectBranchHandlers(node.body) : null;
         if (bodyHandlers && bodyHandlers.size > 0) {
           const handlerArray = Array.from(bodyHandlers);
