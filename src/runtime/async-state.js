@@ -78,22 +78,8 @@ class AsyncState {
         }
       });
 
-      // Add error handler to fulfill writeCounts contract even on failure
-      const handled = (isExpression && writeCounts)//asyncBlockValue
-        ? promise.catch(err => {
-          // Poison all variables that this block was supposed to write and decrement counters
-          // This happens with expressions with sequential operators because their locks are regular variables
-          if (writeCounts) {
-            childFrame.poisonBranchWrites(err, writeCounts);
-          }
-
-          // Re-throw to maintain error propagation to root handler
-          throw err;
-        })
-        : promise;
-
       // The finally must run for all nodes.
-      const wrappedPromise = handled.finally(() => {
+      const wrappedPromise = promise.finally(() => {
         // Ensure per-block finalization always runs (decrementing counters, releasing locks, etc.)
         if (sequentialAsyncBlock) {
           // This is the best place to do it rather than when the counter reaches 0
