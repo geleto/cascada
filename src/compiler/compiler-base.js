@@ -351,6 +351,12 @@ class CompilerBase extends Obj {
         // we can use _updateFrameReads. The last funCall can record false in the lock value
         // to indicate all further paths locked by it that they don't need to make a lock for further funCalls
         // hence we can use _updateFrameReads for all of them
+
+        // For repair operations, both write and read locks are updated at runtime
+        // so we must register both in the frame's writeCounters
+        if (node.sequentialRepair) {
+          this.async.updateFrameWrites(frame, nodeStaticPathKey);
+        }
         this.async.updateFrameWrites(frame, readLockKey);
         // Use sequential lookup as a lock for this node exists
         // sequentialContextLookup will `set` the path key, thus releasing it (by decrementing the lock writeCount)
@@ -701,6 +707,12 @@ class CompilerBase extends Obj {
         // This is a sequential lookup.
         // Register the static path key as a variable write so the next lock waits for it.
         // Multiple static path keys can be in the same block.
+
+        // For repair operations, both write and read locks are updated at runtime
+        // so we must register both in the frame's writeCounters
+        if (node.sequentialRepair) {
+          this.async.updateFrameWrites(frame, nodeStaticPathKey);
+        }
         this.async.updateFrameWrites(frame, readLockKey);
 
         // Create the error context and pass it to the runtime function.
