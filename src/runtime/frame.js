@@ -335,6 +335,7 @@ class AsyncFrame extends Frame {
     let reachedZero = (count === decrementVal);
     if (reachedZero) {
       //this variable will no longer be modified, time to resolve it
+      this.writeCounters[varName] = 0;
       if (!this.sequentialLoopBody) {
         // Parallel mode: Resolve the parent's pending promise
         this._resolveAsyncVar(varName);
@@ -347,7 +348,6 @@ class AsyncFrame extends Frame {
         // As by that time some promises may have already been resolved
 
       }
-      this.writeCounters[varName] = 0;
 
       if (this.parent && !this.sequentialLoopBody) {
         // propagate upwards because this frame's work is fully done (counter hit zero)
@@ -417,10 +417,10 @@ class AsyncFrame extends Frame {
     resolveFunc(value);
 
     //optional cleanup, counters and resolves only, helpful for finding bugs
-    /*delete this.writeCounters[varName];
+    delete this.writeCounters[varName];
     if (Object.keys(this.writeCounters).length === 0) {
       this.writeCounters = undefined;
-    }*/
+    }
 
     delete this.promiseResolves[varName];
     if (Object.keys(this.promiseResolves).length === 0) {
