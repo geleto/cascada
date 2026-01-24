@@ -296,14 +296,32 @@ class AsyncFrame extends Frame {
   }
 
   //when all assignments to a variable are done, resolve the promise for that variable
-  _countdownAndResolveAsyncWrites(varName, decrementVal = 1, scopeFrame = null) {
+  _countdownAndResolveAsyncWrites(varName, decrementVal = 1, scopeFrame = null, checkInfo = null) {
     if (!this.writeCounters || !(varName in this.writeCounters) || decrementVal === 0) {
-      if (this.parent && this.parent !== scopeFrame) {
+      // For sequence locks, we need to search all the way up the chain ignoring scopeFrame,
+      // because writeCounters can be in intermediate frames (e.g., guard blocks) even though
+      // the lock value itself is stored in the root frame
+      const isSequenceLock = varName.startsWith('!');
+      const shouldContinueSearch = isSequenceLock ? !!this.parent : (this.parent && this.parent !== scopeFrame);
+
+      if (shouldContinueSearch) {
         // Search for the proper frame (from async block)
-        return this.parent._countdownAndResolveAsyncWrites(varName, decrementVal, scopeFrame);
+        // For non-sequence variables, respect the scopeFrame boundary
+        // For sequence locks, pass root as scopeFrame to stop at root
+        const actualScopeFrame = isSequenceLock ? this.getRoot() : scopeFrame;
+        return this.parent._countdownAndResolveAsyncWrites(varName, decrementVal, actualScopeFrame, checkInfo || this.checkInfo);
+      }
+      if (!this.parent) {
+        return false;//root frame does not keep counts
       }
       // @todo - throw error, cb argument or frame.checkInfo.cb
-      return false;
+      const err = new RuntimeFatalError(`No write counter found for variable ${varName}`);
+      if (checkInfo && checkInfo.cb) {
+        checkInfo.cb(err);
+        return false;
+      } else {
+        throw err;
+      }
     }
     let count = this.writeCounters[varName];
     if (count === 0) {
@@ -360,7 +378,7 @@ class AsyncFrame extends Frame {
         // Only propagate if the parent is not the scope frame (or null)
         if (this.parent !== scopeFrame) {
           // Propagate a single count upwards
-          this.parent._countdownAndResolveAsyncWrites(varName, 1, scopeFrame);
+          this.parent._countdownAndResolveAsyncWrites(varName, 1, scopeFrame, checkInfo || this.checkInfo);
         }
       }
       return true;
