@@ -37,6 +37,7 @@ module.exports = class CompileAsync {
     // Store the writes and variable declarations down the scope chain
     // Search for the var in the scope chain
     let vf = frame;
+    const startingFrame = frame; // Remember the starting frame
 
     if (name.startsWith('!')) {
       // Sequence keys are conceptually declared at the root
@@ -76,16 +77,27 @@ module.exports = class CompileAsync {
     // Count the sets in the current frame/async block
     // Propagate the first write down the chain
     // Do not count for the frame where the variable is declared
+    let addedCounters = false;
     while (frame != vf) {
       if (!frame.writeCounts || !frame.writeCounts[name]) {
         frame.writeCounts = frame.writeCounts || {};
         frame.writeCounts[name] = 1; // First write, continue to parent frames
+        addedCounters = true;
       } else {
         frame.writeCounts[name]++;
+        addedCounters = true;
         break; // Subsequent writes are not propagated
       }
       frame = frame.parent;
     }
+
+    // Store metadata on the starting frame for validation at code generation
+    if (addedCounters) {
+      startingFrame.varsNeedingResolveUp = startingFrame.varsNeedingResolveUp || new Set();
+      startingFrame.varsNeedingResolveUp.add(name);
+    }
+
+    return addedCounters;
   }
 
   //@todo - handle included parent frames properly

@@ -1,5 +1,10 @@
 'use strict';
 
+// Enable bidirectional validation to ensure write counter registration and decrementing are mutual.
+// Set to true during development to catch compiler bugs early at compile-time.
+// Can be set to false in production if needed for performance (runtime checks still active).
+const ENABLE_RESOLVEUP_VALIDATION = true;
+
 const parser = require('../parser');
 const transformer = require('../transformer');
 const nodes = require('../nodes');
@@ -309,6 +314,7 @@ class Compiler extends CompilerBase {
       ids.push(id);
 
       // This call is common and crucial for async operations in both modes.
+      // In async mode, updateFrameWrites returns whether write counters were added
       if (this.asyncMode) {
         this.async.updateFrameWrites(frame, name);
       } else if (this.scriptMode) {
@@ -367,7 +373,33 @@ class Compiler extends CompilerBase {
       const valueId = (node.varType === 'extern') ? 'null' : id;
 
       // This is common to both modes.
-      this.emit.line(`frame.set("${name}", ${valueId}, true);`);
+      // Determine if resolveUp should be true based on mode and write counter metadata
+      let resolveUp;
+
+      if (this.scriptMode) {
+        // Script mode: Use metadata from updateFrameWrites
+        // This tells us if write counters were actually registered for this variable
+        // Convert to boolean to avoid undefined vs false mismatches
+        const hasResolveUpMetadata = !!(frame.varsNeedingResolveUp && frame.varsNeedingResolveUp.has(name));
+
+        // Bidirectional validation (enabled by flag for development/debugging)
+        if (ENABLE_RESOLVEUP_VALIDATION) {
+          const hasWriteCounter = !!(frame.writeCounts && (name in frame.writeCounts));
+          if (hasResolveUpMetadata !== hasWriteCounter) {
+            this.fail(
+              `Compiler-runtime mismatch for variable '${name}': metadata says resolveUp=${hasResolveUpMetadata} but writeCounts exists=${hasWriteCounter}`,
+              node.lineno, node.colno, node
+            );
+          }
+        }
+
+        resolveUp = hasResolveUpMetadata;
+      } else {
+        // Template mode: always pass true to resolve up and maintain original behavior
+        resolveUp = true;
+      }
+
+      this.emit.line(`frame.set("${name}", ${valueId}, ${resolveUp});`);
 
       // This block is specific to template mode's behavior.
       if (!this.scriptMode) {
