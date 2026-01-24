@@ -160,13 +160,26 @@ module.exports = class CompileEmit {
 
       if (res === undefined) {
         res = this.compiler._tmpid();
-        this.line(`  let ${res} = `);
+        this.line(`  let ${res}; try {`);
+        this.line(`  ${res} = `);
+      } else {
+        this.line(`  try {`);
       }
       emitFunc.call(this.compiler, node, frame);
       this.line(';');
       //await ${res} to avoid unused vars throwing unhandled exceptions
       //and to make sure _leaveAsyncBlock is called after the promise resolves
       this.line(`return await ${res};`);
+      this.line('} catch (e) {');//@todo - temp var
+      this.line(`  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path);`);
+      if (frame.writeCounts) {
+        // If the block owns writes, we must clear them on error to prevent
+        // "Async block finished with pending writes" fatal error.
+        this.line(`  frame.poisonBranchWrites(err, ${JSON.stringify(frame.writeCounts)});`);
+      }
+      this.line('  throw err;');
+      // this.line(`  return runtime.createPoison(err);`);
+      this.line('}');
 
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);

@@ -71,6 +71,15 @@ class PoisonedValue {
  */
 class PoisonError extends Error {
   constructor(errors, errorContext = null) {
+    if (errors instanceof PoisonError) {
+      // Preserve the original error's properties, ignore new errorContext
+      super(errors.message);
+      this.errors = errors.errors;
+      this.errorContext = errorContext;
+      this[POISON_ERROR_KEY] = true;
+      this.stack = errors.stack;
+      return;
+    }
     const normalizedErrors = normalizeErrorsWithContext(errors, errorContext);
     const deduped = deduplicateAndFlattenErrors(normalizedErrors);
     const messageSource = deduped.length > 0 ? deduped : normalizedErrors;
@@ -95,7 +104,7 @@ class PoisonError extends Error {
     }
 
     // Ensure correct prototype chain (for Babel/older environments)
-    Object.setPrototypeOf?.(this, new.target.prototype);
+    // Object.setPrototypeOf?.(this, new.target.prototype);
   }
 
   constructMessage(errors) {
