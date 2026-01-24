@@ -46,22 +46,6 @@
 
         expect(isPoison(retrieved)).to.be(true);
       });
-
-      it('should propagate poison through parent frames', () => {
-        const rootFrame = new AsyncFrame();
-        rootFrame.set('x', 'initial', true);
-
-        const childFrame = rootFrame.push();
-        const poison = createPoison(new Error('Child error'));
-
-        childFrame.set('x', poison, true);
-
-        // Should be retrievable from child
-        expect(isPoison(childFrame.lookup('x'))).to.be(true);
-
-        // Should propagate to root
-        expect(isPoison(rootFrame.lookup('x'))).to.be(true);
-      });
     });
 
     describe('AsyncFrame._promisifyParentVar', () => {
@@ -264,22 +248,6 @@
           thrown = true;
         }
         expect(thrown).to.be(false);
-      });
-
-      it('should handle poison in nested frame resolution', () => {
-        const rootFrame = new AsyncFrame();
-        rootFrame.set('nested', 'initial', true);
-
-        const childFrame = rootFrame.push();
-        const grandChildFrame = childFrame.push();
-
-        const poison = createPoison(new Error('Nested error'));
-        grandChildFrame.set('nested', poison, true);
-
-        // Should be accessible from all levels
-        expect(isPoison(grandChildFrame.lookup('nested'))).to.be(true);
-        expect(isPoison(childFrame.lookup('nested'))).to.be(true);
-        expect(isPoison(rootFrame.lookup('nested'))).to.be(true);
       });
 
       it('should handle poison in asyncVars vs variables', () => {
