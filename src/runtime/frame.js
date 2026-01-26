@@ -8,7 +8,9 @@ const {
 
 const {
   checkWriteCounterExists,
-  checkWriteCounterNegative
+  checkWriteCounterNegative,
+  checkFrameBalance,
+  ENABLE_FRAME_BALANCE_CHECK
 } = require('./checks');
 
 // Frames keep track of scoping both at compile-time and run-time so
@@ -87,10 +89,20 @@ class Frame {
   }
 
   push(isolateWrites, _createScope) {
-    return new Frame(this, isolateWrites);
+    const newFrame = new Frame(this, isolateWrites);
+
+    // Use the imported flag directly since we added it to top-level imports
+    if (ENABLE_FRAME_BALANCE_CHECK) {
+      newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
+    }
+
+    return newFrame;
   }
 
   pop() {
+    if (ENABLE_FRAME_BALANCE_CHECK) {
+      checkFrameBalance(this, this.parent);
+    }
     return this.parent;
   }
 
@@ -465,7 +477,13 @@ class AsyncFrame extends Frame {
   }*/
 
   push(isolateWrites, createScope = true) {
-    return new AsyncFrame(this, isolateWrites, createScope);
+    const newFrame = new AsyncFrame(this, isolateWrites, createScope);
+
+    if (ENABLE_FRAME_BALANCE_CHECK) {
+      newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
+    }
+
+    return newFrame;
   }
 
   /**
@@ -500,6 +518,12 @@ class AsyncFrame extends Frame {
 
   pushAsyncBlock(reads, writeCounters, sequentialLoopBody = false) {
     let asyncBlockFrame = new AsyncFrame(this, false);
+
+    // Track runtime depth for balance validation
+    if (ENABLE_FRAME_BALANCE_CHECK) {
+      asyncBlockFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
+    }
+
     asyncBlockFrame.isAsyncBlock = true;
     asyncBlockFrame.sequentialLoopBody = sequentialLoopBody;
     if (reads || writeCounters) {

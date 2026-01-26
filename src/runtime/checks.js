@@ -10,6 +10,11 @@ const ENABLE_WRITECOUNTER_CHECK = true;
 // When false, skips checkInfo creation (slightly better performance).
 const ENABLE_CHECKINFO = true;
 
+// Enable frame balance validation at runtime.
+// Set to true during development to catch frame push/pop bugs.
+// Can be set to false in production if needed for performance.
+const ENABLE_FRAME_BALANCE_CHECK = true;
+
 /**
  * Check if async block finished with pending writes.
  * Called when leaving an async block to validate all write counters reached zero.
@@ -109,11 +114,66 @@ function createCheckInfo(cb, runtime, lineno, colno, errorContextString, context
   return { cb, runtime, lineno, colno, errorContextString, context };
 }
 
+/**
+ * Check frame balance when popping.
+ * Called when returning to parent frame to validate push/pop balance.
+ *
+ * @param {Frame} frame - Current frame being popped
+ * @param {Frame} parent - Parent frame after pop
+ * @param {Object} checkInfo - Optional checkInfo object with {cb, runtime, lineno, colno, errorContextString, context}
+ * @throws {RuntimeFatalError} If frame balance is violated
+ */
+function checkFrameBalance(frame, parent, checkInfo) {
+  if (!parent) {
+    const message = 'Frame pop without parent - unbalanced push/pop detected';
+
+    if (checkInfo && checkInfo.cb) {
+      const { RuntimeFatalError } = require('./errors');
+      const err = new RuntimeFatalError(
+        message,
+        checkInfo.lineno,
+        checkInfo.colno,
+        checkInfo.errorContextString,
+        checkInfo.context ? checkInfo.context.path : null
+      );
+      checkInfo.cb(err);
+      throw err;
+    } else {
+      throw new Error(message);
+    }
+  }
+
+  // Check depth consistency if depths are tracked
+  if (frame._runtimeDepth !== undefined && parent._runtimeDepth !== undefined) {
+    const expectedDepth = frame._runtimeDepth - 1;
+    if (parent._runtimeDepth !== expectedDepth) {
+      const message = `Frame depth mismatch: expected ${expectedDepth}, got ${parent._runtimeDepth}`;
+
+      if (checkInfo && checkInfo.cb) {
+        const { RuntimeFatalError } = require('./errors');
+        const err = new RuntimeFatalError(
+          message,
+          checkInfo.lineno,
+          checkInfo.colno,
+          checkInfo.errorContextString,
+          checkInfo.context ? checkInfo.context.path : null
+        );
+        checkInfo.cb(err);
+        throw err;
+      } else {
+        throw new Error(message);
+      }
+    }
+  }
+}
+
 module.exports = {
   ENABLE_WRITECOUNTER_CHECK,
   ENABLE_CHECKINFO,
+  ENABLE_FRAME_BALANCE_CHECK,
   checkPendingWrites,
   checkWriteCounterExists,
   checkWriteCounterNegative,
-  createCheckInfo
+  createCheckInfo,
+  checkFrameBalance
 };
