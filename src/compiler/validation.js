@@ -40,9 +40,30 @@ function validateCompileTimeFrameBalance(frame, compiler, positionNode) {
   }
 }
 
+/**
+ * Validate compiler-runtime metadata mismatch for resolveUp operations.
+ * @param {Frame} frame - The current frame
+ * @param {string} name - Variable name
+ * @param {boolean} hasResolveUpMetadata - Whether compiler metadata says variable needs resolveUp
+ * @param {Compiler} compiler - The compiler instance
+ * @param {Node} node - The AST node for error reporting
+ */
+function validateResolveUp(frame, name, hasResolveUpMetadata, compiler, node) {
+  if (ENABLE_RESOLVEUP_VALIDATION) {
+    const hasWriteCounter = !!(frame.writeCounts && (name in frame.writeCounts));
+    if (hasResolveUpMetadata !== hasWriteCounter) {
+      compiler.fail(
+        `Compiler-runtime mismatch for variable '${name}': metadata says resolveUp=${hasResolveUpMetadata} but writeCounts exists=${hasWriteCounter}`,
+        node.lineno, node.colno, node
+      );
+    }
+  }
+}
+
 module.exports = {
   ENABLE_RESOLVEUP_VALIDATION,
   ENABLE_FRAME_BALANCE_VALIDATION,
   trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance
+  validateCompileTimeFrameBalance,
+  validateResolveUp
 };

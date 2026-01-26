@@ -1,5 +1,5 @@
 const {
-  ENABLE_RESOLVEUP_VALIDATION
+  validateResolveUp
 } = require('./validation');
 
 const parser = require('../parser');
@@ -380,15 +380,7 @@ class Compiler extends CompilerBase {
         const hasResolveUpMetadata = !!(frame.varsNeedingResolveUp && frame.varsNeedingResolveUp.has(name));
 
         // Bidirectional validation (enabled by flag for development/debugging)
-        if (ENABLE_RESOLVEUP_VALIDATION) {
-          const hasWriteCounter = !!(frame.writeCounts && (name in frame.writeCounts));
-          if (hasResolveUpMetadata !== hasWriteCounter) {
-            this.fail(
-              `Compiler-runtime mismatch for variable '${name}': metadata says resolveUp=${hasResolveUpMetadata} but writeCounts exists=${hasWriteCounter}`,
-              node.lineno, node.colno, node
-            );
-          }
-        }
+        validateResolveUp(frame, name, hasResolveUpMetadata, this, node);
 
         resolveUp = hasResolveUpMetadata;
       } else {
