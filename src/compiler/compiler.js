@@ -2,7 +2,8 @@ const {
   validateResolveUp,
   validateGuardVariablesDeclared,
   validateGuardVariablesModified,
-  validateSetTarget
+  validateSetTarget,
+  validateDeclarationScope
 } = require('./validation');
 
 const parser = require('../parser');
@@ -56,6 +57,7 @@ class Compiler extends CompilerBase {
   //@todo - move to compile-base next to _isDeclared
   _addDeclaredVar(frame, varName) {
     if (this.asyncMode || this.scriptMode) {
+      validateDeclarationScope(frame, varName, this, null);
       if (!frame.declaredVars) {
         frame.declaredVars = new Set();
       }

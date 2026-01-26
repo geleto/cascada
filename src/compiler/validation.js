@@ -10,6 +10,11 @@ const ENABLE_RESOLVEUP_VALIDATION = true;
 // Can be set to false in production if needed for performance.
 const ENABLE_FRAME_BALANCE_VALIDATION = true;
 
+// Enable declaration scope validation at compile-time.
+// This ensures variables are only declared on frames that explicitly create a scope.
+// Set to true during development to catch incorrect frame selection early.
+const ENABLE_SCOPE_VALIDATION = true;
+
 /**
  * Track the depth of a frame at compile-time for balance validation.
  * @param {Frame} newFrame - The new frame being pushed
@@ -136,15 +141,41 @@ function validateSetTarget(compiler, node, target, name, isDeclared) {
   }
 }
 
+/**
+ * Validate that a variable declaration is attached to a scoping frame.
+ * @param {Frame} frame - The frame where the declaration is being registered
+ * @param {string} name - The variable name
+ * @param {Compiler} compiler - The compiler instance (for error reporting)
+ * @param {Node|null} node - The AST node for error positioning (optional)
+ */
+function validateDeclarationScope(frame, name, compiler, node) {
+  if (!ENABLE_SCOPE_VALIDATION) {
+    return;
+  }
+
+  if (frame && frame.createScope === false) {
+    const lineno = node && node.lineno;
+    const colno = node && node.colno;
+    compiler.fail(
+      `Cannot declare variable '${name}' in a non-scoping frame.`,
+      lineno,
+      colno,
+      node || undefined
+    );
+  }
+}
+
 
 
 module.exports = {
   ENABLE_RESOLVEUP_VALIDATION,
   ENABLE_FRAME_BALANCE_VALIDATION,
+  ENABLE_SCOPE_VALIDATION,
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance,
   validateResolveUp,
   validateGuardVariablesDeclared,
   validateGuardVariablesModified,
-  validateSetTarget
+  validateSetTarget,
+  validateDeclarationScope
 };

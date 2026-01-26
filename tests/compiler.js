@@ -18,6 +18,8 @@
     util = require('./util');
     Template = require('../src/environment/environment').Template;
     Environment = require('../src/environment/environment').Environment;
+    var Compiler = require('../src/compiler/compiler').Compiler;
+    var AsyncFrame = require('../src/runtime/runtime').AsyncFrame;
     fs = require('fs');
   } else {
     expect = window.expect;
@@ -33,6 +35,24 @@
   Loader = util.Loader;
 
   describe('compiler', function() {
+    it('should reject declarations on non-scoping frames', function() {
+      AsyncFrame.inCompilerContext = true;
+      try {
+        var compiler = new Compiler('scope-check.njk', {
+          asyncMode: true,
+          scriptMode: true
+        });
+        var root = new AsyncFrame(null, false, true);
+        var nonScope = new AsyncFrame(root, false, false);
+
+        expect(function() {
+          compiler._addDeclaredVar(nonScope, 'leakyVar');
+        }).to.throwException(/Cannot declare variable 'leakyVar' in a non-scoping frame\./);
+      } finally {
+        AsyncFrame.inCompilerContext = false;
+      }
+    });
+
     it('should compile templates', function(done) {
       equal('Hello world', 'Hello world');
       equal('Hello world, {{ name }}',
