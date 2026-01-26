@@ -60,10 +60,91 @@ function validateResolveUp(frame, name, hasResolveUpMetadata, compiler, node) {
   }
 }
 
+/**
+ * Validate that guard variables are declared in the scope.
+ * @param {Array<string>} variableTargets - List of variable names to check
+ * @param {Frame} frame - The current frame
+ * @param {Compiler} compiler - The compiler instance
+ * @param {Node} node - The AST node for error reporting
+ */
+function validateGuardVariablesDeclared(variableTargets, frame, compiler, node) {
+  if (variableTargets && variableTargets !== '*') {
+    for (const varName of variableTargets) {
+      // Assuming _isDeclared is available on compiler instance
+      if (!compiler._isDeclared(frame, varName)) {
+        compiler.fail(`guard variable "${varName}" is not declared`, node.lineno, node.colno, node);
+      }
+    }
+  }
+}
+
+/**
+ * Validate that guard variables are modified inside the guard block.
+ * @param {Array<string>} variableTargets - List of variable names to check
+ * @param {Frame} frame - The current frame (after body compilation)
+ * @param {Compiler} compiler - The compiler instance
+ * @param {Node} node - The AST node for error reporting
+ */
+function validateGuardVariablesModified(variableTargets, frame, compiler, node) {
+  if (variableTargets && variableTargets.length > 0) {
+    for (const varName of variableTargets) {
+      if (!frame.writeCounts || !frame.writeCounts[varName]) {
+        compiler.fail(`guard variable "${varName}" must be modified inside guard`, node.lineno, node.colno, node);
+      }
+    }
+  }
+}
+
+/**
+ * Validate variable declaration/assignment rules for 'set', 'var', and 'extern' statements.
+ * @param {Compiler} compiler - The compiler instance
+ * @param {Node} node - The Set node
+ * @param {Node} target - The specific target node being processed
+ * @param {string} name - The variable name
+ * @param {boolean} isDeclared - Whether the variable is already declared in the frame
+ */
+function validateSetTarget(compiler, node, target, name, isDeclared) {
+  if (compiler.scriptMode) {
+    // Script mode: Enforce strict var/set/extern rules.
+    switch (node.varType) {
+      case 'declaration': // from 'var'
+        if (isDeclared) {
+          compiler.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
+        }
+        break;
+      case 'assignment': // from '='
+        if (!isDeclared) {
+          compiler.fail(`Cannot assign to undeclared variable '${name}'. Use 'var' to declare a new variable.`, target.lineno, target.colno, node, target);
+        }
+        break;
+      case 'extern': // from 'extern'
+        if (isDeclared) {
+          compiler.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
+        }
+        if (node.value) {
+          compiler.fail('extern variables cannot be initialized at declaration.', node.lineno, node.colno, node);
+        }
+        break;
+      default:
+        compiler.fail(`Unknown varType '${node.varType}' for set/var statement.`, node.lineno, node.colno, node);
+    }
+  } else {
+    // TEMPLATE MODE: Replicates the original behavior.
+    if (node.varType !== 'assignment') { // 'set' is the only valid type
+      compiler.fail(`'${node.varType}' is not allowed in template mode. Use 'set'.`, node.lineno, node.colno, node);
+    }
+  }
+}
+
+
+
 module.exports = {
   ENABLE_RESOLVEUP_VALIDATION,
   ENABLE_FRAME_BALANCE_VALIDATION,
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance,
-  validateResolveUp
+  validateResolveUp,
+  validateGuardVariablesDeclared,
+  validateGuardVariablesModified,
+  validateSetTarget
 };

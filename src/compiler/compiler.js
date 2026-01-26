@@ -1,5 +1,8 @@
 const {
-  validateResolveUp
+  validateResolveUp,
+  validateGuardVariablesDeclared,
+  validateGuardVariablesModified,
+  validateSetTarget
 } = require('./validation');
 
 const parser = require('../parser');
@@ -252,52 +255,10 @@ class Compiler extends CompilerBase {
       const name = target.value;
       let id;
 
-      if (this.scriptMode) {
-        // Script mode: Enforce strict var/set/extern rules.
-        const isDeclared = this._isDeclared(frame, name);
 
-        switch (node.varType) {
-          case 'declaration': // from 'var'
-            if (isDeclared) {
-              this.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
-            }
-            break;
-          case 'assignment': // from '='
-            if (!isDeclared) {
-              this.fail(`Cannot assign to undeclared variable '${name}'. Use 'var' to declare a new variable.`, target.lineno, target.colno, node, target);
-            }
-            break;
-          case 'extern': // from 'extern'
-            if (isDeclared) {
-              this.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
-            }
-            if (node.value) {
-              this.fail('extern variables cannot be initialized at declaration.', node.lineno, node.colno, node);
-            }
-            break;
-          default:
-            this.fail(`Unknown varType '${node.varType}' for set/var statement.`, node.lineno, node.colno, node);
-        }
 
-      } else {
-        // TEMPLATE MODE: Replicates the original, tested behavior.
-        if (node.varType !== 'assignment') { // 'set' is the only valid type
-          this.fail(`'${node.varType}' is not allowed in template mode. Use 'set'.`, node.lineno, node.colno, node);
-        }
-
-        /*
-        // This was an optimization to use local variables for the set value,
-        // @todo - reenable synchronous mode, also check compileSymbol
-        // Look up the existing temporary variable ID. This is the crucial part
-        // for template-mode re-assignments.
-        id = frame.lookup(name);
-        if (id === null || id === undefined) {
-          // If it's a new variable in this scope, generate a new ID and declare it.
-          id = this._tmpid();
-          this.emit.line('let ' + id + ';');
-        }
-        */
-      }
+      const isDeclared = this._isDeclared(frame, name);
+      validateSetTarget(this, node, target, name, isDeclared);
 
       // Both modes rely on a fresh temp for the JS assignment.
       id = this._tmpid();
@@ -579,13 +540,7 @@ class Compiler extends CompilerBase {
     const needsGuardState = (variableTargets === '*') || !!variableTargets || hasSequenceTargets;
     const guardStateVar = needsGuardState ? this._tmpid() : null;
 
-    if (variableTargets && variableTargets !== '*') {
-      for (const varName of variableTargets) {
-        if (!this._isDeclared(frame, varName)) {
-          this.fail(`guard variable "${varName}" is not declared`, node.lineno, node.colno, node);
-        }
-      }
-    }
+    validateGuardVariablesDeclared(variableTargets, frame, this, node);
 
     // Guard blocks are always async boundaries
     node.isAsync = true;
@@ -672,12 +627,9 @@ class Compiler extends CompilerBase {
       }
     }
 
+    validateGuardVariablesModified(finalVariableTargets, frame, this, node);
+
     if (finalVariableTargets && finalVariableTargets.length > 0) {
-      for (const varName of finalVariableTargets) {
-        if (!frame.writeCounts || !frame.writeCounts[varName]) {
-          this.fail(`guard variable "${varName}" must be modified inside guard`, node.lineno, node.colno, node);
-        }
-      }
       for (const varName of finalVariableTargets) {
         this.async.updateFrameWrites(frame, varName);
       }
