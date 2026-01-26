@@ -1,3 +1,8 @@
+const {
+  trackCompileTimeFrameDepth,
+  validateCompileTimeFrameBalance
+} = require('./validation');
+
 module.exports = class CompileEmit {
   constructor(compiler) {
     this.scopeClosers = '';
@@ -123,7 +128,9 @@ module.exports = class CompileEmit {
     }
     if (createScope || node.isAsync) {
       //unscoped frames are only used in async blocks
-      return frame.push(false, createScope);
+      const newFrame = frame.push(false, createScope);
+      trackCompileTimeFrameDepth(newFrame, frame);
+      return newFrame;
     }
     return frame;
   }
@@ -145,7 +152,10 @@ module.exports = class CompileEmit {
     if (createScope && !node.isAsync) {
       this.line('frame = frame.pop();');
     }
+
+    // Validate frame balance before popping
     if (createScope || node.isAsync) {
+      validateCompileTimeFrameBalance(frame, this.compiler, positionNode);
       return frame.pop();
     }
     return frame;

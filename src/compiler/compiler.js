@@ -1,9 +1,6 @@
-'use strict';
-
-// Enable bidirectional validation to ensure write counter registration and decrementing are mutual.
-// Set to true during development to catch compiler bugs early at compile-time.
-// Can be set to false in production if needed for performance (runtime checks still active).
-const ENABLE_RESOLVEUP_VALIDATION = true;
+const {
+  ENABLE_RESOLVEUP_VALIDATION
+} = require('./validation');
 
 const parser = require('../parser');
 const transformer = require('../transformer');
