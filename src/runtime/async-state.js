@@ -1,6 +1,6 @@
 'use strict';
 
-const ENABLE_WRITECOUNTER_CHECK = true;
+const { createCheckInfo } = require('./checks');
 
 class AsyncState {
   constructor(parent = null) {
@@ -39,16 +39,9 @@ class AsyncState {
       throw new Error('Negative activeClosures count detected');
     }
 
-    if (this.activeClosures === 0 && this.checkInfo && this.asyncBlockFrame && this.asyncBlockFrame.writeCounters) {
-      if (Object.values(this.asyncBlockFrame.writeCounters).some(v => v > 0)) {
-        this.checkInfo.cb(new this.checkInfo.runtime.RuntimeFatalError(
-          'Async block finished with pending writes: ' + JSON.stringify(this.asyncBlockFrame.writeCounters),
-          this.checkInfo.lineno,
-          this.checkInfo.colno,
-          this.checkInfo.errorContextString,
-          this.checkInfo.context ? this.checkInfo.context.path : null
-        ));
-      }
+    if (this.activeClosures === 0 && this.checkInfo && this.asyncBlockFrame) {
+      const { checkPendingWrites } = require('./checks');
+      checkPendingWrites(this.asyncBlockFrame, this.checkInfo);
     }
 
     if (this.parent) {
@@ -60,7 +53,7 @@ class AsyncState {
 
   asyncBlock(func, runtime, f, readVars, writeCounts, cb, lineno, colno, context, errorContextString = null, isExpression = false, sequentialAsyncBlock = false) {
     const childFrame = f.pushAsyncBlock(readVars, writeCounts, sequentialAsyncBlock);
-    const checkInfo = ENABLE_WRITECOUNTER_CHECK ? { cb, runtime, lineno, colno, errorContextString, context } : null;
+    const checkInfo = createCheckInfo(cb, runtime, lineno, colno, errorContextString, context);
     const childState = this._enterAsyncBlock(childFrame);
     childState.checkInfo = checkInfo;
     if (checkInfo) {

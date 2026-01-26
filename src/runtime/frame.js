@@ -3,9 +3,13 @@
 const {
   createPoison,
   isPoison,
-  isPoisonError,
-  RuntimeFatalError
+  isPoisonError
 } = require('./errors');
+
+const {
+  checkWriteCounterExists,
+  checkWriteCounterNegative
+} = require('./checks');
 
 // Frames keep track of scoping both at compile-time and run-time so
 // we know how to access variables. Block tags can introduce special
@@ -315,13 +319,7 @@ class AsyncFrame extends Frame {
         return false;//root frame does not keep counts
       }
       // @todo - throw error, cb argument or frame.checkInfo.cb
-      const err = new RuntimeFatalError(`No write counter found for variable ${varName}`);
-      if (checkInfo && checkInfo.cb) {
-        checkInfo.cb(err);
-        return false;
-      } else {
-        throw err;
-      }
+      return checkWriteCounterExists(varName, checkInfo);
     }
     let count = this.writeCounters[varName];
     if (count === 0) {
@@ -335,19 +333,7 @@ class AsyncFrame extends Frame {
     }
     if (count < decrementVal) {
       this.writeCounters[varName] = count - decrementVal;
-      const message = `Variable ${varName} write counter ${count === undefined ? 'is undefined' : 'turned negative'} in _trackAsyncWrites`;
-      if (this.checkInfo && this.checkInfo.cb) {
-        const fatal = new RuntimeFatalError(
-          message,
-          this.checkInfo.lineno,
-          this.checkInfo.colno,
-          this.checkInfo.errorContextString,
-          this.checkInfo.context ? this.checkInfo.context.path : null
-        );
-        this.checkInfo.cb(fatal);
-        throw fatal;
-      }
-      throw new RuntimeFatalError(message);
+      checkWriteCounterNegative(varName, count, this.checkInfo);
     }
 
     let reachedZero = (count === decrementVal);
