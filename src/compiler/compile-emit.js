@@ -1,6 +1,9 @@
 const {
   trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance
+  validateCompileTimeFrameBalance,
+  ENABLE_READVARS_VALIDATION,
+  ensureReadValidationState,
+  validateReadVarsConsistency
 } = require('./validation');
 
 module.exports = class CompileEmit {
@@ -130,6 +133,9 @@ module.exports = class CompileEmit {
       //unscoped frames are only used in async blocks
       const newFrame = frame.push(false, createScope);
       trackCompileTimeFrameDepth(newFrame, frame);
+      if (ENABLE_READVARS_VALIDATION && node.isAsync) {
+        ensureReadValidationState(newFrame);
+      }
       return newFrame;
     }
     return frame;
@@ -145,7 +151,7 @@ module.exports = class CompileEmit {
       this.asyncClosureDepth--;
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
+      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame, positionNode);
       this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", false, ${sequentialLoopBody})`);
       this.line(';');
     }
@@ -193,7 +199,7 @@ module.exports = class CompileEmit {
 
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
+      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame, positionNode);
       this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", true)`);
 
       this.asyncClosureDepth--;
@@ -242,7 +248,7 @@ module.exports = class CompileEmit {
     this.line(`  return ${id};`);
     this.line('}');
     const errorContext = this.compiler._generateErrorContext(node, positionNode);
-    const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
+    const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame, positionNode);
     if (callbackName) {
       this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
     } else {
@@ -295,7 +301,7 @@ module.exports = class CompileEmit {
       this.asyncClosureDepth--;
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
+      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame, positionNode);
       this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
 
       frame = frame.pop();
@@ -351,7 +357,7 @@ module.exports = class CompileEmit {
       this.asyncClosureDepth--;
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame);
+      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame, positionNode);
       this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
       return frame.pop();
     }
@@ -407,7 +413,11 @@ module.exports = class CompileEmit {
   // if a parent async block has the read and there are no writes
   // we can use the parent snapshot
   // similar for writes we can do some optimizations
-  getAsyncBlockArgs(frame) {
+  getAsyncBlockArgs(frame, positionNode = null) {
+    if (ENABLE_READVARS_VALIDATION) {
+      ensureReadValidationState(frame);
+      validateReadVarsConsistency(frame, this.compiler, positionNode);
+    }
     let reads = [];
     if (frame.readVars) {
       //add each read var to a list of vars to be snapshotted, with a few exceptions

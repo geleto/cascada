@@ -8,6 +8,11 @@ const asyncOperationNodes = new Set([
   'Extends', 'Include', 'Import', 'FromImport', 'Super'
 ]);
 
+const {
+  ENABLE_READVARS_VALIDATION,
+  markReadVarPassThrough
+} = require('./validation');
+
 module.exports = class CompileAsync {
 
   constructor(compiler) {
@@ -102,6 +107,7 @@ module.exports = class CompileAsync {
 
   //@todo - handle included parent frames properly
   updateFrameReads(frame, name) {
+    const startingFrame = frame;
     // Find the variable declaration in the scope chain
     let df = frame;
 
@@ -140,10 +146,16 @@ module.exports = class CompileAsync {
       if ((frame.readVars && frame.readVars.has(name)) ||
         (frame.writeCounts && frame.writeCounts[name])) {
         // Already in readVars, or written here (will be snapshotted anyway)
+        if (ENABLE_READVARS_VALIDATION && frame !== startingFrame) {
+          markReadVarPassThrough(frame, name);
+        }
         break;
       }
       frame.readVars = frame.readVars || new Set();
       frame.readVars.add(name);
+      if (ENABLE_READVARS_VALIDATION && frame !== startingFrame) {
+        markReadVarPassThrough(frame, name);
+      }
       frame = frame.parent;
     }
   }
@@ -179,4 +191,3 @@ module.exports = class CompileAsync {
     return combined;
   }
 };
-

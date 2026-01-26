@@ -12,14 +12,16 @@
   var equal;
   var finish;
   var isSlim;
+  var Compiler;
+  var AsyncFrame;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     util = require('./util');
     Template = require('../src/environment/environment').Template;
     Environment = require('../src/environment/environment').Environment;
-    var Compiler = require('../src/compiler/compiler').Compiler;
-    var AsyncFrame = require('../src/runtime/runtime').AsyncFrame;
+    Compiler = require('../src/compiler/compiler').Compiler;
+    AsyncFrame = require('../src/runtime/runtime').AsyncFrame;
     fs = require('fs');
   } else {
     expect = window.expect;
@@ -36,14 +38,17 @@
 
   describe('compiler', function() {
     it('should reject declarations on non-scoping frames', function() {
+      var compiler;
+      var root;
+      var nonScope;
       AsyncFrame.inCompilerContext = true;
       try {
-        var compiler = new Compiler('scope-check.njk', {
+        compiler = new Compiler('scope-check.njk', {
           asyncMode: true,
           scriptMode: true
         });
-        var root = new AsyncFrame(null, false, true);
-        var nonScope = new AsyncFrame(root, false, false);
+        root = new AsyncFrame(null, false, true);
+        nonScope = new AsyncFrame(root, false, false);
 
         expect(function() {
           compiler._addDeclaredVar(nonScope, 'leakyVar');

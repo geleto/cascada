@@ -15,6 +15,10 @@ const ENABLE_FRAME_BALANCE_VALIDATION = true;
 // Set to true during development to catch incorrect frame selection early.
 const ENABLE_SCOPE_VALIDATION = true;
 
+// Enable compile-time validation that readVars registrations match actual reads.
+// This helps catch missing snapshots (critical) and unused snapshots (optimization).
+const ENABLE_READVARS_VALIDATION = true;
+
 /**
  * Track the depth of a frame at compile-time for balance validation.
  * @param {Frame} newFrame - The new frame being pushed
@@ -165,17 +169,152 @@ function validateDeclarationScope(frame, name, compiler, node) {
   }
 }
 
+/**
+ * Ensure read-variable validation state exists on the frame.
+ * This is compile-time-only metadata.
+ * @param {Frame} frame - The compile-time frame
+ */
+function ensureReadValidationState(frame) {
+  if (!ENABLE_READVARS_VALIDATION || !frame) {
+    return;
+  }
+  if (!frame.actualReads) {
+    frame.actualReads = new Set();
+  }
+  if (!frame.actualReadNodes) {
+    frame.actualReadNodes = new Map();
+  }
+  if (!frame.readVarsPassThrough) {
+    frame.readVarsPassThrough = new Set();
+  }
+}
+
+/**
+ * Track an actual variable read encountered by the compiler.
+ * Only tracks declared (frame-chain) variables; context variables are excluded.
+ * @param {Frame} frame - Current compile-time frame
+ * @param {string} name - Variable name being read
+ * @param {Compiler} compiler - Compiler instance
+ * @param {Node} node - AST node for positioning
+ */
+function trackActualRead(frame, name, compiler, node) {
+  if (!ENABLE_READVARS_VALIDATION || !compiler || !compiler.asyncMode) {
+    return;
+  }
+  // Skip locals declared in the current frame; they do not need snapshotting.
+  if (frame.declaredVars && frame.declaredVars.has(name)) {
+    return;
+  }
+  // Only track variables that resolve in the frame chain (not raw context vars).
+  if (!compiler._isDeclared(frame, name)) {
+    return;
+  }
+
+  ensureReadValidationState(frame);
+  frame.actualReads.add(name);
+  if (node && !frame.actualReadNodes.has(name)) {
+    frame.actualReadNodes.set(name, node);
+  }
+}
+
+/**
+ * Mark that a readVar entry exists on a frame purely as pass-through
+ * for a child frame (not because the current frame reads it directly).
+ * @param {Frame} frame - The frame holding the readVar
+ * @param {string} name - Variable name
+ */
+function markReadVarPassThrough(frame, name) {
+  if (!ENABLE_READVARS_VALIDATION || !frame) {
+    return;
+  }
+  ensureReadValidationState(frame);
+  frame.readVarsPassThrough.add(name);
+}
+
+/**
+ * Validate consistency between registered readVars and actual reads.
+ * Missing snapshots are treated as compiler errors.
+ * Unused snapshots are recorded as warnings on the compiler.
+ * @param {Frame} frame - The async block frame
+ * @param {Compiler} compiler - Compiler instance
+ * @param {Node} node - Position node for error reporting
+ */
+function validateReadVarsConsistency(frame, compiler, node) {
+  if (!ENABLE_READVARS_VALIDATION || !compiler || !compiler.asyncMode || !frame) {
+    return;
+  }
+
+  const actualReads = frame.actualReads;
+  const readVars = frame.readVars;
+  const passThrough = frame.readVarsPassThrough;
+  const writeCounts = frame.writeCounts;
+
+  // 1) Missing snapshots: actual read but not covered by readVars/writeCounts.
+  if (actualReads && actualReads.size > 0) {
+    for (const name of actualReads) {
+      // Locals are excluded from snapshot requirements.
+      if (frame.declaredVars && frame.declaredVars.has(name)) {
+        continue;
+      }
+      // Writes imply snapshot coverage via promisification/resolveUp.
+      if (writeCounts && writeCounts[name]) {
+        continue;
+      }
+      if (!readVars || !readVars.has(name)) {
+        const readNode = frame.actualReadNodes && frame.actualReadNodes.get(name);
+        const posNode = readNode || node;
+        const lineno = posNode && posNode.lineno;
+        const colno = posNode && posNode.colno;
+        compiler.fail(
+          `Compiler error: Variable '${name}' is read in async block but is not registered in readVars. This will cause a runtime ReferenceError.`,
+          lineno,
+          colno,
+          posNode || node
+        );
+      }
+    }
+  }
+
+  // 2) Unused snapshots: registered but not read locally or required by children.
+  // Record as warnings to avoid false positives breaking builds.
+  if (readVars && readVars.size > 0) {
+    for (const name of readVars) {
+      if (writeCounts && writeCounts[name]) {
+        continue;
+      }
+      if (actualReads && actualReads.has(name)) {
+        continue;
+      }
+      if (passThrough && passThrough.has(name)) {
+        continue;
+      }
+      compiler._validationWarnings = compiler._validationWarnings || [];
+      compiler._validationWarnings.push({
+        type: 'unused-readvar',
+        name,
+        lineno: node && node.lineno,
+        colno: node && node.colno
+      });
+    }
+  }
+}
+
 
 
 module.exports = {
   ENABLE_RESOLVEUP_VALIDATION,
   ENABLE_FRAME_BALANCE_VALIDATION,
   ENABLE_SCOPE_VALIDATION,
+  ENABLE_READVARS_VALIDATION,
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance,
   validateResolveUp,
   validateGuardVariablesDeclared,
   validateGuardVariablesModified,
   validateSetTarget,
-  validateDeclarationScope
+  validateDeclarationScope,
+  ensureReadValidationState,
+  trackActualRead,
+  markReadVarPassThrough,
+  validateReadVarsConsistency
 };

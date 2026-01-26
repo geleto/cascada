@@ -4,6 +4,10 @@ const nodes = require('../nodes');
 const { TemplateError } = require('../lib');
 // const { Frame, AsyncFrame } = require('./runtime'); // Not used in base class
 const { Obj } = require('../object');
+const {
+  ENABLE_READVARS_VALIDATION,
+  trackActualRead
+} = require('./validation');
 
 // Moved from the main compiler as it's used by compileCompare (expression)
 const compareOps = {
@@ -339,6 +343,9 @@ class CompilerBase extends Obj {
         return;
       }
 
+      if (ENABLE_READVARS_VALIDATION) {
+        trackActualRead(frame, name, this, node);
+      }
       this.async.updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
 
       let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);

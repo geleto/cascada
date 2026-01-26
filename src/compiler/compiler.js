@@ -3,7 +3,8 @@ const {
   validateGuardVariablesDeclared,
   validateGuardVariablesModified,
   validateSetTarget,
-  validateDeclarationScope
+  validateDeclarationScope,
+  ENABLE_READVARS_VALIDATION
 } = require('./validation');
 
 const parser = require('../parser');
@@ -28,6 +29,7 @@ class Compiler extends CompilerBase {
     this.bufferStack = [];
     this.hasExtends = false;
     this.inBlock = false;
+    this.enableReadVarsValidation = ENABLE_READVARS_VALIDATION;
 
     // Instantiate and link helper modules
     this.sequential = new CompileSequential(this);
