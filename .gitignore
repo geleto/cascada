@@ -13,3 +13,4 @@ docs/files
 /samples/express/js/nunjucks.js
 /samples/express/js/templates.js
 generated-docs
+/.claude
