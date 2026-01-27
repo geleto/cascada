@@ -47,7 +47,7 @@ class CompileLoop {
 
   _compileFor(node, frame, sequentialLoopBody = false, iteratorCompiler = null, whileConditionNode = null) {
     // Use node.arr as the position for the outer async block (evaluating the array)
-    frame = this.compiler.emit.asyncBlockBufferNodeBegin(node, frame, true, node.arr);
+    frame = this.compiler.buffer.asyncBufferNodeBegin(node, frame, true, node.arr);
 
     // Evaluate the array expression
     const arr = this.compiler._tmpid();
@@ -102,7 +102,7 @@ class CompileLoop {
     }
 
     // Collect body handlers for poison handling
-    const bodyHandlers = node.isAsync ? this.compiler._collectBranchHandlers(node.body) : null;
+    const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
 
     // Compile else block and collect metadata
     let elseFuncId = 'null';
@@ -117,7 +117,7 @@ class CompileLoop {
 
       // Collect metadata from else compilation
       elseWriteCounts = this.compiler.async.countsTo1(elseFrame.writeCounts);
-      elseHandlers = node.isAsync ? this.compiler._collectBranchHandlers(node.else_) : null;
+      elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_) : null;
     }
 
     // Set up loop frame with combined write counts for mutual exclusion
@@ -150,7 +150,7 @@ class CompileLoop {
     // Call the runtime iterate loop function
     // For sync loops: not awaited (fire-and-forget Promise). iterate() executes synchronously
     // internally (no awaits hit) and executes else block before returning.
-    this.compiler.emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${node.isAsync ? this.compiler.buffer : 'null'}, [`);
+    this.compiler.emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${node.isAsync ? this.compiler.buffer.currentBuffer : 'null'}, [`);
     loopVars.forEach((varName, index) => {
       if (index > 0) {
         this.compiler.emit(', ');
@@ -170,7 +170,7 @@ class CompileLoop {
       frame.writeCounts = this.compiler.async.countsTo1(frame.writeCounts);
     }*/
     // else - all write counts are from the loop body and are 1 anyway (counts are counted inside (>1) and outside (=1))
-    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node.arr);
+    frame = this.compiler.buffer.asyncBufferNodeEnd(node, frame, true, false, node.arr);
   }
 
   _compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, forceAwaitLoopBody = false, whileConditionNode = null) {
@@ -200,7 +200,7 @@ class CompileLoop {
       // we return the IIFE promise so that awaiting the loop body will wait for all closures
       this.compiler.emit('return ');
     }
-    frame = this.compiler.emit.asyncBlockBufferNodeBegin(node, frame, bodyCreatesScope, node.body);
+    frame = this.compiler.buffer.asyncBufferNodeBegin(node, frame, bodyCreatesScope, node.body);
 
     //const makeSequentialPos = this.compiler.codebuf.length;// we will know later if it's sequential or not
     this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
@@ -298,10 +298,10 @@ class CompileLoop {
         if (totalWrites && Object.keys(totalWrites).length > 0) {
           this.compiler.emit.insertLine(catchPoisonPos, `  frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
         }
-        const bodyHandlers = node.isAsync ? this.compiler._collectBranchHandlers(node.body) : null;
+        const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
         if (bodyHandlers && bodyHandlers.size > 0) {
           const handlerArray = Array.from(bodyHandlers);
-          this.compiler.emit.insertLine(catchPoisonPos, `  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer}, contextualError, ${JSON.stringify(handlerArray)});`);
+          this.compiler.emit.insertLine(catchPoisonPos, `  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer.currentBuffer}, contextualError, ${JSON.stringify(handlerArray)});`);
         }
       }
     }
@@ -316,7 +316,7 @@ class CompileLoop {
     let bodyFrame = frame;
     const shouldAwaitLoopBody = Boolean(frame.writeCounts) || sequentialLoopBody || forceAwaitLoopBody;
     // Pass sequential as the 'sequentialLoopBody' argument to asyncBlockBufferNodeEnd
-    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, bodyCreatesScope, shouldAwaitLoopBody, node.body);
+    frame = this.compiler.buffer.asyncBufferNodeEnd(node, frame, bodyCreatesScope, shouldAwaitLoopBody, node.body);
 
     // Close the loop body function
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
@@ -340,12 +340,12 @@ class CompileLoop {
     }
 
     // Use node.else_ as position for the else block buffer
-    frame = this.compiler.emit.asyncBlockBufferNodeBegin(node, frame, elseCreatesScope, node.else_);
+    frame = this.compiler.buffer.asyncBufferNodeBegin(node, frame, elseCreatesScope, node.else_);
     this.compiler.compile(node.else_, frame);
 
     const elseFrame = frame;
 
-    frame = this.compiler.emit.asyncBlockBufferNodeEnd(node, frame, elseCreatesScope, sequential && awaitSequentialElse, node.else_);
+    frame = this.compiler.buffer.asyncBufferNodeEnd(node, frame, elseCreatesScope, sequential && awaitSequentialElse, node.else_);
 
     // Sync: use closure scope to access buffer. Async: bind context for proper this binding.
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
@@ -426,19 +426,19 @@ class CompileLoop {
     this.compiler.emit.withScopedSyntax(() => {
       let buf;
       if (parallel) {
-        buf = this.compiler._pushBuffer();
+        buf = this.compiler.buffer.push();
       }
 
       this.compiler.compile(node.body, frame);
 
       // Collect metadata from body compilation
       _bodyWriteCounts = frame.writeCounts;
-      bodyHandlers = node.isAsync ? this.compiler._collectBranchHandlers(node.body) : null;
+      bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
 
       this.compiler.emit.line('next(' + i + (buf ? ',' + buf : '') + ');');
 
       if (parallel) {
-        this.compiler._popBuffer();
+        this.compiler.buffer.pop();
       }
     });
 
@@ -449,9 +449,9 @@ class CompileLoop {
     if (parallel) {
       if (this.compiler.asyncMode) {
         //non-async node but in async mode -> use the proper buffer implementation
-        this.compiler.emit(`${this.compiler.buffer}[index++] = ${output};`);
+        this.compiler.emit(`${this.compiler.buffer.currentBuffer}[index++] = ${output};`);
       } else {
-        this.compiler.emit.line(`${this.compiler.buffer} += ${output};`);
+        this.compiler.emit.line(`${this.compiler.buffer.currentBuffer} += ${output};`);
       }
     }
 
@@ -465,7 +465,7 @@ class CompileLoop {
 
       // Collect metadata from else compilation
       _elseWriteCounts2 = frame.writeCounts; // eslint-disable-line no-unused-vars
-      elseHandlers = node.isAsync ? this.compiler._collectBranchHandlers(node.else_) : null; // eslint-disable-line no-unused-vars
+      elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_) : null; // eslint-disable-line no-unused-vars
 
       this.compiler.emit.line('}');
     }

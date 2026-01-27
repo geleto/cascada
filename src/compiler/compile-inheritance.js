@@ -207,7 +207,7 @@ class CompileInheritance {
     // blocks twice
 
     if (this.compiler.asyncMode) {
-      this.emit.asyncBlockAddToBuffer(node, frame, (id, f) => {
+      this.compiler.buffer.asyncAddToBuffer(node, frame, (id, f) => {
         // The dynamic check runs when:
         // 1. We're at top level (!this.inBlock)
         // 2. There might be a dynamic parent (hasDynamicExtends OR hasStaticExtends)
@@ -251,9 +251,9 @@ class CompileInheritance {
 
       if (this.compiler.asyncMode) {
         //non-async node but in async mode -> use the proper buffer implementation
-        this.emit(`${this.compiler.buffer}[index++] = ${id};`);
+        this.emit(`${this.compiler.buffer.currentBuffer}[index++] = ${id};`);
       } else {
-        this.emit.line(`${this.compiler.buffer} += ${id};`);
+        this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
       }
       this.emit.addScopeLevel();
     }
@@ -330,7 +330,7 @@ class CompileInheritance {
     }
     // `asyncBlockAddToBuffer` places the final result into the parent buffer.
     // The block is async because `getTemplate` returns a promise.
-    this.emit.asyncBlockAddToBuffer(node, frame, (resultVar, f) => {
+    this.compiler.buffer.asyncAddToBuffer(node, frame, (resultVar, f) => {
       // Get the template object (this part is async)
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();
@@ -375,9 +375,9 @@ class CompileInheritance {
     // Adding to buffer is synchronous here
     if (this.compiler.asyncMode) {
       //non-async node but in async mode -> use the proper buffer implementation
-      this.emit.line(`${this.compiler.buffer}[index++] = result;`);
+      this.emit.line(`${this.compiler.buffer.currentBuffer}[index++] = result;`);
     } else {
-      this.emit.line(`${this.compiler.buffer} += result;`);
+      this.emit.line(`${this.compiler.buffer.currentBuffer} += result;`);
     }
     this.emit.line('callback(null);');
     this.emit.line('});');

@@ -16,6 +16,7 @@ const CompileEmit = require('./compile-emit');
 const CompileAsync = require('./compile-async');
 const CompileInheritance = require('./compile-inheritance');
 const CompileLoop = require('./compile-loop');
+const CompileBuffer = require('./compile-buffer');
 const CompilerBase = require('./compiler-base');
 
 class Compiler extends CompilerBase {
@@ -25,8 +26,6 @@ class Compiler extends CompilerBase {
 
     // Properties specific to the full statement-aware compiler
     this.templateName = templateName;
-    this.buffer = null;
-    this.bufferStack = [];
     this.hasExtends = false;
     this.inBlock = false;
     this.enableReadVarsValidation = ENABLE_READVARS_VALIDATION;
@@ -37,24 +36,9 @@ class Compiler extends CompilerBase {
     this.async = new CompileAsync(this);
     this.inheritance = new CompileInheritance(this);
     this.loop = new CompileLoop(this);
+    this.buffer = new CompileBuffer(this);
   }
 
-
-  _pushBuffer() {
-    const id = this._tmpid();
-    this.bufferStack.push(this.buffer);
-    this.buffer = id;
-    if (this.asyncMode) {
-      this.emit.line(`let ${this.buffer} = []; let ${this.buffer}_index = 0;`);
-    } else {
-      this.emit.line(`let ${this.buffer} = "";`);
-    }
-    return id;
-  }
-
-  _popBuffer() {
-    this.buffer = this.bufferStack.pop();
-  }
 
   //@todo - move to compile-base next to _isDeclared
   _addDeclaredVar(frame, varName) {
@@ -68,41 +52,6 @@ class Compiler extends CompilerBase {
   }
 
 
-  /**
-   * Recursively collect all output handlers written to within a node's subtree.
-   * Used to determine which handlers need poison markers when branch is skipped.
-   *
-   * @param {Node} node - AST node to analyze
-   * @returns {Set<string>} Set of handler names ('text', 'data', etc.)
-   */
-  _collectBranchHandlers(node) {
-    const handlers = new Set();
-
-    const traverse = (n) => {
-      if (!n) return;
-
-      // Case 1: Regular output {{ ... }} uses implicit 'text' handler
-      if (n instanceof nodes.Output) {
-        handlers.add('text');
-      }
-
-      // Case 2: OutputCommand @handler.method() or @handler()
-      if (n instanceof nodes.OutputCommand) {
-        const staticPath = this.sequential._extractStaticPath(n.call.name);
-        if (staticPath && staticPath.length > 0) {
-          const handlerName = staticPath[0]; // First segment is always handler name
-          handlers.add(handlerName);
-        }
-      }
-
-      // Recurse into all children
-      const children = this._getImmediateChildren(n);
-      children.forEach(child => traverse(child));
-    };
-
-    traverse(node);
-    return handlers;
-  }
 
   //@todo - move to compile-base
   _compileChildren(node, frame) {
@@ -136,7 +85,7 @@ class Compiler extends CompilerBase {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
 
-      frame = this.emit.asyncBlockAddToBufferBegin(node, frame, positionNode, 'text');
+      frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text');
       errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
       this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
       if (noExtensionCallback) {
@@ -194,7 +143,7 @@ class Compiler extends CompilerBase {
           if (node.isAsync && !resolveArgs) {
             //when args are not resolved, the contentArgs are promises
             this.emit.asyncBlockRender(node, frame, function (f) {
-              this.emit.line(`frame.markOutputBufferScope(${this.buffer});`);
+              this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
               this.compile(arg, f);
             }, null, arg); // Use content arg node for position
           }
@@ -205,7 +154,7 @@ class Compiler extends CompilerBase {
 
             this.emit.withScopedSyntax(() => {
               this.emit.asyncBlockRender(node, frame, function (f) {
-                this.emit.line(`frame.markOutputBufferScope(${this.buffer});`);
+                this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, f);
               }, 'cb', arg); // Use content arg node for position
               this.emit.line(';');
@@ -226,18 +175,18 @@ class Compiler extends CompilerBase {
       } else {
         this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
       }
-      frame = this.emit.asyncBlockAddToBufferEnd(node, frame, positionNode, 'text');
+      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text');
     } else {
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
-      frame = this.emit.asyncBlockAddToBufferBegin(node, frame, positionNode, 'text');
+      frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text');
       const errorContextJson2 = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
       if (node.isAsync) {
         this.emit(`await runtime.suppressValueAsync(${res}, ${autoescape} && env.opts.autoescape, ${errorContextJson2});`);
       } else {
         this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
       }
-      frame = this.emit.asyncBlockAddToBufferEnd(node, frame, positionNode, 'text');
+      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text');
 
       this.emit.addScopeLevel();
     }
@@ -374,7 +323,7 @@ class Compiler extends CompilerBase {
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
     // Use node.expr as the primary position node for the overall switch block
-    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.expr);
+    frame = this.buffer.asyncBufferNodeBegin(node, frame, false, node.expr);
 
     const branchPositions = [];
     const branchWriteCounts = [];
@@ -417,7 +366,7 @@ class Compiler extends CompilerBase {
 
           // Collect handlers from this branch
           if (this.asyncMode) {
-            branchHandlers.push(this._collectBranchHandlers(c.body));
+            branchHandlers.push(this.buffer.collectBranchHandlers(c.body));
           }
         }, c.body);; // Pass body as code position
         this.emit.line('break;');
@@ -444,7 +393,7 @@ class Compiler extends CompilerBase {
 
         // Collect handlers from default
         if (this.asyncMode) {
-          branchHandlers.push(this._collectBranchHandlers(node.default));
+          branchHandlers.push(this.buffer.collectBranchHandlers(node.default));
         }
       }, node.default); // Pass default as code position
     } else {
@@ -516,13 +465,13 @@ class Compiler extends CompilerBase {
         if (hasHandlers) {
           const handlerArray = Array.from(allHandlers);
           this.emit.insertLine(catchPoisonPos,
-            `    runtime.addPoisonMarkersToBuffer(${this.buffer}, contextualError, ${JSON.stringify(handlerArray)});`);
+            `    runtime.addPoisonMarkersToBuffer(${this.buffer.currentBuffer}, contextualError, ${JSON.stringify(handlerArray)});`);
         }
       }
     }
 
     // Use node.expr (passed earlier) for the end block
-    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, false, node.expr);
+    frame = this.buffer.asyncBufferNodeEnd(node, frame, false, false, node.expr);
   }
 
   compileGuard(node, frame) {
@@ -551,10 +500,10 @@ class Compiler extends CompilerBase {
 
     // 1. Start Async Block with Nested Buffer
     // This creates a nested buffer (this.buffer) and pushes a new async block
-    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, true);
+    frame = this.buffer.asyncBufferNodeBegin(node, frame, true);
 
     // 2. Link for explicit reversion (optional, if we want to support manual revert)
-    this.emit.line(`frame.markOutputBufferScope(${this.buffer});`);
+    this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
     let guardInitLinePos = null;
     if (guardStateVar) {
       if (variableTargets === '*') {
@@ -659,17 +608,17 @@ class Compiler extends CompilerBase {
       allowedBufferHandlers = JSON.stringify(handlerTargets);
     }
 
-    this.emit.line(`const ${guardErrorsVar} = await runtime.guard.getErrors(frame, ${guardStateVar || 'null'}, ${this.buffer}, ${allowedBufferHandlers});`);
+    this.emit.line(`const ${guardErrorsVar} = await runtime.guard.getErrors(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${allowedBufferHandlers});`);
 
     this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
     if (handlerTargetsAll) {
-      this.emit.line(`  runtime.markBufferReverted(${this.buffer});`);
-      this.emit.line(`  delete ${this.buffer}._reverted;`);
-      this.emit.line(`  ${this.buffer}.length = 0;`);
-      this.emit.line(`  ${this.buffer}_index = 0;`);
+      this.emit.line(`  runtime.markBufferReverted(${this.buffer.currentBuffer});`);
+      this.emit.line(`  delete ${this.buffer.currentBuffer}._reverted;`);
+      this.emit.line(`  ${this.buffer.currentBuffer}.length = 0;`);
+      this.emit.line(`  ${this.buffer.currentBuffer}_index = 0;`);
     } else if (handlerTargets) {
-      this.emit.line(`  runtime.revertBufferHandlers(${this.buffer}, ${JSON.stringify(handlerTargets)});`);
-      this.emit.line(`  ${this.buffer}_index = ${this.buffer}.length;`);
+      this.emit.line(`  runtime.revertBufferHandlers(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
+      this.emit.line(`  ${this.buffer.currentBuffer}_index = ${this.buffer.currentBuffer}.length;`);
     }
 
     if (guardStateVar) {
@@ -705,14 +654,14 @@ class Compiler extends CompilerBase {
     this.emit.line('}');
 
     // 6. End Async Block
-    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, true, false, node);
+    frame = this.buffer.asyncBufferNodeEnd(node, frame, true, false, node);
   }
 
   compileRevert(node, frame) {
-    this.emit.addToBuffer(node, frame, () => {
+    this.buffer.addToBuffer(node, frame, () => {
       this.emit(`{ handler: '_', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
     }, node);
-    this.emit.line(`runtime.markBufferHasRevert(${this.buffer});`);
+    this.emit.line(`runtime.markBufferHasRevert(${this.buffer.currentBuffer});`);
   }
 
 
@@ -725,7 +674,7 @@ class Compiler extends CompilerBase {
     const branchCreatesScope = this.scriptMode || this.asyncMode;
 
     // Use node.cond as the position node for the overarching If block
-    frame = this.emit.asyncBlockBufferNodeBegin(node, frame, false, node.cond);
+    frame = this.buffer.asyncBufferNodeBegin(node, frame, false, node.cond);
 
     let trueBranchWriteCounts, falseBranchWriteCounts;
     let trueBranchCodePos;
@@ -769,9 +718,9 @@ class Compiler extends CompilerBase {
       // Collect output handlers from both branches (for async mode poison handling)
       let trueBranchHandlers, falseBranchHandlers, allHandlers;
       if (this.asyncMode) {
-        trueBranchHandlers = this._collectBranchHandlers(node.body);
+        trueBranchHandlers = this.buffer.collectBranchHandlers(node.body);
         falseBranchHandlers = node.else_ ?
-          this._collectBranchHandlers(node.else_) :
+          this.buffer.collectBranchHandlers(node.else_) :
           new Set();
 
         // Combine handlers - both branches might write to same handlers
@@ -811,9 +760,9 @@ class Compiler extends CompilerBase {
         if (hasHandlers) {
           const handlerArray = Array.from(allHandlers);
           this.emit.insertLine(poisonCheckPos,
-            `  runtime.addPoisonMarkersToBuffer(${this.buffer}, ${condResultId}, ${JSON.stringify(handlerArray)});`);
+            `  runtime.addPoisonMarkersToBuffer(${this.buffer.currentBuffer}, ${condResultId}, ${JSON.stringify(handlerArray)});`);
           this.emit.insertLine(catchPoisonPos,
-            `    runtime.addPoisonMarkersToBuffer(${this.buffer}, contextualError, ${JSON.stringify(handlerArray)});`);
+            `    runtime.addPoisonMarkersToBuffer(${this.buffer.currentBuffer}, contextualError, ${JSON.stringify(handlerArray)});`);
         }
       }
     } else {
@@ -863,7 +812,7 @@ class Compiler extends CompilerBase {
     }
 
     // Use node.cond (passed earlier) for the end block
-    frame = this.emit.asyncBlockBufferNodeEnd(node, frame, false, false, node.cond);
+    frame = this.buffer.asyncBufferNodeEnd(node, frame, false, false, node.cond);
   }
 
   compileIfAsync(node, frame) {
@@ -993,7 +942,7 @@ class Compiler extends CompilerBase {
     if (node.isAsync) {
       this._addDeclaredVar(currFrame, 'caller');
     }
-    const bufferId = this._pushBuffer();
+    const bufferId = this.buffer.push();
 
     this.emit.withScopedSyntax(() => {
       this.compile(node.body, currFrame);
@@ -1040,7 +989,7 @@ class Compiler extends CompilerBase {
     } else {
       this.emit.line('});'); // 2b. Closes the main function for sync
     }
-    this._popBuffer();
+    this.buffer.pop();
 
     this.sequential.isCompilingMacroBody = oldIsCompilingMacroBody; // Restore state
 
@@ -1099,8 +1048,8 @@ class Compiler extends CompilerBase {
   compileCapture(node, frame) {
     // we need to temporarily override the current buffer id as 'output'
     // so the set block writes to the capture output instead of the buffer
-    const buffer = this.buffer;
-    this.buffer = 'output';
+    const buffer = this.buffer.currentBuffer;
+    this.buffer.currentBuffer = 'output';
     if (node.isAsync) {
       const res = this._tmpid();
       // Use node.body as position node for the capture block evaluation
@@ -1126,7 +1075,7 @@ class Compiler extends CompilerBase {
     }
 
     // and of course, revert back to the old buffer id
-    this.buffer = buffer;
+    this.buffer.currentBuffer = buffer;
   }
 
   compileOutput(node, frame) {
@@ -1137,13 +1086,13 @@ class Compiler extends CompilerBase {
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
           // Position node is the TemplateData node itself
-          this.emit.addToBuffer(node, frame, function () {
+          this.buffer.addToBuffer(node, frame, function () {
             this.compileLiteral(child, frame);
           }, child); // Pass TemplateData as position
         }
       } else {
         // Use the specific child expression node for position
-        frame = this.emit.asyncBlockAddToBufferBegin(node, frame, child, 'text');
+        frame = this.buffer.asyncAddToBufferBegin(node, frame, child, 'text');
         const errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, child)) : '';
 
         // In script mode, we use a special suppressor that passes through Result Objects
@@ -1174,7 +1123,7 @@ class Compiler extends CompilerBase {
         }
         this.emit(';\n');
 
-        frame = this.emit.asyncBlockAddToBufferEnd(node, frame, child, 'text'); // Pass Output node as op, child as pos
+        frame = this.buffer.asyncAddToBufferEnd(node, frame, child, 'text'); // Pass Output node as op, child as pos
       }
     });
   }
@@ -1256,7 +1205,7 @@ class Compiler extends CompilerBase {
     }
 
     this.emit.funcBegin(node, 'root');
-    this.emit.line(`frame.markOutputBufferScope(${this.buffer});`);
+    this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
     // Always declare parentTemplate (needed even for dynamic-only extends)
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
@@ -1278,7 +1227,7 @@ class Compiler extends CompilerBase {
       this.emit.line('  if(finalParent) {');
       this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
       this.emit.line('  } else {');
-      this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
+      this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer.currentBuffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
       this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`); // Store and update the handled error
@@ -1287,7 +1236,7 @@ class Compiler extends CompilerBase {
       this.emit.line('} else {');
       // If in composition mode, synchronously return the output array.
       // The caller is responsible for the lifecycle.
-      this.emit.line(`  return ${this.buffer};`);
+      this.emit.line(`  return ${this.buffer.currentBuffer};`);
       this.emit.line('}');
     }
     else {
@@ -1296,7 +1245,7 @@ class Compiler extends CompilerBase {
       this.emit.line('  let parentContext = context.forkForPath(parentTemplate.path);');
       this.emit.line('  parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, cb);');
       this.emit.line('} else {');
-      this.emit.line(`  cb(null, ${this.buffer});`);
+      this.emit.line(`  cb(null, ${this.buffer.currentBuffer});`);
       this.emit.line('}');
     }
 
@@ -1376,124 +1325,8 @@ class Compiler extends CompilerBase {
 
 
   compileOutputCommand(node, frame) {
-    // Extract static path once for both focus detection and compilation
-    const staticPath = this.sequential._extractStaticPath(node.call.name);
-
-    if (this.outputFocus) {//@todo - think this over
-      //skip compiling commands that do not target the focued property
-      let commandTarget;
-
-      if (staticPath && staticPath.length >= 1) {
-        commandTarget = staticPath[0]; // First segment is always the handler
-      } /* else if (node.call.name.value === 'text') {
-        // Special case for text command
-        commandTarget = 'text';
-      }*/
-
-      // If we identified a specific target and it doesn't match the focus, skip compilation.
-      if (commandTarget && this.outputFocus !== commandTarget) {
-        return;
-      }
-      /*// If the focus is on 'data', we can safely skip all OutputCommands.
-      if (this.outputFocus === 'data') {
-        return;
-      }*/
-    }
-
-    // Validate the static path
-    if (!staticPath || staticPath.length === 0) {
-      this.fail(
-        'Invalid Method Command syntax. Expected format is @handler(...) or @handler.command(...) or @handler.subpath.command(...).',
-        node.lineno, node.colno, node
-      );
-    }
-
-    // Extract handler, subpath, and command from static path
-    const handler = staticPath[0];
-    const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
-    const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
-
-    const isAsync = node.isAsync;
-
-    // Use a wrapper to avoid duplicating the sync/async logic.
-    const wrapper = (emitLogic) => {
-      // Revert Command Interception
-      if (command === '_revert') {
-        if (subpath && subpath.length > 0) {
-          this.fail('_revert() can only be called on the handler root (e.g. @data._revert())', node.lineno, node.colno, node);
-        }
-        // Special check for transpiled @data commands which move path to first argument
-        if (handler === 'data' && node.call.args && node.call.args.children.length > 0) {
-          const pathArg = node.call.args.children[0];
-          // If pathArg is provided and is NOT a null literal, it means a subpath was provided
-          // The transpiler generates Literal(null) for root calls like @data._revert()
-          if (pathArg && !(pathArg instanceof nodes.Literal && pathArg.value === null)) {
-            this.fail('_revert() can only be called on the handler root (e.g. @data._revert())', node.lineno, node.colno, node);
-          }
-        }
-        this.emit.addToBuffer(node, frame, () => {
-          this.emit(`{ handler: '${handler}', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
-        }, node);
-        this.emit.line(`runtime.markBufferHasRevert(${this.buffer});`);
-        return;
-      }
-
-      if (isAsync) {
-        this.emit.asyncBlockAddToBuffer(node, frame, (resultVar, f) => {
-          this.emit(`${resultVar} = `);
-          emitLogic(f); // Pass the inner frame to the logic.
-        }, node, handler);
-      } else {
-        this.emit.addToBuffer(node, frame, () => {
-          emitLogic(frame); // Pass the current frame.
-        }, node, handler);
-      }
-    };
-
-    wrapper((f) => {
-      this.emit(`{ handler: '${handler}', `);
-      if (command) {
-        this.emit(`command: '${command}', `);
-      }
-      if (subpath && subpath.length > 0) {
-        this.emit(`subpath: ${JSON.stringify(subpath)}, `);
-      }
-
-      let argList = node.call.args;
-      const asyncArgs = argList.isAsync;
-      this.emit('arguments: ' + (asyncArgs ? 'await ' : ''));
-
-      if (handler === 'data') {
-        // For @data commands, we create a new "virtual" AST for the arguments.
-        // where the first argument is a path like "user.posts[0].title" that
-        // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
-        const originalArgs = node.call.args.children;
-        if (originalArgs.length === 0) {
-          this.fail(`@data command '${command}' requires at least a path argument.`, node.lineno, node.colno, node);
-        }
-
-        const pathArg = originalArgs[0];
-
-        // Convert the path argument into a flat array of segments (Literal/Symbol)
-        // expected by the runtime @data handlers.
-        const pathNodeList = this._flattenPathToNodeList(pathArg);
-        const dataPathNode = new nodes.Array(pathArg.lineno, pathArg.colno, pathNodeList.children);
-        dataPathNode.isAsync = pathNodeList.isAsync;
-        dataPathNode.mustResolve = true;
-
-        // Our array node at the front.
-        const newArgs = [dataPathNode, ...originalArgs.slice(1)];
-
-        argList = new nodes.NodeList(node.call.args.lineno, node.call.args.colno, newArgs);
-        argList.isAsync = asyncArgs;
-      }
-
-      this._compileAggregate(argList, f, '[', ']', isAsync, true);
-
-      this.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} }`);
-    });
+    this.buffer.compileOutputCommand(node, frame);
   }
-
 
   /**
    * Do nothing for now, currently used only for focus directive

@@ -57,7 +57,7 @@ module.exports = class CompileEmit {
   }
 
   funcBegin(node, name) {
-    this.compiler.buffer = 'output';
+    this.compiler.buffer.currentBuffer = 'output';
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
@@ -71,11 +71,11 @@ module.exports = class CompileEmit {
       this.line(`let lineno = ${node.lineno};`);
       this.line(`let colno = ${node.colno};`);
     }
-    // this.Line(`let ${this.compiler.buffer} = "";`);
+    // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode) {
-      this.emit(`let ${this.compiler.buffer} = []; let ${this.compiler.buffer}_index = 0;`);
+      this.emit(`let ${this.compiler.buffer.currentBuffer} = []; let ${this.compiler.buffer.currentBuffer}_index = 0;`);
     } else {
-      this.emit(`let ${this.compiler.buffer} = "";`);
+      this.emit(`let ${this.compiler.buffer.currentBuffer} = "";`);
     }
     this.line('try {');
   }
@@ -85,10 +85,10 @@ module.exports = class CompileEmit {
       if (this.compiler.asyncMode) {
         // In async mode, blocks return output directly (not via callback)
         // The callback is only used for error propagation
-        this.line('return ' + this.compiler.buffer + ';');
+        this.line('return ' + this.compiler.buffer.currentBuffer + ';');
       } else {
         // Sync mode blocks use callback for both success and error
-        this.line('cb(null, ' + this.compiler.buffer + ');');
+        this.line('cb(null, ' + this.compiler.buffer.currentBuffer + ');');
       }
     }
 
@@ -106,7 +106,7 @@ module.exports = class CompileEmit {
     //this.Line('  throw e;');//the returned promise should not resolve
     this.line('}');
     this.line('}');
-    this.compiler.buffer = null;
+    this.compiler.buffer.currentBuffer = null;
   }
 
   //todo: use only simple async block if you know that:
@@ -212,9 +212,9 @@ module.exports = class CompileEmit {
 
   asyncBlockRender(node, frame, innerBodyFunction, callbackName = null, positionNode = node) {
     if (!node.isAsync) {
-      const id = this.compiler._pushBuffer();
+      const id = this.compiler.buffer.push();
       innerBodyFunction.call(this.compiler, frame);
-      this.compiler._popBuffer();
+      this.compiler.buffer.pop();
       if (callbackName) {
         this.line(`${callbackName}(null, ${id});`);
       }
@@ -225,7 +225,7 @@ module.exports = class CompileEmit {
     frame = frame.push(false, false);//unscoped frame for the async block
     this.line(`astate.asyncBlock(async (astate, frame) =>{`);
 
-    const id = this.compiler._pushBuffer();//@todo - better way to get the buffer, see compileCapture
+    const id = this.compiler.buffer.push();//@todo - better way to get the buffer, see compileCapture
 
     const originalAsyncClosureDepth = this.asyncClosureDepth;
     this.asyncClosureDepth = 0;
@@ -236,7 +236,7 @@ module.exports = class CompileEmit {
     this.asyncClosureDepth = originalAsyncClosureDepth;
 
     //this.Line(';');//this may be needed in some cases
-    this.compiler._popBuffer();
+    this.compiler.buffer.pop();
 
     this.line('await astate.waitAllClosures(1);');
     this.line(`${id} = runtime.flattenBuffer(${id});`);
@@ -259,156 +259,6 @@ module.exports = class CompileEmit {
     //in the non-callback case, using the rendered buffer will throw the error
   }
 
-  addToBuffer(node, frame, renderFunction, positionNode = node) {
-    if (this.compiler.asyncMode) {
-      this.line(`${this.compiler.buffer}[${this.compiler.buffer}_index++] = `);
-    } else {
-      this.emit(`${this.compiler.buffer} += `);
-    }
-    renderFunction.call(this.compiler, frame);
-    this.line(';');
-  }
-
-  //@todo - use the Begin/End
-  asyncBlockAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null) {
-    const returnId = this.compiler._tmpid();
-    if (node.isAsync) {
-      this.asyncClosureDepth++;
-      frame = frame.push(false, false);
-
-      this.line(`astate.asyncBlock(async (astate, frame)=>{`);
-      this.line(`let index = ${this.compiler.buffer}_index++;`);
-
-      if (handlerName) {
-        // if there is a handler, we need to catch errors and poison the handler/buffer
-        this.line(`try {`);
-      }
-      this.line(`  let ${returnId};`);
-      renderFunction.call(this.compiler, returnId, frame);
-      this.line(';');
-      this.line(`  ${this.compiler.buffer}[index] = ${returnId};`);
-
-      if (handlerName) {
-        // catch errors and poison the handler/buffer
-        this.line(`} catch(e) {`);
-        // Convert ALL errors to error array
-        this.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
-        // Add marker for handler-specific outputs
-        this.line(`  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer}, errors, [${JSON.stringify(handlerName)}], { lineno: ${positionNode.lineno}, colno: ${positionNode.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node, positionNode))}, path: context.path });`);
-        this.line(`}`);
-      }
-
-      this.asyncClosureDepth--;
-      this.line('}');
-      const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame, positionNode);
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
-
-      frame = frame.pop();
-
-    } else {
-      this.line(`let ${returnId};`);
-      renderFunction.call(this.compiler, returnId, frame);
-      if (this.compiler.asyncMode) {
-        this.line(`${this.compiler.buffer}[${this.compiler.buffer}_index++] = ${returnId};`);
-      } else {
-        this.line(`${this.compiler.buffer} += ${returnId};`);
-      }
-    }
-  }
-
-  asyncBlockAddToBufferBegin(node, frame, positionNode = node, handlerName = null) {
-    if (node.isAsync) {
-      this.line(`astate.asyncBlock(async (astate, frame) => {`);
-      this.line(`let index = ${this.compiler.buffer}_index++;`);
-      if (handlerName) {
-        // if there is a handler, we need to catch errors and poison the handler/buffer
-        this.line(`try {`);
-      }
-      this.emit(`  ${this.compiler.buffer}[index] = `);
-      this.asyncClosureDepth++;
-      // Store handlerName for End to use
-      //this._pendingHandler = handlerName;
-      return frame.push(false, false);
-    }
-    if (this.compiler.asyncMode) {
-      this.line(`${this.compiler.buffer}[${this.compiler.buffer}_index++] = `);
-    } else {
-      this.emit(`${this.compiler.buffer} += `);
-    }
-    return frame;
-  }
-
-  asyncBlockAddToBufferEnd(node, frame, positionNode = node, handlerName = null) {
-    this.line(';');
-    if (node.isAsync) {
-      //const handlerName = this._pendingHandler;
-      //this._pendingHandler = null;
-
-      if (handlerName) {
-        // if there is a handler, we need to catch errors and poison the handler/buffer
-        this.line(`} catch(e) {`);
-        this.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
-        // Handler-specific output - add poison marker to buffer
-        this.line(`  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer}, errors, [${JSON.stringify(handlerName)}], { lineno: ${positionNode.lineno}, colno: ${positionNode.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node, positionNode))}, path: context.path });`);
-        this.line(`}`);
-      }
-
-      this.asyncClosureDepth--;
-      this.line('}');
-      const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame, positionNode);
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
-      return frame.pop();
-    }
-    return frame;
-  }
-
-  asyncBlockBufferNodeBegin(node, frame, createScope = false, positionNode = node) {
-    if (node.isAsync) {
-      // Start the async closure
-      frame = this.asyncBlockBegin(node, frame, createScope, positionNode);
-
-      // Push the current buffer onto the stack
-      this.compiler.bufferStack.push(this.compiler.buffer);
-
-      // Create a new buffer array for the nested block
-      const newBuffer = this.compiler._tmpid();
-
-      // Initialize the new buffer and its index inside the async closure
-      this.line(`let ${newBuffer} = [];`);
-      this.line(`let ${newBuffer}_index = 0;`);
-
-      // Append the new buffer to the parent buffer
-      this.line(`${this.compiler.buffer}[${this.compiler.buffer}_index++] = ${newBuffer};`);
-
-      // Update the buffer reference
-      this.compiler.buffer = newBuffer;
-      // No need to update bufferIndex, we'll use `${this.compiler.buffer}_index` when needed
-      return frame;
-    } else if (createScope) {
-      frame = frame.push();
-      this.line('frame = frame.push();');
-      return frame;
-    }
-    return frame;
-  }
-
-  asyncBlockBufferNodeEnd(node, frame, createScope = false, sequential = false, positionNode = node) {
-    if (node.isAsync) {
-      // End the async closure
-      frame = this.asyncBlockEnd(node, frame, createScope, sequential, positionNode);
-
-      // Restore the previous buffer from the stack
-      this.compiler.buffer = this.compiler.bufferStack.pop();
-      return frame;
-    } else if (createScope) {
-      frame = frame.pop();
-      this.line('frame = frame.pop();');
-      return frame;
-    }
-    return frame;
-  }
   // @todo - optimize this:
   // if a parent async block has the read and there are no writes
   // we can use the parent snapshot
