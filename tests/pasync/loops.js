@@ -10,6 +10,7 @@
   var createPoison;
   var isPoisonError;
   var isPoison;
+  var runtime;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -18,7 +19,7 @@
     //unescape = require('he').unescape;
     delay = require('../util').delay;
     parser = require('../../src/parser');
-    const runtime = require('../../src/runtime/runtime');
+    runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
     isPoison = runtime.isPoison;
@@ -29,9 +30,10 @@
     //Environment = nunjucks.Environment;
     delay = window.util.delay;
     parser = nunjucks.parser;
-    createPoison = nunjucks.createPoison;
-    isPoisonError = nunjucks.isPoisonError;
-    isPoison = nunjucks.isPoison;
+    runtime = nunjucks.runtime;
+    createPoison = runtime.createPoison;
+    isPoisonError = runtime.isPoisonError;
+    isPoison = runtime.isPoison;
   }
 
   describe('Async mode - loops', () => {
