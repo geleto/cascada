@@ -75,7 +75,7 @@ const coverageConfig = {
   const reportNyc = new NYC({
     include: ['src/**/*.js'],
     reporter: ['text', 'html', 'lcov'],
-    showProcessTree: true,
+    showProcessTree: false,
     tempDir: nycTempDir,
     cacheDir: nycTempDir,
     cwd: path.join(__dirname, '..')
