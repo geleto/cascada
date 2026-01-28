@@ -188,7 +188,7 @@ async function runTests() {
     console.log(`Static server listening on port ${port}`);
 
     browser = await chromium.launch();
-    const testFiles = ['index.html', 'slim.html'];
+    const testFiles = ['slim.html', 'index.html'];
 
     for (const testFile of testFiles) {
       console.log(`\nRunning tests for ${testFile}...`);
