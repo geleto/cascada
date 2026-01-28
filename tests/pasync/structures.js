@@ -20,6 +20,7 @@
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     //Environment = nunjucks.Environment;
     delay = window.util.delay;
+    expect = window.expect;
     //runtime = nunjucks.runtime;
   }
 
