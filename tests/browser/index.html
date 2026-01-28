@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8">
   <title>Mocha Tests</title>
@@ -9,15 +10,18 @@
       font: 20px/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif;
       padding: 60px 50px;
     }
+
     #mocha {
       margin: 0;
     }
+
     div.note {
       font-size: .8em;
       width: 50%;
     }
   </style>
 </head>
+
 <body>
   <div class="note">
     Tests do not indicate performance. They are much slower because a
@@ -47,15 +51,15 @@
   <script src="../util.js"></script>
 
   <script src="../api.js"></script>
-  <script src="../pasync-calls.js"></script>
-  <script src="../pasync-conditional.js"></script>
-  <script src="../pasync-custom.js"></script>
-  <script src="../pasync-expressions.js"></script>
-  <script src="../pasync-loader.js"></script>
-  <script src="../pasync-loops.js"></script>
-  <script src="../pasync-macros.js"></script>
-  <script src="../pasync-race.js"></script>
-  <script src="../pasync-setblock.js"></script>
+  <script src="../pasync/calls.js"></script>
+  <script src="../pasync/conditional.js"></script>
+  <script src="../pasync/custom.js"></script>
+  <script src="../pasync/expressions.js"></script>
+  <script src="../pasync/loader.js"></script>
+  <script src="../pasync/loops.js"></script>
+  <script src="../pasync/macros.js"></script>
+  <script src="../pasync/race.js"></script>
+  <script src="../pasync/setblock.js"></script>
   <script src="../pasync/structures.js"></script>
   <script src="../pasync/variables.js"></script>
   <script src="../lexer.js"></script>
@@ -78,4 +82,5 @@
     mocha.checkLeaks();
   </script>
 </body>
+
 </html>
