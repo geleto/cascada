@@ -7,11 +7,26 @@ const {
   handleError
 } = require('./errors');
 
+class CommandBuffer {
+  constructor(context) {
+    this._context = context;
+    this.output = [];
+  }
+}
+
+function resolveBufferArray(buffer) {
+  if (buffer instanceof CommandBuffer) {
+    return buffer.output;
+  }
+  return buffer;
+}
+
 // Flags a buffer scope so later passes know it contains a @_revert command.
 function markBufferHasRevert(buffer) {
-  if (!Array.isArray(buffer)) return;
-  buffer._hasRevert = true;
-  buffer._revertsProcessed = false;
+  const target = resolveBufferArray(buffer);
+  if (!Array.isArray(target)) return;
+  target._hasRevert = true;
+  target._revertsProcessed = false;
 }
 
 // Determines which handler a buffer entry belongs to.
@@ -56,8 +71,9 @@ function markBufferReverted(buffer) {
     return;
   }
   buffer._reverted = true;
-  if (Array.isArray(buffer)) {
-    buffer.length = 0;
+  const target = resolveBufferArray(buffer);
+  if (Array.isArray(target)) {
+    target.length = 0;
   }
 }
 
@@ -105,8 +121,9 @@ function ensureBufferScopeMetadata(buffer) {
 
 // Performs a single linear scan to apply handler-targeted reverts per buffer.
 function processReverts(buffer) {
-  if (!Array.isArray(buffer) || buffer._revertsProcessed) return;
-  walkBufferForReverts(buffer, true);
+  const target = resolveBufferArray(buffer);
+  if (!Array.isArray(target) || target._revertsProcessed) return;
+  walkBufferForReverts(target, true);
 }
 
 // Recursively walks a buffer tree collecting nodes for the linear pass.
@@ -128,21 +145,22 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
 
   for (let i = 0; i < container.length; i++) {
     const item = container[i];
+    const resolvedItem = item instanceof CommandBuffer ? item.output : item;
 
-    if (Array.isArray(item)) {
-      const childIsScope = item._outputScopeRoot === true;
-      const lastValue = item.length > 0 ? item[item.length - 1] : null;
+    if (Array.isArray(resolvedItem)) {
+      const childIsScope = resolvedItem._outputScopeRoot === true;
+      const lastValue = resolvedItem.length > 0 ? resolvedItem[resolvedItem.length - 1] : null;
       const hasPostProcessFn = typeof lastValue === 'function';
 
       if (childIsScope) {
-        if (item._hasRevert === true) {
-          const childHasRevert = walkBufferForReverts(item, false, null, { container, index: i });
+        if (resolvedItem._hasRevert === true) {
+          const childHasRevert = walkBufferForReverts(resolvedItem, false, null, { container, index: i });
           if (childHasRevert) {
-            item._hasRevert = true;
+            resolvedItem._hasRevert = true;
             scopeHasRevert = true;
           }
         } else {
-          item._revertsProcessed = true;
+          resolvedItem._revertsProcessed = true;
         }
         linearNodes.push({ handler: 'text', container, index: i, scopeRoot: true, parentIndexRef });
         continue;
@@ -153,7 +171,7 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
         continue;
       }
 
-      const childHasRevert = walkBufferForReverts(item, false, linearNodes, { container, index: i });
+      const childHasRevert = walkBufferForReverts(resolvedItem, false, linearNodes, { container, index: i });
       if (childHasRevert) {
         scopeHasRevert = true;
       }
@@ -215,7 +233,8 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
 }
 
 function revertBufferHandlers(buffer, handlerNames) {
-  if (!Array.isArray(buffer)) {
+  const target = resolveBufferArray(buffer);
+  if (!Array.isArray(target)) {
     return;
   }
 
@@ -225,14 +244,14 @@ function revertBufferHandlers(buffer, handlerNames) {
   }
 
   handlerNames.forEach((handler) => {
-    buffer.push({
+    target.push({
       handler: handler || 'text',
       command: '_revert',
       arguments: [],
       pos: null
     });
-    markBufferHasRevert(buffer);
-    processReverts(buffer);
+    markBufferHasRevert(target);
+    processReverts(target);
   });
 }
 
@@ -250,6 +269,7 @@ function revertBufferHandlers(buffer, handlerNames) {
  * @param {Object} errorContext - Context object with lineno, colno, errorContextString, and path
  */
 function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorContext = null) {
+  const target = resolveBufferArray(buffer);
   const errors = (Array.isArray(errorOrErrors) ? errorOrErrors : [errorOrErrors]);
 
   // Process errors with proper context if available
@@ -266,13 +286,19 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
       handler: handlerName,        // Which handler was intended (for debugging)
     };
 
-    buffer.push(marker);
+    if (Array.isArray(target)) {
+      target.push(marker);
+    }
   }
 }
 
 function getPosonedBufferErrors(arr, allowedHandlers = null) {
   const allErrors = [];
   if (!arr) return allErrors;
+
+  if (arr instanceof CommandBuffer) {
+    arr = arr.output;
+  }
 
   if (!Array.isArray(arr)) {
     const isTextPoison = isPoison(arr) || isPoisonError(arr);
@@ -293,6 +319,13 @@ function getPosonedBufferErrors(arr, allowedHandlers = null) {
 
   for (const item of arr) {
     if (!item) continue;
+    if (item instanceof CommandBuffer) {
+      const nestedErrors = getPosonedBufferErrors(item.output, allowedHandlers);
+      if (nestedErrors.length > 0) {
+        allErrors.push(...nestedErrors);
+      }
+      continue;
+    }
     // Check for poison marker
     if (item.__cascadaPoisonMarker === true) {
       if (allowedHandlers && !allowedHandlers.includes(item.handler)) {
@@ -329,6 +362,10 @@ function getPosonedBufferErrors(arr, allowedHandlers = null) {
 }
 
 function flattenBuffer(arr, context = null, focusOutput = null) {
+  if (arr instanceof CommandBuffer) {
+    arr = arr.output;
+  }
+
   if (Array.isArray(arr)) {
     ensureBufferScopeMetadata(arr);
     processReverts(arr);
@@ -357,7 +394,21 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
         return acc; // Don't add poison to output
       }
 
-      // Handle nested arrays (recursive call)
+      // Handle nested buffers/arrays (recursive call)
+      if (item instanceof CommandBuffer) {
+        try {
+          return acc + flattenBuffer(item.output, null, null);
+        } catch (err) {
+          // Child buffer had poison errors
+          if (isPoisonError(err)) {
+            errors.push(...err.errors);
+          } else {
+            errors.push(err);
+          }
+          return acc;
+        }
+      }
+
       if (Array.isArray(item)) {
         try {
           return acc + flattenBuffer(item, null, null);
@@ -453,6 +504,12 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
     if (isPoison(item)) {
       collectedErrors.push(...item.errors);
       return; // Continue to find all errors
+    }
+
+    if (item instanceof CommandBuffer) {
+      if (item._reverted) return;
+      processItem(item.output);
+      return;
     }
 
     if (Array.isArray(item)) {
@@ -663,6 +720,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 }
 
 module.exports = {
+  CommandBuffer,
   addPoisonMarkersToBuffer,
   flattenBuffer,
   markBufferReverted,

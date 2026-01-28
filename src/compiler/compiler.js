@@ -612,13 +612,19 @@ class Compiler extends CompilerBase {
 
     this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
     if (handlerTargetsAll) {
+      const bufferLength = this.asyncMode
+        ? `${this.buffer.currentBuffer}.output.length`
+        : `${this.buffer.currentBuffer}.length`;
       this.emit.line(`  runtime.markBufferReverted(${this.buffer.currentBuffer});`);
       this.emit.line(`  delete ${this.buffer.currentBuffer}._reverted;`);
-      this.emit.line(`  ${this.buffer.currentBuffer}.length = 0;`);
+      this.emit.line(`  ${bufferLength} = 0;`);
       this.emit.line(`  ${this.buffer.currentBuffer}_index = 0;`);
     } else if (handlerTargets) {
       this.emit.line(`  runtime.revertBufferHandlers(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
-      this.emit.line(`  ${this.buffer.currentBuffer}_index = ${this.buffer.currentBuffer}.length;`);
+      const bufferLength = this.asyncMode
+        ? `${this.buffer.currentBuffer}.output.length`
+        : `${this.buffer.currentBuffer}.length`;
+      this.emit.line(`  ${this.buffer.currentBuffer}_index = ${bufferLength};`);
     }
 
     if (guardStateVar) {
@@ -1055,7 +1061,7 @@ class Compiler extends CompilerBase {
       // Use node.body as position node for the capture block evaluation
       this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
-        this.emit.line('let output = [];');
+        this.emit.line('let output = new runtime.CommandBuffer(context);');
 
         this.compile(n.body, f);//write to output
 

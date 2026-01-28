@@ -25,7 +25,7 @@ class CompileBuffer {
     this.bufferStack.push(this.currentBuffer);
     this.currentBuffer = id;
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`let ${this.currentBuffer} = []; let ${this.currentBuffer}_index = 0;`);
+      this.compiler.emit.line(`let ${this.currentBuffer} = new runtime.CommandBuffer(context); let ${this.currentBuffer}_index = 0;`);
     } else {
       this.compiler.emit.line(`let ${this.currentBuffer} = "";`);
     }
@@ -44,6 +44,11 @@ class CompileBuffer {
    */
   getCurrentBuffer() {
     return this.currentBuffer;
+  }
+
+  _getBufferAccess() {
+    // In async mode, buffers are CommandBuffer instances (use .output).
+    return this.compiler.asyncMode ? `${this.currentBuffer}.output` : this.currentBuffer;
   }
 
   // === HANDLER ANALYSIS ===
@@ -216,7 +221,7 @@ class CompileBuffer {
    */
   addToBuffer(node, frame, renderFunction, positionNode = node) {
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`${this.currentBuffer}[${this.currentBuffer}_index++] = `);
+      this.compiler.emit.line(`${this._getBufferAccess()}[${this.currentBuffer}_index++] = `);
     } else {
       this.compiler.emit(`${this.currentBuffer} += `);
     }
@@ -243,7 +248,7 @@ class CompileBuffer {
       this.compiler.emit.line(`  let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       this.compiler.emit.line(';');
-      this.compiler.emit.line(`  ${this.currentBuffer}[index] = ${returnId};`);
+      this.compiler.emit.line(`  ${this._getBufferAccess()}[index] = ${returnId};`);
 
       if (handlerName) {
         // catch errors and poison the handler/buffer
@@ -267,7 +272,7 @@ class CompileBuffer {
       this.compiler.emit.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       if (this.compiler.asyncMode) {
-        this.compiler.emit.line(`${this.currentBuffer}[${this.currentBuffer}_index++] = ${returnId};`);
+        this.compiler.emit.line(`${this._getBufferAccess()}[${this.currentBuffer}_index++] = ${returnId};`);
       } else {
         this.compiler.emit.line(`${this.currentBuffer} += ${returnId};`);
       }
@@ -285,14 +290,14 @@ class CompileBuffer {
         // if there is a handler, we need to catch errors and poison the handler/buffer
         this.compiler.emit.line(`try {`);
       }
-      this.compiler.emit(`  ${this.currentBuffer}[index] = `);
+      this.compiler.emit(`  ${this._getBufferAccess()}[index] = `);
       this.compiler.emit.asyncClosureDepth++;
       // Store handlerName for End to use
       //this._pendingHandler = handlerName;
       return frame.push(false, false);
     }
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`${this.currentBuffer}[${this.currentBuffer}_index++] = `);
+      this.compiler.emit.line(`${this._getBufferAccess()}[${this.currentBuffer}_index++] = `);
     } else {
       this.compiler.emit(`${this.currentBuffer} += `);
     }
@@ -339,16 +344,17 @@ class CompileBuffer {
 
       // Push the current buffer onto the stack
       this.bufferStack.push(this.currentBuffer);
+      const parentBufferAccess = this._getBufferAccess();
 
       // Create a new buffer array for the nested block
       const newBuffer = this.compiler._tmpid();
 
       // Initialize the new buffer and its index inside the async closure
-      this.compiler.emit.line(`let ${newBuffer} = [];`);
+      this.compiler.emit.line(`let ${newBuffer} = new runtime.CommandBuffer(context);`);
       this.compiler.emit.line(`let ${newBuffer}_index = 0;`);
 
       // Append the new buffer to the parent buffer
-      this.compiler.emit.line(`${this.currentBuffer}[${this.currentBuffer}_index++] = ${newBuffer};`);
+      this.compiler.emit.line(`${parentBufferAccess}[${this.currentBuffer}_index++] = ${newBuffer};`);
 
       // Update the buffer reference
       this.currentBuffer = newBuffer;

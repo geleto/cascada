@@ -111,6 +111,9 @@ class Frame {
   }
 
   markOutputBufferScope(buffer) {
+    if (buffer && Array.isArray(buffer.output)) {
+      buffer = buffer.output;
+    }
     if (buffer && typeof buffer === 'object') {
       buffer._outputScopeRoot = true;
       if (buffer._hasRevert === undefined) {

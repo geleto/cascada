@@ -159,6 +159,7 @@ module.exports = {
   createArray: resolve.createArray,
 
   flattenBuffer: buffer.flattenBuffer,
+  CommandBuffer: buffer.CommandBuffer,
   addPoisonMarkersToBuffer: buffer.addPoisonMarkersToBuffer,
   markBufferReverted: buffer.markBufferReverted,
   revertBufferHandlers: buffer.revertBufferHandlers,

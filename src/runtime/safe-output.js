@@ -3,6 +3,12 @@
 var lib = require('../lib');
 const errors = require('./errors');
 
+function normalizeBufferValue(val) {
+  if (val && typeof val === 'object' && Array.isArray(val.output)) {
+    return val.output;
+  }
+  return val;
+}
 
 // A SafeString object indicates that the string should not be
 // autoescaped. This happens magically because autoescaping only
@@ -91,6 +97,7 @@ function suppressValue(val, autoescape) {
 }
 
 function suppressValueAsync(val, autoescape, errorContext) {
+  val = normalizeBufferValue(val);
   // Poison check - return rejected promise synchronously
   if (errors.isPoison(val)) {
     return val;
@@ -126,6 +133,7 @@ function suppressValueAsync(val, autoescape, errorContext) {
 }
 
 async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
+  val = normalizeBufferValue(val);
   // Handle promise values
   if (val && typeof val.then === 'function') {
     try {
@@ -212,6 +220,7 @@ function ensureDefined(val, lineno, colno, context) {
 
 //@todo - remove lineno, colno
 function ensureDefinedAsync(val, lineno, colno, context, errorContext) {
+  val = normalizeBufferValue(val);
   // Poison check - return rejected promise synchronously
   if (errors.isPoison(val)) {
     return val;
@@ -228,6 +237,7 @@ function ensureDefinedAsync(val, lineno, colno, context, errorContext) {
 
 //@todo - remove lineno, colno
 async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorContext) {
+  val = normalizeBufferValue(val);
   // Handle arrays with possible poison values
   if (Array.isArray(val)) {
     const collectedErrors = await errors.collectErrors(val);
