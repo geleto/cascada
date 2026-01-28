@@ -83,6 +83,9 @@ class AsyncState {
         childState._leaveAsyncBlock();
       });
 
+      // Suppress unhandled rejections as they are propagated via callback or poison
+      wrappedPromise.catch(() => { });
+
       return wrappedPromise;
     } catch (syncError) {
       // This catches synchronous errors that might happen before the promise is even created.
