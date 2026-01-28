@@ -73,7 +73,7 @@ module.exports = class CompileEmit {
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode) {
-      this.emit(`let ${this.compiler.buffer.currentBuffer} = new runtime.CommandBuffer(context); let ${this.compiler.buffer.currentBuffer}_index = 0;`);
+      this.emit(`let ${this.compiler.buffer.currentBuffer} = new runtime.CommandBuffer(context);`);
     } else {
       this.emit(`let ${this.compiler.buffer.currentBuffer} = "";`);
     }

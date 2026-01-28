@@ -618,13 +618,17 @@ class Compiler extends CompilerBase {
       this.emit.line(`  runtime.markBufferReverted(${this.buffer.currentBuffer});`);
       this.emit.line(`  delete ${this.buffer.currentBuffer}._reverted;`);
       this.emit.line(`  ${bufferLength} = 0;`);
-      this.emit.line(`  ${this.buffer.currentBuffer}_index = 0;`);
+      //if (this.asyncMode) {
+      this.emit.line(`  ${this.buffer.currentBuffer}._index = 0;`);
+      //}
     } else if (handlerTargets) {
       this.emit.line(`  runtime.revertBufferHandlers(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
       const bufferLength = this.asyncMode
         ? `${this.buffer.currentBuffer}.output.length`
         : `${this.buffer.currentBuffer}.length`;
-      this.emit.line(`  ${this.buffer.currentBuffer}_index = ${bufferLength};`);
+      //if (this.asyncMode) {
+      this.emit.line(`  ${this.buffer.currentBuffer}._index = ${bufferLength};`);
+      //}
     }
 
     if (guardStateVar) {

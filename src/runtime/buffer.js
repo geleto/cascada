@@ -11,6 +11,21 @@ class CommandBuffer {
   constructor(context) {
     this._context = context;
     this.output = [];
+    this._index = 0;
+  }
+
+  add(value) {
+    const slot = this._index++;
+    this.output[slot] = value;
+    return slot;
+  }
+
+  reserveSlot() {
+    return this._index++;
+  }
+
+  fillSlot(slot, value) {
+    this.output[slot] = value;
   }
 }
 

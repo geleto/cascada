@@ -12,6 +12,8 @@ class CompileBuffer {
     this.compiler = compiler;
     this.currentBuffer = null;
     this.bufferStack = [];
+    // Temp value ids for split buffer writes (asyncAddToBufferBegin/End), supports nesting.
+    this._bufferValueStack = [];
   }
 
   // === BUFFER STACK MANAGEMENT ===
@@ -25,7 +27,7 @@ class CompileBuffer {
     this.bufferStack.push(this.currentBuffer);
     this.currentBuffer = id;
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`let ${this.currentBuffer} = new runtime.CommandBuffer(context); let ${this.currentBuffer}_index = 0;`);
+      this.compiler.emit.line(`let ${this.currentBuffer} = new runtime.CommandBuffer(context);`);
     } else {
       this.compiler.emit.line(`let ${this.currentBuffer} = "";`);
     }
@@ -221,12 +223,16 @@ class CompileBuffer {
    */
   addToBuffer(node, frame, renderFunction, positionNode = node) {
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`${this._getBufferAccess()}[${this.currentBuffer}_index++] = `);
+      this.compiler.emit.line(`${this.currentBuffer}.add(`);
     } else {
       this.compiler.emit(`${this.currentBuffer} += `);
     }
     renderFunction.call(this.compiler, frame);
-    this.compiler.emit.line(';');
+    if (this.compiler.asyncMode) {
+      this.compiler.emit.line(');');
+    } else {
+      this.compiler.emit.line(';');
+    }
   }
 
   /**
@@ -239,7 +245,7 @@ class CompileBuffer {
       frame = frame.push(false, false);
 
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
-      this.compiler.emit.line(`let index = ${this.currentBuffer}_index++;`);
+      this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot();`);
 
       if (handlerName) {
         // if there is a handler, we need to catch errors and poison the handler/buffer
@@ -248,7 +254,7 @@ class CompileBuffer {
       this.compiler.emit.line(`  let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       this.compiler.emit.line(';');
-      this.compiler.emit.line(`  ${this._getBufferAccess()}[index] = ${returnId};`);
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${returnId});`);
 
       if (handlerName) {
         // catch errors and poison the handler/buffer
@@ -272,7 +278,7 @@ class CompileBuffer {
       this.compiler.emit.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       if (this.compiler.asyncMode) {
-        this.compiler.emit.line(`${this._getBufferAccess()}[${this.currentBuffer}_index++] = ${returnId};`);
+        this.compiler.emit.line(`${this.currentBuffer}.add(${returnId});`);
       } else {
         this.compiler.emit.line(`${this.currentBuffer} += ${returnId};`);
       }
@@ -285,19 +291,23 @@ class CompileBuffer {
   asyncAddToBufferBegin(node, frame, positionNode = node, handlerName = null) {
     if (node.isAsync) {
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame) => {`);
-      this.compiler.emit.line(`let index = ${this.currentBuffer}_index++;`);
+      this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot();`);
+      const valueId = this.compiler._tmpid();
+      this._bufferValueStack.push(valueId);
       if (handlerName) {
         // if there is a handler, we need to catch errors and poison the handler/buffer
         this.compiler.emit.line(`try {`);
       }
-      this.compiler.emit(`  ${this._getBufferAccess()}[index] = `);
+      this.compiler.emit(`  let ${valueId} = `);
       this.compiler.emit.asyncClosureDepth++;
       // Store handlerName for End to use
       //this._pendingHandler = handlerName;
       return frame.push(false, false);
     }
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`${this._getBufferAccess()}[${this.currentBuffer}_index++] = `);
+      const valueId = this.compiler._tmpid();
+      this._bufferValueStack.push(valueId);
+      this.compiler.emit(`let ${valueId} = `);
     } else {
       this.compiler.emit(`${this.currentBuffer} += `);
     }
@@ -308,11 +318,13 @@ class CompileBuffer {
    * End async buffer addition (split pattern)
    */
   asyncAddToBufferEnd(node, frame, positionNode = node, handlerName = null) {
+    const valueId = this.compiler.asyncMode ? this._bufferValueStack.pop() : null;
     this.compiler.emit.line(';');
     if (node.isAsync) {
       //const handlerName = this._pendingHandler;
       //this._pendingHandler = null;
 
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueId});`);
       if (handlerName) {
         // if there is a handler, we need to catch errors and poison the handler/buffer
         this.compiler.emit.line(`} catch(e) {`);
@@ -329,6 +341,9 @@ class CompileBuffer {
       this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
       return frame.pop();
     }
+    if (this.compiler.asyncMode) {
+      this.compiler.emit.line(`${this.currentBuffer}.add(${valueId});`);
+    }
     return frame;
   }
 
@@ -344,21 +359,18 @@ class CompileBuffer {
 
       // Push the current buffer onto the stack
       this.bufferStack.push(this.currentBuffer);
-      const parentBufferAccess = this._getBufferAccess();
 
       // Create a new buffer array for the nested block
       const newBuffer = this.compiler._tmpid();
 
       // Initialize the new buffer and its index inside the async closure
       this.compiler.emit.line(`let ${newBuffer} = new runtime.CommandBuffer(context);`);
-      this.compiler.emit.line(`let ${newBuffer}_index = 0;`);
 
       // Append the new buffer to the parent buffer
-      this.compiler.emit.line(`${parentBufferAccess}[${this.currentBuffer}_index++] = ${newBuffer};`);
+      this.compiler.emit.line(`${this.currentBuffer}.add(${newBuffer});`);
 
       // Update the buffer reference
       this.currentBuffer = newBuffer;
-      // No need to update bufferIndex, we'll use `${this.currentBuffer}_index` when needed
       return frame;
     } else if (createScope) {
       frame = frame.push();
