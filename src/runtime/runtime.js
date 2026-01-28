@@ -162,6 +162,7 @@ module.exports = {
   CommandBuffer: buffer.CommandBuffer,
   addPoisonMarkersToBuffer: buffer.addPoisonMarkersToBuffer,
   markBufferReverted: buffer.markBufferReverted,
+  resetBufferOutputIndexes: buffer.resetBufferOutputIndexes,
   revertBufferHandlers: buffer.revertBufferHandlers,
   getPosonedBufferErrors: buffer.getPosonedBufferErrors,
   markBufferHasRevert: buffer.markBufferHasRevert,

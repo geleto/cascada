@@ -80,12 +80,16 @@ class Compiler extends CompilerBase {
     var resolveArgs = node.resolveArgs && node.isAsync;
     const positionNode = args || node; // Prefer args position if available
 
+    if (this.asyncMode) {
+      this.async.updateOutputUsage(frame, 'text');
+    }
+
     let errorContextJson;
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
 
-      frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text');
+      frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text', 'text');
       errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
       this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
       if (noExtensionCallback) {
@@ -175,18 +179,18 @@ class Compiler extends CompilerBase {
       } else {
         this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
       }
-      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text');
+      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text');
     } else {
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
-      frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text');
+      frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text', 'text');
       const errorContextJson2 = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
       if (node.isAsync) {
         this.emit(`await runtime.suppressValueAsync(${res}, ${autoescape} && env.opts.autoescape, ${errorContextJson2});`);
       } else {
         this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
       }
-      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text');
+      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text');
 
       this.emit.addScopeLevel();
     }
@@ -612,23 +616,12 @@ class Compiler extends CompilerBase {
 
     this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
     if (handlerTargetsAll) {
-      const bufferLength = this.asyncMode
-        ? `${this.buffer.currentBuffer}.output.length`
-        : `${this.buffer.currentBuffer}.length`;
       this.emit.line(`  runtime.markBufferReverted(${this.buffer.currentBuffer});`);
       this.emit.line(`  delete ${this.buffer.currentBuffer}._reverted;`);
-      this.emit.line(`  ${bufferLength} = 0;`);
-      //if (this.asyncMode) {
-      this.emit.line(`  ${this.buffer.currentBuffer}._index = 0;`);
-      //}
+      this.emit.line(`  runtime.resetBufferOutputIndexes(${this.buffer.currentBuffer});`);
     } else if (handlerTargets) {
       this.emit.line(`  runtime.revertBufferHandlers(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
-      const bufferLength = this.asyncMode
-        ? `${this.buffer.currentBuffer}.output.length`
-        : `${this.buffer.currentBuffer}.length`;
-      //if (this.asyncMode) {
-      this.emit.line(`  ${this.buffer.currentBuffer}._index = ${bufferLength};`);
-      //}
+      this.emit.line(`  runtime.resetBufferOutputIndexes(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
     }
 
     if (guardStateVar) {
@@ -668,10 +661,13 @@ class Compiler extends CompilerBase {
   }
 
   compileRevert(node, frame) {
-    this.buffer.addToBuffer(node, frame, () => {
-      this.emit(`{ handler: '_', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
-    }, node);
-    this.emit.line(`runtime.markBufferHasRevert(${this.buffer.currentBuffer});`);
+    const revertOutputs = ['text', 'data', 'value'];
+    revertOutputs.forEach((outputName) => {
+      this.buffer.addToBuffer(node, frame, () => {
+        this.emit(`{ handler: '_', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
+      }, node, outputName);
+    });
+    this.emit.line(`runtime.markBufferHasRevert(${this.buffer.currentBuffer}, ${JSON.stringify(revertOutputs)});`);
   }
 
 
@@ -885,6 +881,9 @@ class Compiler extends CompilerBase {
     } else {
       currFrame = frame.new();
     }
+    if (this.asyncMode) {
+      currFrame.declaredOutputs = new Set(['text', 'data', 'value']);
+    }
 
     const oldIsCompilingMacroBody = this.sequential.isCompilingMacroBody; // Save previous state
 
@@ -1066,6 +1065,10 @@ class Compiler extends CompilerBase {
       this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this.emit.line('let output = new runtime.CommandBuffer(context);');
+        this.emit.line('frame.data = output.data;');
+        this.emit.line('frame.text = output.text;');
+        this.emit.line('frame.value = output.value;');
+        f.declaredOutputs = new Set(['text', 'data', 'value']);
 
         this.compile(n.body, f);//write to output
 
@@ -1095,14 +1098,20 @@ class Compiler extends CompilerBase {
       // autoescaped, so simply output it for optimization
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
+          if (this.asyncMode) {
+            this.async.updateOutputUsage(frame, 'text');
+          }
           // Position node is the TemplateData node itself
           this.buffer.addToBuffer(node, frame, function () {
             this.compileLiteral(child, frame);
-          }, child); // Pass TemplateData as position
+          }, child, 'text'); // Pass TemplateData as position
         }
       } else {
+        if (this.asyncMode) {
+          this.async.updateOutputUsage(frame, 'text');
+        }
         // Use the specific child expression node for position
-        frame = this.buffer.asyncAddToBufferBegin(node, frame, child, 'text');
+        frame = this.buffer.asyncAddToBufferBegin(node, frame, child, 'text', 'text');
         const errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, child)) : '';
 
         // In script mode, we use a special suppressor that passes through Result Objects
@@ -1133,7 +1142,7 @@ class Compiler extends CompilerBase {
         }
         this.emit(';\n');
 
-        frame = this.buffer.asyncAddToBufferEnd(node, frame, child, 'text'); // Pass Output node as op, child as pos
+        frame = this.buffer.asyncAddToBufferEnd(node, frame, child, 'text', 'text'); // Pass Output node as op, child as pos
       }
     });
   }
@@ -1204,6 +1213,9 @@ class Compiler extends CompilerBase {
     );
 
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
+    if (this.asyncMode) {
+      frame.declaredOutputs = new Set(['text', 'data', 'value']);
+    }
 
     if (this.asyncMode) {
       // NEW: Pre-declaration pass
@@ -1282,6 +1294,9 @@ class Compiler extends CompilerBase {
         this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
       }
       let tmpFrame = frame.new();//new Frame();
+      if (this.asyncMode) {
+        tmpFrame.declaredOutputs = new Set(['text', 'data', 'value']);
+      }
       this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       this.compile(block.body, tmpFrame);
       this.emit.funcEnd(block);

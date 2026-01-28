@@ -236,7 +236,7 @@ class CompileInheritance {
         if (needsParentCheck) {
           this.emit.line('}');
         }
-      }, node);
+      }, node, null, 'text');
     }
     else {
       let id = this.compiler._tmpid();
@@ -251,7 +251,8 @@ class CompileInheritance {
 
       if (this.compiler.asyncMode) {
         //non-async node but in async mode -> use the proper buffer implementation
-        this.emit(`${this.compiler.buffer.currentBuffer}[index++] = ${id};`);
+        this.compiler.async.updateOutputUsage(frame, 'text');
+        this.emit(`${this.compiler.buffer.currentBuffer}.add(${id}, "text");`);
       } else {
         this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
       }
@@ -347,7 +348,7 @@ class CompileInheritance {
       // that returns the incomplete output array immediately. The master `cb` from the
       // closure is passed for error propagation.
       this.emit.line(`${resultVar} = ${templateVar}._renderForComposition(context.getVariables(), frame, astate, cb);`);
-    }, node);
+    }, node, null, 'text');
   }
 
   compileIncludeSync(node, frame) {
@@ -375,7 +376,8 @@ class CompileInheritance {
     // Adding to buffer is synchronous here
     if (this.compiler.asyncMode) {
       //non-async node but in async mode -> use the proper buffer implementation
-      this.emit.line(`${this.compiler.buffer.currentBuffer}[index++] = result;`);
+      this.compiler.async.updateOutputUsage(frame, 'text');
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.add(result, "text");`);
     } else {
       this.emit.line(`${this.compiler.buffer.currentBuffer} += result;`);
     }

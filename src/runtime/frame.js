@@ -111,6 +111,22 @@ class Frame {
   }
 
   markOutputBufferScope(buffer) {
+    if (buffer && buffer._outputArrays) {
+      const outputArrays = Object.keys(buffer._outputArrays);
+      outputArrays.forEach((name) => {
+        const target = buffer._outputArrays[name];
+        if (target && typeof target === 'object') {
+          target._outputScopeRoot = true;
+          if (target._hasRevert === undefined) {
+            target._hasRevert = false;
+          }
+          target._parentScope = this._revertBuffer || null;
+        }
+      });
+      this._revertBuffer = buffer._outputArrays.text || buffer._outputArrays.output || buffer;
+      return;
+    }
+
     if (buffer && Array.isArray(buffer.output)) {
       buffer = buffer.output;
     }
@@ -164,6 +180,12 @@ class AsyncFrame extends Frame {
       //used when making a snapshot of the frame state when entering an async block
       //passed as argument to pushAsyncBlock in the template source
       this.readVars = undefined;
+
+      //holds the names of outputs declared at this frame
+      this.declaredOutputs = undefined;
+
+      //holds the names of outputs used in this frame or its children
+      this.usedOutputs = undefined;
 
     } else {
       //when an async block is entered, it creates a promise for all variables that it or it's children modify
@@ -519,7 +541,7 @@ class AsyncFrame extends Frame {
     }
   }*/
 
-  pushAsyncBlock(reads, writeCounters, sequentialLoopBody = false) {
+  pushAsyncBlock(reads, writeCounters, sequentialLoopBody = false, usedOutputs = null) {
     let asyncBlockFrame = new AsyncFrame(this, false);
 
     // Track runtime depth for balance validation
@@ -529,6 +551,9 @@ class AsyncFrame extends Frame {
 
     asyncBlockFrame.isAsyncBlock = true;
     asyncBlockFrame.sequentialLoopBody = sequentialLoopBody;
+    if (Array.isArray(usedOutputs)) {
+      asyncBlockFrame.usedOutputs = new Set(usedOutputs);
+    }
     if (reads || writeCounters) {
       asyncBlockFrame.asyncVars = {};
       if (reads) {

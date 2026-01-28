@@ -73,7 +73,12 @@ module.exports = class CompileEmit {
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode) {
+      // note, the below frame.data/text/value assignments are temporarily here
+      // for backward compatibility while we refactor the output implementation
       this.emit(`let ${this.compiler.buffer.currentBuffer} = new runtime.CommandBuffer(context);`);
+      this.line(`frame.data = ${this.compiler.buffer.currentBuffer}.data;`);
+      this.line(`frame.text = ${this.compiler.buffer.currentBuffer}.text;`);
+      this.line(`frame.value = ${this.compiler.buffer.currentBuffer}.value;`);
     } else {
       this.emit(`let ${this.compiler.buffer.currentBuffer} = "";`);
     }
@@ -151,8 +156,8 @@ module.exports = class CompileEmit {
       this.asyncClosureDepth--;
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame, positionNode);
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", false, ${sequentialLoopBody})`);
+      const { readArgs, writeArgs, outputArgs } = this.getAsyncBlockArgs(frame, positionNode);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", false, ${sequentialLoopBody})`);
       this.line(';');
     }
     if (createScope && !node.isAsync) {
@@ -199,8 +204,8 @@ module.exports = class CompileEmit {
 
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame, positionNode);
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", true)`);
+      const { readArgs, writeArgs, outputArgs } = this.getAsyncBlockArgs(frame, positionNode);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", true)`);
 
       this.asyncClosureDepth--;
       frame = frame.pop();
@@ -248,11 +253,11 @@ module.exports = class CompileEmit {
     this.line(`  return ${id};`);
     this.line('}');
     const errorContext = this.compiler._generateErrorContext(node, positionNode);
-    const { readArgs, writeArgs } = this.getAsyncBlockArgs(frame, positionNode);
+    const { readArgs, writeArgs, outputArgs } = this.getAsyncBlockArgs(frame, positionNode);
     if (callbackName) {
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
     } else {
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
     }
 
     frame = frame.pop();
@@ -292,6 +297,9 @@ module.exports = class CompileEmit {
     }
     const readArgs = reads.length ? JSON.stringify(reads) : 'null';
     const writeArgs = frame.writeCounts ? JSON.stringify(frame.writeCounts) : 'null';
-    return { readArgs, writeArgs };
+    const outputArgs = frame.usedOutputs && frame.usedOutputs.size > 0
+      ? JSON.stringify(Array.from(frame.usedOutputs))
+      : 'null';
+    return { readArgs, writeArgs, outputArgs };
   }
 };

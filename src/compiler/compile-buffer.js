@@ -13,7 +13,11 @@ class CompileBuffer {
     this.currentBuffer = null;
     this.bufferStack = [];
     // Temp value ids for split buffer writes (asyncAddToBufferBegin/End), supports nesting.
+    // @otodo - evaluate these buffers, we shall be able to store
+    // the values in the frame, the only probblem is when node.isAsync
+    // is false in asyncMode, then new frame is not created?
     this._bufferValueStack = [];
+    this._bufferAddStack = [];
   }
 
   // === BUFFER STACK MANAGEMENT ===
@@ -28,6 +32,9 @@ class CompileBuffer {
     this.currentBuffer = id;
     if (this.compiler.asyncMode) {
       this.compiler.emit.line(`let ${this.currentBuffer} = new runtime.CommandBuffer(context);`);
+      this.compiler.emit.line(`frame.data = ${this.currentBuffer}.data;`);
+      this.compiler.emit.line(`frame.text = ${this.currentBuffer}.text;`);
+      this.compiler.emit.line(`frame.value = ${this.currentBuffer}.value;`);
     } else {
       this.compiler.emit.line(`let ${this.currentBuffer} = "";`);
     }
@@ -137,6 +144,10 @@ class CompileBuffer {
 
     const isAsync = node.isAsync;
 
+    if (this.compiler.asyncMode) {
+      this.compiler.async.updateOutputUsage(frame, handler);
+    }
+
     // Use a wrapper to avoid duplicating the sync/async logic.
     const wrapper = (emitLogic) => {
       // Revert Command Interception
@@ -153,10 +164,25 @@ class CompileBuffer {
             this.compiler.fail('_revert() can only be called on the handler root (e.g. @data._revert())', node.lineno, node.colno, node);
           }
         }
+        const revertOutputs = new Set(['text', 'data', 'value']);
+        if (frame.usedOutputs) {
+          frame.usedOutputs.forEach(name => revertOutputs.add(name));
+        }
+
+        if (handler === '_') {
+          revertOutputs.forEach((outputName) => {
+            this.addToBuffer(node, frame, () => {
+              this.compiler.emit(`{ handler: '_', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
+            }, node, outputName);
+          });
+          this.compiler.emit.line(`runtime.markBufferHasRevert(${this.currentBuffer}, ${JSON.stringify(Array.from(revertOutputs))});`);
+          return;
+        }
+
         this.addToBuffer(node, frame, () => {
           this.compiler.emit(`{ handler: '${handler}', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
-        }, node);
-        this.compiler.emit.line(`runtime.markBufferHasRevert(${this.currentBuffer});`);
+        }, node, handler);
+        this.compiler.emit.line(`runtime.markBufferHasRevert(${this.currentBuffer}, ${JSON.stringify([handler])});`);
         return;
       }
 
@@ -164,11 +190,11 @@ class CompileBuffer {
         this.asyncAddToBuffer(node, frame, (resultVar, f) => {
           this.compiler.emit(`${resultVar} = `);
           emitLogic(f); // Pass the inner frame to the logic.
-        }, node, handler);
+        }, node, handler, handler);
       } else {
         this.addToBuffer(node, frame, () => {
           emitLogic(frame); // Pass the current frame.
-        }, node);
+        }, node, handler);
       }
     };
 
@@ -221,7 +247,10 @@ class CompileBuffer {
   /**
    * Add value to buffer (sync mode)
    */
-  addToBuffer(node, frame, renderFunction, positionNode = node) {
+  addToBuffer(node, frame, renderFunction, positionNode = node, outputName = null) {
+    if (this.compiler.asyncMode && outputName) {
+      this.compiler.async.updateOutputUsage(frame, outputName);
+    }
     if (this.compiler.asyncMode) {
       this.compiler.emit.line(`${this.currentBuffer}.add(`);
     } else {
@@ -229,6 +258,9 @@ class CompileBuffer {
     }
     renderFunction.call(this.compiler, frame);
     if (this.compiler.asyncMode) {
+      if (outputName) {
+        this.compiler.emit(`, ${JSON.stringify(outputName)}`);
+      }
       this.compiler.emit.line(');');
     } else {
       this.compiler.emit.line(';');
@@ -238,14 +270,21 @@ class CompileBuffer {
   /**
    * Add value to buffer (async mode with error handling)
    */
-  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null) {
+  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null, outputName = null) {
     const returnId = this.compiler._tmpid();
+    if (this.compiler.asyncMode && outputName) {
+      this.compiler.async.updateOutputUsage(frame, outputName);
+    }
     if (node.isAsync) {
       this.compiler.emit.asyncClosureDepth++;
       frame = frame.push(false, false);
 
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
-      this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot();`);
+      if (outputName) {
+        this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot(${JSON.stringify(outputName)});`);
+      } else {
+        this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot();`);
+      }
 
       if (handlerName) {
         // if there is a handler, we need to catch errors and poison the handler/buffer
@@ -254,7 +293,11 @@ class CompileBuffer {
       this.compiler.emit.line(`  let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       this.compiler.emit.line(';');
-      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${returnId});`);
+      if (outputName) {
+        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${returnId}, ${JSON.stringify(outputName)});`);
+      } else {
+        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${returnId});`);
+      }
 
       if (handlerName) {
         // catch errors and poison the handler/buffer
@@ -269,8 +312,8 @@ class CompileBuffer {
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs } = this.compiler.emit.getAsyncBlockArgs(frame, positionNode);
-      this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      const { readArgs, writeArgs, outputArgs } = this.compiler.emit.getAsyncBlockArgs(frame, positionNode);
+      this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
 
       frame = frame.pop();
 
@@ -278,7 +321,11 @@ class CompileBuffer {
       this.compiler.emit.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       if (this.compiler.asyncMode) {
-        this.compiler.emit.line(`${this.currentBuffer}.add(${returnId});`);
+        if (outputName) {
+          this.compiler.emit.line(`${this.currentBuffer}.add(${returnId}, ${JSON.stringify(outputName)});`);
+        } else {
+          this.compiler.emit.line(`${this.currentBuffer}.add(${returnId});`);
+        }
       } else {
         this.compiler.emit.line(`${this.currentBuffer} += ${returnId};`);
       }
@@ -288,10 +335,17 @@ class CompileBuffer {
   /**
    * Begin async buffer addition (split pattern)
    */
-  asyncAddToBufferBegin(node, frame, positionNode = node, handlerName = null) {
+  asyncAddToBufferBegin(node, frame, positionNode = node, handlerName = null, outputName = null) {
+    if (this.compiler.asyncMode && outputName) {
+      this.compiler.async.updateOutputUsage(frame, outputName);
+    }
     if (node.isAsync) {
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame) => {`);
-      this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot();`);
+      if (outputName) {
+        this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot(${JSON.stringify(outputName)});`);
+      } else {
+        this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot();`);
+      }
       const valueId = this.compiler._tmpid();
       this._bufferValueStack.push(valueId);
       if (handlerName) {
@@ -317,14 +371,18 @@ class CompileBuffer {
   /**
    * End async buffer addition (split pattern)
    */
-  asyncAddToBufferEnd(node, frame, positionNode = node, handlerName = null) {
+  asyncAddToBufferEnd(node, frame, positionNode = node, handlerName = null, outputName = null) {
     const valueId = this.compiler.asyncMode ? this._bufferValueStack.pop() : null;
     this.compiler.emit.line(';');
     if (node.isAsync) {
       //const handlerName = this._pendingHandler;
       //this._pendingHandler = null;
 
-      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueId});`);
+      if (outputName) {
+        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueId}, ${JSON.stringify(outputName)});`);
+      } else {
+        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueId});`);
+      }
       if (handlerName) {
         // if there is a handler, we need to catch errors and poison the handler/buffer
         this.compiler.emit.line(`} catch(e) {`);
@@ -337,12 +395,16 @@ class CompileBuffer {
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs } = this.compiler.emit.getAsyncBlockArgs(frame, positionNode);
-      this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      const { readArgs, writeArgs, outputArgs } = this.compiler.emit.getAsyncBlockArgs(frame, positionNode);
+      this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
       return frame.pop();
     }
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`${this.currentBuffer}.add(${valueId});`);
+      if (outputName) {
+        this.compiler.emit.line(`${this.currentBuffer}.add(${valueId}, ${JSON.stringify(outputName)});`);
+      } else {
+        this.compiler.emit.line(`${this.currentBuffer}.add(${valueId});`);
+      }
     }
     return frame;
   }
@@ -359,15 +421,21 @@ class CompileBuffer {
 
       // Push the current buffer onto the stack
       this.bufferStack.push(this.currentBuffer);
+      const parentBuffer = this.currentBuffer;
 
       // Create a new buffer array for the nested block
       const newBuffer = this.compiler._tmpid();
 
       // Initialize the new buffer and its index inside the async closure
       this.compiler.emit.line(`let ${newBuffer} = new runtime.CommandBuffer(context);`);
+      this.compiler.emit.line(`frame.data = ${newBuffer}.data;`);
+      this.compiler.emit.line(`frame.text = ${newBuffer}.text;`);
+      this.compiler.emit.line(`frame.value = ${newBuffer}.value;`);
 
-      // Append the new buffer to the parent buffer
-      this.compiler.emit.line(`${this.currentBuffer}.add(${newBuffer});`);
+      // Defer adding the buffer to the parent until we know which outputs were used.
+      const addPos = this.compiler.codebuf.length;
+      this.compiler.emit.line('');
+      this._bufferAddStack.push({ pos: addPos, parentBuffer, newBuffer });
 
       // Update the buffer reference
       this.currentBuffer = newBuffer;
@@ -385,6 +453,14 @@ class CompileBuffer {
    */
   asyncBufferNodeEnd(node, frame, createScope = false, sequential = false, positionNode = node) {
     if (node.isAsync) {
+      const addInfo = this._bufferAddStack.pop();
+      if (addInfo) {
+        const usedOutputs = frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
+        usedOutputs.forEach((outputName) => {
+          this.compiler.emit.insertLine(addInfo.pos, `${addInfo.parentBuffer}.add(${addInfo.newBuffer}, ${JSON.stringify(outputName)});`);
+        });
+      }
+
       // End the async closure
       frame = this.compiler.emit.asyncBlockEnd(node, frame, createScope, sequential, positionNode);
 

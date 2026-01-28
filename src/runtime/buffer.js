@@ -11,37 +11,114 @@ class CommandBuffer {
   constructor(context) {
     this._context = context;
     this.output = [];
+    this.data = [];
+    this.text = [];
+    this.value = [];
     this._index = 0;
+    this._outputIndexes = Object.create(null);
+    this._outputIndexes.output = 0;
+    this._outputIndexes.data = 0;
+    this._outputIndexes.text = 0;
+    this._outputIndexes.value = 0;
+    this._outputArrays = {
+      output: this.output,
+      data: this.data,
+      text: this.text,
+      value: this.value
+    };
   }
 
-  add(value) {
-    const slot = this._index++;
-    this.output[slot] = value;
+  _getOutputArray(outputName) {
+    const name = outputName || 'output';
+    if (!this._outputArrays[name]) {
+      const arr = [];
+      this._outputArrays[name] = arr;
+      this[name] = arr;
+    }
+    return this._outputArrays[name];
+  }
+
+  _reserveSlot(outputName) {
+    const name = outputName || 'output';
+    if (name === 'output') {
+      return this._index++;
+    }
+    if (this._outputIndexes[name] === undefined) {
+      this._outputIndexes[name] = 0;
+    }
+    return this._outputIndexes[name]++;
+  }
+
+  _setOutputIndex(outputName, nextIndex) {
+    const name = outputName || 'output';
+    if (name === 'output') {
+      this._index = nextIndex;
+      return;
+    }
+    this._outputIndexes[name] = nextIndex;
+  }
+
+  add(value, outputName = null) {
+    const slot = this._reserveSlot(outputName);
+    const target = this._getOutputArray(outputName);
+    target[slot] = value;
     return slot;
   }
 
-  reserveSlot() {
-    return this._index++;
+  reserveSlot(outputName = null) {
+    return this._reserveSlot(outputName);
   }
 
-  fillSlot(slot, value) {
-    this.output[slot] = value;
+  fillSlot(slot, value, outputName = null) {
+    const target = this._getOutputArray(outputName);
+    target[slot] = value;
   }
 }
 
-function resolveBufferArray(buffer) {
+function resolveBufferArray(buffer, outputName = null) {
   if (buffer instanceof CommandBuffer) {
-    return buffer.output;
+    return buffer._getOutputArray(outputName);
   }
   return buffer;
 }
 
+function resolveOutputTargets(buffer, handlerNames = null) {
+  if (!(buffer instanceof CommandBuffer)) {
+    return Array.isArray(buffer) ? [{ name: null, array: buffer }] : [];
+  }
+
+  const allNames = Object.keys(buffer._outputArrays || {});
+  const outputNames = allNames.filter(name => name !== 'output');
+  const hasHandlerList = Array.isArray(handlerNames);
+  const targetsAll = !hasHandlerList ||
+    handlerNames.includes('_') || handlerNames.includes(null);
+
+  const names = targetsAll
+    ? outputNames
+    : handlerNames.filter(name => name && name !== '_');
+
+  if (hasHandlerList && handlerNames.length === 0) {
+    return [];
+  }
+
+  if (names.length === 0 && buffer._outputArrays.output) {
+    return [{ name: 'output', array: buffer._outputArrays.output }];
+  }
+
+  return names.map((name) => ({
+    name,
+    array: buffer._getOutputArray(name)
+  }));
+}
+
 // Flags a buffer scope so later passes know it contains a @_revert command.
-function markBufferHasRevert(buffer) {
-  const target = resolveBufferArray(buffer);
-  if (!Array.isArray(target)) return;
-  target._hasRevert = true;
-  target._revertsProcessed = false;
+function markBufferHasRevert(buffer, handlerNames = null) {
+  const targets = resolveOutputTargets(buffer, handlerNames);
+  targets.forEach(({ array }) => {
+    if (!Array.isArray(array)) return;
+    array._hasRevert = true;
+    array._revertsProcessed = false;
+  });
 }
 
 // Determines which handler a buffer entry belongs to.
@@ -85,11 +162,34 @@ function markBufferReverted(buffer) {
   if (!buffer) {
     return;
   }
-  buffer._reverted = true;
-  const target = resolveBufferArray(buffer);
-  if (Array.isArray(target)) {
-    target.length = 0;
+  if (buffer instanceof CommandBuffer) {
+    buffer._reverted = true;
+    const targets = resolveOutputTargets(buffer, null);
+    targets.forEach(({ name, array }) => {
+      if (Array.isArray(array)) {
+        array.length = 0;
+      }
+      buffer._setOutputIndex(name === 'output' ? null : name, 0);
+    });
+    return;
   }
+
+  buffer._reverted = true;
+  if (Array.isArray(buffer)) {
+    buffer.length = 0;
+  }
+}
+
+function resetBufferOutputIndexes(buffer, handlerNames = null) {
+  if (!(buffer instanceof CommandBuffer)) {
+    return;
+  }
+
+  const targets = resolveOutputTargets(buffer, handlerNames);
+  targets.forEach(({ name, array }) => {
+    const nextIndex = Array.isArray(array) ? array.length : 0;
+    buffer._setOutputIndex(name === 'output' ? null : name, nextIndex);
+  });
 }
 
 // Walks recorded linear nodes backwards and reverts those for a handler.
@@ -135,14 +235,14 @@ function ensureBufferScopeMetadata(buffer) {
 }
 
 // Performs a single linear scan to apply handler-targeted reverts per buffer.
-function processReverts(buffer) {
-  const target = resolveBufferArray(buffer);
+function processReverts(buffer, outputName = null) {
+  const target = resolveBufferArray(buffer, outputName);
   if (!Array.isArray(target) || target._revertsProcessed) return;
-  walkBufferForReverts(target, true);
+  walkBufferForReverts(target, true, null, null, outputName);
 }
 
 // Recursively walks a buffer tree collecting nodes for the linear pass.
-function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinearNodes = null, parentIndexRef = null) {
+function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinearNodes = null, parentIndexRef = null, outputName = null) {
   const isScopeRoot = forceScopeRoot || container._outputScopeRoot === true;
   const linearNodes = isScopeRoot ? [] : inheritedLinearNodes;
 
@@ -160,7 +260,7 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
 
   for (let i = 0; i < container.length; i++) {
     const item = container[i];
-    const resolvedItem = item instanceof CommandBuffer ? item.output : item;
+    const resolvedItem = item instanceof CommandBuffer ? resolveBufferArray(item, outputName) : item;
 
     if (Array.isArray(resolvedItem)) {
       const childIsScope = resolvedItem._outputScopeRoot === true;
@@ -169,7 +269,7 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
 
       if (childIsScope) {
         if (resolvedItem._hasRevert === true) {
-          const childHasRevert = walkBufferForReverts(resolvedItem, false, null, { container, index: i });
+          const childHasRevert = walkBufferForReverts(resolvedItem, false, null, { container, index: i }, outputName);
           if (childHasRevert) {
             resolvedItem._hasRevert = true;
             scopeHasRevert = true;
@@ -186,7 +286,7 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
         continue;
       }
 
-      const childHasRevert = walkBufferForReverts(resolvedItem, false, linearNodes, { container, index: i });
+      const childHasRevert = walkBufferForReverts(resolvedItem, false, linearNodes, { container, index: i }, outputName);
       if (childHasRevert) {
         scopeHasRevert = true;
       }
@@ -248,25 +348,27 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
 }
 
 function revertBufferHandlers(buffer, handlerNames) {
-  const target = resolveBufferArray(buffer);
-  if (!Array.isArray(target)) {
-    return;
-  }
-
   if (!Array.isArray(handlerNames) || handlerNames.length === 0) {
     markBufferReverted(buffer);
     return;
   }
 
-  handlerNames.forEach((handler) => {
-    target.push({
-      handler: handler || 'text',
+  const targets = resolveOutputTargets(buffer, handlerNames);
+  targets.forEach(({ name, array }) => {
+    if (!Array.isArray(array)) {
+      return;
+    }
+    array.push({
+      handler: name || 'text',
       command: '_revert',
       arguments: [],
       pos: null
     });
-    markBufferHasRevert(target);
-    processReverts(target);
+    markBufferHasRevert(array);
+    processReverts(array, name);
+    if (buffer instanceof CommandBuffer) {
+      buffer._setOutputIndex(name, array.length);
+    }
   });
 }
 
@@ -284,7 +386,6 @@ function revertBufferHandlers(buffer, handlerNames) {
  * @param {Object} errorContext - Context object with lineno, colno, errorContextString, and path
  */
 function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorContext = null) {
-  const target = resolveBufferArray(buffer);
   const errors = (Array.isArray(errorOrErrors) ? errorOrErrors : [errorOrErrors]);
 
   // Process errors with proper context if available
@@ -294,17 +395,18 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
     errors;
 
   // Add one marker per handler that would have been written to
-  for (const handlerName of handlerNames) {
+  const targets = resolveOutputTargets(buffer, handlerNames);
+  targets.forEach(({ name, array }) => {
     const marker = {
       __cascadaPoisonMarker: true,  // Flag for detection in flattenBuffer
       errors: processedErrors,       // Array of Error objects to collect (now with proper context)
-      handler: handlerName,        // Which handler was intended (for debugging)
+      handler: name || 'text',        // Which handler was intended (for debugging)
     };
 
-    if (Array.isArray(target)) {
-      target.push(marker);
+    if (Array.isArray(array)) {
+      array.push(marker);
     }
-  }
+  });
 }
 
 function getPosonedBufferErrors(arr, allowedHandlers = null) {
@@ -312,7 +414,14 @@ function getPosonedBufferErrors(arr, allowedHandlers = null) {
   if (!arr) return allErrors;
 
   if (arr instanceof CommandBuffer) {
-    arr = arr.output;
+    const targets = resolveOutputTargets(arr, allowedHandlers);
+    targets.forEach(({ name, array }) => {
+      const nestedErrors = getPosonedBufferErrors(array, allowedHandlers);
+      if (nestedErrors.length > 0) {
+        allErrors.push(...nestedErrors);
+      }
+    });
+    return allErrors;
   }
 
   if (!Array.isArray(arr)) {
@@ -335,7 +444,7 @@ function getPosonedBufferErrors(arr, allowedHandlers = null) {
   for (const item of arr) {
     if (!item) continue;
     if (item instanceof CommandBuffer) {
-      const nestedErrors = getPosonedBufferErrors(item.output, allowedHandlers);
+      const nestedErrors = getPosonedBufferErrors(item, allowedHandlers);
       if (nestedErrors.length > 0) {
         allErrors.push(...nestedErrors);
       }
@@ -376,15 +485,88 @@ function getPosonedBufferErrors(arr, allowedHandlers = null) {
   return allErrors;
 }
 
-function flattenBuffer(arr, context = null, focusOutput = null) {
+function flattenBuffer(arr, context = null, focusOutput = null, outputName = null, sharedState = null) {
   if (arr instanceof CommandBuffer) {
-    arr = arr.output;
+    if (outputName) {
+      return flattenBuffer(resolveBufferArray(arr, outputName), context, focusOutput, outputName, sharedState);
+    }
+    if (!context) {
+      const textArray = resolveBufferArray(arr, 'text');
+      const fallbackArray = (Array.isArray(textArray) && textArray.length > 0)
+        ? textArray
+        : resolveBufferArray(arr, 'output');
+      return flattenBuffer(fallbackArray, null, null, 'text', sharedState);
+    }
+
+    if (focusOutput) {
+      const env = context.env;
+      const handlerExists = focusOutput === 'text' ||
+        env.commandHandlerInstances[focusOutput] ||
+        env.commandHandlerClasses[focusOutput];
+      if (!handlerExists) {
+        throw new Error(`Data output focus target not found: '${focusOutput}'`);
+      }
+    }
+
+    const state = sharedState || {
+      textOutput: [],
+      handlerInstances: {},
+      collectedErrors: []
+    };
+
+    const outputTargets = resolveOutputTargets(arr, null);
+    const outputNames = outputTargets
+      .map(target => target.name)
+      .filter(name => name && name !== 'output');
+
+    const orderedNames = outputNames.includes('text')
+      ? ['text', ...outputNames.filter(name => name !== 'text')]
+      : outputNames.slice();
+
+    if (orderedNames.length === 0) {
+      flattenBuffer(resolveBufferArray(arr, 'output'), context, null, 'text', state);
+    } else {
+      orderedNames.forEach((name) => {
+        flattenBuffer(resolveBufferArray(arr, name), context, null, name, state);
+      });
+    }
+
+    if (sharedState) {
+      return state;
+    }
+
+    if (state.collectedErrors.length > 0) {
+      throw new PoisonError(state.collectedErrors);
+    }
+
+    const finalResult = {};
+    const textResult = state.textOutput.join('');
+    if (textResult) finalResult.text = textResult;
+
+    Object.keys(state.handlerInstances).forEach(handlerName => {
+      const handler = state.handlerInstances[handlerName];
+      if (typeof handler.getReturnValue === 'function') {
+        finalResult[handlerName] = handler.getReturnValue();
+      } else {
+        finalResult[handlerName] = handler;
+      }
+    });
+
+    if (focusOutput) {
+      if (focusOutput === 'text') {
+        return textResult ? textResult : undefined;
+      }
+      return finalResult[focusOutput];
+    }
+
+    return finalResult;
   }
 
   if (Array.isArray(arr)) {
     ensureBufferScopeMetadata(arr);
-    processReverts(arr);
+    processReverts(arr, outputName);
   }
+
   // FAST PATH: If no context, it's a simple template. Concatenate strings and arrays.
   if (!context) {
     if (!Array.isArray(arr)) {
@@ -393,28 +575,26 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
     // Collect errors during fast path processing
     const errors = [];
-
     const result = arr.reduce((acc, item) => {
       // Check for poison marker first
       if (item && typeof item === 'object' && item.__cascadaPoisonMarker === true) {
         if (item.errors && Array.isArray(item.errors)) {
           errors.push(...item.errors);
         }
-        return acc; // Marker consumed, don't add to output
+        return acc;
       }
 
       // Check for regular PoisonedValue
       if (isPoison(item)) {
         errors.push(...item.errors);
-        return acc; // Don't add poison to output
+        return acc;
       }
 
       // Handle nested buffers/arrays (recursive call)
       if (item instanceof CommandBuffer) {
         try {
-          return acc + flattenBuffer(item.output, null, null);
+          return acc + flattenBuffer(resolveBufferArray(item, outputName), null, null, outputName, sharedState);
         } catch (err) {
-          // Child buffer had poison errors
           if (isPoisonError(err)) {
             errors.push(...err.errors);
           } else {
@@ -426,9 +606,8 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
       if (Array.isArray(item)) {
         try {
-          return acc + flattenBuffer(item, null, null);
+          return acc + flattenBuffer(item, null, null, outputName, sharedState);
         } catch (err) {
-          // Child array had poison errors
           if (isPoisonError(err)) {
             errors.push(...err.errors);
           } else {
@@ -456,10 +635,13 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
   }
 
   // Script processing path with poison detection
+  const state = sharedState || {
+    textOutput: [],
+    handlerInstances: {},
+    collectedErrors: []
+  };
+
   const env = context.env;
-  const textOutput = [];
-  const handlerInstances = {};
-  const collectedErrors = []; // Collect ALL errors from poison values
 
   // Validate focusOutput handler exists if specified
   if (focusOutput) {
@@ -472,22 +654,22 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
   }
 
   function getOrInstantiateHandler(handlerName) {
-    if (handlerInstances[handlerName]) {
-      return handlerInstances[handlerName];
+    if (state.handlerInstances[handlerName]) {
+      return state.handlerInstances[handlerName];
     }
     if (env.commandHandlerInstances[handlerName]) {
       const instance = env.commandHandlerInstances[handlerName];
       if (typeof instance._init === 'function') {
         instance._init(context.getVariables());
       }
-      handlerInstances[handlerName] = instance;
+      state.handlerInstances[handlerName] = instance;
       return instance;
     }
     if (env.commandHandlerClasses[handlerName]) {
       const HandlerClass = env.commandHandlerClasses[handlerName];
       // For DataHandler, pass the environment; for other handlers, pass context variables
       const instance = new HandlerClass(context.getVariables(), env);
-      handlerInstances[handlerName] = instance;
+      state.handlerInstances[handlerName] = instance;
       return instance;
     }
     return null;
@@ -508,7 +690,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
       // This marker indicates a handler would have been written to if condition succeeded
       // Collect the errors from the marker
       if (item.errors && Array.isArray(item.errors)) {
-        collectedErrors.push(...item.errors);
+        state.collectedErrors.push(...item.errors);
       }
       return; // Marker is consumed, don't process further
     }
@@ -517,13 +699,13 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
     // Check for regular poison value
     if (isPoison(item)) {
-      collectedErrors.push(...item.errors);
-      return; // Continue to find all errors
+      state.collectedErrors.push(...item.errors);
+      return;
     }
 
     if (item instanceof CommandBuffer) {
       if (item._reverted) return;
-      processItem(item.output);
+      flattenBuffer(resolveBufferArray(item, outputName), context, null, outputName, state);
       return;
     }
 
@@ -552,7 +734,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
           }, '');
 
           if (subErrors.length > 0) {
-            collectedErrors.push(...subErrors);
+            state.collectedErrors.push(...subErrors);
           }
 
           return result;
@@ -582,17 +764,17 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
         // Check args for poison before adding to output
         for (const arg of args) {
           if (isPoison(arg)) {
-            collectedErrors.push(...arg.errors);
-            return; // Don't add poisoned output
+            state.collectedErrors.push(...arg.errors);
+            return;
           }
         }
-        textOutput.push(...args);
+        state.textOutput.push(...args);
       } else {
         // Check args for poison
         for (const arg of args) {
           if (isPoison(arg)) {
-            collectedErrors.push(...arg.errors);
-            return; // Don't call handler with poisoned args
+            state.collectedErrors.push(...arg.errors);
+            return;
           }
         }
 
@@ -607,7 +789,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
               `@${handlerName}`,
               context ? context.path : null
             );
-            collectedErrors.push(err1);
+            state.collectedErrors.push(err1);
             return;
           }
 
@@ -625,7 +807,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
                   `@${handlerName}${subpath ? '.' + subpath.slice(0, subpath.indexOf(pathSegment) + 1).join('.') : ''}`,
                   context ? context.path : null
                 );
-                collectedErrors.push(err2);
+                state.collectedErrors.push(err2);
                 return;
               }
             }
@@ -640,7 +822,6 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
           } else if (!commandName) {
             // The handler may be a Proxy
             try {
-              //the handler may be a Proxy
               commandFunc(...args);
             } catch (e) {
               const err3 = handleError(
@@ -650,7 +831,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
                 `@${handlerName}${subpath ? '.' + subpath.join('.') : ''}`,
                 context ? context.path : null
               );
-              collectedErrors.push(err3);
+              state.collectedErrors.push(err3);
             }
           } else {
             const err5 = handleError(
@@ -660,13 +841,17 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
               `@${handlerName}${subpath ? '.' + subpath.join('.') : ''}${commandName ? '.' + commandName : ''}`,
               context ? context.path : null
             );
-            collectedErrors.push(err5);
+            state.collectedErrors.push(err5);
           }
         } catch (err) {
           const wrappedErr = handleError(err, pos.lineno, pos.colno, `@${handlerName}${subpath ? '.' + subpath.join('.') : ''}${commandName ? '.' + commandName : ''}`, context ? context.path : null);
-          collectedErrors.push(wrappedErr);
+          state.collectedErrors.push(wrappedErr);
         }
       }
+      return;
+    }
+
+    if (outputName !== null && outputName !== 'text') {
       return;
     }
 
@@ -682,7 +867,7 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 
       if (!hasCustomToString && !isPromise) {
         if (item.text) {
-          textOutput.push(item.text);
+          state.textOutput.push(item.text);
         }
         Object.keys(item).forEach(key => {
           if (key === 'text') return;
@@ -699,37 +884,57 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
       }
     }
 
-    textOutput.push(item);
+    state.textOutput.push(item);
   }
 
-  // Process all items (don't short-circuit on errors)
-  arr.forEach(processItem);
+  if (Array.isArray(arr)) {
+    // Process all items (don't short-circuit on errors)
+    arr.forEach(processItem);
+  } else {
+    processItem(arr);
+  }
+
+  if (sharedState) {
+    return state;
+  }
 
   // Check if any errors were collected
-  if (collectedErrors.length > 0) {
-    throw new PoisonError(collectedErrors);
+  if (state.collectedErrors.length > 0) {
+    throw new PoisonError(state.collectedErrors);
+  }
+
+  if (outputName && outputName !== 'text') {
+    const handler = state.handlerInstances[outputName];
+    if (!handler) {
+      return undefined;
+    }
+    return typeof handler.getReturnValue === 'function' ? handler.getReturnValue() : handler;
+  }
+
+  if (focusOutput) {
+    // Handle focused output
+    const handler = state.handlerInstances[focusOutput];
+    if (focusOutput === 'text') {
+      return state.textOutput.join('');
+    }
+    if (!handler) return undefined;
+    return typeof handler.getReturnValue === 'function' ? handler.getReturnValue() : handler;
   }
 
   // Assemble the final result object
   const finalResult = {};
-
-  const textResult = textOutput.join('');
+  const textResult = state.textOutput.join('');
   if (textResult) finalResult.text = textResult;
 
   // Add handler return values to the result
-  Object.keys(handlerInstances).forEach(handlerName => {
-    const handler = handlerInstances[handlerName];
+  Object.keys(state.handlerInstances).forEach(handlerName => {
+    const handler = state.handlerInstances[handlerName];
     if (typeof handler.getReturnValue === 'function') {
       finalResult[handlerName] = handler.getReturnValue();
     } else {
       finalResult[handlerName] = handler;
     }
   });
-
-  // Handle focused output
-  if (focusOutput) {
-    return finalResult[focusOutput];
-  }
 
   return finalResult;
 }
@@ -739,6 +944,7 @@ module.exports = {
   addPoisonMarkersToBuffer,
   flattenBuffer,
   markBufferReverted,
+  resetBufferOutputIndexes,
   revertBufferHandlers,
   markBufferHasRevert,
   getPosonedBufferErrors

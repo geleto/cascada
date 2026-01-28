@@ -449,7 +449,8 @@ class CompileLoop {
     if (parallel) {
       if (this.compiler.asyncMode) {
         //non-async node but in async mode -> use the proper buffer implementation
-        this.compiler.emit(`${this.compiler.buffer.currentBuffer}[index++] = ${output};`);
+        this.compiler.async.updateOutputUsage(frame, 'text');
+        this.compiler.emit(`${this.compiler.buffer.currentBuffer}.add(${output}, "text");`);
       } else {
         this.compiler.emit.line(`${this.compiler.buffer.currentBuffer} += ${output};`);
       }

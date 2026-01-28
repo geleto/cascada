@@ -51,8 +51,20 @@ class AsyncState {
     return this.parent;
   }
 
-  asyncBlock(func, runtime, f, readVars, writeCounts, cb, lineno, colno, context, errorContextString = null, isExpression = false, sequentialAsyncBlock = false) {
-    const childFrame = f.pushAsyncBlock(readVars, writeCounts, sequentialAsyncBlock);
+  asyncBlock(func, runtime, f, readVars, writeCounts, usedOutputs, cb, lineno, colno, context, errorContextString = null, isExpression = false, sequentialAsyncBlock = false) {
+    // Backward-compat: older call sites don't pass usedOutputs.
+    if (typeof usedOutputs === 'function') {
+      sequentialAsyncBlock = isExpression;
+      isExpression = errorContextString;
+      errorContextString = context;
+      context = colno;
+      colno = lineno;
+      lineno = cb;
+      cb = usedOutputs;
+      usedOutputs = null;
+    }
+
+    const childFrame = f.pushAsyncBlock(readVars, writeCounts, sequentialAsyncBlock, usedOutputs);
     const checkInfo = createCheckInfo(cb, runtime, lineno, colno, errorContextString, context);
     const childState = this._enterAsyncBlock(childFrame);
     childState.checkInfo = checkInfo;

@@ -4,8 +4,13 @@ var lib = require('../lib');
 const errors = require('./errors');
 
 function normalizeBufferValue(val) {
-  if (val && typeof val === 'object' && Array.isArray(val.output)) {
-    return val.output;
+  if (val && typeof val === 'object') {
+    if (Array.isArray(val.text)) {
+      return val.text;
+    }
+    if (Array.isArray(val.output)) {
+      return val.output;
+    }
   }
   return val;
 }

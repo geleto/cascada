@@ -160,6 +160,30 @@ module.exports = class CompileAsync {
     }
   }
 
+  updateOutputUsage(frame, outputName) {
+    if (!outputName) {
+      return;
+    }
+
+    let df = frame;
+    while (df) {
+      if (df.declaredOutputs && df.declaredOutputs.has(outputName)) {
+        break;
+      }
+      df = df.parent;
+    }
+
+    let current = frame;
+    while (current) {
+      current.usedOutputs = current.usedOutputs || new Set();
+      current.usedOutputs.add(outputName);
+      if (current === df) {
+        break;
+      }
+      current = current.parent;
+    }
+  }
+
   //within an async block, each set is counted, but when propagating the writes to the parent async block
   //only the first write is propagated
   countsTo1(writeCounts) {
