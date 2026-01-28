@@ -19,10 +19,13 @@ function run(cmd, args, opts = {}) {
   const precompileCode = await run('node', ['scripts/runprecompile.js'], { env });
   if (precompileCode !== 0) process.exit(precompileCode);
 
+  // Run browser tests first
+  const browserCode = await run('npm', ['run', 'test:browser'], { env });
+
   const nodeCode = await run('npm', ['run', 'test:node'], { env });
 
-  // Always run browser tests, passing fullTest so the runner merges coverage and totals
-  const browserCode = await run('npm', ['run', 'test:browser', '--', 'fullTest'], { env });
+  // Report combined results
+  await run('node', ['scripts/report-results.js'], { env });
 
   process.exit(nodeCode !== 0 || browserCode !== 0 ? 1 : 0);
 })();

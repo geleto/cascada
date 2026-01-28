@@ -205,6 +205,15 @@ async function runTests() {
       totalDuration += result.stats.duration;
     }
 
+    // Save browser stats for aggregation
+    const browserStats = {
+      passes: totalPassed,
+      failures: totalFailed,
+      pending: totalPending,
+      duration: totalDuration
+    };
+    await fs.writeFile(path.join(coverageConfig.dir, 'browser-tests-stats.json'), JSON.stringify(browserStats));
+
     // Merge the coverage files from browser tests and Node.js tests
     const coverageMap = libCoverage.createCoverageMap({});
     for (const file of coverageConfig.files) {
