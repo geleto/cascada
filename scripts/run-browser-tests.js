@@ -162,6 +162,7 @@ async function runTests() {
   let totalFailed = 0;
   let totalPending = 0;
   let totalDuration = 0;
+  const fileResults = {};
 
   // Node stats (populated only in full test flow)
   let nodeStats = null;
@@ -192,6 +193,7 @@ async function runTests() {
     for (const testFile of testFiles) {
       console.log(`\nRunning tests for ${testFile}...`);
       const result = await runTestFile(browser, port, testFile);
+      fileResults[testFile] = result.stats;
 
       if (result.stats.failures > 0) {
         overallTestsPassed = false;
@@ -269,8 +271,8 @@ async function runTests() {
         const statsPath = path.join(__dirname, '../coverage/node-tests-stats.json');
         const statsRaw = await fs.readFile(statsPath, 'utf8');
         nodeStats = JSON.parse(statsRaw);
-      // eslint-disable-next-line no-empty
-      } catch (_) {}
+        // eslint-disable-next-line no-empty
+      } catch (_) { }
 
       const combinedPassed = (nodeStats?.passes || 0) + totalPassed;
       const combinedFailed = (nodeStats?.failures || 0) + totalFailed;
@@ -285,6 +287,19 @@ async function runTests() {
       console.log(chalk.green(`${combinedPassed} passing (${durationSec}s)`));
       console.log(chalk.cyan(`${combinedPending} pending`));
       console.log(chalk.red(`${combinedFailed} failing (${nodeFail} node, ${browserFail} browser)\n`));
+    } else {
+      const durationSec = Math.round(totalDuration / 1000);
+
+      console.log('\nBROWSER TOTALS:');
+      for (const [fileName, stats] of Object.entries(fileResults)) {
+        if (!stats) continue;
+        const d = Math.round(stats.duration / 1000);
+        console.log(`${fileName}: ${chalk.green(stats.passes + ' passing')} ${chalk.cyan(stats.pending + ' pending')} ${chalk.red(stats.failures + ' failing')} (${d}s)`);
+      }
+      console.log('---------------------------------------------------');
+      console.log(chalk.green(`${totalPassed} passing (${durationSec}s)`));
+      console.log(chalk.cyan(`${totalPending} pending`));
+      console.log(chalk.red(`${totalFailed} failing\n`));
     }
 
     if (browser) {
