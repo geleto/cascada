@@ -115,3 +115,123 @@ This implementation provides incremental snapshot support for Cascada's output h
   * If resolved → return handler's flattened data (by reference), store snapshot pointer in command, set snapshot taken flag for this handler
   * If not resolved → create and store promise + resolve function in command, return promise
 * Multiple snapshots at same position return the stored promise
+
+---
+
+## Future Tests Section
+
+The following functionality may not be fully implemented yet or requires additional features. These tests should be added once the corresponding features are ready:
+
+### Guard Operations with Outputs
+
+**Future Test: Guard block with outputs**
+- Guard block that declares and uses outputs
+- Verify guard reset behavior with outputs
+- Test guard failures with partial output state
+
+**Future Test: Guard revert interaction**
+- Guard that modifies output then fails
+- Verify output reverted on guard failure
+
+### Advanced Snapshot Caching (Phase 8)
+
+**Future Test: Snapshot caching**
+- Multiple snapshots at same point
+- Verify second snapshot is cached (performance)
+
+**Future Test: Snapshot cache invalidation**
+- Take snapshot, modify output, take snapshot again
+- Verify second snapshot reflects changes
+
+**Future Test: Snapshot during pending async**
+- Try to snapshot while async operations pending
+- Verify appropriate behavior (wait/error/partial)
+
+### Circular Reference Handling
+
+**Future Test: Circular reference in data**
+- Create circular object structure
+- Try to snapshot
+- Verify error or serialization handling
+
+### Advanced Error Propagation
+
+**Future Test: Poison propagation through outputs**
+- Async operation fails while writing to output
+- Verify poison error propagates correctly
+- Test snapshot of poisoned output
+
+**Future Test: Multiple errors in output**
+- Multiple operations fail
+- Verify all errors collected
+
+### Performance and Limits
+
+**Future Test: Very large data output**
+- Set thousands of properties
+- Verify performance acceptable
+- Test snapshot of large data
+
+**Future Test: Deep nesting limits**
+- Test extremely deep nesting (100+ levels)
+- Verify no stack overflow
+
+### Advanced Sink Features
+
+**Future Test: Sink with async methods**
+- Sink methods that return promises
+- Verify async handling
+
+**Future Test: Sink state persistence**
+- Sink maintains state across calls
+- Verify state correct in snapshot
+
+### Extended Path Operations
+
+**Future Test: Array index in paths**
+- `myData.set('items[0].name', 'value')`
+- Verify array indexing in paths works
+
+**Future Test: Dynamic path segments**
+- Path segments from variables
+- `myData.set([varKey, 'nested'], value)`
+
+### Composition Mode Interactions
+
+**Future Test: Outputs in composition mode**
+- Template in composition mode with outputs
+- Verify inheritance/isolation correct
+
+### Extended Macro/Caller Scenarios
+
+**Future Test: Caller inside caller**
+- Nested caller blocks
+- Complex data flow
+- Verify all outputs accessible correctly
+
+**Future Test: Macro returning output object (not snapshot)**
+- Macro returns the output handler itself
+- Using it outside macro
+- Verify behavior (error? works?)
+
+### Unicode and Special Identifiers
+
+**Future Test: Unicode output names**
+- `data 数据;`, `text выход;`
+- Verify unicode identifiers work if supported
+
+**Future Test: Reserved keyword conflicts**
+- Try to use reserved words as output names
+- Verify appropriate error
+
+### Integration with Other Features
+
+**Future Test: Outputs with filters**
+- Use outputs in filter expressions
+- Verify correct evaluation
+
+**Future Test: Outputs in set tags**
+- Assign output snapshot to variable via set tag
+- Verify works correctly
+
+---
