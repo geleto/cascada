@@ -138,6 +138,11 @@ class Revert extends Node {
   get fields() { return []; }
 }
 
+class Return extends Node {
+  get typename() { return 'Return'; }
+  get fields() { return ['value']; }
+}
+
 class InlineIf extends Node {
   get typename() { return 'InlineIf'; }
   get fields() { return ['cond', 'body', 'else_']; }
@@ -461,6 +466,7 @@ module.exports = {
   While: While,
   Guard: Guard,
   Revert: Revert,
+  Return: Return,
   AsyncEach: AsyncEach,
   AsyncAll: AsyncAll,
   Macro: Macro,

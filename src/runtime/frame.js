@@ -13,6 +13,8 @@ const {
   ENABLE_FRAME_BALANCE_CHECK
 } = require('./checks');
 
+const { flattenBuffer } = require('./buffer');
+
 // Frames keep track of scoping both at compile-time and run-time so
 // we know how to access variables. Block tags can introduce special
 // variables, for example.
@@ -90,6 +92,9 @@ class Frame {
 
   push(isolateWrites, _createScope) {
     const newFrame = new Frame(this, isolateWrites);
+    if (this._seesRootScope) {
+      newFrame._seesRootScope = true;
+    }
 
     // Use the imported flag directly since we added it to top-level imports
     if (ENABLE_FRAME_BALANCE_CHECK) {
@@ -503,6 +508,9 @@ class AsyncFrame extends Frame {
 
   push(isolateWrites, createScope = true) {
     const newFrame = new AsyncFrame(this, isolateWrites, createScope);
+    if (this._seesRootScope) {
+      newFrame._seesRootScope = true;
+    }
 
     if (ENABLE_FRAME_BALANCE_CHECK) {
       newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
@@ -688,7 +696,36 @@ class AsyncFrame extends Frame {
   }
 }
 
+class OutputHandler {
+  constructor(frame, outputName, context) {
+    this._frame = frame;
+    this._outputName = outputName;
+    this._context = context;
+  }
+
+  // @todo - get rid of focusOverride later
+  snapshot() {
+    const focus = this._outputName === 'output' ? null : this._outputName;
+    return this._snapshotFocus(focus);
+  }
+
+  _snapshotFocus(focusName) {
+    const buffer = this._frame._outputBuffer;
+    if (buffer) {
+      return flattenBuffer(buffer, this._context, focusName || null);
+    }
+
+    const outputArray = this._frame[this._outputName];
+    if (!outputArray) {
+      return this._outputName === 'text' ? '' : undefined;
+    }
+
+    return flattenBuffer(outputArray, this._context, focusName || null, this._outputName);
+  }
+}
+
 module.exports = {
   Frame,
-  AsyncFrame
+  AsyncFrame,
+  OutputHandler
 };

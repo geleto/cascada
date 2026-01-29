@@ -1065,9 +1065,7 @@ class Compiler extends CompilerBase {
       this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this.emit.line('let output = new runtime.CommandBuffer(context);');
-        this.emit.line('frame.data = output.data;');
-        this.emit.line('frame.text = output.text;');
-        this.emit.line('frame.value = output.value;');
+        this.emit.initOutputHandlers('output');
         f.declaredOutputs = new Set(['text', 'data', 'value']);
 
         this.compile(n.body, f);//write to output
@@ -1213,9 +1211,12 @@ class Compiler extends CompilerBase {
     );
 
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
+    frame._seesRootScope = true;
+
     if (this.asyncMode) {
       frame.declaredOutputs = new Set(['text', 'data', 'value']);
     }
+
 
     if (this.asyncMode) {
       // NEW: Pre-declaration pass
@@ -1346,6 +1347,56 @@ class Compiler extends CompilerBase {
         this.emit.line(';');
       });
     }
+  }
+
+  compileReturn(node, frame) {
+    const returnTarget = (frame && frame._seesRootScope) ? 'root' : 'function';
+    const hasValue = !!node.value;
+
+    if (this.asyncMode) {
+      const resultVar = this._tmpid();
+      if (returnTarget === 'root') {
+        const errorContext = this._generateErrorContext(node);
+        this.emit.line('return astate.waitAllClosures(0).then(async () => {');
+        this.emit(`  let ${resultVar} = `);
+        if (hasValue) {
+          this._compileExpression(node.value, frame, true, node);
+        } else {
+          this.emit('undefined');
+        }
+        this.emit.line(';');
+        this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
+        this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
+        this.emit.line('  cb(null, resolved);');
+        this.emit.line('}).catch(e => {');
+        this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${errorContext}", context.path);`);
+        this.emit.line('  cb(err);');
+        this.emit.line('});');
+      } else {
+        this.emit.line('return astate.waitAllClosures(0).then(async () => {');
+        this.emit(`  let ${resultVar} = `);
+        if (hasValue) {
+          this._compileExpression(node.value, frame, true, node);
+        } else {
+          this.emit('undefined');
+        }
+        this.emit.line(';');
+        this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
+        this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
+        this.emit.line('  return resolved;');
+        this.emit.line('});');
+      }
+      return;
+    }
+
+    this.emit('cb(null, ');
+    if (hasValue) {
+      this._compileExpression(node.value, frame, false, node);
+    } else {
+      this.emit('undefined');
+    }
+    this.emit.line(');');
+    this.emit.line('return;');
   }
 
 

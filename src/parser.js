@@ -959,6 +959,21 @@ class Parser extends Obj {
     return new nodes.Revert(tag.lineno, tag.colno);
   }
 
+  parseReturn() {
+    const tag = this.peekToken();
+    if (!this.skipSymbol('return')) {
+      this.fail('parseReturn: expected return', tag.lineno, tag.colno);
+    }
+
+    let value = null;
+    if (this.peekToken().type !== lexer.TOKEN_BLOCK_END) {
+      value = this.parseExpression();
+    }
+
+    this.advanceAfterBlockEnd(tag.value);
+    return new nodes.Return(tag.lineno, tag.colno, value);
+  }
+
   parseStatement() {
     var tok = this.peekToken();
     var node;
@@ -1022,6 +1037,8 @@ class Parser extends Obj {
         return this.parseGuard();
       case 'revert':
         return this.parseRevert();
+      case 'return':
+        return this.parseReturn();
       default:
         if (this.extensions.length) {
           for (let i = 0; i < this.extensions.length; i++) {

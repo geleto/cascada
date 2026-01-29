@@ -32,9 +32,7 @@ class CompileBuffer {
     this.currentBuffer = id;
     if (this.compiler.asyncMode) {
       this.compiler.emit.line(`let ${this.currentBuffer} = new runtime.CommandBuffer(context);`);
-      this.compiler.emit.line(`frame.data = ${this.currentBuffer}.data;`);
-      this.compiler.emit.line(`frame.text = ${this.currentBuffer}.text;`);
-      this.compiler.emit.line(`frame.value = ${this.currentBuffer}.value;`);
+      this.compiler.emit.initOutputHandlers(this.currentBuffer);
     } else {
       this.compiler.emit.line(`let ${this.currentBuffer} = "";`);
     }
@@ -428,9 +426,7 @@ class CompileBuffer {
 
       // Initialize the new buffer and its index inside the async closure
       this.compiler.emit.line(`let ${newBuffer} = new runtime.CommandBuffer(context);`);
-      this.compiler.emit.line(`frame.data = ${newBuffer}.data;`);
-      this.compiler.emit.line(`frame.text = ${newBuffer}.text;`);
-      this.compiler.emit.line(`frame.value = ${newBuffer}.value;`);
+      this.compiler.emit.initOutputHandlers(newBuffer);
 
       // Defer adding the buffer to the parent until we know which outputs were used.
       const addPos = this.compiler.codebuf.length;

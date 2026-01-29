@@ -76,13 +76,24 @@ module.exports = class CompileEmit {
       // note, the below frame.data/text/value assignments are temporarily here
       // for backward compatibility while we refactor the output implementation
       this.emit(`let ${this.compiler.buffer.currentBuffer} = new runtime.CommandBuffer(context);`);
-      this.line(`frame.data = ${this.compiler.buffer.currentBuffer}.data;`);
-      this.line(`frame.text = ${this.compiler.buffer.currentBuffer}.text;`);
-      this.line(`frame.value = ${this.compiler.buffer.currentBuffer}.value;`);
+      this.initOutputHandlers(this.compiler.buffer.currentBuffer);
     } else {
       this.emit(`let ${this.compiler.buffer.currentBuffer} = "";`);
     }
     this.line('try {');
+  }
+
+  initOutputHandlers(bufferVar) {
+    this.line(`frame._outputBuffer = ${bufferVar};`);
+    this.line(`frame.data = ${bufferVar}.data;`);
+    this.line(`frame.text = ${bufferVar}.text;`);
+    this.line(`frame.value = ${bufferVar}.value;`);
+    this.line('frame._outputs = {');
+    this.line('  data: new runtime.OutputHandler(frame, "data", context),');
+    this.line('  text: new runtime.OutputHandler(frame, "text", context),');
+    this.line('  value: new runtime.OutputHandler(frame, "value", context),');
+    this.line('  output: new runtime.OutputHandler(frame, "output", context)');
+    this.line('};');
   }
 
   funcEnd(node, noReturn) { // Added node parameter

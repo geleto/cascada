@@ -102,7 +102,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'option', 'var', 'extern'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'option', 'var', 'extern', 'return'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -1352,6 +1352,28 @@ class ScriptTranspiler {
 
     // Validate block structure
     this._validateBlockStructure(processedLines);
+
+    const hasExplicitReturn = processedLines.some(line => line.tagName === 'return');
+    let focusDirective = null;
+    processedLines.forEach((line) => {
+      if (line.tagName !== 'option') {
+        return;
+      }
+      const match = line.codeContent && line.codeContent.match(/focus\s*=\s*["']([^"']+)["']/);
+      if (match && match[1]) {
+        focusDirective = match[1];
+      }
+    });
+
+    if (!hasExplicitReturn) {
+      const implicitReturn = focusDirective
+        ? `{%- return @output._snapshotFocus("${focusDirective}") -%}`
+        : '{%- return @output.snapshot() -%}';
+      if (output.length > 0) {
+        output += '\n';
+      }
+      output += implicitReturn;
+    }
 
     return output;
   }

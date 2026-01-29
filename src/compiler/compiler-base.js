@@ -319,6 +319,15 @@ class CompilerBase extends Obj {
   compileSymbol(node, frame) {
 
     let name = node.value;
+    if (name && name.startsWith('@')) {
+      const outputName = name.substring(1);
+      if (!outputName) {
+        this.fail('Invalid output handler reference "@": missing handler name', node.lineno, node.colno, node);
+      }
+      this.emit(`runtime.getOutputHandler(frame, "${outputName}")`);
+      return;
+    }
+
     let v = frame.lookup(name);
     // @todo - omit this for function calls?
     // (parent instanceof nodes.FunCall && parent.name === node)

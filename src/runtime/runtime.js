@@ -133,6 +133,14 @@ module.exports = {
   // Frame classes
   Frame: frame.Frame,
   AsyncFrame: frame.AsyncFrame,
+  OutputHandler: frame.OutputHandler,
+  getOutputHandler(f, outputName) {
+    let current = f;
+    while (current && !current._outputs) {
+      current = current.parent;
+    }
+    return current && current._outputs ? current._outputs[outputName] : undefined;
+  },
 
   AsyncState: require('./async-state').AsyncState,
 
