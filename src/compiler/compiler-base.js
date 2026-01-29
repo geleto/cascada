@@ -319,6 +319,14 @@ class CompilerBase extends Obj {
   compileSymbol(node, frame) {
 
     let name = node.value;
+    const declaredOutput = this.async._getDeclaredOutput(frame, name);
+    if (declaredOutput && !declaredOutput.implicit) {
+      if (this.asyncMode) {
+        this.async.updateOutputUsage(frame, name, node);
+      }
+      this.emit(`runtime.getOutputHandler(frame, "${name}")`);
+      return;
+    }
     if (name && name.startsWith('@')) {
       const outputName = name.substring(1);
       if (!outputName) {

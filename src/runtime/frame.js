@@ -13,7 +13,6 @@ const {
   ENABLE_FRAME_BALANCE_CHECK
 } = require('./checks');
 
-const { flattenBuffer } = require('./buffer');
 
 // Frames keep track of scoping both at compile-time and run-time so
 // we know how to access variables. Block tags can introduce special
@@ -696,36 +695,7 @@ class AsyncFrame extends Frame {
   }
 }
 
-class OutputHandler {
-  constructor(frame, outputName, context) {
-    this._frame = frame;
-    this._outputName = outputName;
-    this._context = context;
-  }
-
-  // @todo - get rid of focusOverride later
-  snapshot() {
-    const focus = this._outputName === 'output' ? null : this._outputName;
-    return this._snapshotFocus(focus);
-  }
-
-  _snapshotFocus(focusName) {
-    const buffer = this._frame._outputBuffer;
-    if (buffer) {
-      return flattenBuffer(buffer, this._context, focusName || null);
-    }
-
-    const outputArray = this._frame[this._outputName];
-    if (!outputArray) {
-      return this._outputName === 'text' ? '' : undefined;
-    }
-
-    return flattenBuffer(outputArray, this._context, focusName || null, this._outputName);
-  }
-}
-
 module.exports = {
   Frame,
-  AsyncFrame,
-  OutputHandler
+  AsyncFrame
 };

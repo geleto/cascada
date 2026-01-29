@@ -102,7 +102,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'option', 'var', 'extern', 'return'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'option', 'var', 'extern', 'return', 'data', 'text', 'value', 'sink'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -1037,6 +1037,17 @@ class ScriptTranspiler {
     parseResult.blockType = null; // extern is always a line tag
   }
 
+  _isOutputDeclarationLine(firstWord, codeContent) {
+    if (!firstWord || !codeContent) return false;
+    if (firstWord === 'sink') {
+      return /^sink\s+[A-Za-z_][A-Za-z0-9_]*\s*=/.test(codeContent);
+    }
+    if (firstWord === 'data' || firstWord === 'text' || firstWord === 'value') {
+      return new RegExp(`^${firstWord}\\s+[A-Za-z_][A-Za-z0-9_]*\\s*$`).test(codeContent);
+    }
+    return false;
+  }
+
   /**
    * Only '@text' needs more validations and continuation handling because the content is
    * between the '()' and for other cases content goes directly to the template tag unmodified
@@ -1084,6 +1095,14 @@ class ScriptTranspiler {
       this._processVar(parseResult, lineIndex);
     } else if (firstWord === 'extern') {
       this._processExtern(parseResult, lineIndex);
+    } else if (this._isOutputDeclarationLine(firstWord, code)) {
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = firstWord;
+      parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1).trim();
+      parseResult.blockType = null;
+    } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'value' || firstWord === 'sink') &&
+      this._isAssignment(code, lineIndex)) {
+      this._processVar(parseResult, lineIndex, true);
     } else if (firstWord === 'endcapture') {
       if (this.setBlockStack.length === 0) {
         throw new Error(`Unexpected 'endcapture' at line ${lineIndex + 1} - no matching var/set block found`);

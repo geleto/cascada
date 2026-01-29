@@ -88,11 +88,15 @@ module.exports = class CompileEmit {
     this.line(`frame.data = ${bufferVar}.data;`);
     this.line(`frame.text = ${bufferVar}.text;`);
     this.line(`frame.value = ${bufferVar}.value;`);
+    this.line(`${bufferVar}._outputTypes = ${bufferVar}._outputTypes || Object.create(null);`);
+    this.line(`${bufferVar}._outputTypes.data = "data";`);
+    this.line(`${bufferVar}._outputTypes.text = "text";`);
+    this.line(`${bufferVar}._outputTypes.value = "value";`);
     this.line('frame._outputs = {');
-    this.line('  data: new runtime.OutputHandler(frame, "data", context),');
-    this.line('  text: new runtime.OutputHandler(frame, "text", context),');
-    this.line('  value: new runtime.OutputHandler(frame, "value", context),');
-    this.line('  output: new runtime.OutputHandler(frame, "output", context)');
+    this.line('  data: runtime.createOutput(frame, "data", context, "data"),');
+    this.line('  text: runtime.createOutput(frame, "text", context, "text"),');
+    this.line('  value: runtime.createOutput(frame, "value", context, "value"),');
+    this.line('  output: runtime.createOutput(frame, "output", context, "text")');
     this.line('};');
   }
 

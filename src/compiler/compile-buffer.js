@@ -137,6 +137,8 @@ class CompileBuffer {
 
     // Extract handler, subpath, and command from static path
     const handler = staticPath[0];
+    const outputDecl = this.compiler.async._getDeclaredOutput(frame, handler);
+    const outputType = outputDecl ? outputDecl.type : null;
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
     const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
 
@@ -209,7 +211,7 @@ class CompileBuffer {
       const asyncArgs = argList.isAsync;
       this.compiler.emit('arguments: ' + (asyncArgs ? 'await ' : ''));
 
-      if (handler === 'data') {
+      if (handler === 'data' || outputType === 'data') {
         // For @data commands, we create a new "virtual" AST for the arguments.
         // where the first argument is a path like "user.posts[0].title" that
         // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].

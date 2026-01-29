@@ -681,6 +681,34 @@ class Parser extends Obj {
     return node;
   }
 
+  parseOutputDeclaration() {
+    const tag = this.peekToken();
+    const outputType = tag.value;
+    if (!this.skipSymbol(outputType)) {
+      this.fail('parseOutputDeclaration: expected output declaration', tag.lineno, tag.colno);
+    }
+
+    const nameNode = this.parsePrimary();
+    if (!(nameNode instanceof nodes.Symbol)) {
+      this.fail('parseOutputDeclaration: output name expected', tag.lineno, tag.colno);
+    }
+
+    let initializer = null;
+    if (outputType === 'sink') {
+      if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+        this.fail('parseOutputDeclaration: sink outputs must have an initializer', tag.lineno, tag.colno);
+      }
+      initializer = this.parseExpression();
+    } else {
+      if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+        this.fail(`parseOutputDeclaration: ${outputType} outputs cannot have initializers`, tag.lineno, tag.colno);
+      }
+    }
+
+    this.advanceAfterBlockEnd(tag.value);
+    return new nodes.OutputDeclaration(tag.lineno, tag.colno, outputType, nameNode, initializer);
+  }
+
   parseExtern() {
     const tag = this.peekToken();
     if (!this.skipSymbol('extern')) {
@@ -1013,6 +1041,11 @@ class Parser extends Obj {
         return this.parseSetPath();
       case 'var':
         return this.parseVar();
+      case 'data':
+      case 'text':
+      case 'value':
+      case 'sink':
+        return this.parseOutputDeclaration();
       case 'macro':
         return this.parseMacro();
       case 'call':

@@ -10,7 +10,8 @@ const asyncOperationNodes = new Set([
 
 const {
   ENABLE_READVARS_VALIDATION,
-  markReadVarPassThrough
+  markReadVarPassThrough,
+  validateDeclarationScope
 } = require('./validation');
 
 module.exports = class CompileAsync {
@@ -182,6 +183,38 @@ module.exports = class CompileAsync {
       }
       current = current.parent;
     }
+  }
+
+  _addDeclaredOutput(frame, name, outputType, initializer = null, node = null) {
+    validateDeclarationScope(frame, name, this.compiler, node);
+    frame.declaredOutputs = frame.declaredOutputs || new Map();
+
+    if (frame.declaredOutputs.has(name)) {
+      const existing = frame.declaredOutputs.get(name);
+      if (!existing || !existing.implicit) {
+        this.compiler.fail(`Output '${name}' already declared`, node && node.lineno, node && node.colno, node || undefined);
+      }
+    }
+
+    if (this.compiler._isDeclared(frame, name)) {
+      this.compiler.fail(`Cannot declare output '${name}' because a variable with the same name is already declared`, node && node.lineno, node && node.colno, node || undefined);
+    }
+
+    frame.declaredOutputs.set(name, {
+      type: outputType,
+      initializer: initializer || null,
+      implicit: false
+    });
+  }
+
+  _getDeclaredOutput(frame, name) {
+    while (frame) {
+      if (frame.declaredOutputs && frame.declaredOutputs.has(name)) {
+        return frame.declaredOutputs.get(name);
+      }
+      frame = frame.parent;
+    }
+    return null;
   }
 
   //within an async block, each set is counted, but when propagating the writes to the parent async block

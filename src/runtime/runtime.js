@@ -6,8 +6,10 @@ const sequential = require('./sequential');
 const lookup = require('./lookup');
 const call = require('./call');
 const frame = require('./frame');
+const output = require('./output');
 const resolve = require('./resolve');
 const buffer = require('./buffer');
+const { flattenBuffer } = require('./flatten-buffer');
 const guard = require('./guard');
 const loop = require('./loop');
 const outputValue = require('./safe-output');
@@ -133,14 +135,14 @@ module.exports = {
   // Frame classes
   Frame: frame.Frame,
   AsyncFrame: frame.AsyncFrame,
-  OutputHandler: frame.OutputHandler,
-  getOutputHandler(f, outputName) {
-    let current = f;
-    while (current && !current._outputs) {
-      current = current.parent;
-    }
-    return current && current._outputs ? current._outputs[outputName] : undefined;
-  },
+  Output: output.Output,
+  DataOutput: output.DataOutput,
+  TextOutput: output.TextOutput,
+  ValueOutput: output.ValueOutput,
+  createOutput: output.createOutput,
+  SinkOutputHandler: output.SinkOutputHandler,
+  createSinkOutput: output.createSinkOutput,
+  getOutputHandler: output.getOutputHandler,
 
   AsyncState: require('./async-state').AsyncState,
 
@@ -166,7 +168,7 @@ module.exports = {
   createObject: resolve.createObject,
   createArray: resolve.createArray,
 
-  flattenBuffer: buffer.flattenBuffer,
+  flattenBuffer: flattenBuffer,
   CommandBuffer: buffer.CommandBuffer,
   addPoisonMarkersToBuffer: buffer.addPoisonMarkersToBuffer,
   markBufferReverted: buffer.markBufferReverted,

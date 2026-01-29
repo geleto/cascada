@@ -237,6 +237,11 @@ class Set extends Node {
   get fields() { return ['targets', 'value', 'varType']; }
 }
 
+class OutputDeclaration extends Node {
+  get typename() { return 'OutputDeclaration'; }
+  get fields() { return ['outputType', 'name', 'initializer']; }
+}
+
 class Switch extends Node {
   get typename() { return 'Switch'; }
   get fields() { return ['expr', 'cases', 'default']; }
@@ -482,6 +487,7 @@ module.exports = {
   Extends: Extends,
   Include: Include,
   Set: Set,
+  OutputDeclaration: OutputDeclaration,
   Switch: Switch,
   Case: Case,
   LookupVal: LookupVal,

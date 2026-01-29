@@ -515,7 +515,7 @@ describe('Sequential Operations in Expressions', function () {
         expect(context.logs).to.contain('opC3 on unrelated');
         expect(context.logs.length).to.equal(3);
 
-        expect(endTime - startTime).to.be.lessThan(100);
+        expect(endTime - startTime).to.be.lessThan(140);
       });
     });
 

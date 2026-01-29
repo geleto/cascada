@@ -44,11 +44,23 @@ class Compiler extends CompilerBase {
   _addDeclaredVar(frame, varName) {
     if (this.asyncMode || this.scriptMode) {
       validateDeclarationScope(frame, varName, this, null);
+      const outputDecl = this.async._getDeclaredOutput(frame, varName);
+      if (outputDecl && !outputDecl.implicit) {
+        this.fail(`Cannot declare variable '${varName}' because an output with the same name is already declared.`);
+      }
       if (!frame.declaredVars) {
         frame.declaredVars = new Set();
       }
       frame.declaredVars.add(varName);
     }
+  }
+
+  _createDefaultOutputDeclarations() {
+    return new Map([
+      ['text', { type: 'text', initializer: null, implicit: true }],
+      ['data', { type: 'data', initializer: null, implicit: true }],
+      ['value', { type: 'value', initializer: null, implicit: true }]
+    ]);
   }
 
 
@@ -882,7 +894,7 @@ class Compiler extends CompilerBase {
       currFrame = frame.new();
     }
     if (this.asyncMode) {
-      currFrame.declaredOutputs = new Set(['text', 'data', 'value']);
+      currFrame.declaredOutputs = this._createDefaultOutputDeclarations();
     }
 
     const oldIsCompilingMacroBody = this.sequential.isCompilingMacroBody; // Save previous state
@@ -1066,7 +1078,7 @@ class Compiler extends CompilerBase {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this.emit.line('let output = new runtime.CommandBuffer(context);');
         this.emit.initOutputHandlers('output');
-        f.declaredOutputs = new Set(['text', 'data', 'value']);
+        f.declaredOutputs = this._createDefaultOutputDeclarations();
 
         this.compile(n.body, f);//write to output
 
@@ -1214,7 +1226,7 @@ class Compiler extends CompilerBase {
     frame._seesRootScope = true;
 
     if (this.asyncMode) {
-      frame.declaredOutputs = new Set(['text', 'data', 'value']);
+      frame.declaredOutputs = this._createDefaultOutputDeclarations();
     }
 
 
@@ -1296,7 +1308,7 @@ class Compiler extends CompilerBase {
       }
       let tmpFrame = frame.new();//new Frame();
       if (this.asyncMode) {
-        tmpFrame.declaredOutputs = new Set(['text', 'data', 'value']);
+        tmpFrame.declaredOutputs = this._createDefaultOutputDeclarations();
       }
       this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       this.compile(block.body, tmpFrame);
@@ -1397,6 +1409,43 @@ class Compiler extends CompilerBase {
     }
     this.emit.line(');');
     this.emit.line('return;');
+  }
+
+  compileOutputDeclaration(node, frame) {
+    if (!this.asyncMode) {
+      this.fail('Output declarations are only supported in async mode', node.lineno, node.colno, node);
+    }
+
+    const outputType = node.outputType;
+    const nameNode = node.name;
+    if (!(nameNode instanceof nodes.Symbol)) {
+      this.fail('Output declaration name must be a symbol', node.lineno, node.colno, node);
+    }
+    const name = nameNode.value;
+
+    if ((outputType === 'data' || outputType === 'text' || outputType === 'value') && node.initializer) {
+      this.fail(`${outputType} outputs cannot have initializers`, node.lineno, node.colno, node);
+    }
+    if (outputType === 'sink' && !node.initializer) {
+      this.fail('sink outputs must have an initializer', node.lineno, node.colno, node);
+    }
+
+    this.async._addDeclaredOutput(frame, name, outputType, node.initializer, node);
+
+    this.emit.line('frame._outputs = frame._outputs || Object.create(null);');
+    this.emit.line('if (!frame._outputBuffer) { frame._outputBuffer = new runtime.CommandBuffer(context); }');
+    if (outputType !== 'sink') {
+      this.emit.line('frame._outputBuffer._outputTypes = frame._outputBuffer._outputTypes || Object.create(null);');
+      this.emit.line(`frame._outputBuffer._outputTypes["${name}"] = "${outputType}";`);
+    }
+
+    if (outputType === 'sink') {
+      this.emit(`frame._outputs["${name}"] = runtime.createSinkOutput(`);
+      this.compile(node.initializer, frame);
+      this.emit.line(');');
+    } else {
+      this.emit.line(`frame._outputs["${name}"] = runtime.createOutput(frame, "${name}", context, "${outputType}");`);
+    }
   }
 
 
