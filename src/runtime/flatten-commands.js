@@ -395,7 +395,9 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
       const textArr = state.textOutput[focusOutput] || [];
       return textArr.join('');
     }
-    const handler = state.handlerInstances[focusOutput];
+    // Keep focus output resolution to already-instantiated handlers only.
+    // Instantiating here can hide missing-handler errors in some flows.
+    const handler = state.handlerInstances[focusOutput];// || getOrInstantiateHandler(focusOutput);
     if (!handler) return undefined;
     return typeof handler.getReturnValue === 'function' ? handler.getReturnValue() : handler;
   }

@@ -1040,10 +1040,14 @@ class ScriptTranspiler {
   _isOutputDeclarationLine(firstWord, codeContent) {
     if (!firstWord || !codeContent) return false;
     if (firstWord === 'sink') {
+      // Sink declarations must have an assignment (e.g., "sink x = value")
       return /^sink\s+[A-Za-z_][A-Za-z0-9_]*\s*=/.test(codeContent);
     }
     if (firstWord === 'data' || firstWord === 'text' || firstWord === 'value') {
-      return new RegExp(`^${firstWord}\\s+[A-Za-z_][A-Za-z0-9_]*\\s*$`).test(codeContent);
+      // Matches variable declarations with optional initialization
+      // Examples: "let myVar", "const foo = 5", "var x = 'hello'"
+      // Pattern: keyword + identifier + optional (= value)
+      return new RegExp(`^${firstWord}\\s+[A-Za-z_][A-Za-z0-9_]*(\\s*=.*)?$`).test(codeContent);
     }
     return false;
   }

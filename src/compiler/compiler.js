@@ -893,8 +893,14 @@ class Compiler extends CompilerBase {
     } else {
       currFrame = frame.new();
     }
+    // Macro bodies should not behave like root scope returns.
+    currFrame._seesRootScope = false;
     if (this.asyncMode) {
       currFrame.declaredOutputs = this._createDefaultOutputDeclarations();
+    }
+    if (!keepFrame) {
+      // Macro frames can be detached from the lexical frame chain; track output scope separately.
+      currFrame.outputParent = frame;
     }
 
     const oldIsCompilingMacroBody = this.sequential.isCompilingMacroBody; // Save previous state
@@ -914,12 +920,15 @@ class Compiler extends CompilerBase {
 
     // Wrap the entire body in withPath to fork the context
     this.emit.line(`return runtime.withPath(this, "${this.templateName}", function() {`);
+    // Avoid mutating outer `frame` by shadowing it inside the macro body.
+    this.emit.line('return (function(frame) {');
 
-    if (!keepFrame) {
-      this.emit.line('let callerFrame = frame;');
-    }
+    // Keep a stable reference for caller/output lookup regardless of frame push/new.
+    this.emit.line('let callerFrame = frame;');
     this.emit.lines(
       'frame = ' + ((keepFrame) ? 'frame.push(true);' : 'frame.new();'),
+      // Expose caller/output parent for output lookups across macro boundaries.
+      'frame._outputParent = callerFrame;',
       'kwargs = kwargs || {};',
       'if (Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
       'frame.set("caller", kwargs.caller); }'
@@ -1001,6 +1010,8 @@ class Compiler extends CompilerBase {
 
     this.emit.line('return ' + returnStatement);
 
+    // Close the macro-body IIFE.
+    this.emit.line('}).call(this, frame);');
     // Close the withPath wrapper function
     this.emit.line('});'); // 1. Closes the withPath inner function
 

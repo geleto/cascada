@@ -43,6 +43,16 @@ class Output {
   _snapshotFocus(focusName) {
     const buffer = this._frame._outputBuffer;
     if (buffer) {
+      // For explicit outputs, preserve default empty snapshots without flattening.
+      // Skip the implicit "output" handler so templates keep legacy behavior.
+      if (this._outputName && this._outputName !== 'output' && typeof buffer._getOutputArray === 'function') {
+        const target = buffer._getOutputArray(this._outputName);
+        if (!target || target.length === 0) {
+          if (this._outputType === 'data') return {};
+          if (this._outputType === 'text') return '';
+          if (this._outputType === 'value') return undefined;
+        }
+      }
       return flattenBuffer(buffer, this._context, focusName || null);
     }
 
@@ -85,6 +95,8 @@ class ValueOutput extends Output {
 class DataOutput extends Output {}
 
 function createOutputProxy(output) {
+  // Proxy is required so output instances can handle arbitrary commands
+  // (e.g. myData.set(...) / myData.merge(...)) without predefining methods.
   return new Proxy(output, {
     get: (target, prop) => {
       if (prop === 'snapshot') {
@@ -128,15 +140,39 @@ function createOutput(frame, outputName, context, outputType = null) {
 class SinkOutputHandler {
   constructor(sink) {
     this._sink = sink;
+    // Sink initializers may be async; cache the promise and resolve once.
+    this._sinkPromise = null;
+    if (sink && typeof sink.then === 'function') {
+      this._sink = null;
+      this._sinkPromise = sink.then((resolved) => {
+        this._sink = resolved;
+        return resolved;
+      });
+    }
   }
 
-  snapshot() {
-    const sink = this._sink;
+  _resolveSink() {
+    // Always return a promise to simplify proxy forwarding.
+    if (this._sinkPromise) {
+      return this._sinkPromise;
+    }
+    return Promise.resolve(this._sink);
+  }
+
+  _snapshotFromSink(sink) {
     if (!sink) return sink;
     if (typeof sink.snapshot === 'function') return sink.snapshot();
     if (typeof sink.getReturnValue === 'function') return sink.getReturnValue();
     if (typeof sink.finalize === 'function') return sink.finalize();
     return sink;
+  }
+
+  snapshot() {
+    // Snapshot waits for async sink initializers, then delegates to sink hooks.
+    if (this._sinkPromise) {
+      return this._sinkPromise.then((resolved) => this._snapshotFromSink(resolved));
+    }
+    return this._snapshotFromSink(this._sink);
   }
 }
 
@@ -148,7 +184,7 @@ function createSinkOutput(sink) {
         return target.snapshot.bind(target);
       }
       if (prop === '_sink') {
-        return sink;
+        return sink;//return target._sink;
       }
       if (prop === 'then') {
         return undefined;
@@ -158,6 +194,17 @@ function createSinkOutput(sink) {
       }
       // Proxy forwards any method/property to the underlying sink object,
       // keeping the sink API transparent to templates/scripts.
+      if (target._sinkPromise) {
+        // Lazy-resolve async sinks before forwarding.
+        return (...args) => target._resolveSink().then((resolved) => {
+          if (!resolved) return undefined;
+          const value = resolved[prop];
+          if (typeof value === 'function') {
+            return value.apply(resolved, args);
+          }
+          return value;
+        });
+      }
       const value = sink ? sink[prop] : undefined;
       if (typeof value === 'function') {
         return value.bind(sink);
@@ -173,7 +220,8 @@ function getOutputHandler(frame, outputName) {
     if (current._outputs && Object.prototype.hasOwnProperty.call(current._outputs, outputName)) {
       return current._outputs[outputName];
     }
-    current = current.parent;
+    // Allow macro/caller scopes to expose outputs via _outputParent.
+    current = current.parent || current._outputParent;
   }
   return undefined;
 }

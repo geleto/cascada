@@ -171,7 +171,9 @@ module.exports = class CompileAsync {
       if (df.declaredOutputs && df.declaredOutputs.has(outputName)) {
         break;
       }
-      df = df.parent;
+      // The df.outputParent matters for macro/caller scoping of declared outputs.
+      // It prevents subtle scope bugs where macro-local outputs shadow outer outputs.
+      df = df.outputParent || df.parent;
     }
 
     let current = frame;
@@ -212,7 +214,8 @@ module.exports = class CompileAsync {
       if (frame.declaredOutputs && frame.declaredOutputs.has(name)) {
         return frame.declaredOutputs.get(name);
       }
-      frame = frame.parent;
+      // Walk outputParent first to resolve macro-local declarations correctly.
+      frame = frame.outputParent || frame.parent;
     }
     return null;
   }
