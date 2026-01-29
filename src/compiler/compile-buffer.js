@@ -138,7 +138,7 @@ class CompileBuffer {
     // Extract handler, subpath, and command from static path
     const handler = staticPath[0];
     const outputDecl = this.compiler.async._getDeclaredOutput(frame, handler);
-    const outputType = outputDecl ? outputDecl.type : null;
+    const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
     const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
 
@@ -147,6 +147,9 @@ class CompileBuffer {
     if (this.compiler.asyncMode) {
       this.compiler.async.updateOutputUsage(frame, handler);
     }
+
+    const declaredInCurrentFrame = frame.declaredOutputs && frame.declaredOutputs.has(handler);
+    const useExplicitOutputBuffer = outputDecl && !outputDecl.implicit && !declaredInCurrentFrame && !frame.outputScope;
 
     // Use a wrapper to avoid duplicating the sync/async logic.
     const wrapper = (emitLogic) => {
@@ -187,14 +190,53 @@ class CompileBuffer {
       }
 
       if (isAsync) {
-        this.asyncAddToBuffer(node, frame, (resultVar, f) => {
-          this.compiler.emit(`${resultVar} = `);
-          emitLogic(f); // Pass the inner frame to the logic.
-        }, node, handler, handler);
+        if (useExplicitOutputBuffer) {
+          const returnId = this.compiler._tmpid();
+          const handlerVar = this.compiler._tmpid();
+          const bufferVar = this.compiler._tmpid();
+          this.compiler.emit.asyncClosureDepth++;
+          const innerFrame = frame.push(false, false);
+          this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
+          this.compiler.emit.line(`let ${handlerVar} = runtime.getOutputHandler(frame, "${handler}");`);
+          this.compiler.emit.line(`let ${bufferVar} = (${handlerVar} && ${handlerVar}._frame && ${handlerVar}._frame._outputBuffer) ? ${handlerVar}._frame._outputBuffer : ${this.currentBuffer};`);
+          this.compiler.emit.line(`let index = ${bufferVar}.reserveSlot(${JSON.stringify(handler)});`);
+          this.compiler.emit.line('try {');
+          this.compiler.emit.line(`  let ${returnId};`);
+          this.compiler.emit(`${returnId} = `);
+          emitLogic(innerFrame);
+          this.compiler.emit.line(';');
+          this.compiler.emit.line(`  ${bufferVar}.fillSlot(index, ${returnId}, ${JSON.stringify(handler)});`);
+          this.compiler.emit.line('} catch(e) {');
+          this.compiler.emit.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
+          this.compiler.emit.line(`  runtime.addPoisonMarkersToBuffer(${bufferVar}, errors, [${JSON.stringify(handler)}], { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node, node))}, path: context.path });`);
+          this.compiler.emit.line('}');
+          this.compiler.emit.asyncClosureDepth--;
+          this.compiler.emit.line('}');
+          const errorContext = this.compiler._generateErrorContext(node, node);
+          const { readArgs, writeArgs, outputArgs } = this.compiler.emit.getAsyncBlockArgs(innerFrame, node);
+          this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, cb, ${node.lineno}, ${node.colno}, context, "${errorContext}");`);
+        } else {
+          this.asyncAddToBuffer(node, frame, (resultVar, f) => {
+            this.compiler.emit(`${resultVar} = `);
+            emitLogic(f); // Pass the inner frame to the logic.
+          }, node, handler, handler);
+        }
       } else {
-        this.addToBuffer(node, frame, () => {
-          emitLogic(frame); // Pass the current frame.
-        }, node, handler);
+        if (useExplicitOutputBuffer) {
+          const handlerVar = this.compiler._tmpid();
+          const bufferVar = this.compiler._tmpid();
+          const valueId = this.compiler._tmpid();
+          this.compiler.emit.line(`let ${handlerVar} = runtime.getOutputHandler(frame, "${handler}");`);
+          this.compiler.emit.line(`let ${bufferVar} = (${handlerVar} && ${handlerVar}._frame && ${handlerVar}._frame._outputBuffer) ? ${handlerVar}._frame._outputBuffer : ${this.currentBuffer};`);
+          this.compiler.emit(`let ${valueId} = `);
+          emitLogic(frame);
+          this.compiler.emit.line(';');
+          this.compiler.emit.line(`${bufferVar}.add(${valueId}, ${JSON.stringify(handler)});`);
+        } else {
+          this.addToBuffer(node, frame, () => {
+            emitLogic(frame); // Pass the current frame.
+          }, node, handler);
+        }
       }
     };
 

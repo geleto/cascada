@@ -1005,8 +1005,8 @@ class CompilerBase extends Obj {
         } else {
           segments.push(node.val);
         }
-      } else if (node instanceof nodes.Literal && node.value === null) {
-        segments.push(new nodes.Literal(node.lineno, node.colno, null));
+      } else if (node instanceof nodes.Literal) {
+        segments.push(node);
       } else {
         this.fail('Invalid node type in path for @data command. Only symbols, lookups, null, or array-literals are allowed.',
           node.lineno, node.colno, node);

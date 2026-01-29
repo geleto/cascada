@@ -17,13 +17,13 @@
  *
  * 3.  **Output Commands with `@`**
  *     - `@text(...)` is the dedicated command for generating text output.
- *       `@text("Hello")`      → `{{ "Hello" }}`
+ *       `@text("Hello")`      → `{% output text text("Hello") %}`
  *     - Data assembly commands build structured objects. The modern path-based
  *       syntax is converted to a generic handler call.
- *       `@data.user.id = 1`   → `{% output_command data.set('user.id', 1) %}`
- *       `@data.tags.push("a")`→ `{% output_command data.push('user.tags', "a") %}`
+ *       `@data.user.id = 1`   → `{% output data data.set('user.id', 1) %}`
+ *       `@data.tags.push("a")`→ `{% output data data.push('user.tags', "a") %}`
  *     - Generic commands are passed through.
- *       `@db.insert(...)`     → `{% output_command db.insert(...) %}`
+ *       `@db.insert(...)`     → `{% output db db.insert(...) %}`
  *
  * 4.  **Output Focus Directives with `:`**
  *     - Script-level directives control the final output format.
@@ -67,11 +67,11 @@
  *
  * {%- var userProfile = fetchProfile(1) -%}
  *
- * {%- output_command data.set('user.id', userProfile.id) -%}
- * {%- output_command data.set('user.name', userProfile.name) -%}
+ * {%- output data data.set('user.id', userProfile.id) -%}
+ * {%- output data data.set('user.name', userProfile.name) -%}
  *
  * {%- for task in userProfile.tasks -%}
- *   {%- output_command data.push('user.tasks', task.title) -%}
+ *   {%- output data data.push('user.tasks', task.title) -%}
  * {%- endfor -%}
  * ```
  *
@@ -172,6 +172,8 @@ class ScriptTranspiler {
 
     // Track block stack for var/set blocks
     this.setBlockStack = []; // 'var' or 'set'
+    // Track "var/set = call" capture blocks that should auto-close after endcall.
+    this.callCaptureStack = [];
 
     this.DATA_COMMANDS = {
       operators: {
@@ -191,6 +193,47 @@ class ScriptTranspiler {
       },
       operatorStart: ['=', '+', '-', '*', '/', '&', '|'],
     };
+
+    // Output scopes track declared outputs in nested blocks.
+    this.outputScopes = [new Map()];
+  }
+
+  getCurrentOutputScope() {
+    return this.outputScopes[this.outputScopes.length - 1];
+  }
+
+  pushOutputScope() {
+    this.outputScopes.push(new Map());
+  }
+
+  popOutputScope() {
+    if (this.outputScopes.length === 1) {
+      return;
+    }
+    this.outputScopes.pop();
+  }
+
+  isOutputInScope(name) {
+    for (let i = this.outputScopes.length - 1; i >= 0; i--) {
+      if (this.outputScopes[i].has(name)) {
+        return this.outputScopes[i].get(name);
+      }
+    }
+    return null;
+  }
+
+  declareOutput(name, type) {
+    const scope = this.getCurrentOutputScope();
+    if (scope.has(name)) {
+      throw new Error(`Output '${name}' already declared in this scope`);
+    }
+    scope.set(name, type);
+  }
+
+  ensureOutputDeclared(name, type) {
+    if (!this.isOutputInScope(name)) {
+      this.declareOutput(name, type);
+    }
   }
 
   /**
@@ -470,7 +513,7 @@ class ScriptTranspiler {
    * @param {Object} tcom - Parsed command object with path, command, and extra args (ending in ')' unless multiline
    * @return {string} The generic syntax command string
    */
-  _transpileDataCommand(tcom, multiline) {
+  _transpileDataCommand(tcom, multiline, handlerName = 'data') {
     // Convert new syntax to generic syntax
     // @data: @data.user.name.set("Alice")
     // generic: @data.set(user.name, "Alice")
@@ -516,7 +559,7 @@ class ScriptTranspiler {
 
     const addComma = refArgs.trim() !== ')';//this happens with empty args or on multiline, where we may not have the ')'
 
-    return `@data.${tcom.command}(${pathArgument}${addComma ? ',' : ''}${args}`;
+    return `@${handlerName}.${tcom.command}(${pathArgument}${addComma ? ',' : ''}${args}`;
   }
 
   /**
@@ -528,6 +571,11 @@ class ScriptTranspiler {
   _getFirstWord(text) {
     // Get the first space-separated word
     const match = text.trim().match(/^(@?[a-zA-Z0-9_]+)(?:[\s:]|$)/);
+    return match ? match[1] : '';
+  }
+
+  _getLeadingIdentifier(text) {
+    const match = text.trim().match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)/);
     return match ? match[1] : '';
   }
 
@@ -876,6 +924,14 @@ class ScriptTranspiler {
         // We need to pass the variable name to the capture tag
         parseResult.codeContent = `${targetsStr} ${captureContent}`;
         this.setBlockStack.push(parseResult.tagName);
+      } else if (firstExprWord === 'call') {
+        // Treat "var x = call ... endcall" as a var/set block that captures the call output.
+        parseResult.lineType = 'TAG';
+        parseResult.blockType = 'START';
+        parseResult.tagName = isAssignment ? 'set' : 'var';
+        parseResult.codeContent = targetsStr;
+        parseResult.injectLines = [parseResult.indentation + exprStr];
+        this.callCaptureStack.push(parseResult.tagName);
       } else {
         // Standard variable/set
         parseResult.lineType = 'TAG';
@@ -885,6 +941,135 @@ class ScriptTranspiler {
         parseResult.blockType = null;
       }
     }
+  }
+
+  _formatOutputCommand(outputType, commandContent) {
+    return `${outputType} ${commandContent}`;
+  }
+
+  _isSnapshotCall(afterTrimmed) {
+    return /^\.\s*snapshot\s*\(/.test(afterTrimmed);
+  }
+
+  _parseDataCommandFromOutput(after, lineIndex) {
+    const { lex } = require('./script-lexer');
+    const tokens = lex(after);
+
+    const parsed = this._parsePathSegments(tokens, 0, true, true, true, lineIndex);
+    const { segments, remainingBuffer, append, operator } = parsed;
+
+    if (!remainingBuffer) {
+      throw new Error(`Invalid output command syntax at line ${lineIndex + 1}: Missing arguments.`);
+    }
+
+    if (!remainingBuffer.startsWith('(')) {
+      throw new Error(`Invalid output command syntax at line ${lineIndex + 1}: Expected '(...)' for arguments.`);
+    }
+
+    const args = remainingBuffer.substring(1);
+    let command;
+    let pathSegments;
+
+    if (operator) {
+      command = operator.slice(1);
+      pathSegments = segments;
+    } else {
+      if (segments.length === 0) {
+        return { directCall: true, command: null };
+      }
+      const commandSegment = segments[segments.length - 1];
+      if (!commandSegment.startsWith('.')) {
+        throw new Error(`Invalid output command syntax at line ${lineIndex + 1}: Command cannot be a bracket expression.`);
+      }
+      command = commandSegment.slice(1);
+      pathSegments = segments.slice(0, -1);
+    }
+
+    if (!this._isValidIdentifier(command)) {
+      throw new Error(`Invalid output command syntax at line ${lineIndex + 1}: '${command}' is not a valid identifier.`);
+    }
+
+    if (pathSegments.length > 0) {
+      this._validatePathSegments(pathSegments);
+    }
+
+    return {
+      command,
+      args,
+      append,
+      segments: pathSegments,
+      directCall: pathSegments.length === 0 && !operator
+    };
+  }
+
+  _processOutputOperation(parseResult, lineIndex) {
+    const code = parseResult.codeContent;
+    const trimmed = code.trimStart();
+    const outputName = this._getLeadingIdentifier(trimmed);
+    if (!outputName) return false;
+
+    const outputType = this.isOutputInScope(outputName);
+    if (!outputType) return false;
+
+    const after = trimmed.substring(outputName.length);
+    const afterTrimmed = after.trimStart();
+    if (!afterTrimmed) return false;
+
+    const opStart = afterTrimmed[0];
+    if (opStart === '=') return false;
+    if (!['.', '(', '['].includes(opStart)) return false;
+
+    if (this._isSnapshotCall(afterTrimmed)) {
+      return false;
+    }
+
+    if (outputType === 'sink') {
+      return false;
+    }
+
+    if (outputType === 'data') {
+      const parsed = this._parseDataCommandFromOutput(after, lineIndex);
+
+      if (parsed.directCall) {
+        // Direct method call on output root (e.g., myData.set(...)) - keep as-is.
+        parseResult.lineType = 'TAG';
+        parseResult.tagName = 'output';
+        parseResult.blockType = null;
+        parseResult.codeContent = this._formatOutputCommand(outputType, trimmed);
+        return true;
+      }
+
+      if (parsed.command === 'snapshot' && parsed.segments.length === 0) {
+        return false;
+      }
+
+      const genericSyntaxCommand = this._transpileDataCommand(parsed, false, outputName);
+      let commandContent = genericSyntaxCommand.substring(1); // remove '@'
+
+      if (parsed.append) {
+        if (parseResult.continuesToNext) {
+          parseResult.expectedContinuationEnd = parsed.append;
+        } else {
+          commandContent += parsed.append;
+        }
+      }
+
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = 'output';
+      parseResult.blockType = null;
+      parseResult.codeContent = this._formatOutputCommand(outputType, commandContent);
+      return true;
+    }
+
+    if (outputType === 'value' && opStart !== '(') {
+      return false;
+    }
+
+    parseResult.lineType = 'TAG';
+    parseResult.tagName = 'output';
+    parseResult.blockType = null;
+    parseResult.codeContent = this._formatOutputCommand(outputType, trimmed);
+    return true;
   }
 
   _processOutputCommand(parseResult, lineIndex) {
@@ -915,43 +1100,12 @@ class ScriptTranspiler {
     let isText = ccontent.startsWith('text(') || this._getFirstWord(ccontent) === 'text';
 
     if (isText) {
-      //skip the 'text'
-      ccontent = ccontent.substring('text'.length).trim();
-      // Check if @text has parentheses (function call syntax)
-      const hasParentheses = ccontent.startsWith('(');
-      let expression = '';
-      if (hasParentheses) {
-        // @text(value) - extract the value and convert to {{ }}
-        const openParenIndex = ccontent.indexOf('(');
-        const closeParenIndex = ccontent.lastIndexOf(')');
-        /*if (openParenIndex === -1 || closeParenIndex === -1 || closeParenIndex <= openParenIndex) {
-          throw new Error(`Invalid text command syntax: "${ccontent}" at line ${lineIndex + 1}`);
-        }*/
-        expression = ccontent.substring(
-          openParenIndex + 1,
-          closeParenIndex === -1 ? ccontent.length : closeParenIndex
-        ).trim();
-
-        if (closeParenIndex && !expression) {
-          throw new Error(`Invalid text command: "${ccontent}" at line ${lineIndex + 1}`);
-        }
-
-        if (closeParenIndex === -1) {
-          //we expect the last continuation line to end with ')' which shall be ignored
-          parseResult.continuesToNext = true;
-          parseResult.expectedContinuationEnd = ')';
-        }
-      } else {
-        //make sure there is no content after the 'text', we expect '(' on the next line (@todo)
-        if (ccontent.length > 0) {
-          throw new Error(`Expected '(' after 'text' at line ${lineIndex + 1}`);
-        }
-        parseResult.continuesToNext = true;
-        parseResult.expectedContinuationEnd = ')';
-      }
-      parseResult.lineType = 'TEXT';
+      this.ensureOutputDeclared('text', 'text');
+      const outputType = 'text';
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = 'output';
       parseResult.blockType = null;
-      parseResult.codeContent = expression;
+      parseResult.codeContent = this._formatOutputCommand(outputType, commandContent.trimStart());
     } else {
       // Check if this is the @data command syntax
       let isDataCommand = false;
@@ -965,6 +1119,7 @@ class ScriptTranspiler {
         }
       }
       if (isDataCommand) {
+        this.ensureOutputDeclared('data', 'data');
         // Parse the @data-specific syntax and convert to the generic syntax
         const parsedCommand = this._deconstructDataCommand(parseResult.tokens, lineIndex);
         let genericSyntaxCommand = this._transpileDataCommand(parsedCommand);
@@ -978,14 +1133,14 @@ class ScriptTranspiler {
 
         // Update the parseResult with the converted command
         parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output_command';
+        parseResult.tagName = 'output';
         parseResult.blockType = null;
-        parseResult.codeContent = genericSyntaxCommand.substring(1); // Remove the @ prefix
+        parseResult.codeContent = this._formatOutputCommand('data', genericSyntaxCommand.substring(1));
       } else {
         // All other @ commands are treated as function commands
         // @print was deprecated and replaced with @text(value)
         parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output_command';
+        parseResult.tagName = 'output';
         parseResult.blockType = null;
 
         // Support special @_revert() shorthand that targets all handlers.
@@ -995,12 +1150,17 @@ class ScriptTranspiler {
           if (!remainder || remainder.startsWith('(') || remainder.startsWith(' ')) {
             const leadingWhitespace = commandContent.slice(0, commandContent.length - trimmedCommand.length);
             const rest = trimmedCommand.substring(1); // remove the leading '.'
-            parseResult.codeContent = `${leadingWhitespace}_.${rest}`;
+            parseResult.codeContent = this._formatOutputCommand('_', `${leadingWhitespace}_.${rest}`);
           } else {
-            parseResult.codeContent = commandContent;
+            const handlerName = this._getLeadingIdentifier(commandContent) || '_';
+            parseResult.codeContent = this._formatOutputCommand(handlerName, commandContent);
           }
         } else {
-          parseResult.codeContent = commandContent; // The content for the Nunjucks tag
+          const handlerName = this._getLeadingIdentifier(commandContent) || '_';
+          if (handlerName === 'value') {
+            this.ensureOutputDeclared('value', 'value');
+          }
+          parseResult.codeContent = this._formatOutputCommand(handlerName, commandContent); // The content for the Nunjucks tag
         }
       }
     }
@@ -1035,6 +1195,36 @@ class ScriptTranspiler {
     parseResult.tagName = 'extern';
     parseResult.codeContent = externContent;
     parseResult.blockType = null; // extern is always a line tag
+  }
+
+  _parseOutputDeclaration(codeContent, lineIndex) {
+    const trimmed = codeContent.trim();
+    const outputType = this._getFirstWord(trimmed);
+    if (!outputType) return null;
+    if (!(outputType === 'data' || outputType === 'text' || outputType === 'value' || outputType === 'sink')) return null;
+
+    const remainder = trimmed.substring(outputType.length).trim();
+    const nameMatch = remainder.match(/^([A-Za-z_][A-Za-z0-9_]*)\b/);
+    if (!nameMatch) {
+      throw new Error(`Invalid output declaration at line ${lineIndex + 1}`);
+    }
+    const name = nameMatch[1];
+    const initializer = remainder.substring(name.length).trim();
+    return { outputType, name, initializer };
+  }
+
+  _processOutputDeclaration(parseResult, lineIndex) {
+    const decl = this._parseOutputDeclaration(parseResult.codeContent, lineIndex);
+    if (!decl) {
+      throw new Error(`Invalid output declaration at line ${lineIndex + 1}`);
+    }
+
+    this.declareOutput(decl.name, decl.outputType);
+
+    parseResult.lineType = 'TAG';
+    parseResult.tagName = decl.outputType;
+    parseResult.codeContent = parseResult.codeContent.substring(decl.outputType.length + 1).trim();
+    parseResult.blockType = null;
   }
 
   _isOutputDeclarationLine(firstWord, codeContent) {
@@ -1078,6 +1268,7 @@ class ScriptTranspiler {
 
     const firstWord = this._getFirstWord(parseResult.codeContent);
     const code = parseResult.codeContent.trim();
+    const continuesFromPrev = this._continuesFromPrevious(code);
 
     // Check for semicolons in CODE tokens
     for (const token of parseResult.tokens) {
@@ -1100,10 +1291,9 @@ class ScriptTranspiler {
     } else if (firstWord === 'extern') {
       this._processExtern(parseResult, lineIndex);
     } else if (this._isOutputDeclarationLine(firstWord, code)) {
-      parseResult.lineType = 'TAG';
-      parseResult.tagName = firstWord;
-      parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1).trim();
-      parseResult.blockType = null;
+      this._processOutputDeclaration(parseResult, lineIndex);
+    } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {
+      // Output operation was processed
     } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'value' || firstWord === 'sink') &&
       this._isAssignment(code, lineIndex)) {
       this._processVar(parseResult, lineIndex, true);
@@ -1122,6 +1312,11 @@ class ScriptTranspiler {
       parseResult.codeContent = parseResult.codeContent.substring(firstWord.length + 1);//skip the first word
       parseResult.blockType = this._getBlockType(firstWord, code);
       parseResult.tagName = firstWord;
+
+      if (firstWord === 'endcall' && this.callCaptureStack.length > 0) {
+        const tag = this.callCaptureStack.pop();
+        parseResult.injectLines = [parseResult.indentation + `end${tag}`];
+      }
     } else if (this._isAssignment(code, lineIndex)) {
       this._processVar(parseResult, lineIndex, true);
     }
@@ -1132,7 +1327,7 @@ class ScriptTranspiler {
     }
 
     parseResult.continuesToNext = parseResult.continuesToNext || this._willContinueToNextLine(codeTokens, parseResult.codeContent, firstWord);
-    parseResult.continuesFromPrev = this._continuesFromPrevious(code);
+    parseResult.continuesFromPrev = continuesFromPrev;
 
     //update the state used by the parser (it works only with state + current line)
     state.inMultiLineComment = parseResult.inMultiLineComment;
@@ -1208,6 +1403,26 @@ class ScriptTranspiler {
         }
       }
       prevLineIndex = i;//only empty or comment-only lines are skipped by continueFromIndex, for other cases it is i-1
+    }
+  }
+
+  _updateOutputScopesForLine(processedLine) {
+    if (!processedLine || processedLine.isContinuation) return;
+
+    if (processedLine.blockType === this.BLOCK_TYPE.MIDDLE) {
+      // New branch scope (else/elif/case/default/recover)
+      this.popOutputScope();
+      this.pushOutputScope();
+      return;
+    }
+
+    if (processedLine.blockType === this.BLOCK_TYPE.START) {
+      this.pushOutputScope();
+      return;
+    }
+
+    if (processedLine.blockType === this.BLOCK_TYPE.END) {
+      this.popOutputScope();
     }
   }
 
@@ -1340,6 +1555,7 @@ class ScriptTranspiler {
    * @return {Object} Object with template string and possible error
    */
   scriptToTemplate(scriptStr) {
+    this.outputScopes = [new Map()];
     // Split into lines
     const lines = scriptStr.split('\n');
 
@@ -1357,6 +1573,15 @@ class ScriptTranspiler {
 
       // Store processed line for potential reuse in lookahead
       processedLines.push(processedLine);
+      this._updateOutputScopesForLine(processedLine);
+
+      if (processedLine.injectLines && processedLine.injectLines.length > 0) {
+        processedLine.injectLines.forEach((injected) => {
+          const injectedLine = this._processLine(injected, state, i);
+          processedLines.push(injectedLine);
+          this._updateOutputScopesForLine(injectedLine);
+        });
+      }
     }
 
     this._processContinuationsAndComments(processedLines);

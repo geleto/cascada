@@ -101,7 +101,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
         await env.renderScriptString(script);
         expect().fail('Should have thrown a parser error');
       } catch (error) {
-        expect(error.message).to.contain('expected block end in output_command statement');
+        expect(error.message).to.contain('expected block end in output statement');
       }
     });
 
@@ -114,7 +114,7 @@ describe('Cascada Script: @data String and Array Methods', function () {
         await env.renderScriptString(script);
         expect().fail('Should have thrown an error');
       } catch (error) {
-        expect(error.message).to.contain('expected block end in output_command statement');
+        expect(error.message).to.contain('expected block end in output statement');
       }
     });
   });

@@ -17,10 +17,14 @@ const {
   buildFinalResultFromState,
   resolveOutputNameReturn
 } = require('./flatten-shared');
+const { suppressValue, suppressValueScript } = require('./safe-output');
 
 function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedState, flattenBuffer) {
   if (outputName) {
     const state = createFlattenState(sharedState, buffer._outputTypes || null);
+    if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
+      state.scriptMode = buffer._scriptMode;
+    }
     return flattenBuffer(resolveBufferArray(buffer, outputName), context, focusOutput, outputName, state);
   }
 
@@ -33,6 +37,9 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
   }
 
   const state = createFlattenState(sharedState, buffer._outputTypes || null);
+  if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
+    state.scriptMode = buffer._scriptMode;
+  }
   ensureFocusOutputExists(context, state, focusOutput, buffer._outputTypes || null);
 
   const outputTargets = resolveOutputTargets(buffer, null);
@@ -212,7 +219,17 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
 
     const target = resolveCommandTarget(handlerName);
     if (target.kind === 'text') {
-      emitText(target.name, args);
+      const autoescape = env && env.opts ? env.opts.autoescape : false;
+      if (state.scriptMode) {
+        args.forEach((arg) => {
+          const normalized = suppressValueScript(arg, autoescape);
+          processItem(normalized);
+        });
+      } else {
+        args.forEach((arg) => {
+          emitText(target.name, [suppressValue(arg, autoescape)]);
+        });
+      }
       return;
     }
 
@@ -346,6 +363,11 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
 
     if (item instanceof CommandBuffer) {
       if (item._reverted) return;
+      if (state.scriptMode && isTextOutputNameFromState(state, outputName || 'text')) {
+        // In script mode, nested buffers should apply all outputs, not just text.
+        flattenBuffer(item, context, null, null, state);
+        return;
+      }
       flattenBuffer(resolveBufferArray(item, outputName), context, null, outputName, state);
       return;
     }

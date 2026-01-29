@@ -517,6 +517,8 @@ class Compiler extends CompilerBase {
     // 1. Start Async Block with Nested Buffer
     // This creates a nested buffer (this.buffer) and pushes a new async block
     frame = this.buffer.asyncBufferNodeBegin(node, frame, true);
+    // Guard blocks should keep output writes scoped to the guard buffer.
+    frame.outputScope = true;
 
     // 2. Link for explicit reversion (optional, if we want to support manual revert)
     this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);

@@ -828,8 +828,14 @@ class Parser extends Obj {
 
   parseOutputCommand() {
     const tag = this.peekToken();
-    if (!this.skipSymbol('output_command')) {
-      this.fail('parseOutputCommand: expected output_command', tag.lineno, tag.colno);
+    let outputType = null;
+    if (this.skipSymbol('output')) {
+      if (this.peekToken().type !== lexer.TOKEN_SYMBOL) {
+        this.fail('parseOutputCommand: expected output type', tag.lineno, tag.colno);
+      }
+      outputType = this.nextToken().value;
+    } else if (!this.skipSymbol('output_command')) {
+      this.fail('parseOutputCommand: expected output or output_command', tag.lineno, tag.colno);
     }
 
     // Parse the entire function call expression
@@ -837,7 +843,11 @@ class Parser extends Obj {
 
     this.advanceAfterBlockEnd(tag.value);
 
-    return new nodes.OutputCommand(tag.lineno, tag.colno, call);
+    const node = new nodes.OutputCommand(tag.lineno, tag.colno, call);
+    if (outputType) {
+      node.outputType = outputType;
+    }
+    return node;
   }
 
   parseOption() {
@@ -1060,6 +1070,7 @@ class Parser extends Obj {
         return this.parseSwitch();
       case 'do':
         return this.parseDo();
+      case 'output':
       case 'output_command':
         return this.parseOutputCommand();
       case 'option':

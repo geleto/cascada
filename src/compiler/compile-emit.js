@@ -85,6 +85,9 @@ module.exports = class CompileEmit {
 
   initOutputHandlers(bufferVar) {
     this.line(`frame._outputBuffer = ${bufferVar};`);
+    if (this.compiler.scriptMode) {
+      this.line(`${bufferVar}._scriptMode = true;`);
+    }
     // Experimental: keep astate on the frame for output snapshots (not currently used).
     //this.line('frame._astate = astate;');
     this.line(`frame.data = ${bufferVar}.data;`);
