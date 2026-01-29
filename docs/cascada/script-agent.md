@@ -318,7 +318,7 @@ endfor
 // ✅ Valid: Correct accumulation
 var sum = 0
 for item in items
-  set sum = sum + item.value  // Modifies outer sum
+  sum = sum + item.value  // Modifies outer sum
 endfor
 ```
 
@@ -456,7 +456,7 @@ endcapture
 ```javascript
 // RULE: Capture can access outer scope variables
 // DIFFERENTIAL: Read outer, but var creates local
-// CONSTRAINT: Use set to modify outer variables
+// CONSTRAINT: Use assignment to modify outer variables
 
 // ✅ Valid: Read outer variables
 var userId = 123
@@ -468,7 +468,7 @@ endcapture
 // ✅ Valid: Modify outer with set
 var counter = 0
 var result = capture :data
-  set counter = counter + 1  // Modify outer
+  counter = counter + 1  // Modify outer
   @data.count = counter
 endcapture
 
@@ -482,7 +482,7 @@ endcapture
 // ✅ Valid: Correct outer modification
 var total = 0
 var result = capture :data
-  set total = 10  // Modifies outer total
+  total = 10  // Modifies outer total
   @data.total = total
 endcapture
 // Outer total now 10
@@ -616,7 +616,7 @@ var temp = process()
 #### [CTRL-001] if/else creates isolated scope (async mode)
 ```javascript
 // RULE: if/elif/else branches execute in isolated scope
-// DIFFERENTIAL: Variables don't leak; use set for outer
+// DIFFERENTIAL: Variables don't leak; use assignment for outer
 // CONSTRAINT: Async mode only; sync mode shares scope
 
 // ✅ Valid: Isolated branch scopes
@@ -629,7 +629,7 @@ endif
 // ✅ Valid: Modify outer variable
 var result = none
 if condition
-  set result = "A"  // Modifies outer result
+  result = "A"  // Modifies outer result
 endif
 // result is "A"
 
@@ -663,7 +663,7 @@ endfor
 // ✅ Valid: Accumulating with set
 var total = 0
 for item in items
-  set total = total + item.value  // Shared accumulator
+  total = total + item.value  // Shared accumulator
 endfor
 
 // ❌ Invalid: Assuming sequential execution
@@ -687,7 +687,7 @@ endwhile
 // ❌ Invalid: Internal loop variable doesn't work
 var i = 0
 while i < 5
-  set i = i + 1  // Parallel execution - unpredictable
+  i = i + 1  // Parallel execution - unpredictable
 endwhile
 
 // Note: Traditional counting loops should use 'for' with range
@@ -824,7 +824,7 @@ if user is NetworkError  // No such syntax
 // ✅ Valid: Fallback value
 var user = fetchUser(id)
 if user is error
-  set user = { name: "Guest", id: 0 }
+  user = { name: "Guest", id: 0 }
 endif
 @data.greeting = "Hello, " + user.name
 
@@ -841,7 +841,7 @@ endif
 var result = riskyOperation()
 if result is error
   !context.logError(result)
-  set result = defaultValue
+  result = defaultValue
 endif
 ```
 
@@ -992,7 +992,7 @@ guard *             // Everything (LIMIT-017)
 
 // ✅ Valid: Selective protection
 guard @data, context.db!, attempts
-  set attempts = attempts + 1
+  attempts = attempts + 1
   !context.db.save(data)
   @data.saved = true
 recover err
@@ -1518,7 +1518,7 @@ include 'fragment.cas'
 
 // ❌ Invalid: Mixing expectations
 import 'module.cas'
-set localVar = "new"  // Error: localVar not in scope
+localVar = "new"  // Error: localVar not in scope
 ```
 
 ---
