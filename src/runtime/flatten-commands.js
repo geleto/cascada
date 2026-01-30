@@ -25,7 +25,25 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
     if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
       state.scriptMode = buffer._scriptMode;
     }
-    return flattenBuffer(resolveBufferArray(buffer, outputName), context, focusOutput, outputName, state);
+    if (state.outputHandlers === undefined && buffer && buffer._outputHandlers) {
+      state.outputHandlers = buffer._outputHandlers;
+    }
+    const resultState = flattenBuffer(resolveBufferArray(buffer, outputName), context, focusOutput, outputName, state);
+    if (sharedState) {
+      return resultState;
+    }
+    if (resultState && typeof resultState.then === 'function') {
+      return resultState.then((res) => {
+        if (res && res.collectedErrors && res.collectedErrors.length > 0) {
+          throw new PoisonError(res.collectedErrors);
+        }
+        return resolveOutputNameReturn(res, outputName, focusOutput, sharedState);
+      });
+    }
+    if (resultState && resultState.collectedErrors && resultState.collectedErrors.length > 0) {
+      throw new PoisonError(resultState.collectedErrors);
+    }
+    return resolveOutputNameReturn(resultState, outputName, focusOutput, sharedState);
   }
 
   if (!context) {
@@ -40,6 +58,9 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
   if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
     state.scriptMode = buffer._scriptMode;
   }
+  //if (state.outputHandlers === undefined && buffer && buffer._outputHandlers) {
+  //  state.outputHandlers = buffer._outputHandlers;
+  //}
   ensureFocusOutputExists(context, state, focusOutput, buffer._outputTypes || null);
 
   const outputTargets = resolveOutputTargets(buffer, null);
@@ -107,6 +128,11 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
   function getOrInstantiateHandler(handlerName) {
     if (state.handlerInstances[handlerName]) {
       return state.handlerInstances[handlerName];
+    }
+    if (state.outputHandlers && state.outputHandlers[handlerName]) {
+      const instance = state.outputHandlers[handlerName];
+      state.handlerInstances[handlerName] = instance;
+      return instance;
     }
     const declaredType = resolveOutputTypeFromState(state, handlerName);
 
@@ -348,6 +374,90 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
     });
   }
 
+  let asyncChain = null;
+  let asyncMode = false;
+
+  function queueAsync(fn) {
+    asyncChain = asyncChain ? asyncChain.then(fn) : Promise.resolve().then(fn);
+  }
+
+  async function processCommandItemAsync(item) {
+    const handlerName = item.handler;
+    const commandName = item.command;
+    const subpath = item.subpath;
+    const args = item.arguments;
+    const pos = getPosition(item);
+
+    if (collectPoisonArgs(args)) {
+      return;
+    }
+
+    const target = resolveCommandTarget(handlerName);
+    if (target.kind === 'text') {
+      const autoescape = env && env.opts ? env.opts.autoescape : false;
+      if (state.scriptMode) {
+        args.forEach((arg) => {
+          const normalized = suppressValueScript(arg, autoescape);
+          processItem(normalized);
+        });
+      } else {
+        args.forEach((arg) => {
+          emitText(target.name, [suppressValue(arg, autoescape)]);
+        });
+      }
+      return;
+    }
+
+    const handlerInstance = target.instance;
+    if (!handlerInstance) {
+      const err1 = handleError(
+        new Error(`Unknown command handler: ${handlerName}`),
+        pos.lineno,
+        pos.colno,
+        `@${handlerName}`,
+        context ? context.path : null
+      );
+      state.collectedErrors.push(err1);
+      return;
+    }
+
+    const targetObject = resolveSubpath(handlerInstance, subpath, handlerName, pos);
+    if (!targetObject) return;
+
+    const isSinkHandler = targetObject && typeof targetObject._resolveSink === 'function';
+    if (isSinkHandler) {
+      const sink = await targetObject._resolveSink();
+      if (!sink) return;
+      const sinkCommand = commandName ? sink[commandName] : sink;
+      if (typeof sinkCommand === 'function') {
+        try {
+          const result = sinkCommand.apply(sink, args);
+          if (result && typeof result.then === 'function') {
+            await result;
+          }
+          return;
+        } catch (err) {
+          throw new RuntimeFatalError(
+            err,
+            pos.lineno,
+            pos.colno,
+            formatHandlerRef(handlerName, subpath, commandName),
+            context ? context.path : null
+          );
+        }
+      }
+      throw new RuntimeFatalError(
+        new Error(`Sink method '${commandName}' not found`),
+        pos.lineno,
+        pos.colno,
+        formatHandlerRef(handlerName, subpath, commandName),
+        context ? context.path : null
+      );
+    }
+
+    processCommandItem(item);
+  }
+
   function processItem(item) {
     if (item === null || item === undefined) return;
 
@@ -378,6 +488,19 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
     }
 
     if (typeof item === 'object' && (item.method || item.handler !== undefined)) {
+      const handlerInstance = item.handler !== undefined
+        ? getOrInstantiateHandler(item.handler)
+        : null;
+      const isSinkHandler = handlerInstance && typeof handlerInstance._resolveSink === 'function';
+      if (isSinkHandler) {
+        asyncMode = true;
+        queueAsync(() => processCommandItemAsync(item));
+        return;
+      }
+      if (asyncMode) {
+        queueAsync(() => processCommandItemAsync(item));
+        return;
+      }
       processCommandItem(item);
       return;
     }
@@ -400,31 +523,39 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
     processItem(arr);
   }
 
-  if (sharedState) {
-    return state;
-  }
-
-  if (state.collectedErrors.length > 0) {
-    throw new PoisonError(state.collectedErrors);
-  }
-
-  if (outputName) {
-    return resolveOutputNameReturn(state, outputName, focusOutput, sharedState);
-  }
-
-  if (focusOutput) {
-    if (isTextOutputNameFromState(state, focusOutput)) {
-      const textArr = state.textOutput[focusOutput] || [];
-      return textArr.join('');
+  const finalize = () => {
+    if (sharedState) {
+      return state;
     }
-    // Keep focus output resolution to already-instantiated handlers only.
-    // Instantiating here can hide missing-handler errors in some flows.
-    const handler = state.handlerInstances[focusOutput];// || getOrInstantiateHandler(focusOutput);
-    if (!handler) return undefined;
-    return typeof handler.getReturnValue === 'function' ? handler.getReturnValue() : handler;
+
+    if (state.collectedErrors.length > 0) {
+      throw new PoisonError(state.collectedErrors);
+    }
+
+    if (outputName) {
+      return resolveOutputNameReturn(state, outputName, focusOutput, sharedState);
+    }
+
+    if (focusOutput) {
+      if (isTextOutputNameFromState(state, focusOutput)) {
+        const textArr = state.textOutput[focusOutput] || [];
+        return textArr.join('');
+      }
+      // Keep focus output resolution to already-instantiated handlers only.
+      // Instantiating here can hide missing-handler errors in some flows.
+      const handler = state.handlerInstances[focusOutput];// || getOrInstantiateHandler(focusOutput);
+      if (!handler) return undefined;
+      return typeof handler.getReturnValue === 'function' ? handler.getReturnValue() : handler;
+    }
+
+    return buildFinalResultFromState(state);
+  };
+
+  if (asyncMode) {
+    return asyncChain.then(() => finalize());
   }
 
-  return buildFinalResultFromState(state);
+  return finalize();
 }
 
 module.exports = {

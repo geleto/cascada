@@ -655,7 +655,6 @@
         async getRole() { return 'Admin'; },
 
         formatUser(user) {
-          // The function receives the object. If the object passed is a Lazy Object,
           // the runtime (resolveArguments) MUST ensure it is resolved before calling this function?
           // OR the function receives the promise/marker?
 

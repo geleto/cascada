@@ -53,7 +53,8 @@ class Output {
           if (this._outputType === 'value') return undefined;
         }
       }
-      return flattenBuffer(buffer, this._context, focusName || null);
+      const outputName = (this._outputName && this._outputName !== 'output') ? this._outputName : null;
+      return flattenBuffer(buffer, this._context, focusName || null, outputName);
     }
 
     const outputArray = this._frame[this._outputName];
@@ -61,7 +62,8 @@ class Output {
       return this._outputName === 'text' ? '' : undefined;
     }
 
-    return flattenBuffer(outputArray, this._context, focusName || null, this._outputName);
+    const outputName = (this._outputName && this._outputName !== 'output') ? this._outputName : null;
+    return flattenBuffer(outputArray, this._context, focusName || null, outputName);
   }
 }
 
@@ -138,25 +140,15 @@ function createOutput(frame, outputName, context, outputType = null) {
 }
 
 class SinkOutputHandler {
-  constructor(sink) {
+  constructor(frame, outputName, context, sink) {
+    this._frame = frame;
+    this._outputName = outputName;
+    this._context = context;
     this._sink = sink;
-    // Sink initializers may be async; cache the promise and resolve once.
-    this._sinkPromise = null;
-    if (sink && typeof sink.then === 'function') {
-      this._sink = null;
-      this._sinkPromise = sink.then((resolved) => {
-        this._sink = resolved;
-        return resolved;
-      });
-    }
   }
 
   _resolveSink() {
-    // Always return a promise to simplify proxy forwarding.
-    if (this._sinkPromise) {
-      return this._sinkPromise;
-    }
-    return Promise.resolve(this._sink);
+    return this._sink;
   }
 
   _snapshotFromSink(sink) {
@@ -168,50 +160,33 @@ class SinkOutputHandler {
   }
 
   snapshot() {
-    // Snapshot waits for async sink initializers, then delegates to sink hooks.
-    if (this._sinkPromise) {
-      return this._sinkPromise.then((resolved) => this._snapshotFromSink(resolved));
+    const buffer = this._frame ? this._frame._outputBuffer : null;
+    const outputName = this._outputName || null;
+    const finalize = (resolvedSink) => this._snapshotFromSink(resolvedSink);
+
+    if (buffer) {
+      const flattened = flattenBuffer(buffer, this._context, null, outputName);
+      if (flattened && typeof flattened.then === 'function') {
+        return flattened.then(() => {
+          const sinkVal = this._resolveSink();
+          if (sinkVal && typeof sinkVal.then === 'function') {
+            return sinkVal.then((resolved) => finalize(resolved));
+          }
+          return finalize(sinkVal);
+        });
+      }
     }
-    return this._snapshotFromSink(this._sink);
+
+    const sinkVal = this._resolveSink();
+    if (sinkVal && typeof sinkVal.then === 'function') {
+      return sinkVal.then((resolved) => finalize(resolved));
+    }
+    return finalize(sinkVal);
   }
 }
 
-function createSinkOutput(sink) {
-  const output = new SinkOutputHandler(sink);
-  return new Proxy(output, {
-    get: (target, prop) => {
-      if (prop === 'snapshot') {
-        return target.snapshot.bind(target);
-      }
-      if (prop === '_sink') {
-        return sink;//return target._sink;
-      }
-      if (prop === 'then') {
-        return undefined;
-      }
-      if (typeof prop === 'symbol') {
-        return target[prop];
-      }
-      // Proxy forwards any method/property to the underlying sink object,
-      // keeping the sink API transparent to templates/scripts.
-      if (target._sinkPromise) {
-        // Lazy-resolve async sinks before forwarding.
-        return (...args) => target._resolveSink().then((resolved) => {
-          if (!resolved) return undefined;
-          const value = resolved[prop];
-          if (typeof value === 'function') {
-            return value.apply(resolved, args);
-          }
-          return value;
-        });
-      }
-      const value = sink ? sink[prop] : undefined;
-      if (typeof value === 'function') {
-        return value.bind(sink);
-      }
-      return value;
-    }
-  });
+function createSinkOutput(frame, outputName, context, sink) {
+  return new SinkOutputHandler(frame, outputName, context, sink);
 }
 
 function getOutputHandler(frame, outputName) {

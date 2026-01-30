@@ -1276,6 +1276,13 @@ class Compiler extends CompilerBase {
       this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
       this.emit.line('  } else {');
       this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer.currentBuffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
+      /*const flattenCall = `runtime.flattenBuffer(${this.buffer.currentBuffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''})`;
+      this.emit.line(`    const __flatResult = ${flattenCall};`);
+      this.emit.line('    if (__flatResult && typeof __flatResult.then === "function") {');
+      this.emit.line('      __flatResult.then(res => cb(null, res)).catch(err => cb(err));');
+      this.emit.line('    } else {');
+      this.emit.line('      cb(null, __flatResult);');
+      this.emit.line('    }');*/
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
       this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`); // Store and update the handled error
@@ -1447,15 +1454,15 @@ class Compiler extends CompilerBase {
 
     this.emit.line('frame._outputs = frame._outputs || Object.create(null);');
     this.emit.line('if (!frame._outputBuffer) { frame._outputBuffer = new runtime.CommandBuffer(context); }');
-    if (outputType !== 'sink') {
-      this.emit.line('frame._outputBuffer._outputTypes = frame._outputBuffer._outputTypes || Object.create(null);');
-      this.emit.line(`frame._outputBuffer._outputTypes["${name}"] = "${outputType}";`);
-    }
+    this.emit.line('frame._outputBuffer._outputTypes = frame._outputBuffer._outputTypes || Object.create(null);');
+    this.emit.line(`frame._outputBuffer._outputTypes["${name}"] = "${outputType}";`);
 
     if (outputType === 'sink') {
-      this.emit(`frame._outputs["${name}"] = runtime.createSinkOutput(`);
+      this.emit(`frame._outputs["${name}"] = runtime.createSinkOutput(frame, "${name}", context, `);
       this.compile(node.initializer, frame);
       this.emit.line(');');
+      this.emit.line('frame._outputBuffer._outputHandlers = frame._outputBuffer._outputHandlers || Object.create(null);');
+      this.emit.line(`frame._outputBuffer._outputHandlers["${name}"] = frame._outputs["${name}"];`);
     } else {
       this.emit.line(`frame._outputs["${name}"] = runtime.createOutput(frame, "${name}", context, "${outputType}");`);
     }

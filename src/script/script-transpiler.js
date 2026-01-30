@@ -1023,10 +1023,6 @@ class ScriptTranspiler {
       return false;
     }
 
-    if (outputType === 'sink') {
-      return false;
-    }
-
     if (outputType === 'data') {
       const parsed = this._parseDataCommandFromOutput(after, lineIndex);
 

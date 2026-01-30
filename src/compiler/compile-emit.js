@@ -265,6 +265,9 @@ module.exports = class CompileEmit {
 
     this.line('await astate.waitAllClosures(1);');
     this.line(`${id} = runtime.flattenBuffer(${id});`);
+    /*this.line(`let ${id}_flat = runtime.flattenBuffer(${id});`);
+    this.line(`if (${id}_flat && typeof ${id}_flat.then === 'function') { ${id}_flat = await ${id}_flat; }`);
+    this.line(`${id} = ${id}_flat;`);*/
 
     //return via callback or directly
     if (callbackName) {

@@ -805,6 +805,18 @@ class CompilerBase extends Obj {
         this.async.updateFrameWrites(frame, sequenceLockKey);
         this.async.updateFrameWrites(frame, readLockKey);
       }
+
+      if (this.scriptMode && !sequenceLockKey) {
+        const mergedNode = {
+          isAsync: node.name.isAsync || node.args.isAsync,
+          children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
+        };
+        this._compileAggregate(mergedNode, frame, '[', ']', false, false, function (result) {
+          const errorContextJson = JSON.stringify(this._createErrorContext(node));
+          this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson});`);
+        });
+        return;
+      }
       let asyncName = node.name.isAsync;
       if (node.name.typename === 'Symbol' && !frame.lookup(node.name.value)) {
         asyncName = false;

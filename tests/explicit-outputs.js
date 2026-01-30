@@ -382,6 +382,107 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     });
   });
 
+  describe('Sink Outputs', function () {
+    it('should execute sink methods during flattening', async () => {
+      const context = {
+        makeLogger() {
+          return {
+            msgs: [],
+            write(msg) { this.msgs.push(msg); },
+            snapshot() { return this.msgs.slice(); }
+          };
+        }
+      };
+      const script = `
+        sink logger = makeLogger()
+        logger.write("msg")
+        return logger.snapshot()
+      `;
+      const result = await render(script, context);
+      expect(result).to.eql(['msg']);
+    });
+
+    it('should await async sink methods', async () => {
+      const context = {
+        makeLogger() {
+          return {
+            msgs: [],
+            async writeAsync(msg) {
+              await delay(5);
+              this.msgs.push(msg);
+            },
+            snapshot() { return this.msgs.slice(); }
+          };
+        },
+      };
+      const script = `
+        sink logger = makeLogger()
+        logger.writeAsync("msg")
+        return logger.snapshot()
+      `;
+      const result = await render(script, context);
+      expect(result).to.eql(['msg']);
+    });
+
+    it('should preserve sink method call order', async () => {
+      const context = {
+        makeLogger() {
+          return {
+            msgs: [],
+            write(msg) { this.msgs.push(msg); },
+            snapshot() { return this.msgs.slice(); }
+          };
+        },
+      };
+      const script = `
+        sink logger = makeLogger()
+        logger.write("a")
+        logger.write("b")
+        return logger.snapshot()
+      `;
+      const result = await render(script, context);
+      expect(result).to.eql(['a', 'b']);
+    });
+
+    it('should use getReturnValue when snapshot is missing', async () => {
+      const context = {
+        makeLogger() {
+          return {
+            msgs: [],
+            write(msg) { this.msgs.push(msg); },
+            getReturnValue() { return this.msgs.slice(); }
+          };
+        }
+      };
+      const script = `
+        sink logger = makeLogger()
+        logger.write("msg")
+        return logger.snapshot()
+      `;
+      const result = await render(script, context);
+      expect(result).to.eql(['msg']);
+    });
+
+    it('should use finalize when snapshot and getReturnValue are missing', async () => {
+      const context = {
+        makeLogger() {
+          return {
+            msgs: [],
+            write(msg) { this.msgs.push(msg); },
+            finalize() { return this.msgs.slice(); }
+          };
+        }
+      };
+      const script = `
+        sink logger = makeLogger()
+        logger.write("msg")
+        return logger.snapshot()
+      `;
+      const result = await render(script, context);
+      expect(result).to.eql(['msg']);
+    });
+  });
+
   describe('Macros', function () {
     it('should support explicit outputs inside macros', async () => {
       const script = `
@@ -854,8 +955,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       }
     });
 
-    // Skipped: sink method call errors are not surfaced yet.
-    it.skip('should surface sink method call errors', async () => {
+    it('should surface sink method call errors', async () => {
       const context = {
         makeLogger() {
           return {
@@ -1091,8 +1191,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       }
     });
 
-    // Skipped: sink method error propagation is not implemented yet.
-    it.skip('should propagate errors from sink methods', async () => {
+    it('should propagate errors from sink methods', async () => {
       const context = {
         makeLogger() {
           return {
