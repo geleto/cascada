@@ -811,7 +811,7 @@ class CompilerBase extends Obj {
           isAsync: node.name.isAsync || node.args.isAsync,
           children: (node.args.children.length > 0) ? [node.name, ...node.args.children] : [node.name]
         };
-        this._compileAggregate(mergedNode, frame, '[', ']', false, false, function (result) {
+        this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
           const errorContextJson = JSON.stringify(this._createErrorContext(node));
           this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson});`);
         });

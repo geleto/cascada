@@ -122,7 +122,7 @@ async function _setSinglePathAsync(objSyncOrPromise, keySyncOrPromise, value) {
 
 /**
  * Sets a value at a deep path, ensuring shallow copies at each level.
- * Handles arrays of segments where each segment can be a promise.
+ * Handles paths as arrays of segments where each segment can be a promise.
  *
  * @param {Object|Promise} root - The root object.
  * @param {Array} segments - Array of path segments (can be mixed values/Promises).
