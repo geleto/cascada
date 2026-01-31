@@ -1427,6 +1427,9 @@ class ScriptTranspiler {
 
   _generateOutput(processedLine, nextIsContinuation, lastNonContinuationLineType, lineIndex) {
     let output = processedLine.indentation;
+    if (processedLine.inlinePrefix) {
+      output = processedLine.inlinePrefix + output;
+    }
 
     if (processedLine.isEmpty) {
       return output;
@@ -1585,9 +1588,10 @@ class ScriptTranspiler {
 
     this._processContinuationsAndComments(processedLines);
 
+    const withOutputDeclarations = this._insertOutputDeclarations(processedLines);
     const outputLines = ENABLE_INSERT_IMPLICIT_RETURN
-      ? this._insertImplicitReturns(processedLines)
-      : processedLines;
+      ? this._insertImplicitReturns(withOutputDeclarations)
+      : withOutputDeclarations;
 
     let output = '';
     let lastNonContinuationLineType = null;
@@ -1605,16 +1609,7 @@ class ScriptTranspiler {
     this._validateBlockStructure(processedLines);
 
     const hasExplicitReturn = this._hasTopLevelReturn(processedLines);
-    let focusDirective = null;
-    processedLines.forEach((line) => {
-      if (line.tagName !== 'option') {
-        return;
-      }
-      const match = line.codeContent && line.codeContent.match(/focus\s*=\s*["']([^"']+)["']/);
-      if (match && match[1]) {
-        focusDirective = match[1];
-      }
-    });
+    const focusDirective = this._getRootFocus(processedLines);
 
     if (ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn) {
       const implicitReturn = focusDirective
@@ -1691,6 +1686,256 @@ class ScriptTranspiler {
       continuesFromPrev: false,
       tokens: []
     };
+  }
+
+  _getRootFocus(processedLines) {
+    let focusDirective = null;
+    processedLines.forEach((line) => {
+      if (line.tagName !== 'option') {
+        return;
+      }
+      const match = line.codeContent && line.codeContent.match(/focus\s*=\s*["']([^"']+)["']/);
+      if (match && match[1]) {
+        focusDirective = match[1];
+      }
+    });
+    return focusDirective;
+  }
+
+  _getOutputsToInject(scope) {
+    const required = new Set(scope.requiredOutputs || []);
+    if (scope.focus && (scope.focus === 'data' || scope.focus === 'text' || scope.focus === 'value')) {
+      required.add(scope.focus);
+    }
+    return Array.from(required);
+  }
+
+  _makeOutputDeclarationLine(outputType, indentation) {
+    return {
+      indentation: indentation || '',
+      lineType: 'TAG',
+      tagName: outputType,
+      codeContent: outputType,
+      blockType: null,
+      comments: [],
+      isContinuation: false,
+      isEmpty: false,
+      isCommentOnly: false,
+      continuesToNext: false,
+      continuesFromPrev: false,
+      tokens: []
+    };
+  }
+
+  _formatInlineOutputDeclaration(outputType, indentation) {
+    const indent = indentation || '';
+    return `${indent}{%- ${outputType} ${outputType} -%}`;
+  }
+
+  _collectIdentifierConflicts(targetsStr, conflicts) {
+    if (!targetsStr) return;
+    targetsStr.split(',').forEach((raw) => {
+      const name = raw.split('=')[0].trim();
+      if (!name) return;
+      if (name === 'data' || name === 'text' || name === 'value') {
+        conflicts.add(name);
+      }
+    });
+  }
+
+  _parseMacroParams(codeContent) {
+    if (!codeContent) return [];
+    const openIdx = codeContent.indexOf('(');
+    if (openIdx === -1) return [];
+    const closeIdx = codeContent.indexOf(')', openIdx + 1);
+    if (closeIdx === -1) return [];
+    const paramsStr = codeContent.substring(openIdx + 1, closeIdx).trim();
+    if (!paramsStr) return [];
+    return paramsStr.split(',').map((p) => p.trim()).filter(Boolean);
+  }
+
+  _parseCallParams(codeContent) {
+    if (!codeContent) return [];
+    const match = codeContent.match(/\)\s*\(([^)]*)\)\s*$/);
+    if (!match) return [];
+    const paramsStr = match[1].trim();
+    if (!paramsStr) return [];
+    return paramsStr.split(',').map((p) => p.trim()).filter(Boolean);
+  }
+
+  _insertOutputDeclarations(processedLines) {
+    const scopes = [];
+    const scopeStack = [];
+    const rootScope = {
+      type: 'root',
+      startIndex: 0,
+      endIndex: processedLines.length,
+      endTag: null,
+      focus: this._getRootFocus(processedLines),
+      declaredOutputs: new Set(),
+      requiredOutputs: new Set(),
+      conflictingNames: new Set(),
+      insertionIndex: 0,
+      indentation: ''
+    };
+    scopes.push(rootScope);
+    scopeStack.push(rootScope);
+
+    for (let i = 0; i < processedLines.length; i++) {
+      const line = processedLines[i];
+
+      if (!line.isContinuation && line.lineType === 'TAG') {
+        const isMacroStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'macro';
+        const isCallStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'call';
+        const isCaptureStart = line.blockType === this.BLOCK_TYPE.START &&
+          (line.tagName === 'var' || line.tagName === 'set');
+
+        if (isMacroStart || isCallStart || isCaptureStart) {
+          const focus = this._extractFocusFromTag(processedLines, i);
+          const scope = {
+            type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
+            startIndex: i,
+            endIndex: null,
+            endTag: isMacroStart ? 'endmacro' : (isCallStart ? 'endcall' : `end${line.tagName}`),
+            focus,
+            declaredOutputs: new Set(),
+            requiredOutputs: new Set(),
+            conflictingNames: new Set(),
+            insertionIndex: null,
+            indentation: ''
+          };
+          scopes.push(scope);
+          scopeStack.push(scope);
+
+          if (isMacroStart) {
+            const params = this._parseMacroParams(line.codeContent);
+            this._collectIdentifierConflicts(params.join(','), scope.conflictingNames);
+          } else if (isCallStart) {
+            const params = this._parseCallParams(line.codeContent);
+            this._collectIdentifierConflicts(params.join(','), scope.conflictingNames);
+          }
+        }
+      }
+
+      if (!line.isContinuation && line.lineType === 'TAG' &&
+        (line.tagName === 'data' || line.tagName === 'text' || line.tagName === 'value' || line.tagName === 'sink')) {
+        const name = this._getFirstWord(line.codeContent || '');
+        if (name) {
+          scopeStack[scopeStack.length - 1].declaredOutputs.add(name);
+        }
+      }
+
+      if (!line.isContinuation && line.lineType === 'TAG' && line.tagName === 'output') {
+        const handlerName = this._getFirstWord(line.codeContent || '');
+        if (handlerName === 'data' || handlerName === 'text' || handlerName === 'value') {
+          scopeStack[scopeStack.length - 1].requiredOutputs.add(handlerName);
+        }
+      }
+
+      if (!line.isContinuation && line.lineType === 'TAG' &&
+        (line.tagName === 'var' || line.tagName === 'extern')) {
+        const lhs = (line.codeContent || '').split('=')[0].trim();
+        this._collectIdentifierConflicts(lhs, scopeStack[scopeStack.length - 1].conflictingNames);
+      }
+
+      if (!line.isContinuation && line.lineType === 'TAG' && line.blockType === this.BLOCK_TYPE.END) {
+        const scope = scopeStack[scopeStack.length - 1];
+        if (scope && scope.endTag === line.tagName) {
+          scope.endIndex = i;
+          scopeStack.pop();
+        }
+      }
+    }
+
+    scopes.forEach((scope) => {
+      let insertionIndex = 0;
+      if (scope.type === 'root') {
+        let i = 0;
+        while (i < processedLines.length) {
+          const line = processedLines[i];
+          if (line.isEmpty || line.isCommentOnly) {
+            i++;
+            continue;
+          }
+          if (!line.isContinuation && line.lineType === 'TAG' && line.tagName === 'option') {
+            i++;
+            while (i < processedLines.length && processedLines[i].isContinuation) {
+              i++;
+            }
+            continue;
+          }
+          break;
+        }
+        insertionIndex = i;
+      } else {
+        let i = scope.startIndex + 1;
+        while (i < processedLines.length && processedLines[i].isContinuation) {
+          i++;
+        }
+        insertionIndex = i;
+      }
+      scope.insertionIndex = insertionIndex;
+
+      const startIndentation = processedLines[scope.startIndex]?.indentation || '';
+      let indentation = scope.type === 'root' ? '' : (startIndentation + '  ');
+      for (let i = insertionIndex; i < (scope.endIndex ?? processedLines.length); i++) {
+        const line = processedLines[i];
+        if (line.isEmpty || line.isCommentOnly || line.isContinuation) {
+          continue;
+        }
+        indentation = line.indentation || indentation;
+        break;
+      }
+      scope.indentation = indentation;
+    });
+
+    const injectionMap = new Map();
+    scopes.forEach((scope) => {
+      if (scope.type === 'capture') {
+        return;
+      }
+      const outputsToInject = this._getOutputsToInject(scope);
+      const inlineChunks = [];
+      outputsToInject.forEach((outputType) => {
+        if (scope.conflictingNames && scope.conflictingNames.has(outputType)) {
+          return;
+        }
+        if (!scope.declaredOutputs.has(outputType)) {
+          inlineChunks.push(this._formatInlineOutputDeclaration(outputType, scope.indentation));
+        }
+      });
+      if (inlineChunks.length) {
+        injectionMap.set(scope.insertionIndex, (injectionMap.get(scope.insertionIndex) || []).concat(inlineChunks));
+      }
+    });
+
+    injectionMap.forEach((chunks, index) => {
+      if (!chunks || chunks.length === 0) return;
+      let targetIndex = index;
+      while (targetIndex < processedLines.length && processedLines[targetIndex].isContinuation) {
+        targetIndex++;
+      }
+      if (targetIndex >= processedLines.length) {
+        processedLines.push({
+          indentation: '',
+          lineType: 'TEXT',
+          tagName: null,
+          codeContent: '',
+          blockType: null,
+          comments: [],
+          isContinuation: false,
+          isEmpty: true,
+          isCommentOnly: false,
+          continuesToNext: false,
+          continuesFromPrev: false,
+          tokens: []
+        });
+      }
+      const line = processedLines[targetIndex];
+      line.inlinePrefix = (line.inlinePrefix || '') + chunks.join('');
+    });
+
+    return processedLines;
   }
 
   _insertImplicitReturns(processedLines) {
