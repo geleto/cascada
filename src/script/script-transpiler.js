@@ -83,6 +83,9 @@
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
 
+//this is only temporary, the implementation is vibe-coded and will be removed later
+const ENABLE_INSERT_IMPLICIT_RETURN = true;
+
 class ScriptTranspiler {
   constructor() {
     // Comment type constants
@@ -1582,14 +1585,18 @@ class ScriptTranspiler {
 
     this._processContinuationsAndComments(processedLines);
 
+    const outputLines = ENABLE_INSERT_IMPLICIT_RETURN
+      ? this._insertImplicitReturns(processedLines)
+      : processedLines;
+
     let output = '';
     let lastNonContinuationLineType = null;
-    for (let i = 0; i < processedLines.length; i++) {
-      if (!processedLines[i].isContinuation) {
-        lastNonContinuationLineType = processedLines[i].lineType;
+    for (let i = 0; i < outputLines.length; i++) {
+      if (!outputLines[i].isContinuation) {
+        lastNonContinuationLineType = outputLines[i].lineType;
       }
-      output += this._generateOutput(processedLines[i], processedLines[i + 1]?.isContinuation, lastNonContinuationLineType, i);
-      if (i != processedLines.length - 1) {
+      output += this._generateOutput(outputLines[i], outputLines[i + 1]?.isContinuation, lastNonContinuationLineType, i);
+      if (i != outputLines.length - 1) {
         output += '\n';
       }
     }
@@ -1597,7 +1604,7 @@ class ScriptTranspiler {
     // Validate block structure
     this._validateBlockStructure(processedLines);
 
-    const hasExplicitReturn = processedLines.some(line => line.tagName === 'return');
+    const hasExplicitReturn = this._hasTopLevelReturn(processedLines);
     let focusDirective = null;
     processedLines.forEach((line) => {
       if (line.tagName !== 'option') {
@@ -1609,7 +1616,7 @@ class ScriptTranspiler {
       }
     });
 
-    if (!hasExplicitReturn) {
+    if (ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn) {
       const implicitReturn = focusDirective
         ? `{%- return @output._snapshotFocus("${focusDirective}") -%}`
         : '{%- return @output.snapshot() -%}';
@@ -1621,6 +1628,118 @@ class ScriptTranspiler {
 
     return output;
   }
+
+  _hasTopLevelReturn(processedLines) {
+    const ignoreStack = [];
+
+    for (let i = 0; i < processedLines.length; i++) {
+      const line = processedLines[i];
+      if (line.isContinuation || line.lineType !== 'TAG') {
+        continue;
+      }
+
+      if (line.blockType === this.BLOCK_TYPE.START) {
+        if (line.tagName === 'macro' || line.tagName === 'var' || line.tagName === 'set' || line.tagName === 'call') {
+          ignoreStack.push(line.tagName);
+        }
+      } else if (line.blockType === this.BLOCK_TYPE.END) {
+        const top = ignoreStack[ignoreStack.length - 1];
+        if ((line.tagName === 'endmacro' && top === 'macro') ||
+          (line.tagName === 'endvar' && top === 'var') ||
+          (line.tagName === 'endset' && top === 'set') ||
+          (line.tagName === 'endcall' && top === 'call')) {
+          ignoreStack.pop();
+        }
+      }
+
+      if (line.tagName === 'return' && ignoreStack.length === 0) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  _extractFocusFromTag(processedLines, startIndex) {
+    let combined = processedLines[startIndex].codeContent || '';
+    for (let i = startIndex + 1; i < processedLines.length; i++) {
+      const line = processedLines[i];
+      if (!line.isContinuation) break;
+      if (line.codeContent) {
+        combined += ' ' + line.codeContent.trim();
+      }
+    }
+
+    const match = combined.match(/:\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/);
+    return match ? match[1] : null;
+  }
+
+  _makeImplicitReturnLine(focus, indentation) {
+    return {
+      indentation: indentation || '',
+      lineType: 'TAG',
+      tagName: 'return',
+      codeContent: focus
+        ? `@output._snapshotFocus("${focus}")`
+        : '@output.snapshot()',
+      blockType: null,
+      comments: [],
+      isContinuation: false,
+      isEmpty: false,
+      isCommentOnly: false,
+      continuesToNext: false,
+      continuesFromPrev: false,
+      tokens: []
+    };
+  }
+
+  _insertImplicitReturns(processedLines) {
+    const result = [];
+    const scopeStack = [];
+
+    for (let i = 0; i < processedLines.length; i++) {
+      const line = processedLines[i];
+
+      if (!line.isContinuation && line.lineType === 'TAG') {
+        const isMacroStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'macro';
+        const isCallStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'call';
+        const isCaptureStart = line.blockType === this.BLOCK_TYPE.START &&
+          (line.tagName === 'var' || line.tagName === 'set');
+
+        if (isMacroStart || isCallStart || isCaptureStart) {
+          const focus = this._extractFocusFromTag(processedLines, i);
+          scopeStack.push({
+            type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
+            endTag: isMacroStart ? 'endmacro' : (isCallStart ? 'endcall' : `end${line.tagName}`),
+            focus,
+            hasExplicitReturn: false
+          });
+        }
+
+        if (line.tagName === 'return') {
+          const scope = scopeStack[scopeStack.length - 1];
+          if (scope) {
+            scope.hasExplicitReturn = true;
+          }
+        }
+
+        if (line.blockType === this.BLOCK_TYPE.END) {
+          const scope = scopeStack[scopeStack.length - 1];
+          if (scope && line.tagName === scope.endTag) {
+            if (!scope.hasExplicitReturn) {
+              result.push(this._makeImplicitReturnLine(scope.focus, line.indentation));
+            }
+            scopeStack.pop();
+          }
+        }
+      }
+
+      result.push(line);
+    }
+
+    return result;
+  }
+
 }
 
 module.exports = new ScriptTranspiler();

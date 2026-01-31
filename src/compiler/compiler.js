@@ -80,6 +80,7 @@ class Compiler extends CompilerBase {
   }
 
   /**
+   * Implements the call/caller() compilation.
    * CallExtension - no callback, can return either value or promise
    * CallExtensionAsync - uses callback, async = true. This was the way to handle the old nunjucks async
    * @todo - rewrite with _emitAggregate
@@ -985,23 +986,27 @@ class Compiler extends CompilerBase {
     let returnStatement;
     if (node.isAsync) {
       const errorCheck = `if (${err}) throw ${err};`;
-      let bufferArgs = bufferId;
       if (this.scriptMode) {
-        bufferArgs += ', this';
+        returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return undefined;});`;
+      } else {
+        let bufferArgs = bufferId;
+        if (this.scriptMode) {
+          bufferArgs += ', this';
+        }
+        if (node.focus) {
+          bufferArgs += `, "${node.focus}"`;
+        }
+
+        const flattenCall = `runtime.flattenBuffer(${bufferArgs})`;
+
+        // Template mode OR script mode with :text focus needs SafeString
+        const needsSafeString = !this.scriptMode || node.focus === 'text';
+        const safeStringCall = needsSafeString
+          ? `runtime.newSafeStringAsync(${flattenCall})`
+          : flattenCall;
+
+        returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;
       }
-      if (node.focus) {
-        bufferArgs += `, "${node.focus}"`;
-      }
-
-      const flattenCall = `runtime.flattenBuffer(${bufferArgs})`;
-
-      // Template mode OR script mode with :text focus needs SafeString
-      const needsSafeString = !this.scriptMode || node.focus === 'text';
-      const safeStringCall = needsSafeString
-        ? `runtime.newSafeStringAsync(${flattenCall})`
-        : flattenCall;
-
-      returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;
     } else {
       // Sync case
       const needsSafeString = !this.scriptMode || node.focus === 'text';
@@ -1092,11 +1097,21 @@ class Compiler extends CompilerBase {
         this.emit.line('let output = new runtime.CommandBuffer(context);');
         this.emit.initOutputHandlers('output');
         f.declaredOutputs = this._createDefaultOutputDeclarations();
+        // Capture bodies should not be treated as root-scope returns.
+        f._seesRootScope = false;
+        // Capture returns run inside an async block; wait for sibling closures.
+        f._returnWaitCount = 1;
 
-        this.compile(n.body, f);//write to output
-
-        this.emit.line('await astate.waitAllClosures(1)');
-        this.emit.line(`let ${res} = runtime.flattenBuffer(output${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''});`);
+        if (this.scriptMode) {
+          this.emit.line(`let ${res} = (async function(frame) {`);
+          this.compile(n.body, f);//write to output
+          this.emit.line('return undefined;');
+          this.emit.line('}).call(this, frame);');
+        } else {
+          this.compile(n.body, f);//write to output
+          this.emit.line('await astate.waitAllClosures(1)');
+          this.emit.line(`let ${res} = runtime.flattenBuffer(output${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''});`);
+        }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
       }, res, node.body);
     }
@@ -1275,7 +1290,12 @@ class Compiler extends CompilerBase {
       this.emit.line('  if(finalParent) {');
       this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
       this.emit.line('  } else {');
-      this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer.currentBuffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
+      if (this.scriptMode) {
+        // In script mode we expect a {%- return ... -%} in the template body to provide the result.
+        // this.emit.line('    cb(null, frame._outputs.output.snapshot());');
+      } else {
+        this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer.currentBuffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
+      }
       /*const flattenCall = `runtime.flattenBuffer(${this.buffer.currentBuffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''})`;
       this.emit.line(`    const __flatResult = ${flattenCall};`);
       this.emit.line('    if (__flatResult && typeof __flatResult.then === "function") {');
@@ -1405,7 +1425,8 @@ class Compiler extends CompilerBase {
         this.emit.line('  cb(err);');
         this.emit.line('});');
       } else {
-        this.emit.line('return astate.waitAllClosures(0).then(async () => {');
+        const waitCount = (frame && frame._returnWaitCount !== undefined) ? frame._returnWaitCount : 0;
+        this.emit.line(`return astate.waitAllClosures(${waitCount}).then(async () => {`);
         this.emit(`  let ${resultVar} = `);
         if (hasValue) {
           this._compileExpression(node.value, frame, true, node);

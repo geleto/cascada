@@ -255,16 +255,27 @@ module.exports = class CompileEmit {
     const originalAsyncClosureDepth = this.asyncClosureDepth;
     this.asyncClosureDepth = 0;
 
-
-    innerBodyFunction.call(this.compiler, frame);
+    if (this.compiler.scriptMode) {
+      // Call blocks in script mode return values via explicit/implicit return.
+      frame._seesRootScope = false;
+      frame._returnWaitCount = 1;
+      this.line(`let ${id} = (async function(frame) {`);
+      innerBodyFunction.call(this.compiler, frame);
+      this.line('return undefined;');
+      this.line('}).call(this, frame);');
+    } else {
+      innerBodyFunction.call(this.compiler, frame);
+    }
 
     this.asyncClosureDepth = originalAsyncClosureDepth;
 
     //this.Line(';');//this may be needed in some cases
     this.compiler.buffer.pop();
 
-    this.line('await astate.waitAllClosures(1);');
-    this.line(`${id} = runtime.flattenBuffer(${id});`);
+    if (!this.compiler.scriptMode) {
+      this.line('await astate.waitAllClosures(1);');
+      this.line(`${id} = runtime.flattenBuffer(${id});`);
+    }
     /*this.line(`let ${id}_flat = runtime.flattenBuffer(${id});`);
     this.line(`if (${id}_flat && typeof ${id}_flat.then === 'function') { ${id}_flat = await ${id}_flat; }`);
     this.line(`${id} = ${id}_flat;`);*/
