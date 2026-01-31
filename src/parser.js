@@ -126,7 +126,8 @@ class Parser extends Obj {
         this.dropLeadingWhitespace = true;
       }
     } else {
-      this.fail('expected block end in ' + name + ' statement');
+      const label = (name === 'output_command') ? 'output' : name;
+      this.fail('expected block end in ' + label + ' statement');
     }
 
     return tok;

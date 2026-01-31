@@ -946,8 +946,11 @@ class ScriptTranspiler {
     }
   }
 
-  _formatOutputCommand(outputType, commandContent) {
-    return `${outputType} ${commandContent}`;
+  _formatOutputCommand(outputType, commandContent, includeOutputType = false) {
+    if (includeOutputType) {
+      return `${outputType} ${commandContent}`;
+    }
+    return commandContent;
   }
 
   _isSnapshotCall(afterTrimmed) {
@@ -1032,9 +1035,12 @@ class ScriptTranspiler {
       if (parsed.directCall) {
         // Direct method call on output root (e.g., myData.set(...)) - keep as-is.
         parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output';
+        parseResult.tagName = 'output_command';
         parseResult.blockType = null;
-        parseResult.codeContent = this._formatOutputCommand(outputType, trimmed);
+        parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
+        if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
+          parseResult.requiredOutputs = new Set([outputType]);
+        }
         return true;
       }
 
@@ -1054,9 +1060,12 @@ class ScriptTranspiler {
       }
 
       parseResult.lineType = 'TAG';
-      parseResult.tagName = 'output';
+      parseResult.tagName = 'output_command';
       parseResult.blockType = null;
-      parseResult.codeContent = this._formatOutputCommand(outputType, commandContent);
+      parseResult.codeContent = this._formatOutputCommand(outputType, commandContent, false);
+      if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
+        parseResult.requiredOutputs = new Set([outputType]);
+      }
       return true;
     }
 
@@ -1065,9 +1074,12 @@ class ScriptTranspiler {
     }
 
     parseResult.lineType = 'TAG';
-    parseResult.tagName = 'output';
+    parseResult.tagName = 'output_command';
     parseResult.blockType = null;
-    parseResult.codeContent = this._formatOutputCommand(outputType, trimmed);
+    parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
+    if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
+      parseResult.requiredOutputs = new Set([outputType]);
+    }
     return true;
   }
 
@@ -1100,11 +1112,11 @@ class ScriptTranspiler {
 
     if (isText) {
       this.ensureOutputDeclared('text', 'text');
-      const outputType = 'text';
       parseResult.lineType = 'TAG';
-      parseResult.tagName = 'output';
+      parseResult.tagName = 'output_command';
       parseResult.blockType = null;
-      parseResult.codeContent = this._formatOutputCommand(outputType, commandContent.trimStart());
+      parseResult.codeContent = commandContent.trimStart();
+      parseResult.requiredOutputs = new Set(['text']);
     } else {
       // Check if this is the @data command syntax
       let isDataCommand = false;
@@ -1130,16 +1142,20 @@ class ScriptTranspiler {
           }
         }
 
-        // Update the parseResult with the converted command
+        // Update the parseResult with the converted command (strip leading "@")
+        const rewritten = genericSyntaxCommand.startsWith('@')
+          ? genericSyntaxCommand.substring(1)
+          : genericSyntaxCommand;
         parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output';
+        parseResult.tagName = 'output_command';
         parseResult.blockType = null;
-        parseResult.codeContent = this._formatOutputCommand('data', genericSyntaxCommand.substring(1));
+        parseResult.codeContent = rewritten;
+        parseResult.requiredOutputs = new Set(['data']);
       } else {
         // All other @ commands are treated as function commands
         // @print was deprecated and replaced with @text(value)
         parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output';
+        parseResult.tagName = 'output_command';
         parseResult.blockType = null;
 
         // Support special @_revert() shorthand that targets all handlers.
@@ -1149,17 +1165,21 @@ class ScriptTranspiler {
           if (!remainder || remainder.startsWith('(') || remainder.startsWith(' ')) {
             const leadingWhitespace = commandContent.slice(0, commandContent.length - trimmedCommand.length);
             const rest = trimmedCommand.substring(1); // remove the leading '.'
-            parseResult.codeContent = this._formatOutputCommand('_', `${leadingWhitespace}_.${rest}`);
+            parseResult.codeContent = `${leadingWhitespace}_.${rest}`;
           } else {
-            const handlerName = this._getLeadingIdentifier(commandContent) || '_';
-            parseResult.codeContent = this._formatOutputCommand(handlerName, commandContent);
+            parseResult.codeContent = commandContent;
           }
         } else {
-          const handlerName = this._getLeadingIdentifier(commandContent) || '_';
-          if (handlerName === 'value') {
+          if ((this._getLeadingIdentifier(commandContent) || '_') === 'value') {
             this.ensureOutputDeclared('value', 'value');
+            parseResult.lineType = 'TAG';
+            parseResult.tagName = 'output_command';
+            parseResult.blockType = null;
+            parseResult.codeContent = commandContent.trimStart();
+            parseResult.requiredOutputs = new Set(['value']);
+          } else {
+            parseResult.codeContent = commandContent; // The content for the Nunjucks tag
           }
-          parseResult.codeContent = this._formatOutputCommand(handlerName, commandContent); // The content for the Nunjucks tag
         }
       }
     }
@@ -1830,6 +1850,12 @@ class ScriptTranspiler {
         if (handlerName === 'data' || handlerName === 'text' || handlerName === 'value') {
           scopeStack[scopeStack.length - 1].requiredOutputs.add(handlerName);
         }
+      }
+
+      if (line.requiredOutputs && line.requiredOutputs.size > 0) {
+        line.requiredOutputs.forEach((outputName) => {
+          scopeStack[scopeStack.length - 1].requiredOutputs.add(outputName);
+        });
       }
 
       if (!line.isContinuation && line.lineType === 'TAG' &&

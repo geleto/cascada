@@ -1,5 +1,8 @@
 'use strict';
 
+//@todo - this will be completely rewritten and simplified togather
+// with implementing proper snapshot() for outputs
+
 const {
   CommandBuffer,
   resolveBufferArray,
@@ -18,6 +21,9 @@ const {
   resolveOutputNameReturn
 } = require('./flatten-shared');
 const { suppressValue, suppressValueScript } = require('./safe-output');
+const { resolveAll } = require('./resolve');
+
+const RESOLVE_MARKER = Symbol.for('cascada.resolve');
 
 function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedState, flattenBuffer) {
   if (outputName) {
@@ -123,6 +129,35 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
       }
     }
     return false;
+  }
+
+  function hasAsyncArg(arg) {
+    if (!arg) return false;
+    if (typeof arg.then === 'function') return true;
+    if (arg[RESOLVE_MARKER]) return true;
+    if (Array.isArray(arg)) {
+      return arg.some(hasAsyncArg);
+    }
+    return false;
+  }
+
+  async function resolveCommandArgs(args) {
+    const resolved = await resolveAll(args);
+    if (isPoison(resolved)) {
+      return resolved;
+    }
+    const result = resolved.slice();
+    for (let i = 0; i < result.length; i++) {
+      const value = result[i];
+      if (Array.isArray(value)) {
+        const nested = await resolveAll(value);
+        if (isPoison(nested)) {
+          return nested;
+        }
+        result[i] = nested;
+      }
+    }
+    return result;
   }
 
   function getOrInstantiateHandler(handlerName) {
@@ -240,6 +275,12 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
     const pos = getPosition(item);
 
     if (collectPoisonArgs(args)) {
+      return;
+    }
+
+    if (hasAsyncArg(args)) {
+      asyncMode = true;
+      queueAsync(() => processCommandItemAsync(item));
       return;
     }
 
@@ -388,7 +429,13 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
     const args = item.arguments;
     const pos = getPosition(item);
 
-    if (collectPoisonArgs(args)) {
+    const resolvedArgs = await resolveCommandArgs(args);
+    if (isPoison(resolvedArgs)) {
+      state.collectedErrors.push(...resolvedArgs.errors);
+      return;
+    }
+
+    if (collectPoisonArgs(resolvedArgs)) {
       return;
     }
 
@@ -396,12 +443,12 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
     if (target.kind === 'text') {
       const autoescape = env && env.opts ? env.opts.autoescape : false;
       if (state.scriptMode) {
-        args.forEach((arg) => {
+        resolvedArgs.forEach((arg) => {
           const normalized = suppressValueScript(arg, autoescape);
           processItem(normalized);
         });
       } else {
-        args.forEach((arg) => {
+        resolvedArgs.forEach((arg) => {
           emitText(target.name, [suppressValue(arg, autoescape)]);
         });
       }
@@ -431,7 +478,7 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
       const sinkCommand = commandName ? sink[commandName] : sink;
       if (typeof sinkCommand === 'function') {
         try {
-          const result = sinkCommand.apply(sink, args);
+          const result = sinkCommand.apply(sink, resolvedArgs);
           if (result && typeof result.then === 'function') {
             await result;
           }
@@ -455,7 +502,49 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
       );
     }
 
-    processCommandItem(item);
+    if (!targetObject) return;
+
+    const commandFunc = commandName ? targetObject[commandName] : targetObject;
+
+    if (typeof commandFunc === 'function') {
+      try {
+        commandFunc.apply(targetObject, resolvedArgs);
+      } catch (err) {
+        throw new RuntimeFatalError(
+          err,
+          pos.lineno,
+          pos.colno,
+          formatHandlerRef(handlerName, subpath, commandName),
+          context ? context.path : null
+        );
+      }
+      return;
+    }
+
+    if (!commandName) {
+      try {
+        commandFunc(...resolvedArgs);
+      } catch (e) {
+        const err3 = handleError(
+          new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable`),
+          pos.lineno,
+          pos.colno,
+          `@${handlerName}${subpath ? '.' + subpath.join('.') : ''}`,
+          context ? context.path : null
+        );
+        state.collectedErrors.push(err3);
+      }
+      return;
+    }
+
+    const err5 = handleError(
+      new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`),
+      pos.lineno,
+      pos.colno,
+      formatHandlerRef(handlerName, subpath, commandName),
+      context ? context.path : null
+    );
+    state.collectedErrors.push(err5);
   }
 
   function processItem(item) {
