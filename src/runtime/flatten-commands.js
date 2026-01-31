@@ -7,7 +7,8 @@ const {
   CommandBuffer,
   resolveBufferArray,
   resolveOutputTargets,
-  processReverts
+  processReverts,
+  unwrapCommand
 } = require('./buffer');
 const { PoisonError, RuntimeFatalError, isPoison, handleError } = require('./errors');
 const {
@@ -550,47 +551,50 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
   function processItem(item) {
     if (item === null || item === undefined) return;
 
-    if (item && typeof item === 'object' && item.__cascadaPoisonMarker === true) {
-      processPoisonMarker(item);
+    // Handle wrapped commands - extract the value
+    const actualValue = unwrapCommand(item);
+
+    if (actualValue && typeof actualValue === 'object' && actualValue.__cascadaPoisonMarker === true) {
+      processPoisonMarker(actualValue);
       return;
     }
 
-    if (isPoison(item)) {
-      state.collectedErrors.push(...item.errors);
+    if (isPoison(actualValue)) {
+      state.collectedErrors.push(...actualValue.errors);
       return;
     }
 
-    if (item instanceof CommandBuffer) {
-      if (item._reverted) return;
+    if (actualValue instanceof CommandBuffer) {
+      if (actualValue._reverted) return;
       if (state.scriptMode && isTextOutputNameFromState(state, outputName || 'text')) {
         // In script mode, nested buffers should apply all outputs, not just text.
-        flattenBuffer(item, context, null, null, state);
+        flattenBuffer(actualValue, context, null, null, state);
         return;
       }
-      flattenBuffer(resolveBufferArray(item, outputName), context, null, outputName, state);
+      flattenBuffer(resolveBufferArray(actualValue, outputName), context, null, outputName, state);
       return;
     }
 
-    if (Array.isArray(item)) {
-      processArrayItem(item);
+    if (Array.isArray(actualValue)) {
+      processArrayItem(actualValue);
       return;
     }
 
-    if (typeof item === 'object' && (item.method || item.handler !== undefined)) {
-      const handlerInstance = item.handler !== undefined
-        ? getOrInstantiateHandler(item.handler)
+    if (typeof actualValue === 'object' && (actualValue.method || actualValue.handler !== undefined)) {
+      const handlerInstance = actualValue.handler !== undefined
+        ? getOrInstantiateHandler(actualValue.handler)
         : null;
       const isSinkHandler = handlerInstance && typeof handlerInstance._resolveSink === 'function';
       if (isSinkHandler) {
         asyncMode = true;
-        queueAsync(() => processCommandItemAsync(item));
+        queueAsync(() => processCommandItemAsync(actualValue));
         return;
       }
       if (asyncMode) {
-        queueAsync(() => processCommandItemAsync(item));
+        queueAsync(() => processCommandItemAsync(actualValue));
         return;
       }
-      processCommandItem(item);
+      processCommandItem(actualValue);
       return;
     }
 
@@ -598,12 +602,12 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
       return;
     }
 
-    if (typeof item === 'object') {
-      processObjectItem(item);
+    if (typeof actualValue === 'object') {
+      processObjectItem(actualValue);
       return;
     }
 
-    emitText(outputName || 'text', [item]);
+    emitText(outputName || 'text', [actualValue]);
   }
 
   if (Array.isArray(arr)) {

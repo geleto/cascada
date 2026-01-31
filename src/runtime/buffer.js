@@ -28,6 +28,78 @@ class CommandBuffer {
     };
   }
 
+  /**
+   * Wraps a value in a command object (async mode only)
+   * @param {*} value - The value to wrap
+   * @returns {Object} Command object with type, value, and metadata fields
+   */
+  _wrapCommand(value) {
+    // Already wrapped - return as-is
+    if (value && typeof value === 'object' && 'type' in value && 'value' in value) {
+      return value;
+    }
+
+    // CommandBuffer and arrays should not be wrapped - pass through as-is
+    if (value instanceof CommandBuffer || Array.isArray(value)) {
+      return value;
+    }
+
+    // Only wrap specific types: primitives, functions, command objects, and poison markers
+    // Everything else (plain objects, objects with custom toString, etc.) passes through
+
+    // Primitives (strings, numbers, booleans, null, undefined)
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ||
+        value === null || value === undefined) {
+      return {
+        type: 'text',
+        value: value,
+        next: null,
+        resolved: false,
+        promise: null,
+        resolve: null
+      };
+    }
+
+    // Functions (used for SafeString processing)
+    if (typeof value === 'function') {
+      return {
+        type: 'function',
+        value: value,
+        next: null,
+        resolved: false,
+        promise: null,
+        resolve: null
+      };
+    }
+
+    // Poison markers
+    if (value && typeof value === 'object' && value.__cascadaPoisonMarker === true) {
+      return {
+        type: 'poison',
+        value: value,
+        next: null,
+        resolved: false,
+        promise: null,
+        resolve: null
+      };
+    }
+
+    // Command objects (have 'command' property)
+    if (value && typeof value === 'object' && 'command' in value) {
+      return {
+        type: 'command',
+        value: value,
+        next: null,
+        resolved: false,
+        promise: null,
+        resolve: null
+      };
+    }
+
+    // Everything else (plain objects, objects with custom toString, etc.) - pass through unwrapped
+    return value;
+  }
+
   _getOutputArray(outputName) {
     const name = outputName || 'output';
     if (!this._outputArrays[name]) {
@@ -61,7 +133,8 @@ class CommandBuffer {
   add(value, outputName = null) {
     const slot = this._reserveSlot(outputName);
     const target = this._getOutputArray(outputName);
-    target[slot] = value;
+    const wrappedValue = this._wrapCommand(value);
+    target[slot] = wrappedValue;
     return slot;
   }
 
@@ -71,7 +144,8 @@ class CommandBuffer {
 
   fillSlot(slot, value, outputName = null) {
     const target = this._getOutputArray(outputName);
-    target[slot] = value;
+    const wrappedValue = this._wrapCommand(value);
+    target[slot] = wrappedValue;
   }
 }
 
@@ -121,20 +195,36 @@ function markBufferHasRevert(buffer, handlerNames = null) {
   });
 }
 
+// Helper to check if an object is a wrapped command
+function isWrappedCommand(item) {
+  return item && typeof item === 'object' &&
+         'type' in item && 'value' in item &&
+         'next' in item && 'resolved' in item;
+}
+
+// Unwraps a wrapped command, returning the original value
+function unwrapCommand(item) {
+  return isWrappedCommand(item) ? item.value : item;
+}
+
 // Determines which handler a buffer entry belongs to.
 function detectHandlerName(item) {
   if (!item) return null;
-  if (item.__cascadaPoisonMarker === true) {
-    return item.handler || 'text';
+
+  // Unwrap if this is a wrapped command
+  const actualItem = unwrapCommand(item);
+
+  if (actualItem.__cascadaPoisonMarker === true) {
+    return actualItem.handler || 'text';
   }
-  if (Array.isArray(item)) {
+  if (Array.isArray(actualItem)) {
     return 'text';
   }
-  if (typeof item === 'object') {
-    if ('handler' in item && item.handler) {
-      return item.handler;
+  if (typeof actualItem === 'object') {
+    if ('handler' in actualItem && actualItem.handler) {
+      return actualItem.handler;
     }
-    if ('text' in item && Object.keys(item).length > 0) {
+    if ('text' in actualItem && Object.keys(actualItem).length > 0) {
       return 'text';
     }
     return null;
@@ -145,7 +235,12 @@ function detectHandlerName(item) {
 
 // Identifies buffer command objects representing @_revert() calls.
 function isRevertCommand(item) {
-  return item && typeof item === 'object' && item.command === '_revert';
+  if (!item || typeof item !== 'object') return false;
+
+  // Unwrap if this is a wrapped command
+  const actualItem = unwrapCommand(item);
+
+  return actualItem && typeof actualItem === 'object' && actualItem.command === '_revert';
 }
 
 // Marks a buffer entry as reverted so flattening skips it.
@@ -288,12 +383,13 @@ function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinear
     }
 
     if (isRevertCommand(item)) {
-      const targetsAllHandlers = item.handler === '_';
+      const unwrappedItem = unwrapCommand(item);
+      const targetsAllHandlers = unwrappedItem.handler === '_';
       const handlerList = targetsAllHandlers
         ? [null] // null => revert all handlers in this scope
-        : (Array.isArray(item.handlers) && item.handlers.length > 0 ?
-          item.handlers :
-          [item.handler || 'text']);
+        : (Array.isArray(unwrappedItem.handlers) && unwrappedItem.handlers.length > 0 ?
+          unwrappedItem.handlers :
+          [unwrappedItem.handler || 'text']);
       handlerList.forEach(handler => revertLinearNodes(linearNodes, handler));
       linearNodes.push({
         isRevertMarker: true,
@@ -485,6 +581,8 @@ module.exports = {
   resetBufferOutputIndexes,
   revertBufferHandlers,
   markBufferHasRevert,
-  getPosonedBufferErrors
+  getPosonedBufferErrors,
+  isWrappedCommand,
+  unwrapCommand
 };
 

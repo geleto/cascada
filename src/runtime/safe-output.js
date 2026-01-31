@@ -2,9 +2,15 @@
 
 var lib = require('../lib');
 const errors = require('./errors');
+const { CommandBuffer } = require('./buffer');
 
 function normalizeBufferValue(val) {
   if (val && typeof val === 'object') {
+    // Don't extract arrays from CommandBuffers - they contain wrapped commands
+    // Let them pass through to be handled by buffer flattening logic
+    if (val instanceof CommandBuffer) {
+      return val;
+    }
     if (Array.isArray(val.text)) {
       return val.text;
     }
@@ -105,6 +111,11 @@ function suppressValueAsync(val, autoescape, errorContext) {
   val = normalizeBufferValue(val);
   // Poison check - return rejected promise synchronously
   if (errors.isPoison(val)) {
+    return val;
+  }
+
+  // CommandBuffer check - return as-is to be handled by flattening logic
+  if (val instanceof CommandBuffer) {
     return val;
   }
 

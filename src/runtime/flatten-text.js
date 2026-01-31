@@ -1,6 +1,6 @@
 'use strict';
 
-const { CommandBuffer, resolveBufferArray, processReverts } = require('./buffer');
+const { CommandBuffer, resolveBufferArray, processReverts, unwrapCommand } = require('./buffer');
 const { ensureBufferScopeMetadata } = require('./flatten-shared');
 const { PoisonError, isPoison, isPoisonError } = require('./errors');
 
@@ -14,21 +14,24 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
 
   const errors = [];
   const result = arr.reduce((acc, item) => {
-    if (item && typeof item === 'object' && item.__cascadaPoisonMarker === true) {
-      if (item.errors && Array.isArray(item.errors)) {
-        errors.push(...item.errors);
+    // Handle wrapped commands - extract the value
+    const actualValue = unwrapCommand(item);
+
+    if (actualValue && typeof actualValue === 'object' && actualValue.__cascadaPoisonMarker === true) {
+      if (actualValue.errors && Array.isArray(actualValue.errors)) {
+        errors.push(...actualValue.errors);
       }
       return acc;
     }
 
-    if (isPoison(item)) {
-      errors.push(...item.errors);
+    if (isPoison(actualValue)) {
+      errors.push(...actualValue.errors);
       return acc;
     }
 
-    if (item instanceof CommandBuffer) {
+    if (actualValue instanceof CommandBuffer) {
       try {
-        return acc + flattenBuffer(resolveBufferArray(item, outputName), null, null, outputName, sharedState);
+        return acc + flattenBuffer(resolveBufferArray(actualValue, outputName), null, null, outputName, sharedState);
       } catch (err) {
         if (isPoisonError(err)) {
           errors.push(...err.errors);
@@ -39,9 +42,9 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
       }
     }
 
-    if (Array.isArray(item)) {
+    if (Array.isArray(actualValue)) {
       try {
-        return acc + flattenBuffer(item, null, null, outputName, sharedState);
+        return acc + flattenBuffer(actualValue, null, null, outputName, sharedState);
       } catch (err) {
         if (isPoisonError(err)) {
           errors.push(...err.errors);
@@ -52,11 +55,11 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
       }
     }
 
-    if (typeof item === 'function') {
-      return (item(acc) || '');
+    if (typeof actualValue === 'function') {
+      return (actualValue(acc) || '');
     }
 
-    return acc + ((item !== null && item !== undefined) ? item : '');
+    return acc + ((actualValue !== null && actualValue !== undefined) ? actualValue : '');
   }, '');
 
   if (errors.length > 0) {
