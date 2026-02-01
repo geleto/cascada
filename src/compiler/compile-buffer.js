@@ -153,42 +153,6 @@ class CompileBuffer {
 
     // Use a wrapper to avoid duplicating the sync/async logic.
     const wrapper = (emitLogic) => {
-      // Revert Command Interception
-      if (command === '_revert') {
-        if (subpath && subpath.length > 0) {
-          this.compiler.fail('_revert() can only be called on the handler root (e.g. @data._revert())', node.lineno, node.colno, node);
-        }
-        // Special check for transpiled @data commands which move path to first argument
-        if (handler === 'data' && node.call.args && node.call.args.children.length > 0) {
-          const pathArg = node.call.args.children[0];
-          // If pathArg is provided and is NOT a null literal, it means a subpath was provided
-          // The transpiler generates Literal(null) for root calls like @data._revert()
-          if (pathArg && !(pathArg instanceof nodes.Literal && pathArg.value === null)) {
-            this.compiler.fail('_revert() can only be called on the handler root (e.g. @data._revert())', node.lineno, node.colno, node);
-          }
-        }
-        const revertOutputs = new Set(['text', 'data', 'value']);
-        if (frame.usedOutputs) {
-          frame.usedOutputs.forEach(name => revertOutputs.add(name));
-        }
-
-        if (handler === '_') {
-          revertOutputs.forEach((outputName) => {
-            this.addToBuffer(node, frame, () => {
-              this.compiler.emit(`{ handler: '_', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
-            }, node, outputName);
-          });
-          this.compiler.emit.line(`runtime.markBufferHasRevert(${this.currentBuffer}, ${JSON.stringify(Array.from(revertOutputs))});`);
-          return;
-        }
-
-        this.addToBuffer(node, frame, () => {
-          this.compiler.emit(`{ handler: '${handler}', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
-        }, node, handler);
-        this.compiler.emit.line(`runtime.markBufferHasRevert(${this.currentBuffer}, ${JSON.stringify([handler])});`);
-        return;
-      }
-
       if (isAsync) {
         if (useExplicitOutputBuffer) {
           const returnId = this.compiler._tmpid();

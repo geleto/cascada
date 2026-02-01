@@ -1,6 +1,6 @@
 'use strict';
 
-const { CommandBuffer, resolveBufferArray, processReverts, unwrapCommand } = require('./buffer');
+const { CommandBuffer, resolveBufferArray, unwrapCommand } = require('./buffer');
 const { ensureBufferScopeMetadata } = require('./flatten-shared');
 const { PoisonError, isPoison, isPoisonError } = require('./errors');
 
@@ -10,7 +10,6 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
   }
 
   ensureBufferScopeMetadata(arr);
-  processReverts(arr, outputName);
 
   const errors = [];
   const result = arr.reduce((acc, item) => {

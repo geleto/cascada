@@ -1,7 +1,6 @@
 'use strict';
 
 const { flattenBuffer } = require('./flatten-buffer');
-const { markBufferHasRevert } = require('./buffer');
 
 class Output {
   constructor(frame, outputName, context, outputType = null) {
@@ -26,13 +25,6 @@ class Output {
     if (this._outputType === 'data') {
       normalizedArgs = this._normalizeDataArgs(args);
     }
-    if (command === '_revert' && this._outputType === 'data' && normalizedArgs && normalizedArgs.length > 0) {
-      const pathArg = normalizedArgs[0];
-      const isRootPath = pathArg === null || (Array.isArray(pathArg) && pathArg.length === 1 && pathArg[0] === null);
-      if (!isRootPath) {
-        throw new Error('_revert() can only be called on the handler root (e.g. @data._revert())');
-      }
-    }
     const entry = {
       handler: this._outputName,
       command: command || null,
@@ -40,9 +32,6 @@ class Output {
       pos: { lineno: 0, colno: 0 }
     };
     this._frame._outputBuffer.add(entry, this._outputName);
-    if (command === '_revert') {
-      markBufferHasRevert(this._frame._outputBuffer, [this._outputName]);
-    }
   }
 
   // @todo - get rid of focusOverride later

@@ -185,15 +185,6 @@ function resolveOutputTargets(buffer, handlerNames = null) {
   }));
 }
 
-// Flags a buffer scope so later passes know it contains a @_revert command.
-function markBufferHasRevert(buffer, handlerNames = null) {
-  const targets = resolveOutputTargets(buffer, handlerNames);
-  targets.forEach(({ array }) => {
-    if (!Array.isArray(array)) return;
-    array._hasRevert = true;
-    array._revertsProcessed = false;
-  });
-}
 
 // Helper to check if an object is a wrapped command
 function isWrappedCommand(item) {
@@ -207,59 +198,15 @@ function unwrapCommand(item) {
   return isWrappedCommand(item) ? item.value : item;
 }
 
-// Determines which handler a buffer entry belongs to.
-function detectHandlerName(item) {
-  if (!item) return null;
-
-  // Unwrap if this is a wrapped command
-  const actualItem = unwrapCommand(item);
-
-  if (actualItem.__cascadaPoisonMarker === true) {
-    return actualItem.handler || 'text';
-  }
-  if (Array.isArray(actualItem)) {
-    return 'text';
-  }
-  if (typeof actualItem === 'object') {
-    if ('handler' in actualItem && actualItem.handler) {
-      return actualItem.handler;
-    }
-    if ('text' in actualItem && Object.keys(actualItem).length > 0) {
-      return 'text';
-    }
-    return null;
-  }
-  // primitives/functions count as text output
-  return 'text';
-}
-
-// Identifies buffer command objects representing @_revert() calls.
-function isRevertCommand(item) {
-  if (!item || typeof item !== 'object') return false;
-
-  // Unwrap if this is a wrapped command
-  const actualItem = unwrapCommand(item);
-
-  return actualItem && typeof actualItem === 'object' && actualItem.command === '_revert';
-}
-
-// Marks a buffer entry as reverted so flattening skips it.
-function markNodeReverted(container, index) {
-  const value = container[index];
-  if (!value || typeof value !== 'object') {
-    container[index] = { _reverted: true };
-    return;
-  }
-  value._reverted = true;
-}
-
-function markBufferReverted(buffer) {
+// Clear buffer contents for guard error recovery
+// This is used by guards to discard output when an error occurs
+function clearBuffer(buffer, handlerNames = null) {
   if (!buffer) {
     return;
   }
+
   if (buffer instanceof CommandBuffer) {
-    buffer._reverted = true;
-    const targets = resolveOutputTargets(buffer, null);
+    const targets = resolveOutputTargets(buffer, handlerNames);
     targets.forEach(({ name, array }) => {
       if (Array.isArray(array)) {
         array.length = 0;
@@ -269,193 +216,10 @@ function markBufferReverted(buffer) {
     return;
   }
 
-  buffer._reverted = true;
+  // For non-CommandBuffer arrays
   if (Array.isArray(buffer)) {
     buffer.length = 0;
   }
-}
-
-function resetBufferOutputIndexes(buffer, handlerNames = null) {
-  if (!(buffer instanceof CommandBuffer)) {
-    return;
-  }
-
-  const targets = resolveOutputTargets(buffer, handlerNames);
-  targets.forEach(({ name, array }) => {
-    const nextIndex = Array.isArray(array) ? array.length : 0;
-    buffer._setOutputIndex(name === 'output' ? null : name, nextIndex);
-  });
-}
-
-// Walks recorded linear nodes backwards and reverts those for a handler.
-function revertLinearNodes(linearNodes, handlerName) {
-  if (!linearNodes) return;
-  for (let i = linearNodes.length - 1; i >= 0; i--) {
-    const info = linearNodes[i];
-
-    if (info && info.isRevertMarker) {
-      // Markers belong to the scope where @_revert executed. If it matches the handler
-      // we're currently rewinding (or was a universal @_revert), we stop for this scope
-      // but keep bubbling up so that parent scopes continue their own cleanup.
-      const markerHandlers = info.handlers;
-      const targetsAllHandlers = info.targetsAllHandlers === true;
-      const appliesToHandler = targetsAllHandlers ||
-        (handlerName !== null && markerHandlers && markerHandlers.includes(handlerName));
-
-      if (appliesToHandler) {
-        // Debug helper: uncomment to confirm early-exit skip logic during tests
-        // console.log('[revert-opt][marker-hit] handler=%s, universal=%s', handlerName === null ? '_' : handlerName, targetsAllHandlers);
-        break; // stop rewinding once we hit a previous _revert on the same handler
-      }
-      continue;
-    }
-
-    const currentHandler = info.handler || 'text';
-    if (handlerName && handlerName !== currentHandler) {
-      continue;
-    }
-    markNodeReverted(info.container, info.index);
-    linearNodes.splice(i, 1);
-  }
-}
-
-// Performs a single linear scan to apply handler-targeted reverts per buffer.
-function processReverts(buffer, outputName = null) {
-  const target = resolveBufferArray(buffer, outputName);
-  if (!Array.isArray(target) || target._revertsProcessed) return;
-  walkBufferForReverts(target, true, null, null, outputName);
-}
-
-// Recursively walks a buffer tree collecting nodes for the linear pass.
-function walkBufferForReverts(container, forceScopeRoot = false, inheritedLinearNodes = null, parentIndexRef = null, outputName = null) {
-  const isScopeRoot = forceScopeRoot || container._outputScopeRoot === true;
-  const linearNodes = isScopeRoot ? [] : inheritedLinearNodes;
-
-  if (!isScopeRoot && !linearNodes) {
-    throw new Error('Non-scope buffers require shared linear nodes');
-  }
-
-  const scopeHasExplicitRevert = container._hasRevert === true;
-  if (isScopeRoot && !forceScopeRoot && !scopeHasExplicitRevert) {
-    container._revertsProcessed = true;
-    return false;
-  }
-
-  let scopeHasRevert = scopeHasExplicitRevert;
-
-  for (let i = 0; i < container.length; i++) {
-    const item = container[i];
-    const resolvedItem = item instanceof CommandBuffer ? resolveBufferArray(item, outputName) : item;
-
-    if (Array.isArray(resolvedItem)) {
-      const childIsScope = resolvedItem._outputScopeRoot === true;
-      const lastValue = resolvedItem.length > 0 ? resolvedItem[resolvedItem.length - 1] : null;
-      const hasPostProcessFn = typeof lastValue === 'function';
-
-      if (childIsScope) {
-        if (resolvedItem._hasRevert === true) {
-          const childHasRevert = walkBufferForReverts(resolvedItem, false, null, { container, index: i }, outputName);
-          if (childHasRevert) {
-            resolvedItem._hasRevert = true;
-            scopeHasRevert = true;
-          }
-        } else {
-          resolvedItem._revertsProcessed = true;
-        }
-        linearNodes.push({ handler: 'text', container, index: i, scopeRoot: true, parentIndexRef });
-        continue;
-      }
-
-      if (hasPostProcessFn) {
-        linearNodes.push({ handler: 'text', container, index: i, parentIndexRef });
-        continue;
-      }
-
-      const childHasRevert = walkBufferForReverts(resolvedItem, false, linearNodes, { container, index: i }, outputName);
-      if (childHasRevert) {
-        scopeHasRevert = true;
-      }
-      continue;
-    }
-
-    if (item && item._reverted) {
-      continue;
-    }
-
-    if (isRevertCommand(item)) {
-      const unwrappedItem = unwrapCommand(item);
-      const targetsAllHandlers = unwrappedItem.handler === '_';
-      const handlerList = targetsAllHandlers
-        ? [null] // null => revert all handlers in this scope
-        : (Array.isArray(unwrappedItem.handlers) && unwrappedItem.handlers.length > 0 ?
-          unwrappedItem.handlers :
-          [unwrappedItem.handler || 'text']);
-      handlerList.forEach(handler => revertLinearNodes(linearNodes, handler));
-      linearNodes.push({
-        isRevertMarker: true,
-        targetsAllHandlers,
-        handlers: targetsAllHandlers ? null : handlerList.slice(),
-        parentIndexRef
-      });
-      markNodeReverted(container, i);
-      scopeHasRevert = true;
-      continue;
-    }
-
-    const handlerName = detectHandlerName(item) || 'text';
-    linearNodes.push({ handler: handlerName, container, index: i, parentIndexRef });
-  }
-
-  if (isScopeRoot) {
-    container._hasRevert = scopeHasRevert;
-    container._revertsProcessed = true;
-    const rebuilt = [];
-    if (linearNodes && linearNodes.length > 0) {
-      for (const entry of linearNodes) {
-        if (entry && entry.isRevertMarker) continue;
-        if (!entry || !entry.container) continue;
-        const value = entry.container[entry.index];
-        if (!value || value._reverted) continue;
-        rebuilt.push(value);
-      }
-    } else {
-      for (const item of container) {
-        if (!item || item._reverted) continue;
-        rebuilt.push(item);
-      }
-    }
-    container.length = rebuilt.length;
-    for (let idx = 0; idx < rebuilt.length; idx++) {
-      container[idx] = rebuilt[idx];
-    }
-  }
-
-  return scopeHasRevert;
-}
-
-function revertBufferHandlers(buffer, handlerNames) {
-  if (!Array.isArray(handlerNames) || handlerNames.length === 0) {
-    markBufferReverted(buffer);
-    return;
-  }
-
-  const targets = resolveOutputTargets(buffer, handlerNames);
-  targets.forEach(({ name, array }) => {
-    if (!Array.isArray(array)) {
-      return;
-    }
-    array.push({
-      handler: name || 'text',
-      command: '_revert',
-      arguments: [],
-      pos: null
-    });
-    markBufferHasRevert(array);
-    processReverts(array, name);
-    if (buffer instanceof CommandBuffer) {
-      buffer._setOutputIndex(name, array.length);
-    }
-  });
 }
 
 /**
@@ -576,11 +340,7 @@ module.exports = {
   addPoisonMarkersToBuffer,
   resolveBufferArray,
   resolveOutputTargets,
-  processReverts,
-  markBufferReverted,
-  resetBufferOutputIndexes,
-  revertBufferHandlers,
-  markBufferHasRevert,
+  clearBuffer,
   getPosonedBufferErrors,
   isWrappedCommand,
   unwrapCommand

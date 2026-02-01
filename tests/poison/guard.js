@@ -94,7 +94,9 @@
       expect(res.replace(/\s+/g, ' ').trim()).to.equal('OUTER DONE');
     });
 
-    it('should respect manual @_revert inside guard block', async () => {
+    it.skip('should respect manual @_revert inside guard block', async () => {
+      // TODO: Re-enable when 'revert' statement is implemented for guards
+      // New syntax will be: revert (without @ prefix, only works inside guards)
       const tpl = `
         BEFORE
         {% guard %}

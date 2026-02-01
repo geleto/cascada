@@ -171,11 +171,8 @@ module.exports = {
   flattenBuffer: flattenBuffer,
   CommandBuffer: buffer.CommandBuffer,
   addPoisonMarkersToBuffer: buffer.addPoisonMarkersToBuffer,
-  markBufferReverted: buffer.markBufferReverted,
-  resetBufferOutputIndexes: buffer.resetBufferOutputIndexes,
-  revertBufferHandlers: buffer.revertBufferHandlers,
+  clearBuffer: buffer.clearBuffer,
   getPosonedBufferErrors: buffer.getPosonedBufferErrors,
-  markBufferHasRevert: buffer.markBufferHasRevert,
 
   guard,
 

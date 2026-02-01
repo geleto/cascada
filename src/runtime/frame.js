@@ -121,13 +121,8 @@ class Frame {
         const target = buffer._outputArrays[name];
         if (target && typeof target === 'object') {
           target._outputScopeRoot = true;
-          if (target._hasRevert === undefined) {
-            target._hasRevert = false;
-          }
-          target._parentScope = this._revertBuffer || null;
         }
       });
-      this._revertBuffer = buffer._outputArrays.text || buffer._outputArrays.output || buffer;
       return;
     }
 
@@ -136,29 +131,6 @@ class Frame {
     }
     if (buffer && typeof buffer === 'object') {
       buffer._outputScopeRoot = true;
-      if (buffer._hasRevert === undefined) {
-        buffer._hasRevert = false;
-      }
-      buffer._parentScope = this._revertBuffer || null;
-    }
-    this._revertBuffer = buffer;
-  }
-
-  revertOutputHandler(handlerName) {
-    this.revertOutput();//temporary before actual implementation
-  }
-
-  revertOutput() {
-    let current = this;
-    while (current) {
-      if (current._revertBuffer) {
-        // Use the buffer module to mark it as reverted
-        // We assume _reverted property convention as per buffer.js logic
-        current._revertBuffer._reverted = true;
-        current._revertBuffer.length = 0;
-        return;
-      }
-      current = current.parent;
     }
   }
 }

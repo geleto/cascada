@@ -1158,28 +1158,15 @@ class ScriptTranspiler {
         parseResult.tagName = 'output_command';
         parseResult.blockType = null;
 
-        // Support special @_revert() shorthand that targets all handlers.
-        const trimmedCommand = commandContent.trimStart();
-        if (trimmedCommand.startsWith('._revert')) {
-          const remainder = trimmedCommand.substring('._revert'.length);
-          if (!remainder || remainder.startsWith('(') || remainder.startsWith(' ')) {
-            const leadingWhitespace = commandContent.slice(0, commandContent.length - trimmedCommand.length);
-            const rest = trimmedCommand.substring(1); // remove the leading '.'
-            parseResult.codeContent = `${leadingWhitespace}_.${rest}`;
-          } else {
-            parseResult.codeContent = commandContent;
-          }
+        if ((this._getLeadingIdentifier(commandContent) || '_') === 'value') {
+          this.ensureOutputDeclared('value', 'value');
+          parseResult.lineType = 'TAG';
+          parseResult.tagName = 'output_command';
+          parseResult.blockType = null;
+          parseResult.codeContent = commandContent.trimStart();
+          parseResult.requiredOutputs = new Set(['value']);
         } else {
-          if ((this._getLeadingIdentifier(commandContent) || '_') === 'value') {
-            this.ensureOutputDeclared('value', 'value');
-            parseResult.lineType = 'TAG';
-            parseResult.tagName = 'output_command';
-            parseResult.blockType = null;
-            parseResult.codeContent = commandContent.trimStart();
-            parseResult.requiredOutputs = new Set(['value']);
-          } else {
-            parseResult.codeContent = commandContent; // The content for the Nunjucks tag
-          }
+          parseResult.codeContent = commandContent; // The content for the Nunjucks tag
         }
       }
     }
@@ -1296,12 +1283,7 @@ class ScriptTranspiler {
       }
     }
 
-    const isRevertLine = /^revert\s*(\(\s*\))?$/i.test(code);
-
     if (code.startsWith('@')) {
-      this._processOutputCommand(parseResult, lineIndex);
-    } else if (isRevertLine) {
-      parseResult.codeContent = '@._revert()';
       this._processOutputCommand(parseResult, lineIndex);
     } else if (code.startsWith(':')) {
       this._processFocusDirective(parseResult, lineIndex);

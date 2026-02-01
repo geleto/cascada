@@ -261,7 +261,12 @@ module.exports = class CompileEmit {
       frame._returnWaitCount = 1;
       this.line(`let ${id} = (async function(frame) {`);
       innerBodyFunction.call(this.compiler, frame);
-      this.line('return undefined;');
+      // If call block has focus, return focused output via snapshot
+      if (node.focus) {
+        this.line(`return frame._outputs.${node.focus}.snapshot();`);
+      } else {
+        this.line('return undefined;');
+      }
       this.line('}).call(this, frame);');
     } else {
       innerBodyFunction.call(this.compiler, frame);

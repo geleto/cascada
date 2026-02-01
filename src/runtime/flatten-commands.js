@@ -7,7 +7,6 @@ const {
   CommandBuffer,
   resolveBufferArray,
   resolveOutputTargets,
-  processReverts,
   unwrapCommand
 } = require('./buffer');
 const { PoisonError, RuntimeFatalError, isPoison, handleError } = require('./errors');
@@ -114,7 +113,6 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
 function flattenCommands(arr, context, focusOutput, outputName, sharedState, flattenBuffer) {
   if (Array.isArray(arr)) {
     ensureBufferScopeMetadata(arr);
-    processReverts(arr, outputName);
   }
 
   const state = createFlattenState(sharedState, null);
@@ -565,7 +563,6 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
     }
 
     if (actualValue instanceof CommandBuffer) {
-      if (actualValue._reverted) return;
       if (state.scriptMode && isTextOutputNameFromState(state, outputName || 'text')) {
         // In script mode, nested buffers should apply all outputs, not just text.
         flattenBuffer(actualValue, context, null, null, state);

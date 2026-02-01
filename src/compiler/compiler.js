@@ -631,12 +631,10 @@ class Compiler extends CompilerBase {
 
     this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
     if (handlerTargetsAll) {
-      this.emit.line(`  runtime.markBufferReverted(${this.buffer.currentBuffer});`);
-      this.emit.line(`  delete ${this.buffer.currentBuffer}._reverted;`);
-      this.emit.line(`  runtime.resetBufferOutputIndexes(${this.buffer.currentBuffer});`);
+      this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer});`);
     } else if (handlerTargets) {
-      this.emit.line(`  runtime.revertBufferHandlers(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
-      this.emit.line(`  runtime.resetBufferOutputIndexes(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
+      // Clear specific handlers when guard fails with selective targets
+      this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
     }
 
     if (guardStateVar) {
@@ -674,17 +672,6 @@ class Compiler extends CompilerBase {
     // 6. End Async Block
     frame = this.buffer.asyncBufferNodeEnd(node, frame, true, false, node);
   }
-
-  compileRevert(node, frame) {
-    const revertOutputs = ['text', 'data', 'value'];
-    revertOutputs.forEach((outputName) => {
-      this.buffer.addToBuffer(node, frame, () => {
-        this.emit(`{ handler: '_', command: '_revert', arguments: [], pos: { lineno: ${node.lineno}, colno: ${node.colno} } }`);
-      }, node, outputName);
-    });
-    this.emit.line(`runtime.markBufferHasRevert(${this.buffer.currentBuffer}, ${JSON.stringify(revertOutputs)});`);
-  }
-
 
   //todo! - get rid of the callback
   compileIf(node, frame, async) {
@@ -1110,7 +1097,10 @@ class Compiler extends CompilerBase {
         } else {
           this.compile(n.body, f);//write to output
           this.emit.line('await astate.waitAllClosures(1)');
-          this.emit.line(`let ${res} = runtime.flattenBuffer(output${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''});`);
+          const flattenArgs = this.scriptMode
+            ? `output, context${node.focus ? ', "' + node.focus + '"' : ''}`
+            : `output${node.focus ? ', null, "' + node.focus + '"' : ''}`;
+          this.emit.line(`let ${res} = runtime.flattenBuffer(${flattenArgs});`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
       }, res, node.body);
@@ -1294,7 +1284,10 @@ class Compiler extends CompilerBase {
         // In script mode we expect a {%- return ... -%} in the template body to provide the result.
         // this.emit.line('    cb(null, frame._outputs.output.snapshot());');
       } else {
-        this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer.currentBuffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''}));`);
+        const flattenArgs = this.scriptMode
+          ? `${this.buffer.currentBuffer}, context${node.focus ? ', "' + node.focus + '"' : ''}`
+          : `${this.buffer.currentBuffer}${node.focus ? ', null, "' + node.focus + '"' : ''}`;
+        this.emit.line(`    cb(null, runtime.flattenBuffer(${flattenArgs}));`);
       }
       /*const flattenCall = `runtime.flattenBuffer(${this.buffer.currentBuffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''})`;
       this.emit.line(`    const __flatResult = ${flattenCall};`);
