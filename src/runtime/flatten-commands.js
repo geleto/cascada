@@ -7,7 +7,8 @@ const {
   CommandBuffer,
   resolveBufferArray,
   resolveOutputTargets,
-  unwrapCommand
+  unwrapCommand,
+  isCommandBuffer
 } = require('./buffer');
 const { PoisonError, RuntimeFatalError, isPoison, handleError } = require('./errors');
 const {
@@ -607,10 +608,32 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
     emitText(outputName || 'text', [actualValue]);
   }
 
-  if (Array.isArray(arr)) {
-    arr.forEach(processItem);
+  // Try chain-based iteration first (for CommandBuffers)
+  // This validates the command chain implementation
+  if (isCommandBuffer(arr)) {
+    const usedChain = arr.traverseChain(outputName || 'output', (wrappedCmd) => {
+      // Process the wrapped command's value
+      processItem(wrappedCmd);
+    });
+
+    // If chain traversal succeeded, we're done
+    if (usedChain) {
+      // Chain iteration complete
+    } else {
+      // Chain not available, fall back to array iteration
+      if (Array.isArray(arr)) {
+        arr.forEach(processItem);
+      } else {
+        processItem(arr);
+      }
+    }
   } else {
-    processItem(arr);
+    // Not a CommandBuffer or not in async mode - use array iteration
+    if (Array.isArray(arr)) {
+      arr.forEach(processItem);
+    } else {
+      processItem(arr);
+    }
   }
 
   const finalize = () => {

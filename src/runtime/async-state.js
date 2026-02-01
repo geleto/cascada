@@ -72,19 +72,15 @@ class AsyncState {
       childFrame.checkInfo = checkInfo;
     }
 
-    try {
-      // 1. Invoke the async function to get the promise.
-      const promise = func(childState, childFrame);
-
-      // Check for fatal errors to report them immediately to the render which will reject the promise
-      promise.catch(err => {
-        if (err instanceof runtime.RuntimeFatalError) {
-          cb(err);
+    const promise = func(childState, childFrame)
+      .then((result) => {
+        // Patch command chain when async function completes
+        if (childFrame._outputBuffer) {
+          childFrame._outputBuffer.markFinishedAndPatchLinks();
         }
-      });
-
-      // The finally must run for all nodes.
-      const wrappedPromise = promise.finally(() => {
+        return result;
+      })
+      .finally(() => {
         // Ensure per-block finalization always runs (decrementing counters, releasing locks, etc.)
         if (sequentialAsyncBlock) {
           // This is the best place to do it rather than when the counter reaches 0
@@ -95,31 +91,14 @@ class AsyncState {
         childState._leaveAsyncBlock();
       });
 
-      // Suppress unhandled rejections as they are propagated via callback or poison
-      wrappedPromise.catch(() => { });
-
-      return wrappedPromise;
-    } catch (syncError) {
-      // This catches synchronous errors that might happen before the promise is even created.
-      // This can happen mostly due to compiler error, may remove it in the future
-
-      cb(new runtime.RuntimeFatalError(syncError, lineno, colno, errorContextString, context ? context.path : null));
-
-      // Poison variables and decrement counters on sync failure too
-      /*if (writeCounts) {
-        childFrame.poisonBranchWrites(syncError, writeCounts);
+    // Report fatal errors (side-effect only - doesn't suppress rejection)
+    promise.catch(err => {
+      if (err instanceof runtime.RuntimeFatalError) {
+        cb(err);
       }
+    });
 
-      const handledError = runtime.handleError(syncError, lineno, colno, errorContextString, context ? context.path : null);
-      cb(handledError);
-      ////////
-      if (sequential) {
-        //childFrame._commitSequentialWrites();
-      }
-      ////////
-      childState._leaveAsyncBlock();// Ensure cleanup even on sync failure.
-      */
-    }
+    return promise;
   }
 
   _incrementClosures() {

@@ -167,6 +167,24 @@ function checkFrameBalance(frame, parent, checkInfo) {
   }
 }
 
+/**
+ * Check if trying to add command to finished CommandBuffer
+ * This prevents race conditions where commands are added after the buffer
+ * has completed its async block and patched its links.
+ *
+ * @param {Object} buffer - The CommandBuffer to check
+ * @throws {Error} If buffer is finished
+ */
+function checkFinishedBuffer(buffer) {
+  if (buffer && buffer.finished) {
+    throw new Error(
+      'Cannot add command to finished CommandBuffer. ' +
+      'This indicates a timing issue where commands are being added after ' +
+      'the async block has completed.'
+    );
+  }
+}
+
 module.exports = {
   ENABLE_WRITECOUNTER_CHECK,
   ENABLE_CHECKINFO,
@@ -175,5 +193,6 @@ module.exports = {
   checkWriteCounterExists,
   checkWriteCounterNegative,
   createCheckInfo,
-  checkFrameBalance
+  checkFrameBalance,
+  checkFinishedBuffer
 };

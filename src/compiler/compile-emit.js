@@ -75,7 +75,7 @@ module.exports = class CompileEmit {
     if (this.compiler.asyncMode) {
       // note, the below frame.data/text/value assignments are temporarily here
       // for backward compatibility while we refactor the output implementation
-      this.emit(`let ${this.compiler.buffer.currentBuffer} = new runtime.CommandBuffer(context);`);
+      this.emit(`let ${this.compiler.buffer.currentBuffer} = new runtime.CommandBuffer(context, null);`);
       this.initOutputHandlers(this.compiler.buffer.currentBuffer);
     } else {
       this.emit(`let ${this.compiler.buffer.currentBuffer} = "";`);
@@ -90,9 +90,9 @@ module.exports = class CompileEmit {
     }
     // Experimental: keep astate on the frame for output snapshots (not currently used).
     //this.line('frame._astate = astate;');
-    this.line(`frame.data = ${bufferVar}.data;`);
-    this.line(`frame.text = ${bufferVar}.text;`);
-    this.line(`frame.value = ${bufferVar}.value;`);
+    this.line(`frame.data = ${bufferVar}.arrays.data;`);
+    this.line(`frame.text = ${bufferVar}.arrays.text;`);
+    this.line(`frame.value = ${bufferVar}.arrays.value;`);
     this.line(`${bufferVar}._outputTypes = ${bufferVar}._outputTypes || Object.create(null);`);
     this.line(`${bufferVar}._outputTypes.data = "data";`);
     this.line(`${bufferVar}._outputTypes.text = "text";`);

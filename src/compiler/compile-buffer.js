@@ -31,7 +31,7 @@ class CompileBuffer {
     this.bufferStack.push(this.currentBuffer);
     this.currentBuffer = id;
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`let ${this.currentBuffer} = new runtime.CommandBuffer(context);`);
+      this.compiler.emit.line(`let ${this.currentBuffer} = new runtime.CommandBuffer(context, null);`);
       this.compiler.emit.initOutputHandlers(this.currentBuffer);
     } else {
       this.compiler.emit.line(`let ${this.currentBuffer} = "";`);
@@ -433,7 +433,7 @@ class CompileBuffer {
       const newBuffer = this.compiler._tmpid();
 
       // Initialize the new buffer and its index inside the async closure
-      this.compiler.emit.line(`let ${newBuffer} = new runtime.CommandBuffer(context);`);
+      this.compiler.emit.line(`let ${newBuffer} = new runtime.CommandBuffer(context, null);`);
       this.compiler.emit.initOutputHandlers(newBuffer);
 
       // Defer adding the buffer to the parent until we know which outputs were used.

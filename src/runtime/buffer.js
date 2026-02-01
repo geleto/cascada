@@ -6,13 +6,40 @@ const {
   handleError
 } = require('./errors');
 
+const {
+  setParentPosition,
+  firstCommand,
+  lastCommand,
+  markFinishedAndPatchLinks,
+  debugChain,
+  linkToPrevious,
+  linkToNext,
+  patchLinksAfterClear,
+  traverseChain
+} = require('./buffer-snapshot');
+
+const { checkFinishedBuffer } = require('./checks');
+
+// Unique symbols for type identification
+const COMMAND_BUFFER_SYMBOL = Symbol.for('cascada.CommandBuffer');
+const WRAPPED_COMMAND_SYMBOL = Symbol.for('cascada.WrappedCommand');
+
 class CommandBuffer {
-  constructor(context) {
+  constructor(context, parent = null) {
     this._context = context;
-    this.output = [];
-    this.data = [];
-    this.text = [];
-    this.value = [];
+    this.parent = parent;
+    this.positions = new Map();
+    this.finished = false;
+    this[COMMAND_BUFFER_SYMBOL] = true;
+
+    // Create arrays namespace
+    this.arrays = {
+      output: [],
+      data: [],
+      text: [],
+      value: []
+    };
+
     this._index = 0;
     this._outputTypes = Object.create(null);
     this._outputIndexes = Object.create(null);
@@ -20,16 +47,11 @@ class CommandBuffer {
     this._outputIndexes.data = 0;
     this._outputIndexes.text = 0;
     this._outputIndexes.value = 0;
-    this._outputArrays = {
-      output: this.output,
-      data: this.data,
-      text: this.text,
-      value: this.value
-    };
+    this._outputArrays = this.arrays;
   }
 
   /**
-   * Wraps a value in a command object (async mode only)
+   * Wraps a value in a command object for chain building
    * @param {*} value - The value to wrap
    * @returns {Object} Command object with type, value, and metadata fields
    */
@@ -51,6 +73,7 @@ class CommandBuffer {
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ||
         value === null || value === undefined) {
       return {
+        [WRAPPED_COMMAND_SYMBOL]: true,
         type: 'text',
         value: value,
         next: null,
@@ -63,6 +86,7 @@ class CommandBuffer {
     // Functions (used for SafeString processing)
     if (typeof value === 'function') {
       return {
+        [WRAPPED_COMMAND_SYMBOL]: true,
         type: 'function',
         value: value,
         next: null,
@@ -75,6 +99,7 @@ class CommandBuffer {
     // Poison markers
     if (value && typeof value === 'object' && value.__cascadaPoisonMarker === true) {
       return {
+        [WRAPPED_COMMAND_SYMBOL]: true,
         type: 'poison',
         value: value,
         next: null,
@@ -87,6 +112,7 @@ class CommandBuffer {
     // Command objects (have 'command' property)
     if (value && typeof value === 'object' && 'command' in value) {
       return {
+        [WRAPPED_COMMAND_SYMBOL]: true,
         type: 'command',
         value: value,
         next: null,
@@ -100,12 +126,36 @@ class CommandBuffer {
     return value;
   }
 
+  // Snapshot and command chain methods (imported from buffer-snapshot.js)
+  _setParentPosition(handlerName, index) {
+    return setParentPosition.call(this, handlerName, index);
+  }
+
+  firstCommand(handlerName) {
+    return firstCommand.call(this, handlerName);
+  }
+
+  lastCommand(handlerName) {
+    return lastCommand.call(this, handlerName);
+  }
+
+  markFinishedAndPatchLinks() {
+    return markFinishedAndPatchLinks.call(this);
+  }
+
+  debugChain(handlerName) {
+    return debugChain.call(this, handlerName);
+  }
+
+  traverseChain(handlerName, processCommand) {
+    return traverseChain.call(this, handlerName, processCommand);
+  }
+
   _getOutputArray(outputName) {
     const name = outputName || 'output';
     if (!this._outputArrays[name]) {
       const arr = [];
       this._outputArrays[name] = arr;
-      this[name] = arr;
     }
     return this._outputArrays[name];
   }
@@ -131,10 +181,27 @@ class CommandBuffer {
   }
 
   add(value, outputName = null) {
+    // Check if buffer is finished
+    checkFinishedBuffer(this);
+
     const slot = this._reserveSlot(outputName);
     const target = this._getOutputArray(outputName);
     const wrappedValue = this._wrapCommand(value);
+
+    // Link to previous command
+    if (target.length > 0) {
+      const prev = target[target.length - 1];
+      linkToPrevious(prev, wrappedValue, outputName || 'output');
+    }
+
     target[slot] = wrappedValue;
+
+    // If adding a CommandBuffer as a child, set up parent relationship
+    if (wrappedValue instanceof CommandBuffer) {
+      wrappedValue.parent = this;
+      wrappedValue._setParentPosition(outputName || 'output', slot);
+    }
+
     return slot;
   }
 
@@ -143,9 +210,28 @@ class CommandBuffer {
   }
 
   fillSlot(slot, value, outputName = null) {
+    // Don't check finished here - fillSlot fills pre-reserved slots
+    // that may have been reserved before the buffer was marked finished
     const target = this._getOutputArray(outputName);
     const wrappedValue = this._wrapCommand(value);
+
+    // Link to previous and next commands
+    if (slot > 0) {
+      const prev = target[slot - 1];
+      linkToPrevious(prev, wrappedValue, outputName || 'output');
+    }
+    if (slot < target.length - 1) {
+      const next = target[slot + 1];
+      linkToNext(wrappedValue, next, outputName || 'output');
+    }
+
     target[slot] = wrappedValue;
+
+    // If adding a CommandBuffer as a child, set up parent relationship
+    if (wrappedValue instanceof CommandBuffer) {
+      wrappedValue.parent = this;
+      wrappedValue._setParentPosition(outputName || 'output', slot);
+    }
   }
 }
 
@@ -188,14 +274,17 @@ function resolveOutputTargets(buffer, handlerNames = null) {
 
 // Helper to check if an object is a wrapped command
 function isWrappedCommand(item) {
-  return item && typeof item === 'object' &&
-         'type' in item && 'value' in item &&
-         'next' in item && 'resolved' in item;
+  return item && typeof item === 'object' && item[WRAPPED_COMMAND_SYMBOL] === true;
 }
 
 // Unwraps a wrapped command, returning the original value
 function unwrapCommand(item) {
   return isWrappedCommand(item) ? item.value : item;
+}
+
+// Check if value is a CommandBuffer using symbol
+function isCommandBuffer(value) {
+  return value && typeof value === 'object' && value[COMMAND_BUFFER_SYMBOL] === true;
 }
 
 // Clear buffer contents for guard error recovery
@@ -213,6 +302,10 @@ function clearBuffer(buffer, handlerNames = null) {
       }
       buffer._setOutputIndex(name === 'output' ? null : name, 0);
     });
+
+    // Update next chains to skip this buffer if it has a parent
+    patchLinksAfterClear(buffer);
+
     return;
   }
 
@@ -343,6 +436,10 @@ module.exports = {
   clearBuffer,
   getPosonedBufferErrors,
   isWrappedCommand,
-  unwrapCommand
+  unwrapCommand,
+  isCommandBuffer,
+  traverseChain,
+  COMMAND_BUFFER_SYMBOL,
+  WRAPPED_COMMAND_SYMBOL
 };
 
