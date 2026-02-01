@@ -174,6 +174,10 @@ parentBuffer.arrays[handlerName].push(childBuffer);
 childBuffer._setParentPosition(handlerName, index);
 ```
 
+**Handle guard recover**
+When a guard recovers from a poisoned output, its CommandBuffer is cleared with clearBuffer.
+The next chains has to be updated to skip the CommandBuffer.
+
 ### 3. Async State Patching (async-state.js)
 
 In the `asyncBlock()` method, add patching call in `promise.then()`:
