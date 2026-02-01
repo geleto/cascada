@@ -161,10 +161,10 @@ describe('Sequential Expression Poisoning', function () {
         },
         async failingFunc(val) {
           if (val === 2 || val === 4) {
-            console.log(`Failure on ${val}`);
+            //console.log(`Failure on ${val}`);
             throw new Error(`Failure on ${val}`);
           }
-          console.log(`Success on ${val}`);
+          //console.log(`Success on ${val}`);
           return val;
         }
       };
