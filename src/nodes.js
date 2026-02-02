@@ -237,6 +237,13 @@ class Set extends Node {
   get fields() { return ['targets', 'value', 'varType']; }
 }
 
+// Internal node emitted by the ScriptTranspiler via the `call_assign` tag.
+// Represents a call block whose result is assigned to a variable (declaration or assignment).
+class CallAssign extends Node {
+  get typename() { return 'CallAssign'; }
+  get fields() { return ['targets', 'value', 'varType']; }
+}
+
 class OutputDeclaration extends Node {
   get typename() { return 'OutputDeclaration'; }
   get fields() { return ['outputType', 'name', 'initializer']; }
@@ -487,6 +494,7 @@ module.exports = {
   Extends: Extends,
   Include: Include,
   Set: Set,
+  CallAssign: CallAssign,
   OutputDeclaration: OutputDeclaration,
   Switch: Switch,
   Case: Case,

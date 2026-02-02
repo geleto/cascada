@@ -314,6 +314,104 @@ class Parser extends Obj {
       [macroCall]);
   }
 
+  parseCallAssign() {
+    // Script-only internal tag emitted by the script transpiler to support:
+    //   var x = call ... endcall
+    //   x = call ... endcall
+    //
+    // Syntax emitted:
+    //   {% call_assign var x = macroCall(args) (sig) [:focus] %}...{% endcall_assign %}
+    //   {% call_assign set x = macroCall(args) (sig) [:focus] %}...{% endcall_assign %}
+    const callTok = this.peekToken();
+    if (!this.skipSymbol('call_assign')) {
+      this.fail('parseCallAssign: expected call_assign', callTok.lineno, callTok.colno);
+    }
+
+    let varType;
+    if (this.skipSymbol('var')) {
+      varType = 'declaration';
+    } else if (this.skipSymbol('set')) {
+      varType = 'assignment';
+    } else {
+      const tok = this.peekToken();
+      this.fail('parseCallAssign: expected var or set', tok ? tok.lineno : callTok.lineno, tok ? tok.colno : callTok.colno);
+    }
+
+    const node = new nodes.CallAssign(callTok.lineno, callTok.colno, [], null, varType);
+
+    // Parse targets up to '='
+    let target;
+    while ((target = this.parsePrimary())) {
+      node.targets.push(target);
+      if (!this.skip(lexer.TOKEN_COMMA)) {
+        break;
+      }
+    }
+
+    if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+      this.fail('parseCallAssign: expected =', callTok.lineno, callTok.colno);
+    }
+
+    // Parse "call" style signature from either:
+    // - call_assign var x = (signature) macroCall
+    // - call_assign var x = macroCall(args) (signature)
+    let callerArgs = this.parseSignature(true);
+    if (!callerArgs) callerArgs = new nodes.NodeList();
+
+    let macroCall = this.parsePrimary();
+
+    // Support "macro(args) (signature)" syntax which is parsed as FunCall(FunCall(macro, args), signature)
+    if (callerArgs.children.length === 0 &&
+      macroCall instanceof nodes.FunCall &&
+      macroCall.name instanceof nodes.FunCall) {
+      callerArgs = macroCall.args;
+      macroCall = macroCall.name;
+    }
+
+    if (!(macroCall instanceof nodes.FunCall)) {
+      this.fail('parseCallAssign: expected macro call expression', callTok.lineno, callTok.colno);
+    }
+
+    let focus;
+    if (this.skip(lexer.TOKEN_COLON)) {
+      const tok = this.nextToken();
+      if (!tok && tok.type !== lexer.TOKEN_SYMBOL) {
+        this.fail('parseCallAssign: expected focus directive value', tok.lineno, tok.colno);
+      } else {
+        focus = tok.value;
+      }
+    }
+
+    this.advanceAfterBlockEnd(callTok.value);
+    const body = this.parseUntilBlocks('endcall_assign');
+    this.advanceAfterBlockEnd();
+
+    const callerName = new nodes.Symbol(callTok.lineno,
+      callTok.colno,
+      'caller');
+    const callerNode = new nodes.Caller(callTok.lineno,
+      callTok.colno,
+      callerName,
+      callerArgs,
+      body,
+      focus
+    );
+
+    // add the additional caller kwarg, adding kwargs if necessary
+    const args = macroCall.args.children;
+    if (!(args[args.length - 1] instanceof nodes.KeywordArgs)) {
+      args.push(new nodes.KeywordArgs());
+    }
+    const kwargs = args[args.length - 1];
+    kwargs.addChild(new nodes.Pair(callTok.lineno,
+      callTok.colno,
+      callerName,
+      callerNode));
+
+    node.value = macroCall;
+    return node;
+  }
+
   parseWithContext() {
     var tok = this.peekToken();
 
@@ -1062,6 +1160,8 @@ class Parser extends Obj {
         return this.parseMacro();
       case 'call':
         return this.parseCall();
+      case 'call_assign':
+        return this.parseCallAssign();
       case 'import':
         return this.parseImport();
       case 'from':

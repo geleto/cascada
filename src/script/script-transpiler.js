@@ -127,6 +127,10 @@ class ScriptTranspiler {
         'macro': 'endmacro',
         'filter': 'endfilter',
         'call': 'endcall',
+        // Internal tag emitted by this transpiler to support:
+        //   var x = call ... endcall
+        //   x = call ... endcall
+        'call_assign': 'endcall_assign',
         'raw': 'endraw',
         'verbatim': 'endverbatim',
         'set': 'endset', //only when no = in the set, then the block has to be closed
@@ -139,7 +143,7 @@ class ScriptTranspiler {
       neverContinued: [
         'else', 'elif', 'case', 'default',
         'endif', 'endfor', 'endswitch', 'endblock', 'endmacro',
-        'endfilter', 'endcall', 'endraw', 'endverbatim',
+        'endfilter', 'endcall', 'endcall_assign', 'endraw', 'endverbatim',
         'endwhile', 'endvar', 'recover'
       ],
 
@@ -175,8 +179,8 @@ class ScriptTranspiler {
 
     // Track block stack for var/set blocks
     this.setBlockStack = []; // 'var' or 'set'
-    // Track "var/set = call" capture blocks that should auto-close after endcall.
-    this.callCaptureStack = [];
+    // Track "var/set = call ... endcall" blocks so we can rewrite endcall -> endcall_assign.
+    this.callAssignStack = [];
 
     this.DATA_COMMANDS = {
       operators: {
@@ -928,13 +932,15 @@ class ScriptTranspiler {
         parseResult.codeContent = `${targetsStr} ${captureContent}`;
         this.setBlockStack.push(parseResult.tagName);
       } else if (firstExprWord === 'call') {
-        // Treat "var x = call ... endcall" as a var/set block that captures the call output.
+        // "var x = call ... endcall" / "x = call ... endcall"
+        // becomes an internal block tag that the parser/compiler understand.
+        // This avoids a synthetic capture wrapper and keeps return semantics clean.
+        const afterCall = exprStr.substring('call'.length).trim();
         parseResult.lineType = 'TAG';
         parseResult.blockType = 'START';
-        parseResult.tagName = isAssignment ? 'set' : 'var';
-        parseResult.codeContent = targetsStr;
-        parseResult.injectLines = [parseResult.indentation + exprStr];
-        this.callCaptureStack.push(parseResult.tagName);
+        parseResult.tagName = 'call_assign';
+        parseResult.codeContent = `${isAssignment ? 'set' : 'var'} ${targetsStr} = ${afterCall}`;
+        this.callAssignStack.push(true);
       } else {
         // Standard variable/set
         parseResult.lineType = 'TAG';
@@ -1151,29 +1157,29 @@ class ScriptTranspiler {
         parseResult.blockType = null;
         parseResult.codeContent = rewritten;
         parseResult.requiredOutputs = new Set(['data']);
-    } else {
-      // All other @ commands are treated as function commands
-      // @print was deprecated and replaced with @text(value)
-      parseResult.lineType = 'TAG';
-      parseResult.tagName = 'output_command';
-      parseResult.blockType = null;
-
-      if ((this._getLeadingIdentifier(commandContent) || '_') === 'value') {
-        this.ensureOutputDeclared('value', 'value');
+      } else {
+        // All other @ commands are treated as function commands
+        // @print was deprecated and replaced with @text(value)
         parseResult.lineType = 'TAG';
         parseResult.tagName = 'output_command';
         parseResult.blockType = null;
-        parseResult.codeContent = commandContent.trimStart();
-        parseResult.requiredOutputs = new Set(['value']);
-      } else {
-        parseResult.codeContent = commandContent; // The content for the Nunjucks tag
-        const handlerName = this._getLeadingIdentifier(commandContent);
-        if (handlerName) {
-          parseResult.requiredOutputs = new Set([handlerName]);
+
+        if ((this._getLeadingIdentifier(commandContent) || '_') === 'value') {
+          this.ensureOutputDeclared('value', 'value');
+          parseResult.lineType = 'TAG';
+          parseResult.tagName = 'output_command';
+          parseResult.blockType = null;
+          parseResult.codeContent = commandContent.trimStart();
+          parseResult.requiredOutputs = new Set(['value']);
+        } else {
+          parseResult.codeContent = commandContent; // The content for the Nunjucks tag
+          const handlerName = this._getLeadingIdentifier(commandContent);
+          if (handlerName) {
+            parseResult.requiredOutputs = new Set([handlerName]);
+          }
         }
       }
     }
-  }
   }
 
   _processFocusDirective(parseResult, lineIndex) {
@@ -1323,9 +1329,11 @@ class ScriptTranspiler {
       parseResult.blockType = this._getBlockType(firstWord, code);
       parseResult.tagName = firstWord;
 
-      if (firstWord === 'endcall' && this.callCaptureStack.length > 0) {
-        const tag = this.callCaptureStack.pop();
-        parseResult.injectLines = [parseResult.indentation + `end${tag}`];
+      if (firstWord === 'endcall' && this.callAssignStack.length > 0) {
+        // Close "var/set = call ... endcall" assignment blocks.
+        // The start tag is emitted as `call_assign`, so we rewrite endcall -> endcall_assign.
+        this.callAssignStack.pop();
+        parseResult.tagName = 'endcall_assign';
       }
     } else if (this._isAssignment(code, lineIndex)) {
       this._processVar(parseResult, lineIndex, true);
@@ -1656,7 +1664,7 @@ class ScriptTranspiler {
       }
 
       if (line.blockType === this.BLOCK_TYPE.START) {
-        if (line.tagName === 'macro' || line.tagName === 'var' || line.tagName === 'set' || line.tagName === 'call') {
+        if (line.tagName === 'macro' || line.tagName === 'var' || line.tagName === 'set' || line.tagName === 'call' || line.tagName === 'call_assign') {
           ignoreStack.push(line.tagName);
         }
       } else if (line.blockType === this.BLOCK_TYPE.END) {
@@ -1664,7 +1672,8 @@ class ScriptTranspiler {
         if ((line.tagName === 'endmacro' && top === 'macro') ||
           (line.tagName === 'endvar' && top === 'var') ||
           (line.tagName === 'endset' && top === 'set') ||
-          (line.tagName === 'endcall' && top === 'call')) {
+          (line.tagName === 'endcall' && top === 'call') ||
+          (line.tagName === 'endcall_assign' && top === 'call_assign')) {
           ignoreStack.pop();
         }
       }
@@ -1874,7 +1883,8 @@ class ScriptTranspiler {
 
   _parseCallParams(codeContent) {
     if (!codeContent) return [];
-    const match = codeContent.match(/\)\s*\(([^)]*)\)\s*$/);
+    const withoutFocus = codeContent.replace(/:\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/, '').trim();
+    const match = withoutFocus.match(/\)\s*\(([^)]*)\)\s*$/);
     if (!match) return [];
     const paramsStr = match[1].trim();
     if (!paramsStr) return [];
@@ -1908,7 +1918,7 @@ class ScriptTranspiler {
 
       if (!line.isContinuation && line.lineType === 'TAG') {
         const isMacroStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'macro';
-        const isCallStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'call';
+        const isCallStart = line.blockType === this.BLOCK_TYPE.START && (line.tagName === 'call' || line.tagName === 'call_assign');
         const isCaptureStart = line.blockType === this.BLOCK_TYPE.START &&
           (line.tagName === 'var' || line.tagName === 'set');
 
@@ -1918,7 +1928,9 @@ class ScriptTranspiler {
             type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
             startIndex: i,
             endIndex: null,
-            endTag: isMacroStart ? 'endmacro' : (isCallStart ? 'endcall' : `end${line.tagName}`),
+            endTag: isMacroStart
+              ? 'endmacro'
+              : (isCallStart ? (line.tagName === 'call_assign' ? 'endcall_assign' : 'endcall') : `end${line.tagName}`),
             focus,
             declaredOutputs: new Set(),
             requiredOutputs: new Set(),
@@ -2085,7 +2097,7 @@ class ScriptTranspiler {
 
       if (!line.isContinuation && line.lineType === 'TAG') {
         const isMacroStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'macro';
-        const isCallStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'call';
+        const isCallStart = line.blockType === this.BLOCK_TYPE.START && (line.tagName === 'call' || line.tagName === 'call_assign');
         const isCaptureStart = line.blockType === this.BLOCK_TYPE.START &&
           (line.tagName === 'var' || line.tagName === 'set');
 
@@ -2094,7 +2106,9 @@ class ScriptTranspiler {
           const scopeInfo = this._lastOutputScopeByStart ? this._lastOutputScopeByStart.get(i) : null;
           scopeStack.push({
             type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
-            endTag: isMacroStart ? 'endmacro' : (isCallStart ? 'endcall' : `end${line.tagName}`),
+            endTag: isMacroStart
+              ? 'endmacro'
+              : (isCallStart ? (line.tagName === 'call_assign' ? 'endcall_assign' : 'endcall') : `end${line.tagName}`),
             focus,
             hasExplicitReturn: false,
             scopeInfo
@@ -2113,7 +2127,6 @@ class ScriptTranspiler {
           if (scope && line.tagName === scope.endTag) {
             if (!scope.hasExplicitReturn) {
               if (scope.scopeInfo && scope.focus && (scope.type === 'capture' || scope.type === 'macro' || scope.type === 'call')) {
-                const isCapture = scope.type === 'capture';
                 const declaredOutputs = scope.scopeInfo.declaredOutputs;
                 const forceDirectCore = true;
                 const returnExpr = this._buildFocusedReturnExpressionForScope(

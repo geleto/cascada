@@ -44,26 +44,19 @@ class Compiler extends CompilerBase {
   _addDeclaredVar(frame, varName) {
     if (this.asyncMode || this.scriptMode) {
       validateDeclarationScope(frame, varName, this, null);
+      // Variables and outputs share the same lexical scoping rules.
+      // Use _getDeclaredOutput (lexical-only) for collision checks.
       const outputDecl = this.async._getDeclaredOutput(frame, varName);
-      if (outputDecl && !outputDecl.implicit) {
+      if (outputDecl) {
         this.fail(`Cannot declare variable '${varName}' because an output with the same name is already declared.`);
       }
+
       if (!frame.declaredVars) {
         frame.declaredVars = new Set();
       }
       frame.declaredVars.add(varName);
     }
   }
-
-  _createDefaultOutputDeclarations() {
-    return new Map([
-      ['text', { type: 'text', initializer: null, implicit: true }],
-      ['data', { type: 'data', initializer: null, implicit: true }],
-      ['value', { type: 'value', initializer: null, implicit: true }]
-    ]);
-  }
-
-
 
   //@todo - move to compile-base
   _compileChildren(node, frame) {
@@ -335,6 +328,17 @@ class Compiler extends CompilerBase {
         this.emit.line('}');
       }
     });
+  }
+
+  compileCallAssign(node, frame) {
+    // `call_assign` is an internal script feature emitted by the ScriptTranspiler.
+    if (!this.scriptMode) {
+      this.fail('call_assign is only supported in script mode', node.lineno, node.colno, node);
+    }
+
+    // Reuse the existing Set compilation path.
+    const setNode = new nodes.Set(node.lineno, node.colno, node.targets, node.value, node.varType);
+    return this.compileSet(setNode, frame);
   }
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
@@ -885,13 +889,6 @@ class Compiler extends CompilerBase {
     }
     // Macro bodies should not behave like root scope returns.
     currFrame._seesRootScope = false;
-    if (this.asyncMode) {
-      currFrame.declaredOutputs = this._createDefaultOutputDeclarations();
-    }
-    if (!keepFrame) {
-      // Macro frames can be detached from the lexical frame chain; track output scope separately.
-      currFrame.outputParent = frame;
-    }
 
     const oldIsCompilingMacroBody = this.sequential.isCompilingMacroBody; // Save previous state
 
@@ -917,8 +914,6 @@ class Compiler extends CompilerBase {
     this.emit.line('let callerFrame = frame;');
     this.emit.lines(
       'frame = ' + ((keepFrame) ? 'frame.push(true);' : 'frame.new();'),
-      // Expose caller/output parent for output lookups across macro boundaries.
-      'frame._outputParent = callerFrame;',
       'kwargs = kwargs || {};',
       'if (Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
       'frame.set("caller", kwargs.caller); }'
@@ -1072,6 +1067,9 @@ class Compiler extends CompilerBase {
   }
 
   compileCapture(node, frame) {
+    if (!this.scriptMode && node.focus) {
+      this.fail('focus is not supported in templates', node.lineno, node.colno, node);
+    }
     // we need to temporarily override the current buffer id as 'output'
     // so the set block writes to the capture output instead of the buffer
     const buffer = this.buffer.currentBuffer;
@@ -1083,7 +1081,6 @@ class Compiler extends CompilerBase {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this.emit.line('let output = new runtime.CommandBuffer(context, null);');
         this.emit.initOutputHandlers('output');
-        f.declaredOutputs = this._createDefaultOutputDeclarations();
         // Capture bodies should not be treated as root-scope returns.
         f._seesRootScope = false;
         // Capture returns run inside an async block; wait for sibling closures.
@@ -1243,8 +1240,8 @@ class Compiler extends CompilerBase {
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
     frame._seesRootScope = true;
 
-    if (this.asyncMode) {
-      frame.declaredOutputs = this._createDefaultOutputDeclarations();
+    if (!this.scriptMode && node.focus) {
+      this.fail('focus is not supported in templates', node.lineno, node.colno, node);
     }
 
 
@@ -1340,9 +1337,6 @@ class Compiler extends CompilerBase {
         this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
       }
       let tmpFrame = frame.new();//new Frame();
-      if (this.asyncMode) {
-        tmpFrame.declaredOutputs = this._createDefaultOutputDeclarations();
-      }
       this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       this.compile(block.body, tmpFrame);
       this.emit.funcEnd(block);
@@ -1449,6 +1443,9 @@ class Compiler extends CompilerBase {
     if (!this.asyncMode) {
       this.fail('Output declarations are only supported in async mode', node.lineno, node.colno, node);
     }
+    if (!this.scriptMode) {
+      this.fail('Output declarations are only supported in script mode', node.lineno, node.colno, node);
+    }
 
     const outputType = node.outputType;
     const nameNode = node.name;
@@ -1484,6 +1481,9 @@ class Compiler extends CompilerBase {
 
 
   compileOutputCommand(node, frame) {
+    if (!this.scriptMode) {
+      this.fail('Output commands are only supported in script mode', node.lineno, node.colno, node);
+    }
     this.buffer.compileOutputCommand(node, frame);
   }
 
@@ -1492,6 +1492,13 @@ class Compiler extends CompilerBase {
    * where the logic is handled in the parser. See parseAsRoot
    */
   compileOption(node, frame) {
+    if (!this.scriptMode) {
+      // Currently option tags are only used for script focus directives.
+      // Templates do not support focus or output handler features.
+      if (node.key && node.key.typename === 'Literal' && node.key.value === 'focus') {
+        this.fail('focus option is only supported in script mode', node.lineno, node.colno, node);
+      }
+    }
   }
 
   _getDeclarationFrame(frame) {

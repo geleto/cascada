@@ -619,21 +619,22 @@ describe('Cascada Script: Explicit Output Declarations', function () {
   describe('Caller', function () {
     it('should support caller blocks with explicit outputs', async () => {
       const script = `
-        data myData
         macro collect(items)
+          data myData
           for item in items
-            var value = caller(item)
-            myData.items.push(value)
+            var itemVal = caller(item)
+            myData.items.push(itemVal)
           endfor
+          return myData.snapshot()
         endmacro
 
-        call collect([1, 2, 3]) (num)
-          value result
-          result(num * 2)
-          return result.snapshot()
+        var callRes = call collect([1, 2, 3]) (num)
+          value out
+          out(num * 2)
+          return out.snapshot()
         endcall
 
-        return myData.snapshot()
+        return callRes
       `;
       const result = await render(script);
       expect(result).to.eql({ items: [2, 4, 6] });
@@ -641,24 +642,25 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should support caller blocks that return text and data', async () => {
       const script = `
-        data myData
         macro collect(items)
+          data myData
           for item in items
             var res = caller(item)
             myData.items.push(res.data)
             myData.texts.push(res.text)
           endfor
+          return myData.snapshot()
         endmacro
 
-        call collect([1, 2]) (num)
-          data dataOut
-          text textOut
-          dataOut.value = num
-          textOut("v" + num)
-          return { data: dataOut.snapshot(), text: textOut.snapshot() }
+        var callRes = call collect([1, 2]) (num)
+          data outData
+          text outText
+          outData.value = num
+          outText("v" + num)
+          return { data: outData.snapshot(), text: outText.snapshot() }
         endcall
 
-        return myData.snapshot()
+        return callRes
       `;
       const result = await render(script);
       expect(result).to.eql({ items: [{ value: 1 }, { value: 2 }], texts: ['v1', 'v2'] });

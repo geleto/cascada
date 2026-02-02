@@ -2045,6 +2045,20 @@ endmacro
 
 If no parameters are needed, the `()` can be omitted from the call block.
 
+#### Capturing the Call Result (Assignment Form)
+
+In **scripts**, a `call` block can be used as an expression and assigned to a variable. This works for both:
+
+- **Initialization**: `var x = call ... endcall`
+- **Assignment**: `x = call ... endcall`
+
+```javascript
+var squared = call map([1, 2, 3])
+  (n) :value
+  @value = n * n
+endcall
+```
+
 #### Example: Grid Generator
 
 ```javascript
@@ -2135,6 +2149,11 @@ call processItem(item)
 endcall
 ```
 
+In addition, the call block's access to the parent scope is **read-only**:
+
+- **Reads** can see variables from the parent scope (where the call block was written).
+- **Writes** (e.g. `x = ...`, `var x = ...`) do **not** propagate to the parent scope. They create/modify variables in the call block's own scope.
+
 This ensures the call block remains decoupled from the macro's implementation details.
 
 #### How Call Blocks Work
@@ -2142,7 +2161,7 @@ This ensures the call block remains decoupled from the macro's implementation de
 - **Parameters**: Explicitly passed via `caller(args)` and declared in `(params)`
 - **Return value**: The object, text or other handler result produced by the block (controlled by focus), captured by `caller()`
 - **Result Construction**: Output writes (like `@data`) build this return value instead of modifying the parent scope
-- **Caller's context**: Block accesses variables from where it was written, not the macro's scope
+- **Caller's context**: Block reads variables from where it was written, not the macro's scope
 - **Execution control**: Macro decides when and how many times to invoke `caller()`
 
 ## Templates vs Scripts

@@ -21,6 +21,82 @@
     delay = window.util.delay;
   }
 
+  describe('Cascada Script: Call blocks (assignment)', function () {
+    let env;
+
+    beforeEach(() => {
+      env = new AsyncEnvironment();
+    });
+
+    it('should allow assigning the result of a call block to a new variable (var x = call ... endcall)', async () => {
+      const script = `
+        :data
+        macro map(items) :data
+          var out = []
+          for item in items
+            out.push(caller(item))
+          endfor
+          return out
+        endmacro
+
+        var result = call map([1, 2, 3]) (n) :value
+          @value = n * 2
+        endcall
+
+        @data.result = result
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ result: [2, 4, 6] });
+    });
+
+    it('should allow assigning the result of a call block to an existing variable (x = call ... endcall)', async () => {
+      const script = `
+        :data
+        macro map(items) :data
+          var out = []
+          for item in items
+            out.push(caller(item))
+          endfor
+          return out
+        endmacro
+
+        var result = none
+        result = call map([1, 2, 3]) (n) :value
+          @value = n * 2
+        endcall
+
+        @data.result = result
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ result: [2, 4, 6] });
+    });
+
+    it('should allow reading parent variables in call blocks but not propagate writes to the parent scope', async () => {
+      const script = `
+        :data
+        var outer = 10
+
+        macro runner()
+          return caller()
+        endmacro
+
+        var callResult = call runner() :data
+          @data.before = outer
+          outer = 20
+          @data.after = outer
+        endcall
+
+        @data.callResult = callResult
+        @data.outerAfter = outer
+      `;
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        callResult: { before: 10, after: 20 },
+        outerAfter: 10
+      });
+    });
+  });
+
   describe('Async mode - calls and arguments', () => {
     let env;
     beforeEach(() => {

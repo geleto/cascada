@@ -46,7 +46,8 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 | **Macro Definition**     | `macro greet(name)`<br>  `...`<br>`endmacro`               | `{% macro greet(name) %}`<br>  `...`<br>`{% endmacro %}`                     |
 | **Macro Calls**          | `greet("Alice")`                                           | `{{ greet("Alice") }}`                                                       |
 | **Call Block**           | `call wrapper()`<br>  `(x) :data`<br>  `...`<br>`endcall`  | `{% call wrapper() %}`<br>  `...`<br>`{% endcall %}`                         |
-| **Caller Invocation**    | `var result = caller(value)`                               | `{{ caller() }}` `                                    |
+| **Call Block Assignment**| `var x = call wrapper()`<br>  `(x) :data`<br>  `...`<br>`endcall`<br>`x = call wrapper() ... endcall` | *(script only)* |
+| **Caller Invocation**    | `var result = caller(value)`                               | `{{ caller() }}`                                                             |
 | **Block Capture**        | `var html = capture :text`<br>  `...`<br>`endcapture`      | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
 | **Template Inheritance** | `extends "base.html"`                                      | `{% extends "base.html" %}`                                                  |
 | **Include**              | `include "header.html"`                                    | `{% include "header.html" %}`                                                |
@@ -170,6 +171,15 @@ endmacro
 
 call map([1, 2, 3])
   (n) :data  // Focus directive specifies return type
+  @data.squared = n * n
+endcall
+```
+
+You can also **assign** a call block directly in scripts:
+
+```javascript
+var result = call map([1, 2, 3])
+  (n) :data
   @data.squared = n * n
 endcall
 ```
