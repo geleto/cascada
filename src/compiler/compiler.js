@@ -1103,7 +1103,7 @@ class Compiler extends CompilerBase {
           this.emit.line(`let ${res} = runtime.flattenBuffer(${flattenArgs});`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
-      }, res, node.body);
+      }, res, node.body, true);
     }
     else {
       this.emit.line('(function() {');
@@ -1457,7 +1457,7 @@ class Compiler extends CompilerBase {
     }
     const name = nameNode.value;
 
-    if ((outputType === 'data' || outputType === 'text' || outputType === 'value') && node.initializer) {
+    if ((outputType === 'data' || outputType === 'text' || outputType === 'value' || outputType === 'handler') && node.initializer) {
       this.fail(`${outputType} outputs cannot have initializers`, node.lineno, node.colno, node);
     }
     if (outputType === 'sink' && !node.initializer) {

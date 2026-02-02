@@ -764,23 +764,27 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    it('should support custom handlers with the Factory pattern (addCommandHandlerClass)', async () => {
+    it('should support custom handlers with the Factory pattern (sink)', async () => {
       class Turtle {
         constructor() { this.x = 0; this.y = 0; }
         forward(dist) { this.x += dist; }
         turn(deg) { this.y += deg; } // simplified for test
+        snapshot() { return this; }
       }
-      env.addCommandHandlerClass('turtle', Turtle);
+      const context = {
+        makeTurtle: () => new Turtle()
+      };
       const script = `
+        sink turtle = makeTurtle()
         @turtle.forward(50)
         @turtle.turn(90)
         @turtle.forward(10)
+        return turtle.snapshot()
       `;
-      const result = await env.renderScriptString(script);
-      // The final state of the handler instance is added to the result object
-      expect(result.turtle).to.be.a(Turtle);
-      expect(result.turtle.x).to.equal(60);
-      expect(result.turtle.y).to.equal(90);
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.be.a(Turtle);
+      expect(result.x).to.equal(60);
+      expect(result.y).to.equal(90);
     });
 
     it('Supports callable callable command handlers - no path', async () => {
@@ -885,22 +889,24 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    it('should focus the output to a custom handler result with :handlerName', async () => {
+    it('should return a custom handler result with explicit return', async () => {
       class Turtle {
         constructor() { this.x = 0; this.y = 0; }
         forward(dist) { this.x += dist; }
+        snapshot() { return this; }
       }
-      env.addCommandHandlerClass('turtle', Turtle);
+      const context = {
+        makeTurtle: () => new Turtle()
+      };
       const script = `
-        :turtle // Focus the script's return value on the 'turtle' handler
+        sink turtle = makeTurtle()
         @turtle.forward(100)
         @data.status = "ignored"
+        return turtle.snapshot()
       `;
-      const result = await env.renderScriptString(script);
-      // The result is just the turtle object, not the full result container
+      const result = await env.renderScriptString(script, context);
       expect(result).to.be.a(Turtle);
       expect(result.x).to.equal(100);
-      expect(result.data).to.be(undefined);
     });
 
     it('should allow input focusing in capture blocks', async () => {
@@ -1727,31 +1733,7 @@ describe('Cascada Script: Output commands', function () {
         }
       });
 
-      it('should handle @data with invalid focus', async () => {
-        const script = `
-          :someInvalidFocus
-          @data.counter = 10
-        `;
-        try {
-          await env.renderScriptString(script);
-          expect().fail('Should have thrown an error');
-        } catch (error) {
-          expect(error.message).to.contain(`Data output focus target not found: 'someInvalidFocus'`);
-        }
-      });
-
-      it('should handle @data with invalid data; focus', async () => {
-        const script = `
-          :data_invalid
-          @data.counter = 10
-        `;
-        try {
-          await env.renderScriptString(script);
-          expect().fail('Should have thrown an error');
-        } catch (error) {
-          expect(error.message).to.contain(`Data output focus target not found: 'data_invalid'`);
-        }
-      });
+      // Removed invalid focus tests: focus will be deprecated in favor of explicit returns.
 
       it('should handle @data.subtract', async () => {
         const script = `

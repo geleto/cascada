@@ -44,8 +44,12 @@ class Output {
     const buffer = this._frame._outputBuffer;
     if (buffer) {
       // For explicit outputs, preserve default empty snapshots without flattening.
-      // Skip the implicit "output" handler so templates keep legacy behavior.
-      if (this._outputName && this._outputName !== 'output' && typeof buffer._getOutputArray === 'function') {
+      // Skip this shortcut in script mode because focused data snapshots can
+      // depend on Result Objects emitted to the text stream.
+      if (!buffer._scriptMode &&
+          this._outputName &&
+          this._outputName !== 'output' &&
+          typeof buffer._getOutputArray === 'function') {
         const target = buffer._getOutputArray(this._outputName);
         if (!target || target.length === 0) {
           if (this._outputType === 'data') return {};
@@ -54,7 +58,21 @@ class Output {
         }
       }
       const outputName = null;//(this._outputName && this._outputName !== 'output') ? this._outputName : null;
-      return flattenBuffer(buffer, this._context, focusName || null, outputName);
+      const result = flattenBuffer(buffer, this._context, focusName || null, outputName);
+      if (!buffer._scriptMode || this._outputName === 'output') {
+        return result;
+      }
+      const applyDefault = (value) => {
+        if (value !== undefined) return value;
+        if (this._outputType === 'data') return {};
+        if (this._outputType === 'text') return '';
+        if (this._outputType === 'value') return undefined;
+        return value;
+      };
+      if (result && typeof result.then === 'function') {
+        return result.then((value) => applyDefault(value));
+      }
+      return applyDefault(result);
     }
 
     const outputArray = this._frame[this._outputName];

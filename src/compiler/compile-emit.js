@@ -192,12 +192,12 @@ module.exports = class CompileEmit {
     return frame;
   }
 
-  asyncBlockValue(node, frame, emitFunc, res, positionNode = node) {
+  asyncBlockValue(node, frame, emitFunc, res, positionNode = node, createScope = false) {
     if (node.isAsync) {
 
       this.line(`astate.asyncBlock(async (astate, frame) => {`);
       this.asyncClosureDepth++;
-      frame = frame.push(false, false);
+      frame = frame.push(false, createScope);
 
       if (res === undefined) {
         res = this.compiler._tmpid();

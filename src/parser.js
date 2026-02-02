@@ -1056,6 +1056,7 @@ class Parser extends Obj {
       case 'text':
       case 'value':
       case 'sink':
+      case 'handler':
         return this.parseOutputDeclaration();
       case 'macro':
         return this.parseMacro();
