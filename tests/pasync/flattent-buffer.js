@@ -33,26 +33,26 @@ describe('flattenBuffer', function () {
   describe('Data Assembly (@put, @push, etc.)', function () {
     it('should handle a simple @data.set command', async function () {
       const buffer = [{ handler: 'data', command: 'set', arguments: [['user'], { name: 'Alice' }] }];
-      const result = await flattenBuffer(buffer, context, null, 'data');
-      expect(result).to.eql({ data: { user: { name: 'Alice' } } });
+      const result = await flattenBuffer(buffer, context, 'data');
+      expect(result).to.eql({ user: { name: 'Alice' } });
     });
 
     it('should create nested objects with @data.set', async function () {
       const buffer = [{ handler: 'data', command: 'set', arguments: [['config', 'theme', 'color'], 'dark'] }];
-      const result = await flattenBuffer(buffer, context, null, 'data');
-      expect(result).to.eql({ data: { config: { theme: { color: 'dark' } } } });
+      const result = await flattenBuffer(buffer, context, 'data');
+      expect(result).to.eql({ config: { theme: { color: 'dark' } } });
     });
 
     it('should handle a simple @data.push command', async function () {
       const buffer = [{ handler: 'data', command: 'push', arguments: [['users'], 'Alice'] }];
-      const result = await flattenBuffer(buffer, context, null, 'data');
-      expect(result).to.eql({ data: { users: ['Alice'] } });
+      const result = await flattenBuffer(buffer, context, 'data');
+      expect(result).to.eql({ users: ['Alice'] });
     });
 
     it('should create an array with @data.push if it does not exist', async function () {
       const buffer = [{ handler: 'data', command: 'push', arguments: [['config', 'admins'], 'root'] }];
-      const result = await flattenBuffer(buffer, context, null, 'data');
-      expect(result).to.eql({ data: { config: { admins: ['root'] } } });
+      const result = await flattenBuffer(buffer, context, 'data');
+      expect(result).to.eql({ config: { admins: ['root'] } });
     });
 
     it('should handle the "[]" path syntax for creating and populating array items', async function () {
@@ -61,8 +61,8 @@ describe('flattenBuffer', function () {
         { handler: 'data', command: 'set', arguments: [['users', '[]', 'id'], 1] },
         { handler: 'data', command: 'set', arguments: [['users', 0, 'name'], 'Alice'] }
       ];
-      const result = await flattenBuffer(buffer, context, null, 'data');
-      expect(result).to.eql({ data: { users: [{ id: 1, name: 'Alice' }] } });
+      const result = await flattenBuffer(buffer, context, 'data');
+      expect(result).to.eql({ users: [{ id: 1, name: 'Alice' }] });
     });
 
     it('should handle the @data.merge command', async function () {
@@ -70,16 +70,16 @@ describe('flattenBuffer', function () {
         { handler: 'data', command: 'set', arguments: [['user'], { id: 1, name: 'Alice' }] },
         { handler: 'data', command: 'merge', arguments: [['user'], { name: 'Alicia', active: true }] },
       ];
-      const result = await flattenBuffer(buffer, context, null, 'data');
-      expect(result).to.eql({ data: { user: { id: 1, name: 'Alicia', active: true } } });
+      const result = await flattenBuffer(buffer, context, 'data');
+      expect(result).to.eql({ user: { id: 1, name: 'Alicia', active: true } });
     });
 
     it('should handle null path to work on the root of the data object', async function () {
       const buffer = [
         { handler: 'data', command: 'set', arguments: [null, { id: 5, name: 'Bob' }] }
       ];
-      const result = await flattenBuffer(buffer, context, null, 'data');
-      expect(result).to.eql({ data: { id: 5, name: 'Bob' } });
+      const result = await flattenBuffer(buffer, context, 'data');
+      expect(result).to.eql({ id: 5, name: 'Bob' });
     });
 
     it('should handle null path with merge to combine with existing root data', async function () {
@@ -87,8 +87,8 @@ describe('flattenBuffer', function () {
         { handler: 'data', command: 'set', arguments: [['id'], 10] },
         { handler: 'data', command: 'merge', arguments: [null, { name: 'Charlie' }] }
       ];
-      const result = await flattenBuffer(buffer, context, null, 'data');
-      expect(result).to.eql({ data: { id: 10, name: 'Charlie' } });
+      const result = await flattenBuffer(buffer, context, 'data');
+      expect(result).to.eql({ id: 10, name: 'Charlie' });
     });
   });
 
@@ -123,8 +123,8 @@ describe('flattenBuffer', function () {
       const buffer = [
         { handler: 'counter', command: 'increment', subpath: [], arguments: [] }
       ];
-      const result = await flattenBuffer(buffer, context, null, 'counter');
-      expect(result).to.eql({ counter: { count: 1 } });
+      const result = await flattenBuffer(buffer, context, 'counter');
+      expect(result).to.eql({ count: 1 });
     });
 
     it('should use a singleton handler and call its _init hook', function () {
@@ -136,8 +136,8 @@ describe('flattenBuffer', function () {
       };
       env.addCommandHandler('singleton', singletonHandler);
       const buffer = [{ handler: 'singleton', command: 'set', subpath: [], arguments: [456] }];
-      const result = flattenBuffer(buffer, context, null, 'singleton');
-      expect(result).to.eql({ singleton: { value: 456 } });
+      const result = flattenBuffer(buffer, context, 'singleton');
+      expect(result).to.eql({ value: 456 });
     });
 
     it('should support callable handlers (handler is a function)', function () {
@@ -146,8 +146,8 @@ describe('flattenBuffer', function () {
       callableHandler.getReturnValue = function() { return { result: 'called', lastValue: this.lastValue }; };
       env.addCommandHandler('callable', callableHandler);
       const buffer = [{ handler: 'callable', command: 'set', subpath: [], arguments: ['test'] }];
-      const result = flattenBuffer(buffer, context, null, 'callable');
-      expect(result).to.eql({ callable: { result: 'called', lastValue: 'test' } });
+      const result = flattenBuffer(buffer, context, 'callable');
+      expect(result).to.eql({ result: 'called', lastValue: 'test' });
     });
   });
 
@@ -181,8 +181,8 @@ describe('flattenBuffer', function () {
         'Test',
         (val) => ({ handler: 'data', command: 'set', arguments: [['result'], val] })
       ]];
-      const result = await flattenBuffer(buffer, context, null, 'data');
-      expect(result).to.eql({ data: { result: 'Test' } });
+      const result = await flattenBuffer(buffer, context, 'data');
+      expect(result).to.eql({ result: 'Test' });
     });
   });
 
@@ -223,7 +223,7 @@ describe('flattenBuffer', function () {
     it('should throw an error for a non-string/non-number path segment', async function () {
       const buffer = [{ handler: 'data', command: 'set', arguments: [[{}], 'value'] }];
       await expectAsyncError(async () => {
-        await flattenBuffer(buffer, context, null, 'data');
+        await flattenBuffer(buffer, context, 'data');
       }, (err) => {
         expect(err.message).to.contain('Invalid path segment');
       });

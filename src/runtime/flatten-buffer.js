@@ -10,22 +10,24 @@ const { flattenCommands, flattenCommandBuffer } = require('./flatten-commands');
 // both provided => value (unwrapped, focusOutput used)
 // neither provided, no context => this is a text flattening => string
 // neither provided, context  => ERROR (no longer supported)
-function flattenBuffer(arr, context = null, focusOutput = null, outputName = null, sharedState = null) {
-  let res;
+function flattenBuffer(arr, context = null, focusOutput = null) {
+  if (context && !focusOutput) {
+    //throw new Error('flattenBuffer requires either focusOutput or outputName parameter');
+  }
+  return doFlattenBuffer(arr, context, focusOutput);
+}
+
+function doFlattenBuffer(arr, context = null, focusOutput = null, outputName = null, sharedState = null) {
 
   if (arr instanceof CommandBuffer) {
-    res = flattenCommandBuffer(arr, context, focusOutput, outputName, sharedState, flattenBuffer);
-    return res;
+    return flattenCommandBuffer(arr, context, focusOutput, outputName, sharedState, doFlattenBuffer);
   }
 
   if (!context) {
-    return flattenText(arr, outputName, sharedState, flattenBuffer);
+    return flattenText(arr, outputName, sharedState, doFlattenBuffer);
   }
 
-  if (!focusOutput && !outputName) {
-    throw new Error('flattenBuffer requires either focusOutput or outputName parameter');
-  }
-  return flattenCommands(arr, context, focusOutput, outputName, sharedState, flattenBuffer);
+  return flattenCommands(arr, context, focusOutput, outputName, sharedState, doFlattenBuffer);
 }
 
 module.exports = {
