@@ -115,10 +115,10 @@ class Frame {
   }
 
   markOutputBufferScope(buffer) {
-    if (buffer && buffer._outputArrays) {
-      const outputArrays = Object.keys(buffer._outputArrays);
+    if (buffer && buffer.arrays) {
+      const outputArrays = Object.keys(buffer.arrays);
       outputArrays.forEach((name) => {
-        const target = buffer._outputArrays[name];
+        const target = buffer.arrays[name];
         if (target && typeof target === 'object') {
           target._outputScopeRoot = true;
         }

@@ -32,22 +32,14 @@ class CommandBuffer {
     this.finished = false;
     this[COMMAND_BUFFER_SYMBOL] = true;
 
-    // Create arrays namespace
-    this.arrays = {
-      output: [],
-      data: [],
-      text: [],
-      value: []
-    };
+    // Create arrays namespace (handlers created lazily on first write/snapshot).
+    // Note: templates write to the default arrays 'output' stream,
+    this.arrays = Object.create(null);
 
     this._index = 0;
-    this._outputTypes = Object.create(null);
+    // `_outputTypes` is script-only metadata used by the flattener to interpret
+    // explicit output handler types. Templates don't need it.
     this._outputIndexes = Object.create(null);
-    this._outputIndexes.output = 0;
-    this._outputIndexes.data = 0;
-    this._outputIndexes.text = 0;
-    this._outputIndexes.value = 0;
-    this._outputArrays = this.arrays;
   }
 
   /**
@@ -153,11 +145,11 @@ class CommandBuffer {
 
   _getOutputArray(outputName) {
     const name = outputName || 'output';
-    if (!this._outputArrays[name]) {
+    if (!this.arrays[name]) {
       const arr = [];
-      this._outputArrays[name] = arr;
+      this.arrays[name] = arr;
     }
-    return this._outputArrays[name];
+    return this.arrays[name];
   }
 
   _reserveSlot(outputName) {
@@ -247,7 +239,7 @@ function resolveOutputTargets(buffer, handlerNames = null) {
     return Array.isArray(buffer) ? [{ name: null, array: buffer }] : [];
   }
 
-  const allNames = Object.keys(buffer._outputArrays || {});
+  const allNames = Object.keys(buffer.arrays || {});
   const outputNames = allNames.filter(name => name !== 'output');
   const hasHandlerList = Array.isArray(handlerNames);
   const targetsAll = !hasHandlerList ||
@@ -261,8 +253,8 @@ function resolveOutputTargets(buffer, handlerNames = null) {
     return [];
   }
 
-  if (names.length === 0 && buffer._outputArrays.output) {
-    return [{ name: 'output', array: buffer._outputArrays.output }];
+  if (names.length === 0 && buffer.arrays && buffer.arrays.output) {
+    return [{ name: 'output', array: buffer.arrays.output }];
   }
 
   return names.map((name) => ({
