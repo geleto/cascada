@@ -163,7 +163,7 @@ class SinkOutputHandler {
     const finalize = (resolvedSink) => this._snapshotFromSink(resolvedSink);
 
     if (buffer) {
-      const flattened = flattenBuffer(buffer, this._context, null, outputName);
+      const flattened = flattenBuffer(buffer, this._context, outputName);
       if (flattened && typeof flattened.then === 'function') {
         return flattened.then(() => {
           const sinkVal = this._resolveSink();

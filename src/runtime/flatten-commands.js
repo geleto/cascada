@@ -90,36 +90,52 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
     ? ['text', ...outputNames.filter(name => name !== 'text')]
     : outputNames.slice();
 
+  const pending = [];
+  const queueFlatten = (name, arrayName) => {
+    const res = flattenBuffer(resolveBufferArray(buffer, arrayName), context, null, name, state);
+    if (res && typeof res.then === 'function') {
+      pending.push(res);
+    }
+  };
+
   if (orderedNames.length === 0) {
-    flattenBuffer(resolveBufferArray(buffer, 'output'), context, null, 'text', state);
+    queueFlatten('text', 'output');
   } else {
     orderedNames.forEach((name) => {
-      flattenBuffer(resolveBufferArray(buffer, name), context, null, name, state);
+      queueFlatten(name, name);
     });
   }
 
-  if (sharedState) {
-    return state;
-  }
-
-  if (state.collectedErrors.length > 0) {
-    throw new PoisonError(state.collectedErrors);
-  }
-
-  const finalResult = buildFinalResultFromState(state);
-
-  if (focusOutput) {
-    if (focusOutput === 'text') {
-      const textResult = state.textOutput.text ? state.textOutput.text.join('') : '';
-      return textResult ? textResult : undefined;
+  const finalize = () => {
+    if (sharedState) {
+      return state;
     }
-    if (state.textOutput[focusOutput]) {
-      return state.textOutput[focusOutput].join('');
+
+    if (state.collectedErrors.length > 0) {
+      throw new PoisonError(state.collectedErrors);
     }
-    return finalResult[focusOutput];
+
+    const finalResult = buildFinalResultFromState(state);
+
+    if (focusOutput) {
+      if (focusOutput === 'text') {
+        const textResult = state.textOutput.text ? state.textOutput.text.join('') : '';
+        return textResult ? textResult : undefined;
+      }
+      if (state.textOutput[focusOutput]) {
+        return state.textOutput[focusOutput].join('');
+      }
+      return finalResult[focusOutput];
+    }
+
+    return finalResult;
+  };
+
+  if (pending.length > 0) {
+    return Promise.all(pending).then(() => finalize());
   }
 
-  return finalResult;
+  return finalize();
 }
 
 function flattenCommands(arr, context, focusOutput, outputName, sharedState, flattenBuffer) {
