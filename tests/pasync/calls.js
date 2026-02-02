@@ -71,7 +71,7 @@
       expect(result).to.eql({ result: [2, 4, 6] });
     });
 
-    it('should allow reading parent variables in call blocks but not propagate writes to the parent scope', async () => {
+    it('should allow reading parent variables in call blocks', async () => {
       const script = `
         :data
         var outer = 10
@@ -82,8 +82,7 @@
 
         var callResult = call runner() :data
           @data.before = outer
-          outer = 20
-          @data.after = outer
+          @data.after = outer + 10
         endcall
 
         @data.callResult = callResult
@@ -94,6 +93,31 @@
         callResult: { before: 10, after: 20 },
         outerAfter: 10
       });
+    });
+
+    it('should reject assignment to outer-scope variables inside call blocks', async () => {
+      const script = `
+        :data
+        var outer = 10
+
+        macro runner()
+          return caller()
+        endmacro
+
+        var callResult = call runner() :data
+          outer = 20
+          @data.ok = true
+        endcall
+
+        @data.callResult = callResult
+      `;
+      try {
+        await env.renderScriptString(script);
+        throw new Error('Should have thrown');
+      } catch (e) {
+        expect(e.message).to.contain('Cannot assign to outer-scope variable');
+        expect(e.message).to.contain('outer');
+      }
     });
   });
 

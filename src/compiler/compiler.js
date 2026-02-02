@@ -218,9 +218,27 @@ class Compiler extends CompilerBase {
       const name = target.value;
       let id;
 
-
-
       const isDeclared = this._isDeclared(frame, name);
+
+      // Read-only parent scopes (e.g. call/caller bodies) may read from parent frames,
+      // but must not mutate parent variables. Without this check, assignments can
+      // silently become local shadows, which is surprising.
+      if (this.scriptMode &&
+        node.varType === 'assignment' &&
+        frame &&
+        frame.isolateWrites &&
+        isDeclared &&
+        !(frame.declaredVars && frame.declaredVars.has(name))) {
+        this.fail(
+          `Cannot assign to outer-scope variable '${name}' from a read-only scope. ` +
+          `Call blocks can read from parent scope but cannot mutate it.`,
+          target.lineno,
+          target.colno,
+          node,
+          target
+        );
+      }
+
       validateSetTarget(this, node, target, name, isDeclared);
 
       // Both modes rely on a fresh temp for the JS assignment.
