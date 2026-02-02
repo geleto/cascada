@@ -53,7 +53,7 @@ class Output {
           if (this._outputType === 'value') return undefined;
         }
       }
-      const outputName = (this._outputName && this._outputName !== 'output') ? this._outputName : null;
+      const outputName = null;//(this._outputName && this._outputName !== 'output') ? this._outputName : null;
       return flattenBuffer(buffer, this._context, focusName || null, outputName);
     }
 

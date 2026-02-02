@@ -65,12 +65,23 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
   if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
     state.scriptMode = buffer._scriptMode;
   }
-  //if (state.outputHandlers === undefined && buffer && buffer._outputHandlers) {
-  //  state.outputHandlers = buffer._outputHandlers;
-  //}
+  if (state.outputHandlers === undefined && buffer && buffer._outputHandlers) {
+    state.outputHandlers = buffer._outputHandlers;
+  }
   ensureFocusOutputExists(context, state, focusOutput, buffer._outputTypes || null);
 
-  const outputTargets = resolveOutputTargets(buffer, null);
+  const outputTargets = (() => {
+    if (!focusOutput) {
+      return resolveOutputTargets(buffer, null);
+    }
+    const targets = [focusOutput];
+    // In script mode, focused data returns can still depend on Result Objects
+    // emitted to the text stream (e.g., call blocks).
+    if (state.scriptMode && focusOutput === 'data' && !targets.includes('text')) {
+      targets.push('text');
+    }
+    return resolveOutputTargets(buffer, targets);
+  })();
   const outputNames = outputTargets
     .map(target => target.name)
     .filter(name => name && name !== 'output');
