@@ -814,7 +814,7 @@
         const arr = ['Valid text', poison, 'More text'];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -828,7 +828,7 @@
         const arr = [poison1, 'text', poison2];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -841,7 +841,7 @@
         const arr = [poison, 'Valid', 'Text'];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -859,7 +859,7 @@
         ];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -873,7 +873,7 @@
         ];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -891,7 +891,7 @@
         }];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -908,7 +908,7 @@
         }];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -918,9 +918,9 @@
 
       it('should return valid output when no poison found', () => {
         const arr = ['Hello', ' ', 'World'];
-        const result = runtime.flattenBuffer(arr, context);
+        const result = runtime.flattenBuffer(arr, context, 'text');
 
-        expect(result.text).to.equal('Hello World');
+        expect(result).to.equal('Hello World');
       });
     });
 
@@ -942,7 +942,7 @@
         const arr = [poison1, poison2];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -957,7 +957,7 @@
         const arr = [poison1, poison2];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -987,7 +987,7 @@
         ];
 
         try {
-          runtime.flattenBuffer(errors, context);
+          runtime.flattenBuffer(errors, context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1009,7 +1009,7 @@
         ];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1044,7 +1044,7 @@
         }];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1062,7 +1062,7 @@
         }];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1098,7 +1098,7 @@
         ];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1113,7 +1113,7 @@
         ];
 
         try {
-          runtime.flattenBuffer(arr, context);
+          runtime.flattenBuffer(arr, context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);

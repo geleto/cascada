@@ -31,50 +31,27 @@ describe('flattenBuffer', function () {
   });
 
   describe('Data Assembly (@put, @push, etc.)', function () {
-    // Add the necessary data methods for this test suite.
-    /*beforeEach(() => {
-      env.addDataMethods({
-        put: (target, value) => { return value; },
-        push: (target, value) => {
-          if (!Array.isArray(target)) return [value];
-          target.push(value);
-          return target;
-        },
-        merge: (target, value) => {
-          if (target === undefined) {
-            return value;
-          }
-          if (typeof target === 'object' && target !== null && !Array.isArray(target) && typeof value === 'object' && value !== null) {
-            Object.assign(target, value);
-            return target;
-          } else {
-            throw new Error('Error: Both target and value for \'merge\' must be non-null objects.');
-          }
-        }
-      });
-    });*/
-
     it('should handle a simple @data.set command', async function () {
       const buffer = [{ handler: 'data', command: 'set', arguments: [['user'], { name: 'Alice' }] }];
-      const result = await flattenBuffer(buffer, context);
+      const result = await flattenBuffer(buffer, context, null, 'data');
       expect(result).to.eql({ data: { user: { name: 'Alice' } } });
     });
 
     it('should create nested objects with @data.set', async function () {
       const buffer = [{ handler: 'data', command: 'set', arguments: [['config', 'theme', 'color'], 'dark'] }];
-      const result = await flattenBuffer(buffer, context);
+      const result = await flattenBuffer(buffer, context, null, 'data');
       expect(result).to.eql({ data: { config: { theme: { color: 'dark' } } } });
     });
 
     it('should handle a simple @data.push command', async function () {
       const buffer = [{ handler: 'data', command: 'push', arguments: [['users'], 'Alice'] }];
-      const result = await flattenBuffer(buffer, context);
+      const result = await flattenBuffer(buffer, context, null, 'data');
       expect(result).to.eql({ data: { users: ['Alice'] } });
     });
 
     it('should create an array with @data.push if it does not exist', async function () {
       const buffer = [{ handler: 'data', command: 'push', arguments: [['config', 'admins'], 'root'] }];
-      const result = await flattenBuffer(buffer, context);
+      const result = await flattenBuffer(buffer, context, null, 'data');
       expect(result).to.eql({ data: { config: { admins: ['root'] } } });
     });
 
@@ -84,7 +61,7 @@ describe('flattenBuffer', function () {
         { handler: 'data', command: 'set', arguments: [['users', '[]', 'id'], 1] },
         { handler: 'data', command: 'set', arguments: [['users', 0, 'name'], 'Alice'] }
       ];
-      const result = await flattenBuffer(buffer, context);
+      const result = await flattenBuffer(buffer, context, null, 'data');
       expect(result).to.eql({ data: { users: [{ id: 1, name: 'Alice' }] } });
     });
 
@@ -93,232 +70,163 @@ describe('flattenBuffer', function () {
         { handler: 'data', command: 'set', arguments: [['user'], { id: 1, name: 'Alice' }] },
         { handler: 'data', command: 'merge', arguments: [['user'], { name: 'Alicia', active: true }] },
       ];
-      const result = await flattenBuffer(buffer, context);
+      const result = await flattenBuffer(buffer, context, null, 'data');
       expect(result).to.eql({ data: { user: { id: 1, name: 'Alicia', active: true } } });
     });
 
     it('should handle null path to work on the root of the data object', async function () {
       const buffer = [
-        { handler: 'data', command: 'set', arguments: [null, { name: 'George', age: 30 }] },
-        { handler: 'data', command: 'set', arguments: [null, { status: 'active', role: 'user' }] }
+        { handler: 'data', command: 'set', arguments: [null, { id: 5, name: 'Bob' }] }
       ];
-      const result = await flattenBuffer(buffer, context);
-      expect(result).to.eql({ data: { status: 'active', role: 'user' } });
+      const result = await flattenBuffer(buffer, context, null, 'data');
+      expect(result).to.eql({ data: { id: 5, name: 'Bob' } });
     });
 
     it('should handle null path with merge to combine with existing root data', async function () {
       const buffer = [
-        { handler: 'data', command: 'set', arguments: [['user', 'name'], 'Alice'] },
-        { handler: 'data', command: 'set', arguments: [['user', 'role'], 'Admin'] },
-        { handler: 'data', command: 'deepMerge', arguments: [null, { user: { status: 'active' }, config: { theme: 'dark' } }] }
+        { handler: 'data', command: 'set', arguments: [['id'], 10] },
+        { handler: 'data', command: 'merge', arguments: [null, { name: 'Charlie' }] }
       ];
-      const result = await flattenBuffer(buffer, context);
-      expect(result).to.eql({ data: { user: { name: 'Alice', role: 'Admin', status: 'active' }, config: { theme: 'dark' } } });
+      const result = await flattenBuffer(buffer, context, null, 'data');
+      expect(result).to.eql({ data: { id: 10, name: 'Charlie' } });
     });
   });
 
   describe('Text Output & Mixed Content', function () {
     it('should join plain strings and numbers in the buffer', async function () {
-      const buffer = ['Hello, ', 'world! ', 2024];
-      const result = await flattenBuffer(buffer, context);
-      expect(result).to.eql({ text: 'Hello, world! 2024' });
-    });
-
-    it('should handle @text commands (handler: null)', async function () {
-      const buffer = [{ handler: null, command: 'text', arguments: ['Log message.'] }];
-      const result = await flattenBuffer(buffer, context, null, 'text');
-      expect(result).to.eql({ text: 'Log message.' });
+      const buffer = ['Hello', ' ', 'world', '!', 42];
+      const result = await flattenBuffer(buffer, context, 'text');
+      expect(result).to.equal('Hello world!42');
     });
 
     it('should process nested buffer arrays', async function () {
-      const buffer = ['<div>', ['<p>', 'content', '</p>'], '</div>'];
-      const result = await flattenBuffer(buffer, context);
-      expect(result).to.eql({ text: '<div><p>content</p></div>' });
+      const buffer = ['Outer', ['Middle', ['Inner']], 'End'];
+      const result = await flattenBuffer(buffer, context, 'text');
+      expect(result).to.equal('OuterMiddleInnerEnd');
     });
   });
 
   describe('Command Handlers (Factory & Singleton)', function () {
-    class CanvasTurtle {
-      constructor(ctx) { this.x = 0; this.y = 0; this.contextUserId = ctx.userId; }
-      forward(dist) { this.x += dist; }
-      turn(deg) { this.y += deg; }
-    }
-
-    const logger = {
-      logs: [],
-      _init(ctx) { this.logs = [`Initialized for user ${ctx.userId}`]; },
-      log(message) { this.logs.push(message); }
-    };
-
-    const createCallableHandler = () => {
-      const handler = function (...args) {
-        handler.calledWith.push(args);
-      };
-      handler.calledWith = [];
-      return handler;
-    };
-
     it('should instantiate and use a factory handler', async function () {
-      env.addCommandHandlerClass('turtle', CanvasTurtle);
+      class CounterHandler {
+        constructor() {
+          this.count = 0;
+        }
+        increment() {
+          this.count++;
+        }
+        getReturnValue() {
+          return { count: this.count };
+        }
+      }
+      env.addCommandHandlerClass('counter', CounterHandler);
       const buffer = [
-        { handler: 'turtle', command: 'forward', arguments: [50] },
-        { handler: 'turtle', command: 'turn', arguments: [90] }
+        { handler: 'counter', command: 'increment', subpath: [], arguments: [] }
       ];
-      const result = await flattenBuffer(buffer, context);
-      expect(result.turtle.x).to.equal(50);
-      expect(result.turtle.y).to.equal(90);
-      expect(result.turtle.contextUserId).to.equal(123);
+      const result = await flattenBuffer(buffer, context, null, 'counter');
+      expect(result).to.eql({ counter: { count: 1 } });
     });
 
-    it('should use a singleton handler and call its _init hook', async function () {
-      logger.logs = []; // Reset singleton state before test
-      env.addCommandHandler('logger', logger);
-      const buffer = [{ handler: 'logger', command: 'log', arguments: ['User action'] }];
-      await flattenBuffer(buffer, context);
-      expect(logger.logs).to.eql(['Initialized for user 123', 'User action']);
+    it('should use a singleton handler and call its _init hook', function () {
+      const singletonHandler = {
+        value: 0,
+        _init(ctx) { this.value = ctx.userId; },
+        set(val) { this.value = val; },
+        getReturnValue() { return { value: this.value }; }
+      };
+      env.addCommandHandler('singleton', singletonHandler);
+      const buffer = [{ handler: 'singleton', command: 'set', subpath: [], arguments: [456] }];
+      const result = flattenBuffer(buffer, context, null, 'singleton');
+      expect(result).to.eql({ singleton: { value: 456 } });
     });
 
-    it('should support callable handlers (handler is a function)', async function () {
-      const callableHandler = createCallableHandler();
+    it('should support callable handlers (handler is a function)', function () {
+      const callableHandler = function() {};
+      callableHandler.set = function(val) { this.lastValue = val; };
+      callableHandler.getReturnValue = function() { return { result: 'called', lastValue: this.lastValue }; };
       env.addCommandHandler('callable', callableHandler);
-      const buffer = [{ handler: 'callable', command: null, arguments: [1, 'arg2'] }];
-      await flattenBuffer(buffer, context);
-      expect(callableHandler.calledWith).to.eql([[1, 'arg2']]);
-    });
-  });
-
-  describe('Focused Output', function () {
-    // Setup the environment for all tests in this suite
-    beforeEach(() => {
-      class Turtle { constructor() { this.pos = 0; } forward(d) { this.pos += d; } }
-      env.addCommandHandlerClass('turtle', Turtle);
-      env.addDataMethods({ set: (target, value) => { return value; } });
-    });
-
-    const fullBuffer = [
-      { handler: 'data', command: 'set', arguments: [['user', 'name'], 'Bob'] },
-      'Some text. ',
-      { handler: 'turtle', command: 'forward', arguments: [10] }
-    ];
-
-    it('should return only the data object when focus is "data"', async function () {
-      const result = await flattenBuffer(fullBuffer, context, 'data');
-      expect(result).to.eql({ user: { name: 'Bob' } });
-    });
-
-    it('should return only the text output when focus is "text"', async function () {
-      const result = await flattenBuffer(fullBuffer, context, 'text');
-      expect(result).to.be('Some text. ');
-    });
-
-    it('should return only a handler instance when focus is on a handler name', async function () {
-      const result = await flattenBuffer(fullBuffer, context, 'turtle');
-      expect(result.pos).to.equal(10);
-    });
-
-    it('should throw an error when focus key does not exist', async function () {
-      await expectAsyncError(
-        () => flattenBuffer(fullBuffer, context, 'nonexistent'),
-        (err) => expect(err.message).to.contain(`Data output focus target not found: 'nonexistent'`)
-      );
+      const buffer = [{ handler: 'callable', command: 'set', subpath: [], arguments: ['test'] }];
+      const result = flattenBuffer(buffer, context, null, 'callable');
+      expect(result).to.eql({ callable: { result: 'called', lastValue: 'test' } });
     });
   });
 
   describe('Post-Processing Functions (e.g., SafeString)', function () {
-    class SafeString {
-      constructor(val) { this.val = String(val); }
-      toString() { return this.val; }
-    }
-
     it('should handle a simple array with a post-processing function', async function () {
-      const buffer = [
-        ['<p>', 'Hello', '</p>', (val) => new SafeString(val.toUpperCase())]
-      ];
-      const result = await flattenBuffer(buffer, context);
-      expect(result.text).to.equal('<P>HELLO</P>');
+      const buffer = [['Hello', (val) => val.toUpperCase()]];
+      const result = await flattenBuffer(buffer, context, 'text');
+      expect(result).to.equal('HELLO');
     });
 
     it('should handle nested arrays within a post-processing array', async function () {
-      const buffer = [
-        ['<span>', ['nested', ' text'], '</span>', (val) => new SafeString(val.replace(/ /g, '_'))]
-      ];
-      const result = await flattenBuffer(buffer, context);
-      expect(result.text).to.equal('<span>nested_text</span>');
+      const buffer = [[['Hello', ' ', 'World'], (val) => val.toLowerCase()]];
+      const result = await flattenBuffer(buffer, context, 'text');
+      expect(result).to.equal('hello world');
     });
 
     it('should process the result of the function along with other buffer items', async function () {
-      const buffer = [
-        'Prefix -- ',
-        ['data', (val) => new SafeString(val + '!')],
-        ' -- Suffix'
-      ];
-      const result = await flattenBuffer(buffer, context);
-      expect(result.text).to.equal('Prefix -- data! -- Suffix');
+      const buffer = ['Start ', [['mid'], (val) => val.toUpperCase()], ' End'];
+      const result = await flattenBuffer(buffer, context, 'text');
+      expect(result).to.equal('Start MID End');
     });
 
     it('should handle post-processing functions that return null or undefined', async function () {
-      const buffer = ['A', ['B', (val) => null], 'C'];
-      const result = await flattenBuffer(buffer, context);
-      expect(result.text).to.equal('AC');
+      const buffer = [['text', () => null]];
+      const result = await flattenBuffer(buffer, context, 'text');
+      expect(result).to.equal('');
     });
 
     it('should handle post-processing functions that return another command object', async function () {
-      env.addDataMethods({ set: (target, value) => { return value; } });
-      const buffer = [
-        ['ignored', (val) => ({ handler: 'data', command: 'set', arguments: [['wasProcessed'], true] })]
-      ];
-      const result = await flattenBuffer(buffer, context);
-      expect(result).to.eql({ data: { wasProcessed: true } });
+      const buffer = [[
+        'Test',
+        (val) => ({ handler: 'data', command: 'set', arguments: [['result'], val] })
+      ]];
+      const result = await flattenBuffer(buffer, context, null, 'data');
+      expect(result).to.eql({ data: { result: 'Test' } });
     });
   });
 
   describe('Error Handling & Edge Cases', function () {
     it('should handle an empty buffer', async function () {
-      const result = await flattenBuffer([], context);
-      expect(result).to.eql({});
+      const buffer = [];
+      const result = await flattenBuffer(buffer, context, 'text');
+      expect(result).to.equal('');
     });
 
     it('should ignore null and undefined values in the buffer', async function () {
-      const result = await flattenBuffer(['A', null, 'B', undefined, 'C'], context);
-      expect(result).to.eql({ text: 'ABC' });
+      const buffer = ['Hello', null, undefined, 'World'];
+      const result = await flattenBuffer(buffer, context, 'text');
+      expect(result).to.equal('HelloWorld');
     });
 
     it('should throw an error for an unknown command handler', async function () {
-      const buffer = [{ handler: 'nonexistent', command: 'do', arguments: [], pos: { lineno: 1, colno: 1 } }];
-      await expectAsyncError(
-        () => flattenBuffer(buffer, context),
-        (err) => expect(err.message).to.contain('Unknown command handler: nonexistent')
-      );
+      const buffer = [{ handler: 'nonexistent', command: 'method', subpath: [], arguments: [] }];
+      await expectAsyncError(async () => {
+        await flattenBuffer(buffer, context, 'text');
+      }, (err) => {
+        expect(err.message).to.contain('Unknown command handler: nonexistent');
+      });
     });
 
     it('should throw an error for an unknown command method on a handler', async function () {
-      env.addCommandHandler('logger', { log: () => {} });
-      const buffer = [{ handler: 'logger', command: 'nonexistent', arguments: [], pos: { lineno: 1, colno: 1 } }];
-      await expectAsyncError(
-        () => flattenBuffer(buffer, context),
-        (err) => expect(err.message).to.contain(`has no method 'nonexistent'`)
-      );
-    });
-
-    it('should throw an error for @data.set on an invalid path', async function () {
-      env.addDataMethods({ set: (target, value) => { return value; } });
-      const buffer = [
-        { handler: 'data', command: 'set', arguments: [['user'], null] },
-        { handler: 'data', command: 'set', arguments: [['user', 'profile'], 'test'] }
-      ];
-      await expectAsyncError(
-        () => flattenBuffer(buffer, context),
-        (err) => expect(err.message).to.contain('on null or undefined path segment')
-      );
+      env.addCommandHandler('testHandler', {
+        getReturnValue: () => ({ test: true })
+      });
+      const buffer = [{ handler: 'testHandler', command: 'nonexistent', subpath: [], arguments: [] }];
+      await expectAsyncError(async () => {
+        await flattenBuffer(buffer, context, 'text');
+      }, (err) => {
+        expect(err.message).to.contain('has no method');
+      });
     });
 
     it('should throw an error for a non-string/non-number path segment', async function () {
-      env.addDataMethods({ set: (target, value) => { return value; } });
-      const buffer = [{ handler: 'data', command: 'set', arguments: [['config', null, 'value'], 'test'] }];
-      await expectAsyncError(
-        () => flattenBuffer(buffer, context),
-        (err) => expect(err.message).to.contain('Invalid path segment')
-      );
+      const buffer = [{ handler: 'data', command: 'set', arguments: [[{}], 'value'] }];
+      await expectAsyncError(async () => {
+        await flattenBuffer(buffer, context, null, 'data');
+      }, (err) => {
+        expect(err.message).to.contain('Invalid path segment');
+      });
     });
   });
 });

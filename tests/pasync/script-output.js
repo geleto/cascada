@@ -2,16 +2,13 @@
 
 let expect;
 let AsyncEnvironment;
-let StringLoader;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-  StringLoader = require('../util').StringLoader;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
-  StringLoader = window.util.StringLoader;
 }
 
 describe('Cascada Script: Output commands', function () {
