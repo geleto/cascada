@@ -211,8 +211,8 @@ function getOutputHandler(frame, outputName) {
     if (current._outputs && Object.prototype.hasOwnProperty.call(current._outputs, outputName)) {
       return current._outputs[outputName];
     }
-    // Allow macro/caller scopes to expose outputs via _outputParent.
-    current = current.parent || current._outputParent;
+    // Outputs follow the same scoping rules as variables: lexical parent chain only.
+    current = current.parent;
   }
   return undefined;
 }

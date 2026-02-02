@@ -916,8 +916,8 @@
             token = "fallback-token"
           endif
           api!!
-          var data = api!.fetchData(token)
-          var processed = api!.processData(data)
+          var fetched = api!.fetchData(token)
+          var processed = api!.processData(fetched)
           @data.result = processed
         `;
 
@@ -937,8 +937,8 @@
         };
 
         // Test with healing
-        let data = await env.renderScriptString(script, context, { output: 'data' });
-        expect(data.result).to.equal('DATA');
+        let result = await env.renderScriptString(script, context, { output: 'data' });
+        expect(result.result).to.equal('DATA');
         expect(callOrder).to.eql(['fetch', 'process']);
 
         // Test without healing

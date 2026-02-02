@@ -149,7 +149,7 @@ class CompileBuffer {
     }
 
     const declaredInCurrentFrame = frame.declaredOutputs && frame.declaredOutputs.has(handler);
-    const useExplicitOutputBuffer = outputDecl && !outputDecl.implicit && !declaredInCurrentFrame && !frame.outputScope;
+    const useExplicitOutputBuffer = outputDecl && !declaredInCurrentFrame && !frame.outputScope;
 
     // Use a wrapper to avoid duplicating the sync/async logic.
     const wrapper = (emitLogic) => {

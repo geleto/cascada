@@ -1605,8 +1605,11 @@ class ScriptTranspiler {
 
     const withOutputDeclarations = this._insertOutputDeclarations(processedLines, {
       forceRootOutputs,
-      forceMacroCallOutputs: ENABLE_INSERT_IMPLICIT_RETURN,
-      forceCaptureOutputs: ENABLE_INSERT_IMPLICIT_RETURN
+      // Do not force core outputs into every macro/call/capture scope.
+      // Only inject outputs that are actually required/used (plus root defaults when needed).
+      // This avoids conflicts with common parameter/variable names like "value".
+      forceMacroCallOutputs: false,
+      forceCaptureOutputs: false
     });
     const outputLines = ENABLE_INSERT_IMPLICIT_RETURN
       ? this._insertImplicitReturns(withOutputDeclarations)
@@ -2035,9 +2038,6 @@ class ScriptTranspiler {
       }
       const inlineChunks = [];
       outputsToInject.forEach((outputType) => {
-        if (scope.conflictingNames && scope.conflictingNames.has(outputType)) {
-          return;
-        }
         if (!scope.declaredOutputs.has(outputType)) {
           inlineChunks.push(this._formatInlineOutputDeclaration(outputType, scope.indentation));
         }

@@ -171,9 +171,8 @@ module.exports = class CompileAsync {
       if (df.declaredOutputs && df.declaredOutputs.has(outputName)) {
         break;
       }
-      // The df.outputParent matters for macro/caller scoping of declared outputs.
-      // It prevents subtle scope bugs where macro-local outputs shadow outer outputs.
-      df = df.outputParent || df.parent;
+      // Outputs follow lexical scoping only (same as variables).
+      df = df.parent;
     }
 
     let current = frame;
@@ -192,20 +191,24 @@ module.exports = class CompileAsync {
     frame.declaredOutputs = frame.declaredOutputs || new Map();
 
     if (frame.declaredOutputs.has(name)) {
-      const existing = frame.declaredOutputs.get(name);
-      if (!existing || !existing.implicit) {
-        this.compiler.fail(`Output '${name}' already declared`, node && node.lineno, node && node.colno, node || undefined);
-      }
+      this.compiler.fail(`Output '${name}' already declared`, node && node.lineno, node && node.colno, node || undefined);
     }
 
+    // Output declarations cannot conflict with variables in the same lexical frame chain.
+    // Note: we intentionally do NOT consider outputParent here; macro/call detached scopes
+    // can still access outer outputs via @name without having lexical name conflicts.
     if (this.compiler._isDeclared(frame, name)) {
-      this.compiler.fail(`Cannot declare output '${name}' because a variable with the same name is already declared`, node && node.lineno, node && node.colno, node || undefined);
+      this.compiler.fail(
+        `Cannot declare output '${name}' because a variable with the same name is already declared`,
+        node && node.lineno,
+        node && node.colno,
+        node || undefined
+      );
     }
 
     frame.declaredOutputs.set(name, {
       type: outputType,
       initializer: initializer || null,
-      implicit: false
     });
   }
 
@@ -214,8 +217,8 @@ module.exports = class CompileAsync {
       if (frame.declaredOutputs && frame.declaredOutputs.has(name)) {
         return frame.declaredOutputs.get(name);
       }
-      // Walk outputParent first to resolve macro-local declarations correctly.
-      frame = frame.outputParent || frame.parent;
+      // Outputs follow lexical scoping only (same as variables).
+      frame = frame.parent;
     }
     return null;
   }

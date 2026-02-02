@@ -103,8 +103,8 @@
         });
 
         const script = `
-        var data = fetchData()
-        @data.result = data
+        var fetched = fetchData()
+        @data.result = fetched
       `;
 
         try {
@@ -344,8 +344,8 @@
         };
 
         const script = `
-        var value = config.asyncValue
-        @data.value = value
+        var cfgValue = config.asyncValue
+        @data.value = cfgValue
       `;
 
         try {

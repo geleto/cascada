@@ -88,21 +88,6 @@ module.exports = class CompileEmit {
     if (this.compiler.scriptMode) {
       this.line(`${bufferVar}._scriptMode = true;`);
     }
-    // Experimental: keep astate on the frame for output snapshots (not currently used).
-    //this.line('frame._astate = astate;');
-    this.line(`frame.data = ${bufferVar}.arrays.data;`);
-    this.line(`frame.text = ${bufferVar}.arrays.text;`);
-    this.line(`frame.value = ${bufferVar}.arrays.value;`);
-    this.line(`${bufferVar}._outputTypes = ${bufferVar}._outputTypes || Object.create(null);`);
-    this.line(`${bufferVar}._outputTypes.data = "data";`);
-    this.line(`${bufferVar}._outputTypes.text = "text";`);
-    this.line(`${bufferVar}._outputTypes.value = "value";`);
-    this.line('frame._outputs = {');
-    this.line('  data: runtime.createOutput(frame, "data", context, "data"),');
-    this.line('  text: runtime.createOutput(frame, "text", context, "text"),');
-    this.line('  value: runtime.createOutput(frame, "value", context, "value"),');
-    this.line('  output: runtime.createOutput(frame, "output", context, "text")');
-    this.line('};');
   }
 
   funcEnd(node, noReturn) { // Added node parameter
@@ -261,12 +246,6 @@ module.exports = class CompileEmit {
       frame._returnWaitCount = 1;
       this.line(`let ${id} = (async function(frame) {`);
       innerBodyFunction.call(this.compiler, frame);
-      // If call block has focus, return focused output via snapshot
-      if (node.focus) {
-        this.line(`return frame._outputs.${node.focus}.snapshot();`);
-      } else {
-        this.line('return undefined;');
-      }
       this.line('}).call(this, frame);');
     } else {
       innerBodyFunction.call(this.compiler, frame);

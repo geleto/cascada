@@ -320,7 +320,7 @@ class CompilerBase extends Obj {
 
     let name = node.value;
     const declaredOutput = this.async._getDeclaredOutput(frame, name);
-    if (declaredOutput && !declaredOutput.implicit && !this._isDeclared(frame, name)) {
+    if (declaredOutput && !this._isDeclared(frame, name)) {
       if (this.asyncMode) {
         this.async.updateOutputUsage(frame, name, node);
       }

@@ -723,15 +723,15 @@
 
       const script = `
          :data
-         var data = {}
+         var collected = {}
          var total = 0
 
          for i in [1, 2, 3]
            var v = getVal(i)
-           data[i] = v
+           collected[i] = v
          endfor
 
-         @data.res = data
+         @data.res = collected
       `;
 
       const result = await env.renderScriptString(script, context);
