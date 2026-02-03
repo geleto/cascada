@@ -3,8 +3,7 @@ const { TOKEN_TYPES } = require('../src/script/script-lexer');
 const expect = require('expect.js');
 
 const aliasOptions = {
-  useCoreOutputAliases: true,
-  injectReturnedOutputsOnly: true
+  useCoreOutputAliases: true
 };
 
 describe('Script Transpiler', () => {
@@ -211,10 +210,12 @@ describe('Script Transpiler', () => {
 
     describe('processLine', () => {
       it('should correctly process a text statement', () => {
-        const line = '@text(value)';
+        scriptTranspiler.outputScopes = [scriptTranspiler._createOutputScope()];
+        scriptTranspiler.declareOutput('text', 'text');
+        const line = 'text(value)';
         const state = { inMultiLineComment: false, stringState: null };
 
-        const result = scriptTranspiler._processLine(line, state);
+        const result = scriptTranspiler._processLine(line, state, 0);
 
         expect(result.lineType).to.equal('TAG');
         expect(result.tagName).to.equal('output_command');
@@ -427,9 +428,9 @@ describe('Script Transpiler', () => {
   // Basic conversion tests
   describe('Basic Conversions', () => {
     it('should convert text statements', () => {
-      const script = '@text("Hello, World!")';
+      const script = 'text text\ntext("Hello, World!")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}{%- output_command text("Hello, World!") -%}');
+      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello, World!") -%}');
     });
 
     it('should convert tag statements', () => {
@@ -484,33 +485,33 @@ describe('Script Transpiler', () => {
   // Token type tests
   describe('Token Types', () => {
     it('should handle single-quoted strings', () => {
-      const script = '@text(\'Hello, World!\')';
+      const script = 'text text\ntext(\'Hello, World!\')';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}{%- output_command text(\'Hello, World!\') -%}');
+      expect(template).to.equal('{%- text text -%}\n{%- output_command text(\'Hello, World!\') -%}');
     });
 
     it('should handle double-quoted strings', () => {
-      const script = '@text("Hello, World!")';
+      const script = 'text text\ntext("Hello, World!")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}{%- output_command text("Hello, World!") -%}');
+      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello, World!") -%}');
     });
 
     it('should handle template literals', () => {
-      const script = '@text(`Hello, World!`)';
+      const script = 'text text\ntext(`Hello, World!`)';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}{%- output_command text(`Hello, World!`) -%}');
+      expect(template).to.equal('{%- text text -%}\n{%- output_command text(`Hello, World!`) -%}');
     });
 
     it('should handle single-line comments', () => {
-      const script = '@text("Hello")// This is a comment';
+      const script = 'text text\ntext("Hello")// This is a comment';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}{%- output_command text("Hello") -%}{#- This is a comment -#}');
+      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello") -%}{#- This is a comment -#}');
     });
 
     it('should handle multi-line comments', () => {
-      const script = '@text("Hello")/* This is a multi-line comment */';
+      const script = 'text text\ntext("Hello")/* This is a multi-line comment */';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}{%- output_command text("Hello") -%}{#- This is a multi-line comment -#}');
+      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello") -%}{#- This is a multi-line comment -#}');
     });
 
     it('should handle standalone comments', () => {
@@ -565,7 +566,7 @@ describe('Script Transpiler', () => {
     });
 
     it('should detect invalid middle tags', () => {
-      const script = 'for item in items\n  @text(item)\nelif\n  @text("Empty")\nendfor';
+      const script = 'text text\nfor item in items\n  text(item)\nelif\n  text("Empty")\nendfor';
       try {
         scriptTranspiler.scriptToTemplate(script);
       } catch (error) {
@@ -574,7 +575,7 @@ describe('Script Transpiler', () => {
     });
 
     it('should detect middle tags outside blocks', () => {
-      const script = '@text("Before")\nelse\n@text("After")';
+      const script = 'text text\ntext("Before")\nelse\ntext("After")';
       try {
         scriptTranspiler.scriptToTemplate(script);
       } catch (error) {
@@ -736,328 +737,58 @@ endif`;
     });
   });
 
-  // @ Command conversion tests
-  describe('@ Command Conversions', () => {
-    describe('Statement-Style Commands', () => {
-      it('should convert simple command with path and string value', () => {
-        const script = '@data.user.name = \'Alice\'';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "name"], \'Alice\') -%}');
-      });
-
-      it('should convert command with path and numeric value', () => {
-        const script = '@data.user.age = 30';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "age"], 30) -%}');
-      });
-
-      it('should convert command with complex path', () => {
-        const script = '@data.user.settings.theme = \'dark\'';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "settings", "theme"], \'dark\') -%}');
-      });
-
-      it('should convert data commands with object literal argument', () => {
-        const script = '@data.users.push({ id: 1, name: \'Bob\' })';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.push(["users"],{ id: 1, name: \'Bob\' }) -%}');
-      });
-
-      it('should convert data commands with no argument', () => {
-        const script = '@data.user.roles.pop()';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.pop(["user", "roles"]) -%}');
-      });
-
-      it('should handle data commands with extra whitespace', () => {
-        const script = '  @data.user.name = \'Alice\'  ';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('  {%- data data -%}  {%- output_command data.set(["user", "name"], \'Alice\'  ) -%}');
-      });
-
-      it('should convert command that looks like function but has no parentheses', () => {
-        const script = 'sink turtle = makeTurtle()\n@turtle.forward(50)';
-        const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
-        expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50) -%}');
-      });
+  // Output operation tests
+  describe('Output Operations', () => {
+    it('should convert data set with explicit output variable', () => {
+      const script = 'data data\ndata.user.name = "Alice"';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- data data -%}\n{%- output_command data.set(["user", "name"], "Alice") -%}');
     });
 
-    describe('Function-Style Commands', () => {
-      it('should convert simple function call with dot in name', () => {
-        const script = 'sink turtle = makeTurtle()\n@turtle.forward(50)';
-        const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
-        expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50) -%}');
-      });
-
-      it('should convert call with complex expression as argument', () => {
-        const script = 'sink turtle = makeTurtle()\n@turtle.turn(getAngle() * 2)';
-        const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
-        expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.turn(getAngle() * 2) -%}');
-      });
-
-      it('should handle call with extra whitespace around parentheses', () => {
-        const script = 'sink turtle = makeTurtle()\n@turtle.forward ( 50 )';
-        const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
-        expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward ( 50 ) -%}');
-      });
-
-      it('should convert function call with multiple arguments', () => {
-        const script = '@move.to(x + 10, y - 5, z)';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command move.to(x + 10, y - 5, z) -%}');
-      });
-
-      it('should convert function call with nested function calls', () => {
-        const script = '@calc.process(getValue(a), transform(b, c))';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command calc.process(getValue(a), transform(b, c)) -%}');
-      });
+    it('should convert data push with explicit output variable', () => {
+      const script = 'data data\ndata.user.roles.push("admin")';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- data data -%}\n{%- output_command data.push(["user", "roles"],"admin") -%}');
     });
 
-    describe('@ Commands with Comments', () => {
-      it('should handle statement command with trailing comment', () => {
-        const script = '@data.user.name = \'Alice\' // Set user name';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "name"], \'Alice\' ) -%}{#- Set user name -#}');
-      });
-
-      it('should handle function command with trailing comment', () => {
-        const script = 'sink turtle = makeTurtle()\n@turtle.forward(50) // Move turtle forward';
-        const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
-        expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50)  -%}{#- Move turtle forward -#}');
-      });
-
-      it('should handle command with multi-line comment', () => {
-        const script = '@data.user.status = "active" /* Update user status */';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "status"], "active" ) -%}{#- Update user status -#}');
-      });
+    it('should convert root-level data operations', () => {
+      const script = 'data data\ndata.merge({ version: "1.1" })';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- data data -%}\n{%- output_command data.merge(null,{ version: "1.1" }) -%}');
     });
 
-    describe('@ Commands Edge Cases', () => {
-      it('should handle @ command with indentation', () => {
-        const script = '  @data.user.name = \'Alice\'';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('  {%- data data -%}  {%- output_command data.set(["user", "name"], \'Alice\') -%}');
-      });
-
-      it('should handle @ command with empty function call', () => {
-        const script = '@reset()';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- output_command reset() -%}');
-      });
-
-      it('should handle @ command with string containing spaces', () => {
-        const script = '@data.message = "Hello World with spaces"';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["message"], "Hello World with spaces") -%}');
-      });
-
-      it('should handle @ command with boolean values', () => {
-        const script = '@data.user.active = true';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "active"], true) -%}');
-      });
-
-      it('should handle @ command with array notation', () => {
-        const script = '@data.items[0].status = \'completed\'';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["items", 0, "status"], \'completed\') -%}');
-      });
-    });
-  });
-
-  // New @data Command Syntax Tests
-  describe('@data Command Syntax', () => {
-    describe('Basic Commands', () => {
-      it('should convert simple set command with @data syntax', () => {
-        const script = '@data.user.name = "Alice"';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "name"], "Alice") -%}');
-      });
-
-      it('should convert push command with @data syntax', () => {
-        const script = '@data.user.roles.push("admin")';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.push(["user", "roles"],"admin") -%}');
-      });
-
-      it('should convert root-level merge command', () => {
-        const script = '@data.merge({ version: "1.1" })';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.merge(null,{ version: "1.1" }) -%}');
-      });
-
-      it('should convert command with complex path', () => {
-        const script = '@data.report.users[user.id].status = "active"';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["report", "users", user.id, "status"], "active") -%}');
-      });
-
-      it('should convert command with dynamic array lookup', () => {
-        const script = '@data.users[getUser(params[0])].name = "Bob"';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["users", getUser(params[0]), "name"], "Bob") -%}');
-      });
-
-      it('should convert command with whitespace', () => {
-        const script = '@data.user.name = "Alice"';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "name"], "Alice") -%}');
-      });
+    it('should convert text output calls', () => {
+      const script = 'text text\ntext("Hello, World!")';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello, World!") -%}');
     });
 
-    describe('Complex Paths', () => {
-      it('should handle nested object paths', () => {
-        const script = '@data.user.settings.notifications.email = true';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "settings", "notifications", "email"], true) -%}');
-      });
-
-      it('should handle array indices in paths', () => {
-        const script = '@data.items[0].tags[1] = "urgent"';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["items", 0, "tags", 1], "urgent") -%}');
-      });
-
-      it('should handle mixed array and object access', () => {
-        const script = '@data.users[user.id].permissions.admin = true';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["users", user.id, "permissions", "admin"], true) -%}');
-      });
-
-      it('should handle complex expressions in brackets', () => {
-        const script = '@data.reports[getReportId(user.id, "monthly")].data = reportData';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["reports", getReportId(user.id, "monthly"), "data"], reportData) -%}');
-      });
+    it('should convert sink output calls', () => {
+      const script = 'sink turtle = makeTurtle()\nturtle.forward(50)';
+      const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
+      expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50) -%}');
     });
 
-    describe('Different @data Commands', () => {
-      it('should handle push command', () => {
-        const script = '@data.user.tasks.push("Review code")';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.push(["user", "tasks"],"Review code") -%}');
-      });
-
-      it('should handle pop command', () => {
-        const script = '@data.user.tasks.pop()';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.pop(["user", "tasks"]) -%}');
-      });
-
-      it('should handle shift command', () => {
-        const script = '@data.user.tasks.shift()';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.shift(["user", "tasks"]) -%}');
-      });
-
-      it('should handle unshift command', () => {
-        const script = '@data.user.tasks.unshift("New task")';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.unshift(["user", "tasks"],"New task") -%}');
-      });
-
-      it('should handle merge command', () => {
-        const script = '@data.user.settings.merge({ theme: "dark", notifications: true })';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.merge(["user", "settings"],{ theme: "dark", notifications: true }) -%}');
-      });
-
-      it('should handle deepMerge command', () => {
-        const script = '@data.user.profile.deepMerge({ address: { city: "New York" } })';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.deepMerge(["user", "profile"],{ address: { city: "New York" } }) -%}');
-      });
-
-      it('should handle reverse command', () => {
-        const script = '@data.user.tasks.reverse()';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.reverse(["user", "tasks"]) -%}');
-      });
-
-      it('should handle append command', () => {
-        const script = '@data.user.bio.append(" - Updated")';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.append(["user", "bio"]," - Updated") -%}');
-      });
+    it('should preserve comments on output operations', () => {
+      const script = 'data data\ndata.user.name = "Alice" // Set user name';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- data data -%}\n{%- output_command data.set(["user", "name"], "Alice" ) -%}{#- Set user name -#}');
     });
 
-    describe('Root-level Operations', () => {
-      it('should handle root-level set', () => {
-        const script = '@data = { status: "complete", timestamp: now() }';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(null, { status: "complete", timestamp: now() }) -%}');
-      });
-
-      it('should handle root-level merge', () => {
-        const script = '@data.merge({ version: "2.1", build: 123 })';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.merge(null,{ version: "2.1", build: 123 }) -%}');
-      });
-
-      it('should handle root-level deepMerge', () => {
-        const script = '@data.deepMerge({ config: { debug: true } })';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.deepMerge(null,{ config: { debug: true } }) -%}');
-      });
+    it('should handle indentation with output operations', () => {
+      const script = 'data data\n  data.user.name = "Alice"';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- data data -%}\n  {%- output_command data.set(["user", "name"], "Alice") -%}');
     });
 
-    describe('Comments and Whitespace', () => {
-      it('should handle command with trailing comment', () => {
-        const script = '@data.user.name = "Alice" // Set user name';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "name"], "Alice" ) -%}{#- Set user name -#}');
-      });
-
-      it('should handle command with multi-line comment', () => {
-        const script = '@data.user.status = "active" /* Update user status */';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- output_command data.set(["user", "status"], "active" ) -%}{#- Update user status -#}');
-      });
-
-      it('should handle command with indentation', () => {
-        const script = '  @data.user.name = "Alice"';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('  {%- data data -%}  {%- output_command data.set(["user", "name"], "Alice") -%}');
-      });
+    it('should throw error for invalid path segments', () => {
+      const script = 'data data\ndata.user..name = "Alice"';
+      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Invalid path: empty path component (consecutive dots)');
     });
 
-    describe('Error Cases', () => {
-      it('should throw error for invalid path with consecutive dots', () => {
-        const script = '@data.user..name = "Alice"';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Invalid path: empty path component (consecutive dots)');
-      });
-
-      it('should throw error for invalid identifier in path', () => {
-        const script = '@data.user.123invalid = "Alice"';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Invalid path component: \'123invalid\' is not a valid identifier');
-      });
-
-      it('should throw error for invalid command identifier', () => {
-        const script = '@data.user.name.123invalid("Alice")';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('is not a valid identifier');
-      });
-
-      it('should throw error for empty command', () => {
-        const script = '@data.user.name.("Alice")';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('is not a valid identifier');
-      });
-
-      it('should throw error for missing parentheses', () => {
-        const script = '@data.user.name.set';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Expected \'(\' after command');
-      });
-
-      it('should throw error for unmatched bracket', () => {
-        const script = '@data.user[unclosed = "Alice"';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Unmatched closing bracket');
-      });
-
-      it('should throw error for command as bracket expression', () => {
-        const script = '@data.user[set]("Alice")';
-        expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Command cannot be a bracket expression');
-      });
+    it('should throw error for invalid command identifier', () => {
+      const script = 'data data\ndata.user.name.123invalid("Alice")';
+      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('is not a valid identifier');
     });
   });
 
@@ -1076,15 +807,15 @@ endif`;
     });
 
     it('should handle special characters', () => {
-      const script = '@text("@#$%^&*")';
+      const script = 'text text\ntext("@#$%^&*")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}{%- output_command text("@#$%^&*") -%}');
+      expect(template).to.equal('{%- text text -%}\n{%- output_command text("@#$%^&*") -%}');
     });
 
     it('should handle escape sequences in strings', () => {
-      const script = '@text("Line 1\\nLine 2")';
+      const script = 'text text\ntext("Line 1\\nLine 2")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}{%- output_command text("Line 1\\nLine 2") -%}');
+      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Line 1\\nLine 2") -%}');
     });
 
     it('should handle multi-line string literals', () => {
@@ -1094,9 +825,9 @@ endif`;
     });
 
     it('should handle strings with embedded quotes', () => {
-      const script = '@text("He said \\"Hello\\"")';
+      const script = 'text text\ntext("He said \\"Hello\\"")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}{%- output_command text("He said \\"Hello\\"") -%}');
+      expect(template).to.equal('{%- text text -%}\n{%- output_command text("He said \\"Hello\\"") -%}');
     });
 
     it('should handle strings with multiple line continuations', () => {
@@ -1182,6 +913,7 @@ return {}`;
       const script = `
         // A complete script example
         data data
+        text text
         var user = { name: "Alice", role: "admin" }
         if user.role == "admin"
           text("Hello, " + user.name)
@@ -1198,14 +930,15 @@ return {}`;
       expect(result).to.equal(`
         {#- A complete script example -#}
         {%- data dat -%}
+        {%- text tex -%}
         {%- var user = { name: "Alice", role: "admin" } -%}
         {%- if user.role == "admin" -%}
-          {%- do text("Hello, " + user.name) -%}
+          {%- output_command tex("Hello, " + user.name) -%}
           {%- for item in user.items -%}
-            {%- do text(item.name) -%}
+            {%- output_command tex(item.name) -%}
           {%- endfor -%}
         {%- else -%}
-          {%- do text("Access denied") -%}
+          {%- output_command tex("Access denied") -%}
         {%- endif -%}
 
         {%- return data.snapshot() -%}`);

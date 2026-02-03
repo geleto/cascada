@@ -540,6 +540,10 @@
         this.commands.push({ type: 'set', key, value });
       }
 
+      snapshot() {
+        return { commands: this.commands };
+      }
+
       getReturnValue() {
         return { commands: this.commands };
       }
@@ -549,6 +553,7 @@
     class SingletonHandler {
       constructor() {
         this.allLogs = [];
+        this.currentLogs = [];
       }
 
       _init(context) {
@@ -556,8 +561,15 @@
       }
 
       log(message) {
+        if (!this.currentLogs) {
+          this.currentLogs = [];
+        }
         this.currentLogs.push(message);
         this.allLogs.push(message);
+      }
+
+      snapshot() {
+        return { logs: this.currentLogs };
       }
 
       getReturnValue() {
@@ -570,22 +582,21 @@
 
     beforeEach(() => {
       env = new AsyncEnvironment(null, { asyncMode: true, scriptMode: true });
-      env.addCommandHandlerClass('test', TestHandler);
-
       singleton = new SingletonHandler();
-      env.addCommandHandler('logger', singleton);
 
       context = {
         asyncReject: async () => { throw new Error('Async rejection'); },
-        loggerRef: singleton
+        loggerRef: singleton,
+        makeTest: () => new TestHandler()
       };
     });
 
     it('should poison custom handler when condition fails', async () => {
       const script = `
+        sink test = makeTest()
         if asyncReject()
-          @test.log("This should be poisoned")
-          @test.setValue("key", "value")
+          test.log("This should be poisoned")
+          test.setValue("key", "value")
         endif
         return null
       `;
@@ -600,9 +611,11 @@
 
     it('should poison multiple custom handlers', async () => {
       const script = `
+        sink test = makeTest()
+        sink logger = loggerRef
         if asyncReject()
-          @test.log("Handler 1")
-          @logger.log("Handler 2")
+          test.log("Handler 1")
+          logger.log("Handler 2")
         endif
         return null`;
 
@@ -617,10 +630,11 @@
 
     it('should poison custom handler in else branch', async () => {
       const script = `
+        sink test = makeTest()
         if asyncReject()
-          @test.log("if branch")
+          test.log("if branch")
         else
-          @test.log("else branch")
+          test.log("else branch")
         endif
         return null
       `;
@@ -653,17 +667,16 @@
         }
       }
 
-      env.addCommandHandlerClass('chain', ChainHandler);
-
       const script = `
+        sink chain = makeChain()
         if asyncReject()
-          @chain.subcommand.doSomething("test")
+          chain.subcommand.doSomething("test")
         endif
         return null
       `;
 
       try {
-        await env.renderScriptString(script, context);
+        await env.renderScriptString(script, { ...context, makeChain: () => new ChainHandler() });
         throw new Error('Should have thrown');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
@@ -674,8 +687,8 @@
       const script = `
       sink testSink = makeTest()
       if true
-        @testSink.log("Success")
-        @testSink.setValue("key", "value")
+        testSink.log("Success")
+        testSink.setValue("key", "value")
       endif
       return { test: testSink.snapshot() }
     `;
@@ -691,13 +704,15 @@
 
     it('should poison handler in nested blocks with custom handlers', async () => {
       const script = `
+        sink test = makeTest()
+        sink logger = loggerRef
         if true
-          @test.log("outer start")
+          test.log("outer start")
           if asyncReject()
-            @test.log("inner")
-            @logger.log("inner logger")
+            test.log("inner")
+            logger.log("inner logger")
           endif
-          @test.log("outer end")
+          test.log("outer end")
         endif
         return null
       `;
@@ -715,7 +730,7 @@
       const script1 = `
       sink loggerSink = loggerRef
       if true
-        @logger.log("First render")
+        loggerSink.log("First render")
       endif
       return { logger: loggerSink.snapshot() }
     `;
@@ -724,8 +739,9 @@
 
       // Second render - should fail and not pollute singleton state
       const script2 = `
+        sink loggerSink = loggerRef
         if asyncReject()
-          @logger.log("Should be poisoned")
+          loggerSink.log("Should be poisoned")
         endif
         return null
       `;
@@ -741,7 +757,7 @@
       const script3 = `
       sink loggerSink = loggerRef
       if true
-        @logger.log("Third render")
+        loggerSink.log("Third render")
       endif
       return { logger: loggerSink.snapshot() }
     `;

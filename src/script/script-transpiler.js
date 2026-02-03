@@ -75,9 +75,6 @@
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
 
-//this is only temporary, the implementation is vibe-coded and will be removed later
-const ENABLE_INSERT_IMPLICIT_RETURN = false;
-
 class ScriptTranspiler {
   constructor() {
     // Comment type constants
@@ -204,7 +201,6 @@ class ScriptTranspiler {
     };
 
     this._useCoreOutputAliases = false;
-    this._injectReturnedOutputsOnly = false;
   }
 
   getCurrentOutputScope() {
@@ -253,12 +249,6 @@ class ScriptTranspiler {
       throw new Error(`Output '${name}' already declared in this scope`);
     }
     scope.outputs.set(name, { type });
-  }
-
-  ensureOutputDeclared(name, type) {
-    if (!this.isOutputInScope(name)) {
-      this.declareOutput(name, type);
-    }
   }
 
   /**
@@ -1071,9 +1061,6 @@ class ScriptTranspiler {
         return false;
       }
 
-      if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
-        parseResult.requiredOutputs = new Set([outputType]);
-      }
       return true;
     }
     if (!['.', '(', '['].includes(opStart)) return false;
@@ -1106,9 +1093,6 @@ class ScriptTranspiler {
           parseResult.tagName = 'output_command';
           parseResult.blockType = null;
           parseResult.codeContent = this._formatOutputCommand(outputType, commandContent, false);
-          if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
-            parseResult.requiredOutputs = new Set([outputType]);
-          }
           return true;
         }
         // Direct method call on output root (e.g., myData.set(...)) - keep as-is.
@@ -1116,9 +1100,6 @@ class ScriptTranspiler {
         parseResult.tagName = 'output_command';
         parseResult.blockType = null;
         parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
-        if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
-          parseResult.requiredOutputs = new Set([outputType]);
-        }
         return true;
       }
 
@@ -1141,9 +1122,6 @@ class ScriptTranspiler {
       parseResult.tagName = 'output_command';
       parseResult.blockType = null;
       parseResult.codeContent = this._formatOutputCommand(outputType, commandContent, false);
-      if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
-        parseResult.requiredOutputs = new Set([outputType]);
-      }
       return true;
     }
 
@@ -1155,122 +1133,7 @@ class ScriptTranspiler {
     parseResult.tagName = 'output_command';
     parseResult.blockType = null;
     parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
-    if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
-      parseResult.requiredOutputs = new Set([outputType]);
-    }
     return true;
-  }
-
-  _processOutputCommand(parseResult, lineIndex) {
-    // Find the @ symbol position and preserve all whitespace after it
-    const atIndex = parseResult.codeContent.indexOf('@');
-    let commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
-
-    // Handle special syntax @value = ... -> @value(...)
-    if (commandContent.trim().startsWith('value')) {
-      const trimmed = commandContent.trim();
-      const afterValue = trimmed.substring(5).trim(); // 5 is length of 'value'
-      if (afterValue.startsWith('=')) {
-        const expr = afterValue.substring(1).trim();
-        // Preserve indentation/whitespace before 'value'
-        const leadingSpace = commandContent.substring(0, commandContent.indexOf('value'));
-        // Transform to function call syntax.
-        // We add the closing parenthesis. If the expression is multiline,
-        // we might ideally want the ')' at the end of the block.
-        // Simple transformation: value(expr)
-        // If expr contains newlines (e.g. from a prior transformation?), it keeps them.
-        // Here we are processing a single logical line from the parser's perspective (though it might be continued later).
-        commandContent = `${leadingSpace}value(${expr})`;
-      }
-    }
-
-    // Check if this is a @text command (the current command for text output)
-    let ccontent = commandContent.trim();
-    let isText = ccontent.startsWith('text(') || this._getFirstWord(ccontent) === 'text';
-
-    if (isText) {
-      const outputInfo = this.isOutputInScope('text');
-      if (outputInfo && outputInfo.writable === false) {
-        throw new Error(`Output 'text' is read-only in this scope at line ${lineIndex + 1}`);
-      }
-      this.ensureOutputDeclared('text', 'text');
-      parseResult.lineType = 'TAG';
-      parseResult.tagName = 'output_command';
-      parseResult.blockType = null;
-      parseResult.codeContent = commandContent.trimStart();
-      parseResult.requiredOutputs = new Set(['text']);
-    } else {
-      // Check if this is the @data command syntax
-      let isDataCommand = false;
-      if (ccontent.startsWith('data')) {
-        isDataCommand = ccontent.startsWith('data.') || ccontent.startsWith('data=') || ccontent.startsWith('data[');
-        if (!isDataCommand) {
-          //check if the first word is a valid identifier
-          const afterData = ccontent.substring('data'.length).trim();
-          // @data =, @data .push(, @data[](root indexing), @data[0](root indexing)
-          isDataCommand = afterData.startsWith('.') || afterData.startsWith('=') || afterData.startsWith('[');
-        }
-      }
-      if (isDataCommand) {
-        // Parse the @data-specific syntax and convert to the generic syntax
-        const parsedCommand = this._deconstructDataCommand(parseResult.tokens, lineIndex);
-        const outputInfo = this.isOutputInScope('data');
-        if (outputInfo && outputInfo.writable === false) {
-          const isSnapshot = parsedCommand.command === 'snapshot' && !parsedCommand.path;
-          if (!isSnapshot) {
-            throw new Error(`Output 'data' is read-only in this scope at line ${lineIndex + 1}`);
-          }
-        }
-        this.ensureOutputDeclared('data', 'data');
-        let genericSyntaxCommand = this._transpileDataCommand(parsedCommand);
-        if (parsedCommand.append) {
-          if (parseResult.continuesToNext) {
-            parseResult.expectedContinuationEnd = parsedCommand.append;//append at end of multiline
-          } else {
-            genericSyntaxCommand += parsedCommand.append;//append now
-          }
-        }
-
-        // Update the parseResult with the converted command (strip leading "@")
-        const rewritten = genericSyntaxCommand.startsWith('@')
-          ? genericSyntaxCommand.substring(1)
-          : genericSyntaxCommand;
-        parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output_command';
-        parseResult.blockType = null;
-        parseResult.codeContent = rewritten;
-        parseResult.requiredOutputs = new Set(['data']);
-      } else {
-        // All other @ commands are treated as function commands
-        // @print was deprecated and replaced with @text(value)
-        parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output_command';
-        parseResult.blockType = null;
-
-        if ((this._getLeadingIdentifier(commandContent) || '_') === 'value') {
-          const outputInfo = this.isOutputInScope('value');
-          if (outputInfo && outputInfo.writable === false) {
-            throw new Error(`Output 'value' is read-only in this scope at line ${lineIndex + 1}`);
-          }
-          this.ensureOutputDeclared('value', 'value');
-          parseResult.lineType = 'TAG';
-          parseResult.tagName = 'output_command';
-          parseResult.blockType = null;
-          parseResult.codeContent = commandContent.trimStart();
-          parseResult.requiredOutputs = new Set(['value']);
-        } else {
-          parseResult.codeContent = commandContent; // The content for the Nunjucks tag
-          const handlerName = this._getLeadingIdentifier(commandContent);
-          if (handlerName) {
-            const outputInfo = this.isOutputInScope(handlerName);
-            if (outputInfo && outputInfo.writable === false) {
-              throw new Error(`Output '${handlerName}' is read-only in this scope at line ${lineIndex + 1}`);
-            }
-            parseResult.requiredOutputs = new Set([handlerName]);
-          }
-        }
-      }
-    }
   }
 
   _processExtern(parseResult, lineIndex) {
@@ -1375,7 +1238,7 @@ class ScriptTranspiler {
     }
 
     if (code.startsWith('@')) {
-      this._processOutputCommand(parseResult, lineIndex);
+      throw new Error(`Legacy '@' output commands are no longer supported at line ${lineIndex + 1}`);
     } else if (firstWord === 'var') {
       this._processVar(parseResult, lineIndex);
     } else if (firstWord === 'extern') {
@@ -1645,7 +1508,6 @@ class ScriptTranspiler {
    */
   scriptToTemplate(scriptStr, options = {}) {
     this._useCoreOutputAliases = !!options.useCoreOutputAliases;
-    this._injectReturnedOutputsOnly = !!options.injectReturnedOutputsOnly;
     this.outputScopes = [this._createOutputScope()];
     // Split into lines
     const lines = scriptStr.split('\n');
@@ -1677,29 +1539,14 @@ class ScriptTranspiler {
 
     this._processContinuationsAndComments(processedLines);
 
-    const hasExplicitReturn = this._hasTopLevelReturn(processedLines);
-    const forceRootOutputs = ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn && !this._injectReturnedOutputsOnly;
-
-    const withOutputDeclarations = this._insertOutputDeclarations(processedLines, {
-      forceRootOutputs,
-      // Do not force core outputs into every macro/call/capture scope.
-      // Only inject outputs that are actually required/used (plus root defaults when needed).
-      // This avoids conflicts with common parameter/variable names like "value".
-      forceMacroCallOutputs: false,
-      forceCaptureOutputs: false
-    });
-    const outputLines = ENABLE_INSERT_IMPLICIT_RETURN
-      ? this._insertImplicitReturns(withOutputDeclarations)
-      : withOutputDeclarations;
-
     let output = '';
     let lastNonContinuationLineType = null;
-    for (let i = 0; i < outputLines.length; i++) {
-      if (!outputLines[i].isContinuation) {
-        lastNonContinuationLineType = outputLines[i].lineType;
+    for (let i = 0; i < processedLines.length; i++) {
+      if (!processedLines[i].isContinuation) {
+        lastNonContinuationLineType = processedLines[i].lineType;
       }
-      output += this._generateOutput(outputLines[i], outputLines[i + 1]?.isContinuation, lastNonContinuationLineType, i);
-      if (i != outputLines.length - 1) {
+      output += this._generateOutput(processedLines[i], processedLines[i + 1]?.isContinuation, lastNonContinuationLineType, i);
+      if (i != processedLines.length - 1) {
         output += '\n';
       }
     }
@@ -1707,79 +1554,7 @@ class ScriptTranspiler {
     // Validate block structure
     this._validateBlockStructure(processedLines);
 
-    const rootConflicts = this._getRootConflicts();
-
-    if (ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn) {
-      const returnExpr = this._buildUnfocusedReturnExpression(rootConflicts);
-      const implicitReturn = `{% return ${returnExpr} %}`;
-      if (output.length > 0) {
-        output += '\n';
-      }
-      output += implicitReturn;
-    }
-
     return output;
-  }
-
-  _hasTopLevelReturn(processedLines) {
-    const ignoreStack = [];
-
-    for (let i = 0; i < processedLines.length; i++) {
-      const line = processedLines[i];
-      if (line.isContinuation || line.lineType !== 'TAG') {
-        continue;
-      }
-
-      if (line.blockType === this.BLOCK_TYPE.START) {
-        if (line.tagName === 'macro' || line.tagName === 'var' || line.tagName === 'set' || line.tagName === 'call' || line.tagName === 'call_assign') {
-          ignoreStack.push(line.tagName);
-        }
-      } else if (line.blockType === this.BLOCK_TYPE.END) {
-        const top = ignoreStack[ignoreStack.length - 1];
-        if ((line.tagName === 'endmacro' && top === 'macro') ||
-          (line.tagName === 'endvar' && top === 'var') ||
-          (line.tagName === 'endset' && top === 'set') ||
-          (line.tagName === 'endcall' && top === 'call') ||
-          (line.tagName === 'endcall_assign' && top === 'call_assign')) {
-          ignoreStack.pop();
-        }
-      }
-
-      if (line.tagName === 'return' && ignoreStack.length === 0) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  _makeImplicitReturnLine(indentation) {
-    const codeContent = this._buildUnfocusedReturnExpression(this._getRootConflicts());
-    return {
-      indentation: indentation || '',
-      lineType: 'TAG',
-      tagName: 'return',
-      codeContent,
-      blockType: null,
-      comments: [],
-      isContinuation: false,
-      isEmpty: false,
-      isCommentOnly: false,
-      continuesToNext: false,
-      continuesFromPrev: false,
-      tokens: []
-    };
-  }
-
-  _getRootConflicts() {
-    return this._lastRootOutputScope ? this._lastRootOutputScope.conflictingNames : null;
-  }
-
-  _getSnapshotTargetName(name, conflicts) {
-    if (conflicts && conflicts.has(name)) {
-      return this._mapCoreOutputTarget(`@${name}`);
-    }
-    return this._mapCoreOutputTarget(name);
   }
 
   _mapCoreOutputName(name) {
@@ -1787,20 +1562,6 @@ class ScriptTranspiler {
       return name;
     }
     return this.CORE_OUTPUT_ALIASES[name] || name;
-  }
-
-  _mapCoreOutputTarget(target) {
-    if (!this._useCoreOutputAliases) {
-      return target;
-    }
-    if (!target) return target;
-    let prefix = '';
-    let name = target;
-    if (name.startsWith('@')) {
-      prefix = '@';
-      name = name.slice(1);
-    }
-    return prefix + this._mapCoreOutputName(name);
   }
 
   _mapCoreOutputCall(callString) {
@@ -1813,405 +1574,6 @@ class ScriptTranspiler {
     const mapped = this._mapCoreOutputName(match[2]);
     if (mapped === match[2]) return callString;
     return `${match[1]}${mapped}${match[3]}`;
-  }
-
-  _buildUnfocusedReturnExpression(conflicts) {
-    const rootScope = this._lastRootOutputScope;
-    const includeOutputs = new Set();
-    const declaredOutputs = rootScope?.declaredOutputs || new Set();
-    const requiredOutputs = rootScope?.requiredOutputs || new Set();
-
-    if (rootScope) {
-      // Only core outputs are implicitly returned. Custom command handlers must
-      // be returned explicitly via sinks (or explicit return statements).
-      requiredOutputs.forEach((name) => {
-        if (name === 'data' || name === 'text' || name === 'value') {
-          includeOutputs.add(name);
-        }
-      });
-      declaredOutputs.forEach((name) => includeOutputs.add(name));
-    }
-
-    if (this._lastOutputScopes) {
-      this._lastOutputScopes.forEach((scope) => {
-        if (!scope || scope === rootScope) return;
-        if (scope.type === 'capture') return;
-        const scopeDeclared = scope.declaredOutputs || new Set();
-        (scope.requiredOutputs || new Set()).forEach((name) => {
-          // Only carry core outputs implicitly; sinks must be declared.
-          if ((name === 'data' || name === 'text' || name === 'value') && !scopeDeclared.has(name)) {
-            includeOutputs.add(name);
-          }
-        });
-      });
-    }
-
-    if (includeOutputs.size === 0) {
-      return '{}';
-    }
-
-    const parts = [];
-    includeOutputs.forEach((name) => {
-      let target;
-      if (declaredOutputs.has(name)) {
-        target = this._getSnapshotTargetName(name, conflicts);
-      } else if (name === 'data' || name === 'text' || name === 'value') {
-        target = this._getSnapshotTargetName(name, conflicts);
-      } else {
-        target = name;
-      }
-      parts.push(`${name}: ${target}.snapshot()`);
-    });
-
-    return `{${parts.join(', ')} }`;
-  }
-
-  _getOutputsToInject(scope) {
-    const required = new Set();
-    // Only auto-inject core outputs. Sinks require explicit initializers and
-    // custom command handlers should be accessed via declared sinks.
-    (scope.requiredOutputs || []).forEach((name) => {
-      if (name === 'data' || name === 'text' || name === 'value') {
-        required.add(name);
-      }
-    });
-    return Array.from(required);
-  }
-
-  _makeOutputDeclarationLine(outputType, indentation) {
-    return {
-      indentation: indentation || '',
-      lineType: 'TAG',
-      tagName: outputType,
-      codeContent: outputType,
-      blockType: null,
-      comments: [],
-      isContinuation: false,
-      isEmpty: false,
-      isCommentOnly: false,
-      continuesToNext: false,
-      continuesFromPrev: false,
-      tokens: []
-    };
-  }
-
-  _formatInlineOutputDeclaration(outputType, indentation) {
-    const indent = indentation || '';
-    if (outputType !== 'data' && outputType !== 'text' && outputType !== 'value') {
-      return '';
-    }
-    const name = this._mapCoreOutputName(outputType);
-    return `${indent}{%- ${outputType} ${name} -%}`;
-  }
-
-  _collectIdentifierConflicts(targetsStr, conflicts) {
-    if (!targetsStr) return;
-    targetsStr.split(',').forEach((raw) => {
-      const name = raw.split('=')[0].trim();
-      if (!name) return;
-      if (name === 'data' || name === 'text' || name === 'value') {
-        conflicts.add(name);
-      }
-    });
-  }
-
-  _parseMacroParams(codeContent) {
-    if (!codeContent) return [];
-    const openIdx = codeContent.indexOf('(');
-    if (openIdx === -1) return [];
-    const closeIdx = codeContent.indexOf(')', openIdx + 1);
-    if (closeIdx === -1) return [];
-    const paramsStr = codeContent.substring(openIdx + 1, closeIdx).trim();
-    if (!paramsStr) return [];
-    return paramsStr.split(',').map((p) => p.trim()).filter(Boolean);
-  }
-
-  _parseCallParams(codeContent) {
-    if (!codeContent) return [];
-    const match = codeContent.match(/\)\s*\(([^)]*)\)\s*$/);
-    if (!match) return [];
-    const paramsStr = match[1].trim();
-    if (!paramsStr) return [];
-    return paramsStr.split(',').map((p) => p.trim()).filter(Boolean);
-  }
-
-  _insertOutputDeclarations(processedLines, options = {}) {
-    const scopes = [];
-    const scopeStack = [];
-    const rootScope = {
-      type: 'root',
-      startIndex: 0,
-      endIndex: processedLines.length,
-      endTag: null,
-      declaredOutputs: new Set(),
-      requiredOutputs: new Set(),
-      conflictingNames: new Set(),
-      insertionIndex: 0,
-      indentation: ''
-    };
-    this._lastRootOutputScope = rootScope;
-    scopes.push(rootScope);
-    scopeStack.push(rootScope);
-    this._lastOutputScopes = scopes;
-    this._lastOutputScopeByStart = new Map();
-    this._lastOutputScopeByStart.set(rootScope.startIndex, rootScope);
-
-    for (let i = 0; i < processedLines.length; i++) {
-      const line = processedLines[i];
-
-      if (!line.isContinuation && line.lineType === 'TAG') {
-        const isMacroStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'macro';
-        const isCallStart = line.blockType === this.BLOCK_TYPE.START && (line.tagName === 'call' || line.tagName === 'call_assign');
-        const isCaptureStart = line.blockType === this.BLOCK_TYPE.START &&
-          (line.tagName === 'var' || line.tagName === 'set');
-
-        if (isMacroStart || isCallStart || isCaptureStart) {
-          const scope = {
-            type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
-            startIndex: i,
-            endIndex: null,
-            endTag: isMacroStart
-              ? 'endmacro'
-              : (isCallStart ? (line.tagName === 'call_assign' ? 'endcall_assign' : 'endcall') : `end${line.tagName}`),
-            declaredOutputs: new Set(),
-            requiredOutputs: new Set(),
-            conflictingNames: new Set(),
-            insertionIndex: null,
-            indentation: ''
-          };
-          scopes.push(scope);
-          scopeStack.push(scope);
-          this._lastOutputScopeByStart.set(scope.startIndex, scope);
-
-          if (isMacroStart) {
-            const params = this._parseMacroParams(line.codeContent);
-            this._collectIdentifierConflicts(params.join(','), scope.conflictingNames);
-          } else if (isCallStart) {
-            const params = this._parseCallParams(line.codeContent);
-            this._collectIdentifierConflicts(params.join(','), scope.conflictingNames);
-          }
-        }
-      }
-
-      if (!line.isContinuation && line.lineType === 'TAG' &&
-        (line.tagName === 'data' || line.tagName === 'text' || line.tagName === 'value' || line.tagName === 'sink')) {
-        const name = this._getFirstWord(line.codeContent || '');
-        if (name) {
-          scopeStack[scopeStack.length - 1].declaredOutputs.add(name);
-        }
-      }
-
-      if (!line.isContinuation && line.lineType === 'TAG' && line.tagName === 'output') {
-        const handlerName = this._getFirstWord(line.codeContent || '');
-        if (handlerName === 'data' || handlerName === 'text' || handlerName === 'value') {
-          scopeStack[scopeStack.length - 1].requiredOutputs.add(handlerName);
-        }
-      }
-
-      if (line.requiredOutputs && line.requiredOutputs.size > 0) {
-        line.requiredOutputs.forEach((outputName) => {
-          scopeStack[scopeStack.length - 1].requiredOutputs.add(outputName);
-        });
-      }
-
-      if (!line.isContinuation && line.lineType === 'TAG' &&
-        (line.tagName === 'var' || line.tagName === 'extern')) {
-        const lhs = (line.codeContent || '').split('=')[0].trim();
-        this._collectIdentifierConflicts(lhs, scopeStack[scopeStack.length - 1].conflictingNames);
-      }
-
-      if (!line.isContinuation && line.lineType === 'TAG' && line.blockType === this.BLOCK_TYPE.END) {
-        const scope = scopeStack[scopeStack.length - 1];
-        if (scope && scope.endTag === line.tagName) {
-          scope.endIndex = i;
-          scopeStack.pop();
-        }
-      }
-    }
-
-    scopes.forEach((scope) => {
-      let insertionIndex = 0;
-      if (scope.type === 'root') {
-        let i = 0;
-        while (i < processedLines.length) {
-          const line = processedLines[i];
-          if (line.isEmpty || line.isCommentOnly) {
-            i++;
-            continue;
-          }
-          break;
-        }
-        insertionIndex = i;
-      } else {
-        let i = scope.startIndex + 1;
-        while (i < processedLines.length && processedLines[i].isContinuation) {
-          i++;
-        }
-        insertionIndex = i;
-      }
-      scope.insertionIndex = insertionIndex;
-
-      const startIndentation = processedLines[scope.startIndex]?.indentation || '';
-      let indentation = scope.type === 'root' ? '' : (startIndentation + '  ');
-      for (let i = insertionIndex; i < (scope.endIndex ?? processedLines.length); i++) {
-        const line = processedLines[i];
-        if (line.isEmpty || line.isCommentOnly || line.isContinuation) {
-          continue;
-        }
-        indentation = line.indentation || indentation;
-        break;
-      }
-      scope.indentation = indentation;
-    });
-
-    const injectionMap = new Map();
-    scopes.forEach((scope) => {
-      const outputsToInject = new Set(this._getOutputsToInject(scope));
-      if (options.forceRootOutputs && scope.type === 'root') {
-        outputsToInject.add('data');
-        outputsToInject.add('text');
-        outputsToInject.add('value');
-      }
-      if (options.forceMacroCallOutputs && (scope.type === 'macro' || scope.type === 'call')) {
-        outputsToInject.add('data');
-        outputsToInject.add('text');
-        outputsToInject.add('value');
-      }
-      if (options.forceCaptureOutputs && scope.type === 'capture') {
-        outputsToInject.add('data');
-        outputsToInject.add('text');
-        outputsToInject.add('value');
-      }
-      const inlineChunks = [];
-      outputsToInject.forEach((outputType) => {
-        if (!scope.declaredOutputs.has(outputType)) {
-          inlineChunks.push(this._formatInlineOutputDeclaration(outputType, scope.indentation));
-        }
-      });
-      if (inlineChunks.length) {
-        injectionMap.set(scope.insertionIndex, (injectionMap.get(scope.insertionIndex) || []).concat(inlineChunks));
-      }
-    });
-
-    injectionMap.forEach((chunks, index) => {
-      if (!chunks || chunks.length === 0) return;
-      let targetIndex = index;
-      while (targetIndex < processedLines.length && processedLines[targetIndex].isContinuation) {
-        targetIndex++;
-      }
-      if (targetIndex >= processedLines.length) {
-        processedLines.push({
-          indentation: '',
-          lineType: 'TEXT',
-          tagName: null,
-          codeContent: '',
-          blockType: null,
-          comments: [],
-          isContinuation: false,
-          isEmpty: true,
-          isCommentOnly: false,
-          continuesToNext: false,
-          continuesFromPrev: false,
-          tokens: []
-        });
-      }
-      const line = processedLines[targetIndex];
-      line.inlinePrefix = (line.inlinePrefix || '') + chunks.join('');
-    });
-
-    return processedLines;
-  }
-
-  _insertImplicitReturns(processedLines) {
-    const result = [];
-    const scopeStack = [];
-
-    for (let i = 0; i < processedLines.length; i++) {
-      const line = processedLines[i];
-
-      if (!line.isContinuation && line.lineType === 'TAG') {
-        const isMacroStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'macro';
-        const isCallStart = line.blockType === this.BLOCK_TYPE.START && (line.tagName === 'call' || line.tagName === 'call_assign');
-        const isCaptureStart = line.blockType === this.BLOCK_TYPE.START &&
-          (line.tagName === 'var' || line.tagName === 'set');
-
-        if (isMacroStart || isCallStart || isCaptureStart) {
-          const scopeInfo = this._lastOutputScopeByStart ? this._lastOutputScopeByStart.get(i) : null;
-          scopeStack.push({
-            type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
-            endTag: isMacroStart
-              ? 'endmacro'
-              : (isCallStart ? (line.tagName === 'call_assign' ? 'endcall_assign' : 'endcall') : `end${line.tagName}`),
-            hasExplicitReturn: false,
-            scopeInfo
-          });
-        }
-
-        if (line.tagName === 'return') {
-          const scope = scopeStack[scopeStack.length - 1];
-          if (scope) {
-            scope.hasExplicitReturn = true;
-          }
-        }
-
-        if (line.blockType === this.BLOCK_TYPE.END) {
-          const scope = scopeStack[scopeStack.length - 1];
-          if (scope && line.tagName === scope.endTag) {
-            if (!scope.hasExplicitReturn) {
-              if (scope.scopeInfo && (scope.type === 'macro' || scope.type === 'call' || scope.type === 'capture')) {
-                const declaredOutputs = scope.scopeInfo.declaredOutputs || new Set();
-                const requiredOutputs = scope.scopeInfo.requiredOutputs || new Set();
-                const includeOutputs = new Set();
-                requiredOutputs.forEach((name) => {
-                  if (name === 'data' || name === 'text' || name === 'value') {
-                    includeOutputs.add(name);
-                  }
-                });
-                declaredOutputs.forEach((name) => includeOutputs.add(name));
-                let returnExpr;
-                if (includeOutputs.size === 0) {
-                  returnExpr = '{}';
-                } else {
-                  const parts = [];
-                  includeOutputs.forEach((name) => {
-                    let target;
-                    if (declaredOutputs.has(name) || name === 'data' || name === 'text' || name === 'value') {
-                      target = this._getSnapshotTargetName(name, scope.scopeInfo.conflictingNames);
-                    } else {
-                      target = name;
-                    }
-                    parts.push(`${name}: ${target}.snapshot()`);
-                  });
-                  returnExpr = `{${parts.join(', ')} }`;
-                }
-
-                result.push({
-                  indentation: line.indentation || '',
-                  lineType: 'TAG',
-                  tagName: 'return',
-                  codeContent: returnExpr,
-                  blockType: null,
-                  comments: [],
-                  isContinuation: false,
-                  isEmpty: false,
-                  isCommentOnly: false,
-                  continuesToNext: false,
-                  continuesFromPrev: false,
-                  tokens: []
-                });
-              } else {
-                result.push(this._makeImplicitReturnLine(line.indentation));
-              }
-            }
-            scopeStack.pop();
-          }
-        }
-      }
-
-      result.push(line);
-    }
-
-    return result;
   }
 
 }

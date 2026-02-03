@@ -855,9 +855,9 @@ describe('Cascada Script: Output commands', function () {
       };
       const script = `
         sink turtle = makeTurtle()
-        @turtle.forward(50)
-        @turtle.turn(90)
-        @turtle.forward(10)
+        turtle.forward(50)
+        turtle.turn(90)
+        turtle.forward(10)
         return turtle.snapshot()
       `;
       const result = await env.renderScriptString(script, context);
@@ -872,6 +872,7 @@ describe('Cascada Script: Output commands', function () {
           this.logs = [];
           const callable = (...args) => this._call(...args);
           callable.logs = this.logs;
+          callable.snapshot = () => callable;
           return callable;
         }
         _call(text) {
@@ -880,19 +881,18 @@ describe('Cascada Script: Output commands', function () {
       };
 
       const logHandler = new Logger();
-      env.addCommandHandler('log', logHandler);
       const script = `
-        sink captured = logHandler
-        @log("user1 logged in")
-        @log("user2 logged in")
-        return { log: captured.snapshot() }
+        sink log = logHandler
+        log("user1 logged in")
+        log("user2 logged in")
+        return { log: log.snapshot() }
       `;
       const result = await env.renderScriptString(script, { logHandler });
       // The same logger instance is modified
       expect(result.log.logs).to.eql(['user1 logged in', 'user2 logged in']);
     });
 
-    it('should support custom handlers with the Singleton pattern (addCommandHandler) - 1 segment path', async () => {
+    it('should support sink handlers with a singleton instance - 1 segment path', async () => {
       const logger = {
         log: [],
         login: function (user) {
@@ -902,12 +902,12 @@ describe('Cascada Script: Output commands', function () {
           this.log.push(`action(${action},${doc})`);
         },
       };
-      env.addCommandHandler('audit', logger);
       const script = `
-        @audit.login("user1")
-        @audit.action("read", "doc1")
+        sink audit = logger
+        audit.login("user1")
+        audit.action("read", "doc1")
         return`;
-      await env.renderScriptString(script);
+      await env.renderScriptString(script, { logger });
       // The same logger instance is modified
       expect(logger.log).to.eql(['login(user1)', 'action(read,doc1)']);
     });
@@ -933,24 +933,23 @@ describe('Cascada Script: Output commands', function () {
       const util = {
         output: new OutputLogger()
       };
-      env.addCommandHandler('util', util);
+      util.snapshot = () => util;
 
       const script = `
-        sink utilSink = utilRef
-        @util.output.log("User logged in")
-        @util.output.error("Connection failed")
-        @util.output.warn("Deprecated feature used")
+        sink utilSink = utilRef.output
+        utilSink.log("User logged in")
+        utilSink.error("Connection failed")
+        utilSink.warn("Deprecated feature used")
         return { util: utilSink.snapshot() }
       `;
 
       const result = await env.renderScriptString(script, { utilRef: util });
 
       // Verify the multi-segment handler is accessible and functional
-      expect(result.util).to.equal(util);
-      expect(result.util.output).to.be.an(OutputLogger);
-      expect(result.util.output.logs).to.eql(['User logged in']);
-      expect(result.util.output.errors).to.eql(['Connection failed']);
-      expect(result.util.output.warnings).to.eql(['Deprecated feature used']);
+      expect(result.util).to.be.an(OutputLogger);
+      expect(result.util.logs).to.eql(['User logged in']);
+      expect(result.util.errors).to.eql(['Connection failed']);
+      expect(result.util.warnings).to.eql(['Deprecated feature used']);
     });
   });
 
@@ -989,7 +988,7 @@ describe('Cascada Script: Output commands', function () {
       const script = `
         data data
         sink turtle = makeTurtle()
-        @turtle.forward(100)
+        turtle.forward(100)
         data.status = "ignored"
         return turtle.snapshot()
       `;
@@ -1116,7 +1115,8 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle a simple path-like expression', async () => {
         const script = `
-          @text(user.name)
+          text text
+          text(user.name)
           return { text: text.snapshot() }
         `;
         const context = { user: { name: 'Alice' } };
@@ -1126,7 +1126,8 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle a simple path-like expression with trailing whitespace', async () => {
         const script = `
-          @text(user.name)
+          text text
+          text(user.name)
           return { text: text.snapshot() }
         `;
         const context = { user: { name: 'Alice' } };
@@ -1136,7 +1137,8 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle an expression with a binary operator', async () => {
         const script = `
-          @text("Hello, " + user.name)
+          text text
+          text("Hello, " + user.name)
           return { text: text.snapshot() }
         `;
         const context = { user: { name: 'Bob' } };
@@ -1146,7 +1148,8 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle an expression starting with a string literal', async () => {
         const script = `
-          @text("Hello World")
+          text text
+          text("Hello World")
           return { text: text.snapshot() }
         `;
         const result = await env.renderScriptString(script, {});
@@ -1155,7 +1158,8 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle an expression that is a function call', async () => {
         const script = `
-          @text(format(user.name))
+          text text
+          text(format(user.name))
           return { text: text.snapshot() }
         `;
         const context = {
@@ -1168,7 +1172,8 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle a path-like expression broken by a filter', async () => {
         const script = `
-          @text(user.name|title)
+          text text
+          text(user.name|title)
           return { text: text.snapshot() }
         `;
         const context = { user: { name: 'dave' } };
@@ -1178,7 +1183,8 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle a path-like expression broken by a math operator', async () => {
         const script = `
-          @text(user.id + 1)
+          text text
+          text(user.id + 1)
           return { text: text.snapshot() }
         `;
         const context = { user: { id: 99 } };
@@ -1188,7 +1194,8 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle a path-like expression broken by parenthesis', async () => {
         const script = `
-          @text((user.name))
+          text text
+          text((user.name))
           return { text: text.snapshot() }
         `;
         const context = { user: { name: 'Eve' } };
@@ -1198,7 +1205,8 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle an expression with multiple path-like parts', async () => {
         const script = `
-          @text(user.name + " " + user.lastName)
+          text text
+          text(user.name + " " + user.lastName)
           return { text: text.snapshot() }
         `;
         const context = { user: { name: 'Frank', lastName: 'Castle' } };
@@ -1210,7 +1218,8 @@ describe('Cascada Script: Output commands', function () {
         // Transpiles to `{{ user. firstName }}`, where `user.` is undefined.
         // Nunjucks treats `undefined` as an empty string in concatenation.
         const script = `
-          @text(user. firstName)
+          text text
+          text(user. firstName)
           return { text: text.snapshot() }
         `;
         const context = { user: { firstName: 'Grace' } };
@@ -1220,7 +1229,8 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle an object as an expression', async () => {
         const script = `
-          @text(user)
+          text text
+          text(user)
           return { text: text.snapshot() }
         `;
         const context = { user: 'John' };
