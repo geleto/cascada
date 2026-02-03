@@ -10,25 +10,12 @@ class Output {
     this._context = context;
   }
 
-  _normalizeDataArgs(args) {
-    if (!args || args.length === 0) return args;
-    const path = args[0];
-    if (typeof path === 'string') {
-      return [[path], ...args.slice(1)];
-    }
-    return args;
-  }
-
   _enqueueCommand(command, args) {
     if (!this._frame || !this._frame._outputBuffer) return;
-    let normalizedArgs = args;
-    if (this._outputType === 'data') {
-      normalizedArgs = this._normalizeDataArgs(args);
-    }
     const entry = {
       handler: this._outputName,
       command: command || null,
-      arguments: normalizedArgs,
+      arguments: args,
       pos: { lineno: 0, colno: 0 }
     };
     this._frame._outputBuffer.add(entry, this._outputName);

@@ -202,15 +202,22 @@ class ScriptTranspiler {
     };
 
     // Output scopes track declared outputs in nested blocks.
-    this.outputScopes = [new Map()];
+    this.outputScopes = [this._createOutputScope()];
   }
 
   getCurrentOutputScope() {
     return this.outputScopes[this.outputScopes.length - 1];
   }
 
-  pushOutputScope() {
-    this.outputScopes.push(new Map());
+  _createOutputScope(parentAccess = 'inherit') {
+    return {
+      outputs: new Map(),
+      parentAccess
+    };
+  }
+
+  pushOutputScope(parentAccess = 'inherit') {
+    this.outputScopes.push(this._createOutputScope(parentAccess));
   }
 
   popOutputScope() {
@@ -221,9 +228,18 @@ class ScriptTranspiler {
   }
 
   isOutputInScope(name) {
+    let readOnly = false;
     for (let i = this.outputScopes.length - 1; i >= 0; i--) {
-      if (this.outputScopes[i].has(name)) {
-        return this.outputScopes[i].get(name);
+      const scope = this.outputScopes[i];
+      if (scope.outputs.has(name)) {
+        const info = scope.outputs.get(name);
+        return { type: info.type, writable: !readOnly };
+      }
+      if (scope.parentAccess === 'none') {
+        return null;
+      }
+      if (scope.parentAccess === 'readonly') {
+        readOnly = true;
       }
     }
     return null;
@@ -231,10 +247,10 @@ class ScriptTranspiler {
 
   declareOutput(name, type) {
     const scope = this.getCurrentOutputScope();
-    if (scope.has(name)) {
+    if (scope.outputs.has(name)) {
       throw new Error(`Output '${name}' already declared in this scope`);
     }
-    scope.set(name, type);
+    scope.outputs.set(name, { type });
   }
 
   ensureOutputDeclared(name, type) {
@@ -1020,8 +1036,9 @@ class ScriptTranspiler {
     const outputName = this._getLeadingIdentifier(trimmed);
     if (!outputName) return false;
 
-    const outputType = this.isOutputInScope(outputName);
-    if (!outputType) return false;
+    const outputInfo = this.isOutputInScope(outputName);
+    if (!outputInfo) return false;
+    const outputType = outputInfo.type;
 
     const after = trimmed.substring(outputName.length);
     const afterTrimmed = after.trimStart();
@@ -1033,6 +1050,10 @@ class ScriptTranspiler {
 
     if (this._isSnapshotCall(afterTrimmed)) {
       return false;
+    }
+
+    if (!outputInfo.writable) {
+      throw new Error(`Output '${outputName}' is read-only in this scope at line ${lineIndex + 1}`);
     }
 
     if (outputType === 'data') {
@@ -1117,6 +1138,10 @@ class ScriptTranspiler {
     let isText = ccontent.startsWith('text(') || this._getFirstWord(ccontent) === 'text';
 
     if (isText) {
+      const outputInfo = this.isOutputInScope('text');
+      if (outputInfo && outputInfo.writable === false) {
+        throw new Error(`Output 'text' is read-only in this scope at line ${lineIndex + 1}`);
+      }
       this.ensureOutputDeclared('text', 'text');
       parseResult.lineType = 'TAG';
       parseResult.tagName = 'output_command';
@@ -1136,9 +1161,16 @@ class ScriptTranspiler {
         }
       }
       if (isDataCommand) {
-        this.ensureOutputDeclared('data', 'data');
         // Parse the @data-specific syntax and convert to the generic syntax
         const parsedCommand = this._deconstructDataCommand(parseResult.tokens, lineIndex);
+        const outputInfo = this.isOutputInScope('data');
+        if (outputInfo && outputInfo.writable === false) {
+          const isSnapshot = parsedCommand.command === 'snapshot' && !parsedCommand.path;
+          if (!isSnapshot) {
+            throw new Error(`Output 'data' is read-only in this scope at line ${lineIndex + 1}`);
+          }
+        }
+        this.ensureOutputDeclared('data', 'data');
         let genericSyntaxCommand = this._transpileDataCommand(parsedCommand);
         if (parsedCommand.append) {
           if (parseResult.continuesToNext) {
@@ -1165,6 +1197,10 @@ class ScriptTranspiler {
         parseResult.blockType = null;
 
         if ((this._getLeadingIdentifier(commandContent) || '_') === 'value') {
+          const outputInfo = this.isOutputInScope('value');
+          if (outputInfo && outputInfo.writable === false) {
+            throw new Error(`Output 'value' is read-only in this scope at line ${lineIndex + 1}`);
+          }
           this.ensureOutputDeclared('value', 'value');
           parseResult.lineType = 'TAG';
           parseResult.tagName = 'output_command';
@@ -1175,6 +1211,10 @@ class ScriptTranspiler {
           parseResult.codeContent = commandContent; // The content for the Nunjucks tag
           const handlerName = this._getLeadingIdentifier(commandContent);
           if (handlerName) {
+            const outputInfo = this.isOutputInScope(handlerName);
+            if (outputInfo && outputInfo.writable === false) {
+              throw new Error(`Output '${handlerName}' is read-only in this scope at line ${lineIndex + 1}`);
+            }
             parseResult.requiredOutputs = new Set([handlerName]);
           }
         }
@@ -1426,13 +1466,21 @@ class ScriptTranspiler {
 
     if (processedLine.blockType === this.BLOCK_TYPE.MIDDLE) {
       // New branch scope (else/elif/case/default/recover)
+      const current = this.getCurrentOutputScope();
+      const parentAccess = current ? current.parentAccess : 'inherit';
       this.popOutputScope();
-      this.pushOutputScope();
+      this.pushOutputScope(parentAccess);
       return;
     }
 
     if (processedLine.blockType === this.BLOCK_TYPE.START) {
-      this.pushOutputScope();
+      let parentAccess = 'inherit';
+      if (processedLine.tagName === 'macro' || processedLine.tagName === 'var' || processedLine.tagName === 'set') {
+        parentAccess = 'none';
+      } else if (processedLine.tagName === 'call' || processedLine.tagName === 'call_assign') {
+        parentAccess = 'readonly';
+      }
+      this.pushOutputScope(parentAccess);
       return;
     }
 
@@ -1573,7 +1621,7 @@ class ScriptTranspiler {
    * @return {Object} Object with template string and possible error
    */
   scriptToTemplate(scriptStr) {
-    this.outputScopes = [new Map()];
+    this.outputScopes = [this._createOutputScope()];
     // Split into lines
     const lines = scriptStr.split('\n');
 

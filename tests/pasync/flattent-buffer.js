@@ -4,17 +4,20 @@ let expect;
 let AsyncEnvironment;
 let flattenBuffer;
 let expectAsyncError;
+let DataHandler;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
   flattenBuffer = require('../../src/runtime/runtime').flattenBuffer;
   expectAsyncError = require('../util').expectAsyncError;
+  DataHandler = require('../../src/script/data-handler');
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   flattenBuffer = nunjucks.runtime.flattenBuffer;
   expectAsyncError = nunjucks.util.expectAsyncError;
+  DataHandler = nunjucks.DataHandler;
 }
 
 describe('flattenBuffer', function () {
@@ -24,6 +27,7 @@ describe('flattenBuffer', function () {
   // For each test, create a fresh environment and context.
   beforeEach(() => {
     env = new AsyncEnvironment();
+    env.addCommandHandlerClass('data', DataHandler);
     context = {
       getVariables: () => ({ userId: 123 }),
       env: env,

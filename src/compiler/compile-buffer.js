@@ -217,8 +217,8 @@ class CompileBuffer {
       const asyncArgs = argList.isAsync;
       this.compiler.emit('arguments: ' + (asyncArgs ? 'await ' : ''));
 
-      if (handler === 'data' || outputType === 'data') {
-        // For @data commands, we create a new "virtual" AST for the arguments.
+      if (outputType === 'data') {
+        // For data outputs, we create a new "virtual" AST for the arguments.
         // where the first argument is a path like "user.posts[0].title" that
         // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
         const originalArgs = node.call.args.children;
@@ -229,6 +229,7 @@ class CompileBuffer {
         const pathArg = originalArgs[0];
 
         // Convert the path argument into a flat array of segments (Literal/Symbol)
+        // @todo - move this to the transformer phase?
         // expected by the runtime @data handlers.
         const pathNodeList = this.compiler._flattenPathToNodeList(pathArg);
         const dataPathNode = new nodes.Array(pathArg.lineno, pathArg.colno, pathNodeList.children);
