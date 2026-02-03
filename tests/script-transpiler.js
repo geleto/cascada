@@ -2,6 +2,11 @@ const scriptTranspiler = require('../src/script/script-transpiler');
 const { TOKEN_TYPES } = require('../src/script/script-lexer');
 const expect = require('expect.js');
 
+const aliasOptions = {
+  useCoreOutputAliases: true,
+  injectReturnedOutputsOnly: true
+};
+
 describe.skip('Script Transpiler', () => {
   // Helper function tests
   describe('Helper Functions', () => {
@@ -779,28 +784,28 @@ endif`;
 
       it('should convert command that looks like function but has no parentheses', () => {
         const script = 'sink turtle = makeTurtle()\n@turtle.forward(50)';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- text text -%}{%- value value -%}{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50) -%}\n{% return {turtle: turtle.snapshot() } %}');
+        const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
+        expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50) -%}\n{% return {turtle: turtle.snapshot() } %}');
       });
     });
 
     describe('Function-Style Commands', () => {
       it('should convert simple function call with dot in name', () => {
         const script = 'sink turtle = makeTurtle()\n@turtle.forward(50)';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- text text -%}{%- value value -%}{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50) -%}\n{% return {turtle: turtle.snapshot() } %}');
+        const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
+        expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50) -%}\n{% return {turtle: turtle.snapshot() } %}');
       });
 
       it('should convert call with complex expression as argument', () => {
         const script = 'sink turtle = makeTurtle()\n@turtle.turn(getAngle() * 2)';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- text text -%}{%- value value -%}{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.turn(getAngle() * 2) -%}\n{% return {turtle: turtle.snapshot() } %}');
+        const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
+        expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.turn(getAngle() * 2) -%}\n{% return {turtle: turtle.snapshot() } %}');
       });
 
       it('should handle call with extra whitespace around parentheses', () => {
         const script = 'sink turtle = makeTurtle()\n@turtle.forward ( 50 )';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- text text -%}{%- value value -%}{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward ( 50 ) -%}\n{% return {turtle: turtle.snapshot() } %}');
+        const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
+        expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward ( 50 ) -%}\n{% return {turtle: turtle.snapshot() } %}');
       });
 
       it('should convert function call with multiple arguments', () => {
@@ -825,8 +830,8 @@ endif`;
 
       it('should handle function command with trailing comment', () => {
         const script = 'sink turtle = makeTurtle()\n@turtle.forward(50) // Move turtle forward';
-        const template = scriptTranspiler.scriptToTemplate(script);
-        expect(template).to.equal('{%- data data -%}{%- text text -%}{%- value value -%}{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50)  -%}{#- Move turtle forward -#}\n{% return {turtle: turtle.snapshot() } %}');
+        const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
+        expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50)  -%}{#- Move turtle forward -#}\n{% return {turtle: turtle.snapshot() } %}');
       });
 
       it('should handle command with multi-line comment', () => {
@@ -1189,10 +1194,11 @@ endcapture`;
         endif
       `;
 
-      const result = scriptTranspiler.scriptToTemplate(script);
+      const result = scriptTranspiler.scriptToTemplate(script, aliasOptions);
       expect(result).to.equal(`
         {#- A complete script example -#}
-        {%- option focus="data" -%}
+        {%- option focus="dat" -%}
+        {%- data dat -%}
         {%- var user = { name: "Alice", role: "admin" } -%}
         {%- if user.role == "admin" -%}
           {{- "Hello, " + user.name -}}

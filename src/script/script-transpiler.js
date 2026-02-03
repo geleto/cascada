@@ -203,6 +203,16 @@ class ScriptTranspiler {
 
     // Output scopes track declared outputs in nested blocks.
     this.outputScopes = [this._createOutputScope()];
+
+    // Aliases for injected core outputs in generated templates.
+    this.CORE_OUTPUT_ALIASES = {
+      data: 'dat',
+      text: 'tex',
+      value: 'val'
+    };
+
+    this._useCoreOutputAliases = false;
+    this._injectReturnedOutputsOnly = false;
   }
 
   getCurrentOutputScope() {
@@ -1491,6 +1501,17 @@ class ScriptTranspiler {
 
   _generateOutput(processedLine, nextIsContinuation, lastNonContinuationLineType, lineIndex) {
     let output = processedLine.indentation;
+    let codeContent = processedLine.codeContent;
+
+    if (!processedLine.isContinuation && processedLine.lineType === 'TAG') {
+      if (processedLine.tagName === 'option') {
+        codeContent = this._mapFocusDirective(codeContent);
+      } else if (processedLine.tagName === 'output_command') {
+        codeContent = this._mapCoreOutputCall(codeContent);
+      } else if (processedLine.tagName === 'data' || processedLine.tagName === 'text' || processedLine.tagName === 'value') {
+        codeContent = this._mapCoreOutputName(codeContent || '');
+      }
+    }
     if (processedLine.inlinePrefix) {
       output = processedLine.inlinePrefix + output;
     }
@@ -1521,12 +1542,12 @@ class ScriptTranspiler {
           output += '{%- do';
           break;
       }
-      if (processedLine.codeContent) {
+      if (codeContent) {
         //add space between tag and code content
         output += ' ';
       }
     }
-    output += processedLine.codeContent;
+    output += codeContent || '';
 
     if (!nextIsContinuation) {
       // Handle expectedContinuationEnd - remove the expected character from the last continuation line
@@ -1620,7 +1641,9 @@ class ScriptTranspiler {
    * @param {string} scriptStr - The input script string
    * @return {Object} Object with template string and possible error
    */
-  scriptToTemplate(scriptStr) {
+  scriptToTemplate(scriptStr, options = {}) {
+    this._useCoreOutputAliases = !!options.useCoreOutputAliases;
+    this._injectReturnedOutputsOnly = !!options.injectReturnedOutputsOnly;
     this.outputScopes = [this._createOutputScope()];
     // Split into lines
     const lines = scriptStr.split('\n');
@@ -1654,7 +1677,7 @@ class ScriptTranspiler {
 
     const hasExplicitReturn = this._hasTopLevelReturn(processedLines);
     const focusDirective = this._getRootFocus(processedLines);
-    const forceRootOutputs = ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn && !focusDirective;
+    const forceRootOutputs = ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn && !focusDirective && !this._injectReturnedOutputsOnly;
 
     const withOutputDeclarations = this._insertOutputDeclarations(processedLines, {
       forceRootOutputs,
@@ -1748,7 +1771,7 @@ class ScriptTranspiler {
   _makeImplicitReturnLine(focus, indentation) {
     let codeContent;
     if (focus) {
-      codeContent = `${focus}.snapshot()`;
+      codeContent = `${this._mapCoreOutputTarget(focus)}.snapshot()`;
     } else {
       codeContent = this._buildUnfocusedReturnExpression(this._getRootConflicts());
     }
@@ -1788,9 +1811,53 @@ class ScriptTranspiler {
 
   _getSnapshotTargetName(name, conflicts) {
     if (conflicts && conflicts.has(name)) {
-      return `@${name}`;
+      return this._mapCoreOutputTarget(`@${name}`);
     }
-    return name;
+    return this._mapCoreOutputTarget(name);
+  }
+
+  _mapCoreOutputName(name) {
+    if (!this._useCoreOutputAliases) {
+      return name;
+    }
+    return this.CORE_OUTPUT_ALIASES[name] || name;
+  }
+
+  _mapCoreOutputTarget(target) {
+    if (!this._useCoreOutputAliases) {
+      return target;
+    }
+    if (!target) return target;
+    let prefix = '';
+    let name = target;
+    if (name.startsWith('@')) {
+      prefix = '@';
+      name = name.slice(1);
+    }
+    return prefix + this._mapCoreOutputName(name);
+  }
+
+  _mapCoreOutputCall(callString) {
+    if (!this._useCoreOutputAliases) {
+      return callString;
+    }
+    if (!callString) return callString;
+    const match = callString.match(/^(\s*)([A-Za-z_$][A-Za-z0-9_$]*)(.*)$/);
+    if (!match) return callString;
+    const mapped = this._mapCoreOutputName(match[2]);
+    if (mapped === match[2]) return callString;
+    return `${match[1]}${mapped}${match[3]}`;
+  }
+
+  _mapFocusDirective(codeContent) {
+    if (!this._useCoreOutputAliases) {
+      return codeContent;
+    }
+    if (!codeContent) return codeContent;
+    return codeContent.replace(
+      /(focus\s*=\s*["'])(data|text|value)(["'])/,
+      (match, prefix, name, suffix) => `${prefix}${this._mapCoreOutputName(name)}${suffix}`
+    );
   }
 
   _buildFocusedReturnExpression(focusDirective, conflicts) {
@@ -1817,7 +1884,7 @@ class ScriptTranspiler {
       if (forceDirectCore) {
         return 'undefined';
       }
-      return `@${focusDirective}.snapshot()`;
+      return `${this._mapCoreOutputTarget(`@${focusDirective}`)}.snapshot()`;
     }
     if (declaredOutputs && declaredOutputs.has(focusDirective)) {
       const target = this._getSnapshotTargetName(focusDirective, conflicts);
@@ -1879,6 +1946,12 @@ class ScriptTranspiler {
 
   _getOutputsToInject(scope) {
     const required = new Set();
+    if (this._injectReturnedOutputsOnly && scope.focus) {
+      if (scope.focus === 'data' || scope.focus === 'text' || scope.focus === 'value') {
+        required.add(scope.focus);
+      }
+      return Array.from(required);
+    }
     // Only auto-inject core outputs. Sinks require explicit initializers and
     // custom command handlers should be accessed via declared sinks.
     (scope.requiredOutputs || []).forEach((name) => {
@@ -1914,7 +1987,8 @@ class ScriptTranspiler {
     if (outputType !== 'data' && outputType !== 'text' && outputType !== 'value') {
       return '';
     }
-    return `${indent}{%- ${outputType} ${outputType} -%}`;
+    const name = this._mapCoreOutputName(outputType);
+    return `${indent}{%- ${outputType} ${name} -%}`;
   }
 
   _collectIdentifierConflicts(targetsStr, conflicts) {
