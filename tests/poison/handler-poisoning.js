@@ -544,16 +544,18 @@
     }
 
     let context;
+    let singleton;
 
     beforeEach(() => {
       env = new AsyncEnvironment(null, { asyncMode: true, scriptMode: true });
       env.addCommandHandlerClass('test', TestHandler);
 
-      const singleton = new SingletonHandler();
+      singleton = new SingletonHandler();
       env.addCommandHandler('logger', singleton);
 
       context = {
-        asyncReject: async () => { throw new Error('Async rejection'); }
+        asyncReject: async () => { throw new Error('Async rejection'); },
+        loggerRef: singleton
       };
     });
 
@@ -643,15 +645,20 @@
       }
     });
 
-    it('should work with custom handler when no condition poison', async () => {
+    it('should work with sink-backed custom handler when no condition poison', async () => {
       const script = `
+      sink testSink = makeTest()
       if true
-        @test.log("Success")
-        @test.setValue("key", "value")
+        @testSink.log("Success")
+        @testSink.setValue("key", "value")
       endif
+      return { test: testSink.snapshot() }
     `;
 
-      const result = await env.renderScriptString(script, context);
+      const result = await env.renderScriptString(script, {
+        ...context,
+        makeTest: () => new TestHandler()
+      });
       expect(result.test.commands).to.have.length(2);
       expect(result.test.commands[0].type).to.be('log');
       expect(result.test.commands[1].type).to.be('set');
@@ -677,12 +684,14 @@
       }
     });
 
-    it('should handle singleton handler state correctly on poison', async () => {
+    it('should handle sink-backed singleton handler state correctly on poison', async () => {
       // First render - should succeed
       const script1 = `
+      sink loggerSink = loggerRef
       if true
         @logger.log("First render")
       endif
+      return { logger: loggerSink.snapshot() }
     `;
       const result1 = await env.renderScriptString(script1, context);
       expect(result1.logger.logs).to.contain(`First render`);
@@ -703,9 +712,11 @@
 
       // Third render - should succeed and not see poisoned state
       const script3 = `
+      sink loggerSink = loggerRef
       if true
         @logger.log("Third render")
       endif
+      return { logger: loggerSink.snapshot() }
     `;
       const result3 = await env.renderScriptString(script3, context);
       expect(result3.logger.logs).to.contain(`Third render`);

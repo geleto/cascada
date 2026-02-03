@@ -1424,6 +1424,13 @@ class Compiler extends CompilerBase {
         this.emit.line(';');
         this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
         this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
+        // Ensure all deferred output commands are executed before returning.
+        // Scripts must not skip output processing just because the return value
+        // doesn't explicitly snapshot outputs.
+        this.emit.line('  if (frame && frame._outputBuffer) {');
+        this.emit.line('    const __flat = runtime.flattenBuffer(frame._outputBuffer, context);');
+        this.emit.line('    if (__flat && typeof __flat.then === "function") { await __flat; }');
+        this.emit.line('  }');
         this.emit.line('  cb(null, resolved);');
         this.emit.line('}).catch(e => {');
         this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${errorContext}", context.path);`);
@@ -1441,6 +1448,11 @@ class Compiler extends CompilerBase {
         this.emit.line(';');
         this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
         this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
+        // Ensure all deferred output commands are executed before returning.
+        this.emit.line('  if (frame && frame._outputBuffer) {');
+        this.emit.line('    const __flat = runtime.flattenBuffer(frame._outputBuffer, context);');
+        this.emit.line('    if (__flat && typeof __flat.then === "function") { await __flat; }');
+        this.emit.line('  }');
         this.emit.line('  return resolved;');
         this.emit.line('});');
       }
@@ -1472,7 +1484,7 @@ class Compiler extends CompilerBase {
     }
     const name = nameNode.value;
 
-    if ((outputType === 'data' || outputType === 'text' || outputType === 'value' || outputType === 'handler') && node.initializer) {
+    if ((outputType === 'data' || outputType === 'text' || outputType === 'value') && node.initializer) {
       this.fail(`${outputType} outputs cannot have initializers`, node.lineno, node.colno, node);
     }
     if (outputType === 'sink' && !node.initializer) {

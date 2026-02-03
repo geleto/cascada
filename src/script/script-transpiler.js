@@ -1217,7 +1217,7 @@ class ScriptTranspiler {
     const trimmed = codeContent.trim();
     const outputType = this._getFirstWord(trimmed);
     if (!outputType) return null;
-    if (!(outputType === 'data' || outputType === 'text' || outputType === 'value' || outputType === 'sink' || outputType === 'handler')) {
+    if (!(outputType === 'data' || outputType === 'text' || outputType === 'value' || outputType === 'sink')) {
       return null;
     }
 
@@ -1250,9 +1250,6 @@ class ScriptTranspiler {
     if (firstWord === 'sink') {
       // Sink declarations must have an assignment (e.g., "sink x = value")
       return /^sink\s+[A-Za-z_][A-Za-z0-9_]*\s*=/.test(codeContent);
-    }
-    if (firstWord === 'handler') {
-      return /^handler\s+[A-Za-z_][A-Za-z0-9_]*$/.test(codeContent.trim());
     }
     if (firstWord === 'data' || firstWord === 'text' || firstWord === 'value') {
       // Matches variable declarations with optional initialization
@@ -1759,7 +1756,7 @@ class ScriptTranspiler {
       const target = this._getSnapshotTargetName(focusDirective, conflicts);
       return `${target}.snapshot()`;
     }
-    return `${focusDirective}.snapshot()`;
+    throw new Error(`Output focus '${focusDirective}' must be declared (e.g. 'sink ${focusDirective} = ...')`);
   }
 
   _buildFocusedReturnExpressionForScope(focusDirective, conflicts, declaredOutputs, forceDirectCore = false) {
@@ -1778,7 +1775,7 @@ class ScriptTranspiler {
       const target = this._getSnapshotTargetName(focusDirective, conflicts);
       return `${target}.snapshot()`;
     }
-    return `${focusDirective}.snapshot()`;
+    throw new Error(`Output focus '${focusDirective}' must be declared in this scope (e.g. 'sink ${focusDirective} = ...')`);
   }
 
   _buildUnfocusedReturnExpression(conflicts) {
@@ -1788,7 +1785,13 @@ class ScriptTranspiler {
     const requiredOutputs = rootScope?.requiredOutputs || new Set();
 
     if (rootScope) {
-      requiredOutputs.forEach((name) => includeOutputs.add(name));
+      // Only core outputs are implicitly returned. Custom command handlers must
+      // be returned explicitly via sinks (or explicit return statements).
+      requiredOutputs.forEach((name) => {
+        if (name === 'data' || name === 'text' || name === 'value') {
+          includeOutputs.add(name);
+        }
+      });
       declaredOutputs.forEach((name) => includeOutputs.add(name));
     }
 
@@ -1798,7 +1801,8 @@ class ScriptTranspiler {
         if (scope.type === 'capture') return;
         const scopeDeclared = scope.declaredOutputs || new Set();
         (scope.requiredOutputs || new Set()).forEach((name) => {
-          if (!scopeDeclared.has(name)) {
+          // Only carry core outputs implicitly; sinks must be declared.
+          if ((name === 'data' || name === 'text' || name === 'value') && !scopeDeclared.has(name)) {
             includeOutputs.add(name);
           }
         });
@@ -1827,7 +1831,13 @@ class ScriptTranspiler {
 
   _getOutputsToInject(scope) {
     const required = new Set();
-    (scope.requiredOutputs || []).forEach((name) => required.add(name));
+    // Only auto-inject core outputs. Sinks require explicit initializers and
+    // custom command handlers should be accessed via declared sinks.
+    (scope.requiredOutputs || []).forEach((name) => {
+      if (name === 'data' || name === 'text' || name === 'value') {
+        required.add(name);
+      }
+    });
     if (scope.focus && (scope.focus === 'data' || scope.focus === 'text' || scope.focus === 'value')) {
       required.add(scope.focus);
     }
@@ -1853,8 +1863,8 @@ class ScriptTranspiler {
 
   _formatInlineOutputDeclaration(outputType, indentation) {
     const indent = indentation || '';
-    if (outputType !== 'data' && outputType !== 'text' && outputType !== 'value' && outputType !== 'sink') {
-      return `${indent}{%- handler ${outputType} -%}`;
+    if (outputType !== 'data' && outputType !== 'text' && outputType !== 'value') {
+      return '';
     }
     return `${indent}{%- ${outputType} ${outputType} -%}`;
   }
@@ -1953,7 +1963,7 @@ class ScriptTranspiler {
       }
 
       if (!line.isContinuation && line.lineType === 'TAG' &&
-        (line.tagName === 'data' || line.tagName === 'text' || line.tagName === 'value' || line.tagName === 'sink' || line.tagName === 'handler')) {
+        (line.tagName === 'data' || line.tagName === 'text' || line.tagName === 'value' || line.tagName === 'sink')) {
         const name = this._getFirstWord(line.codeContent || '');
         if (name) {
           scopeStack[scopeStack.length - 1].declaredOutputs.add(name);
@@ -2153,7 +2163,11 @@ class ScriptTranspiler {
                 const declaredOutputs = scope.scopeInfo.declaredOutputs || new Set();
                 const requiredOutputs = scope.scopeInfo.requiredOutputs || new Set();
                 const includeOutputs = new Set();
-                requiredOutputs.forEach((name) => includeOutputs.add(name));
+                requiredOutputs.forEach((name) => {
+                  if (name === 'data' || name === 'text' || name === 'value') {
+                    includeOutputs.add(name);
+                  }
+                });
                 declaredOutputs.forEach((name) => includeOutputs.add(name));
                 let returnExpr;
                 if (includeOutputs.size === 0) {

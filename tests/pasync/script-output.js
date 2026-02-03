@@ -787,7 +787,7 @@ describe('Cascada Script: Output commands', function () {
       expect(result.y).to.equal(90);
     });
 
-    it('Supports callable callable command handlers - no path', async () => {
+    it('supports sink snapshot of callable command handler (no path)', async () => {
       class Logger {
         constructor() {
           this.logs = [];
@@ -800,12 +800,15 @@ describe('Cascada Script: Output commands', function () {
         }
       };
 
-      env.addCommandHandler('log', new Logger());
+      const logHandler = new Logger();
+      env.addCommandHandler('log', logHandler);
       const script = `
+        sink captured = logHandler
         @log("user1 logged in")
         @log("user2 logged in")
+        return { log: captured.snapshot() }
       `;
-      const result = await env.renderScriptString(script);
+      const result = await env.renderScriptString(script, { logHandler });
       // The same logger instance is modified
       expect(result.log.logs).to.eql(['user1 logged in', 'user2 logged in']);
     });
@@ -830,7 +833,7 @@ describe('Cascada Script: Output commands', function () {
       expect(logger.log).to.eql(['login(user1)', 'action(read,doc1)']);
     });
 
-    it('should support multi-segment path handlers - 2 segments path', async () => {
+    it('should support sink snapshot of multi-segment command handler (2 segments path)', async () => {
       // Create a utility object with nested structure
       class OutputLogger {
         constructor() {
@@ -854,12 +857,14 @@ describe('Cascada Script: Output commands', function () {
       env.addCommandHandler('util', util);
 
       const script = `
+        sink utilSink = utilRef
         @util.output.log("User logged in")
         @util.output.error("Connection failed")
         @util.output.warn("Deprecated feature used")
+        return { util: utilSink.snapshot() }
       `;
 
-      const result = await env.renderScriptString(script);
+      const result = await env.renderScriptString(script, { utilRef: util });
 
       // Verify the multi-segment handler is accessible and functional
       expect(result.util).to.equal(util);
