@@ -1,5 +1,8 @@
 # Cascada Script Documentation
 
+> **Note:** Output focus directives (`:data`, `:text`, `:value`, and custom `:handler` focus) have been removed.
+> Use explicit `return` statements (e.g., `return data.snapshot()`) to shape results.
+
 [Download as Markdown](https://raw.githubusercontent.com/geleto/cascada/master/docs/cascada/script.md)
 
 [Markdown for AI Coding Agents](https://raw.githubusercontent.com/geleto/cascada/refs/heads/master/docs/cascada/script-agent.md)

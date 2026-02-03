@@ -79,7 +79,7 @@ class NodeList extends Node {
 class Root extends NodeList {
   get typename() { return 'Root'; }
   get fields() {
-    return ['children', 'focus'];
+    return ['children'];
   }
 }
 
@@ -168,7 +168,7 @@ class AsyncAll extends For {
 
 class Macro extends Node {
   get typename() { return 'Macro'; }
-  get fields() { return ['name', 'args', 'body', 'focus']; }
+  get fields() { return ['name', 'args', 'body']; }
 }
 
 class Caller extends Macro {
@@ -265,12 +265,7 @@ class Output extends NodeList {
 
 class Capture extends Node {
   get typename() { return 'Capture'; }
-  get fields() { return ['body', 'focus']; }
-}
-
-class Option extends Node {
-  get typename() { return 'Option'; }
-  get fields() { return ['key', 'value']; }
+  get fields() { return ['body']; }
 }
 
 class TemplateData extends Literal {
@@ -469,7 +464,6 @@ module.exports = {
   Dict: Dict,
   Output: Output,
   Capture: Capture,
-  Option: Option,
   TemplateData: TemplateData,
   If: If,
   IfAsync: IfAsync,

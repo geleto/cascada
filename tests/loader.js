@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   'use strict';
 
   var expect,
@@ -19,6 +19,8 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
+    const path = require('path');
+    const Module = require('module');
     Environment = require('../src/environment/environment').Environment;
     AsyncEnvironment = require('../src/environment/environment').AsyncEnvironment;
     WebLoader = require('../src/loader/web-loaders').WebLoader;
@@ -33,6 +35,22 @@
     precompileScriptString = require('../src/index').precompileScriptString;
     Template = require('../src/environment/environment').Template;
     delay = require('./util').delay;
+
+    // Ensure test packages are resolvable for NodeResolveLoader tests.
+    const testNodePkgs = path.join(__dirname, 'test-node-pkgs');
+    if (!Module.globalPaths.includes(testNodePkgs)) {
+      Module.globalPaths.push(testNodePkgs);
+    }
+    if (!module.paths.includes(testNodePkgs)) {
+      module.paths.unshift(testNodePkgs);
+    }
+    const existingNodePath = process.env.NODE_PATH || '';
+    if (!existingNodePath.split(path.delimiter).includes(testNodePkgs)) {
+      process.env.NODE_PATH = existingNodePath
+        ? `${existingNodePath}${path.delimiter}${testNodePkgs}`
+        : testNodePkgs;
+      Module._initPaths();
+    }
   } else {
     expect = window.expect;
     Environment = nunjucks.Environment;
@@ -1300,8 +1318,9 @@
         class ScriptClassLoader {
           load(name) {
             if (name === 'script-constructor-test.njk') {
-              return `:data
-              @data = value`;
+              return `              data data
+              data.set(null, value)
+              return data.snapshot()`;
             }
           }
         }

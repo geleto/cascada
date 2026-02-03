@@ -993,14 +993,9 @@ class Compiler extends CompilerBase {
         if (this.scriptMode) {
           bufferArgs += ', this';
         }
-        if (node.focus) {
-          bufferArgs += `, "${node.focus}"`;
-        }
-
         const flattenCall = `runtime.flattenBuffer(${bufferArgs})`;
 
-        // Template mode OR script mode with :text focus needs SafeString
-        const needsSafeString = !this.scriptMode || node.focus === 'text';
+        const needsSafeString = !this.scriptMode;
         const safeStringCall = needsSafeString
           ? `runtime.newSafeStringAsync(${flattenCall})`
           : flattenCall;
@@ -1009,7 +1004,7 @@ class Compiler extends CompilerBase {
       }
     } else {
       // Sync case
-      const needsSafeString = !this.scriptMode || node.focus === 'text';
+      const needsSafeString = !this.scriptMode;
       returnStatement = needsSafeString
         ? `new runtime.SafeString(${bufferId})`
         : bufferId;
@@ -1085,9 +1080,6 @@ class Compiler extends CompilerBase {
   }
 
   compileCapture(node, frame) {
-    if (!this.scriptMode && node.focus) {
-      this.fail('focus is not supported in templates', node.lineno, node.colno, node);
-    }
     // we need to temporarily override the current buffer id as 'output'
     // so the set block writes to the capture output instead of the buffer
     const buffer = this.buffer.currentBuffer;
@@ -1113,8 +1105,8 @@ class Compiler extends CompilerBase {
           this.compile(n.body, f);//write to output
           this.emit.line('await astate.waitAllClosures(1)');
           const flattenArgs = this.scriptMode
-            ? `output, context${node.focus ? ', "' + node.focus + '"' : ''}`
-            : `output${node.focus ? ', null, "' + node.focus + '"' : ''}`;
+            ? 'output, context'
+            : 'output';
           this.emit.line(`let ${res} = runtime.flattenBuffer(${flattenArgs});`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
@@ -1258,11 +1250,6 @@ class Compiler extends CompilerBase {
     frame = this.asyncMode ? new AsyncFrame() : new Frame();
     frame._seesRootScope = true;
 
-    if (!this.scriptMode && node.focus) {
-      this.fail('focus is not supported in templates', node.lineno, node.colno, node);
-    }
-
-
     if (this.asyncMode) {
       // NEW: Pre-declaration pass
       const sequenceLocks = this.sequential.collectSequenceLocks(node);
@@ -1300,17 +1287,10 @@ class Compiler extends CompilerBase {
         // this.emit.line('    cb(null, frame._outputs.output.snapshot());');
       } else {
         const flattenArgs = this.scriptMode
-          ? `${this.buffer.currentBuffer}, context${node.focus ? ', "' + node.focus + '"' : ''}`
-          : `${this.buffer.currentBuffer}${node.focus ? ', null, "' + node.focus + '"' : ''}`;
+          ? `${this.buffer.currentBuffer}, context`
+          : `${this.buffer.currentBuffer}`;
         this.emit.line(`    cb(null, runtime.flattenBuffer(${flattenArgs}));`);
       }
-      /*const flattenCall = `runtime.flattenBuffer(${this.buffer.currentBuffer}${this.scriptMode ? ', context' : ''}${node.focus ? ', "' + node.focus + '"' : ''})`;
-      this.emit.line(`    const __flatResult = ${flattenCall};`);
-      this.emit.line('    if (__flatResult && typeof __flatResult.then === "function") {');
-      this.emit.line('      __flatResult.then(res => cb(null, res)).catch(err => cb(err));');
-      this.emit.line('    } else {');
-      this.emit.line('      cb(null, __flatResult);');
-      this.emit.line('    }');*/
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
       this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`); // Store and update the handled error
@@ -1518,17 +1498,10 @@ class Compiler extends CompilerBase {
   }
 
   /**
-   * Do nothing for now, currently used only for focus directive
-   * where the logic is handled in the parser. See parseAsRoot
+   * Do nothing for now.
    */
   compileOption(node, frame) {
-    if (!this.scriptMode) {
-      // Currently option tags are only used for script focus directives.
-      // Templates do not support focus or output handler features.
-      if (node.key && node.key.typename === 'Literal' && node.key.value === 'focus') {
-        this.fail('focus option is only supported in script mode', node.lineno, node.colno, node);
-      }
-    }
+    return;
   }
 
   _getDeclarationFrame(frame) {

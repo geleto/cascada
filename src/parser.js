@@ -237,12 +237,7 @@ class Parser extends Obj {
     const node = new nodes.Macro(macroTok.lineno, macroTok.colno, name, args);
 
     if (this.skip(lexer.TOKEN_COLON)) {
-      node.focus = this.nextToken();
-      if (!node.focus && node.focus.type !== lexer.TOKEN_SYMBOL) {
-        this.fail('parseMacro: expected focus directive value', node.focus.lineno, node.focus.colno);
-      } else {
-        node.focus = node.focus.value;
-      }
+      this.fail('parseMacro: focus directives are not supported', macroTok.lineno, macroTok.colno);
     }
 
     this.advanceAfterBlockEnd(macroTok.value);
@@ -273,14 +268,8 @@ class Parser extends Obj {
       macroCall = macroCall.name;
     }
 
-    let focus;
     if (this.skip(lexer.TOKEN_COLON)) {
-      const tok = this.nextToken();
-      if (!tok && tok.type !== lexer.TOKEN_SYMBOL) {
-        this.fail('parseCall: expected focus directive value', tok.lineno, tok.colno);
-      } else {
-        focus = tok.value;
-      }
+      this.fail('parseCall: focus directives are not supported', callTok.lineno, callTok.colno);
     }
 
     this.advanceAfterBlockEnd(callTok.value);
@@ -294,8 +283,7 @@ class Parser extends Obj {
       callTok.colno,
       callerName,
       callerArgs,
-      body,
-      focus
+      body
     );
 
     // add the additional caller kwarg, adding kwargs if necessary
@@ -320,8 +308,8 @@ class Parser extends Obj {
     //   x = call ... endcall
     //
     // Syntax emitted:
-    //   {% call_assign var x = macroCall(args) (sig) [:focus] %}...{% endcall_assign %}
-    //   {% call_assign set x = macroCall(args) (sig) [:focus] %}...{% endcall_assign %}
+    //   {% call_assign var x = macroCall(args) (sig) %}...{% endcall_assign %}
+    //   {% call_assign set x = macroCall(args) (sig) %}...{% endcall_assign %}
     const callTok = this.peekToken();
     if (!this.skipSymbol('call_assign')) {
       this.fail('parseCallAssign: expected call_assign', callTok.lineno, callTok.colno);
@@ -372,14 +360,8 @@ class Parser extends Obj {
       this.fail('parseCallAssign: expected macro call expression', callTok.lineno, callTok.colno);
     }
 
-    let focus;
     if (this.skip(lexer.TOKEN_COLON)) {
-      const tok = this.nextToken();
-      if (!tok && tok.type !== lexer.TOKEN_SYMBOL) {
-        this.fail('parseCallAssign: expected focus directive value', tok.lineno, tok.colno);
-      } else {
-        focus = tok.value;
-      }
+      this.fail('parseCallAssign: focus directives are not supported', callTok.lineno, callTok.colno);
     }
 
     this.advanceAfterBlockEnd(callTok.value);
@@ -393,8 +375,7 @@ class Parser extends Obj {
       callTok.colno,
       callerName,
       callerArgs,
-      body,
-      focus
+      body
     );
 
     // add the additional caller kwarg, adding kwargs if necessary
@@ -656,15 +637,8 @@ class Parser extends Obj {
 
     if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
       // no =, so this is a block assignment
-      let focus;
       if (this.skip(lexer.TOKEN_COLON)) {
-        // a focus directive is allowed for block assignments
-        const tok = this.nextToken();
-        if (!tok && tok.type !== lexer.TOKEN_SYMBOL) {
-          this.fail('parseSet: expected focus directive value', tok.lineno, tok.colno);
-        } else {
-          focus = tok.value;
-        }
+        this.fail('parseSet: focus directives are not supported', tag.lineno, tag.colno);
       }
 
       if (!this.skip(lexer.TOKEN_BLOCK_END)) {
@@ -675,19 +649,12 @@ class Parser extends Obj {
         node.body = new nodes.Capture(
           tag.lineno,
           tag.colno,
-          this.parseUntilBlocks('endset'),
-          focus
+          this.parseUntilBlocks('endset')
         );
         node.value = null;
         this.advanceAfterBlockEnd();
       }
     } else {
-      // This is a value assignment, so focus directive is not allowed
-      /*if (this.peekToken().type === lexer.TOKEN_COLON) {
-        this.fail('parseSet: focus directive not allowed in value assignment',
-          tag.lineno,
-          tag.colno);
-      }*/
       node.value = this.parseExpression();
       this.advanceAfterBlockEnd(tag.value);
     }
@@ -741,15 +708,8 @@ class Parser extends Obj {
 
     if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
       // no =, so this is a block assignment
-      let focus;
       if (this.skip(lexer.TOKEN_COLON)) {
-        // a focus directive is allowed for block assignments
-        const tok = this.nextToken();
-        if (!tok && tok.type !== lexer.TOKEN_SYMBOL) {
-          this.fail('parseVar: expected focus directive value', tok.lineno, tok.colno);
-        } else {
-          focus = tok.value;
-        }
+        this.fail('parseVar: focus directives are not supported', tag.lineno, tag.colno);
       }
 
       if (!this.skip(lexer.TOKEN_BLOCK_END)) {
@@ -760,19 +720,12 @@ class Parser extends Obj {
         node.body = new nodes.Capture(
           tag.lineno,
           tag.colno,
-          this.parseUntilBlocks('endvar'),
-          focus
+          this.parseUntilBlocks('endvar')
         );
         node.value = null;
         this.advanceAfterBlockEnd();
       }
     } else {
-      // This is a value assignment, so focus directive is not allowed
-      /*if (this.peekToken().type === lexer.TOKEN_COLON) {
-        this.fail('parseVar: focus directive not allowed in value assignment',
-          tag.lineno,
-          tag.colno);
-      }*/
       node.value = this.parseExpression();
       this.advanceAfterBlockEnd(tag.value);
     }
@@ -947,28 +900,6 @@ class Parser extends Obj {
       node.outputType = outputType;
     }
     return node;
-  }
-
-  parseOption() {
-    const tag = this.peekToken();
-    if (!this.skipSymbol('option')) {
-      this.fail('parseOption: expected option', tag.lineno, tag.colno);
-    }
-
-    // Parse the key (typically a string literal)
-    const key = this.parseExpression();
-
-    // Expect the = operator
-    if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-      this.fail('parseOption: expected =', tag.lineno, tag.colno);
-    }
-
-    // Parse the value (typically a string literal)
-    const value = this.parseExpression();
-
-    this.advanceAfterBlockEnd(tag.value);
-
-    return new nodes.Option(tag.lineno, tag.colno, key, value);
   }
 
   parseGuard() {
@@ -1174,8 +1105,6 @@ class Parser extends Obj {
       case 'output':
       case 'output_command':
         return this.parseOutputCommand();
-      case 'option':
-        return this.parseOption();
       case 'extern':
         return this.parseExtern();
       case 'guard':
@@ -1952,21 +1881,7 @@ class Parser extends Obj {
     //return new nodes.Root(0, 0, this.parseNodes());
     const start = this.peekToken();
     const parsedNodes = this.parseNodes();
-    const root = new nodes.Root(start.lineno, start.colno, parsedNodes);
-
-    // Process Option nodes and set root properties
-    // For now only the focus option is supported
-    parsedNodes.forEach(node => {
-      if (node instanceof nodes.Option) {
-        if (node.key.value === 'focus') {
-          root.focus = node.value.value;
-        } else {
-          this.fail('parseAsRoot: unknown option: ' + node.key.value, node.lineno, node.colno);
-        }
-      }
-    });
-
-    return root;
+    return new nodes.Root(start.lineno, start.colno, parsedNodes);
   }
 }
 

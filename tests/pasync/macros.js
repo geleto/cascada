@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   'use strict';
 
   var expect;
@@ -36,14 +36,18 @@
         };
 
         const script = `
-        macro greet(name) :data
-          @data.user.name = name
-          @data.user.greeted = true
+        data data
+        macro greet(name)
+          data data
+          data.user.name = name
+          data.user.greeted = true
+          return data.snapshot()
         endmacro
 
         var result = greet(getName())
-        @data.output = result.user
-        `;
+        data.output = result.user
+
+        return {data: data.snapshot() }`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.data.output).to.eql({
@@ -84,14 +88,18 @@
         };
 
         const script = `
-        macro greet() :data
-          @data.user.name = getName()
-          @data.user.id = getUserId()
+        data data
+        macro greet()
+          data data
+          data.user.name = getName()
+          data.user.id = getUserId()
+          return data.snapshot()
         endmacro
 
         var result = greet()
-        @data.output = result.user
-        `;
+        data.output = result.user
+
+        return {data: data.snapshot() }`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.data.output).to.eql({
@@ -113,14 +121,18 @@
         };
 
         const script = `
-        macro greet() :data
-          @data.greeting.type = getGreetingType()
-          @data.greeting.score = getUserScore()
+        data data
+        macro greet()
+          data data
+          data.greeting.type = getGreetingType()
+          data.greeting.score = getUserScore()
+          return data.snapshot()
         endmacro
 
         var result = greet()
-        @data.output = result.greeting
-        `;
+        data.output = result.greeting
+
+        return {data: data.snapshot() }`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.data.output).to.eql({
@@ -142,14 +154,18 @@
         };
 
         const script = `
-        macro getWeather() :data
-          @data.weather.temperature = getTemperature()
-          @data.weather.humidity = getHumidity()
+        data data
+        macro getWeather()
+          data data
+          data.weather.temperature = getTemperature()
+          data.weather.humidity = getHumidity()
+          return data.snapshot()
         endmacro
 
         var result = getWeather()
-        @data.output = result.weather
-        `;
+        data.output = result.weather
+
+        return {data: data.snapshot() }`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.data.output).to.eql({
@@ -171,17 +187,21 @@
         };
 
         const script = `
-        macro calculateTotal() :data
+        data data
+        macro calculateTotal()
+          data data
           var price = getPrice()
           var taxRate = getTaxRate()
-          @data.calculation.basePrice = price
-          @data.calculation.tax = price * taxRate
-          @data.calculation.total = price + (price * taxRate)
+          data.calculation.basePrice = price
+          data.calculation.tax = price * taxRate
+          data.calculation.total = price + (price * taxRate)
+          return data.snapshot()
         endmacro
 
         var result = calculateTotal()
-        @data.output = result.calculation
-        `;
+        data.output = result.calculation
+
+        return {data: data.snapshot() }`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.data.output).to.eql({
@@ -202,16 +222,20 @@
         };
 
         const script = `
-        macro getStats(id) :data
-          @data.id = id
-          @data.score = fetchScore(id)
+        data data
+        macro getStats(id)
+          data data
+          data.id = id
+          data.score = fetchScore(id)
+          return data.snapshot()
         endmacro
 
         var stats1 = getStats(1)
         var stats2 = getStats(2)
-        @data.results.push(stats1)
-        @data.results.push(stats2)
-        `;
+        data.results.push(stats1)
+        data.results.push(stats2)
+
+        return {data: data.snapshot() }`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.data.results).to.eql([
@@ -348,16 +372,20 @@
         };
 
         const script = `
-        macro getPageStats(views, likes, comments) :data
-          @data.stats.views = views
-          @data.stats.likes = likes
-          @data.stats.comments = comments
-          @data.stats.engagement = likes + comments
+        data data
+        macro getPageStats(views, likes, comments)
+          data data
+          data.stats.views = views
+          data.stats.likes = likes
+          data.stats.comments = comments
+          data.stats.engagement = likes + comments
+          return data.snapshot()
         endmacro
 
         var result = getPageStats(fetchViewCount(), fetchLikeCount(), fetchCommentCount())
-        @data.output = result.stats
-        `;
+        data.output = result.stats
+
+        return {data: data.snapshot() }`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.data.output).to.eql({
@@ -421,23 +449,29 @@
         };
 
         const script = `
-        macro getUserPermissions(level) :data
-          @data.permissions = fetchPermissions(level)
+        data data
+        macro getUserPermissions(level)
+          data data
+          data.permissions = fetchPermissions(level)
+          return data.snapshot()
         endmacro
 
-        macro userProfile(user) :data
-          @data.profile.id = user.id
-          @data.profile.name = user.name
-          @data.profile.level = user.level
+        macro userProfile(user)
+          data data
+          data.profile.id = user.id
+          data.profile.name = user.name
+          data.profile.level = user.level
           var perms = getUserPermissions(user.level)
-          @data.profile.permissions = perms.permissions
+          data.profile.permissions = perms.permissions
+          return data.snapshot()
         endmacro
 
         var user1 = userProfile(fetchUser(1))
         var user2 = userProfile(fetchUser(2))
-        @data.users.push(user1.profile)
-        @data.users.push(user2.profile)
-        `;
+        data.users.push(user1.profile)
+        data.users.push(user2.profile)
+
+        return {data: data.snapshot() }`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.data.users).to.eql([
@@ -459,16 +493,20 @@
         };
 
         const script = `
-        macro processItems(items, multiplier) :data
-          @data.original = items
+        data data
+        macro processItems(items, multiplier)
+          data data
+          data.original = items
           for item in items
-            @data.processed.push(item * multiplier)
+            data.processed.push(item * multiplier)
           endfor
+          return data.snapshot()
         endmacro
 
         var result = processItems(fetchItems(), getMultiplier())
-        @data.output = result
-        `;
+        data.output = result
+
+        return {data: data.snapshot() }`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.data.output).to.eql({
@@ -490,24 +528,28 @@
         };
 
         const script = `
-        macro calculateFinalScore(userId) :data
+        data data
+        macro calculateFinalScore(userId)
+          data data
           var score = getScore(userId)
           var bonus = getBonus(userId)
           var total = score + bonus
 
-          @data.userId = userId
-          @data.baseScore = score
-          @data.bonus = bonus
-          @data.totalScore = total
-          @data.grade = "A" if total >= 95 else "B"
-          @data.passed = total >= 70
+          data.userId = userId
+          data.baseScore = score
+          data.bonus = bonus
+          data.totalScore = total
+          data.grade = "A" if total >= 95 else "B"
+          data.passed = total >= 70
+          return data.snapshot()
         endmacro
 
         var result1 = calculateFinalScore(1)
         var result2 = calculateFinalScore(2)
-        @data.students.push(result1)
-        @data.students.push(result2)
-        `;
+        data.students.push(result1)
+        data.students.push(result2)
+
+        return {data: data.snapshot() }`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.data.students).to.eql([

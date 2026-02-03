@@ -146,11 +146,12 @@
       const poison = runtime.createPoison(err);
 
       const script = `
-        :data
+        data data
         if val is error
-          @data.msg = val#message
+          data.msg = val#message
         endif
-      `;
+      
+        return data.snapshot()`;
       const data = await env.renderScriptString(script, { val: poison });
       expect(data.msg).to.equal('Script Error');
     });
@@ -160,10 +161,11 @@
       const poison = runtime.createPoison(err);
 
       const script = `
-        :data
+        data data
         var errInfo = val#
-        @data.msg = errInfo.message
-      `;
+        data.msg = errInfo.message
+      
+        return data.snapshot()`;
       const data = await env.renderScriptString(script, { val: poison });
       expect(data.msg).to.equal('Assignment Error');
     });
@@ -179,12 +181,13 @@
       };
 
       const script = `
-        :data
+        data data
         var result = service.action()
         if result is error
-          @data.peeked = result#message
+          data.peeked = result#message
         endif
-      `;
+      
+        return data.snapshot()`;
       const data = await env.renderScriptString(script, context);
       expect(data.peeked).to.equal('Sequence Error');
     });

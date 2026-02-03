@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 let expect;
 let AsyncEnvironment;
@@ -71,7 +71,6 @@ describe('Cascada Script: Variables', function () {
 
     it('should throw error when re-declaring a variable', async function () {
       const script = `
-        :data
         var user = "Alice"
         var user = "Bob"
       `;
@@ -125,7 +124,6 @@ describe('Cascada Script: Variables', function () {
 
     it('should throw error when initializing extern variable', async function () {
       const script = `
-        :data
         extern currentUser = "Alice"
       `;
 
@@ -170,7 +168,6 @@ describe('Cascada Script: Variables', function () {
 
     it('should throw error when assigning to undeclared variable', async function () {
       const script = `
-        :data
         username = "Charlie"
       `;
 
@@ -257,7 +254,6 @@ describe('Cascada Script: Variables', function () {
   describe('Variable Scoping and Shadowing', function () {
     it('should not allow variable shadowing in child scope', async function () {
       const script = `
-        :data
         var item = "parent"
         for i in range(2)
           var item = "child " + i

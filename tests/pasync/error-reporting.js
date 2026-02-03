@@ -399,7 +399,7 @@
 
     it('shoukld report correct path when accessing unknown variable in script', async () => {
       var scriptName = 'error-script-unknown-variable.scr';
-      loader.addTemplate(scriptName, ':data\nvar x = nonExistentVar\n@data.x = x');
+      loader.addTemplate(scriptName, 'data data\nvar x = nonExistentVar\ndata.x = x\nreturn data.snapshot()');
       try {
         await env.renderScript(scriptName, {});
         expect().fail('Expected an error to be thrown');
@@ -410,7 +410,7 @@
 
     it('shoukld report correct path when outputing unknown variable in script', async () => {
       var scriptName = 'error-script-output-unknown-variable.scr';
-      loader.addTemplate(scriptName, ':text\n@text( nonExistentVar )');
+      loader.addTemplate(scriptName, 'text text\ntext( nonExistentVar )\nreturn text.snapshot()');
       try {
         await env.renderScript(scriptName, {});
         expect().fail('Expected an error to be thrown');
@@ -432,7 +432,7 @@
 
     it('shoukld report correct path when using unknown handler in script', async () => {
       var scriptName = 'error-script-unknown-handler.scr';
-      loader.addTemplate(scriptName, '@nonExistentHandler("Hi")');
+      loader.addTemplate(scriptName, '@nonExistentHandler("Hi")\nreturn null');
       try {
         await env.renderScript(scriptName, {});
         expect().fail('Expected an error to be thrown');
@@ -1050,4 +1050,3 @@
     });
   });
 })();
-

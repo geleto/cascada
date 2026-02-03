@@ -547,19 +547,20 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should handle nested macros with same output name', async () => {
       const script = `
-        macro inner() : myData
-          data myData
-          myData.level = 'inner'
-        endmacro
-        macro outer()
-          data myData
-          myData.level = 'outer'
-          var innerRes = inner()
-          myData.inner = innerRes
-          return myData.snapshot()
-        endmacro
-        return outer()
-      `;
+        macro inner()
+        data myData
+        myData.level = 'inner'
+        return myData.snapshot()
+      endmacro
+      macro outer()
+        data myData
+        myData.level = 'outer'
+        var innerRes = inner()
+        myData.inner = innerRes
+        return myData.snapshot()
+      endmacro
+      return outer()
+    `;
       const result = await render(script);
       expect(result).to.eql({ level: 'outer', inner: { level: 'inner' } });
     });

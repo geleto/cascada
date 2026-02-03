@@ -17,16 +17,15 @@ const {
   isTextOutputNameFromState,
   getTextOutputFromState,
   ensureBufferScopeMetadata,
-  ensureFocusOutputExists,
   buildFinalResultFromState,
-  resolveOutputNameReturn
+  resolveOutputValue
 } = require('./flatten-shared');
 const { suppressValue, suppressValueScript } = require('./safe-output');
 const { resolveAll } = require('./resolve');
 
 const RESOLVE_MARKER = Symbol.for('cascada.resolve');
 
-function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedState, flattenBuffer) {
+function flattenCommandBuffer(buffer, context, outputName, sharedState, flattenBuffer) {
   if (outputName) {
     const state = createFlattenState(sharedState, buffer._outputTypes || null);
     if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
@@ -35,7 +34,7 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
     if (state.outputHandlers === undefined && buffer && buffer._outputHandlers) {
       state.outputHandlers = buffer._outputHandlers;
     }
-    const resultState = flattenBuffer(resolveBufferArray(buffer, outputName), context, focusOutput, outputName, state);
+    const resultState = flattenBuffer(resolveBufferArray(buffer, outputName), context, outputName, state);
     if (sharedState) {
       return resultState;
     }
@@ -44,13 +43,13 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
         if (res && res.collectedErrors && res.collectedErrors.length > 0) {
           throw new PoisonError(res.collectedErrors);
         }
-        return resolveOutputNameReturn(res, outputName, focusOutput, sharedState);
+        return resolveOutputValue(res, outputName);
       });
     }
     if (resultState && resultState.collectedErrors && resultState.collectedErrors.length > 0) {
       throw new PoisonError(resultState.collectedErrors);
     }
-    return resolveOutputNameReturn(resultState, outputName, focusOutput, sharedState);
+    return resolveOutputValue(resultState, outputName);
   }
 
   if (!context) {
@@ -58,7 +57,7 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
     const fallbackArray = (Array.isArray(textArray) && textArray.length > 0)
       ? textArray
       : resolveBufferArray(buffer, 'output');
-    return flattenBuffer(fallbackArray, null, null, 'text', sharedState);
+    return flattenBuffer(fallbackArray, null, 'text', sharedState);
   }
 
   const state = createFlattenState(sharedState, buffer._outputTypes || null);
@@ -68,20 +67,7 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
   if (state.outputHandlers === undefined && buffer && buffer._outputHandlers) {
     state.outputHandlers = buffer._outputHandlers;
   }
-  ensureFocusOutputExists(context, state, focusOutput, buffer._outputTypes || null);
-
-  const outputTargets = (() => {
-    if (!focusOutput) {
-      return resolveOutputTargets(buffer, null);
-    }
-    const targets = [focusOutput];
-    // In script mode, focused data returns can still depend on Result Objects
-    // emitted to the text stream (e.g., call blocks).
-    if (state.scriptMode && focusOutput === 'data' && !targets.includes('text')) {
-      targets.push('text');
-    }
-    return resolveOutputTargets(buffer, targets);
-  })();
+  const outputTargets = resolveOutputTargets(buffer, null);
   const outputNames = outputTargets
     .map(target => target.name)
     .filter(name => name && name !== 'output');
@@ -92,7 +78,7 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
 
   const pending = [];
   const queueFlatten = (name, arrayName) => {
-    const res = flattenBuffer(resolveBufferArray(buffer, arrayName), context, null, name, state);
+    const res = flattenBuffer(resolveBufferArray(buffer, arrayName), context, name, state);
     if (res && typeof res.then === 'function') {
       pending.push(res);
     }
@@ -115,20 +101,7 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
       throw new PoisonError(state.collectedErrors);
     }
 
-    const finalResult = buildFinalResultFromState(state);
-
-    if (focusOutput) {
-      if (focusOutput === 'text') {
-        const textResult = state.textOutput.text ? state.textOutput.text.join('') : '';
-        return textResult ? textResult : undefined;
-      }
-      if (state.textOutput[focusOutput]) {
-        return state.textOutput[focusOutput].join('');
-      }
-      return finalResult[focusOutput];
-    }
-
-    return finalResult;
+    return buildFinalResultFromState(state);
   };
 
   if (pending.length > 0) {
@@ -138,15 +111,13 @@ function flattenCommandBuffer(buffer, context, focusOutput, outputName, sharedSt
   return finalize();
 }
 
-function flattenCommands(arr, context, focusOutput, outputName, sharedState, flattenBuffer) {
+function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
   if (Array.isArray(arr)) {
     ensureBufferScopeMetadata(arr);
   }
 
   const state = createFlattenState(sharedState, null);
   const env = context.env;
-
-  ensureFocusOutputExists(context, state, focusOutput);
 
   function collectPoisonArgs(args) {
     for (const arg of args) {
@@ -593,10 +564,10 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
     if (actualValue instanceof CommandBuffer) {
       if (state.scriptMode && isTextOutputNameFromState(state, outputName || 'text')) {
         // In script mode, nested buffers should apply all outputs, not just text.
-        flattenBuffer(actualValue, context, null, null, state);
+        flattenBuffer(actualValue, context, null, state);
         return;
       }
-      flattenBuffer(resolveBufferArray(actualValue, outputName), context, null, outputName, state);
+      flattenBuffer(resolveBufferArray(actualValue, outputName), context, outputName, state);
       return;
     }
 
@@ -673,19 +644,7 @@ function flattenCommands(arr, context, focusOutput, outputName, sharedState, fla
     }
 
     if (outputName) {
-      return resolveOutputNameReturn(state, outputName, focusOutput, sharedState);
-    }
-
-    if (focusOutput) {
-      if (isTextOutputNameFromState(state, focusOutput)) {
-        const textArr = state.textOutput[focusOutput] || [];
-        return textArr.join('');
-      }
-      // Keep focus output resolution to already-instantiated handlers only.
-      // Instantiating here can hide missing-handler errors in some flows.
-      const handler = state.handlerInstances[focusOutput];// || getOrInstantiateHandler(focusOutput);
-      if (!handler) return undefined;
-      return typeof handler.getReturnValue === 'function' ? handler.getReturnValue() : handler;
+      return resolveOutputValue(state, outputName);
     }
 
     return buildFinalResultFromState(state);

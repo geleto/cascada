@@ -978,7 +978,31 @@ class ScriptUpdater {
     if (!afterTrimmed) return false;
 
     const opStart = afterTrimmed[0];
-    if (opStart === '=') return false;
+    if (opStart === '=') {
+      if (!outputInfo.writable) {
+        throw new Error(`Output '${outputName}' is read-only in this scope at line ${lineIndex + 1}`);
+      }
+
+      const assignmentExpr = afterTrimmed.slice(1).trimStart();
+      if (!assignmentExpr) return false;
+
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = 'output_command';
+      parseResult.blockType = null;
+
+      if (outputType === 'data') {
+        parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}.set(null, ${assignmentExpr})`, false);
+      } else if (outputType === 'text' || outputType === 'value') {
+        parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}(${assignmentExpr})`, false);
+      } else {
+        return false;
+      }
+
+      if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
+        parseResult.requiredOutputs = new Set([outputType]);
+      }
+      return true;
+    }
     if (!['.', '(', '['].includes(opStart)) return false;
 
     if (this._isSnapshotCall(afterTrimmed)) {
@@ -993,6 +1017,27 @@ class ScriptUpdater {
       const parsed = this._parseDataCommandFromOutput(after, lineIndex);
 
       if (parsed.directCall) {
+        const argsPreview = (parsed.args || '').trimStart();
+        const hasExplicitPathArg = argsPreview.startsWith('null') || argsPreview.startsWith('[');
+        if (!hasExplicitPathArg && parsed.command) {
+          const genericSyntaxCommand = this._transpileDataCommand(parsed, false, outputName);
+          let commandContent = genericSyntaxCommand.substring(1);
+          if (parsed.append) {
+            if (parseResult.continuesToNext) {
+              parseResult.expectedContinuationEnd = parsed.append;
+            } else {
+              commandContent += parsed.append;
+            }
+          }
+          parseResult.lineType = 'TAG';
+          parseResult.tagName = 'output_command';
+          parseResult.blockType = null;
+          parseResult.codeContent = this._formatOutputCommand(outputType, commandContent, false);
+          if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
+            parseResult.requiredOutputs = new Set([outputType]);
+          }
+          return true;
+        }
         // Direct method call on output root (e.g., myData.set(...)) - keep as-is.
         parseResult.lineType = 'TAG';
         parseResult.tagName = 'output_command';
@@ -1156,17 +1201,7 @@ class ScriptUpdater {
   }
 
   _processFocusDirective(parseResult, lineIndex) {
-    // Handle :data/text/handleName output focus directive
-    const code = parseResult.codeContent.trim();
-    const focus = code.substring(1); // Remove : but keep the directive name
-    if (!focus) {
-      throw new Error(`Invalid output focus: "${parseResult.codeContent}"`);
-    }
-    parseResult.lineType = 'TAG';
-    parseResult.tagName = 'option';
-    parseResult.blockType = null;//no block
-    parseResult.codeContent = `focus="${focus}"`;
-    parseResult.isFocusDirective = true;
+    throw new Error(`Output focus directives are not supported: "${parseResult.codeContent}" at line ${lineIndex + 1}`);
   }
 
   _processExtern(parseResult, lineIndex) {
@@ -1362,7 +1397,7 @@ class ScriptUpdater {
         if (prevLineIndex != -1 && (parseResults[prevLineIndex].continuesToNext || presult.continuesFromPrev || isOptionContinuation)) {
           //this is continuation
           if (isOptionContinuation) {
-            // Revert option tag to raw content for continuation (e.g. ": data" instead of focusing directive)
+            // Revert option tag to raw content for continuation.
             presult.codeContent = this._tokensToCode(this._filterOutComments(presult.tokens));
           }
 
@@ -1431,7 +1466,7 @@ class ScriptUpdater {
 
     if (!processedLine.isContinuation && processedLine.lineType === 'TAG') {
       if (processedLine.tagName === 'option') {
-        codeContent = this._mapFocusDirective(codeContent);
+        throw new Error(`Option tags are not supported in scripts at line ${lineIndex + 1}`);
       } else if (processedLine.tagName === 'output_command') {
         codeContent = this._mapCoreOutputCall(codeContent);
       } else if (processedLine.tagName === 'data' || processedLine.tagName === 'text' || processedLine.tagName === 'value') {
@@ -1648,8 +1683,7 @@ class ScriptUpdater {
     this._processContinuationsAndComments(processedLines);
 
     const hasExplicitReturn = this._hasTopLevelReturn(processedLines);
-    const focusDirective = this._getRootFocus(processedLines);
-    const forceRootOutputs = ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn && !focusDirective && !this._injectReturnedOutputsOnly;
+    const forceRootOutputs = ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn && !this._injectReturnedOutputsOnly;
 
     const withOutputDeclarations = this._insertOutputDeclarations(processedLines, {
       forceRootOutputs,
@@ -1681,9 +1715,7 @@ class ScriptUpdater {
     const rootConflicts = this._getRootConflicts();
 
     if (ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn) {
-      const returnExpr = focusDirective
-        ? this._buildFocusedReturnExpression(focusDirective, rootConflicts)
-        : this._buildUnfocusedReturnExpression(rootConflicts);
+      const returnExpr = this._buildUnfocusedReturnExpression(rootConflicts);
       const implicitReturn = `{% return ${returnExpr} %}`;
       if (output.length > 0) {
         output += '\n';
@@ -1725,8 +1757,7 @@ class ScriptUpdater {
     this._processContinuationsAndComments(processedLines);
 
     const hasExplicitReturn = this._hasTopLevelReturn(processedLines);
-    const focusDirective = this._getRootFocus(processedLines);
-    const forceRootOutputs = ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn && !focusDirective && !this._injectReturnedOutputsOnly;
+    const forceRootOutputs = ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn && !this._injectReturnedOutputsOnly;
 
     const withOutputDeclarations = this._insertOutputDeclarations(processedLines, {
       forceRootOutputs,
@@ -1774,9 +1805,7 @@ class ScriptUpdater {
     const rootConflicts = this._getRootConflicts();
 
     if (ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn) {
-      const returnExpr = focusDirective
-        ? this._buildFocusedReturnExpression(focusDirective, rootConflicts)
-        : this._buildUnfocusedReturnExpression(rootConflicts);
+      const returnExpr = this._buildUnfocusedReturnExpression(rootConflicts);
 
       const implicitReturn = `{% return ${returnExpr} %}`;
       if (template.length > 0) {
@@ -1835,16 +1864,14 @@ class ScriptUpdater {
     }
 
     const match = combined.match(/:\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/);
-    return match ? match[1] : null;
+    if (match) {
+      throw new Error(`Output focus directives are not supported: ":${match[1]}" at line ${startIndex + 1}`);
+    }
+    return null;
   }
 
   _makeImplicitReturnLine(focus, indentation) {
-    let codeContent;
-    if (focus) {
-      codeContent = `${this._mapCoreOutputTarget(focus)}.snapshot()`;
-    } else {
-      codeContent = this._buildUnfocusedReturnExpression(this._getRootConflicts());
-    }
+    const codeContent = this._buildUnfocusedReturnExpression(this._getRootConflicts());
     return {
       indentation: indentation || '',
       lineType: 'TAG',
@@ -1861,20 +1888,6 @@ class ScriptUpdater {
       isInjected: true,
       scriptText: `return ${codeContent}`
     };
-  }
-
-  _getRootFocus(processedLines) {
-    let focusDirective = null;
-    processedLines.forEach((line) => {
-      if (line.tagName !== 'option') {
-        return;
-      }
-      const match = line.codeContent && line.codeContent.match(/focus\s*=\s*["']([^"']+)["']/);
-      if (match && match[1]) {
-        focusDirective = match[1];
-      }
-    });
-    return focusDirective;
   }
 
   _getRootConflicts() {
@@ -1919,50 +1932,6 @@ class ScriptUpdater {
     const mapped = this._mapCoreOutputName(match[2]);
     if (mapped === match[2]) return callString;
     return `${match[1]}${mapped}${match[3]}`;
-  }
-
-  _mapFocusDirective(codeContent) {
-    if (!this._useCoreOutputAliases) {
-      return codeContent;
-    }
-    if (!codeContent) return codeContent;
-    return codeContent.replace(
-      /(focus\s*=\s*["'])(data|text|value)(["'])/,
-      (match, prefix, name, suffix) => `${prefix}${this._mapCoreOutputName(name)}${suffix}`
-    );
-  }
-
-  _buildFocusedReturnExpression(focusDirective, conflicts) {
-    if (!focusDirective) return 'undefined';
-    if (focusDirective === 'data' || focusDirective === 'text' || focusDirective === 'value') {
-      const target = this._getSnapshotTargetName(focusDirective, conflicts);
-      return `${target}.snapshot()`;
-    }
-    const rootScope = this._lastRootOutputScope;
-    if (rootScope && rootScope.declaredOutputs && rootScope.declaredOutputs.has(focusDirective)) {
-      const target = this._getSnapshotTargetName(focusDirective, conflicts);
-      return `${target}.snapshot()`;
-    }
-    throw new Error(`Output focus '${focusDirective}' must be declared (e.g. 'sink ${focusDirective} = ...')`);
-  }
-
-  _buildFocusedReturnExpressionForScope(focusDirective, conflicts, declaredOutputs, forceDirectCore = false) {
-    if (!focusDirective) return 'undefined';
-    if (focusDirective === 'data' || focusDirective === 'text' || focusDirective === 'value') {
-      if (forceDirectCore || (declaredOutputs && declaredOutputs.has(focusDirective))) {
-        const target = this._getSnapshotTargetName(focusDirective, conflicts);
-        return `${target}.snapshot()`;
-      }
-      if (forceDirectCore) {
-        return 'undefined';
-      }
-      return `${this._mapCoreOutputTarget(`@${focusDirective}`)}.snapshot()`;
-    }
-    if (declaredOutputs && declaredOutputs.has(focusDirective)) {
-      const target = this._getSnapshotTargetName(focusDirective, conflicts);
-      return `${target}.snapshot()`;
-    }
-    throw new Error(`Output focus '${focusDirective}' must be declared in this scope (e.g. 'sink ${focusDirective} = ...')`);
   }
 
   _buildUnfocusedReturnExpression(conflicts) {
@@ -2018,12 +1987,6 @@ class ScriptUpdater {
 
   _getOutputsToInject(scope) {
     const required = new Set();
-    if (this._injectReturnedOutputsOnly && scope.focus) {
-      if (scope.focus === 'data' || scope.focus === 'text' || scope.focus === 'value') {
-        required.add(scope.focus);
-      }
-      return Array.from(required);
-    }
     // Only auto-inject core outputs. Sinks require explicit initializers and
     // custom command handlers should be accessed via declared sinks.
     (scope.requiredOutputs || []).forEach((name) => {
@@ -2031,9 +1994,6 @@ class ScriptUpdater {
         required.add(name);
       }
     });
-    if (scope.focus && (scope.focus === 'data' || scope.focus === 'text' || scope.focus === 'value')) {
-      required.add(scope.focus);
-    }
     return Array.from(required);
   }
 
@@ -2130,7 +2090,7 @@ class ScriptUpdater {
       startIndex: 0,
       endIndex: processedLines.length,
       endTag: null,
-      focus: this._getRootFocus(processedLines),
+      focus: null,
       declaredOutputs: new Set(),
       requiredOutputs: new Set(),
       conflictingNames: new Set(),
@@ -2154,7 +2114,7 @@ class ScriptUpdater {
           (line.tagName === 'var' || line.tagName === 'set');
 
         if (isMacroStart || isCallStart || isCaptureStart) {
-          const focus = this._extractFocusFromTag(processedLines, i);
+          this._extractFocusFromTag(processedLines, i);
           const scope = {
             type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
             startIndex: i,
@@ -2162,7 +2122,7 @@ class ScriptUpdater {
             endTag: isMacroStart
               ? 'endmacro'
               : (isCallStart ? (line.tagName === 'call_assign' ? 'endcall_assign' : 'endcall') : `end${line.tagName}`),
-            focus,
+            focus: null,
             declaredOutputs: new Set(),
             requiredOutputs: new Set(),
             conflictingNames: new Set(),
@@ -2338,7 +2298,7 @@ class ScriptUpdater {
       startIndex: 0,
       endIndex: processedLines.length,
       endTag: null,
-      focus: this._getRootFocus(processedLines),
+      focus: null,
       declaredOutputs: new Set(),
       requiredOutputs: new Set(),
       conflictingNames: new Set(),
@@ -2362,7 +2322,7 @@ class ScriptUpdater {
           (line.tagName === 'var' || line.tagName === 'set');
 
         if (isMacroStart || isCallStart || isCaptureStart) {
-          const focus = this._extractFocusFromTag(processedLines, i);
+          this._extractFocusFromTag(processedLines, i);
           const scope = {
             type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
             startIndex: i,
@@ -2370,7 +2330,7 @@ class ScriptUpdater {
             endTag: isMacroStart
               ? 'endmacro'
               : (isCallStart ? (line.tagName === 'call_assign' ? 'endcall_assign' : 'endcall') : `end${line.tagName}`),
-            focus,
+            focus: null,
             declaredOutputs: new Set(),
             requiredOutputs: new Set(),
             conflictingNames: new Set(),
@@ -2531,14 +2491,14 @@ class ScriptUpdater {
           (line.tagName === 'var' || line.tagName === 'set');
 
         if (isMacroStart || isCallStart || isCaptureStart) {
-          const focus = this._extractFocusFromTag(processedLines, i);
+          this._extractFocusFromTag(processedLines, i);
           const scopeInfo = line._outputScopeInfo || (this._lastOutputScopeByStart ? this._lastOutputScopeByStart.get(i) : null);
           scopeStack.push({
             type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
             endTag: isMacroStart
               ? 'endmacro'
               : (isCallStart ? (line.tagName === 'call_assign' ? 'endcall_assign' : 'endcall') : `end${line.tagName}`),
-            focus,
+            focus: null,
             hasExplicitReturn: false,
             scopeInfo
           });
@@ -2555,33 +2515,7 @@ class ScriptUpdater {
           const scope = scopeStack[scopeStack.length - 1];
           if (scope && line.tagName === scope.endTag) {
             if (!scope.hasExplicitReturn) {
-              if (scope.scopeInfo && scope.focus && (scope.type === 'capture' || scope.type === 'macro' || scope.type === 'call')) {
-                const declaredOutputs = scope.scopeInfo.declaredOutputs;
-                const forceDirectCore = true;
-                const returnExpr = this._buildFocusedReturnExpressionForScope(
-                  scope.focus,
-                  scope.scopeInfo.conflictingNames,
-                  declaredOutputs,
-                  forceDirectCore
-                );
-                const returnIndentation = scope.scopeInfo?.indentation || line.indentation || '';
-                result.push({
-                  indentation: returnIndentation,
-                  lineType: 'TAG',
-                  tagName: 'return',
-                  codeContent: returnExpr,
-                  blockType: null,
-                  comments: [],
-                  isContinuation: false,
-                  isEmpty: false,
-                  isCommentOnly: false,
-                  continuesToNext: false,
-                  continuesFromPrev: false,
-                  tokens: [],
-                  isInjected: true,
-                  scriptText: `return ${returnExpr}`
-                });
-              } else if (scope.scopeInfo && !scope.focus && (scope.type === 'macro' || scope.type === 'call' || scope.type === 'capture')) {
+              if (scope.scopeInfo && (scope.type === 'macro' || scope.type === 'call' || scope.type === 'capture')) {
                 const declaredOutputs = scope.scopeInfo.declaredOutputs || new Set();
                 const requiredOutputs = scope.scopeInfo.requiredOutputs || new Set();
                 const includeOutputs = new Set();
@@ -2625,32 +2559,8 @@ class ScriptUpdater {
                   isInjected: true,
                   scriptText: `return ${returnExpr}`
                 });
-              } else if (scope.focus && scope.scopeInfo) {
-                const returnExpr = this._buildFocusedReturnExpressionForScope(
-                  scope.focus,
-                  scope.scopeInfo.conflictingNames,
-                  scope.scopeInfo.declaredOutputs,
-                  true
-                );
-                const returnIndentation = scope.scopeInfo?.indentation || line.indentation || '';
-                result.push({
-                  indentation: returnIndentation,
-                  lineType: 'TAG',
-                  tagName: 'return',
-                  codeContent: returnExpr,
-                  blockType: null,
-                  comments: [],
-                  isContinuation: false,
-                  isEmpty: false,
-                  isCommentOnly: false,
-                  continuesToNext: false,
-                  continuesFromPrev: false,
-                  tokens: [],
-                  isInjected: true,
-                  scriptText: `return ${returnExpr}`
-                });
               } else {
-                result.push(this._makeImplicitReturnLine(scope.focus, line.indentation));
+                result.push(this._makeImplicitReturnLine(null, line.indentation));
               }
             }
             scopeStack.pop();

@@ -43,7 +43,7 @@ function walk(ast, func, depthFirst) {
     }
   }
 
-  // The Root node is a NodeList, but it can have a focus property so do not special-case NodeList
+  // The Root node is a NodeList, but it has custom fields so do not special-case NodeList
   /*if (ast instanceof nodes.NodeList) {
     const children = mapCOW(ast.children, (node) => walk(node, func, depthFirst));
 

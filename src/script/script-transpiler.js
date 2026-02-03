@@ -25,13 +25,9 @@
  *     - Generic commands are passed through.
  *       `@db.insert(...)`     → `{% output db db.insert(...) %}`
  *
- * 4.  **Output Focus Directives with `:`**
- *     - Script-level directives control the final output format.
- *       `:data`               → `{% option focus="data" %}`
- *
- * 5.  **Block Assignment with `capture`**
- *     - `var user = capture :data ... endcapture` becomes a `var` block.
- *       → `{% var user :data %}{#...#}{% endvar %}`
+ * 4.  **Block Assignment with `capture`**
+ *     - `var user = capture ... endcapture` becomes a `var` block.
+ *       → `{% var user %}{#...#}{% endvar %}`
  *
  * 6.  **Implicit `do` Statements**
  *     - Any standalone expression becomes a `do` statement for executing logic.
@@ -47,8 +43,6 @@
  *
  * ```
  * // Assemble a user object from a profile
- * :data
- *
  * var userProfile = fetchProfile(1)
  *
  * @data.user.id = userProfile.id
@@ -63,8 +57,6 @@
  *
  * ```
  * {#- Assemble a user object from a profile -#}
- * {%- option focus="data" -%}
- *
  * {%- var userProfile = fetchProfile(1) -%}
  *
  * {%- output data data.set('user.id', userProfile.id) -%}
@@ -84,7 +76,7 @@
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
 
 //this is only temporary, the implementation is vibe-coded and will be removed later
-const ENABLE_INSERT_IMPLICIT_RETURN = true;
+const ENABLE_INSERT_IMPLICIT_RETURN = false;
 
 class ScriptTranspiler {
   constructor() {
@@ -694,7 +686,7 @@ class ScriptTranspiler {
    * @return {string} Combined code string
    */
   _tokensToCode(tokens) {
-    return tokens.map(token => token.value).join('').trimStart();
+    return tokens.map(token => token.value).join('');
   }
 
   /**
@@ -1059,7 +1051,31 @@ class ScriptTranspiler {
     if (!afterTrimmed) return false;
 
     const opStart = afterTrimmed[0];
-    if (opStart === '=') return false;
+    if (opStart === '=') {
+      if (!outputInfo.writable) {
+        throw new Error(`Output '${outputName}' is read-only in this scope at line ${lineIndex + 1}`);
+      }
+
+      const assignmentExpr = afterTrimmed.slice(1).trimStart();
+      if (!assignmentExpr) return false;
+
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = 'output_command';
+      parseResult.blockType = null;
+
+      if (outputType === 'data') {
+        parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}.set(null, ${assignmentExpr})`, false);
+      } else if (outputType === 'text' || outputType === 'value') {
+        parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}(${assignmentExpr})`, false);
+      } else {
+        return false;
+      }
+
+      if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
+        parseResult.requiredOutputs = new Set([outputType]);
+      }
+      return true;
+    }
     if (!['.', '(', '['].includes(opStart)) return false;
 
     if (this._isSnapshotCall(afterTrimmed)) {
@@ -1074,6 +1090,27 @@ class ScriptTranspiler {
       const parsed = this._parseDataCommandFromOutput(after, lineIndex);
 
       if (parsed.directCall) {
+        const argsPreview = (parsed.args || '').trimStart();
+        const hasExplicitPathArg = argsPreview.startsWith('null') || argsPreview.startsWith('[');
+        if (!hasExplicitPathArg && parsed.command) {
+          const genericSyntaxCommand = this._transpileDataCommand(parsed, false, outputName);
+          let commandContent = genericSyntaxCommand.substring(1);
+          if (parsed.append) {
+            if (parseResult.continuesToNext) {
+              parseResult.expectedContinuationEnd = parsed.append;
+            } else {
+              commandContent += parsed.append;
+            }
+          }
+          parseResult.lineType = 'TAG';
+          parseResult.tagName = 'output_command';
+          parseResult.blockType = null;
+          parseResult.codeContent = this._formatOutputCommand(outputType, commandContent, false);
+          if (outputType === 'data' || outputType === 'text' || outputType === 'value') {
+            parseResult.requiredOutputs = new Set([outputType]);
+          }
+          return true;
+        }
         // Direct method call on output root (e.g., myData.set(...)) - keep as-is.
         parseResult.lineType = 'TAG';
         parseResult.tagName = 'output_command';
@@ -1236,19 +1273,6 @@ class ScriptTranspiler {
     }
   }
 
-  _processFocusDirective(parseResult, lineIndex) {
-    // Handle :data/text/handleName output focus directive
-    const code = parseResult.codeContent.trim();
-    const focus = code.substring(1); // Remove : but keep the directive name
-    if (!focus) {
-      throw new Error(`Invalid output focus: "${parseResult.codeContent}"`);
-    }
-    parseResult.lineType = 'TAG';
-    parseResult.tagName = 'option';
-    parseResult.blockType = null;//no block
-    parseResult.codeContent = `focus="${focus}"`;
-  }
-
   _processExtern(parseResult, lineIndex) {
     const code = parseResult.codeContent.trim();
     const externContent = code.substring('extern'.length).trim();
@@ -1331,7 +1355,8 @@ class ScriptTranspiler {
 
     parseResult.isCommentOnly = !this._hasNonWhitespaceCode(codeTokens) && comments.length > 0;
     parseResult.isEmpty = line.trim() === '';
-    parseResult.codeContent = this._tokensToCode(codeTokens);
+    const rawCodeContent = this._tokensToCode(codeTokens);
+    parseResult.codeContent = rawCodeContent.trimStart();
 
     parseResult.comments = [];
     for (let i = 0; i < comments.length; i++) {
@@ -1351,8 +1376,6 @@ class ScriptTranspiler {
 
     if (code.startsWith('@')) {
       this._processOutputCommand(parseResult, lineIndex);
-    } else if (code.startsWith(':')) {
-      this._processFocusDirective(parseResult, lineIndex);
     } else if (firstWord === 'var') {
       this._processVar(parseResult, lineIndex);
     } else if (firstWord === 'extern') {
@@ -1440,7 +1463,7 @@ class ScriptTranspiler {
         if (prevLineIndex != -1 && (parseResults[prevLineIndex].continuesToNext || presult.continuesFromPrev || isOptionContinuation)) {
           //this is continuation
           if (isOptionContinuation) {
-            // Revert option tag to raw content for continuation (e.g. ": data" instead of focusing directive)
+            // Revert option tag to raw content for continuation.
             presult.codeContent = this._tokensToCode(this._filterOutComments(presult.tokens));
           }
 
@@ -1509,7 +1532,7 @@ class ScriptTranspiler {
 
     if (!processedLine.isContinuation && processedLine.lineType === 'TAG') {
       if (processedLine.tagName === 'option') {
-        codeContent = this._mapFocusDirective(codeContent);
+        throw new Error(`Option tags are not supported in scripts at line ${lineIndex + 1}`);
       } else if (processedLine.tagName === 'output_command') {
         codeContent = this._mapCoreOutputCall(codeContent);
       } else if (processedLine.tagName === 'data' || processedLine.tagName === 'text' || processedLine.tagName === 'value') {
@@ -1680,8 +1703,7 @@ class ScriptTranspiler {
     this._processContinuationsAndComments(processedLines);
 
     const hasExplicitReturn = this._hasTopLevelReturn(processedLines);
-    const focusDirective = this._getRootFocus(processedLines);
-    const forceRootOutputs = ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn && !focusDirective && !this._injectReturnedOutputsOnly;
+    const forceRootOutputs = ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn && !this._injectReturnedOutputsOnly;
 
     const withOutputDeclarations = this._insertOutputDeclarations(processedLines, {
       forceRootOutputs,
@@ -1713,9 +1735,7 @@ class ScriptTranspiler {
     const rootConflicts = this._getRootConflicts();
 
     if (ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn) {
-      const returnExpr = focusDirective
-        ? this._buildFocusedReturnExpression(focusDirective, rootConflicts)
-        : this._buildUnfocusedReturnExpression(rootConflicts);
+      const returnExpr = this._buildUnfocusedReturnExpression(rootConflicts);
       const implicitReturn = `{% return ${returnExpr} %}`;
       if (output.length > 0) {
         output += '\n';
@@ -1758,27 +1778,8 @@ class ScriptTranspiler {
     return false;
   }
 
-  _extractFocusFromTag(processedLines, startIndex) {
-    let combined = processedLines[startIndex].codeContent || '';
-    for (let i = startIndex + 1; i < processedLines.length; i++) {
-      const line = processedLines[i];
-      if (!line.isContinuation) break;
-      if (line.codeContent) {
-        combined += ' ' + line.codeContent.trim();
-      }
-    }
-
-    const match = combined.match(/:\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/);
-    return match ? match[1] : null;
-  }
-
-  _makeImplicitReturnLine(focus, indentation) {
-    let codeContent;
-    if (focus) {
-      codeContent = `${this._mapCoreOutputTarget(focus)}.snapshot()`;
-    } else {
-      codeContent = this._buildUnfocusedReturnExpression(this._getRootConflicts());
-    }
+  _makeImplicitReturnLine(indentation) {
+    const codeContent = this._buildUnfocusedReturnExpression(this._getRootConflicts());
     return {
       indentation: indentation || '',
       lineType: 'TAG',
@@ -1793,20 +1794,6 @@ class ScriptTranspiler {
       continuesFromPrev: false,
       tokens: []
     };
-  }
-
-  _getRootFocus(processedLines) {
-    let focusDirective = null;
-    processedLines.forEach((line) => {
-      if (line.tagName !== 'option') {
-        return;
-      }
-      const match = line.codeContent && line.codeContent.match(/focus\s*=\s*["']([^"']+)["']/);
-      if (match && match[1]) {
-        focusDirective = match[1];
-      }
-    });
-    return focusDirective;
   }
 
   _getRootConflicts() {
@@ -1851,50 +1838,6 @@ class ScriptTranspiler {
     const mapped = this._mapCoreOutputName(match[2]);
     if (mapped === match[2]) return callString;
     return `${match[1]}${mapped}${match[3]}`;
-  }
-
-  _mapFocusDirective(codeContent) {
-    if (!this._useCoreOutputAliases) {
-      return codeContent;
-    }
-    if (!codeContent) return codeContent;
-    return codeContent.replace(
-      /(focus\s*=\s*["'])(data|text|value)(["'])/,
-      (match, prefix, name, suffix) => `${prefix}${this._mapCoreOutputName(name)}${suffix}`
-    );
-  }
-
-  _buildFocusedReturnExpression(focusDirective, conflicts) {
-    if (!focusDirective) return 'undefined';
-    if (focusDirective === 'data' || focusDirective === 'text' || focusDirective === 'value') {
-      const target = this._getSnapshotTargetName(focusDirective, conflicts);
-      return `${target}.snapshot()`;
-    }
-    const rootScope = this._lastRootOutputScope;
-    if (rootScope && rootScope.declaredOutputs && rootScope.declaredOutputs.has(focusDirective)) {
-      const target = this._getSnapshotTargetName(focusDirective, conflicts);
-      return `${target}.snapshot()`;
-    }
-    throw new Error(`Output focus '${focusDirective}' must be declared (e.g. 'sink ${focusDirective} = ...')`);
-  }
-
-  _buildFocusedReturnExpressionForScope(focusDirective, conflicts, declaredOutputs, forceDirectCore = false) {
-    if (!focusDirective) return 'undefined';
-    if (focusDirective === 'data' || focusDirective === 'text' || focusDirective === 'value') {
-      if (forceDirectCore || (declaredOutputs && declaredOutputs.has(focusDirective))) {
-        const target = this._getSnapshotTargetName(focusDirective, conflicts);
-        return `${target}.snapshot()`;
-      }
-      if (forceDirectCore) {
-        return 'undefined';
-      }
-      return `${this._mapCoreOutputTarget(`@${focusDirective}`)}.snapshot()`;
-    }
-    if (declaredOutputs && declaredOutputs.has(focusDirective)) {
-      const target = this._getSnapshotTargetName(focusDirective, conflicts);
-      return `${target}.snapshot()`;
-    }
-    throw new Error(`Output focus '${focusDirective}' must be declared in this scope (e.g. 'sink ${focusDirective} = ...')`);
   }
 
   _buildUnfocusedReturnExpression(conflicts) {
@@ -1950,12 +1893,6 @@ class ScriptTranspiler {
 
   _getOutputsToInject(scope) {
     const required = new Set();
-    if (this._injectReturnedOutputsOnly && scope.focus) {
-      if (scope.focus === 'data' || scope.focus === 'text' || scope.focus === 'value') {
-        required.add(scope.focus);
-      }
-      return Array.from(required);
-    }
     // Only auto-inject core outputs. Sinks require explicit initializers and
     // custom command handlers should be accessed via declared sinks.
     (scope.requiredOutputs || []).forEach((name) => {
@@ -1963,9 +1900,6 @@ class ScriptTranspiler {
         required.add(name);
       }
     });
-    if (scope.focus && (scope.focus === 'data' || scope.focus === 'text' || scope.focus === 'value')) {
-      required.add(scope.focus);
-    }
     return Array.from(required);
   }
 
@@ -2019,8 +1953,7 @@ class ScriptTranspiler {
 
   _parseCallParams(codeContent) {
     if (!codeContent) return [];
-    const withoutFocus = codeContent.replace(/:\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/, '').trim();
-    const match = withoutFocus.match(/\)\s*\(([^)]*)\)\s*$/);
+    const match = codeContent.match(/\)\s*\(([^)]*)\)\s*$/);
     if (!match) return [];
     const paramsStr = match[1].trim();
     if (!paramsStr) return [];
@@ -2035,7 +1968,6 @@ class ScriptTranspiler {
       startIndex: 0,
       endIndex: processedLines.length,
       endTag: null,
-      focus: this._getRootFocus(processedLines),
       declaredOutputs: new Set(),
       requiredOutputs: new Set(),
       conflictingNames: new Set(),
@@ -2059,7 +1991,6 @@ class ScriptTranspiler {
           (line.tagName === 'var' || line.tagName === 'set');
 
         if (isMacroStart || isCallStart || isCaptureStart) {
-          const focus = this._extractFocusFromTag(processedLines, i);
           const scope = {
             type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
             startIndex: i,
@@ -2067,7 +1998,6 @@ class ScriptTranspiler {
             endTag: isMacroStart
               ? 'endmacro'
               : (isCallStart ? (line.tagName === 'call_assign' ? 'endcall_assign' : 'endcall') : `end${line.tagName}`),
-            focus,
             declaredOutputs: new Set(),
             requiredOutputs: new Set(),
             conflictingNames: new Set(),
@@ -2238,14 +2168,12 @@ class ScriptTranspiler {
           (line.tagName === 'var' || line.tagName === 'set');
 
         if (isMacroStart || isCallStart || isCaptureStart) {
-          const focus = this._extractFocusFromTag(processedLines, i);
           const scopeInfo = this._lastOutputScopeByStart ? this._lastOutputScopeByStart.get(i) : null;
           scopeStack.push({
             type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
             endTag: isMacroStart
               ? 'endmacro'
               : (isCallStart ? (line.tagName === 'call_assign' ? 'endcall_assign' : 'endcall') : `end${line.tagName}`),
-            focus,
             hasExplicitReturn: false,
             scopeInfo
           });
@@ -2262,30 +2190,7 @@ class ScriptTranspiler {
           const scope = scopeStack[scopeStack.length - 1];
           if (scope && line.tagName === scope.endTag) {
             if (!scope.hasExplicitReturn) {
-              if (scope.scopeInfo && scope.focus && (scope.type === 'capture' || scope.type === 'macro' || scope.type === 'call')) {
-                const declaredOutputs = scope.scopeInfo.declaredOutputs;
-                const forceDirectCore = true;
-                const returnExpr = this._buildFocusedReturnExpressionForScope(
-                  scope.focus,
-                  scope.scopeInfo.conflictingNames,
-                  declaredOutputs,
-                  forceDirectCore
-                );
-                result.push({
-                  indentation: line.indentation || '',
-                  lineType: 'TAG',
-                  tagName: 'return',
-                  codeContent: returnExpr,
-                  blockType: null,
-                  comments: [],
-                  isContinuation: false,
-                  isEmpty: false,
-                  isCommentOnly: false,
-                  continuesToNext: false,
-                  continuesFromPrev: false,
-                  tokens: []
-                });
-              } else if (scope.scopeInfo && !scope.focus && (scope.type === 'macro' || scope.type === 'call' || scope.type === 'capture')) {
+              if (scope.scopeInfo && (scope.type === 'macro' || scope.type === 'call' || scope.type === 'capture')) {
                 const declaredOutputs = scope.scopeInfo.declaredOutputs || new Set();
                 const requiredOutputs = scope.scopeInfo.requiredOutputs || new Set();
                 const includeOutputs = new Set();
@@ -2326,29 +2231,8 @@ class ScriptTranspiler {
                   continuesFromPrev: false,
                   tokens: []
                 });
-              } else if (scope.focus && scope.scopeInfo) {
-                const returnExpr = this._buildFocusedReturnExpressionForScope(
-                  scope.focus,
-                  scope.scopeInfo.conflictingNames,
-                  scope.scopeInfo.declaredOutputs,
-                  true
-                );
-                result.push({
-                  indentation: line.indentation || '',
-                  lineType: 'TAG',
-                  tagName: 'return',
-                  codeContent: returnExpr,
-                  blockType: null,
-                  comments: [],
-                  isContinuation: false,
-                  isEmpty: false,
-                  isCommentOnly: false,
-                  continuesToNext: false,
-                  continuesFromPrev: false,
-                  tokens: []
-                });
               } else {
-                result.push(this._makeImplicitReturnLine(scope.focus, line.indentation));
+                result.push(this._makeImplicitReturnLine(line.indentation));
               }
             }
             scopeStack.pop();

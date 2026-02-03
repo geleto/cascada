@@ -1,5 +1,8 @@
 # Cascada Template Documentation
 
+> **Note:** Output focus directives (`:data`, `:text`, `:value`, and custom `:handler` focus) have been removed.
+> Use explicit `return` statements (e.g., `return data.snapshot()`) to shape results in scripts.
+
 **Reference Documentation:**
 
 * [Cascada Script Documentation](https://geleto.github.io/cascada-script/) — Complete reference for Cascada Script features

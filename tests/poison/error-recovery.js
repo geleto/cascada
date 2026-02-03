@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   'use strict';
 
   var expect;
@@ -404,7 +404,7 @@
           {% if heal and value is error %}
             {% set value = 42 %}
           {% endif %}
-          {% set obj = {key: value} %}
+          {% set obj = { key: value } %}
           {{ obj.key }}
         `;
 
@@ -540,14 +540,15 @@
           }
         };
         const script = `
-          :data
+          data data
           for value in asyncItems()
             if value is error
               value = "healed-async-for"
             endif
-            @data.values.push(value)
+            data.values.push(value)
           endfor
-        `;
+
+          return data.snapshot()`;
 
         const data = await env.renderScriptString(script, context);
         expect(data.values).to.eql(['one', 'healed-async-for', 'two']);
@@ -562,14 +563,15 @@
           }
         };
         const script = `
-        :data
+        data data
         each entry in series()
           if entry is error
             entry = "healed-async-each"
           endif
-          @data.values.push(entry)
+          data.values.push(entry)
         endeach
-        `;
+
+        return data.snapshot()`;
 
         const data = await env.renderScriptString(script, context);
         expect(data.values).to.eql(['uno', 'healed-async-each', 'dos']);
@@ -606,13 +608,14 @@
 
       it('should recover from error in simple assignment', async () => {
         const script = `
-          :data
+          data data
           var value = getValue()
           if heal and value is error
             value = "fallback"
           endif
-          @data.result = value
-        `;
+          data.result = value
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -635,14 +638,15 @@
 
       it('should recover from error in nested @data output assignment', async () => {
         const script = `
-          :data
+          data data
           var user = getUser()
           if heal and user is error
             user = {name: "Guest", id: 0}
           endif
-          @data.user.name = user.name
-          @data.user.id = user.id
-        `;
+          data.user.name = user.name
+          data.user.id = user.id
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -666,14 +670,15 @@
 
       it('should recover from error in @data output with computed expression', async () => {
         const script = `
-          :data
+          data data
           var price = getPrice()
           if heal and price is error
             price = 100
           endif
-          @data.total = price * 1.2
-          @data.currency = "USD"
-        `;
+          data.total = price * 1.2
+          data.currency = "USD"
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -697,13 +702,14 @@
 
       it('should recover from error in @data output with filter', async () => {
         const script = `
-          :data
+          data data
           var text = getText()
           if heal and text is error
             text = "default text"
           endif
-          @data.message = text | upper
-        `;
+          data.message = text | upper
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -726,15 +732,16 @@
 
       it('should recover from error in @data array output', async () => {
         const script = `
-          :data
+          data data
           var items = getItems()
           if heal and items is error
             items = ["item1", "item2"]
           endif
           for item in items
-            @data.list.push(item)
+            data.list.push(item)
           endfor
-        `;
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -757,13 +764,14 @@
 
       it('should recover from error in @data output with object construction', async () => {
         const script = `
-          :data
+          data data
           var config = getConfig()
           if heal and config is error
             config = {theme: "light", lang: "en"}
           endif
-          @data.settings = { theme: config.theme, language: config.lang, version: "1.0" }
-        `;
+          data.settings = { theme: config.theme, language: config.lang, version: "1.0" }
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -788,15 +796,16 @@
 
       it('should recover from error in multiple @data outputs with partial errors', async () => {
         const script = `
-          :data
+          data data
           var validData = getValid()
           var errorData = getError()
           if heal and errorData is error
             errorData = "recovered"
           endif
-          @data.valid = validData
-          @data.recovered = errorData
-        `;
+          data.valid = validData
+          data.recovered = errorData
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -830,15 +839,16 @@
 
       it('should recover from error in sequential operation chain', async () => {
         const script = `
-          :data
+          data data
           var step1 = ops!.getStep1()
           ops!!
           if heal and step1 is error
             step1 = "step1-fallback"
           endif
           var step2 = ops!.getStep2(step1)
-          @data.result = step2
-        `;
+          data.result = step2
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -869,16 +879,17 @@
 
       it('should recover from error in sequential database writes', async () => {
         const script = `
-          :data
+          data data
           var user = db!.createUser()
           if heal and user is error
             user = {id: 999, name: "FallbackUser"}
           endif
           db!!
           var profile = db!.createProfile(user.id)
-          @data.user = user
-          @data.profile = profile
-        `;
+          data.user = user
+          data.profile = profile
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -910,7 +921,7 @@
 
       it('should recover from error in sequential API calls', async () => {
         const script = `
-          :data
+          data data
           var token = api!.authenticate()
           if heal and token is error
             token = "fallback-token"
@@ -918,8 +929,9 @@
           api!!
           var fetched = api!.fetchData(token)
           var processed = api!.processData(fetched)
-          @data.result = processed
-        `;
+          data.result = processed
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -954,7 +966,7 @@
 
       it('should recover from error in middle of sequential chain', async () => {
         const script = `
-          :data
+          data data
           var step1 = ops!.getStep1()
           var step2 = ops!.getStep2()
           if heal and step2 is error
@@ -962,8 +974,9 @@
           endif
           ops!!
           var step3 = ops!.getStep3(step1, step2)
-          @data.result = step3
-        `;
+          data.result = step3
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -999,7 +1012,7 @@
 
       it('should recover from error in sequential loop iterations', async () => {
         const script = `
-          :data
+          data data
           var items = ops!.getItems()
           if heal and items is error
             items = [1, 2, 3]
@@ -1007,9 +1020,10 @@
           ops!!
           for item in items
             var processed = ops!.processItem(item)
-            @data.results.push(processed)
+            data.results.push(processed)
           endfor
-        `;
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -1040,7 +1054,7 @@
 
       it('should recover from error in conditional sequential operations', async () => {
         const script = `
-          :data
+          data data
           var condition = ops!.checkCondition()
           if heal and condition is error
             condition = true
@@ -1052,8 +1066,9 @@
           else
             result = ops!.executeFalse()
           endif
-          @data.result = result
-        `;
+          data.result = result
+
+          return data.snapshot()`;
 
         const context = {
           heal: true,
@@ -1110,16 +1125,17 @@
         };
 
         const script = `
-:data
+data data
 var res1 = db!.insert('bad')
 var res2 = db!.insert('good')
 var res3 = db!!.rollback()
 var res4 = db!.insert('after')
-@data.log = db.getLog()
-@data.res2_poison = res2 is error
-@data.res3_poison = res3 is error
-@data.res3_val = res3
-`;
+data.log = db.getLog()
+data.res2_poison = res2 is error
+data.res3_poison = res3 is error
+data.res3_val = res3
+
+return data.snapshot()`;
 
         const result = await env.renderScriptString(script, context);
 
@@ -1141,9 +1157,9 @@ var res4 = db!.insert('after')
         };
 
         const script = `
-        :data
 
         // Poison the path
+        data data
         var _ = service!.doSomething()
 
         // Verify it is poisoned (next call skipped)
@@ -1153,9 +1169,10 @@ var res4 = db!.insert('after')
         service!!
 
         // Should work now
-        @data.status = service.status
-        @data.skipped_is_poison = skip is error
-      `;
+        data.status = service.status
+        data.skipped_is_poison = skip is error
+
+        return data.snapshot()`;
 
         const result = await env.renderScriptString(script, context);
 
@@ -1176,10 +1193,11 @@ var res4 = db!.insert('after')
 
         // Normal call, then repair call on generic healthy state
         const script = `
-        db!.setStatus('step1')
-        db!!.setStatus('step2')
-        var finalStatus = db.status
-      `;
+          db!.setStatus('step1')
+          db!!.setStatus('step2')
+          var finalStatus = db.status
+          return finalStatus
+        `;
 
         await env.renderScriptString(script, context);
         expect(context.db.status).to.equal('step2');
@@ -1203,8 +1221,8 @@ var res4 = db!.insert('after')
 
         // Poison -> Repair -> Work -> Poison -> Repair -> Work
         const script = `
-        :data
         // Cycle 1
+        data data
         var fail1 = service!.fail()
         var rep1 = service!!.recover()
         var work1 = service!.work('working1')
@@ -1214,11 +1232,12 @@ var res4 = db!.insert('after')
         var rep2 = service!!.recover()
         var work2 = service!.work('working2')
 
-        @data.rep1 = rep1
-        @data.work1 = work1
-        @data.rep2 = rep2
-        @data.work2 = work2
-      `;
+        data.rep1 = rep1
+        data.work1 = work1
+        data.rep2 = rep2
+        data.work2 = work2
+
+        return data.snapshot()`;
 
         const result = await env.renderScriptString(script, context);
 
@@ -1232,7 +1251,7 @@ var res4 = db!.insert('after')
         const context = {
           processor: {
             processed: [],
-            fail: function () { throw new Error('fail'); },
+            fail: function () { return false; },
             recover: function () { return 'recovered'; },
             process: function (val) {
               this.processed.push(val);
@@ -1245,14 +1264,14 @@ var res4 = db!.insert('after')
         // Using 'set' or implicit assignment might be safer, but just calling the method is best if allowed.
         // Assuming expression statements are allowed in scripts (which they usually are).
         const script = `
-        var items = [1, 2, 3]
-        for item in items
-          // Just call them for side effects
-          processor!.fail()
-          processor!!.recover()
-          processor!.process(item)
-        endfor
-      `;
+          var items = [1, 2, 3]
+          for item in items
+            processor!.fail()
+            processor!!.recover()
+            processor!.process(item)
+          endfor
+          return processor.processed
+        `;
 
         await env.renderScriptString(script, context);
         expect(context.processor.processed).to.eql([1, 2, 3]);
@@ -1278,28 +1297,29 @@ var res4 = db!.insert('after')
         };
 
         const script = `
-        :data
         // 1. Call a method that throws, poisoning the sequence lock '!service'
         // We use 'is error' to catch the runtime error and avoid script termination
-        @data.initialCallFailed = service!.badMethod() is error
+        data data
+        data.initialCallFailed = service!.badMethod() is error
 
         // 2. Check if the sequence is in error state using obj.prop! is error
         // This confirms the lock '!service' itself is poisoned
-        @data.isPoisoned = service! is error
+        data.isPoisoned = service! is error
 
         // 3. Verify normal lookup fails/is skipped (poison propagation)
         // using a standard call without repair. Accessing it directly would throw, so we check 'is error'
-        @data.skippedHadError = service!.reset() is error
+        data.skippedHadError = service!.reset() is error
 
         // 4. Manual repair to prove we can continue
         service!!
 
         // 5. Verify we are good again
-        @data.finalResult = service!.goodMethod()
+        data.finalResult = service!.goodMethod()
 
         // 6. Verify healthy check returns false
-        @data.isPoisonedHealthy = service! is error
-      `;
+        data.isPoisonedHealthy = service! is error
+
+        return data.snapshot()`;
 
         const result = await env.renderScriptString(script, context);
 
@@ -1315,11 +1335,12 @@ var res4 = db!.insert('after')
     describe('Sequential Syntax Strictness and Logic', () => {
       it('should detect poison on a sequential path after a failure', async () => {
         const script = `
-          :data
+          data data
           service!.fail()
 
-          @data.isErr = service! is error
-        `;
+          data.isErr = service! is error
+
+          return data.snapshot()`;
 
         const ctx = {
           service: {
@@ -1334,11 +1355,12 @@ var res4 = db!.insert('after')
 
       it('should detect poison on a sequential path via strict property access after failure', async () => {
         const script = `
-          :data
+          data data
           service.db!.fail()
 
-          @data.isErr = service.db! is error
-        `;
+          data.isErr = service.db! is error
+
+          return data.snapshot()`;
 
         const ctx = {
           service: {
@@ -1354,9 +1376,10 @@ var res4 = db!.insert('after')
 
       it('should throw compilation error for non-existing/unused sequence path', async () => {
         const script = `
-          :data
-          @data.isErr = service! is error
-        `;
+          data data
+          data.isErr = service! is error
+
+          return data.snapshot()`;
 
         try {
           await env.renderScriptString(script, { service: {} });
@@ -1368,10 +1391,11 @@ var res4 = db!.insert('after')
 
       it('should allow successful sequence operations implicitly (healthy path)', async () => {
         const script = `
-          :data
+          data data
           service!.ok()
-          @data.isErr = service! is error
-        `;
+          data.isErr = service! is error
+
+          return data.snapshot()`;
 
         const ctx = {
           service: {
@@ -1400,10 +1424,11 @@ var res4 = db!.insert('after')
 
       it('should verify scope independence: parent lock is not created by child lock', async () => {
         const script = `
-            :data
+            data data
             service.db!.fail()
-            @data.serviceErr = service! is error
-          `;
+            data.serviceErr = service! is error
+
+            return data.snapshot()`;
 
         const ctx = {
           service: {
@@ -1423,10 +1448,11 @@ var res4 = db!.insert('after')
 
       it('should verify scope independence: child lock IS created and checkable', async () => {
         const script = `
-            :data
+            data data
             service.db!.fail()
-            @data.dbErr = service.db! is error
-          `;
+            data.dbErr = service.db! is error
+
+            return data.snapshot()`;
 
         const ctx = {
           service: {
@@ -1446,12 +1472,13 @@ var res4 = db!.insert('after')
         // 3. Repair with !!
         // 4. Check is error -> false
         const script = `
-          :data
+          data data
           service!.fail()
-          @data.step1 = service! is error
+          data.step1 = service! is error
           service!!.repair()
-          @data.step2 = service! is error
-        `;
+          data.step2 = service! is error
+
+          return data.snapshot()`;
 
         const ctx = {
           service: {
@@ -1467,12 +1494,13 @@ var res4 = db!.insert('after')
 
       it('should verify scope independence: parent lock defined does not create child lock', async () => {
         const script = `
-            :data
+            data data
             service!.fail()
             // !service is defined, but !service.db is NOT.
             // Docs say !paths are strict.
-            @data.dbErr = service.db! is error
-        `;
+            data.dbErr = service.db! is error
+
+            return data.snapshot()`;
 
         const ctx = {
           service: {

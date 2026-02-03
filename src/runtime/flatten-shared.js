@@ -27,19 +27,6 @@ function getTextOutputFromState(state, name) {
   return state.textOutput[key];
 }
 
-function ensureFocusOutputExists(context, state, focusOutput, outputTypesOverride = null) {
-  if (!focusOutput) return;
-  const env = context.env;
-  const outputTypes = outputTypesOverride || state.outputTypes || null;
-  const handlerExists = isTextOutputNameFromState(state, focusOutput) ||
-    (outputTypes && outputTypes[focusOutput]) ||
-    env.commandHandlerInstances[focusOutput] ||
-    env.commandHandlerClasses[focusOutput];
-  if (!handlerExists) {
-    throw new Error(`Data output focus target not found: '${focusOutput}'`);
-  }
-}
-
 function buildFinalResultFromState(state) {
   const finalResult = {};
   const defaultTextArr = state.textOutput.text || [];
@@ -66,23 +53,8 @@ function buildFinalResultFromState(state) {
   return finalResult;
 }
 
-function resolveOutputNameReturn(state, outputName, focusOutput, sharedState) {
+function resolveOutputValue(state, outputName) {
   const isText = isTextOutputNameFromState(state, outputName);
-  if (!sharedState && !focusOutput) {
-    if (isText) {
-      const textArr = state.textOutput[outputName] || [];
-      const key = outputName === 'text' ? 'text' : outputName;
-      return { [key]: textArr.join('') };
-    }
-    const handler = state.handlerInstances[outputName];
-    if (!handler) {
-      return { [outputName]: undefined };
-    }
-    return {
-      [outputName]: typeof handler.getReturnValue === 'function' ? handler.getReturnValue() : handler
-    };
-  }
-
   if (isText) {
     const textArr = state.textOutput[outputName] || [];
     return textArr.join('');
@@ -109,8 +81,7 @@ module.exports = {
   resolveOutputTypeFromState,
   isTextOutputNameFromState,
   getTextOutputFromState,
-  ensureFocusOutputExists,
   buildFinalResultFromState,
-  resolveOutputNameReturn,
+  resolveOutputValue,
   ensureBufferScopeMetadata
 };

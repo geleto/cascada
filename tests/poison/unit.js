@@ -1121,7 +1121,7 @@
       });
     });
 
-    describe('Focus output handling', () => {
+    describe('Output name handling', () => {
       let context;
 
       beforeEach(() => {
@@ -1132,7 +1132,7 @@
         };
       });
 
-      it('should handle focus output with poison', () => {
+      it('should handle output name with poison', () => {
         const poison = createPoison(new Error('Focus poison'));
         const arr = [poison, 'text'];
 
@@ -1144,7 +1144,7 @@
         }
       });
 
-      it('should return focused output when no poison', () => {
+      it('should return text output when no poison', () => {
         const arr = ['Hello', ' ', 'World'];
         const result = runtime.flattenBuffer(arr, context, 'text');
 

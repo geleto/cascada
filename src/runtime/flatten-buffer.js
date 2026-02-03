@@ -4,23 +4,21 @@ const { CommandBuffer } = require('./buffer');
 const { flattenText } = require('./flatten-text');
 const { flattenCommands, flattenCommandBuffer } = require('./flatten-commands');
 const { PoisonError } = require('./errors');
-const { createFlattenState, buildFinalResultFromState } = require('./flatten-shared');
+const { createFlattenState, buildFinalResultFromState, resolveOutputValue } = require('./flatten-shared');
 
 // the below comments may not be exactly correct right now
-// outputName only (no focusOutput) => {outputName: ...} (wrapped)
-// focusOutput only (no outputName) => value (unwrapped)
-// both provided => value (unwrapped, focusOutput used)
+// outputName only => value (unwrapped)
 // neither provided, no context => this is a text flattening => string
 // neither provided, context  => ERROR (no longer supported)
-function flattenBuffer(arr, context = null, focusOutput = null) {
-  if (context && !focusOutput) {
+function flattenBuffer(arr, context = null, outputName = null) {
+  if (context && !outputName) {
     //throw new Error('flattenBuffer requires either focusOutput or outputName parameter');
   }
   if (context && arr instanceof CommandBuffer) {
-    return flattenCommandBufferCached(arr, context, focusOutput);
+    return flattenCommandBufferCached(arr, context, outputName);
   }
 
-  return doFlattenBuffer(arr, context, focusOutput);
+  return doFlattenBuffer(arr, context, outputName);
 }
 
 // @TODO - remove this once proper snapshot() is implemented for outputs
@@ -28,27 +26,18 @@ function flattenBuffer(arr, context = null, focusOutput = null) {
 // CommandBuffer more than once (e.g. implicit return + explicit snapshots).
 // Flattening must be idempotent w.r.t. executing output commands, so we cache
 // the flattened state per CommandBuffer instance.
-function flattenCommandBufferCached(buffer, context, focusOutput) {
+function flattenCommandBufferCached(buffer, context, outputName) {
   const resolveFromState = (state) => {
     if (state && state.collectedErrors && state.collectedErrors.length > 0) {
       throw new PoisonError(state.collectedErrors);
     }
     const finalResult = buildFinalResultFromState(state || {});
 
-    if (!focusOutput) {
+    if (!outputName) {
       return finalResult;
     }
 
-    // Match flattenCommandBuffer focused return semantics.
-    if (focusOutput === 'text') {
-      const textArr = state.textOutput && state.textOutput.text ? state.textOutput.text : [];
-      const textResult = Array.isArray(textArr) ? textArr.join('') : '';
-      return textResult ? textResult : undefined;
-    }
-    if (state.textOutput && state.textOutput[focusOutput]) {
-      return state.textOutput[focusOutput].join('');
-    }
-    return finalResult[focusOutput];
+    return resolveOutputValue(state || {}, outputName);
   };
 
   if (buffer._flattenState) {
@@ -67,7 +56,7 @@ function flattenCommandBufferCached(buffer, context, focusOutput) {
   // Use a properly-shaped shared state so flattening logic can mutate it
   // without re-initializing on each recursive call.
   const sharedState = createFlattenState(null, buffer._outputTypes || null);
-  const computed = doFlattenBuffer(buffer, context, null, null, sharedState);
+  const computed = doFlattenBuffer(buffer, context, null, sharedState);
 
   const store = (state) => {
     buffer._flattenState = state;
@@ -87,17 +76,17 @@ function flattenCommandBufferCached(buffer, context, focusOutput) {
   return resolveFromState(state);
 }
 
-function doFlattenBuffer(arr, context = null, focusOutput = null, outputName = null, sharedState = null) {
+function doFlattenBuffer(arr, context = null, outputName = null, sharedState = null) {
 
   if (arr instanceof CommandBuffer) {
-    return flattenCommandBuffer(arr, context, focusOutput, outputName, sharedState, doFlattenBuffer);
+    return flattenCommandBuffer(arr, context, outputName, sharedState, doFlattenBuffer);
   }
 
   if (!context) {
     return flattenText(arr, outputName, sharedState, doFlattenBuffer);
   }
 
-  return flattenCommands(arr, context, focusOutput, outputName, sharedState, doFlattenBuffer);
+  return flattenCommands(arr, context, outputName, sharedState, doFlattenBuffer);
 }
 
 module.exports = {

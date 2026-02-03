@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Integration Tests for RuntimePromise Issues
  *
  * These tests demonstrate the 5 places where RuntimePromise wrappers are needed.
@@ -103,9 +103,11 @@
         });
 
         const script = `
+        data data
         var fetched = fetchData()
-        @data.result = fetched
-      `;
+        data.result = fetched
+
+        return {data: data.snapshot() }`;
 
         try {
           await env.renderScriptString(script, {}, { output: 'data' });
@@ -113,7 +115,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Fetch failed');
-          expect(err.errors[0].lineno).to.equal(2); // Line with fetchData()
+          expect(err.errors[0].lineno).to.equal(3); // Line with fetchData()
         }
       });
 
@@ -318,9 +320,11 @@
         };
 
         const script = `
+        data data
         var key = config.apiKey
-        @data.key = key
-      `;
+        data.key = key
+
+        return {data: data.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -328,7 +332,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('API key fetch failed');
-          expect(err.errors[0].lineno).to.equal(2); // Line with config.apiKey
+          expect(err.errors[0].lineno).to.equal(3); // Line with config.apiKey
         }
       });
 
@@ -344,9 +348,11 @@
         };
 
         const script = `
+        data data
         var cfgValue = config.asyncValue
-        @data.value = cfgValue
-      `;
+        data.value = cfgValue
+
+        return {data: data.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -354,7 +360,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Config getter failed');
-          expect(err.errors[0].lineno).to.equal(2);
+          expect(err.errors[0].lineno).to.equal(3);
         }
       });
 
@@ -366,10 +372,12 @@
         };
 
         const script = `
+        data data
         if flags.enabled
-          @data.message = "Enabled"
+          data.message = "Enabled"
         endif
-      `;
+
+        return {data: data.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -377,7 +385,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Feature flag check failed');
-          expect(err.errors[0].lineno).to.equal(2);
+          expect(err.errors[0].lineno).to.equal(3);
         }
       });
 
@@ -391,9 +399,11 @@
         };
 
         const script = `
+        data data
         var endpoint = api.endpoints.users
-        @data.endpoint = endpoint
-      `;
+        data.endpoint = endpoint
+
+        return {data: data.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -401,7 +411,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Endpoint config failed');
-          expect(err.errors[0].lineno).to.equal(2);
+          expect(err.errors[0].lineno).to.equal(3);
         }
       });
     });
@@ -527,9 +537,11 @@
         };
 
         const script = `
+        data data
         var tx = db!.transaction()
-        @data.tx = tx
-      `;
+        data.tx = tx
+
+        return {data: data.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -537,7 +549,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Transaction failed');
-          expect(err.errors[0].lineno).to.equal(2);
+          expect(err.errors[0].lineno).to.equal(3);
         }
       });
 
@@ -553,9 +565,11 @@
         };
 
         const script = `
+        data data
         var state = service!.asyncState()
-        @data.state = state
-      `;
+        data.state = state
+
+        return {data: data.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -563,7 +577,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('State getter failed');
-          expect(err.errors[0].lineno).to.equal(2);
+          expect(err.errors[0].lineno).to.equal(3);
         }
       });
 
@@ -577,9 +591,11 @@
         };
 
         const script = `
+        data data
         var cached = system.cache!.data()
-        @data.cached = cached
-      `;
+        data.cached = cached
+
+        return {data: data.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -587,7 +603,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Cache read failed');
-          expect(err.errors[0].lineno).to.equal(2);
+          expect(err.errors[0].lineno).to.equal(3);
         }
       });
 
@@ -599,10 +615,12 @@
         };
 
         const script = `
+        data data
         if auth!.token()
-          @data.authorized = true
+          data.authorized = true
         endif
-      `;
+
+        return {data: data.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -610,7 +628,7 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
           expect(err.errors[0].message).to.contain('Token validation failed');
-          expect(err.errors[0].lineno).to.equal(2);
+          expect(err.errors[0].lineno).to.equal(3);
         }
       });
     });
@@ -648,11 +666,15 @@
         });
 
         const script = `
+        text text
         var result = capture
-          @text(asyncData())
+          text text
+          text(asyncData())
+          return { text: text.snapshot() }
         endcapture
-        @text(result)
-      `;
+        text(result)
+
+        return { text: text.snapshot() }`;
 
         try {
           await env.renderScriptString(script);
@@ -776,11 +798,13 @@
         };
 
         const script = `
+        data data
         var result1 = service!.firstOp()
         var result2 = service!.secondOp()
-        @data.result1 = result1
-        @data.result2 = result2
-      `;
+        data.result1 = result1
+        data.result2 = result2
+
+        return {data: data.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -791,7 +815,7 @@
           // Should only have one error - from the first operation
           expect(err.errors.length).to.equal(1);
           expect(err.errors[0].message).to.contain('First script operation failed');
-          expect(err.errors[0].lineno).to.equal(2); // Line with service!.firstOp()
+          expect(err.errors[0].lineno).to.equal(3); // Line with service!.firstOp()
 
           // Should NOT contain error from second operation
           expect(err.errors[0].message).to.not.contain('Second script operation failed');

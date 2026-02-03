@@ -103,29 +103,8 @@ class CompileBuffer {
    * Handles legacy @data, @text, and custom handler syntax
    */
   compileOutputCommand(node, frame) {
-    // Extract static path once for both focus detection and compilation
+    // Extract static path once for validation and compilation
     const staticPath = this.compiler.sequential._extractStaticPath(node.call.name);
-
-    if (this.compiler.outputFocus) {//@todo - think this over
-      //skip compiling commands that do not target the focued property
-      let commandTarget;
-
-      if (staticPath && staticPath.length >= 1) {
-        commandTarget = staticPath[0]; // First segment is always the handler
-      } /* else if (node.call.name.value === 'text') {
-        // Special case for text command
-        commandTarget = 'text';
-      }*/
-
-      // If we identified a specific target and it doesn't match the focus, skip compilation.
-      if (commandTarget && this.compiler.outputFocus !== commandTarget) {
-        return;
-      }
-      /*// If the focus is on 'data', we can safely skip all OutputCommands.
-      if (this.compiler.outputFocus === 'data') {
-        return;
-      }*/
-    }
 
     // Validate the static path
     if (!staticPath || staticPath.length === 0) {

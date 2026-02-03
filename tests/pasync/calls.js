@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   'use strict';
 
   var expect;
@@ -30,8 +30,9 @@
 
     it('should allow assigning the result of a call block to a new variable (var x = call ... endcall)', async () => {
       const script = `
-        :data
-        macro map(items) :data
+        data data
+        macro map(items)
+          data data
           var out = []
           for item in items
             out.push(caller(item))
@@ -39,20 +40,24 @@
           return out
         endmacro
 
-        var result = call map([1, 2, 3]) (n) :value
-          @value = n * 2
+        var result = call map([1, 2, 3]) (n)
+          value value
+          value(n * 2)
+          return value.snapshot()
         endcall
 
-        @data.result = result
-      `;
+        data.result = result
+      
+        return data.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ result: [2, 4, 6] });
     });
 
     it('should allow assigning the result of a call block to an existing variable (x = call ... endcall)', async () => {
       const script = `
-        :data
-        macro map(items) :data
+        data data
+        macro map(items)
+          data data
           var out = []
           for item in items
             out.push(caller(item))
@@ -61,33 +66,39 @@
         endmacro
 
         var result = none
-        result = call map([1, 2, 3]) (n) :value
-          @value = n * 2
+        result = call map([1, 2, 3]) (n)
+          value value
+          value(n * 2)
+          return value.snapshot()
         endcall
 
-        @data.result = result
-      `;
+        data.result = result
+      
+        return data.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ result: [2, 4, 6] });
     });
 
     it('should allow reading parent variables in call blocks', async () => {
       const script = `
-        :data
+        data data
         var outer = 10
 
         macro runner()
           return caller()
         endmacro
 
-        var callResult = call runner() :data
-          @data.before = outer
-          @data.after = outer + 10
+        var callResult = call runner()
+          data data
+          data.before = outer
+          data.after = outer + 10
+          return data.snapshot()
         endcall
 
-        @data.callResult = callResult
-        @data.outerAfter = outer
-      `;
+        data.callResult = callResult
+        data.outerAfter = outer
+      
+        return data.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         callResult: { before: 10, after: 20 },
@@ -97,20 +108,23 @@
 
     it('should reject assignment to outer-scope variables inside call blocks', async () => {
       const script = `
-        :data
+        data data
         var outer = 10
 
         macro runner()
           return caller()
         endmacro
 
-        var callResult = call runner() :data
+        var callResult = call runner()
+          data data
           outer = 20
-          @data.ok = true
+          data.ok = true
+          return data.snapshot()
         endcall
 
-        @data.callResult = callResult
-      `;
+        data.callResult = callResult
+      
+        return data.snapshot()`;
       try {
         await env.renderScriptString(script);
         throw new Error('Should have thrown');
@@ -164,9 +178,9 @@
           })()
         };
 
-        const template = 'The weather is {{ weatherPromise.temp }}°C and {{ weatherPromise.condition }}.';
+        const template = 'The weather is {{ weatherPromise.temp }}В°C and {{ weatherPromise.condition }}.';
         const result = await env.renderTemplateString(template, context);
-        expect(result).to.equal('The weather is 22°C and Sunny.');
+        expect(result).to.equal('The weather is 22В°C and Sunny.');
       });
 
       it('should correctly resolve a dynamic function name', async () => {

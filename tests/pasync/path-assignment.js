@@ -35,17 +35,13 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
   // Helper to verify the state of a variable after script execution
   async function checkVariable(script, varName, context = {}) {
-    // We capture the variable into @data output to verify it
-    const wrappedScript = `
-        ${script}
-        :data
-        @data.res = ${varName}
-    `;
+    // Return the variable directly to avoid relying on implicit output injection
+    const wrappedScript = `${script.trimEnd()}\nreturn ${varName}\n`;
     const result = await env.renderScriptString(wrappedScript, context);
 
     // Resolve if the result itself or properties are promises
-    // In this specific test case, result.res might be a Promise or contain Promises
-    let res = result.res;
+    // In this specific test case, result might be a Promise or contain Promises
+    let res = result;
 
     // Helper to deeply resolve lazy structures for verification
     async function deepResolve(item) {
@@ -276,15 +272,11 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
 
     async function evalScript(script, context = {}) {
-      const wrapped = `
-        ${script}
-        :data
-        @data.res = res
-      `;
+      const wrapped = `${script.trimEnd()}\nreturn res\n`;
       // env is available from outer scope
       const result = await env.renderScriptString(wrapped, context);
       // Deep resolve the result for verification
-      return runtime.resolveAll([result.res]).then(r => r[0]);
+      return runtime.resolveAll([result]).then(r => r[0]);
     }
 
     it('should set a simple property on an object (sync)', () => {

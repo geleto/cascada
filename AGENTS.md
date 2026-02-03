@@ -80,8 +80,8 @@ Write and modify TypeScript/JavaScript for `cascada-engine`: implement features,
 #### **Language & Scripting (Writing Cascada Code)**
 
 *   ✅ **DO:** Use `!` on **static context paths** (e.g., `db.users!.create()`) to enforce strict execution order for side effects.
-*   ✅ **DO:** Use output focusing (`:data`, `:text`) in scripts/macros for clean, predictable return values.
-*   ✅ **DO:** Use `var result = capture :data ...` to build complex intermediate objects, leveraging the `@data` assembly system's guaranteed order.
+*   ✅ **DO:** Use explicit returns (`return data.snapshot()`, `return text.snapshot()`) in scripts/macros for clean, predictable return values.
+*   ✅ **DO:** Use `var result = capture ...` with explicit `return data.snapshot()` inside the block to build complex intermediate objects, leveraging the `@data` assembly system's guaranteed order.
 
 *   ❌ **DON'T:** Use `!` on template variables (`{% set x = ... %}{{ x!.method() }}`) or dynamic lookups (`items[i]!.method()`). Compiler only supports static paths from initial context.
 *   ❌ **DON'T:** Manually collect results from parallel loops into temporary arrays if final order matters. The `@data` system handles this, guaranteeing ordered assembly despite concurrent execution.
@@ -202,10 +202,11 @@ Scripts use **Output Commands** via "Collect, Execute, Assemble" model.
 
 -   `@data`: Build structured data (objects/arrays).
 -   `@text`: Generate text output.
--   **Output focusing**: `:data` or `:text` at scope top (script, macro, capture) returns just that output.
+-   **Explicit returns**: use `return data.snapshot()` / `return text.snapshot()` at scope end to control output.
 
 ```javascript
-:data  // Returns just data object, not { data: {...}, text: "..." }
+// Use explicit return for data-only results.
+return data.snapshot()
 @data.user.name = "Alice"
 @data.user.roles.push("editor")
 @text("Processing complete")
@@ -416,7 +417,7 @@ const template = new AsyncTemplate('{% set x = asyncFunc() %}{{ x }}', env);
 const source = template._compileSource();
 expect(source).to.contain('await');
 
-const script = new AsyncScript(':data\n@data.count = 5', env);
+const script = new AsyncScript('@data.count = 5\nreturn data.snapshot()', env);
 const compiledCode = script._compileSource();
 expect(compiledCode).to.contain('output_command');
 ```
@@ -428,10 +429,10 @@ Verify script-to-template conversion:
 ```javascript
 const scriptTranspiler = require('../src/script/script-transpiler');
 
-const script = ':data\nvar user = getUser()\n@data.userName = user.name';
+const script = 'var user = getUser()\n@data.userName = user.name\nreturn data.snapshot()';
 const template = scriptTranspiler.scriptToTemplate(script);
 
-expect(template).to.contain('{% option focus="data" %}');
+// Focus directives removed: use explicit returns instead.
 expect(template).to.contain('{% var user = getUser() %}');
 expect(template).to.contain('output_command data.set(userName, user.name)');
 ```
@@ -448,7 +449,7 @@ expect(template).to.contain('output_command data.set(userName, user.name)');
 import { AsyncEnvironment } from 'cascada-engine';
 const env = new AsyncEnvironment();
 
-// Execute script and get focused data output
+// Execute script and get data output via explicit return
 const result = await env.renderScriptString(script, context, {output: 'data'});
 
 // Render template to text
@@ -497,7 +498,7 @@ const result = await script.render(context);
 ```
 
 **Key Methods:**
-- `render(context)` - Returns `Promise` with script output (object/string based on output focus)
+- `render(context)` - Returns `Promise` with script output (object/string based on explicit returns)
 - `compile()` - Compiles script (called automatically on first render)
 - `_compileSource()` - Returns generated JavaScript source code (debugging)
 

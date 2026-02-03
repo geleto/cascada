@@ -326,11 +326,12 @@
         }
       };
       const script = `
-        :data
+        data data
         for name, id in myGenerator()
-          @data.processed.push(name)
+          data.processed.push(name)
         endfor
-      `;
+      
+        return data.snapshot()`;
 
       try {
         await env.renderScriptString(script, context);
@@ -474,12 +475,13 @@
         }
       };
       const script = `
-        :data
+        data data
         for item in myGenerator()
-          @data.items.push(item)
-          @data.processedItems.push(processItem(item))
+          data.items.push(item)
+          data.processedItems.push(processItem(item))
         endfor
-      `;
+      
+        return data.snapshot()`;
 
       try {
         await env.renderScriptString(script, context);

@@ -617,7 +617,7 @@
         async getC() { await delay(5); return 'C'; }
       };
       const script = `
-          :data
+          data data
           var complex = {
              l1: getA(),
              nested: {
@@ -636,10 +636,11 @@
           // 1. Used in @output commands (like @data, @text)
           // 2. Used in expressions that require values (like math, string concat) - handled by compiler-base expression compilation
 
-          @data.val1 = complex.l1
-          @data.val2 = complex.nested.l2
-          @data.val3 = complex.nested.deep[0]
-        `;
+          data.val1 = complex.l1
+          data.val2 = complex.nested.l2
+          data.val3 = complex.nested.deep[0]
+        
+          return data.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.eql({
@@ -665,13 +666,14 @@
       };
 
       const script = `
-           :data
+           data data
            var user = { name: getName(), role: getRole() }
 
            // Passing 'user' to formatUser.
            // The compiler generates code that wraps args in runtime.resolveArguments or resolves them before call.
-           @data.formatted = formatUser(user)
-         `;
+           data.formatted = formatUser(user)
+         
+           return data.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.eql({ formatted: 'Alice:Admin' });
@@ -685,14 +687,15 @@
       };
 
       const script = `
-            :text
+            text text
             var list = [getOne(), getTwo()]
 
             // Loop over lazy array
             for item in list
-               @text(item + "-")
+               text(item + "-")
             endfor
-         `;
+         
+            return text.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.equal('one-two-');
@@ -708,10 +711,11 @@
       };
 
       const script = `
-            :data
+            data data
             var obj = { a: { b: { c: getDeep() } } }
-            @data.result = inspect(obj)
-          `;
+            data.result = inspect(obj)
+          
+            return data.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.eql({ result: 'found' });
@@ -722,7 +726,7 @@
       };
 
       const script = `
-         :data
+         data data
          var collected = {}
          var total = 0
 
@@ -731,8 +735,9 @@
            collected[i] = v
          endfor
 
-         @data.res = collected
-      `;
+         data.res = collected
+      
+         return data.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result.res).to.eql({ '1': 1, '2': 2, '3': 3 });
@@ -746,7 +751,7 @@
           now: () => Date.now()
         };
         const script = `
-          :data
+          data data
           var obj = { x: 1 }
 
           var t0 = now()
@@ -758,11 +763,12 @@
           var val = obj.x
           var t2 = now()
 
-          @data.assignmentTime = t1 - t0
-          @data.accessTime = t2 - t1
-          @data.val = val
-          @data.y = obj.y
-        `;
+          data.assignmentTime = t1 - t0
+          data.accessTime = t2 - t1
+          data.val = val
+          data.y = obj.y
+        
+          return data.snapshot()`;
 
         const result = await env.renderScriptString(script, context);
 
@@ -781,7 +787,7 @@
           now: () => Date.now()
         };
         const script = `
-          :data
+          data data
           var list = [10, 20]
 
           var t0 = now()
@@ -794,9 +800,10 @@
           // Accessing property on a Promise works (awaits resolution)
           var val = list[0]
 
-          @data.assignmentTime = t1 - t0
-          @data.val = val
-        `;
+          data.assignmentTime = t1 - t0
+          data.val = val
+        
+          return data.snapshot()`;
 
         const result = await env.renderScriptString(script, context);
 
@@ -814,7 +821,7 @@
         };
 
         const script = `
-            :data
+            data data
             var obj = { a: 1 }
 
             var t0 = now()
@@ -830,9 +837,10 @@
             // Reading 'c'
             var val = obj.c
 
-            @data.operationsTime = t1 - t0
-            @data.res = obj
-         `;
+            data.operationsTime = t1 - t0
+            data.res = obj
+         
+            return data.snapshot()`;
         const result = await env.renderScriptString(script, context);
 
         // Operations are just chaining promises, should be fast

@@ -21,17 +21,11 @@ class Output {
     this._frame._outputBuffer.add(entry, this._outputName);
   }
 
-  // @todo - get rid of focusOverride later
   snapshot() {
-    const focus = this._outputName === 'output' ? null : this._outputName;
-    return this._snapshotFocus(focus);
-  }
-
-  _snapshotFocus(focusName) {
     const buffer = this._frame._outputBuffer;
     if (buffer) {
       // For explicit outputs, preserve default empty snapshots without flattening.
-      // Skip this shortcut in script mode because focused data snapshots can
+      // Skip this shortcut in script mode because data snapshots can
       // depend on Result Objects emitted to the text stream.
       if (!buffer._scriptMode &&
           this._outputName &&
@@ -44,8 +38,8 @@ class Output {
           if (this._outputType === 'value') return undefined;
         }
       }
-      const outputName = null;//(this._outputName && this._outputName !== 'output') ? this._outputName : null;
-      const result = flattenBuffer(buffer, this._context, focusName || null, outputName);
+      const outputName = (this._outputName && this._outputName !== 'output') ? this._outputName : null;
+      const result = flattenBuffer(buffer, this._context, outputName);
       if (!buffer._scriptMode || this._outputName === 'output') {
         return result;
       }
@@ -68,13 +62,12 @@ class Output {
     }
 
     const outputName = (this._outputName && this._outputName !== 'output') ? this._outputName : null;
-    return flattenBuffer(outputArray, this._context, focusName || null, outputName);
+    return flattenBuffer(outputArray, this._context, outputName);
   }
 }
 
 function attachOutputApi(target, output) {
   target.snapshot = output.snapshot.bind(output);
-  target._snapshotFocus = output._snapshotFocus.bind(output);
   target._outputName = output._outputName;
   target._outputType = output._outputType;
   target._frame = output._frame;
@@ -106,9 +99,6 @@ function createOutputProxy(output) {
     get: (target, prop) => {
       if (prop === 'snapshot') {
         return target.snapshot.bind(target);
-      }
-      if (prop === '_snapshotFocus') {
-        return target._snapshotFocus.bind(target);
       }
       if (prop === '_outputName' || prop === '_outputType' || prop === '_frame' || prop === '_context') {
         return target[prop];

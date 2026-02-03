@@ -1,5 +1,8 @@
 # Cascada Script - AI Agent Reference
 
+> **Note:** Output focus directives (`:data`, `:text`, `:value`, and custom `:handler` focus) have been removed.
+> Use explicit `return` statements (e.g., `return data.snapshot()`) to shape results.
+
 ## Core Description
 Parallel-by-default scripting language for JavaScript/TypeScript async orchestration. Data-driven execution engine that automatically resolves dependencies, maximizes concurrency, and guarantees deterministic output assembly.
 
@@ -16,7 +19,7 @@ Parallel-by-default scripting language for JavaScript/TypeScript async orchestra
 EXEC-xxx   : Execution model invariants
 VAR-xxx    : Variable declaration and scope rules
 OUT-xxx    : Output building (@data syntax)
-CAPT-xxx   : Capture blocks and output focus
+CAPT-xxx   : Capture blocks
 CTRL-xxx   : Control flow (if/else, loops, switch)
 ERR-xxx    : Error handling and poison values
 FN-xxx     : Functions, filters, operators

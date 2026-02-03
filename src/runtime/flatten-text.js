@@ -30,7 +30,7 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
 
     if (actualValue instanceof CommandBuffer) {
       try {
-        return acc + flattenBuffer(resolveBufferArray(actualValue, outputName), null, null, outputName, sharedState);
+        return acc + flattenBuffer(resolveBufferArray(actualValue, outputName), null, outputName, sharedState);
       } catch (err) {
         if (isPoisonError(err)) {
           errors.push(...err.errors);
@@ -43,7 +43,7 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
 
     if (Array.isArray(actualValue)) {
       try {
-        return acc + flattenBuffer(actualValue, null, null, outputName, sharedState);
+        return acc + flattenBuffer(actualValue, null, outputName, sharedState);
       } catch (err) {
         if (isPoisonError(err)) {
           errors.push(...err.errors);

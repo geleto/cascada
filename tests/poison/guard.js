@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   'use strict';
 
   var cascada;
@@ -112,15 +112,18 @@
 
     it('should revert only specified handlers in script mode', async () => {
       const script = `
+        text text
+        data data
         guard @text, @data
-          @text("INNER")
-          @data.guard.value = "DROP"
-          @text(explode())
+          text("INNER")
+          data.guard.value = "DROP"
+          text(explode())
         endguard
 
-        @text("OUTER")
-        @data.status = "ok"
-      `;
+        text("OUTER")
+        data.status = "ok"
+      
+        return { text: text.snapshot(), data: data.snapshot() }`;
 
       const context = {
         explode: () => {
@@ -135,15 +138,18 @@
 
     it('should allow guard @ to revert all handlers', async () => {
       const script = `
+        text text
+        data data
         guard @
-          @text("INNER")
-          @data.guard.value = "DROP"
-          @text(explode())
+          text("INNER")
+          data.guard.value = "DROP"
+          text(explode())
         endguard
 
-        @text("OUTER")
-        @data.status = "ok"
-      `;
+        text("OUTER")
+        data.status = "ok"
+      
+        return { text: text.snapshot(), data: data.snapshot() }`;
 
       const context = {
         explode: () => {
@@ -158,14 +164,16 @@
 
     it('should propagate handler poison when only variables are guarded', async () => {
       const script = `
+        text text
         var count = 1
         guard count
-          @text("INSIDE")
+          text("INSIDE")
           count = count + 1
-          @text(explode())
+          text(explode())
         endguard
-        @text("AFTER")
-      `;
+        text("AFTER")
+      
+        return { text: text.snapshot() }`;
 
       const context = {
         explode: () => throwError('boom')
@@ -181,14 +189,17 @@
 
     it('should revert outputs when guard has no selectors', async () => {
       const script = `
+        text text
+        data data
         guard
-          @text("inside")
-          @data.val = explode()
+          text("inside")
+          data.val = explode()
         endguard
 
-        @text("outside")
-        @data.final = "ok"
-      `;
+        text("outside")
+        data.final = "ok"
+      
+        return { text: text.snapshot(), data: data.snapshot() }`;
 
       const context = {
         explode: () => { throw new Error('boom'); }
@@ -202,10 +213,12 @@
 
     it('should error when mixing @ with specific handlers', async () => {
       const script = `
+        text text
         guard @, @text
-          @text("X")
+          text("X")
         endguard
-      `;
+      
+        return { text: text.snapshot() }`;
 
       try {
         await env.renderScriptString(script, {});
@@ -217,10 +230,12 @@
 
     it('should error on duplicate handler selectors', async () => {
       const script = `
+        text text
         guard @text, @text
-          @text("X")
+          text("X")
         endguard
-      `;
+      
+        return { text: text.snapshot() }`;
 
       try {
         await env.renderScriptString(script, {});
@@ -330,19 +345,22 @@
 
     it('should revert everything with guard * in script mode', async () => {
       const script = `
+        data data
+        text text
         var count = 1
         guard *
           count = count + 1
-          @data.inner = "inside"
-          @text("INNER")
+          data.inner = "inside"
+          text("INNER")
           count = poison()
           var ignore = lock!.fail()
         recover err
-          @data.recovered = true
+          data.recovered = true
         endguard
-        @data.count = count
-        @data.status = lock!.success()
-      `;
+        data.count = count
+        data.status = lock!.success()
+      
+        return {data: data.snapshot(), text: text.snapshot() }`;
 
       const res = await env.renderScriptString(script, {
         poison: () => throwError('boom'),
@@ -361,13 +379,15 @@
 
     it('should restore guarded variables on error in script mode', async () => {
       const script = `
+        data data
         var count = 1
         guard count
           count = count + 1
           count = poison()
         endguard
-        @data.res = count
-      `;
+        data.res = count
+      
+        return {data: data.snapshot() }`;
 
       const res = await env.renderScriptString(script, {
         poison: () => throwError('boom')
@@ -377,12 +397,14 @@
 
     it('should keep guarded variable changes on success in script mode', async () => {
       const script = `
+        data data
         var count = 1
         guard count
           count = count + 1
         endguard
-        @data.res = count
-      `;
+        data.res = count
+      
+        return {data: data.snapshot() }`;
 
       const res = await env.renderScriptString(script);
       expect(res.data.res).to.equal(2);
@@ -390,15 +412,17 @@
 
     it('should restore multiple guarded variables on error in script mode', async () => {
       const script = `
+        data data
         var a = 10
         var b = 20
         guard a, b
           a = 11
           b = poison()
         endguard
-        @data.resA = a
-        @data.resB = b
-      `;
+        data.resA = a
+        data.resB = b
+      
+        return {data: data.snapshot() }`;
 
       const res = await env.renderScriptString(script, {
         poison: () => throwError('boom')
@@ -409,11 +433,13 @@
 
     it('should guard and restore sequence locks (postfix !)', async () => {
       const script = `
+        data data
         guard lock!
           var ignore = lock!.fail()
         endguard
-        @data.status = lock!.success()
-      `;
+        data.status = lock!.success()
+      
+        return {data: data.snapshot() }`;
 
       const res = await env.renderScriptString(script, {
         lock: {
@@ -426,13 +452,15 @@
 
     it('sequence lock shall not wait on guarded var', async () => {
       const script = `
+        data data
         var slowVar
         guard lock!, slowVar
           lock!.op()
           slowVar = getSlow()
         endguard
-        @data.status = lock!.success()
-      `;
+        data.status = lock!.success()
+      
+        return {data: data.snapshot() }`;
 
       var slowResolved = false;
 
@@ -460,15 +488,17 @@
 
     it('should guard and restore multiple sequence locks', async () => {
       const script = `
+        data data
         var success
         guard lock1!, lock2!
           var _1 = lock1!.op()
           var _2 = lock2!.op()
           var _3 = fail()
         endguard
-        @data.status1 = lock1!.success()
-        @data.status2 = lock2!.success()
-      `;
+        data.status1 = lock1!.success()
+        data.status2 = lock2!.success()
+      
+        return {data: data.snapshot() }`;
 
       const context = {
         fail: () => { throw new Error('failure'); },
@@ -494,13 +524,15 @@
       // before attempting to repair. If it repaired too early (e.g. while slow() was running),
       // the subsequent fail() would leave the lock in a broken state.
       const script = `
+        data data
         var ignore
         guard lock!
           var _1 = lock!.slow()
           var _2 = lock!.fail()
         endguard
-        @data.status = lock!.success()
-      `;
+        data.status = lock!.success()
+      
+        return {data: data.snapshot() }`;
 
       const context = {
         lock: {
@@ -575,16 +607,18 @@
 
     it('should execute recover block on error', async () => {
       const script = `
+      data data
       var state = "initial"
       guard state, @data
         state = "changed"
-        @data.x = error("fail")
+        data.x = error("fail")
       recover err
         state = "recovered: " + err.message
-        @data.msg = err.message
+        data.msg = err.message
       endguard
-      @data.finalState = state
-      `;
+      data.finalState = state
+
+      return {data: data.snapshot() }`;
 
       const context = {
         error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
@@ -616,18 +650,20 @@
 
       let trackedState = 'initial';
       const script = `
+        text text
         var state = "initial"
         guard state, @data
           state = "changed"
           // This puts a PoisonedValue into the buffer (text handler default)
           // Since guard @data ignores it, this poison remains in buffer.
-          @text(poison())
+          text(poison())
         endguard
 
         // We track state AFTER guard to verify it wasn't reverted
         // If guard reverted, state would be "initial"
         track(state)
-      `;
+      
+        return { text: text.snapshot() }`;
 
       const context = {
         poison: () => throwError('text-error'),
@@ -647,22 +683,25 @@
 
     it('should support nested recovery (inner suppresses error)', async () => {
       const script = `
+        text text
+        data data
         var outer = "ok"
         var inner = "ok"
         guard outer
           guard inner, @
             inner = "modified"
             // Inner error must go to buffer to trigger guard
-            @text(error("fail"))
+            text(error("fail"))
           recover
              inner = "recovered"
           endguard
           // Outer continues because inner recovered
           outer = "finished"
         endguard
-        @data.inner = inner
-        @data.outer = outer
-      `;
+        data.inner = inner
+        data.outer = outer
+      
+        return { text: text.snapshot(), data: data.snapshot() }`;
 
       const context = {
         error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
@@ -676,13 +715,15 @@
 
     it('should check variable scope within guard (var declaration)', async () => {
       const script = `
+        data data
         var outer = "outer"
         guard outer
            var inner = "inner"
-           @data.innerVisible = inner
+           data.innerVisible = inner
         endguard
-        @data.innerCheck = "checked"
-      `;
+        data.innerCheck = "checked"
+      
+        return {data: data.snapshot() }`;
 
       const context = {
         defined: (val) => val !== undefined
@@ -697,11 +738,13 @@
 
       // Updated test strategy:
       const script2 = `
+        data data
         guard @data
           var local = 1
         endguard
-        @data.leak = local
-      `;
+        data.leak = local
+      
+        return {data: data.snapshot() }`;
       try {
         await env.renderScriptString(script2, {});
         // If we reach here, local leaked?
@@ -728,13 +771,16 @@
     it('should recover from async error', async () => {
       // await inside guard triggers 'expected block end' parser issue (do statement).
       // But await inside RECOVER (async closure) should work.
-      const script = `guard @
+      const script = `text text
+data data
+guard @
   // await delay(10)
-  @text(error("fail"))
+  text(error("fail"))
 recover
   // await delay(5)
-  @data.res = "recovered"
-endguard`;
+  data.res = "recovered"
+endguard
+return { text: text.snapshot(), data: data.snapshot() }`;
       const context = {
         error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); },
         delay: (ms) => new Promise(r => setTimeout(r, ms))
@@ -744,16 +790,22 @@ endguard`;
     });
 
     it('should recover from macro error', async () => {
-      const script = `macro bomb()
-  @text(error("boom"))
+      const script = `data data
+text text
+macro bomb()
+  text text
+  text(error("boom"))
+  return { text: text.snapshot() }
 endmacro
 
 guard @
   call bomb()
+    return {}
   endcall
 recover
-  @data.res = "safe"
-endguard`;
+  data.res = "safe"
+endguard
+return {data: data.snapshot(), text: text.snapshot() }`;
       const context = {
         error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
       };
@@ -763,12 +815,14 @@ endguard`;
 
     it('should handle error in recover block (bubbling)', async () => {
       const script = `
+        text text
         guard @
-          @text(error("fail1"))
+          text(error("fail1"))
         recover
-          @text(error("fail2"))
+          text(error("fail2"))
         endguard
-      `;
+      
+        return { text: text.snapshot() }`;
       const context = {
         error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
       };
@@ -786,6 +840,7 @@ endguard`;
       // guard blocks transpiled as async blocks might wrap loop control.
       // We verification if break propagates correctly.
       const script = `
+        data data
         var i = 0
         var guarded_exec = 0
         while i < 10
@@ -797,9 +852,10 @@ endguard`;
           endguard
           i = i + 1
         endwhile
-        @data.count = i
-        @data.guarded = guarded_exec
-      `;
+        data.count = i
+        data.guarded = guarded_exec
+      
+        return {data: data.snapshot() }`;
       const res = await env.renderScriptString(script, {});
       // Known limitation: break inside guard is currently ignored by transpiler/runtime
       expect(res.data.count).to.equal(10);
@@ -807,11 +863,13 @@ endguard`;
     });
 
     it('should catch @data poison with global guard', async () => {
-      const script = `guard
-  @data.err = error("fail")
+      const script = `data data
+guard
+  data.err = error("fail")
 recover
-  @data.res = "caught"
-endguard`;
+  data.res = "caught"
+endguard
+return {data: data.snapshot() }`;
       const context = {
         error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
       };
@@ -820,12 +878,15 @@ endguard`;
     });
 
     it('should handle multiple concurrent errors', async () => {
-      const script = `guard @
-  @text(error("fail1"))
-  @text(error("fail2"))
+      const script = `text text
+data data
+guard @
+  text(error("fail1"))
+  text(error("fail2"))
 recover
-  @data.res = "caught"
-endguard`;
+  data.res = "caught"
+endguard
+return { text: text.snapshot(), data: data.snapshot() }`;
       const context = {
         error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
       };
@@ -835,6 +896,7 @@ endguard`;
 
     it('should guard child paths when parent path is guarded', async () => {
       const script = `
+        data data
         var log = []
         guard lock!
           // This creates a lock on lock.sub! which is !lock!sub
@@ -842,8 +904,9 @@ endguard`;
         endguard
         // Should be repaired
         log.push(lock.sub!.success())
-        @data.log = log
-      `;
+        data.log = log
+      
+        return {data: data.snapshot() }`;
       const context = {
         lock: {
           sub: {
@@ -858,6 +921,7 @@ endguard`;
 
     it('should guard simple sequence lock', async () => {
       const script = `
+        data data
         var log = []
         guard lock!
           // This creates a lock on !lock
@@ -865,8 +929,9 @@ endguard`;
         endguard
         // Should be repaired
         log.push(lock!.success())
-        @data.log = log
-      `;
+        data.log = log
+      
+        return {data: data.snapshot() }`;
       const context = {
         lock: {
           fail: () => { throw new Error('fail'); },
@@ -893,14 +958,16 @@ endguard`;
 
     it('should guard all paths when global ! is guarded', async () => {
       const script = `
+        data data
         var log = []
         guard !
           var ignore = lock.sub!.fail()
         endguard
         // Should be repaired
         log.push(lock.sub!.success())
-        @data.log = log
-      `;
+        data.log = log
+      
+        return {data: data.snapshot() }`;
       const context = {
         lock: {
           sub: {
@@ -916,12 +983,14 @@ endguard`;
 
     it('should fail guard when sequence lock fails', async () => {
       const script = `
+        data data
         var log = []
         guard lock!
            var ignore = lock!.fail()
         endguard
-        @data.log = log
-      `;
+        data.log = log
+      
+        return {data: data.snapshot() }`;
       const context = {
         lock: {
           fail: () => { throw new Error('fail'); },
@@ -939,13 +1008,15 @@ endguard`;
 
     it('should succeed guard when sequence lock succeeds', async () => {
       const script = `
+        data data
         var log = []
         guard lock!
            var ignore = lock!.success()
         endguard
         log.push('done')
-        @data.log = log
-      `;
+        data.log = log
+      
+        return {data: data.snapshot() }`;
       const context = {
         lock: {
           fail: () => { throw new Error('fail'); },
@@ -958,6 +1029,7 @@ endguard`;
 
     it('should revert guarded variables when sequence lock fails', async () => {
       const script = `
+        data data
         var x = 1
         var log = []
 
@@ -969,8 +1041,9 @@ endguard`;
            log.push(x) // Should be 1
         endguard
 
-        @data.log = log
-      `;
+        data.log = log
+      
+        return {data: data.snapshot() }`;
       const context = {
         lock: {
           fail: () => { throw new Error('fail'); },
@@ -984,16 +1057,18 @@ endguard`;
 
     it('should aggregate multiple sequence errors', async () => {
       const script = `
+        data data
         guard lock1!, lock2!
            // Both fail
            var a = lock1!.fail1()
            var b = lock2!.fail2()
         recover err
-           @data.errorCount = err.errors.length
-           @data.msg1 = err.errors[0].message
-           @data.msg2 = err.errors[1].message
+           data.errorCount = err.errors.length
+           data.msg1 = err.errors[0].message
+           data.msg2 = err.errors[1].message
         endguard
-      `;
+      
+        return {data: data.snapshot() }`;
       const context = {
         lock1: { fail1: () => { throw new Error('fail1'); } },
         lock2: { fail2: () => { throw new Error('fail2'); } }
@@ -1006,24 +1081,27 @@ endguard`;
 
     it('should aggregate mixed buffer, variable, and sequence errors', async () => {
       const script = `
+        text text
+        data data
         guard lock!, @text
            // 1. Buffer poison
-           @text(error('buffer_fail'))
+           text(error('buffer_fail'))
            // 2. Sequence poison
            var lockRes = lock!.fail()
            // 3. Another Buffer poison
-           @text(error('buffer_fail_2'))
+           text(error('buffer_fail_2'))
         recover err
-           @data.errorCount = err.errors.length
+           data.errorCount = err.errors.length
            // We expect:
            // - buffer_fail
            // - buffer_fail_2
            // - sequence_fail
            for e in err.errors
-             @data.msgs.push(e.message)
+             data.msgs.push(e.message)
            endfor
         endguard
-      `;
+      
+        return { text: text.snapshot(), data: data.snapshot() }`;
       const context = {
         error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); },
         lock: { fail: () => { return new cascada.runtime.PoisonedValue([new Error('sequence_fail')]); } }

@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   'use strict';
 
   var expect;
@@ -2980,13 +2980,15 @@
       });
 
       const script = `
+        value value
         var i = 0
         while checkCondition()
           //i = i + 1
           i = 1
         endwhile
-        @value(i)
-      `;
+        value(i)
+      
+        return { value: value.snapshot() }`;
 
       try {
         await env.renderScriptString(script, {}, { output: 'data' });
@@ -2999,12 +3001,14 @@
 
     it('should poison loop variables when while condition is poison', async () => {
       const script = `
+        value value
         var i = 0
         while poisonCond()
           i = 1 //i + 1
         endwhile
-        @value(i is error)
-      `;
+        value(i is error)
+      
+        return { value: value.snapshot() }`;
 
       const result = await env.renderScriptString(script, {
         poisonCond: () => {
@@ -3016,12 +3020,13 @@
 
     it('should poison while output handler when while condition is poison', async () => {
       const script = `
-        :data
+        data data
         var i = 0
         while poisonCond()
-          @data.push(i)
+          data.push(i)
         endwhile
-      `;
+      
+        return data.snapshot()`;
 
       try {
         await env.renderScriptString(script, {
@@ -3309,25 +3314,26 @@
       };
 
       const script = `
-:data
 
 // Initialize arrays
-@data.users = []
-@data.summary.userNames = []
+data data
+data.users = []
+data.summary.userNames = []
 
 // For loop - parallel execution
 var userIds = [1, 2, 3, 4]
 for id in userIds
   var user = fetchUser(id)
-  @data.users.push({ id: user.id, name: user.name, active: user.active })
+  data.users.push({ id: user.id, name: user.name, active: user.active })
 endfor
 
 // Summary - simplified to avoid complex filtering
-@data.summary.totalUsers = userIds.length
+data.summary.totalUsers = userIds.length
 for user in userIds
-  @data.summary.userNames.push("User " + user)
+  data.summary.userNames.push("User " + user)
 endfor
-      `;
+      
+return data.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
 
@@ -3363,28 +3369,31 @@ endfor
       };
 
       const script = `
-:data
 
 // Use capture block to handle the while loop logic
-var result = capture :data
+data data
+var result = capture
+  data data
   var counter = 0
   var iterations = 0
   while checkCondition(counter)
     var processed = processItem("item-" + counter)
-    @data.whileResults.push(processed)
+    data.whileResults.push(processed)
     iterations = iterations + 1
     counter = incrementCounter(counter)
   endwhile
 
-  @data.summary.iterations = iterations
-  @data.summary.finalCounter = counter
+  data.summary.iterations = iterations
+  data.summary.finalCounter = counter
+  return data.snapshot()
 endcapture
 
 // Assign the captured result to our data object
-@data.whileResults = result.whileResults
-@data.summary.iterations = result.summary.iterations
-@data.summary.finalCounter = result.summary.finalCounter
-      `;
+data.whileResults = result.whileResults
+data.summary.iterations = result.summary.iterations
+data.summary.finalCounter = result.summary.finalCounter
+      
+return data.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
 
@@ -3408,26 +3417,29 @@ endcapture
       };
 
       const script = `
-:data
 
 // Use capture block to handle the each loop logic
-var result = capture :data
+data data
+var result = capture
+  data data
   var items = ["a", "b", "c"]
   var totalItems = items.length
   each item in items
     var processed = processItem(item)
-    @data.eachResults.push(processed)
+    data.eachResults.push(processed)
   endeach
 
-  @data.summary.totalItems = totalItems
-  @data.summary.items = items | join(", ")
+  data.summary.totalItems = totalItems
+  data.summary.items = items | join(", ")
+  return data.snapshot()
 endcapture
 
 // Assign the captured result to our data object
-@data.eachResults = result.eachResults
-@data.summary.totalItems = result.summary.totalItems
-@data.summary.items = result.summary.items
-      `;
+data.eachResults = result.eachResults
+data.summary.totalItems = result.summary.totalItems
+data.summary.items = result.summary.items
+      
+return data.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
 
@@ -3456,12 +3468,13 @@ endcapture
         }
       };
 
-      const script = `:data
+      const script = `      data data
       var result = 1
 			for text in candidates
 				result = processItem(text)
-				@data = result
-			endfor`;
+				data.set(null, result)
+			endfor
+      return data.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.be('Processed: c');
@@ -3482,11 +3495,12 @@ endcapture
         }
       };
 
-      const script = `:data
+      const script = `			data data
 			for text in candidates
 				var result = processItem(text)
-				@data = result
-			endfor`;
+				data.set(null, result)
+			endfor
+			return data.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.be('Processed: c');
@@ -3507,13 +3521,14 @@ endcapture
         }
       };
 
-      const script = `:data
+      const script = `			data data
 			for text in candidates
 				if text
 					var result = processItem(text)
-					@data = result
+					data.set(null, result)
 				endif
-			endfor`;
+			endfor
+			return data.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.be('Processed: c');

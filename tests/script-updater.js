@@ -3,7 +3,7 @@ const expect = require('expect.js');
 
 describe('Script Updater', () => {
   it('removes root focus directive and preserves indentation', () => {
-    const script = '  :data\n  @data.user.name = "Alice"';
+    const script = '  data data\n  data.user.name = "Alice"\n  return data.snapshot()';
     const result = scriptUpdater.scriptToTemplateAndScript(script);
     const lines = result.script.split('\n');
 
@@ -12,7 +12,7 @@ describe('Script Updater', () => {
     expect(lines[2]).to.equal('  return data.snapshot()');
   });
 
-  it('removes focus directive on a new line (macro continuation)', () => {
+  it('rejects focus directives on a new line (macro continuation)', () => {
     const script = [
       'macro buildUser()',
       ': data',
@@ -20,18 +20,7 @@ describe('Script Updater', () => {
       'endmacro'
     ].join('\n');
 
-    const result = scriptUpdater.scriptToTemplateAndScript(script);
-    const lines = result.script.split('\n');
-
-    expect(lines[0]).to.equal('data data');
-    expect(lines[1]).to.equal('text text');
-    expect(lines[2]).to.equal('value value');
-    expect(lines[3]).to.equal('macro buildUser()');
-    expect(lines).to.contain('  data data');
-    expect(lines).to.contain('  data.user.id = 1');
-    expect(lines).to.contain('  return data.snapshot()');
-    expect(lines[lines.length - 2]).to.equal('endmacro');
-    expect(lines[lines.length - 1]).to.equal('return {data: data.snapshot() }');
+    expect(() => scriptUpdater.scriptToTemplateAndScript(script)).to.throwError(/Output focus directives are not supported/);
   });
 
   it('injects only used outputs and keeps each declaration on its own line', () => {

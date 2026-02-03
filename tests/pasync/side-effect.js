@@ -1073,11 +1073,13 @@
         };
 
         const script = `
+                data data
                 var a = obj!.init('A', 5)
                 var b = obj!!.repair('B', 5)
                 var c = obj!.after('C', 5)
-                @data = c
-             `;
+                data = c
+             
+                return {data: data.snapshot() }`;
         const result = await env.renderScriptString(script, ctx);
         expect(logs).to.eql(['repaired B', 'after C']);
         expect(result.data).to.eql('after C');
@@ -1105,11 +1107,12 @@
 
       // guard(a) disables implicit sequence lock repair.
       // The sequence lock '!obj' (implied by obj!.init) must be manually repaired by obj!!.repairCheck()
-      const script = `
-               obj!.init('A', 5)
-               obj!!.repairCheck()
-               obj!.after('B', 5)
-          `;
+        const script = `
+                 obj!.init('A', 5)
+                 obj!!.repairCheck()
+                 obj!.after('B', 5)
+                 return true
+            `;
 
       await env.renderScriptString(script, ctx);
       expect(logs).to.eql(['repair called', 'after']);

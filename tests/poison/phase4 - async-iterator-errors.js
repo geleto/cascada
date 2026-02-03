@@ -30,12 +30,13 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      :data
+      data data
       for item in testGen()
         var processed = processItem(item)
-        @data.items.push(processed)
+        data.items.push(processed)
       endfor
-    `;
+    
+      return data.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -71,12 +72,13 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      :data
+      data data
       for item in testGen()
         var processed = processValue(item)
-        @data.items.push(processed)
+        data.items.push(processed)
       endfor
-    `;
+    
+      return data.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -110,12 +112,13 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      :data
+      data data
       for item in testGen()
         var result = processItem(item)
-        @data.results.push(result)
+        data.results.push(result)
       endfor
-    `;
+    
+      return data.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -140,13 +143,14 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      :data
+      data data
       for item in emptyGen()
-        @data.items.push(item)
+        data.items.push(item)
       else
-        @data.isEmpty = true
+        data.isEmpty = true
       endfor
-    `;
+    
+      return data.snapshot()`;
 
     const result = await env.renderScriptString(script, context);
     expect(result.isEmpty).to.be(true);
@@ -160,15 +164,16 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      :data
+      data data
       var total = 0
       for item in getPoisonedArray()
         total = total + item
       else
-        @data.elseBranch = true
+        data.elseBranch = true
       endfor
-      @data.total = total
-    `;
+      data.total = total
+    
+      return data.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -194,11 +199,12 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      :data
+      data data
       for item in testGen()
-        @data.items.push(item)
+        data.items.push(item)
       endfor
-    `;
+    
+      return data.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -229,11 +235,12 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      :data
+      data data
       for item in testGen()
-        @data.items.push(item)
+        data.items.push(item)
       endfor
-    `;
+    
+      return data.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -263,15 +270,16 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      :data
+      data data
       for pageResult in fetchPages()
         if pageResult.data
           for item in pageResult.data
-            @data.allItems.push(item)
+            data.allItems.push(item)
           endfor
         endif
       endfor
-    `;
+    
+      return data.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -309,11 +317,12 @@ describe('Phase 4: Async Iterator Error Handling', () => {
 
     it('Should propagate a soft error to body handler of "for"/"each" loops', async () => {
       let script = `
-        :data
+        data data
         for item in testGen()
-          @data.items.push(item)
+          data.items.push(item)
         endfor
-      `;
+      
+        return data.snapshot()`;
 
       for (let i = 0; i < 2; i++) {
         const ctx = { ...context };
@@ -332,11 +341,12 @@ describe('Phase 4: Async Iterator Error Handling', () => {
 
     it('Should propagate a hard error to body handler of "for"/"each" loops', async () => {
       let script = `
-        :data
+        data data
         for item in testGen()
-          @data.items.push(item)
+          data.items.push(item)
         endfor
-      `;
+      
+        return data.snapshot()`;
 
       for (let i = 0; i < 2; i++) {
         const ctx = { ...context, hardError: true };
