@@ -203,6 +203,11 @@ function processNormalState(state) {
   const char = line[index];
   const nextChar = index < line.length - 1 ? line[index + 1] : '';
 
+  if (state.codeStart === null && char.trim() === '') {
+    state.codeStart = index;
+    return;
+  }
+
   // Check for the start of a string
   if (char === '\'' || char === '"' || char === '`') {
     finalizeCodeToken(state);
@@ -558,51 +563,6 @@ function finalizeEndOfLine(state) {
     ));
   }
 
-  // Handle the case of a line with only indentation (no tokens)
-  if (state.tokens.length === 0 && state.indentation.length > 0) {
-    switch (currentState) {
-      case STATES.REGEX:
-        throw new Error('REGEX state should not be present on a whitespace-only line');
-      case STATES.SINGLE_LINE_COMMENT:
-        throw new Error('SINGLE_LINE_COMMENT state should not be present on a whitespace-only line');
-      case STATES.MULTI_LINE_COMMENT: {
-        throw new Error('MULTI_LINE_COMMENT should always create a token');
-        /*const commentToken = createToken(TOKEN_TYPES.COMMENT, TOKEN_SUBTYPES.MULTI_LINE, state.indentation.length, '');
-        commentToken.end = line.length;
-        state.tokens.push(commentToken);
-        break;*/
-      }
-      case STATES.NORMAL:
-        // In the regular state, add an empty code token
-        state.tokens.push(createCodeToken(
-          state.indentation.length,
-          state.indentation.length,
-          ''
-        ));
-        break;
-      case STATES.STRING: {
-        throw new Error('STRING state should have been handled before this point');
-        // We're in a string state but haven't added a token yet - add a string token
-        /*const subtype = state.stringDelimiter === '\'' ? TOKEN_SUBTYPES.SINGLE_QUOTED :
-          state.stringDelimiter === '"' ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
-            TOKEN_SUBTYPES.TEMPLATE;
-
-        const stringToken = createToken(TOKEN_TYPES.STRING, subtype, state.indentation.length, '');
-        stringToken.end = line.length;
-        stringToken.incomplete = true;
-        state.tokens.push(stringToken);
-
-        // Also update the stringState to continue the string to the next line
-        result.stringState = {
-          escaped: false,
-          delimiter: state.stringDelimiter
-        };
-        break;*/
-      }
-      default:
-        throw new Error('Invalid state: ' + currentState);
-    }
-  }
   return result;
 }
 
@@ -646,7 +606,7 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
     tokens: [],
     currentState: inMultiLineComment ? STATES.MULTI_LINE_COMMENT : STATES.NORMAL,
     currentToken: null,
-    codeStart: inMultiLineComment ? null : indentation.length,
+    codeStart: inMultiLineComment ? null : 0,
     escaped: false,
     stringDelimiter: '',
     indentation // Store indentation in state
@@ -663,12 +623,12 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
       stringState.delimiter === '"' ? TOKEN_SUBTYPES.DOUBLE_QUOTED :
         TOKEN_SUBTYPES.TEMPLATE;
 
-    state.currentToken = createToken(TOKEN_TYPES.STRING, subtype, indentation.length, '');
+    state.currentToken = createToken(TOKEN_TYPES.STRING, subtype, 0, '');
     state.codeStart = null;
 
     // Special handling for empty or whitespace-only lines in string continuation
     if (line.trim() === '') {
-      state.currentToken.value = line.substring(indentation.length);
+      state.currentToken.value = line;
       state.currentToken.end = line.length;
       state.currentToken.incomplete = true;
       state.tokens.push(state.currentToken);
@@ -686,7 +646,7 @@ function parseTemplateLine(line, inMultiLineComment = false, stringState = null)
     }
   } else if (inMultiLineComment) {
     // Continuing a multi-line comment
-    state.currentToken = createToken(TOKEN_TYPES.COMMENT, TOKEN_SUBTYPES.MULTI_LINE, indentation.length, '');
+    state.currentToken = createToken(TOKEN_TYPES.COMMENT, TOKEN_SUBTYPES.MULTI_LINE, 0, '');
   }
 
   // Process the line character by character

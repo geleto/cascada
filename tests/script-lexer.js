@@ -1,11 +1,16 @@
 const expect = require('expect.js');
 const {
-  parseTemplateLine,
+  parseTemplateLine: _parseTemplateLine,
   TOKEN_TYPES,
   TOKEN_SUBTYPES,
   isValidRegexContext,
   hasCompleteRegexPattern
 } = require('../src/script/script-lexer');
+
+function parseTemplateLine(...args) {
+  const result = _parseTemplateLine(...args);
+  return result;
+}
 
 describe('Script Parser', function() {
 
@@ -1316,32 +1321,35 @@ describe('Script Parser', function() {
     describe('Token Positioning', function () {
       it('should position code tokens correctly with space indentation', function () {
         const result = parseTemplateLine('    const x = 5;');
-        expect(result.tokens[0].start).to.equal(4);
-        expect(result.tokens[0].value).to.equal('const x = 5;');
+        expect(result.tokens[0].start).to.equal(0);
+        expect(result.tokens[0].value).to.equal('    const x = 5;');
       });
 
       it('should position code tokens correctly with tab indentation', function () {
         const result = parseTemplateLine('\tconst x = 5;');
-        expect(result.tokens[0].start).to.equal(1);
-        expect(result.tokens[0].value).to.equal('const x = 5;');
+        expect(result.tokens[0].start).to.equal(0);
+        expect(result.tokens[0].value).to.equal('\tconst x = 5;');
       });
 
       it('should position string tokens correctly after indentation', function () {
         const result = parseTemplateLine('    "string";');
-        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-        expect(result.tokens[0].start).to.equal(4);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[1].start).to.equal(4);
       });
 
       it('should position regex tokens correctly after indentation', function () {
         const result = parseTemplateLine('    r/pattern/g;');
-        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
-        expect(result.tokens[0].start).to.equal(4);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.REGEX);
+        expect(result.tokens[1].start).to.equal(4);
       });
 
       it('should position comment tokens correctly after indentation', function () {
         const result = parseTemplateLine('    // Comment');
-        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
-        expect(result.tokens[0].start).to.equal(4);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.COMMENT);
+        expect(result.tokens[1].start).to.equal(4);
       });
     });
 
@@ -1356,7 +1364,7 @@ describe('Script Parser', function() {
         const result2 = parseTemplateLine('      Line 2";', false, result1.stringState);
         expect(result2.indentation).to.equal('      ');
         expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-        expect(result2.tokens[0].start).to.equal(6); // After indentation
+        expect(result2.tokens[0].start).to.equal(0);
       });
 
       it('should handle multi-line comment continuation with indentation', function () {
@@ -1369,7 +1377,7 @@ describe('Script Parser', function() {
         const result2 = parseTemplateLine('      End of comment */', result1.inMultiLineComment);
         expect(result2.indentation).to.equal('      ');
         expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
-        expect(result2.tokens[0].start).to.equal(6); // After indentation
+        expect(result2.tokens[0].start).to.equal(0);
       });
 
       it('should preserve indentation in the result object', function () {
@@ -1391,9 +1399,9 @@ describe('Script Parser', function() {
         expect(result.indentation).to.equal('    ');
         expect(result.tokens).to.have.length(1);
         expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
-        expect(result.tokens[0].start).to.equal(4);
+        expect(result.tokens[0].start).to.equal(0);
         expect(result.tokens[0].end).to.equal(4);
-        expect(result.tokens[0].value).to.equal('');
+        expect(result.tokens[0].value).to.equal('    ');
       });
 
       it('should handle lines with only tabs as indentation', function () {
@@ -1401,9 +1409,9 @@ describe('Script Parser', function() {
         expect(result.indentation).to.equal('\t\t');
         expect(result.tokens).to.have.length(1);
         expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
-        expect(result.tokens[0].start).to.equal(2);
+        expect(result.tokens[0].start).to.equal(0);
         expect(result.tokens[0].end).to.equal(2);
-        expect(result.tokens[0].value).to.equal('');
+        expect(result.tokens[0].value).to.equal('\t\t');
       });
     });
 
@@ -1419,7 +1427,7 @@ describe('Script Parser', function() {
         const result2 = parseTemplateLine('      7A";', false, result1.stringState);
         expect(result2.indentation).to.equal('      ');
         expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-        expect(result2.tokens[0].start).to.equal(6); // After indentation
+        expect(result2.tokens[0].start).to.equal(0);
       });
 
       it('should handle single backslash at line end with indentation (string continues)', function () {
@@ -1448,25 +1456,27 @@ describe('Script Parser', function() {
         // This test needs modification because our parser might be treating template literals differently
         // Let's test for the backtick at the start position after indentation
         const result = parseTemplateLine('    `Value: ${x}`;');
-        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-        expect(result.tokens[0].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
-        expect(result.tokens[0].start).to.equal(4);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+        expect(result.tokens[1].start).to.equal(4);
       });
 
       it('should handle multi-line template literals with indentation', function () {
         // Direct template literal without assignment
         const result1 = parseTemplateLine('    `Line 1');
         expect(result1.indentation).to.equal('    ');
-        expect(result1.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-        expect(result1.tokens[0].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
-        expect(result1.tokens[0].start).to.equal(4);
-        expect(result1.tokens[0].incomplete).to.be(true);
+        expect(result1.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result1.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result1.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+        expect(result1.tokens[1].start).to.equal(4);
+        expect(result1.tokens[1].incomplete).to.be(true);
 
         // Template literal continues with different indentation
         const result2 = parseTemplateLine('      Line 2`;', false, result1.stringState);
         expect(result2.indentation).to.equal('      ');
         expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-        expect(result2.tokens[0].start).to.equal(6);
+        expect(result2.tokens[0].start).to.equal(0);
       });
     });
 
@@ -1475,32 +1485,34 @@ describe('Script Parser', function() {
         const result = parseTemplateLine('    const x = "string"; // Comment');
         expect(result.indentation).to.equal('    ');
         expect(result.tokens.length).to.be.greaterThan(1);
-        expect(result.tokens[0].start).to.equal(4); // First token starts after indentation
+        expect(result.tokens[0].start).to.equal(0); // First token includes indentation
       });
 
       it('should handle indentation with both single and multi-line comments', function () {
         // Modified to account for space between comments being tokenized
         const result = parseTemplateLine('    /* multi-line *//* single-line */');
         expect(result.indentation).to.equal('    ');
-        expect(result.tokens).to.have.length(2);
-        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
-        expect(result.tokens[0].subtype).to.equal(TOKEN_SUBTYPES.MULTI_LINE);
-        expect(result.tokens[0].start).to.equal(4);
+        expect(result.tokens).to.have.length(3);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
         expect(result.tokens[1].type).to.equal(TOKEN_TYPES.COMMENT);
         expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.MULTI_LINE);
+        expect(result.tokens[1].start).to.equal(4);
+        expect(result.tokens[2].type).to.equal(TOKEN_TYPES.COMMENT);
+        expect(result.tokens[2].subtype).to.equal(TOKEN_SUBTYPES.MULTI_LINE);
       });
 
       it('should handle multi-line comment followed by a single-line comment with space', function () {
         // Add a specific test for the case with space between comments
         const result = parseTemplateLine('    /* multi-line */ // single-line');
         expect(result.indentation).to.equal('    ');
-        // It's valid to have 3 tokens: multi-line comment, space as code, single-line comment
-        expect(result.tokens).to.have.length(3);
-        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
-        expect(result.tokens[0].subtype).to.equal(TOKEN_SUBTYPES.MULTI_LINE);
-        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.CODE); // Space between comments
-        expect(result.tokens[2].type).to.equal(TOKEN_TYPES.COMMENT);
-        expect(result.tokens[2].subtype).to.equal(TOKEN_SUBTYPES.SINGLE_LINE);
+        // It's valid to have 4 tokens: indentation code, multi-line comment, space as code, single-line comment
+        expect(result.tokens).to.have.length(4);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.COMMENT);
+        expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.MULTI_LINE);
+        expect(result.tokens[2].type).to.equal(TOKEN_TYPES.CODE); // Space between comments
+        expect(result.tokens[3].type).to.equal(TOKEN_TYPES.COMMENT);
+        expect(result.tokens[3].subtype).to.equal(TOKEN_SUBTYPES.SINGLE_LINE);
       });
 
       it('should preserve indentation when constructing string continuation state', function () {
@@ -1510,7 +1522,7 @@ describe('Script Parser', function() {
         expect(result1.indentation).to.equal('    ');
         expect(result2.indentation).to.equal('\t\t');
         expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-        expect(result2.tokens[0].start).to.equal(2); // After tab indentation
+        expect(result2.tokens[0].start).to.equal(0);
       });
     });
   });
@@ -1539,7 +1551,7 @@ describe('Script Parser', function() {
         const largeIndent = ' '.repeat(100);
         const result = parseTemplateLine(largeIndent + 'x = 5;');
         expect(result.indentation).to.equal(largeIndent);
-        expect(result.tokens[0].start).to.equal(100);
+        expect(result.tokens[0].start).to.equal(0);
       });
     });
 
@@ -1579,23 +1591,26 @@ describe('Script Parser', function() {
       it('should handle template literals with nested expressions', function () {
         const result = parseTemplateLine('    `Value: ${x > 5 ? `nested ${y}` : "not nested"}`;');
         expect(result.indentation).to.equal('    ');
-        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-        expect(result.tokens[0].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[1].subtype).to.equal(TOKEN_SUBTYPES.TEMPLATE);
       });
 
       it('should handle template literals with multiple expressions and indentation', function () {
         const result = parseTemplateLine('    `${a} + ${b} = ${a + b}`;');
         expect(result.indentation).to.equal('    ');
-        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-        expect(result.tokens[0].start).to.equal(4);
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result.tokens[1].start).to.equal(4);
       });
 
       it('should handle multi-line template literal with expressions and varying indentation', function () {
         // First line
         const result1 = parseTemplateLine('    `Start of template ${');
         expect(result1.indentation).to.equal('    ');
-        expect(result1.tokens[0].type).to.equal(TOKEN_TYPES.STRING);
-        expect(result1.tokens[0].incomplete).to.be(true);
+        expect(result1.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result1.tokens[1].type).to.equal(TOKEN_TYPES.STRING);
+        expect(result1.tokens[1].incomplete).to.be(true);
         expect(result1.stringState).not.to.be(null);
 
         // Second line with different indentation
@@ -1621,13 +1636,13 @@ describe('Script Parser', function() {
         const result2 = parseTemplateLine('\t\tmiddle of comment', result1.inMultiLineComment);
         expect(result2.indentation).to.equal('\t\t');
         expect(result2.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
-        expect(result2.tokens[0].start).to.equal(2);
+        expect(result2.tokens[0].start).to.equal(0);
 
         // Finish with mixed indentation
         const result3 = parseTemplateLine('  \t  end of comment */', result2.inMultiLineComment);
         expect(result3.indentation).to.equal('  \t  ');
         expect(result3.tokens[0].type).to.equal(TOKEN_TYPES.COMMENT);
-        expect(result3.tokens[0].start).to.equal(5);
+        expect(result3.tokens[0].start).to.equal(0);
       });
     });
 
@@ -1656,8 +1671,9 @@ describe('Script Parser', function() {
       it('should handle regex with flags after indentation', function() {
         const result = parseTemplateLine('    r/pattern/gi;');
         expect(result.indentation).to.equal('    ');
-        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.REGEX);
-        expect(result.tokens[0].flags).to.equal('gi');
+        expect(result.tokens[0].type).to.equal(TOKEN_TYPES.CODE);
+        expect(result.tokens[1].type).to.equal(TOKEN_TYPES.REGEX);
+        expect(result.tokens[1].flags).to.equal('gi');
       });
 
       it('should treat incomplete regex pattern as code', function() {
@@ -1699,7 +1715,7 @@ describe('Script Parser', function() {
           expect(result.indentation).to.equal(expectedIndentation);
 
           // Verify token is positioned correctly after indentation
-          expect(result.tokens[0].start).to.equal(expectedIndentation.length);
+          expect(result.tokens[0].start).to.equal(0);
         }
 
         // Verify final result is not in comment state
@@ -1746,12 +1762,12 @@ describe('Script Parser', function() {
         const largeIndent = ' '.repeat(100);
         const result2 = parseTemplateLine(largeIndent + 'still in comment', result1.inMultiLineComment);
         expect(result2.indentation).to.equal(largeIndent);
-        expect(result2.tokens[0].start).to.equal(100);
+        expect(result2.tokens[0].start).to.equal(0);
 
         // Back to small indentation
         const result3 = parseTemplateLine(' end comment */', result2.inMultiLineComment);
         expect(result3.indentation).to.equal(' ');
-        expect(result3.tokens[0].start).to.equal(1);
+        expect(result3.tokens[0].start).to.equal(0);
       });
     });
   });
