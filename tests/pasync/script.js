@@ -22,10 +22,11 @@ describe('Cascada Script: Variables', function () {
   describe('Variable Declaration with var', function () {
     it('should declare and initialize a variable', async function () {
       const script = `
-        :data
+        data data
         var user = fetchUser(1)
-        @data.result.user = user
-      `;
+        data.result.user = user
+      
+        return data.snapshot()`;
 
       const context = {
         fetchUser: async (id) => ({ id, name: 'Alice' })
@@ -37,14 +38,15 @@ describe('Cascada Script: Variables', function () {
 
     it('should declare a variable with default value none', async function () {
       const script = `
-        :data
+        data data
         var report
         var value = 1
-		    @data.result.hasReportValue = report !== none
-        @data.result.hasValue = value !== none
-        @data.result.value = value
-        @data.result.reportValue = report
-      `;
+		    data.result.hasReportValue = report !== none
+        data.result.hasValue = value !== none
+        data.result.value = value
+        data.result.reportValue = report
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.hasReportValue).to.be(false);
@@ -55,11 +57,12 @@ describe('Cascada Script: Variables', function () {
 
     it('should declare multiple variables and assign them a single value', async function () {
       const script = `
-        :data
+        data data
         var x, y = 100
-        @data.result.x = x
-        @data.result.y = y
-      `;
+        data.result.x = x
+        data.result.y = y
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.x).to.be(100);
@@ -85,11 +88,12 @@ describe('Cascada Script: Variables', function () {
   describe('External Variable Declaration with extern', function () {
     it.skip('should declare external variables', async function () {
       const script = `
-        :data
+        data data
         extern currentUser, theme
-        @data.result.user = currentUser
-        @data.result.theme = theme
-      `;
+        data.result.user = currentUser
+        data.result.theme = theme
+      
+        return data.snapshot()`;
 
       const context = {
         currentUser: { name: 'Alice' },
@@ -103,11 +107,12 @@ describe('Cascada Script: Variables', function () {
 
     it('should allow re-assigning extern variables', async function () {
       const script = `
-        :data
+        data data
         extern currentUser, theme
         theme = "guest"
-        @data.result.theme = theme
-      `;
+        data.result.theme = theme
+      
+        return data.snapshot()`;
 
       const context = {
         currentUser: { name: 'Alice' },
@@ -136,11 +141,12 @@ describe('Cascada Script: Variables', function () {
   describe('Variable Assignment with =', function () {
     it('should assign to previously declared variables', async function () {
       const script = `
-        :data
+        data data
         var name = "Alice"
         name = "Bob"
-        @data.result.name = name
-      `;
+        data.result.name = name
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.name).to.be('Bob');
@@ -148,13 +154,14 @@ describe('Cascada Script: Variables', function () {
 
     it('should assign multiple existing variables at once', async function () {
       const script = `
-        :data
+        data data
         var x = 10
         var y = 20
         x, y = 200
-        @data.result.x = x
-        @data.result.y = y
-      `;
+        data.result.x = x
+        data.result.y = y
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.x).to.be(200);
@@ -179,16 +186,18 @@ describe('Cascada Script: Variables', function () {
   describe('Capture Block Assignment', function () {
     it('should use capture block for declaration and assignment', async function () {
       const script = `
-        :data
+        data data
         var rawUserData = fetchUser(123)
         var user = capture
-          : data
-          @data.id = rawUserData.id
-          @data.username = rawUserData.name | title
-          @data.status = "active" if rawUserData.isActive == 1 else "inactive"
+          data data
+          data.id = rawUserData.id
+          data.username = rawUserData.name | title
+          data.status = "active" if rawUserData.isActive == 1 else "inactive"
+          return data.snapshot()
         endcapture
-        @data.result.user = user
-      `;
+        data.result.user = user
+      
+        return data.snapshot()`;
 
       const context = {
         fetchUser: async (id) => ({ id: 123, name: 'alice', isActive: 1 })
@@ -204,15 +213,17 @@ describe('Cascada Script: Variables', function () {
 
     it('should use capture block for assignment to existing variable', async function () {
       const script = `
-        :data
+        data data
         var user
         user = capture
-          : data
-          @data.name = "Bob"
-          @data.role = "admin"
+          data data
+          data.name = "Bob"
+          data.role = "admin"
+          return data.snapshot()
         endcapture
-        @data.result.user = user
-      `;
+        data.result.user = user
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.user).to.eql({
@@ -223,15 +234,17 @@ describe('Cascada Script: Variables', function () {
 
     it('should access outer scope variables in capture block', async function () {
       const script = `
-        :data
+        data data
         var baseUrl = "https://api.example.com"
         var user = capture
-          : data
-          @data.apiUrl = baseUrl + "/users"
-          @data.name = "Alice"
+          data data
+          data.apiUrl = baseUrl + "/users"
+          data.name = "Alice"
+          return data.snapshot()
         endcapture
-        @data.result.user = user
-      `;
+        data.result.user = user
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.user).to.eql({
@@ -261,12 +274,13 @@ describe('Cascada Script: Variables', function () {
 
     it('should allow accessing parent scope variables in child scope', async function () {
       const script = `
-        :data
+        data data
         var parentVar = "parent value"
         for i in range(2)
-          @data.result.items.push(parentVar + " " + i)
+          data.result.items.push(parentVar + " " + i)
         endfor
-      `;
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.items).to.eql(['parent value 0', 'parent value 1']);
@@ -274,13 +288,14 @@ describe('Cascada Script: Variables', function () {
 
     it('should allow declaring different variables in different scopes', async function () {
       const script = `
-        :data
+        data data
         var outerVar = "outer"
         for i in range(2)
           var innerVar = "inner " + i
-          @data.result.items.push(outerVar + " - " + innerVar)
+          data.result.items.push(outerVar + " - " + innerVar)
         endfor
-      `;
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.items).to.eql(['outer - inner 0', 'outer - inner 1']);
@@ -288,16 +303,17 @@ describe('Cascada Script: Variables', function () {
 
     it('should scope branch-local vars for each side of an if/else', async function () {
       const script = `
-        :data
+        data data
         var usePrimary = inputFlag
         if usePrimary
           var scopedValue = "primary"
-          @data.result.selection = scopedValue
+          data.result.selection = scopedValue
         else
           var scopedValue = "fallback"
-          @data.result.selection = scopedValue
+          data.result.selection = scopedValue
         endif
-      `;
+      
+        return data.snapshot()`;
 
       const primary = await env.renderScriptString(script, { inputFlag: true });
       expect(primary.result.selection).to.be('primary');
@@ -308,17 +324,18 @@ describe('Cascada Script: Variables', function () {
 
     it('should not leak vars declared inside if/else branches', async function () {
       const script = `
-        :data
+        data data
         var pickPrimary = true
         if pickPrimary
           var scopedValue = "primary-only"
-          @data.result.selection = scopedValue
+          data.result.selection = scopedValue
         else
           var scopedValue = "fallback-only"
-          @data.result.selection = scopedValue
+          data.result.selection = scopedValue
         endif
-        @data.result.postBranchSeen = scopedValue
-      `;
+        data.result.postBranchSeen = scopedValue
+      
+        return data.snapshot()`;
 
       try {
         await env.renderScriptString(script, {});
@@ -330,18 +347,19 @@ describe('Cascada Script: Variables', function () {
 
     it('should allow redeclaring a branch-local name after the if/else', async function () {
       const script = `
-        :data
+        data data
         var shouldUsePrimary = true
         if shouldUsePrimary
           var scopedValue = "primary branch"
-          @data.result.internal = scopedValue
+          data.result.internal = scopedValue
         else
           var scopedValue = "fallback branch"
-          @data.result.internal = scopedValue
+          data.result.internal = scopedValue
         endif
         var scopedValue = "outer scope"
-        @data.result.outer = scopedValue
-      `;
+        data.result.outer = scopedValue
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.internal).to.be('primary branch');
@@ -350,20 +368,21 @@ describe('Cascada Script: Variables', function () {
 
     it('should scope switch case variables independently', async function () {
       const script = `
-        :data
+        data data
         var mode = currentMode
         switch mode
         case "alpha"
           var branchScoped = "ALPHA"
-          @data.result.value = branchScoped
+          data.result.value = branchScoped
         case "beta"
           var branchScoped = "BETA"
-          @data.result.value = branchScoped
+          data.result.value = branchScoped
         default
           var branchScoped = "DEFAULT"
-          @data.result.value = branchScoped
+          data.result.value = branchScoped
         endswitch
-      `;
+      
+        return data.snapshot()`;
 
       const betaResult = await env.renderScriptString(script, { currentMode: 'beta' });
       expect(betaResult.result.value).to.be('BETA');
@@ -374,21 +393,22 @@ describe('Cascada Script: Variables', function () {
 
     it('should not leak vars declared in switch cases', async function () {
       const script = `
-        :data
+        data data
         var mode = "alpha"
         switch mode
         case "alpha"
           var branchScoped = "ALPHA"
-          @data.result.value = branchScoped
+          data.result.value = branchScoped
         case "beta"
           var branchScoped = "BETA"
-          @data.result.value = branchScoped
+          data.result.value = branchScoped
         default
           var branchScoped = "DEFAULT"
-          @data.result.value = branchScoped
+          data.result.value = branchScoped
         endswitch
-        @data.result.after = branchScoped
-      `;
+        data.result.after = branchScoped
+      
+        return data.snapshot()`;
 
       try {
         await env.renderScriptString(script, {});
@@ -400,22 +420,23 @@ describe('Cascada Script: Variables', function () {
 
     it('should allow redeclaring a case-local name after the switch', async function () {
       const script = `
-        :data
+        data data
         var mode = "beta"
         switch mode
         case "alpha"
           var branchScoped = "ALPHA"
-          @data.result.inner = branchScoped
+          data.result.inner = branchScoped
         case "beta"
           var branchScoped = "BETA"
-          @data.result.inner = branchScoped
+          data.result.inner = branchScoped
         default
           var branchScoped = "DEFAULT"
-          @data.result.inner = branchScoped
+          data.result.inner = branchScoped
         endswitch
         var branchScoped = "outer switch scope"
-        @data.result.outer = branchScoped
-      `;
+        data.result.outer = branchScoped
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.inner).to.be('BETA');
@@ -426,19 +447,22 @@ describe('Cascada Script: Variables', function () {
   describe('Complex Variable Scenarios', function () {
     it('should handle nested capture blocks', async function () {
       const script = `
-        :data
+        data data
         var outer = capture
-          : data
-          @data.level = "outer"
+          data data
+          data.level = "outer"
           var inner = capture
-            : data
-            @data.level = "inner"
-            @data.parentLevel = "outer"
+            data data
+            data.level = "inner"
+            data.parentLevel = "outer"
+            return data.snapshot()
           endcapture
-          @data.innerResult = inner
+          data.innerResult = inner
+          return data.snapshot()
         endcapture
-        @data.result.outer = outer
-      `;
+        data.result.outer = outer
+      
+        return data.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.result.outer).to.eql({
@@ -452,18 +476,20 @@ describe('Cascada Script: Variables', function () {
 
     it.skip('should handle multiple extern variables with reassignment', async function () {
       const script = `
-        :data
+        data data
         extern user, settings, theme
         theme = "dark"
         settings = capture
-          : data
-          @data.notifications = true
-          @data.language = "en"
+          data data
+          data.notifications = true
+          data.language = "en"
+          return data.snapshot()
         endcapture
-        @data.result.user = user
-        @data.result.settings = settings
-        @data.result.theme = theme
-      `;
+        data.result.user = user
+        data.result.settings = settings
+        data.result.theme = theme
+      
+        return data.snapshot()`;
 
       const context = {
         user: { name: 'Alice' },
@@ -482,18 +508,20 @@ describe('Cascada Script: Variables', function () {
 
     it('should handle complex variable declarations with async operations', async function () {
       const script = `
-        :data
+        data data
         var userData = fetchUser(1)
         var settings = fetchSettings(1)
         var profile = capture
-          : data
-          @data.name = userData.name
-          @data.email = userData.email
-          @data.theme = settings.theme
-          @data.notifications = settings.notifications
+          data data
+          data.name = userData.name
+          data.email = userData.email
+          data.theme = settings.theme
+          data.notifications = settings.notifications
+          return data.snapshot()
         endcapture
-        @data.result.profile = profile
-      `;
+        data.result.profile = profile
+      
+        return data.snapshot()`;
 
       const context = {
         fetchUser: async (id) => ({ name: 'Alice', email: 'alice@example.com' }),
@@ -513,14 +541,16 @@ describe('Cascada Script: Variables', function () {
   describe('Error Handling in Variable Operations', function () {
     it('should handle errors in capture block gracefully', async function () {
       const script = `
-        :data
+        data data
         var result = capture
-          : data
+          data data
           // This would cause an error if not handled
-          @data.value = someUndefinedFunction()
+          data.value = someUndefinedFunction()
+          return data.snapshot()
         endcapture
-        @data.result.output = result
-      `;
+        data.result.output = result
+      
+        return data.snapshot()`;
 
       try {
         await env.renderScriptString(script, {});
@@ -532,10 +562,11 @@ describe('Cascada Script: Variables', function () {
 
     it.skip('should handle errors in extern variable access', async function () {
       const script = `
-        :data
+        data data
         extern requiredVar
-        @data.result.value = requiredVar
-      `;
+        data.result.value = requiredVar
+      
+        return data.snapshot()`;
 
       try {
         await env.renderScriptString(script, {});

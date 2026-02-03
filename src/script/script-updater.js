@@ -1,84 +1,3 @@
-/**
- * Cascada Script to Template Transpiler
- *
- * This module transpiles Cascada Script syntax into the underlying Nunjucks/Cascada
- * template engine syntax. Uses script-lexer for token extraction and handling.
- *
- * Key Syntax Transformations:
- *
- * 1.  **No Tag Delimiters**
- *     - Logic is written without `{% ... %}` or `{{ ... }}`. The transpiler
- *       adds them automatically with whitespace control.
- *
- * 2.  **Explicit Variable Handling**
- *     - `var user = ...`      → `{% var user = ... %}`
- *     - `user = "new name"`   → `{% set user = "new name" %}`
- *     - `extern config`       → `{% extern config %}`
- *
- * 3.  **Output Commands with `@`**
- *     - `@text(...)` is the dedicated command for generating text output.
- *       `@text("Hello")`      → `{% output text text("Hello") %}`
- *     - Data assembly commands build structured objects. The modern path-based
- *       syntax is converted to a generic handler call.
- *       `@data.user.id = 1`   → `{% output data data.set('user.id', 1) %}`
- *       `@data.tags.push("a")`→ `{% output data data.push('user.tags', "a") %}`
- *     - Generic commands are passed through.
- *       `@db.insert(...)`     → `{% output db db.insert(...) %}`
- *
- * 4.  **Output Focus Directives with `:`**
- *     - Script-level directives control the final output format.
- *       `:data`               → `{% option focus="data" %}`
- *
- * 5.  **Block Assignment with `capture`**
- *     - `var user = capture :data ... endcapture` becomes a `var` block.
- *       → `{% var user :data %}{#...#}{% endvar %}`
- *
- * 6.  **Implicit `do` Statements**
- *     - Any standalone expression becomes a `do` statement for executing logic.
- *       `items.push("new")`   → `{% do items.push("new") %}`
- *
- * 7.  **Modern Syntax Features**
- *     - **Multi-line Expressions**: Expressions can span multiple lines based
- *       on operators or unclosed brackets and are automatically concatenated.
- *     - **Comments**: Standard `//` and `/* ... * /` comments are converted
- *       to Nunjucks/Cascada `{# ... #}` comments.
- *
- * Script Syntax Example:
- *
- * ```
- * // Assemble a user object from a profile
- * :data
- *
- * var userProfile = fetchProfile(1)
- *
- * @data.user.id = userProfile.id
- * @data.user.name = userProfile.name
- *
- * for task in userProfile.tasks
- *   @data.user.tasks.push(task.title)
- * endfor
- * ```
- *
- * Converts to:
- *
- * ```
- * {#- Assemble a user object from a profile -#}
- * {%- option focus="data" -%}
- *
- * {%- var userProfile = fetchProfile(1) -%}
- *
- * {%- output data data.set('user.id', userProfile.id) -%}
- * {%- output data data.set('user.name', userProfile.name) -%}
- *
- * {%- for task in userProfile.tasks -%}
- *   {%- output data data.push('user.tasks', task.title) -%}
- * {%- endfor -%}
- * ```
- *
- * The transpiler uses a line-by-line, token-based approach with a state machine
- * to handle complex cases like multi-line expressions, nested comments, and
- * block structure validation, ensuring robust and accurate conversion.
- */
 
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
@@ -86,7 +5,7 @@ const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
 //this is only temporary, the implementation is vibe-coded and will be removed later
 const ENABLE_INSERT_IMPLICIT_RETURN = true;
 
-class ScriptTranspiler {
+class ScriptUpdater {
   constructor() {
     // Comment type constants
     this.COMMENT_TYPE = {
@@ -1247,6 +1166,7 @@ class ScriptTranspiler {
     parseResult.tagName = 'option';
     parseResult.blockType = null;//no block
     parseResult.codeContent = `focus="${focus}"`;
+    parseResult.isFocusDirective = true;
   }
 
   _processExtern(parseResult, lineIndex) {
@@ -1329,6 +1249,8 @@ class ScriptTranspiler {
     const comments = this._extractComments(parseResult.tokens);
     const codeTokens = this._filterOutComments(parseResult.tokens);
 
+    parseResult.originalLine = line;
+    parseResult.isFocusDirective = false;
     parseResult.isCommentOnly = !this._hasNonWhitespaceCode(codeTokens) && comments.length > 0;
     parseResult.isEmpty = line.trim() === '';
     parseResult.codeContent = this._tokensToCode(codeTokens);
@@ -1590,6 +1512,52 @@ class ScriptTranspiler {
     return output;
   }
 
+  _generateScriptOutput(processedLine) {
+    if (processedLine.isFocusDirective) {
+      return null;
+    }
+    if (processedLine.isInjected) {
+      const indentation = processedLine.indentation || '';
+      return `${indentation}${processedLine.scriptText || ''}`;
+    }
+    if (processedLine.originalLine !== undefined) {
+      if (processedLine.originalLine.includes('@data') ||
+        processedLine.originalLine.includes('@text') ||
+        processedLine.originalLine.includes('@value')) {
+        return this._rewriteLegacyOutputLine(processedLine);
+      }
+      return processedLine.originalLine;
+    }
+    const indentation = processedLine.indentation || '';
+    if (processedLine.lineType === 'TAG' && processedLine.tagName === 'return') {
+      return `${indentation}return ${processedLine.codeContent || ''}`.trimEnd();
+    }
+    return `${indentation}${processedLine.codeContent || ''}`.trimEnd();
+  }
+
+  _rewriteLegacyOutputLine(processedLine) {
+    const tokens = processedLine.tokens || [];
+    if (!tokens.length) {
+      return processedLine.originalLine;
+    }
+
+    const dataName = this._mapCoreOutputName('data');
+    const textName = this._mapCoreOutputName('text');
+    const valueName = this._mapCoreOutputName('value');
+
+    const replaceInCode = (value) => value
+      .replace(/@data\b/g, dataName)
+      .replace(/@text\b/g, textName)
+      .replace(/@value\b/g, valueName);
+
+    return tokens.map((token) => {
+      if (token.type === TOKEN_TYPES.CODE) {
+        return replaceInCode(token.value);
+      }
+      return token.value;
+    }).join('');
+  }
+
   /**
    * Validate block structure of processed lines
    * @param {Array} processedLines - Array of processed line info objects
@@ -1726,6 +1694,104 @@ class ScriptTranspiler {
     return output;
   }
 
+  scriptToTemplateAndScript(scriptStr, options = {}) {
+    this._useCoreOutputAliases = !!options.useCoreOutputAliases;
+    this._injectReturnedOutputsOnly = !!options.injectReturnedOutputsOnly;
+    this.outputScopes = [this._createOutputScope()];
+
+    const lines = scriptStr.split('\n');
+    const state = {
+      inMultiLineComment: false,
+      stringState: null,
+    };
+
+    const processedLines = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const processedLine = this._processLine(line, state, i);
+
+      processedLines.push(processedLine);
+      this._updateOutputScopesForLine(processedLine);
+
+      if (processedLine.injectLines && processedLine.injectLines.length > 0) {
+        processedLine.injectLines.forEach((injected) => {
+          const injectedLine = this._processLine(injected, state, i);
+          processedLines.push(injectedLine);
+          this._updateOutputScopesForLine(injectedLine);
+        });
+      }
+    }
+
+    this._processContinuationsAndComments(processedLines);
+
+    const hasExplicitReturn = this._hasTopLevelReturn(processedLines);
+    const focusDirective = this._getRootFocus(processedLines);
+    const forceRootOutputs = ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn && !focusDirective && !this._injectReturnedOutputsOnly;
+
+    const withOutputDeclarations = this._insertOutputDeclarations(processedLines, {
+      forceRootOutputs,
+      forceMacroCallOutputs: false,
+      forceCaptureOutputs: false
+    });
+    const outputLines = ENABLE_INSERT_IMPLICIT_RETURN
+      ? this._insertImplicitReturns(withOutputDeclarations)
+      : withOutputDeclarations;
+
+    let template = '';
+    let lastNonContinuationLineType = null;
+    for (let i = 0; i < outputLines.length; i++) {
+      if (!outputLines[i].isContinuation) {
+        lastNonContinuationLineType = outputLines[i].lineType;
+      }
+      template += this._generateOutput(outputLines[i], outputLines[i + 1]?.isContinuation, lastNonContinuationLineType, i);
+      if (i != outputLines.length - 1) {
+        template += '\n';
+      }
+    }
+
+    this._validateBlockStructure(processedLines);
+
+    const scriptLines = this._cloneProcessedLines(processedLines);
+    const withScriptDeclarations = this._insertOutputDeclarationsForScript(scriptLines, {
+      forceRootOutputs,
+      forceMacroCallOutputs: false,
+      forceCaptureOutputs: false
+    });
+    const scriptOutputLines = ENABLE_INSERT_IMPLICIT_RETURN
+      ? this._insertImplicitReturns(withScriptDeclarations)
+      : withScriptDeclarations;
+
+    const scriptLineTexts = [];
+    for (let i = 0; i < scriptOutputLines.length; i++) {
+      const lineText = this._generateScriptOutput(scriptOutputLines[i]);
+      if (lineText === null) {
+        continue;
+      }
+      scriptLineTexts.push(lineText);
+    }
+    let script = scriptLineTexts.join('\n');
+
+    const rootConflicts = this._getRootConflicts();
+
+    if (ENABLE_INSERT_IMPLICIT_RETURN && !hasExplicitReturn) {
+      const returnExpr = focusDirective
+        ? this._buildFocusedReturnExpression(focusDirective, rootConflicts)
+        : this._buildUnfocusedReturnExpression(rootConflicts);
+
+      const implicitReturn = `{% return ${returnExpr} %}`;
+      if (template.length > 0) {
+        template += '\n';
+      }
+      template += implicitReturn;
+
+      const rootIndentation = this._lastRootOutputScope?.indentation || '';
+      scriptLineTexts.push(`${rootIndentation}return ${returnExpr}`);
+      script = scriptLineTexts.join('\n');
+    }
+
+    return { template, script };
+  }
+
   _hasTopLevelReturn(processedLines) {
     const ignoreStack = [];
 
@@ -1791,7 +1857,9 @@ class ScriptTranspiler {
       isCommentOnly: false,
       continuesToNext: false,
       continuesFromPrev: false,
-      tokens: []
+      tokens: [],
+      isInjected: true,
+      scriptText: `return ${codeContent}`
     };
   }
 
@@ -1995,6 +2063,33 @@ class ScriptTranspiler {
     return `${indent}{%- ${outputType} ${name} -%}`;
   }
 
+  _formatInlineOutputDeclarationScript(outputType, indentation) {
+    if (outputType !== 'data' && outputType !== 'text' && outputType !== 'value') {
+      return '';
+    }
+    const name = this._mapCoreOutputName(outputType);
+    return `${outputType} ${name}`;
+  }
+
+  _makeInjectedScriptLine(scriptText, indentation) {
+    return {
+      indentation: indentation || '',
+      lineType: 'CODE',
+      tagName: null,
+      codeContent: '',
+      blockType: null,
+      comments: [],
+      isContinuation: false,
+      isEmpty: false,
+      isCommentOnly: false,
+      continuesToNext: false,
+      continuesFromPrev: false,
+      tokens: [],
+      isInjected: true,
+      scriptText
+    };
+  }
+
   _collectIdentifierConflicts(targetsStr, conflicts) {
     if (!targetsStr) return;
     targetsStr.split(',').forEach((raw) => {
@@ -2028,6 +2123,214 @@ class ScriptTranspiler {
   }
 
   _insertOutputDeclarations(processedLines, options = {}) {
+    const scopes = [];
+    const scopeStack = [];
+    const rootScope = {
+      type: 'root',
+      startIndex: 0,
+      endIndex: processedLines.length,
+      endTag: null,
+      focus: this._getRootFocus(processedLines),
+      declaredOutputs: new Set(),
+      requiredOutputs: new Set(),
+      conflictingNames: new Set(),
+      insertionIndex: 0,
+      indentation: ''
+    };
+    this._lastRootOutputScope = rootScope;
+    scopes.push(rootScope);
+    scopeStack.push(rootScope);
+    this._lastOutputScopes = scopes;
+    this._lastOutputScopeByStart = new Map();
+    this._lastOutputScopeByStart.set(rootScope.startIndex, rootScope);
+
+    for (let i = 0; i < processedLines.length; i++) {
+      const line = processedLines[i];
+
+      if (!line.isContinuation && line.lineType === 'TAG') {
+        const isMacroStart = line.blockType === this.BLOCK_TYPE.START && line.tagName === 'macro';
+        const isCallStart = line.blockType === this.BLOCK_TYPE.START && (line.tagName === 'call' || line.tagName === 'call_assign');
+        const isCaptureStart = line.blockType === this.BLOCK_TYPE.START &&
+          (line.tagName === 'var' || line.tagName === 'set');
+
+        if (isMacroStart || isCallStart || isCaptureStart) {
+          const focus = this._extractFocusFromTag(processedLines, i);
+          const scope = {
+            type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
+            startIndex: i,
+            endIndex: null,
+            endTag: isMacroStart
+              ? 'endmacro'
+              : (isCallStart ? (line.tagName === 'call_assign' ? 'endcall_assign' : 'endcall') : `end${line.tagName}`),
+            focus,
+            declaredOutputs: new Set(),
+            requiredOutputs: new Set(),
+            conflictingNames: new Set(),
+            insertionIndex: null,
+            indentation: ''
+          };
+          scopes.push(scope);
+          scopeStack.push(scope);
+          this._lastOutputScopeByStart.set(scope.startIndex, scope);
+
+          if (isMacroStart) {
+            const params = this._parseMacroParams(line.codeContent);
+            this._collectIdentifierConflicts(params.join(','), scope.conflictingNames);
+          } else if (isCallStart) {
+            const params = this._parseCallParams(line.codeContent);
+            this._collectIdentifierConflicts(params.join(','), scope.conflictingNames);
+          }
+        }
+      }
+
+      if (!line.isContinuation && line.lineType === 'TAG' &&
+        (line.tagName === 'data' || line.tagName === 'text' || line.tagName === 'value' || line.tagName === 'sink')) {
+        const name = this._getFirstWord(line.codeContent || '');
+        if (name) {
+          scopeStack[scopeStack.length - 1].declaredOutputs.add(name);
+        }
+      }
+
+      if (!line.isContinuation && line.lineType === 'TAG' && line.tagName === 'output') {
+        const handlerName = this._getFirstWord(line.codeContent || '');
+        if (handlerName === 'data' || handlerName === 'text' || handlerName === 'value') {
+          scopeStack[scopeStack.length - 1].requiredOutputs.add(handlerName);
+        }
+      }
+
+      if (line.requiredOutputs && line.requiredOutputs.size > 0) {
+        line.requiredOutputs.forEach((outputName) => {
+          scopeStack[scopeStack.length - 1].requiredOutputs.add(outputName);
+        });
+      }
+
+      if (!line.isContinuation && line.lineType === 'TAG' &&
+        (line.tagName === 'var' || line.tagName === 'extern')) {
+        const lhs = (line.codeContent || '').split('=')[0].trim();
+        this._collectIdentifierConflicts(lhs, scopeStack[scopeStack.length - 1].conflictingNames);
+      }
+
+      if (!line.isContinuation && line.lineType === 'TAG' && line.blockType === this.BLOCK_TYPE.END) {
+        const scope = scopeStack[scopeStack.length - 1];
+        if (scope && scope.endTag === line.tagName) {
+          scope.endIndex = i;
+          scopeStack.pop();
+        }
+      }
+    }
+
+    scopes.forEach((scope) => {
+      if (scope.type !== 'root' && processedLines[scope.startIndex]) {
+        processedLines[scope.startIndex]._outputScopeInfo = scope;
+      }
+      let insertionIndex = 0;
+      if (scope.type === 'root') {
+        let i = 0;
+        while (i < processedLines.length) {
+          const line = processedLines[i];
+          if (line.isEmpty || line.isCommentOnly) {
+            i++;
+            continue;
+          }
+          if (!line.isContinuation && line.lineType === 'TAG' && line.tagName === 'option') {
+            i++;
+            while (i < processedLines.length && processedLines[i].isContinuation) {
+              i++;
+            }
+            continue;
+          }
+          break;
+        }
+        insertionIndex = i;
+      } else {
+        let i = scope.startIndex + 1;
+        while (i < processedLines.length && processedLines[i].isContinuation) {
+          i++;
+        }
+        insertionIndex = i;
+      }
+      scope.insertionIndex = insertionIndex;
+
+      const startIndentation = processedLines[scope.startIndex]?.indentation || '';
+      let indentation = scope.type === 'root' ? '' : (startIndentation + '  ');
+      for (let i = insertionIndex; i < (scope.endIndex ?? processedLines.length); i++) {
+        const line = processedLines[i];
+        if (line.isEmpty || line.isCommentOnly || line.isContinuation || line.isFocusDirective) {
+          continue;
+        }
+        indentation = line.indentation || indentation;
+        break;
+      }
+      scope.indentation = indentation;
+    });
+
+    const injectionMap = new Map();
+    scopes.forEach((scope) => {
+      const outputsToInject = new Set(this._getOutputsToInject(scope));
+      if (options.forceRootOutputs && scope.type === 'root') {
+        outputsToInject.add('data');
+        outputsToInject.add('text');
+        outputsToInject.add('value');
+      }
+      if (options.forceMacroCallOutputs && (scope.type === 'macro' || scope.type === 'call')) {
+        outputsToInject.add('data');
+        outputsToInject.add('text');
+        outputsToInject.add('value');
+      }
+      if (options.forceCaptureOutputs && scope.type === 'capture') {
+        outputsToInject.add('data');
+        outputsToInject.add('text');
+        outputsToInject.add('value');
+      }
+      const inlineChunks = [];
+      outputsToInject.forEach((outputType) => {
+        if (!scope.declaredOutputs.has(outputType)) {
+          inlineChunks.push(this._formatInlineOutputDeclaration(outputType, scope.indentation));
+        }
+      });
+      if (inlineChunks.length) {
+        injectionMap.set(scope.insertionIndex, (injectionMap.get(scope.insertionIndex) || []).concat(inlineChunks));
+      }
+    });
+
+    injectionMap.forEach((chunks, index) => {
+      if (!chunks || chunks.length === 0) return;
+      let targetIndex = index;
+      while (targetIndex < processedLines.length && processedLines[targetIndex].isContinuation) {
+        targetIndex++;
+      }
+      if (targetIndex >= processedLines.length) {
+        processedLines.push({
+          indentation: '',
+          lineType: 'TEXT',
+          tagName: null,
+          codeContent: '',
+          blockType: null,
+          comments: [],
+          isContinuation: false,
+          isEmpty: true,
+          isCommentOnly: false,
+          continuesToNext: false,
+          continuesFromPrev: false,
+          tokens: []
+        });
+      }
+      const line = processedLines[targetIndex];
+      line.inlinePrefix = (line.inlinePrefix || '') + chunks.join('');
+    });
+
+    return processedLines;
+  }
+
+  _cloneProcessedLines(processedLines) {
+    return processedLines.map((line) => ({
+      ...line,
+      comments: line.comments ? [...line.comments] : [],
+      tokens: line.tokens ? line.tokens.map((token) => ({ ...token })) : []
+    }));
+  }
+
+  _insertOutputDeclarationsForScript(processedLines, options = {}) {
     const scopes = [];
     const scopeStack = [];
     const rootScope = {
@@ -2187,7 +2490,10 @@ class ScriptTranspiler {
       const inlineChunks = [];
       outputsToInject.forEach((outputType) => {
         if (!scope.declaredOutputs.has(outputType)) {
-          inlineChunks.push(this._formatInlineOutputDeclaration(outputType, scope.indentation));
+          inlineChunks.push({
+            text: this._formatInlineOutputDeclarationScript(outputType, scope.indentation),
+            indentation: scope.indentation
+          });
         }
       });
       if (inlineChunks.length) {
@@ -2195,30 +2501,17 @@ class ScriptTranspiler {
       }
     });
 
-    injectionMap.forEach((chunks, index) => {
+    const entries = Array.from(injectionMap.entries()).sort((a, b) => a[0] - b[0]);
+    let offset = 0;
+    entries.forEach(([index, chunks]) => {
       if (!chunks || chunks.length === 0) return;
-      let targetIndex = index;
+      let targetIndex = index + offset;
       while (targetIndex < processedLines.length && processedLines[targetIndex].isContinuation) {
         targetIndex++;
       }
-      if (targetIndex >= processedLines.length) {
-        processedLines.push({
-          indentation: '',
-          lineType: 'TEXT',
-          tagName: null,
-          codeContent: '',
-          blockType: null,
-          comments: [],
-          isContinuation: false,
-          isEmpty: true,
-          isCommentOnly: false,
-          continuesToNext: false,
-          continuesFromPrev: false,
-          tokens: []
-        });
-      }
-      const line = processedLines[targetIndex];
-      line.inlinePrefix = (line.inlinePrefix || '') + chunks.join('');
+      const injectedLines = chunks.map((chunk) => this._makeInjectedScriptLine(chunk.text, chunk.indentation));
+      processedLines.splice(targetIndex, 0, ...injectedLines);
+      offset += injectedLines.length;
     });
 
     return processedLines;
@@ -2239,7 +2532,7 @@ class ScriptTranspiler {
 
         if (isMacroStart || isCallStart || isCaptureStart) {
           const focus = this._extractFocusFromTag(processedLines, i);
-          const scopeInfo = this._lastOutputScopeByStart ? this._lastOutputScopeByStart.get(i) : null;
+          const scopeInfo = line._outputScopeInfo || (this._lastOutputScopeByStart ? this._lastOutputScopeByStart.get(i) : null);
           scopeStack.push({
             type: isMacroStart ? 'macro' : (isCallStart ? 'call' : 'capture'),
             endTag: isMacroStart
@@ -2271,8 +2564,9 @@ class ScriptTranspiler {
                   declaredOutputs,
                   forceDirectCore
                 );
+                const returnIndentation = scope.scopeInfo?.indentation || line.indentation || '';
                 result.push({
-                  indentation: line.indentation || '',
+                  indentation: returnIndentation,
                   lineType: 'TAG',
                   tagName: 'return',
                   codeContent: returnExpr,
@@ -2283,7 +2577,9 @@ class ScriptTranspiler {
                   isCommentOnly: false,
                   continuesToNext: false,
                   continuesFromPrev: false,
-                  tokens: []
+                  tokens: [],
+                  isInjected: true,
+                  scriptText: `return ${returnExpr}`
                 });
               } else if (scope.scopeInfo && !scope.focus && (scope.type === 'macro' || scope.type === 'call' || scope.type === 'capture')) {
                 const declaredOutputs = scope.scopeInfo.declaredOutputs || new Set();
@@ -2312,8 +2608,9 @@ class ScriptTranspiler {
                   returnExpr = `{${parts.join(', ')} }`;
                 }
 
+                const returnIndentation = scope.scopeInfo?.indentation || line.indentation || '';
                 result.push({
-                  indentation: line.indentation || '',
+                  indentation: returnIndentation,
                   lineType: 'TAG',
                   tagName: 'return',
                   codeContent: returnExpr,
@@ -2324,7 +2621,9 @@ class ScriptTranspiler {
                   isCommentOnly: false,
                   continuesToNext: false,
                   continuesFromPrev: false,
-                  tokens: []
+                  tokens: [],
+                  isInjected: true,
+                  scriptText: `return ${returnExpr}`
                 });
               } else if (scope.focus && scope.scopeInfo) {
                 const returnExpr = this._buildFocusedReturnExpressionForScope(
@@ -2333,8 +2632,9 @@ class ScriptTranspiler {
                   scope.scopeInfo.declaredOutputs,
                   true
                 );
+                const returnIndentation = scope.scopeInfo?.indentation || line.indentation || '';
                 result.push({
-                  indentation: line.indentation || '',
+                  indentation: returnIndentation,
                   lineType: 'TAG',
                   tagName: 'return',
                   codeContent: returnExpr,
@@ -2345,7 +2645,9 @@ class ScriptTranspiler {
                   isCommentOnly: false,
                   continuesToNext: false,
                   continuesFromPrev: false,
-                  tokens: []
+                  tokens: [],
+                  isInjected: true,
+                  scriptText: `return ${returnExpr}`
                 });
               } else {
                 result.push(this._makeImplicitReturnLine(scope.focus, line.indentation));
@@ -2364,4 +2666,4 @@ class ScriptTranspiler {
 
 }
 
-module.exports = new ScriptTranspiler();
+module.exports = new ScriptUpdater();
