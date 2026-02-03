@@ -24,7 +24,7 @@ class ScriptUpdater {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'option', 'var', 'extern', 'return', 'data', 'text', 'value', 'sink'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'extern', 'return', 'data', 'text', 'value', 'sink'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -1367,25 +1367,7 @@ class ScriptUpdater {
     for (let i = 0; i < parseResults.length; i++) {
       const presult = parseResults[i];
 
-      // Check if this is an option tag that should continue the previous macro/var/set definition
-      // Check if this is an option tag that should continue the previous macro/var/set definition
-      let isOptionContinuation = false;
-      if (presult.tagName === 'option' && prevLineIndex !== -1) {
-        const prevTag = parseResults[prevLineIndex].tagName;
-        if (['macro', 'call'].includes(prevTag)) {
-          isOptionContinuation = true;
-        } else if (['var', 'set'].includes(prevTag)) {
-          // Only allow if it's a block set/var (no =) or capture assignment
-          const prevTokens = parseResults[prevLineIndex].tokens;
-          const hasEquals = prevTokens.some(t => t.type === 'CODE' && t.value.includes('='));
-          const hasCapture = prevTokens.some(t => t.type === 'CODE' && /\bcapture\b/.test(t.value));
-          if (!hasEquals || hasCapture) {
-            isOptionContinuation = true;
-          }
-        }
-      }
-
-      if ((presult.lineType === 'TAG' && !isOptionContinuation) || presult.lineType === 'TEXT') {
+      if (presult.lineType === 'TAG' || presult.lineType === 'TEXT') {
         //start of a new tag or text, save it for continuation
         tagLineParseResult = presult;
       } else {
@@ -1394,13 +1376,8 @@ class ScriptUpdater {
           //skip for now, we may add isContinuation = true later
           continue;
         }
-        if (prevLineIndex != -1 && (parseResults[prevLineIndex].continuesToNext || presult.continuesFromPrev || isOptionContinuation)) {
+        if (prevLineIndex != -1 && (parseResults[prevLineIndex].continuesToNext || presult.continuesFromPrev)) {
           //this is continuation
-          if (isOptionContinuation) {
-            // Revert option tag to raw content for continuation.
-            presult.codeContent = this._tokensToCode(this._filterOutComments(presult.tokens));
-          }
-
           //mark everything between prevLineIndex+1 and i as continuation
           for (let j = prevLineIndex + 1; j <= i; j++) {
             parseResults[j].isContinuation = true;
@@ -1465,9 +1442,7 @@ class ScriptUpdater {
     let codeContent = processedLine.codeContent;
 
     if (!processedLine.isContinuation && processedLine.lineType === 'TAG') {
-      if (processedLine.tagName === 'option') {
-        throw new Error(`Option tags are not supported in scripts at line ${lineIndex + 1}`);
-      } else if (processedLine.tagName === 'output_command') {
+      if (processedLine.tagName === 'output_command') {
         codeContent = this._mapCoreOutputCall(codeContent);
       } else if (processedLine.tagName === 'data' || processedLine.tagName === 'text' || processedLine.tagName === 'value') {
         codeContent = this._mapCoreOutputName(codeContent || '');
@@ -2192,13 +2167,6 @@ class ScriptUpdater {
             i++;
             continue;
           }
-          if (!line.isContinuation && line.lineType === 'TAG' && line.tagName === 'option') {
-            i++;
-            while (i < processedLines.length && processedLines[i].isContinuation) {
-              i++;
-            }
-            continue;
-          }
           break;
         }
         insertionIndex = i;
@@ -2395,13 +2363,6 @@ class ScriptUpdater {
           const line = processedLines[i];
           if (line.isEmpty || line.isCommentOnly) {
             i++;
-            continue;
-          }
-          if (!line.isContinuation && line.lineType === 'TAG' && line.tagName === 'option') {
-            i++;
-            while (i < processedLines.length && processedLines[i].isContinuation) {
-              i++;
-            }
             continue;
           }
           break;

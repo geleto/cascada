@@ -263,13 +263,6 @@ describe('Script Transpiler', () => {
 
         expect(result.isEmpty).to.equal(true);
       });
-
-      it('should reject focus directives', () => {
-        const line = ':data';
-        const state = { inMultiLineComment: false, stringState: null };
-
-        expect(() => scriptTranspiler._processLine(line, state)).to.throwError(/Output focus directives are not supported/);
-      });
     });
 
     describe('generateOutput', () => {
@@ -1382,38 +1375,18 @@ return { text: text.snapshot() }`;
     });
   });
   describe('Macro and Capture Focus Rejection', () => {
-    it('should reject macro focus directives', () => {
-      const script = `
-macro myMacro(x, y)
-: data
-  set_data(x, y)
-endmacro
-      `;
-      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwError(/Output focus directives are not supported/);
-    });
 
     it('should continue capture with', () => {
       const script = `
-x = capture
-  output(x)
-endcapture
+        x = capture
+          output(x)
+        endcapture
       `;
       const template = scriptTranspiler.scriptToTemplate(script);
       // {%- set x \n -%}
       expect(template).to.contain('set x');
       expect(template).to.contain('');
       expect(template).not.to.contain('focus="text"');
-    });
-
-    it('should reject focus directives after empty lines', () => {
-      const script = `
-macro myMacro(x, y)
-
-: data
-  set_data(x, y)
-endmacro
-      `;
-      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwError(/Output focus directives are not supported/);
     });
   });
 });

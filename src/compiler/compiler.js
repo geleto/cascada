@@ -1497,13 +1497,6 @@ class Compiler extends CompilerBase {
     this.buffer.compileOutputCommand(node, frame);
   }
 
-  /**
-   * Do nothing for now.
-   */
-  compileOption(node, frame) {
-    return;
-  }
-
   _getDeclarationFrame(frame) {
     let current = frame;
     while (current && current.createScope === false) {
