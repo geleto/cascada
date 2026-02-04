@@ -701,18 +701,15 @@
         const arr = ['hello', 'world'];
         const result = runtime.suppressValueAsync(arr, false, mockErrorContext);
 
-        // Should be an array, not a Promise
-        expect(Array.isArray(result)).to.be(true);
-        expect(result.length).to.be.greaterThan(0);
-        expect(result[0]).to.equal('hello,world');
+        // Array is joined and returned as a plain string, not an array
+        expect(result).to.equal('hello,world');
       });
 
       it('should handle array with promises asynchronously', async () => {
         const arr = ['hello', Promise.resolve('world')];
         const result = await runtime.suppressValueAsync(arr, false, mockErrorContext);
 
-        expect(Array.isArray(result)).to.be(true);
-        expect(result[0]).to.equal('hello,world');
+        expect(result).to.equal('hello,world');
       });
     });
 
@@ -789,14 +786,14 @@
         }
       });
 
-      it('should append validation function to valid array', async () => {
+      it('should return valid array unchanged', async () => {
         const arr = ['valid'];
         const result = await runtime.ensureDefinedAsync(arr, 1, 1, mockContext, mockErrorContext);
 
+        // Array is defined (not null/undefined), passed through without mutation
         expect(Array.isArray(result)).to.be(true);
-        expect(result.length).to.equal(2);
+        expect(result.length).to.equal(1);
         expect(result[0]).to.equal('valid');
-        expect(typeof result[1]).to.equal('function');
       });
 
       it('should handle promise that resolves to null', async () => {

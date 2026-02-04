@@ -131,13 +131,7 @@ function suppressValueAsync(val, autoescape, errorContext) {
 
     // If array has no promises and no poison, handle synchronously
     if (!hasPromises && !hasPoison) {
-      if (val.length > 0) {
-        val = [val.join(',')];
-      }
-      if (autoescape) {
-        val.push((value) => suppressValue(value, true));
-      }
-      return val;
+      return suppressValue(val.join(','), autoescape);
     }
 
     // Has promises or poison - delegate to async helper
@@ -181,22 +175,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
 
     if (hasPromises) {
       try {
-        if (hasPromises) {
-          // Flatten promises
-          val = await Promise.all(val);
-        }
-
-        // We assume deep structures are lazily resolved by the compiler
-        // or handled by custom formatters if passed directly.
-        // For basic template output, we just need to wait for the top-level items.
-
-        if (val.length > 0) {
-          val = [val.join(',')];
-        }
-        if (autoescape) {
-          val.push((value) => suppressValue(value, true));
-        }
-        return val;
+        val = await Promise.all(val);
       } catch (err) {
         if (errors.isPoisonError(err)) {
           throw err;
@@ -205,16 +184,9 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
           throw new errors.PoisonError([contextualError]);
         }
       }
-    } else {
-      // No promises in array
-      if (val.length > 0) {
-        val = [val.join(',')];
-      }
-      if (autoescape) {
-        val.push((value) => suppressValue(value, true));
-      }
-      return val;
     }
+
+    return suppressValue(val.join(','), autoescape);
   }
 
   return suppressValue(val, autoescape);
@@ -261,8 +233,6 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
       throw new errors.PoisonError(collectedErrors);
     }
 
-    // Append validation function
-    val.push((v) => ensureDefined(v, lineno, colno, context));
     return val;
   }
 
