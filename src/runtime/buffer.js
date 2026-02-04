@@ -152,7 +152,7 @@ class CommandBuffer {
     return this.arrays[name];
   }
 
-  _reserveSlot(outputName) {
+  reserveSlot(outputName) {
     const name = outputName || 'output';
     if (name === 'output') {
       return this._index++;
@@ -176,7 +176,7 @@ class CommandBuffer {
     // Check if buffer is finished
     checkFinishedBuffer(this);
 
-    const slot = this._reserveSlot(outputName);
+    const slot = this.reserveSlot(outputName);
     const target = this._getOutputArray(outputName);
     const wrappedValue = this._wrapCommand(value);
 
@@ -195,10 +195,6 @@ class CommandBuffer {
     }
 
     return slot;
-  }
-
-  reserveSlot(outputName = null) {
-    return this._reserveSlot(outputName);
   }
 
   fillSlot(slot, value, outputName = null) {
