@@ -198,4 +198,210 @@ describe('flattenBuffer', function () {
       });
     });
   });
+
+  describe('Async Autoescape — integration', function () {
+    describe('sync values', function () {
+      beforeEach(() => {
+        env = new AsyncEnvironment(null, { autoescape: true });
+      });
+
+      it('should escape HTML entities in {{ }} output', async function () {
+        const result = await env.renderTemplateString('{{ value }}', { value: '<b>bold</b>' });
+        expect(result).to.equal('&lt;b&gt;bold&lt;/b&gt;');
+      });
+
+      it('should not escape with autoescape off', async function () {
+        const offEnv = new AsyncEnvironment(null, { autoescape: false });
+        const result = await offEnv.renderTemplateString('{{ value }}', { value: '<b>bold</b>' });
+        expect(result).to.equal('<b>bold</b>');
+      });
+
+      it('should bypass autoescape with | safe filter', async function () {
+        const result = await env.renderTemplateString('{{ value | safe }}', { value: '<b>bold</b>' });
+        expect(result).to.equal('<b>bold</b>');
+      });
+
+      it('should coerce null to empty string', async function () {
+        const result = await env.renderTemplateString('x{{ value }}y', { value: null });
+        expect(result).to.equal('xy');
+      });
+
+      it('should coerce undefined to empty string', async function () {
+        const result = await env.renderTemplateString('x{{ value }}y', {});
+        expect(result).to.equal('xy');
+      });
+    });
+
+    describe('async context functions', function () {
+      beforeEach(() => {
+        env = new AsyncEnvironment(null, { autoescape: true });
+      });
+
+      it('should escape value resolved from async function', async function () {
+        const result = await env.renderTemplateString('{{ getHtml() }}', {
+          getHtml: () => Promise.resolve('<em>async</em>')
+        });
+        expect(result).to.equal('&lt;em&gt;async&lt;/em&gt;');
+      });
+
+      it('should not escape async value with autoescape off', async function () {
+        const offEnv = new AsyncEnvironment(null, { autoescape: false });
+        const result = await offEnv.renderTemplateString('{{ getHtml() }}', {
+          getHtml: () => Promise.resolve('<em>async</em>')
+        });
+        expect(result).to.equal('<em>async</em>');
+      });
+
+      it('should bypass autoescape on async value with | safe', async function () {
+        const result = await env.renderTemplateString('{{ getHtml() | safe }}', {
+          getHtml: () => Promise.resolve('<b>safe</b>')
+        });
+        expect(result).to.equal('<b>safe</b>');
+      });
+
+      it('should escape multiple parallel async expressions independently', async function () {
+        const result = await env.renderTemplateString('{{ a() }} and {{ b() }}', {
+          a: () => Promise.resolve('<i>one</i>'),
+          b: () => Promise.resolve('<i>two</i>')
+        });
+        expect(result).to.equal('&lt;i&gt;one&lt;/i&gt; and &lt;i&gt;two&lt;/i&gt;');
+      });
+    });
+
+    describe('macro boundary — no double-escape', function () {
+      // Each {{ }} inside a macro is escaped per-expression. The macro output
+      // is wrapped in SafeString at the boundary (new SafeString(flattenBuffer(...))).
+      // Interpolating the result in the outer template must not escape again.
+      beforeEach(() => {
+        env = new AsyncEnvironment(null, { autoescape: true });
+      });
+
+      it('should not double-escape sync macro argument', async function () {
+        const template =
+          '{% macro card(title) %}<div>{{ title }}</div>{% endmacro %}' +
+          '{{ card("<b>Hello</b>") }}';
+        const result = await env.renderTemplateString(template, {});
+        // '<b>Hello</b>' escaped once inside macro. SafeString at boundary
+        // prevents re-escape at the outer {{ card(...) }}.
+        expect(result).to.equal('<div>&lt;b&gt;Hello&lt;/b&gt;</div>');
+      });
+
+      it('should not double-escape async macro argument', async function () {
+        const template =
+          '{% macro wrap(content) %}<span>{{ content }}</span>{% endmacro %}' +
+          '{{ wrap(getHtml()) }}';
+        const result = await env.renderTemplateString(template, {
+          getHtml: () => Promise.resolve('<script>xss</script>')
+        });
+        expect(result).to.contain('&lt;script&gt;xss&lt;/script&gt;');
+        // If double-escaped, & would become &amp; — must not happen
+        expect(result).to.not.contain('&amp;lt;');
+      });
+    });
+
+    describe('throwOnUndefined + autoescape', function () {
+      // Compiler wraps output expressions with ensureDefinedAsync when
+      // throwOnUndefined is enabled. Validation runs before escape.
+      beforeEach(() => {
+        env = new AsyncEnvironment(null, { autoescape: true, throwOnUndefined: true });
+      });
+
+      it('should escape a defined value normally', async function () {
+        const result = await env.renderTemplateString('{{ value }}', { value: '<b>x</b>' });
+        expect(result).to.equal('&lt;b&gt;x&lt;/b&gt;');
+      });
+
+      it('should throw on null output value', async function () {
+        try {
+          await env.renderTemplateString('{{ value }}', { value: null });
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(err.message).to.contain('null or undefined');
+        }
+      });
+
+      it('should throw when async function resolves to null', async function () {
+        try {
+          await env.renderTemplateString('{{ getValue() }}', {
+            getValue: () => Promise.resolve(null)
+          });
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(err.message).to.contain('null or undefined');
+        }
+      });
+
+      it('should throw when async function resolves to undefined', async function () {
+        try {
+          await env.renderTemplateString('{{ getValue() }}', {
+            getValue: () => Promise.resolve(undefined)
+          });
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(err.message).to.contain('null or undefined');
+        }
+      });
+    });
+
+    describe('script @text output', function () {
+      // Script output uses suppressValueScriptAsync (not suppressValueAsync)
+      // and flattens through flatten-commands.js processArrayItem — a separate
+      // path from template {{ }} which goes through flattenText.
+      beforeEach(() => {
+        env = new AsyncEnvironment(null, { autoescape: true });
+      });
+
+      it('should escape HTML in sync text output', async function () {
+        const script = `
+          text out
+          out("<b>bold</b>")
+          return out.snapshot()`;
+        const result = await env.renderScriptString(script);
+        expect(result).to.equal('&lt;b&gt;bold&lt;/b&gt;');
+      });
+
+      it('should escape async function result in text output', async function () {
+        const script = `
+          text out
+          out(getHtml())
+          return out.snapshot()`;
+        const result = await env.renderScriptString(script, {
+          getHtml: () => Promise.resolve('<em>async</em>')
+        });
+        expect(result).to.equal('&lt;em&gt;async&lt;/em&gt;');
+      });
+
+      it('should escape async variable in text output', async function () {
+        const script = `
+          text out
+          var html = getHtml()
+          out(html)
+          return out.snapshot()`;
+        const result = await env.renderScriptString(script, {
+          getHtml: () => Promise.resolve('<script>xss</script>')
+        });
+        expect(result).to.equal('&lt;script&gt;xss&lt;/script&gt;');
+      });
+
+      it('should not escape text output with autoescape off', async function () {
+        const offEnv = new AsyncEnvironment(null, { autoescape: false });
+        const script = `
+          text out
+          out("<b>bold</b>")
+          return out.snapshot()`;
+        const result = await offEnv.renderScriptString(script);
+        expect(result).to.equal('<b>bold</b>');
+      });
+
+      it('should escape multiple text calls independently', async function () {
+        const script = `
+          text out
+          out("<i>one</i>")
+          out("<i>two</i>")
+          return out.snapshot()`;
+        const result = await env.renderScriptString(script);
+        expect(result).to.equal('&lt;i&gt;one&lt;/i&gt;&lt;i&gt;two&lt;/i&gt;');
+      });
+    });
+  });
 });
