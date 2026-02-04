@@ -997,7 +997,7 @@ class Compiler extends CompilerBase {
 
         const needsSafeString = !this.scriptMode;
         const safeStringCall = needsSafeString
-          ? `runtime.newSafeStringAsync(${flattenCall})`
+          ? `new runtime.SafeString(${flattenCall})`
           : flattenCall;
 
         returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;

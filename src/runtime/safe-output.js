@@ -33,23 +33,6 @@ function SafeString(val) {
   this.length = val.length;
 }
 
-function newSafeStringAsync(val, lineno, colno) {
-  if (Array.isArray(val)) {
-    // append the function to the array, so it will be
-    // called after the elements before it are joined
-    val.push((v) => {
-      return new SafeString(v, lineno, colno);
-    });
-    return val;
-  }
-  if (val && typeof val.then === 'function') {
-    // it's a promise, return a promise that suppresses the value when resolved
-    return (async (v) => {
-      return new SafeString(await v, lineno, colno);
-    })(val);
-  }
-  return new SafeString(val, lineno, colno);
-}
 
 SafeString.prototype = Object.create(String.prototype, {
   length: {
@@ -311,7 +294,6 @@ module.exports = {
   suppressValueScript,
   suppressValueScriptAsync,
   SafeString,
-  newSafeStringAsync,
   copySafeness,
   markSafe,
   ensureDefined,

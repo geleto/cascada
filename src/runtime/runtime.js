@@ -128,7 +128,6 @@ module.exports = {
   promisify,
   withPath,
   SafeString: outputValue.SafeString,
-  newSafeStringAsync: outputValue.newSafeStringAsync,
   copySafeness: outputValue.copySafeness,
   markSafe: outputValue.markSafe,
 
