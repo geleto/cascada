@@ -444,6 +444,7 @@ class ScriptTranspiler {
    */
   _deconstructDataCommand(tokens, lineIndex) {
     let prefixBuffer = '';
+    const dataPrefix = 'data';
 
     // Find where data ends
     let i = 0;
@@ -458,7 +459,7 @@ class ScriptTranspiler {
         if (char.trim() === '') continue;
         prefixBuffer += char;
 
-        if (prefixBuffer === '@data') {
+        if (prefixBuffer === dataPrefix) {
           // Found prefix in current token. The rest of this token, and subsequent tokens,
           // contain the path/command. We create a transient token list for the helper.
 
@@ -513,7 +514,7 @@ class ScriptTranspiler {
           }
         }
 
-        if (!'@data'.startsWith(prefixBuffer)) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected data prefix.`);
+        if (!dataPrefix.startsWith(prefixBuffer)) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected data prefix.`);
       }
       if (found) break;
     }
