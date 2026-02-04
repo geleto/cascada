@@ -153,7 +153,7 @@ function debugChain(handlerName) {
   let cmd = first;
   const chain = [];
   while (cmd) {
-    chain.push(cmd.type || 'unknown');
+    chain.push(cmd.handler || 'unknown');
     cmd = cmd.next;
   }
   return chain;

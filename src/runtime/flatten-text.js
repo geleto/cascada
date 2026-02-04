@@ -1,6 +1,6 @@
 'use strict';
 
-const { CommandBuffer, resolveBufferArray, unwrapCommand } = require('./buffer');
+const { CommandBuffer, resolveBufferArray } = require('./buffer');
 const { ensureBufferScopeMetadata } = require('./flatten-shared');
 const { PoisonError, isPoison, isPoisonError } = require('./errors');
 
@@ -13,24 +13,23 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
 
   const errors = [];
   const result = arr.reduce((acc, item) => {
-    // Handle wrapped commands - extract the value
-    const actualValue = unwrapCommand(item);
+    if (item === null || item === undefined) return acc;
 
-    if (actualValue && typeof actualValue === 'object' && actualValue.__cascadaPoisonMarker === true) {
-      if (actualValue.errors && Array.isArray(actualValue.errors)) {
-        errors.push(...actualValue.errors);
+    if (item.__cascadaPoisonMarker === true) {
+      if (item.errors && Array.isArray(item.errors)) {
+        errors.push(...item.errors);
       }
       return acc;
     }
 
-    if (isPoison(actualValue)) {
-      errors.push(...actualValue.errors);
+    if (isPoison(item)) {
+      errors.push(...item.errors);
       return acc;
     }
 
-    if (actualValue instanceof CommandBuffer) {
+    if (item instanceof CommandBuffer) {
       try {
-        return acc + flattenBuffer(resolveBufferArray(actualValue, outputName), null, outputName, sharedState);
+        return acc + flattenBuffer(resolveBufferArray(item, outputName), null, outputName, sharedState);
       } catch (err) {
         if (isPoisonError(err)) {
           errors.push(...err.errors);
@@ -41,9 +40,9 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
       }
     }
 
-    if (Array.isArray(actualValue)) {
+    if (Array.isArray(item)) {
       try {
-        return acc + flattenBuffer(actualValue, null, outputName, sharedState);
+        return acc + flattenBuffer(item, null, outputName, sharedState);
       } catch (err) {
         if (isPoisonError(err)) {
           errors.push(...err.errors);
@@ -54,11 +53,14 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
       }
     }
 
-    if (typeof actualValue === 'function') {
-      return (actualValue(acc) || '');
+    // Text command - extract and emit the value.
+    // typeof guard needed: raw functions in nested arrays bypass _wrapCommand,
+    // and Function.prototype.arguments throws in strict mode.
+    const value = (item && typeof item === 'object' && item.arguments) ? item.arguments[0] : item;
+    if (typeof value === 'function') {
+      return (value(acc) || '');
     }
-
-    return acc + ((actualValue !== null && actualValue !== undefined) ? actualValue : '');
+    return acc + ((value !== null && value !== undefined) ? value : '');
   }, '');
 
   if (errors.length > 0) {

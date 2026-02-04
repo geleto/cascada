@@ -7,7 +7,6 @@ const {
   CommandBuffer,
   resolveBufferArray,
   resolveOutputTargets,
-  unwrapCommand,
   isCommandBuffer
 } = require('./buffer');
 const { PoisonError, RuntimeFatalError, isPoison, handleError } = require('./errors');
@@ -548,62 +547,58 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
   function processItem(item) {
     if (item === null || item === undefined) return;
 
-    // Handle wrapped commands - extract the value
-    const actualValue = unwrapCommand(item);
-
-    if (actualValue && typeof actualValue === 'object' && actualValue.__cascadaPoisonMarker === true) {
-      processPoisonMarker(actualValue);
+    if (item.__cascadaPoisonMarker === true) {
+      processPoisonMarker(item);
       return;
     }
 
-    if (isPoison(actualValue)) {
-      state.collectedErrors.push(...actualValue.errors);
+    if (isPoison(item)) {
+      state.collectedErrors.push(...item.errors);
       return;
     }
 
-    if (actualValue instanceof CommandBuffer) {
+    if (item instanceof CommandBuffer) {
       if (state.scriptMode && isTextOutputNameFromState(state, outputName || 'text')) {
-        // In script mode, nested buffers should apply all outputs, not just text.
-        flattenBuffer(actualValue, context, null, state);
+        flattenBuffer(item, context, null, state);
         return;
       }
-      flattenBuffer(resolveBufferArray(actualValue, outputName), context, outputName, state);
+      flattenBuffer(resolveBufferArray(item, outputName), context, outputName, state);
       return;
     }
 
-    if (Array.isArray(actualValue)) {
-      processArrayItem(actualValue);
+    if (Array.isArray(item)) {
+      processArrayItem(item);
       return;
     }
 
-    if (typeof actualValue === 'object' && (actualValue.method || actualValue.handler !== undefined)) {
-      const handlerInstance = actualValue.handler !== undefined
-        ? getOrInstantiateHandler(actualValue.handler)
-        : null;
+    // All buffer items are command objects — dispatch to handler
+    if (item.handler !== undefined) {
+      const handlerInstance = getOrInstantiateHandler(item.handler);
       const isSinkHandler = handlerInstance && typeof handlerInstance._resolveSink === 'function';
       if (isSinkHandler) {
         asyncMode = true;
-        queueAsync(() => processCommandItemAsync(actualValue));
+        queueAsync(() => processCommandItemAsync(item));
         return;
       }
       if (asyncMode) {
-        queueAsync(() => processCommandItemAsync(actualValue));
+        queueAsync(() => processCommandItemAsync(item));
         return;
       }
-      processCommandItem(actualValue);
+      processCommandItem(item);
       return;
     }
 
+    // Fallback for items from nested arrays that bypassed _wrapCommand
     if (outputName !== null && !isTextOutputNameFromState(state, outputName)) {
       return;
     }
 
-    if (typeof actualValue === 'object') {
-      processObjectItem(actualValue);
+    if (typeof item === 'object') {
+      processObjectItem(item);
       return;
     }
 
-    emitText(outputName || 'text', [actualValue]);
+    emitText(outputName || 'text', [item]);
   }
 
   // Try chain-based iteration first (for CommandBuffers)

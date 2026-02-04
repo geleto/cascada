@@ -43,79 +43,36 @@ class CommandBuffer {
   }
 
   /**
-   * Wraps a value in a command object for chain building
+   * Coerces a value into a command object and stamps chain properties on it.
+   * Containers (CommandBuffer, Array) and error values (PoisonedValue) pass through unchanged.
+   * Existing command objects (have 'handler') get chain properties stamped directly.
+   * Everything else becomes a text command: { handler: 'text', arguments: [value] }.
    * @param {*} value - The value to wrap
-   * @returns {Object} Command object with type, value, and metadata fields
+   * @returns {Object} Command object with chain properties
    */
   _wrapCommand(value) {
-    // Already wrapped - return as-is
-    if (value && typeof value === 'object' && 'type' in value && 'value' in value) {
+    // Containers and error values pass through unchanged
+    if (value instanceof CommandBuffer || Array.isArray(value) || isPoison(value)) {
       return value;
     }
 
-    // CommandBuffer and arrays should not be wrapped - pass through as-is
-    if (value instanceof CommandBuffer || Array.isArray(value)) {
+    // Already stamped - return as-is
+    if (value && value[WRAPPED_COMMAND_SYMBOL]) {
       return value;
     }
 
-    // Only wrap specific types: primitives, functions, command objects, and poison markers
-    // Everything else (plain objects, objects with custom toString, etc.) passes through
+    // Coerce to command object if not already one
+    const cmd = (value && typeof value === 'object' && 'handler' in value)
+      ? value
+      : { handler: 'text', arguments: [value] };
 
-    // Primitives (strings, numbers, booleans, null, undefined)
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ||
-        value === null || value === undefined) {
-      return {
-        [WRAPPED_COMMAND_SYMBOL]: true,
-        type: 'text',
-        value: value,
-        next: null,
-        resolved: false,
-        promise: null,
-        resolve: null
-      };
-    }
-
-    // Functions (used for SafeString processing)
-    if (typeof value === 'function') {
-      return {
-        [WRAPPED_COMMAND_SYMBOL]: true,
-        type: 'function',
-        value: value,
-        next: null,
-        resolved: false,
-        promise: null,
-        resolve: null
-      };
-    }
-
-    // Poison markers
-    if (value && typeof value === 'object' && value.__cascadaPoisonMarker === true) {
-      return {
-        [WRAPPED_COMMAND_SYMBOL]: true,
-        type: 'poison',
-        value: value,
-        next: null,
-        resolved: false,
-        promise: null,
-        resolve: null
-      };
-    }
-
-    // Command objects (have 'command' property)
-    if (value && typeof value === 'object' && 'command' in value) {
-      return {
-        [WRAPPED_COMMAND_SYMBOL]: true,
-        type: 'command',
-        value: value,
-        next: null,
-        resolved: false,
-        promise: null,
-        resolve: null
-      };
-    }
-
-    // Everything else (plain objects, objects with custom toString, etc.) - pass through unwrapped
-    return value;
+    // Stamp chain properties
+    cmd[WRAPPED_COMMAND_SYMBOL] = true;
+    cmd.next = null;
+    cmd.resolved = false;
+    cmd.promise = null;
+    cmd.resolve = null;
+    return cmd;
   }
 
   // Snapshot and command chain methods (imported from buffer-snapshot.js)
@@ -265,9 +222,9 @@ function isWrappedCommand(item) {
   return item && typeof item === 'object' && item[WRAPPED_COMMAND_SYMBOL] === true;
 }
 
-// Unwraps a wrapped command, returning the original value
+// Extract the payload value from a text command, or return the item unchanged
 function unwrapCommand(item) {
-  return isWrappedCommand(item) ? item.value : item;
+  return (isWrappedCommand(item) && item.arguments) ? item.arguments[0] : item;
 }
 
 // Check if value is a CommandBuffer using symbol
