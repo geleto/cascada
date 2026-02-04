@@ -15,15 +15,14 @@
  *     - `user = "new name"`   → `{% set user = "new name" %}`
  *     - `extern config`       → `{% extern config %}`
  *
- * 3.  **Output Commands with `@`**
- *     - `@text(...)` is the dedicated command for generating text output.
- *       `@text("Hello")`      → `{% output text text("Hello") %}`
- *     - Data assembly commands build structured objects. The modern path-based
- *       syntax is converted to a generic handler call.
- *       `@data.user.id = 1`   → `{% output data data.set('user.id', 1) %}`
- *       `@data.tags.push("a")`→ `{% output data data.push('user.tags', "a") %}`
- *     - Generic commands are passed through.
- *       `@db.insert(...)`     → `{% output db db.insert(...) %}`
+ * 3.  **Explicit Output Variables**
+ *     - `text text` declares a text output variable; `text("Hello")` emits text.
+ *       `text("Hello")`       → `{% output_command text("Hello") %}`
+ *     - Data assembly uses explicit data outputs with path-based commands.
+ *       `data data` + `data.user.id = 1` → `{% output_command data.set(["user","id"], 1) %}`
+ *       `data.tags.push("a")` → `{% output_command data.push(["tags"], "a") %}`
+ *     - Sink outputs call methods directly on declared sinks.
+ *       `sink db = makeDb(); db.insert(...)` → `{% output_command db.insert(...) %}`
  *
  * 4.  **Block Assignment with `capture`**
  *     - `var user = capture ... endcapture` becomes a `var` block.
@@ -45,11 +44,11 @@
  * // Assemble a user object from a profile
  * var userProfile = fetchProfile(1)
  *
- * @data.user.id = userProfile.id
- * @data.user.name = userProfile.name
+ * data.user.id = userProfile.id
+ * data.user.name = userProfile.name
  *
  * for task in userProfile.tasks
- *   @data.user.tasks.push(task.title)
+ *   data.user.tasks.push(task.title)
  * endfor
  * ```
  *
@@ -59,11 +58,11 @@
  * {#- Assemble a user object from a profile -#}
  * {%- var userProfile = fetchProfile(1) -%}
  *
- * {%- output data data.set('user.id', userProfile.id) -%}
- * {%- output data data.set('user.name', userProfile.name) -%}
+ * {%- output_command data.set(["user","id"], userProfile.id) -%}
+ * {%- output_command data.set(["user","name"], userProfile.name) -%}
  *
  * {%- for task in userProfile.tasks -%}
- *   {%- output data data.push('user.tasks', task.title) -%}
+ *   {%- output_command data.push(["user","tasks"], task.title) -%}
  * {%- endfor -%}
  * ```
  *
@@ -252,7 +251,7 @@ class ScriptTranspiler {
   }
 
   /**
-   * Validates path segments for the @data command syntax
+   * Validates path segments for the data command syntax
    * @param {Array} segments - Array of path segments
    * @throws {Error} If any segment is invalid
    */
@@ -280,7 +279,7 @@ class ScriptTranspiler {
    * @param {number} startIndex - Index to start parsing from
    * @param {boolean} stopAtArgs - Whether to stop at '('
    * @param {boolean} detectAssignment - Whether to detect assignment operators and return them
-   * @param {Boolean} wrapAssignmentValue - Whether to wrap assignment value in parens (for @data)
+   * @param {Boolean} wrapAssignmentValue - Whether to wrap assignment value in parens (for data)
    * @param {number} lineIndex - For error reporting
    * @returns {Object} { segments, endIndex, append, remainingBuffer, operator }
    */
@@ -401,7 +400,7 @@ class ScriptTranspiler {
       let opCommand = this.DATA_COMMANDS.operators[op];
 
       if (op === '==') {
-        // Comparison (==) is invalid in these contexts (LHS assignment or @data command).
+        // Comparison (==) is invalid in these contexts (LHS assignment or data command).
         throw new Error(`Invalid command operator at line ${context.config.lineIndex + 1}: ${op} is not a valid operator.`);
       }
 
@@ -415,7 +414,7 @@ class ScriptTranspiler {
         }
         charIdx++;
         context.operator = opCommand;
-        // Map operators to commands (e.g., += to .add) for @data usage. set_path currently only supports = (.set).
+        // Map operators to commands (e.g., += to .add) for data usage. set_path currently only supports = (.set).
 
       } else if (char === '=') {
         context.operator = '.set';
@@ -438,7 +437,7 @@ class ScriptTranspiler {
   }
 
   /**
-   * Breaks down a new @data command syntax into its components
+   * Breaks down a data command syntax into its components
    * @param {Array} tokens - Array of tokens from script-lexer
    * @param {number} lineIndex - Current line index for error reporting
    * @return {Object} Object with path, command, and args properties. Args may not be ')' terminated in a multi-line command.
@@ -446,12 +445,12 @@ class ScriptTranspiler {
   _deconstructDataCommand(tokens, lineIndex) {
     let prefixBuffer = '';
 
-    // Find where @data ends
+    // Find where data ends
     let i = 0;
     for (; i < tokens.length; i++) {
       const token = tokens[i];
       if (token.type === 'COMMENT') continue;
-      if (token.type !== 'CODE') throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected @data prefix.`);
+      if (token.type !== 'CODE') throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected data prefix.`);
 
       let found = false;
       for (let j = 0; j < token.value.length; j++) {
@@ -514,26 +513,26 @@ class ScriptTranspiler {
           }
         }
 
-        if (!'@data'.startsWith(prefixBuffer)) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected @data prefix.`);
+        if (!'@data'.startsWith(prefixBuffer)) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected data prefix.`);
       }
       if (found) break;
     }
 
     // If loop finishes without returning, we failed
-    throw new Error(`Invalid command syntax at line ${lineIndex + 1}: incomplete @data command.`);
+    throw new Error(`Invalid command syntax at line ${lineIndex + 1}: incomplete data command.`);
   }
 
   /**
-   * Converts new @data command syntax to the generic syntax
+   * Converts data command syntax to the generic syntax
    * @param {Object} tcom - Parsed command object with path, command, and extra args (ending in ')' unless multiline
    * @return {string} The generic syntax command string
    */
   _transpileDataCommand(tcom, multiline, handlerName = 'data') {
     // Convert new syntax to generic syntax
-    // @data: @data.user.name.set("Alice")
-    // generic: @data.set(user.name, "Alice")
-    // @data: @data.merge({ version: "1.1" })
-    // generic: @data.merge(null, { version: "1.1" })
+    // data: data.user.name.set("Alice")
+    // generic: data.set(user.name, "Alice")
+    // data: data.merge({ version: "1.1" })
+    // generic: data.merge(null, { version: "1.1" })
 
     // Always build an explicit array literal of path segments when a path is present.
     // This unifies handling for root and non-root paths.
@@ -1202,7 +1201,7 @@ class ScriptTranspiler {
   }
 
   /**
-   * Only '@text' needs more validations and continuation handling because the content is
+   * Only 'text' needs more validations and continuation handling because the content is
    * between the '()' and for other cases content goes directly to the template tag unmodified
    */
   _processLine(line, state, lineIndex) {

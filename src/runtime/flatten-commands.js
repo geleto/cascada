@@ -226,7 +226,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
   function formatHandlerRef(handlerName, subpath, commandName) {
     const pathSuffix = subpath && subpath.length > 0 ? `.${subpath.join('.')}` : '';
     const commandSuffix = commandName ? `.${commandName}` : '';
-    return `@${handlerName}${pathSuffix}${commandSuffix}`;
+    return `${handlerName}${pathSuffix}${commandSuffix}`;
   }
 
   function resolveSubpath(targetObject, subpath, handlerName, pos) {
@@ -305,7 +305,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
           new Error(`Unknown command handler: ${handlerName}`),
           pos.lineno,
           pos.colno,
-          `@${handlerName}`,
+          handlerName,
           context ? context.path : null
         );
         state.collectedErrors.push(err1);
@@ -330,7 +330,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
             new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable`),
             pos.lineno,
             pos.colno,
-            `@${handlerName}${subpath ? '.' + subpath.join('.') : ''}`,
+            `${handlerName}${subpath ? '.' + subpath.join('.') : ''}`,
             context ? context.path : null
           );
           state.collectedErrors.push(err3);
@@ -459,7 +459,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
         new Error(`Unknown command handler: ${handlerName}`),
         pos.lineno,
         pos.colno,
-        `@${handlerName}`,
+        handlerName,
         context ? context.path : null
       );
       state.collectedErrors.push(err1);
@@ -527,7 +527,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
           new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable`),
           pos.lineno,
           pos.colno,
-          `@${handlerName}${subpath ? '.' + subpath.join('.') : ''}`,
+          `${handlerName}${subpath ? '.' + subpath.join('.') : ''}`,
           context ? context.path : null
         );
         state.collectedErrors.push(err3);

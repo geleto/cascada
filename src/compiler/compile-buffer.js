@@ -78,7 +78,7 @@ class CompileBuffer {
         handlers.add('text');
       }
 
-      // Case 2: OutputCommand @handler.method() or @handler()
+      // Case 2: OutputCommand handler.method() or handler()
       if (n instanceof nodes.OutputCommand) {
         const staticPath = this.compiler.sequential._extractStaticPath(n.call.name);
         if (staticPath && staticPath.length > 0) {
@@ -99,8 +99,8 @@ class CompileBuffer {
   // === OUTPUT COMMAND COMPILATION ===
 
   /**
-   * Compile output command: @handler.method(args)
-   * Handles legacy @data, @text, and custom handler syntax
+   * Compile output command: handler.method(args)
+   * Handles output variables (data/text/value/sink) and custom sinks
    */
   compileOutputCommand(node, frame) {
     // Extract static path once for validation and compilation
@@ -109,7 +109,7 @@ class CompileBuffer {
     // Validate the static path
     if (!staticPath || staticPath.length === 0) {
       this.compiler.fail(
-        'Invalid Method Command syntax. Expected format is @handler(...) or @handler.command(...) or @handler.subpath.command(...).',
+        'Invalid command syntax. Expected format is handler(...) or handler.command(...) or handler.subpath.command(...).',
         node.lineno, node.colno, node
       );
     }
@@ -197,19 +197,19 @@ class CompileBuffer {
       this.compiler.emit('arguments: ' + (asyncArgs ? 'await ' : ''));
 
       if (outputType === 'data') {
-        // For data outputs, we create a new "virtual" AST for the arguments.
+        // For data outputs, we create a new "virtual" AST for the arguments,
         // where the first argument is a path like "user.posts[0].title" that
         // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
         const originalArgs = node.call.args.children;
         if (originalArgs.length === 0) {
-          this.compiler.fail(`@data command '${command}' requires at least a path argument.`, node.lineno, node.colno, node);
+          this.compiler.fail(`data command '${command}' requires at least a path argument.`, node.lineno, node.colno, node);
         }
 
         const pathArg = originalArgs[0];
 
         // Convert the path argument into a flat array of segments (Literal/Symbol)
         // @todo - move this to the transformer phase?
-        // expected by the runtime @data handlers.
+        // expected by the runtime data handlers.
         const pathNodeList = this.compiler._flattenPathToNodeList(pathArg);
         const dataPathNode = new nodes.Array(pathArg.lineno, pathArg.colno, pathNodeList.children);
         dataPathNode.isAsync = pathNodeList.isAsync;

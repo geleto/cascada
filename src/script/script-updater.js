@@ -189,7 +189,7 @@ class ScriptUpdater {
   }
 
   /**
-   * Validates path segments for the @data command syntax
+   * Validates path segments for the data command syntax
    * @param {Array} segments - Array of path segments
    * @throws {Error} If any segment is invalid
    */
@@ -217,7 +217,7 @@ class ScriptUpdater {
    * @param {number} startIndex - Index to start parsing from
    * @param {boolean} stopAtArgs - Whether to stop at '('
    * @param {boolean} detectAssignment - Whether to detect assignment operators and return them
-   * @param {Boolean} wrapAssignmentValue - Whether to wrap assignment value in parens (for @data)
+   * @param {Boolean} wrapAssignmentValue - Whether to wrap assignment value in parens (for data)
    * @param {number} lineIndex - For error reporting
    * @returns {Object} { segments, endIndex, append, remainingBuffer, operator }
    */
@@ -338,7 +338,7 @@ class ScriptUpdater {
       let opCommand = this.DATA_COMMANDS.operators[op];
 
       if (op === '==') {
-        // Comparison (==) is invalid in these contexts (LHS assignment or @data command).
+        // Comparison (==) is invalid in these contexts (LHS assignment or data command).
         throw new Error(`Invalid command operator at line ${context.config.lineIndex + 1}: ${op} is not a valid operator.`);
       }
 
@@ -352,7 +352,7 @@ class ScriptUpdater {
         }
         charIdx++;
         context.operator = opCommand;
-        // Map operators to commands (e.g., += to .add) for @data usage. set_path currently only supports = (.set).
+        // Map operators to commands (e.g., += to .add) for data usage. set_path currently only supports = (.set).
 
       } else if (char === '=') {
         context.operator = '.set';
@@ -375,7 +375,7 @@ class ScriptUpdater {
   }
 
   /**
-   * Breaks down a new @data command syntax into its components
+   * Breaks down a data command syntax into its components
    * @param {Array} tokens - Array of tokens from script-lexer
    * @param {number} lineIndex - Current line index for error reporting
    * @return {Object} Object with path, command, and args properties. Args may not be ')' terminated in a multi-line command.
@@ -383,12 +383,12 @@ class ScriptUpdater {
   _deconstructDataCommand(tokens, lineIndex) {
     let prefixBuffer = '';
 
-    // Find where @data ends
+    // Find where data ends
     let i = 0;
     for (; i < tokens.length; i++) {
       const token = tokens[i];
       if (token.type === 'COMMENT') continue;
-      if (token.type !== 'CODE') throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected @data prefix.`);
+      if (token.type !== 'CODE') throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected data prefix.`);
 
       let found = false;
       for (let j = 0; j < token.value.length; j++) {
@@ -451,26 +451,26 @@ class ScriptUpdater {
           }
         }
 
-        if (!'@data'.startsWith(prefixBuffer)) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected @data prefix.`);
+        if (!'@data'.startsWith(prefixBuffer)) throw new Error(`Invalid command syntax at line ${lineIndex + 1}: Expected data prefix.`);
       }
       if (found) break;
     }
 
     // If loop finishes without returning, we failed
-    throw new Error(`Invalid command syntax at line ${lineIndex + 1}: incomplete @data command.`);
+    throw new Error(`Invalid command syntax at line ${lineIndex + 1}: incomplete data command.`);
   }
 
   /**
-   * Converts new @data command syntax to the generic syntax
+   * Converts data command syntax to the generic syntax
    * @param {Object} tcom - Parsed command object with path, command, and extra args (ending in ')' unless multiline
    * @return {string} The generic syntax command string
    */
   _transpileDataCommand(tcom, multiline, handlerName = 'data') {
     // Convert new syntax to generic syntax
-    // @data: @data.user.name.set("Alice")
-    // generic: @data.set(user.name, "Alice")
-    // @data: @data.merge({ version: "1.1" })
-    // generic: @data.merge(null, { version: "1.1" })
+    // data: data.user.name.set("Alice")
+    // generic: data.set(user.name, "Alice")
+    // data: data.merge({ version: "1.1" })
+    // generic: data.merge(null, { version: "1.1" })
 
     // Always build an explicit array literal of path segments when a path is present.
     // This unifies handling for root and non-root paths.
@@ -1093,7 +1093,7 @@ class ScriptUpdater {
     const atIndex = parseResult.codeContent.indexOf('@');
     let commandContent = parseResult.codeContent.substring(atIndex + 1); // Remove @ but keep all whitespace
 
-    // Handle special syntax @value = ... -> @value(...)
+    // Handle special syntax value = ... -> value(...)
     if (commandContent.trim().startsWith('value')) {
       const trimmed = commandContent.trim();
       const afterValue = trimmed.substring(5).trim(); // 5 is length of 'value'
@@ -1111,7 +1111,7 @@ class ScriptUpdater {
       }
     }
 
-    // Check if this is a @text command (the current command for text output)
+    // Check if this is a text command (the current command for text output)
     let ccontent = commandContent.trim();
     let isText = ccontent.startsWith('text(') || this._getFirstWord(ccontent) === 'text';
 
@@ -1127,19 +1127,19 @@ class ScriptUpdater {
       parseResult.codeContent = commandContent.trimStart();
       parseResult.requiredOutputs = new Set(['text']);
     } else {
-      // Check if this is the @data command syntax
+      // Check if this is the data command syntax
       let isDataCommand = false;
       if (ccontent.startsWith('data')) {
         isDataCommand = ccontent.startsWith('data.') || ccontent.startsWith('data=') || ccontent.startsWith('data[');
         if (!isDataCommand) {
           //check if the first word is a valid identifier
           const afterData = ccontent.substring('data'.length).trim();
-          // @data =, @data .push(, @data[](root indexing), @data[0](root indexing)
+          // data =, data .push(, data[](root indexing), data[0](root indexing)
           isDataCommand = afterData.startsWith('.') || afterData.startsWith('=') || afterData.startsWith('[');
         }
       }
       if (isDataCommand) {
-        // Parse the @data-specific syntax and convert to the generic syntax
+        // Parse the data-specific syntax and convert to the generic syntax
         const parsedCommand = this._deconstructDataCommand(parseResult.tokens, lineIndex);
         const outputInfo = this.isOutputInScope('data');
         if (outputInfo && outputInfo.writable === false) {
@@ -1169,7 +1169,7 @@ class ScriptUpdater {
         parseResult.requiredOutputs = new Set(['data']);
       } else {
         // All other @ commands are treated as function commands
-        // @print was deprecated and replaced with @text(value)
+        // @print was deprecated and replaced with text(value)
         parseResult.lineType = 'TAG';
         parseResult.tagName = 'output_command';
         parseResult.blockType = null;
@@ -1270,7 +1270,7 @@ class ScriptUpdater {
   }
 
   /**
-   * Only '@text' needs more validations and continuation handling because the content is
+   * Only 'text' needs more validations and continuation handling because the content is
    * between the '()' and for other cases content goes directly to the template tag unmodified
    */
   _processLine(line, state, lineIndex) {

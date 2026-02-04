@@ -73,7 +73,7 @@ class CompilerBase extends Obj {
     if (node.typename === 'OutputCommand' && node.call && node.call.name) {
       const staticPath = this.sequential._extractStaticPath(node.call.name);
       if (staticPath) {
-        return '@' + staticPath.join('.');
+        return staticPath.join('.');
       }
     }
     const nodeType = node.typename || 'Node';
@@ -327,15 +327,6 @@ class CompilerBase extends Obj {
       this.emit(`runtime.getOutputHandler(frame, "${name}")`);
       return;
     }
-    if (name && name.startsWith('@')) {
-      const outputName = name.substring(1);
-      if (!outputName) {
-        this.fail('Invalid output handler reference "@": missing handler name', node.lineno, node.colno, node);
-      }
-      this.emit(`runtime.getOutputHandler(frame, "${outputName}")`);
-      return;
-    }
-
     let v = frame.lookup(name);
     // @todo - omit this for function calls?
     // (parent instanceof nodes.FunCall && parent.name === node)
@@ -953,7 +944,7 @@ class CompilerBase extends Obj {
    * Compiles a virtual "DataPath" node into a JavaScript array literal.
    * While there is no DataPath node in the AST, we create a temporary node with
    * typename 'DataPath' and pathNode property to store the actual AST for the path.
-   * This is used to compile the first argument (path) of @data commands
+   * This is used to compile the first argument (path) of data commands
    * where a path like "user.posts[0].title"
    * needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
    * The method recursively traverses the AST nodes representing the path and generates
@@ -1008,7 +999,7 @@ class CompilerBase extends Obj {
       } else if (node instanceof nodes.Literal) {
         segments.push(node);
       } else {
-        this.fail('Invalid node type in path for @data command. Only symbols, lookups, null, or array-literals are allowed.',
+        this.fail('Invalid node type in path for data command. Only symbols, lookups, null, or array-literals are allowed.',
           node.lineno, node.colno, node);
       }
     };

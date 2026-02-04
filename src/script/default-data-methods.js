@@ -34,7 +34,7 @@ module.exports = {
 
   /**
    * Appends an element to an array. This is an in-place mutation.
-   * Corresponds to the Cascada command: `@push path value`
+   * Corresponds to the Cascada command: `push path value`
    *
    * @param {Array<any>} target The array at the specified `path`.
    * @param {any} value The value to append to the array.
@@ -53,7 +53,7 @@ module.exports = {
 
   /**
    * Merges properties from a source object into a target object. This is an in-place mutation.
-   * Corresponds to the Cascada command: `@merge path value`
+   * Corresponds to the Cascada command: `merge path value`
    *
    * @param {Object} target The target object at the specified `path`.
    * @param {Object} value The source object whose properties will be merged.
@@ -82,7 +82,7 @@ module.exports = {
    * If a key exists in both objects and both values are objects, it will merge them recursively.
    * Otherwise, the value from the source will overwrite the value in the target.
    * Arrays from the source will replace arrays in the target.
-   * Corresponds to the Cascada command: `@deepMerge path value`
+   * Corresponds to the Cascada command: `deepMerge path value`
    *
    * @param {Object} target The target object at the specified `path` that will be mutated.
    * @param {Object} value The source object whose properties will be merged.
@@ -120,7 +120,7 @@ module.exports = {
   /**
    * Removes the last element from an array. This is an in-place mutation.
    * The `value` argument is ignored for this operation.
-   * Corresponds to the Cascada command: `@pop path`
+   * Corresponds to the Cascada command: `pop path`
    *
    * @param {Array<any>} target The array at the specified `path`.
    */
@@ -139,7 +139,7 @@ module.exports = {
   /**
    * Removes the first element from an array. This is an in-place mutation.
    * The `value` argument is ignored for this operation.
-   * Corresponds to the Cascada command: `@shift path`
+   * Corresponds to the Cascada command: `shift path`
    *
    * @param {Array<any>} target The array at the specified `path`.
    */
@@ -157,7 +157,7 @@ module.exports = {
 
   /**
    * Adds an element to the beginning of an array. This is an in-place mutation.
-   * Corresponds to the Cascada command: `@unshift path value`
+   * Corresponds to the Cascada command: `unshift path value`
    *
    * @param {Array<any>} target The array at the specified `path`.
    * @param {any} value The value to add to the beginning of the array.
@@ -177,7 +177,7 @@ module.exports = {
   /**
    * Reverses the order of the elements in an array. This is an in-place mutation.
    * The `value` argument is ignored for this operation.
-   * Corresponds to the Cascada command: `@reverse path`
+   * Corresponds to the Cascada command: `reverse path`
    *
    * @param {Array<any>} target The array at the specified `path`.
    */
@@ -197,7 +197,7 @@ module.exports = {
    * Concatenates arrays together. This is an in-place mutation.
    * If the target is undefined, it creates a new array with the value.
    * If the value is not an array, it will be wrapped in an array.
-   * Corresponds to the Cascada command: `@concat path value`
+   * Corresponds to the Cascada command: `concat path value`
    *
    * @param {Array<any>} target The array at the specified `path`.
    * @param {Array<any>|any} value The array or value to concatenate.
@@ -230,7 +230,7 @@ module.exports = {
 
   /**
    * Appends a value to the content at a path.
-   * Corresponds to the Cascada command: `@text path value`
+   * Corresponds to the Cascada command: `text path value`
    * - If the target is a string, it returns a new concatenated string.
    * - If the target is an array, it pushes the value (in-place mutation).
    *
@@ -254,7 +254,7 @@ module.exports = {
 
   /**
    * Appends a value to a string. Returns a new concatenated string.
-   * Corresponds to the Cascada command: `@append path value`
+   * Corresponds to the Cascada command: `append path value`
    *
    * @param {string} target The string at the specified `path`.
    * @param {any} value The value to append to the string.
@@ -274,7 +274,7 @@ module.exports = {
   /**
    * Adds values together. If the target is a number, performs arithmetic addition.
    * If the target is a string, appends the value to the string.
-   * Corresponds to the Cascada command: `@add path value`
+   * Corresponds to the Cascada command: `add path value`
    *
    * @param {number|string} target The number or string at the specified `path`.
    * @param {any} value The value to add or append.
@@ -295,7 +295,7 @@ module.exports = {
 
   /**
    * Subtracts a value from the target. Arithmetic-only operation.
-   * Corresponds to the Cascada command: `@subtract path value`
+   * Corresponds to the Cascada command: `subtract path value`
    *
    * @param {number} target The number at the specified `path`.
    * @param {any} value The value to subtract from the target.
@@ -314,7 +314,7 @@ module.exports = {
 
   /**
    * Increments the target by 1. Arithmetic-only operation.
-   * Corresponds to the Cascada command: `@increment path`
+   * Corresponds to the Cascada command: `increment path`
    *
    * @param {number} target The number at the specified `path`.
    * @returns {number} The incremented value.
@@ -332,7 +332,7 @@ module.exports = {
 
   /**
    * Decrements the target by 1. Arithmetic-only operation.
-   * Corresponds to the Cascada command: `@decrement path`
+   * Corresponds to the Cascada command: `decrement path`
    *
    * @param {number} target The number at the specified `path`.
    * @returns {number} The decremented value.
@@ -350,7 +350,7 @@ module.exports = {
 
   /**
    * Multiplies the target by a value. Arithmetic-only operation.
-   * Corresponds to the Cascada command: `@multiply path value`
+   * Corresponds to the Cascada command: `multiply path value`
    *
    * @param {number} target The number at the specified `path`.
    * @param {any} value The value to multiply by.
@@ -369,7 +369,7 @@ module.exports = {
 
   /**
    * Divides the target by a value. Arithmetic-only operation.
-   * Corresponds to the Cascada command: `@divide path value`
+   * Corresponds to the Cascada command: `divide path value`
    *
    * @param {number} target The number at the specified `path`.
    * @param {any} value The value to divide by.
@@ -392,7 +392,7 @@ module.exports = {
 
   /**
    * Returns the smaller of the target and the value.
-   * Corresponds to the Cascada command: `@min path value`
+   * Corresponds to the Cascada command: `min path value`
    *
    * @param {number} target The number at the specified `path`.
    * @param {any} value The value to compare.
@@ -411,7 +411,7 @@ module.exports = {
 
   /**
    * Returns the larger of the target and the value.
-   * Corresponds to the Cascada command: `@max path value`
+   * Corresponds to the Cascada command: `max path value`
    *
    * @param {number} target The number at the specified `path`.
    * @param {any} value The value to compare.
@@ -430,7 +430,7 @@ module.exports = {
 
   /**
    * Performs logical AND operation using JavaScript && operator.
-   * Corresponds to the Cascada command: `@and path value`
+   * Corresponds to the Cascada command: `and path value`
    *
    * @param {any} target The value at the specified `path`.
    * @param {any} value The value to perform AND operation with.
@@ -445,7 +445,7 @@ module.exports = {
 
   /**
    * Performs logical OR operation using JavaScript || operator.
-   * Corresponds to the Cascada command: `@or path value`
+   * Corresponds to the Cascada command: `or path value`
    *
    * @param {any} target The value at the specified `path`.
    * @param {any} value The value to perform OR operation with.
@@ -460,7 +460,7 @@ module.exports = {
 
   /**
    * Performs bitwise AND operation using JavaScript & operator.
-   * Corresponds to the Cascada command: `@bitAnd path value`
+   * Corresponds to the Cascada command: `bitAnd path value`
    *
    * @param {number} target The number at the specified `path`.
    * @param {any} value The value to perform bitwise AND operation with.
@@ -479,7 +479,7 @@ module.exports = {
 
   /**
    * Performs bitwise OR operation using JavaScript | operator.
-   * Corresponds to the Cascada command: `@bitOr path value`
+   * Corresponds to the Cascada command: `bitOr path value`
    *
    * @param {number} target The number at the specified `path`.
    * @param {any} value The value to perform bitwise OR operation with.
@@ -498,7 +498,7 @@ module.exports = {
 
   /**
    * Performs bitwise NOT operation using JavaScript ~ operator.
-   * Corresponds to the Cascada command: `@bitNot path`
+   * Corresponds to the Cascada command: `bitNot path`
    *
    * @param {number} target The number at the specified `path`.
    * @returns {number} The result of the bitwise NOT operation.
@@ -516,7 +516,7 @@ module.exports = {
 
   /**
    * Performs logical NOT operation using JavaScript ! operator.
-   * Corresponds to the Cascada command: `@not path`
+   * Corresponds to the Cascada command: `not path`
    *
    * @param {any} target The value at the specified `path`.
    * @returns {boolean} The result of the logical NOT operation.
@@ -530,7 +530,7 @@ module.exports = {
 
   /**
    * Converts a string to uppercase.
-   * Corresponds to the Cascada command: `@toUpperCase path`
+   * Corresponds to the Cascada command: `toUpperCase path`
    *
    * @param {string} target The string at the specified `path`.
    * @returns {string} The uppercase string.
@@ -551,7 +551,7 @@ module.exports = {
 
   /**
    * Converts a string to lowercase.
-   * Corresponds to the Cascada command: `@toLowerCase path`
+   * Corresponds to the Cascada command: `toLowerCase path`
    *
    * @param {string} target The string at the specified `path`.
    * @returns {string} The lowercase string.
@@ -572,7 +572,7 @@ module.exports = {
 
   /**
    * Extracts a section of a string.
-   * Corresponds to the Cascada command: `@slice path start end`
+   * Corresponds to the Cascada command: `slice path start end`
    *
    * @param {string} target The string at the specified `path`.
    * @param {number} start The start index.
@@ -595,7 +595,7 @@ module.exports = {
 
   /**
    * Extracts a section of a string (no negative indices).
-   * Corresponds to the Cascada command: `@substring path start end`
+   * Corresponds to the Cascada command: `substring path start end`
    *
    * @param {string} target The string at the specified `path`.
    * @param {number} start The start index.
@@ -620,7 +620,7 @@ module.exports = {
 
   /**
    * Removes whitespace from both ends of a string.
-   * Corresponds to the Cascada command: `@trim path`
+   * Corresponds to the Cascada command: `trim path`
    *
    * @param {string} target The string at the specified `path`.
    * @returns {string} The trimmed string.
@@ -641,7 +641,7 @@ module.exports = {
 
   /**
    * Removes whitespace from the start of a string.
-   * Corresponds to the Cascada command: `@trimStart path`
+   * Corresponds to the Cascada command: `trimStart path`
    *
    * @param {string} target The string at the specified `path`.
    * @returns {string} The string with leading whitespace removed.
@@ -662,7 +662,7 @@ module.exports = {
 
   /**
    * Removes whitespace from the end of a string.
-   * Corresponds to the Cascada command: `@trimEnd path`
+   * Corresponds to the Cascada command: `trimEnd path`
    *
    * @param {string} target The string at the specified `path`.
    * @returns {string} The string with trailing whitespace removed.
@@ -683,7 +683,7 @@ module.exports = {
 
   /**
    * Replaces the first occurrence of a substring.
-   * Corresponds to the Cascada command: `@replace path searchValue replaceValue`
+   * Corresponds to the Cascada command: `replace path searchValue replaceValue`
    *
    * @param {string} target The string at the specified `path`.
    * @param {string} searchValue The substring to replace.
@@ -706,7 +706,7 @@ module.exports = {
 
   /**
    * Replaces all occurrences of a substring.
-   * Corresponds to the Cascada command: `@replaceAll path searchValue replaceValue`
+   * Corresponds to the Cascada command: `replaceAll path searchValue replaceValue`
    *
    * @param {string} target The string at the specified `path`.
    * @param {string} searchValue The substring to replace.
@@ -729,7 +729,7 @@ module.exports = {
 
   /**
    * Splits a string into an array.
-   * Corresponds to the Cascada command: `@split path separator`
+   * Corresponds to the Cascada command: `split path separator`
    *
    * @param {string} target The string at the specified `path`.
    * @param {string} separator The separator string (optional).
@@ -751,7 +751,7 @@ module.exports = {
 
   /**
    * Returns the character at a specified index.
-   * Corresponds to the Cascada command: `@charAt path index`
+   * Corresponds to the Cascada command: `charAt path index`
    *
    * @param {string} target The string at the specified `path`.
    * @param {number} index The character index.
@@ -773,7 +773,7 @@ module.exports = {
 
   /**
    * Repeats a string a specified number of times.
-   * Corresponds to the Cascada command: `@repeat path count`
+   * Corresponds to the Cascada command: `repeat path count`
    *
    * @param {string} target The string at the specified `path`.
    * @param {number} count The number of times to repeat.
@@ -797,7 +797,7 @@ module.exports = {
 
   /**
    * Returns the element at a specified index.
-   * Corresponds to the Cascada command: `@at path index`
+   * Corresponds to the Cascada command: `at path index`
    *
    * @param {Array<any>} target The array at the specified `path`.
    * @param {number} index The index of the element.
@@ -821,7 +821,7 @@ module.exports = {
 
   /**
    * Sorts an array in place.
-   * Corresponds to the Cascada command: `@sort path`
+   * Corresponds to the Cascada command: `sort path`
    *
    * @param {Array<any>} target The array at the specified `path`.
    * @returns {Array<any>} The sorted array.
@@ -843,7 +843,7 @@ module.exports = {
 
   /**
    * Sorts an array with a custom comparison function.
-   * Corresponds to the Cascada command: `@sortWith path compareFunction`
+   * Corresponds to the Cascada command: `sortWith path compareFunction`
    *
    * @param {Array<any>} target The array at the specified `path`.
    * @param {Function} compareFunction The comparison function.
@@ -868,7 +868,7 @@ module.exports = {
 
   /**
    * Extracts a section of an array.
-   * Corresponds to the Cascada command: `@slice path start end`
+   * Corresponds to the Cascada command: `slice path start end`
    *
    * @param {Array<any>} target The array at the specified `path`.
    * @param {number} start The start index.
@@ -893,7 +893,7 @@ module.exports = {
 
   /**
    * Returns undefined, effectively deleting the target.
-   * Corresponds to the Cascada command: `@delete path`
+   * Corresponds to the Cascada command: `delete path`
    *
    * @param {any} target The value at the specified `path` (ignored).
    * @returns {undefined} Always returns undefined.
