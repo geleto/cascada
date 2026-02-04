@@ -155,41 +155,6 @@ describe('flattenBuffer', function () {
     });
   });
 
-  describe('Post-Processing Functions (e.g., SafeString)', function () {
-    it('should handle a simple array with a post-processing function', async function () {
-      const buffer = [['Hello', (val) => val.toUpperCase()]];
-      const result = await flattenBuffer(buffer, context, 'text');
-      expect(result).to.equal('HELLO');
-    });
-
-    it('should handle nested arrays within a post-processing array', async function () {
-      const buffer = [[['Hello', ' ', 'World'], (val) => val.toLowerCase()]];
-      const result = await flattenBuffer(buffer, context, 'text');
-      expect(result).to.equal('hello world');
-    });
-
-    it('should process the result of the function along with other buffer items', async function () {
-      const buffer = ['Start ', [['mid'], (val) => val.toUpperCase()], ' End'];
-      const result = await flattenBuffer(buffer, context, 'text');
-      expect(result).to.equal('Start MID End');
-    });
-
-    it('should handle post-processing functions that return null or undefined', async function () {
-      const buffer = [['text', () => null]];
-      const result = await flattenBuffer(buffer, context, 'text');
-      expect(result).to.equal('');
-    });
-
-    it('should handle post-processing functions that return another command object', async function () {
-      const buffer = [[
-        'Test',
-        (val) => ({ handler: 'data', command: 'set', arguments: [['result'], val] })
-      ]];
-      const result = await flattenBuffer(buffer, context, 'data');
-      expect(result).to.eql({ result: 'Test' });
-    });
-  });
-
   describe('Error Handling & Edge Cases', function () {
     it('should handle an empty buffer', async function () {
       const buffer = [];

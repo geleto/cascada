@@ -53,13 +53,9 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
       }
     }
 
-    // Text command - extract and emit the value.
-    // typeof guard needed: raw functions in nested arrays bypass _wrapCommand,
-    // and Function.prototype.arguments throws in strict mode.
+    // Text command - extract the value. typeof guard needed because
+    // Function.prototype.arguments throws in strict mode.
     const value = (item && typeof item === 'object' && item.arguments) ? item.arguments[0] : item;
-    if (typeof value === 'function') {
-      return (value(acc) || '');
-    }
     return acc + ((value !== null && value !== undefined) ? value : '');
   }, '');
 

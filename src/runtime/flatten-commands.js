@@ -356,35 +356,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
     }
   }
 
-  function flattenStringifiable(subArr) {
-    const subErrors = [];
-    const result = subArr.reduce((acc, current) => {
-      if (isPoison(current)) {
-        subErrors.push(...current.errors);
-        return acc;
-      }
-      if (Array.isArray(current)) {
-        return acc + flattenStringifiable(current);
-      }
-      return acc + ((current !== null && current !== undefined) ? current : '');
-    }, '');
-
-    if (subErrors.length > 0) {
-      state.collectedErrors.push(...subErrors);
-    }
-
-    return result;
-  }
-
   function processArrayItem(item) {
-    const last = item.length > 0 ? item[item.length - 1] : null;
-    if (typeof last === 'function') {
-      const subArray = item.slice(0, -1);
-      const subResult = flattenStringifiable(subArray);
-      const finalResult = last(subResult);
-      processItem(finalResult);
-      return;
-    }
     item.forEach(processItem);
   }
 

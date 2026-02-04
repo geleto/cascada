@@ -786,12 +786,6 @@
         expect(result).to.equal('ABCD');
       });
 
-      it('should handle functions in arrays', () => {
-        const arr = ['Test', (val) => val.toUpperCase()];
-        const result = runtime.flattenBuffer(arr);
-
-        expect(result).to.equal('TEST');
-      });
     });
 
     describe('flattenBuffer with script context - poison detection', () => {
@@ -1106,19 +1100,6 @@
         }
       });
 
-      it('should collect poison from function arrays with nested poison', () => {
-        const poison = createPoison(new Error('Function array poison'));
-        const arr = [
-          ['text', poison, (val) => val.toUpperCase()]
-        ];
-
-        try {
-          runtime.flattenBuffer(arr, context, 'text');
-          expect().fail('Should have thrown');
-        } catch (thrown) {
-          expect(isPoisonError(thrown)).to.be(true);
-        }
-      });
     });
 
     describe('Output name handling', () => {
