@@ -1007,8 +1007,8 @@
       };
 
       const result = await env.renderTemplateString(template, context);
-        expect(result).to.contain('First: Value 1');
-        expect(result).to.contain('Second: Value 2');
+      expect(result).to.contain('First: Value 1');
+      expect(result).to.contain('Second: Value 2');
     });
 
     // Test Case 3: Async blocks that don't modify variables
@@ -1072,7 +1072,7 @@
       };
 
       const result = await env.renderTemplateString(template, context);
-        expect(result).to.contain('Result: Value 2 (modified)');
+      expect(result).to.contain('Result: Value 2 (modified)');
     });
 
     // Test Case 6: Async function returning a promise
@@ -1107,12 +1107,12 @@
       };
 
       let result = await env.renderTemplateString(template, context);
-        expect(result).to.contain('Result: Value A');
+      expect(result).to.contain('Result: Value A');
 
       // Test with condition = false
       context.condition = false;
       result = await env.renderTemplateString(template, context);
-        expect(result).to.contain('Result: Value B');
+      expect(result).to.contain('Result: Value B');
     });
 
     // Test Case 9: Async loops with promise values
@@ -1468,7 +1468,7 @@
       };
 
       const result = await env.renderTemplateString(template, context);
-        expect(result).to.contain('Result: Processed: Value from promise');
+      expect(result).to.contain('Result: Processed: Value from promise');
     });
 
     // Test 3: Using async control structures
