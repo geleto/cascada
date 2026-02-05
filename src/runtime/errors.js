@@ -488,11 +488,13 @@ function handleError(error, lineno, colno, errorContextString = null, path = nul
 
   // Regular error handling
   if ('lineno' in error && error.lineno !== undefined) {
-    // Already wrapped with position info
-    /*if (path && !error.path && typeof error.Update === 'function') {
-      //does this happen?
-      error.Update(path);
-    }*/
+    // Already wrapped with position info, just add path and errorContextString if missing
+    if (!error.path && path) {
+      error.path = path;
+    }
+    if (!error.errorContextString && errorContextString) {
+      error.errorContextString = errorContextString;
+    }
     return error;
   } else {
     // Wrap in RuntimeError

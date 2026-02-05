@@ -1,7 +1,7 @@
 'use strict';
 
-//@todo - this will be completely rewritten and simplified togather
-// with implementing proper snapshot() for outputs
+// Flatten populates Output._target / Output._base (via emitText / getOrInstantiateHandler).
+// snapshot() on Output objects reads from _target/_base after flatten completes.
 
 const {
   CommandBuffer,
@@ -21,6 +21,7 @@ const {
 } = require('./flatten-shared');
 const { suppressValue, suppressValueScript } = require('./safe-output');
 const { resolveAll } = require('./resolve');
+const { ErrorCommand } = require('./commands');
 
 const RESOLVE_MARKER = Symbol.for('cascada.resolve');
 
@@ -32,6 +33,9 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState, flattenB
     }
     if (state.outputHandlers === undefined && buffer && buffer._outputHandlers) {
       state.outputHandlers = buffer._outputHandlers;
+    }
+    if (!state.outputCtxs && buffer && buffer._outputs) {
+      state.outputCtxs = buffer._outputs;
     }
     const resultState = flattenBuffer(resolveBufferArray(buffer, outputName), context, outputName, state);
     if (sharedState) {
@@ -65,6 +69,9 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState, flattenB
   }
   if (state.outputHandlers === undefined && buffer && buffer._outputHandlers) {
     state.outputHandlers = buffer._outputHandlers;
+  }
+  if (!state.outputCtxs && buffer && buffer._outputs) {
+    state.outputCtxs = buffer._outputs;
   }
   const outputTargets = resolveOutputTargets(buffer, null);
   const outputNames = outputTargets
@@ -157,6 +164,15 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
     return result;
   }
 
+  // Resolve the Output object for a handler name from state.outputCtxs.
+  // Returns null if not found (e.g. template mode or undeclared handler).
+  function getOutputCtx(handlerName) {
+    if (state.outputCtxs && state.outputCtxs[handlerName]) {
+      return state.outputCtxs[handlerName];
+    }
+    return null;
+  }
+
   function getOrInstantiateHandler(handlerName) {
     if (state.handlerInstances[handlerName]) {
       return state.handlerInstances[handlerName];
@@ -175,12 +191,21 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
           instance._init(context.getVariables());
         }
         state.handlerInstances[handlerName] = instance;
+        // Wire _base on the Output ctx for this handler
+        const outputCtx = getOutputCtx(handlerName);
+        if (outputCtx && !outputCtx._base) {
+          outputCtx._base = instance;
+        }
         return instance;
       }
       if (env.commandHandlerClasses[declaredType]) {
         const HandlerClass = env.commandHandlerClasses[declaredType];
         const instance = new HandlerClass(context.getVariables(), env);
         state.handlerInstances[handlerName] = instance;
+        const outputCtx = getOutputCtx(handlerName);
+        if (outputCtx && !outputCtx._base) {
+          outputCtx._base = instance;
+        }
         return instance;
       }
     }
@@ -191,12 +216,20 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
         instance._init(context.getVariables());
       }
       state.handlerInstances[handlerName] = instance;
+      const outputCtx = getOutputCtx(handlerName);
+      if (outputCtx && !outputCtx._base) {
+        outputCtx._base = instance;
+      }
       return instance;
     }
     if (env.commandHandlerClasses[handlerName]) {
       const HandlerClass = env.commandHandlerClasses[handlerName];
       const instance = new HandlerClass(context.getVariables(), env);
       state.handlerInstances[handlerName] = instance;
+      const outputCtx = getOutputCtx(handlerName);
+      if (outputCtx && !outputCtx._base) {
+        outputCtx._base = instance;
+      }
       return instance;
     }
     return null;
@@ -256,6 +289,11 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
   function emitText(name, values) {
     getTextOutputFromState(state, name).push(...values);
+    // Also populate Output._target for the new command-based pipeline
+    const outputCtx = getOutputCtx(name);
+    if (outputCtx && Array.isArray(outputCtx._target)) {
+      outputCtx._target.push(...values);
+    }
   }
 
   function processPoisonMarker(item) {
@@ -373,6 +411,8 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
       emitText(outputName || 'text', [item.text]);
     }
 
+    // Merge named handler values (e.g. {data: ...} from macro/call-block returns).
+    // getOrInstantiateHandler also wires Output._base for the new pipeline.
     Object.keys(item).forEach(key => {
       if (key === 'text') return;
       if (key === 'data') {
@@ -518,6 +558,18 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
   function processItem(item) {
     if (item === null || item === undefined) return;
+
+    // ErrorCommand: apply to the Output ctx and collect errors into state
+    if (item instanceof ErrorCommand) {
+      const outputCtx = getOutputCtx(outputName || 'text');
+      if (outputCtx) {
+        item.apply(outputCtx);
+      }
+      if (item.value && item.value.errors) {
+        state.collectedErrors.push(...item.value.errors);
+      }
+      return;
+    }
 
     if (item.__cascadaPoisonMarker === true) {
       processPoisonMarker(item);

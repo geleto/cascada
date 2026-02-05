@@ -1475,6 +1475,7 @@ class Compiler extends CompilerBase {
 
     this.emit.line('frame._outputs = frame._outputs || Object.create(null);');
     this.emit.line(`if (!frame._outputBuffer) { frame._outputBuffer = new runtime.CommandBuffer(context, null); }`);
+    this.emit.line('if (!frame._outputBuffer._outputs) { frame._outputBuffer._outputs = frame._outputs; }');
     this.emit.line('frame._outputBuffer._outputTypes = frame._outputBuffer._outputTypes || Object.create(null);');
     this.emit.line(`frame._outputBuffer._outputTypes["${name}"] = "${outputType}";`);
 

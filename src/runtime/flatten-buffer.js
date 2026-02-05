@@ -21,11 +21,11 @@ function flattenBuffer(arr, context = null, outputName = null) {
   return doFlattenBuffer(arr, context, outputName);
 }
 
-// @TODO - remove this once proper snapshot() is implemented for outputs
 // In script mode, multiple snapshots/returns may request flattening the same
 // CommandBuffer more than once (e.g. implicit return + explicit snapshots).
-// Flattening must be idempotent w.r.t. executing output commands, so we cache
-// the flattened state per CommandBuffer instance.
+// Flattening is idempotent: it populates Output._target/_base once, and
+// subsequent snapshot() calls read from those without re-executing commands.
+// We cache the flattened state per CommandBuffer instance to enforce this.
 function flattenCommandBufferCached(buffer, context, outputName) {
   const resolveFromState = (state) => {
     if (state && state.collectedErrors && state.collectedErrors.length > 0) {
@@ -89,6 +89,40 @@ function doFlattenBuffer(arr, context = null, outputName = null, sharedState = n
   return flattenCommands(arr, context, outputName, sharedState, doFlattenBuffer);
 }
 
+// Output-driven entry point for script mode.
+// Output carries buffer, context, and outputName — all flatten needs.
+// Internal recursion (nested CommandBuffers) still goes through flattenBuffer.
+function flattenOutput(output) {
+  const buffer = output._buffer;
+  const context = output._context;
+  const outputName = (output._outputName && output._outputName !== 'output') ? output._outputName : null;
+
+  // Template mode shortcut: empty named outputs return type defaults without flattening
+  if (!buffer._scriptMode && output._outputName && output._outputName !== 'output'
+      && typeof buffer._getOutputArray === 'function') {
+    const target = buffer._getOutputArray(output._outputName);
+    if (!target || target.length === 0) {
+      if (output._outputType === 'data') return {};
+      if (output._outputType === 'text') return '';
+      if (output._outputType === 'value') return undefined;
+    }
+  }
+
+  // Template mode or implicit 'output' handler: return flatten result directly
+  if (!buffer._scriptMode || output._outputName === 'output') {
+    return flattenBuffer(buffer, context, outputName);
+  }
+
+  // Script mode: flatten populates _target/_base as a side effect;
+  // resolve the final value from them after flatten completes.
+  const result = flattenBuffer(buffer, context, outputName);
+  if (result && typeof result.then === 'function') {
+    return result.then(() => output._resolveFromOutput());
+  }
+  return output._resolveFromOutput();
+}
+
 module.exports = {
-  flattenBuffer
+  flattenBuffer,
+  flattenOutput
 };

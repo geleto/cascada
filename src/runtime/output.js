@@ -1,6 +1,7 @@
 'use strict';
 
-const { flattenBuffer } = require('./flatten-buffer');
+const { flattenBuffer, flattenOutput } = require('./flatten-buffer');
+const { isPoison, PoisonError } = require('./errors');
 
 class Output {
   constructor(frame, outputName, context, outputType = null) {
@@ -8,54 +9,44 @@ class Output {
     this._outputName = outputName;
     this._outputType = outputType || outputName;
     this._context = context;
+    this._buffer = frame ? frame._outputBuffer : null;
   }
 
   _enqueueCommand(command, args) {
-    if (!this._frame || !this._frame._outputBuffer) return;
+    if (!this._buffer) return;
     const entry = {
       handler: this._outputName,
       command: command || null,
       arguments: args,
       pos: { lineno: 0, colno: 0 }
     };
-    this._frame._outputBuffer.add(entry, this._outputName);
+    this._buffer.add(entry, this._outputName);
+  }
+
+  // Resolve the final value from _target/_base after flatten has populated them.
+  _resolveFromOutput() {
+    if (isPoison(this._target)) {
+      throw new PoisonError(this._target.errors);
+    }
+    if (this._outputType === 'text') {
+      return Array.isArray(this._target) ? this._target.join('') : '';
+    }
+    // data and value: _base is the handler instance (DataHandler / ValueHandler).
+    // If _base is set, delegate to getReturnValue(); otherwise fall back to _target default.
+    if (this._base) {
+      return typeof this._base.getReturnValue === 'function'
+        ? this._base.getReturnValue()
+        : this._base;
+    }
+    return this._target;
   }
 
   snapshot() {
-    const buffer = this._frame._outputBuffer;
-    if (buffer) {
-      // For explicit outputs, preserve default empty snapshots without flattening.
-      // Skip this shortcut in script mode because data snapshots can
-      // depend on Result Objects emitted to the text stream.
-      if (!buffer._scriptMode &&
-          this._outputName &&
-          this._outputName !== 'output' &&
-          typeof buffer._getOutputArray === 'function') {
-        const target = buffer._getOutputArray(this._outputName);
-        if (!target || target.length === 0) {
-          if (this._outputType === 'data') return {};
-          if (this._outputType === 'text') return '';
-          if (this._outputType === 'value') return undefined;
-        }
-      }
-      const outputName = (this._outputName && this._outputName !== 'output') ? this._outputName : null;
-      const result = flattenBuffer(buffer, this._context, outputName);
-      if (!buffer._scriptMode || this._outputName === 'output') {
-        return result;
-      }
-      const applyDefault = (value) => {
-        if (value !== undefined) return value;
-        if (this._outputType === 'data') return {};
-        if (this._outputType === 'text') return '';
-        if (this._outputType === 'value') return undefined;
-        return value;
-      };
-      if (result && typeof result.then === 'function') {
-        return result.then((value) => applyDefault(value));
-      }
-      return applyDefault(result);
+    if (this._buffer) {
+      return flattenOutput(this);
     }
 
+    // Legacy fallback: no CommandBuffer
     const outputArray = this._frame[this._outputName];
     if (!outputArray) {
       return this._outputName === 'text' ? '' : undefined;
@@ -72,25 +63,57 @@ function attachOutputApi(target, output) {
   target._outputType = output._outputType;
   target._frame = output._frame;
   target._context = output._context;
+  // _target and _base are mutable accumulator state; use live bindings
+  // so that the flattener's writes to outputCtx._target propagate to the
+  // underlying Output instance and snapshot() can read them.
+  Object.defineProperty(target, '_target', {
+    get() { return output._target; },
+    set(v) { output._target = v; },
+    enumerable: true,
+    configurable: true
+  });
+  Object.defineProperty(target, '_base', {
+    get() { return output._base; },
+    set(v) { output._base = v; },
+    enumerable: true,
+    configurable: true
+  });
   return target;
 }
 
 class TextOutput extends Output {
+  constructor(frame, outputName, context, outputType) {
+    super(frame, outputName, context, outputType);
+    this._target = [];
+  }
+
   invoke(...args) {
-    if (!this._frame || !this._frame._outputBuffer) return;
+    if (!this._buffer) return;
     if (args.length === 0) return;
     this._enqueueCommand(null, args);
   }
 }
 
 class ValueOutput extends Output {
+  constructor(frame, outputName, context, outputType) {
+    super(frame, outputName, context, outputType);
+    this._target = undefined;
+    this._base = null;
+  }
+
   invoke(value) {
-    if (!this._frame || !this._frame._outputBuffer) return;
+    if (!this._buffer) return;
     this._enqueueCommand(null, [value]);
   }
 }
 
-class DataOutput extends Output {}
+class DataOutput extends Output {
+  constructor(frame, outputName, context, outputType) {
+    super(frame, outputName, context, outputType);
+    this._target = {};
+    this._base = null;
+  }
+}
 
 function createOutputProxy(output) {
   // Proxy is required so output instances can handle arbitrary commands
@@ -100,7 +123,7 @@ function createOutputProxy(output) {
       if (prop === 'snapshot') {
         return target.snapshot.bind(target);
       }
-      if (prop === '_outputName' || prop === '_outputType' || prop === '_frame' || prop === '_context') {
+      if (prop === '_outputName' || prop === '_outputType' || prop === '_frame' || prop === '_context' || prop === '_target' || prop === '_base' || prop === '_buffer') {
         return target[prop];
       }
       if (prop === 'then') {
@@ -138,6 +161,9 @@ class SinkOutputHandler {
     this._outputName = outputName;
     this._context = context;
     this._sink = sink;
+    this._target = undefined;
+    this._base = null;
+    this._buffer = frame ? frame._outputBuffer : null;
   }
 
   _resolveSink() {
@@ -153,7 +179,7 @@ class SinkOutputHandler {
   }
 
   snapshot() {
-    const buffer = this._frame ? this._frame._outputBuffer : null;
+    const buffer = this._buffer;
     const outputName = this._outputName || null;
     const finalize = (resolvedSink) => this._snapshotFromSink(resolvedSink);
 

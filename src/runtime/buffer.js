@@ -3,8 +3,11 @@
 const {
   isPoison,
   isPoisonError,
+  PoisonedValue,
   handleError
 } = require('./errors');
+
+const { ErrorCommand } = require('./commands');
 
 const {
   setParentPosition,
@@ -282,17 +285,22 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
       errorContext.errorContextString, errorContext.path)) :
     errors;
 
-  // Add one marker per handler that would have been written to
+  // Add one marker per handler that would have been written to.
+  // In script mode, emit ErrorCommand instances; in template mode, use legacy markers.
+  const isScript = buffer instanceof CommandBuffer && buffer._scriptMode;
   const targets = resolveOutputTargets(buffer, handlerNames);
   targets.forEach(({ name, array }) => {
-    const marker = {
-      __cascadaPoisonMarker: true,  // Flag for detection in flattenBuffer
-      errors: processedErrors,       // Array of Error objects to collect (now with proper context)
-      handler: name || 'text',        // Which handler was intended (for debugging)
-    };
-
     if (Array.isArray(array)) {
-      array.push(marker);
+      if (isScript) {
+        array.push(new ErrorCommand(new PoisonedValue(processedErrors)));
+      } else {
+        const marker = {
+          __cascadaPoisonMarker: true,
+          errors: processedErrors,
+          handler: name || 'text',
+        };
+        array.push(marker);
+      }
     }
   });
 }
@@ -338,7 +346,14 @@ function getPosonedBufferErrors(arr, allowedHandlers = null) {
       }
       continue;
     }
-    // Check for poison marker
+    // Check for ErrorCommand (script-mode replacement for poison markers)
+    if (item instanceof ErrorCommand) {
+      if (item.value && item.value.errors) {
+        allErrors.push(...item.value.errors);
+      }
+      continue;
+    }
+    // Check for poison marker (template mode / legacy)
     if (item.__cascadaPoisonMarker === true) {
       if (allowedHandlers && !allowedHandlers.includes(item.handler)) {
         continue;
