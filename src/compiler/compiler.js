@@ -989,11 +989,7 @@ class Compiler extends CompilerBase {
       if (this.scriptMode) {
         returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return undefined;});`;
       } else {
-        let bufferArgs = bufferId;
-        if (this.scriptMode) {
-          bufferArgs += ', this';
-        }
-        const flattenCall = `runtime.flattenBuffer(${bufferArgs})`;
+        const flattenCall = `runtime.flattenBufferText(${bufferId})`;
 
         const needsSafeString = !this.scriptMode;
         const safeStringCall = needsSafeString
@@ -1104,10 +1100,7 @@ class Compiler extends CompilerBase {
         } else {
           this.compile(n.body, f);//write to output
           this.emit.line('await astate.waitAllClosures(1)');
-          const flattenArgs = this.scriptMode
-            ? 'output, context'
-            : 'output';
-          this.emit.line(`let ${res} = runtime.flattenBuffer(${flattenArgs});`);
+          this.emit.line(`let ${res} = runtime.flattenBufferText(output);`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
       }, res, node.body, true);
@@ -1286,10 +1279,7 @@ class Compiler extends CompilerBase {
         // In script mode we expect a {%- return ... -%} in the template body to provide the result.
         // this.emit.line('    cb(null, frame._outputs.output.snapshot());');
       } else {
-        const flattenArgs = this.scriptMode
-          ? `${this.buffer.currentBuffer}, context`
-          : `${this.buffer.currentBuffer}`;
-        this.emit.line(`    cb(null, runtime.flattenBuffer(${flattenArgs}));`);
+        this.emit.line(`    cb(null, runtime.flattenBufferText(${this.buffer.currentBuffer}));`);
       }
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
@@ -1407,9 +1397,19 @@ class Compiler extends CompilerBase {
         // Ensure all deferred output commands are executed before returning.
         // Scripts must not skip output processing just because the return value
         // doesn't explicitly snapshot outputs.
+
+        // @todo - rewrite once we have proper snapshot()
         this.emit.line('  if (frame && frame._outputBuffer) {');
-        this.emit.line('    const __flat = runtime.flattenBuffer(frame._outputBuffer, context);');
-        this.emit.line('    if (__flat && typeof __flat.then === "function") { await __flat; }');
+        this.emit.line('    if (frame._outputs) {');
+        this.emit.line('      const __outs = frame._outputs;');
+        this.emit.line('      const __pending = [];');
+        this.emit.line('      for (const __name in __outs) {');
+        this.emit.line('        if (!Object.prototype.hasOwnProperty.call(__outs, __name)) continue;');
+        this.emit.line('        const __res = runtime.flattenBuffer(__outs[__name], context);');
+        this.emit.line('        if (__res && typeof __res.then === "function") { __pending.push(__res); }');
+        this.emit.line('      }');
+        this.emit.line('      if (__pending.length > 0) { await Promise.all(__pending); }');
+        this.emit.line('    }');
         this.emit.line('  }');
         this.emit.line('  cb(null, resolved);');
         this.emit.line('}).catch(e => {');
@@ -1429,9 +1429,19 @@ class Compiler extends CompilerBase {
         this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
         this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
         // Ensure all deferred output commands are executed before returning.
+
+        // @todo - rewrite once we have proper snapshot()
         this.emit.line('  if (frame && frame._outputBuffer) {');
-        this.emit.line('    const __flat = runtime.flattenBuffer(frame._outputBuffer, context);');
-        this.emit.line('    if (__flat && typeof __flat.then === "function") { await __flat; }');
+        this.emit.line('    if (frame._outputs) {');
+        this.emit.line('      const __outs = frame._outputs;');
+        this.emit.line('      const __pending = [];');
+        this.emit.line('      for (const __name in __outs) {');
+        this.emit.line('        if (!Object.prototype.hasOwnProperty.call(__outs, __name)) continue;');
+        this.emit.line('        const __res = runtime.flattenBuffer(__outs[__name], context);');
+        this.emit.line('        if (__res && typeof __res.then === "function") { __pending.push(__res); }');
+        this.emit.line('      }');
+        this.emit.line('      if (__pending.length > 0) { await Promise.all(__pending); }');
+        this.emit.line('    }');
         this.emit.line('  }');
         this.emit.line('  return resolved;');
         this.emit.line('});');

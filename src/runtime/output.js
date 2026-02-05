@@ -1,6 +1,6 @@
 'use strict';
 
-const { flattenBuffer, flattenOutput } = require('./flatten-buffer');
+const { flattenBuffer } = require('./flatten-buffer');
 const { isPoison, PoisonError } = require('./errors');
 
 class Output {
@@ -41,19 +41,14 @@ class Output {
     return this._target;
   }
 
+  // @todo - find a way to pass the errorContext rather than using the declaring context
   snapshot() {
     if (this._buffer) {
-      return flattenOutput(this);
+      return flattenBuffer(this);
     }
 
-    // Legacy fallback: no CommandBuffer
-    const outputArray = this._frame[this._outputName];
-    if (!outputArray) {
-      return this._outputName === 'text' ? '' : undefined;
-    }
-
-    const outputName = (this._outputName && this._outputName !== 'output') ? this._outputName : null;
-    return flattenBuffer(outputArray, this._context, outputName);
+    // No CommandBuffer available; legacy array fallback removed.
+    return this._outputName === 'text' ? '' : undefined;
   }
 }
 
@@ -184,7 +179,8 @@ class SinkOutputHandler {
     const finalize = (resolvedSink) => this._snapshotFromSink(resolvedSink);
 
     if (buffer) {
-      const flattened = flattenBuffer(buffer, this._context, outputName);
+      // Ensure commands execute once (cached) before resolving the sink value.
+      const flattened = flattenBuffer(this, this._context);
       if (flattened && typeof flattened.then === 'function') {
         return flattened.then(() => {
           const sinkVal = this._resolveSink();

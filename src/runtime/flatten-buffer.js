@@ -1,24 +1,40 @@
 'use strict';
 
-const { CommandBuffer } = require('./buffer');
+const { CommandBuffer, resolveBufferArray } = require('./buffer');
 const { flattenText } = require('./flatten-text');
 const { flattenCommands, flattenCommandBuffer } = require('./flatten-commands');
 const { PoisonError } = require('./errors');
 const { createFlattenState, buildFinalResultFromState, resolveOutputValue } = require('./flatten-shared');
 
-// the below comments may not be exactly correct right now
-// outputName only => value (unwrapped)
-// neither provided, no context => this is a text flattening => string
-// neither provided, context  => ERROR (no longer supported)
-function flattenBuffer(arr, context = null, outputName = null) {
-  if (context && !outputName) {
-    //throw new Error('flattenBuffer requires either focusOutput or outputName parameter');
-  }
-  if (context && arr instanceof CommandBuffer) {
-    return flattenCommandBufferCached(arr, context, outputName);
+function doFlattenBuffer(arr, context = null, outputName = null, sharedState = null) {
+  if (arr instanceof CommandBuffer) {
+    return flattenCommandBuffer(arr, context, outputName, sharedState, doFlattenBuffer);
   }
 
-  return doFlattenBuffer(arr, context, outputName);
+  if (!context) {
+    return flattenText(arr, outputName, sharedState, doFlattenBuffer);
+  }
+
+  return flattenCommands(arr, context, outputName, sharedState, doFlattenBuffer);
+}
+
+// Template-mode entry point: flatten text from a buffer or raw array.
+function flattenBufferText(arr, outputName = null, sharedState = null) {
+  let target = arr;
+  const name = outputName || 'text';
+
+  if (arr instanceof CommandBuffer) {
+    const textArray = resolveBufferArray(arr, name);
+    if (!outputName && name === 'text') {
+      target = (Array.isArray(textArray) && textArray.length > 0)
+        ? textArray
+        : resolveBufferArray(arr, 'output');
+    } else {
+      target = textArray;
+    }
+  }
+
+  return flattenText(target, name, sharedState, doFlattenBuffer);
 }
 
 // In script mode, multiple snapshots/returns may request flattening the same
@@ -76,26 +92,26 @@ function flattenCommandBufferCached(buffer, context, outputName) {
   return resolveFromState(state);
 }
 
-function doFlattenBuffer(arr, context = null, outputName = null, sharedState = null) {
-
-  if (arr instanceof CommandBuffer) {
-    return flattenCommandBuffer(arr, context, outputName, sharedState, doFlattenBuffer);
-  }
-
-  if (!context) {
-    return flattenText(arr, outputName, sharedState, doFlattenBuffer);
-  }
-
-  return flattenCommands(arr, context, outputName, sharedState, doFlattenBuffer);
-}
-
 // Output-driven entry point for script mode.
 // Output carries buffer, context, and outputName — all flatten needs.
-// Internal recursion (nested CommandBuffers) still goes through flattenBuffer.
-function flattenOutput(output) {
+// Internal recursion (nested CommandBuffers) goes through doFlattenBuffer.
+function flattenBuffer(output, errorContext = null) {
+  if (!output || (typeof output !== 'object' && typeof output !== 'function')) {
+    return undefined;
+  }
+
   const buffer = output._buffer;
-  const context = output._context;
+  if (!buffer) {
+    return undefined;
+  }
+
+  let context = errorContext || output._context || null;
   const outputName = (output._outputName && output._outputName !== 'output') ? output._outputName : null;
+  const isTemplateMode = (buffer instanceof CommandBuffer) && !buffer._scriptMode;
+  if (isTemplateMode) {
+    // Template mode should use text flattening (no second-pass suppression).
+    context = null;
+  }
 
   // Template mode shortcut: empty named outputs return type defaults without flattening
   if (!buffer._scriptMode && output._outputName && output._outputName !== 'output'
@@ -108,21 +124,52 @@ function flattenOutput(output) {
     }
   }
 
-  // Template mode or implicit 'output' handler: return flatten result directly
-  if (!buffer._scriptMode || output._outputName === 'output') {
-    return flattenBuffer(buffer, context, outputName);
+  // Template mode: flatten text directly from buffer arrays (no command handler path).
+  if (isTemplateMode) {
+    const getArray = (name) => (
+      typeof buffer._getOutputArray === 'function'
+        ? buffer._getOutputArray(name)
+        : resolveBufferArray(buffer, name)
+    );
+    if (!outputName) {
+      const textArray = getArray('text');
+      const target = (Array.isArray(textArray) && textArray.length > 0)
+        ? textArray
+        : getArray('output');
+      return doFlattenBuffer(target, null, 'text');
+    }
+    return doFlattenBuffer(getArray(outputName), null, outputName);
+  }
+
+  // Script mode or implicit 'output' handler: return flatten result directly
+  if (output._outputName === 'output') {
+    if (context && buffer instanceof CommandBuffer) {
+      return flattenCommandBufferCached(buffer, context, outputName);
+    }
+    return doFlattenBuffer(buffer, context, outputName);
   }
 
   // Script mode: flatten populates _target/_base as a side effect;
   // resolve the final value from them after flatten completes.
-  const result = flattenBuffer(buffer, context, outputName);
+  const result = (context && buffer instanceof CommandBuffer)
+    ? flattenCommandBufferCached(buffer, context, outputName)
+    : doFlattenBuffer(buffer, context, outputName);
   if (result && typeof result.then === 'function') {
-    return result.then(() => output._resolveFromOutput());
+    return result.then(() => (
+      typeof output._resolveFromOutput === 'function'
+        ? output._resolveFromOutput()
+        : result
+    ));
   }
-  return output._resolveFromOutput();
+  return typeof output._resolveFromOutput === 'function' ? output._resolveFromOutput() : result;
+}
+
+function flattenOutput(output, errorContext = null) {
+  return flattenBuffer(output, errorContext);
 }
 
 module.exports = {
   flattenBuffer,
-  flattenOutput
+  flattenOutput,
+  flattenBufferText
 };
