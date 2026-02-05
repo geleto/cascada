@@ -219,17 +219,6 @@ function resolveOutputTargets(buffer, handlerNames = null) {
   }));
 }
 
-
-// Helper to check if an object is a wrapped command
-function isWrappedCommand(item) {
-  return item && typeof item === 'object' && item[WRAPPED_COMMAND_SYMBOL] === true;
-}
-
-// Extract the payload value from a text command, or return the item unchanged
-function unwrapCommand(item) {
-  return (isWrappedCommand(item) && item.arguments) ? item.arguments[0] : item;
-}
-
 // Check if value is a CommandBuffer using symbol
 function isCommandBuffer(value) {
   return value && typeof value === 'object' && value[COMMAND_BUFFER_SYMBOL] === true;
@@ -392,8 +381,6 @@ module.exports = {
   resolveOutputTargets,
   clearBuffer,
   getPosonedBufferErrors,
-  isWrappedCommand,
-  unwrapCommand,
   isCommandBuffer,
   traverseChain,
   COMMAND_BUFFER_SYMBOL,

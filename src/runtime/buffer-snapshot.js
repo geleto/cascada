@@ -9,20 +9,12 @@
 
 // Import symbols for robust type checking (avoids circular dependency)
 const COMMAND_BUFFER_SYMBOL = Symbol.for('cascada.CommandBuffer');
-const WRAPPED_COMMAND_SYMBOL = Symbol.for('cascada.WrappedCommand');
 
 /**
  * Check if value is a CommandBuffer
  */
 function isCommandBuffer(value) {
   return value && typeof value === 'object' && value[COMMAND_BUFFER_SYMBOL] === true;
-}
-
-/**
- * Check if value is a wrapped command
- */
-function isWrappedCommand(value) {
-  return value && typeof value === 'object' && value[WRAPPED_COMMAND_SYMBOL] === true;
 }
 
 /**
@@ -46,16 +38,14 @@ function firstCommand(handlerName) {
   }
 
   for (const item of arr) {
-    // If it's a wrapped command, return it
-    if (isWrappedCommand(item)) {
+    // For script buffers, non-CommandBuffer entries are commands
+    if (!isCommandBuffer(item)) {
       return item;
     }
     // If it's a nested CommandBuffer, recurse
-    if (isCommandBuffer(item)) {
-      const nestedFirst = item.firstCommand(handlerName);
-      if (nestedFirst) {
-        return nestedFirst;
-      }
+    const nestedFirst = item.firstCommand(handlerName);
+    if (nestedFirst) {
+      return nestedFirst;
     }
   }
 
@@ -76,16 +66,14 @@ function lastCommand(handlerName) {
   // Iterate backwards
   for (let i = arr.length - 1; i >= 0; i--) {
     const item = arr[i];
-    // If it's a wrapped command, return it
-    if (isWrappedCommand(item)) {
+    // For script buffers, non-CommandBuffer entries are commands
+    if (!isCommandBuffer(item)) {
       return item;
     }
     // If it's a nested CommandBuffer, recurse
-    if (isCommandBuffer(item)) {
-      const nestedLast = item.lastCommand(handlerName);
-      if (nestedLast) {
-        return nestedLast;
-      }
+    const nestedLast = item.lastCommand(handlerName);
+    if (nestedLast) {
+      return nestedLast;
     }
   }
 
@@ -116,10 +104,10 @@ function markFinishedAndPatchLinks() {
     // Link backward: previous element → this.first
     if (position > 0 && firstCmd) {
       const prev = parentArray[position - 1];
-      if (isWrappedCommand(prev)) {
+      if (!isCommandBuffer(prev)) {
         // prev is a command object
         prev.next = firstCmd;
-      } else if (isCommandBuffer(prev) && prev.finished) {
+      } else if (prev.finished) {
         const prevLast = prev.lastCommand(handlerName);
         if (prevLast) {
           prevLast.next = firstCmd;
@@ -130,10 +118,10 @@ function markFinishedAndPatchLinks() {
     // Link forward: this.last → next element
     if (position < parentArray.length - 1 && lastCmd) {
       const next = parentArray[position + 1];
-      if (isWrappedCommand(next)) {
+      if (!isCommandBuffer(next)) {
         // next is a command object
         lastCmd.next = next;
-      } else if (isCommandBuffer(next) && next.finished) {
+      } else if (next.finished) {
         const nextFirst = next.firstCommand(handlerName);
         if (nextFirst) {
           lastCmd.next = nextFirst;
@@ -166,14 +154,14 @@ function debugChain(handlerName) {
  * @param {string} handlerName - Handler name for buffer lookups
  */
 function linkToPrevious(prev, current, handlerName) {
-  if (!prev || !isWrappedCommand(current)) {
+  if (!prev || isCommandBuffer(current)) {
     return;
   }
 
-  if (isWrappedCommand(prev)) {
+  if (!isCommandBuffer(prev)) {
     // prev is a command object
     prev.next = current;
-  } else if (isCommandBuffer(prev) && prev.finished) {
+  } else if (prev.finished) {
     // prev is a finished buffer - link its last command to current
     const prevLast = prev.lastCommand(handlerName);
     if (prevLast) {
@@ -189,14 +177,14 @@ function linkToPrevious(prev, current, handlerName) {
  * @param {string} handlerName - Handler name for buffer lookups
  */
 function linkToNext(current, next, handlerName) {
-  if (!isWrappedCommand(current) || !next) {
+  if (isCommandBuffer(current) || !next) {
     return;
   }
 
-  if (isWrappedCommand(next)) {
+  if (!isCommandBuffer(next)) {
     // next is a command object
     current.next = next;
-  } else if (isCommandBuffer(next) && next.finished) {
+  } else if (next.finished) {
     // next is a finished buffer - link current to its first command
     const nextFirst = next.firstCommand(handlerName);
     if (nextFirst) {
@@ -224,9 +212,9 @@ function patchLinksAfterClear(buffer) {
     let prevCmd = null;
     if (position > 0) {
       const prev = parentArray[position - 1];
-      if (isWrappedCommand(prev)) {
+      if (!isCommandBuffer(prev)) {
         prevCmd = prev;
-      } else if (isCommandBuffer(prev) && prev.finished) {
+      } else if (prev.finished) {
         prevCmd = prev.lastCommand(handlerName);
       }
     }
@@ -234,9 +222,9 @@ function patchLinksAfterClear(buffer) {
     let nextCmd = null;
     if (position < parentArray.length - 1) {
       const next = parentArray[position + 1];
-      if (isWrappedCommand(next)) {
+      if (!isCommandBuffer(next)) {
         nextCmd = next;
-      } else if (isCommandBuffer(next) && next.finished) {
+      } else if (next.finished) {
         nextCmd = next.firstCommand(handlerName);
       }
     }
