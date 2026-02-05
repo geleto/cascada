@@ -147,25 +147,6 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
     return false;
   }
 
-  async function resolveCommandArgs(args) {
-    const resolved = await resolveAll(args);
-    if (isPoison(resolved)) {
-      return resolved;
-    }
-    const result = resolved.slice();
-    for (let i = 0; i < result.length; i++) {
-      const value = result[i];
-      if (Array.isArray(value)) {
-        const nested = await resolveAll(value);
-        if (isPoison(nested)) {
-          return nested;
-        }
-        result[i] = nested;
-      }
-    }
-    return result;
-  }
-
   // Resolve the Output object for a handler name from state.outputCtxs.
   // Returns null if not found (e.g. template mode or undeclared handler).
   function getOutputCtx(handlerName) {
@@ -434,13 +415,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
     const args = item.arguments;
     const pos = getPosition(item);
 
-    const resolvedArgs = await resolveCommandArgs(args);
-    if (isPoison(resolvedArgs)) {
-      state.collectedErrors.push(...resolvedArgs.errors);
-      return;
-    }
-
-    if (collectPoisonArgs(resolvedArgs)) {
+    if (collectPoisonArgs(args)) {
       return;
     }
 
@@ -448,12 +423,12 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
     if (target.kind === 'text') {
       const autoescape = env && env.opts ? env.opts.autoescape : false;
       if (state.scriptMode) {
-        resolvedArgs.forEach((arg) => {
+        args.forEach((arg) => {
           const normalized = suppressValueScript(arg, autoescape);
           processItem(normalized);
         });
       } else {
-        resolvedArgs.forEach((arg) => {
+        args.forEach((arg) => {
           emitText(target.name, [suppressValue(arg, autoescape)]);
         });
       }
@@ -483,7 +458,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
       const sinkCommand = commandName ? sink[commandName] : sink;
       if (typeof sinkCommand === 'function') {
         try {
-          const result = sinkCommand.apply(sink, resolvedArgs);
+          const result = sinkCommand.apply(sink, args);
           if (result && typeof result.then === 'function') {
             await result;
           }
@@ -513,7 +488,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
     if (typeof commandFunc === 'function') {
       try {
-        commandFunc.apply(targetObject, resolvedArgs);
+        commandFunc.apply(targetObject, args);
       } catch (err) {
         throw new RuntimeFatalError(
           err,
@@ -528,7 +503,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
     if (!commandName) {
       try {
-        commandFunc(...resolvedArgs);
+        commandFunc(...args);
       } catch (e) {
         const err3 = handleError(
           new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable`),
