@@ -113,42 +113,6 @@ function flattenBuffer(output, errorContext = null) {
     context = null;
   }
 
-  // Template mode shortcut: empty named outputs return type defaults without flattening
-  if (!buffer._scriptMode && output._outputName && output._outputName !== 'output'
-    && typeof buffer._getOutputArray === 'function') {
-    const target = buffer._getOutputArray(output._outputName);
-    if (!target || target.length === 0) {
-      if (output._outputType === 'data') return {};
-      if (output._outputType === 'text') return '';
-      if (output._outputType === 'value') return undefined;
-    }
-  }
-
-  // Template mode: flatten text directly from buffer arrays (no command handler path).
-  if (isTemplateMode) {
-    const getArray = (name) => (
-      typeof buffer._getOutputArray === 'function'
-        ? buffer._getOutputArray(name)
-        : resolveBufferArray(buffer, name)
-    );
-    if (!outputName) {
-      const textArray = getArray('text');
-      const target = (Array.isArray(textArray) && textArray.length > 0)
-        ? textArray
-        : getArray('output');
-      return doFlattenBuffer(target, null, 'text');
-    }
-    return doFlattenBuffer(getArray(outputName), null, outputName);
-  }
-
-  // Script mode or implicit 'output' handler: return flatten result directly
-  if (output._outputName === 'output') {
-    if (context && buffer instanceof CommandBuffer) {
-      return flattenCommandBufferCached(buffer, context, outputName);
-    }
-    return doFlattenBuffer(buffer, context, outputName);
-  }
-
   // Script mode: flatten populates _target/_base as a side effect;
   // resolve the final value from them after flatten completes.
   const result = (context && buffer instanceof CommandBuffer)
@@ -161,10 +125,6 @@ function flattenBuffer(output, errorContext = null) {
     if (output._outputType === 'text') {
       if (Array.isArray(output._target)) {
         return output._target.join('');
-      }
-      // If text output didn't use _target (template/legacy paths), fall back to flatten result.
-      if (output._target !== undefined && output._target !== null) {
-        return output._target;
       }
       return result;
     }
@@ -181,12 +141,7 @@ function flattenBuffer(output, errorContext = null) {
   return resolveFromOutput();
 }
 
-function flattenOutput(output, errorContext = null) {
-  return flattenBuffer(output, errorContext);
-}
-
 module.exports = {
   flattenBuffer,
-  flattenOutput,
   flattenBufferText
 };
