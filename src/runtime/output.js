@@ -1,6 +1,7 @@
 'use strict';
 
 const { flattenBuffer } = require('./flatten-buffer');
+const { CommandBuffer } = require('./buffer');
 
 class Output {
   constructor(frame, outputName, context, outputType = null) {
@@ -52,6 +53,12 @@ function attachOutputApi(target, output) {
   Object.defineProperty(target, '_base', {
     get() { return output._base; },
     set(v) { output._base = v; },
+    enumerable: true,
+    configurable: true
+  });
+  Object.defineProperty(target, '_buffer', {
+    get() { return output._buffer; },
+    set(v) { output._buffer = v; },
     enumerable: true,
     configurable: true
   });
@@ -198,6 +205,57 @@ function getOutputHandler(frame, outputName) {
   return undefined;
 }
 
+function findOutputBuffer(frame) {
+  let current = frame;
+  while (current) {
+    if (current._outputBuffer) {
+      return current._outputBuffer;
+    }
+    if (current.outputScope) {
+      break;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+function declareOutput(frame, outputName, outputType, context, initializer = null, isScript = false) {
+  frame._outputs = frame._outputs || Object.create(null);
+
+  let buffer = findOutputBuffer(frame);
+  if (!buffer) {
+    buffer = new CommandBuffer(context, null);
+    frame._outputBuffer = buffer;
+    if (isScript) {
+      buffer._scriptMode = true;
+    }
+  }
+
+  if (!buffer._outputs) {
+    buffer._outputs = frame._outputs;
+  }
+  buffer._outputTypes = buffer._outputTypes || Object.create(null);
+  buffer._outputTypes[outputName] = outputType;
+
+  const output = (outputType === 'sink')
+    ? createSinkOutput(frame, outputName, context, initializer)
+    : createOutput(frame, outputName, context, outputType);
+
+  output._buffer = buffer;
+  frame._outputs[outputName] = output;
+
+  if (buffer._outputs && buffer._outputs !== frame._outputs) {
+    buffer._outputs[outputName] = output;
+  }
+
+  if (outputType === 'sink') {
+    buffer._outputHandlers = buffer._outputHandlers || Object.create(null);
+    buffer._outputHandlers[outputName] = output;
+  }
+
+  return output;
+}
+
 module.exports = {
   Output,
   DataOutput,
@@ -206,5 +264,7 @@ module.exports = {
   createOutput,
   SinkOutputHandler,
   createSinkOutput,
-  getOutputHandler
+  getOutputHandler,
+  declareOutput,
+  findOutputBuffer
 };

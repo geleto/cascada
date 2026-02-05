@@ -142,6 +142,7 @@ module.exports = {
   SinkOutputHandler: output.SinkOutputHandler,
   createSinkOutput: output.createSinkOutput,
   getOutputHandler: output.getOutputHandler,
+  declareOutput: output.declareOutput,
 
   AsyncState: require('./async-state').AsyncState,
 
