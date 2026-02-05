@@ -3,6 +3,7 @@
 const { CommandBuffer, resolveBufferArray } = require('./buffer');
 const { ensureBufferScopeMetadata } = require('./flatten-shared');
 const { PoisonError, isPoison, isPoisonError } = require('./errors');
+const { ErrorCommand } = require('./commands');
 
 function flattenText(arr, outputName, sharedState, flattenBuffer) {
   if (!Array.isArray(arr)) {
@@ -15,9 +16,9 @@ function flattenText(arr, outputName, sharedState, flattenBuffer) {
   const result = arr.reduce((acc, item) => {
     if (item === null || item === undefined) return acc;
 
-    if (item.__cascadaPoisonMarker === true) {
-      if (item.errors && Array.isArray(item.errors)) {
-        errors.push(...item.errors);
+    if (item instanceof ErrorCommand) {
+      if (item.value && item.value.errors) {
+        errors.push(...item.value.errors);
       }
       return acc;
     }

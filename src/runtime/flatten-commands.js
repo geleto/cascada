@@ -7,7 +7,8 @@ const {
   CommandBuffer,
   resolveBufferArray,
   resolveOutputTargets,
-  isCommandBuffer
+  isCommandBuffer,
+  getPosonedBufferErrors
 } = require('./buffer');
 const { PoisonError, RuntimeFatalError, isPoison, handleError } = require('./errors');
 const {
@@ -137,6 +138,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
   function hasAsyncArg(arg) {
     if (!arg) return false;
+    if (isPoison(arg)) return false;
     if (typeof arg.then === 'function') return true;
     if (arg[RESOLVE_MARKER]) return true;
     if (Array.isArray(arg)) {
@@ -296,13 +298,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
     }
   }
 
-  function processPoisonMarker(item) {
-    if (item.errors && Array.isArray(item.errors)) {
-      state.collectedErrors.push(...item.errors);
-    }
-  }
-
-  function processCommandItem(item) {
+    function processCommandItem(item) {
     const handlerName = item.handler;
     const commandName = item.command;
     const subpath = item.subpath;
@@ -571,15 +567,10 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
       return;
     }
 
-    if (item.__cascadaPoisonMarker === true) {
-      processPoisonMarker(item);
-      return;
-    }
-
-    if (isPoison(item)) {
-      state.collectedErrors.push(...item.errors);
-      return;
-    }
+      if (isPoison(item)) {
+        state.collectedErrors.push(...item.errors);
+        return;
+      }
 
     if (item instanceof CommandBuffer) {
       if (state.scriptMode && isTextOutputNameFromState(state, outputName || 'text')) {
@@ -627,24 +618,30 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
   // Try chain-based iteration first (for CommandBuffers)
   // This validates the command chain implementation
-  if (isCommandBuffer(arr)) {
-    const usedChain = arr.traverseChain(outputName || 'output', (wrappedCmd) => {
-      // Process the wrapped command's value
-      processItem(wrappedCmd);
-    });
-
-    // If chain traversal succeeded, we're done
-    if (usedChain) {
-      // Chain iteration complete
-    } else {
-      // Chain not available, fall back to array iteration
-      if (Array.isArray(arr)) {
-        arr.forEach(processItem);
+    if (isCommandBuffer(arr)) {
+      const handlerName = outputName || 'output';
+      const first = arr.firstCommand(handlerName);
+      if (first) {
+        // Collect any poison values that are not part of the command chain
+        const poisonErrors = getPosonedBufferErrors(arr, outputName ? [outputName] : null);
+        if (poisonErrors && poisonErrors.length > 0) {
+          state.collectedErrors.push(...poisonErrors);
+        }
+        let current = first;
+        while (current) {
+          processItem(current);
+          current = current.next;
+        }
       } else {
-        processItem(arr);
+        // Chain not available, fall back to array iteration
+        if (Array.isArray(arr)) {
+          arr.forEach(processItem);
+        } else {
+          processItem(arr);
+        }
       }
-    }
-  } else {
+
+    } else {
     // Not a CommandBuffer or not in async mode - use array iteration
     if (Array.isArray(arr)) {
       arr.forEach(processItem);

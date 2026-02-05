@@ -285,8 +285,8 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
       errorContext.errorContextString, errorContext.path)) :
     errors;
 
-  // Add one marker per handler that would have been written to.
-  // In script mode, emit ErrorCommand instances; in template mode, use legacy markers.
+  // Add one poison entry per handler that would have been written to.
+  // In script mode, emit ErrorCommand instances; in template mode, push PoisonedValue directly.
   const isScript = buffer instanceof CommandBuffer && buffer._scriptMode;
   const targets = resolveOutputTargets(buffer, handlerNames);
   targets.forEach(({ name, array }) => {
@@ -294,40 +294,42 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
       if (isScript) {
         array.push(new ErrorCommand(new PoisonedValue(processedErrors)));
       } else {
-        const marker = {
-          __cascadaPoisonMarker: true,
-          errors: processedErrors,
-          handler: name || 'text',
-        };
-        array.push(marker);
+        array.push(new PoisonedValue(processedErrors));
       }
     }
   });
 }
 
-function getPosonedBufferErrors(arr, allowedHandlers = null) {
+function getPoisonedCommandBufferErrors(buffer, allowedHandlers = null) {
+  const allErrors = [];
+  if (!buffer) return allErrors;
+  const targets = resolveOutputTargets(buffer, allowedHandlers);
+  targets.forEach(({ name, array }) => {
+    const handlerName = name || 'text';
+    const nestedErrors = getPoisonedArrayErrors(array, handlerName, allowedHandlers);
+    if (nestedErrors.length > 0) {
+      allErrors.push(...nestedErrors);
+    }
+  });
+  return allErrors;
+}
+
+function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
   const allErrors = [];
   if (!arr) return allErrors;
 
-  if (arr instanceof CommandBuffer) {
-    const targets = resolveOutputTargets(arr, allowedHandlers);
-    targets.forEach(({ name, array }) => {
-      const nestedErrors = getPosonedBufferErrors(array, allowedHandlers);
-      if (nestedErrors.length > 0) {
-        allErrors.push(...nestedErrors);
-      }
-    });
+  const handlerAllowed = !allowedHandlers || allowedHandlers.includes(handlerName);
+  if (!handlerAllowed) {
     return allErrors;
   }
 
+  if (arr instanceof CommandBuffer) {
+    return getPoisonedCommandBufferErrors(arr, allowedHandlers);
+  }
+
   if (!Array.isArray(arr)) {
-    const isTextPoison = isPoison(arr) || isPoisonError(arr);
-    if (isTextPoison) {
-      // Direct poison (without handler property) is from text/default output.
-      // We check if 'text' handler is allowed (or if allowedHandlers is null/global).
-      if (allowedHandlers && !allowedHandlers.includes('text')) {
-        return allErrors;
-      }
+    const isDirectPoison = isPoison(arr) || isPoisonError(arr);
+    if (isDirectPoison) {
       if (arr.errors) {
         allErrors.push(...arr.errors);
       } else {
@@ -340,35 +342,22 @@ function getPosonedBufferErrors(arr, allowedHandlers = null) {
   for (const item of arr) {
     if (!item) continue;
     if (item instanceof CommandBuffer) {
-      const nestedErrors = getPosonedBufferErrors(item, allowedHandlers);
+      const nestedErrors = getPoisonedCommandBufferErrors(item, allowedHandlers);
       if (nestedErrors.length > 0) {
         allErrors.push(...nestedErrors);
       }
       continue;
     }
-    // Check for ErrorCommand (script-mode replacement for poison markers)
+    // Check for ErrorCommand (script-mode poison entries)
     if (item instanceof ErrorCommand) {
       if (item.value && item.value.errors) {
         allErrors.push(...item.value.errors);
       }
       continue;
     }
-    // Check for poison marker (template mode / legacy)
-    if (item.__cascadaPoisonMarker === true) {
-      if (allowedHandlers && !allowedHandlers.includes(item.handler)) {
-        continue;
-      }
-      if (item.errors && item.errors.length > 0) {
-        allErrors.push(...item.errors);
-      }
-      continue;
-    }
     // Check for direct poison value or PoisonError
-    const isTextPoison = isPoison(item) || isPoisonError(item);
-    if (isTextPoison) {
-      if (allowedHandlers && !allowedHandlers.includes('text')) {
-        continue;
-      }
+    const isDirectPoison = isPoison(item) || isPoisonError(item);
+    if (isDirectPoison) {
       if (item.errors) {
         allErrors.push(...item.errors);
       } else {
@@ -378,7 +367,7 @@ function getPosonedBufferErrors(arr, allowedHandlers = null) {
     }
     // Recursive check for nested arrays
     if (Array.isArray(item)) {
-      const nestedErrors = getPosonedBufferErrors(item, allowedHandlers);
+      const nestedErrors = getPoisonedArrayErrors(item, handlerName, allowedHandlers);
       if (nestedErrors.length > 0) {
         allErrors.push(...nestedErrors);
       }
@@ -386,6 +375,14 @@ function getPosonedBufferErrors(arr, allowedHandlers = null) {
   }
 
   return allErrors;
+}
+
+function getPosonedBufferErrors(arr, allowedHandlers = null) {
+  if (!arr) return [];
+  if (arr instanceof CommandBuffer) {
+    return getPoisonedCommandBufferErrors(arr, allowedHandlers);
+  }
+  return getPoisonedArrayErrors(arr, 'text', allowedHandlers);
 }
 
 module.exports = {
