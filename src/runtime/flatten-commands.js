@@ -21,10 +21,14 @@ const {
   resolveOutputValue
 } = require('./flatten-shared');
 const { suppressValue, suppressValueScript } = require('./safe-output');
-const { resolveAll } = require('./resolve');
 const { ErrorCommand } = require('./commands');
 
 const RESOLVE_MARKER = Symbol.for('cascada.resolve');
+let resolveSinkCommand = null;
+
+function setResolveSinkCommand(resolver) {
+  resolveSinkCommand = resolver;
+}
 
 function flattenCommandBuffer(buffer, context, outputName, sharedState, flattenBuffer) {
   if (outputName) {
@@ -408,7 +412,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
     asyncChain = asyncChain ? asyncChain.then(fn) : Promise.resolve().then(fn);
   }
 
-  async function processCommandItemAsync(item) {
+  function processCommandItemAsync(item) {
     const handlerName = item.handler;
     const commandName = item.command;
     const subpath = item.subpath;
@@ -453,30 +457,11 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
     const isSinkHandler = targetObject && typeof targetObject._resolveSink === 'function';
     if (isSinkHandler) {
-      const sink = await targetObject._resolveSink();
-      if (!sink) return;
-      const sinkCommand = commandName ? sink[commandName] : sink;
-      if (typeof sinkCommand === 'function') {
-        try {
-          const result = sinkCommand.apply(sink, args);
-          if (result && typeof result.then === 'function') {
-            await result;
-          }
-          return;
-        } catch (err) {
-          throw new RuntimeFatalError(
-            err,
-            pos.lineno,
-            pos.colno,
-            formatHandlerRef(handlerName, subpath, commandName),
-            context ? context.path : null
-          );
-        }
-      }
-      throw new RuntimeFatalError(
-        new Error(`Sink method '${commandName}' not found`),
-        pos.lineno,
-        pos.colno,
+      return resolveSinkCommand(
+        targetObject,
+        commandName,
+        args,
+        pos,
         formatHandlerRef(handlerName, subpath, commandName),
         context ? context.path : null
       );
@@ -650,5 +635,6 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
 module.exports = {
   flattenCommandBuffer,
-  flattenCommands
+  flattenCommands,
+  setResolveSinkCommand
 };
