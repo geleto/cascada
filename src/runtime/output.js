@@ -35,34 +35,57 @@ class Output {
   }
 }
 
-function attachOutputApi(target, output) {
-  target.snapshot = output.snapshot.bind(output);
-  target._outputName = output._outputName;
-  target._outputType = output._outputType;
-  target._frame = output._frame;
-  target._context = output._context;
-  // _target and _base are mutable accumulator state; use live bindings
-  // so that the flattener's writes to outputCtx._target propagate to the
-  // underlying Output instance and snapshot() can read them.
-  Object.defineProperty(target, '_target', {
-    get() { return output._target; },
-    set(v) { output._target = v; },
-    enumerable: true,
-    configurable: true
+// Shared properties exposed on output facades (proxy/callable).
+// These must read/write the underlying Output instance.
+const OUTPUT_API_PROPS = new Set([
+  '_outputName',
+  '_outputType',
+  '_frame',
+  '_context',
+  '_target',
+  '_base',
+  '_buffer'
+]);
+
+// Create a facade that can be callable (text/value) or dynamic-command (data).
+// The proxy makes _target/_base/_buffer read/write-through to the Output instance
+// so the flattener's writes are visible to snapshot().
+function createOutputFacade(output, options) {
+  const { callable, dynamicCommands } = options;
+  const target = callable
+    ? (...args) => output.invoke(...args)
+    : output;
+
+  return new Proxy(target, {
+    get: (proxyTarget, prop) => {
+      if (prop === 'snapshot') {
+        return output.snapshot.bind(output);
+      }
+      if (OUTPUT_API_PROPS.has(prop)) {
+        return output[prop];
+      }
+      if (prop === 'then') {
+        return undefined;
+      }
+      if (typeof prop === 'symbol') {
+        return proxyTarget[prop];
+      }
+      if (dynamicCommands) {
+        // Proxy allows arbitrary output commands (e.g., output.set(...)) without
+        // predefining methods on the class. It preserves the dynamic command API.
+        return (...args) => output._enqueueCommand(prop, args);
+      }
+      return proxyTarget[prop];
+    },
+    set: (proxyTarget, prop, value) => {
+      if (OUTPUT_API_PROPS.has(prop)) {
+        output[prop] = value;
+        return true;
+      }
+      proxyTarget[prop] = value;
+      return true;
+    }
   });
-  Object.defineProperty(target, '_base', {
-    get() { return output._base; },
-    set(v) { output._base = v; },
-    enumerable: true,
-    configurable: true
-  });
-  Object.defineProperty(target, '_buffer', {
-    get() { return output._buffer; },
-    set(v) { output._buffer = v; },
-    enumerable: true,
-    configurable: true
-  });
-  return target;
 }
 
 class TextOutput extends Output {
@@ -99,44 +122,27 @@ class DataOutput extends Output {
   }
 }
 
-function createOutputProxy(output) {
-  // Proxy is required so output instances can handle arbitrary commands
-  // (e.g. myData.set(...) / myData.merge(...)) without predefining methods.
-  return new Proxy(output, {
-    get: (target, prop) => {
-      if (prop === 'snapshot') {
-        return target.snapshot.bind(target);
-      }
-      if (prop === '_outputName' || prop === '_outputType' || prop === '_frame' || prop === '_context' || prop === '_target' || prop === '_base' || prop === '_buffer') {
-        return target[prop];
-      }
-      if (prop === 'then') {
-        return undefined;
-      }
-      if (typeof prop === 'symbol') {
-        return target[prop];
-      }
-      // Proxy allows arbitrary output commands (e.g., output.set(...)) without
-      // predefining methods on the class. It preserves the dynamic command API.
-      return (...args) => target._enqueueCommand(prop, args);
-    }
-  });
-}
-
-function createCallableOutput(output) {
-  const handler = (...args) => output.invoke(...args);
-  return attachOutputApi(handler, output);
-}
-
 function createOutput(frame, outputName, context, outputType = null) {
   const type = outputType || outputName;
   if (type === 'text') {
-    return createCallableOutput(new TextOutput(frame, outputName, context, type));
+    // Text output is callable; args are appended to the text buffer.
+    return createOutputFacade(new TextOutput(frame, outputName, context, type), {
+      callable: true,
+      dynamicCommands: false
+    });
   }
   if (type === 'value') {
-    return createCallableOutput(new ValueOutput(frame, outputName, context, type));
+    // Value output is callable; args replace the current value.
+    return createOutputFacade(new ValueOutput(frame, outputName, context, type), {
+      callable: true,
+      dynamicCommands: false
+    });
   }
-  return createOutputProxy(new DataOutput(frame, outputName, context, type));
+  // Data output supports arbitrary commands (set, push, merge, etc.).
+  return createOutputFacade(new DataOutput(frame, outputName, context, type), {
+    callable: false,
+    dynamicCommands: true
+  });
 }
 
 class SinkOutputHandler {
@@ -164,7 +170,6 @@ class SinkOutputHandler {
 
   snapshot() {
     const buffer = this._buffer;
-    const outputName = this._outputName || null;
     const finalize = (resolvedSink) => this._snapshotFromSink(resolvedSink);
 
     if (buffer) {
