@@ -154,27 +154,27 @@ function flattenBuffer(output, errorContext = null) {
   const result = (context && buffer instanceof CommandBuffer)
     ? flattenCommandBufferCached(buffer, context, outputName)
     : doFlattenBuffer(buffer, context, outputName);
-    const resolveFromOutput = () => {
-      if (!output || typeof output !== 'object') {
-        return result;
+  const resolveFromOutput = () => {
+    if (!output || typeof output !== 'object') {
+      return result;
+    }
+    if (output._outputType === 'text') {
+      if (Array.isArray(output._target)) {
+        return output._target.join('');
       }
-      if (output._outputType === 'text') {
-        if (Array.isArray(output._target)) {
-          return output._target.join('');
-        }
-        // If text output didn't use _target (template/legacy paths), fall back to flatten result.
-        if (output._target !== undefined && output._target !== null) {
-          return output._target;
-        }
-        return result;
+      // If text output didn't use _target (template/legacy paths), fall back to flatten result.
+      if (output._target !== undefined && output._target !== null) {
+        return output._target;
       }
-      if (output._base) {
-        return typeof output._base.getReturnValue === 'function'
-          ? output._base.getReturnValue()
-          : output._base;
-      }
-      return output._target !== undefined ? output._target : result;
-    };
+      return result;
+    }
+    if (output._base) {
+      return typeof output._base.getReturnValue === 'function'
+        ? output._base.getReturnValue()
+        : output._base;
+    }
+    return output._target !== undefined ? output._target : result;
+  };
   if (result && typeof result.then === 'function') {
     return result.then(() => resolveFromOutput());
   }

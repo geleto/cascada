@@ -298,7 +298,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
     }
   }
 
-    function processCommandItem(item) {
+  function processCommandItem(item) {
     const handlerName = item.handler;
     const commandName = item.command;
     const subpath = item.subpath;
@@ -567,10 +567,10 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
       return;
     }
 
-      if (isPoison(item)) {
-        state.collectedErrors.push(...item.errors);
-        return;
-      }
+    if (isPoison(item)) {
+      state.collectedErrors.push(...item.errors);
+      return;
+    }
 
     if (item instanceof CommandBuffer) {
       if (state.scriptMode && isTextOutputNameFromState(state, outputName || 'text')) {
@@ -618,30 +618,30 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
   // Try chain-based iteration first (for CommandBuffers)
   // This validates the command chain implementation
-    if (isCommandBuffer(arr)) {
-      const handlerName = outputName || 'output';
-      const first = arr.firstCommand(handlerName);
-      if (first) {
-        // Collect any poison values that are not part of the command chain
-        const poisonErrors = getPosonedBufferErrors(arr, outputName ? [outputName] : null);
-        if (poisonErrors && poisonErrors.length > 0) {
-          state.collectedErrors.push(...poisonErrors);
-        }
-        let current = first;
-        while (current) {
-          processItem(current);
-          current = current.next;
-        }
-      } else {
-        // Chain not available, fall back to array iteration
-        if (Array.isArray(arr)) {
-          arr.forEach(processItem);
-        } else {
-          processItem(arr);
-        }
+  if (isCommandBuffer(arr)) {
+    const handlerName = outputName || 'output';
+    const first = arr.firstCommand(handlerName);
+    if (first) {
+      // Collect any poison values that are not part of the command chain
+      const poisonErrors = getPosonedBufferErrors(arr, outputName ? [outputName] : null);
+      if (poisonErrors && poisonErrors.length > 0) {
+        state.collectedErrors.push(...poisonErrors);
       }
-
+      let current = first;
+      while (current) {
+        processItem(current);
+        current = current.next;
+      }
     } else {
+      // Chain not available, fall back to array iteration
+      if (Array.isArray(arr)) {
+        arr.forEach(processItem);
+      } else {
+        processItem(arr);
+      }
+    }
+
+  } else {
     // Not a CommandBuffer or not in async mode - use array iteration
     if (Array.isArray(arr)) {
       arr.forEach(processItem);
