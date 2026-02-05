@@ -115,7 +115,7 @@ function flattenBuffer(output, errorContext = null) {
 
   // Template mode shortcut: empty named outputs return type defaults without flattening
   if (!buffer._scriptMode && output._outputName && output._outputName !== 'output'
-      && typeof buffer._getOutputArray === 'function') {
+    && typeof buffer._getOutputArray === 'function') {
     const target = buffer._getOutputArray(output._outputName);
     if (!target || target.length === 0) {
       if (output._outputType === 'data') return {};
@@ -154,14 +154,31 @@ function flattenBuffer(output, errorContext = null) {
   const result = (context && buffer instanceof CommandBuffer)
     ? flattenCommandBufferCached(buffer, context, outputName)
     : doFlattenBuffer(buffer, context, outputName);
+    const resolveFromOutput = () => {
+      if (!output || typeof output !== 'object') {
+        return result;
+      }
+      if (output._outputType === 'text') {
+        if (Array.isArray(output._target)) {
+          return output._target.join('');
+        }
+        // If text output didn't use _target (template/legacy paths), fall back to flatten result.
+        if (output._target !== undefined && output._target !== null) {
+          return output._target;
+        }
+        return result;
+      }
+      if (output._base) {
+        return typeof output._base.getReturnValue === 'function'
+          ? output._base.getReturnValue()
+          : output._base;
+      }
+      return output._target !== undefined ? output._target : result;
+    };
   if (result && typeof result.then === 'function') {
-    return result.then(() => (
-      typeof output._resolveFromOutput === 'function'
-        ? output._resolveFromOutput()
-        : result
-    ));
+    return result.then(() => resolveFromOutput());
   }
-  return typeof output._resolveFromOutput === 'function' ? output._resolveFromOutput() : result;
+  return resolveFromOutput();
 }
 
 function flattenOutput(output, errorContext = null) {

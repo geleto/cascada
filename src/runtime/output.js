@@ -1,7 +1,6 @@
 'use strict';
 
 const { flattenBuffer } = require('./flatten-buffer');
-const { isPoison, PoisonError } = require('./errors');
 
 class Output {
   constructor(frame, outputName, context, outputType = null) {
@@ -24,23 +23,6 @@ class Output {
   }
 
   // Resolve the final value from _target/_base after flatten has populated them.
-  _resolveFromOutput() {
-    if (isPoison(this._target)) {
-      throw new PoisonError(this._target.errors);
-    }
-    if (this._outputType === 'text') {
-      return Array.isArray(this._target) ? this._target.join('') : '';
-    }
-    // data and value: _base is the handler instance (DataHandler / ValueHandler).
-    // If _base is set, delegate to getReturnValue(); otherwise fall back to _target default.
-    if (this._base) {
-      return typeof this._base.getReturnValue === 'function'
-        ? this._base.getReturnValue()
-        : this._base;
-    }
-    return this._target;
-  }
-
   // @todo - find a way to pass the errorContext rather than using the declaring context
   snapshot() {
     if (this._buffer) {
