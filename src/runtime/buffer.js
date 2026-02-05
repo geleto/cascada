@@ -316,18 +316,6 @@ function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
     return getPoisonedCommandBufferErrors(arr, allowedHandlers);
   }
 
-  if (!Array.isArray(arr)) {
-    const isDirectPoison = isPoison(arr) || isPoisonError(arr);
-    if (isDirectPoison) {
-      if (arr.errors) {
-        allErrors.push(...arr.errors);
-      } else {
-        allErrors.push(arr);
-      }
-    }
-    return allErrors;
-  }
-
   for (const item of arr) {
     if (!item) continue;
     if (item instanceof CommandBuffer) {
@@ -344,6 +332,9 @@ function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
       }
       continue;
     }
+
+    // @todo - when we switch to all-command implementation, even for
+    // templates, we can remove the below code:
     // Check for direct poison value or PoisonError
     const isDirectPoison = isPoison(item) || isPoisonError(item);
     if (isDirectPoison) {
