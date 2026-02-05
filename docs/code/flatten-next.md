@@ -52,7 +52,7 @@ _wrapCommand() behavior (current):
 Therefore handler arrays can contain:
 - Wrapped command objects (the normal case)
 - Nested CommandBuffer instances
-- Arrays (often from async suppress/ensure helpers)
+- Arrays
 - PoisonedValue
 - Poison markers (special objects used to mark skipped outputs)
 - Plain objects in script mode (result objects with { text, data } behavior)
@@ -73,17 +73,15 @@ Therefore handler arrays can contain:
 - Template mode uses flatten-text to reduce a text array into a string.
 - It accepts:
   - primitives
-  - arrays (including the array + trailing function pattern)
+  - arrays
   - PoisonedValue
   - CommandBuffer (flattened recursively)
-- Autoescape helpers (suppressValueAsync, ensureDefinedAsync, newSafeStringAsync) can return arrays
-  where the last element is a function applied after joining.
 
 ### 6) Script Mode (Flatten Commands)
 - Script mode uses flatten-commands and processes:
   - command objects (handler/command/subpath/arguments)
   - CommandBuffer containers
-  - arrays (including the array + trailing function pattern)
+  - arrays
   - plain objects with { text, data } semantics
   - poison markers and PoisonedValue
 
@@ -93,13 +91,12 @@ Therefore handler arrays can contain:
 
 ### 1) Template Mode
 - Unchanged in behavior and representation.
-- Still accepts primitives, arrays with trailing functions, and PoisonedValue.
+- Still accepts primitives, arrays, and PoisonedValue.
 - May standardize on PoisonedValue for error collection, but no structural refactor required.
 
 ### 2) Script Mode: Data Layout
 - Everything is either a Command or a CommandBuffer.
 - No raw arrays or plain objects in handler arrays.
-- No array + trailing function pattern in script buffers.
 - Poison handling is represented as a command that carries a PoisonedValue.
 
 ### 3) Command Objects
@@ -108,28 +105,10 @@ Therefore handler arrays can contain:
 - The flattener receives a single target object and applies only to that target.
 - We flatten one buffer at a time, not combining multiple outputs into a composite result.
 
-### 4) Function Elements (formerly array + trailing function)
-- Represented as a command that owns a separate internal chain.
-- The internal chain lives in its own CommandBuffer.
-- This internal buffer is not connected to the parent chain.
-- The command resolves its child buffer into a temporary text, applies the function,
-  then emits the result into the parent target.
-- The computed text can be provided by a cached getter (not necessarily a Promise),
-  which avoids introducing promise-valued command payloads in the initial refactor.
-- Function transforms are text-only. Data/value handlers are not redirected into
-  function captures.
-
-### 5) Shared CommandBuffer Context (Telemetry/Tracing)
+### 4) Shared CommandBuffer Context (Telemetry/Tracing)
 - We keep shared CommandBuffer objects across handlers to preserve execution-context grouping
   for telemetry and tracing.
-- Function-commands should not create an isolated execution context by default. They should
-  execute within the same shared CommandBuffer context as their parent, even if they flatten
-  a child chain for temporary text.
-- When an async block creates a new child CommandBuffer, we must decide whether that buffer
-  is also registered inside any in-flight function-command (if the function-command wraps
-  content emitted during that block). This affects how traces group nested output.
-  - Decision: child buffers created for function transforms inherit the parent trace id and
-    are scoped to text-only capture.
+- Child buffers inherit the parent trace id and remain part of the same execution context.
 
 ---
 
@@ -140,68 +119,34 @@ Background: Before changing formats, we need a precise list of all producers tha
 non-command values into script buffers (arrays, result objects, poison markers) and ensure
 we have tests that cover each producer.
 - Identify all sources that insert non-command values into CommandBuffer arrays in script mode:
-  - arrays from suppress/ensure helpers
+  - arrays
   - result objects with {text, data}
   - poison markers
 - Confirm test coverage for each producer.
 - Tests: full suite should pass.
 
-### Step 2: Implement Text Function Transformations in the Compiler
-Background: Today, text transforms are represented as arrays with a trailing function, produced
-by text output helpers (suppressValueAsync, ensureDefinedAsync, newSafeStringAsync). These are
-handled at flatten time. We will replace this with compiler-level capture of text content.
-- Create a child, text-only CommandBuffer for the function body.
-- Flatten child buffer to text.
-- Apply the transform function.
-- Emit the result as a normal text command into the parent buffer.
-- The child buffer inherits the parent execution context for telemetry/tracing.
-- The child buffer is not chained into the parent; the function-transform appears as a single
-  command in the parent chain.
-- Pseudocode (single child async block, buffer name postfix):
-  - let parentBuf = currentBuffer
-  - let childBuf = parentBuf + "__" + uid
-  - emit: let childBuf = new CommandBuffer(context, null)
-  - emit: initOutputHandlers(childBuf)
-  - set currentBuffer = childBuf
-  - compile body (may create a child async block)
-  - restore currentBuffer = parentBuf
-  - emit: let tmpText = flattenBuffer(childBuf, context, "text")
-  - emit: let transformed = transformFn(tmpText)
-  - emit: parentBuf.add(transformed, "text")
-- Buffer name aliasing: explicitly save/restore the previous buffer name in a local variable.
-  A stack is not required for a single-node transform, but nested transforms should use a
-  push/pop stack to avoid aliasing bugs.
-- Tests: full suite should pass.
-
-### Step 3: Implement Command Class Interface (No Behavior Change)
+### Step 2: Implement Command Class Interface (No Behavior Change)
 Background: We want commands to be first-class objects with apply(target) so we can simplify
 flattening. This step adds the interface without changing produced output.
 - Add a Command class with apply(target) but keep existing command object usage.
 - Implement an adapter so old command objects can be treated as Command without changing outputs.
 - Tests: full suite should pass.
 
-### Step 4: Implement Poison Command Support (No Producer Changes)
+### Step 3: Implement Poison Command Support (No Producer Changes)
 Background: Script mode should represent poison as a command instead of a special marker. First,
 teach the flattener to understand poison commands while leaving producers unchanged.
 - Teach the flattener to accept a poison command and collect errors from it.
 - Keep template behavior unchanged.
 - Tests: full suite should pass.
 
-### Step 5: Implement Script Poison Marker Switch
+### Step 4: Implement Script Poison Marker Switch
 Background: Once the flattener accepts poison commands, switch script-mode producers away from
 poison markers to poison commands.
 - Replace addPoisonMarkersToBuffer for script output with a command that carries PoisonedValue.
 - Keep template behavior unchanged.
 - Tests: full suite should pass.
 
-### Step 6: Implement Compiler Capture as Default in Script Mode
-Background: After the compiler capture path exists, enable it by default for script mode to
-replace the function-array pattern in script buffers.
-- Enable compiler capture by default for script mode.
-- Keep template mode behavior unchanged.
-- Tests: full suite should pass.
-
-### Step 7: Implement Result Object Removal in Script Buffers
+### Step 5: Implement Result Object Removal in Script Buffers
 Background: Result objects ({text, data}) are a script-mode shortcut. We will replace them with
 explicit commands per handler.
 - Stop emitting {text, data} objects into script output arrays.
@@ -209,13 +154,13 @@ explicit commands per handler.
 - Deprecate object handling in flatten-commands (keep temporarily if needed).
 - Tests: full suite should pass.
 
-### Step 8: Implement Script Buffer Invariants
+### Step 6: Implement Script Buffer Invariants
 Background: Enforce the target data layout once legacy producers are removed.
 - Add runtime checks to ensure script buffers contain only Command or CommandBuffer.
 - Remove array handling from flatten-commands in script mode.
 - Tests: full suite should pass.
 
-### Step 9: Implement flatten-commands Rewrite
+### Step 7: Implement flatten-commands Rewrite
 Background: With commands and invariants in place, flatten-commands can be rewritten as a clean
 pipeline that only applies command objects to a target.
 - Replace current logic with a clean pipeline:
