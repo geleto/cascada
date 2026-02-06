@@ -48,11 +48,27 @@ class Output {
     this._buffer.add(entry, this._outputName);
   }
 
+  _resolveSnapshotValue(result) {
+    if (this._outputType === 'text') {
+      if (Array.isArray(this._target)) {
+        return this._target.join('');
+      }
+      return result;
+    }
+    if (this._base) {
+      return typeof this._base.getReturnValue === 'function'
+        ? this._base.getReturnValue()
+        : this._base;
+    }
+    return this._target !== undefined ? this._target : result;
+  }
+
   // Resolve the final value from _target/_base after flatten has populated them.
   // @todo - find a way to pass the errorContext rather than using the declaring context
   snapshot() {
     if (this._buffer) {
-      return flattenBuffer(this);
+      const result = flattenBuffer(this);
+      return this._resolveSnapshotValue(result);
     }
 
     // No CommandBuffer available; legacy array fallback removed.

@@ -3,6 +3,7 @@
 const { CommandBuffer, resolveBufferArray } = require('./buffer');
 const { flattenText } = require('./flatten-text');
 const { flattenCommands, flattenCommandBuffer } = require('./flatten-commands');
+const { RuntimeFatalError } = require('./errors');
 
 function doFlattenBuffer(arr, context = null, outputName = null, sharedState = null) {
   if (arr instanceof CommandBuffer) {
@@ -22,6 +23,9 @@ function flattenBufferText(arr, outputName = null, sharedState = null) {
   const name = outputName || 'text';
 
   if (arr instanceof CommandBuffer) {
+    //@todo - this should not happen, but it does
+    //we will probably remove array in the future and just use commands
+    //for both templates and scripts
     const textArray = resolveBufferArray(arr, name);
     if (!outputName && name === 'text') {
       target = (Array.isArray(textArray) && textArray.length > 0)
@@ -40,44 +44,43 @@ function flattenBufferText(arr, outputName = null, sharedState = null) {
 // Internal recursion (nested CommandBuffers) goes through doFlattenBuffer.
 function flattenBuffer(output, errorContext = null) {
 
+  let context = errorContext || output._context || null;
+
   if (!output || (typeof output !== 'object' && typeof output !== 'function')) {
-    return undefined;
+    throw new RuntimeFatalError(
+      `Invalid output object for flattening: ${output}`,
+      context ? context.lineno : null,
+      context ? context.colno : null,
+      context ? context.errorContextString : null,
+      context ? context.path : null
+    );
   }
 
   const buffer = output._buffer;
   if (!buffer) {
-    return undefined;
+    throw new RuntimeFatalError(
+      `Output object is missing _buffer property for flattening: ${output}`,
+      context ? context.lineno : null,
+      context ? context.colno : null,
+      context ? context.errorContextString : null,
+      context ? context.path : null
+    );
   }
 
-  let context = errorContext || output._context || null;
   const outputName = (output._outputName && output._outputName !== 'output') ? output._outputName : null;
   const isTemplateMode = (buffer instanceof CommandBuffer) && !buffer._scriptMode;
   if (isTemplateMode) {
     // Template mode should use text flattening (no second-pass suppression).
-    context = null;
+    throw new RuntimeFatalError(
+      'flattenBuffer should not be called directly in template mode; use flattenBufferText instead',
+      context ? context.lineno : null,
+      context ? context.colno : null,
+      context ? context.errorContextString : null,
+      context ? context.path : null
+    );
   }
 
-  // Script mode: flatten populates _target/_base as a side effect;
-  // resolve the final value from them after flatten completes.
-  const result = doFlattenBuffer(buffer, context, outputName);
-  const resolveFromOutput = () => {
-    if (!output || typeof output !== 'object') {
-      return result;
-    }
-    if (output._outputType === 'text') {
-      if (Array.isArray(output._target)) {
-        return output._target.join('');
-      }
-      return result;
-    }
-    if (output._base) {
-      return typeof output._base.getReturnValue === 'function'
-        ? output._base.getReturnValue()
-        : output._base;
-    }
-    return output._target !== undefined ? output._target : result;
-  };
-  return resolveFromOutput();
+  return doFlattenBuffer(buffer, context, outputName);
 }
 
 module.exports = {
