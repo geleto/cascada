@@ -6,8 +6,8 @@ const { CommandBuffer } = require('./buffer');
 class Output {
   constructor(frame, outputName, context, outputType = null) {
     this._frame = frame;
-    this._outputName = outputName;
-    this._outputType = outputType || outputName;
+    this._outputName = outputName;//@todo rename to name
+    this._outputType = outputType || outputName;//@todo rename to type
     this._context = context;
     this._buffer = frame ? frame._outputBuffer : null;
   }
@@ -170,27 +170,25 @@ class SinkOutputHandler {
 
   snapshot() {
     const buffer = this._buffer;
-    const finalize = (resolvedSink) => this._snapshotFromSink(resolvedSink);
+    const runSnapshot = (resolvedSink) => {
+      // Normalize sink once so flatten and final snapshot read the same value.
+      this._sink = resolvedSink;
 
-    if (buffer) {
-      // Ensure commands execute once (cached) before resolving the sink value.
-      const flattened = flattenBuffer(this, this._context);
-      if (flattened && typeof flattened.then === 'function') {
-        return flattened.then(() => {
-          const sinkVal = this._resolveSink();
-          if (sinkVal && typeof sinkVal.then === 'function') {
-            return sinkVal.then((resolved) => finalize(resolved));
-          }
-          return finalize(sinkVal);
-        });
+      if (buffer) {
+        const flattened = flattenBuffer(this, this._context);
+        if (flattened && typeof flattened.then === 'function') {
+          return flattened.then(() => this._snapshotFromSink(this._sink));
+        }
       }
-    }
+
+      return this._snapshotFromSink(this._sink);
+    };
 
     const sinkVal = this._resolveSink();
     if (sinkVal && typeof sinkVal.then === 'function') {
-      return sinkVal.then((resolved) => finalize(resolved));
+      return sinkVal.then((resolved) => runSnapshot(resolved));
     }
-    return finalize(sinkVal);
+    return runSnapshot(sinkVal);
   }
 }
 

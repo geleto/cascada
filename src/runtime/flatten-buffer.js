@@ -98,12 +98,7 @@ function flattenCommandBufferCached(buffer, context, outputName) {
 function flattenBuffer(output, errorContext = null) {
   function resolveSinkCommand(targetObject, commandName, args, pos, handlerRef, contextPath) {
     const sink = targetObject._resolveSink();
-    if (!sink || typeof sink.then !== 'function') {
-      return invokeSinkCommand(sink, commandName, args, pos, handlerRef, contextPath);
-    }
-    return sink.then(
-      (resolved) => invokeSinkCommand(resolved, commandName, args, pos, handlerRef, contextPath)
-    );
+    return invokeSinkCommand(sink, commandName, args, pos, handlerRef, contextPath);
   }
 
   function invokeSinkCommand(sink, commandName, args, pos, handlerRef, contextPath) {
@@ -129,17 +124,6 @@ function flattenBuffer(output, errorContext = null) {
         handlerRef,
         contextPath
       );
-    }
-    if (result && typeof result.then === 'function') {
-      return result.catch((err) => {
-        throw new RuntimeFatalError(
-          err,
-          pos.lineno,
-          pos.colno,
-          handlerRef,
-          contextPath
-        );
-      });
     }
     return result;
   }

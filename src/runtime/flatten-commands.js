@@ -23,7 +23,7 @@ const {
 const { suppressValue, suppressValueScript } = require('./safe-output');
 const { ErrorCommand } = require('./commands');
 
-const RESOLVE_MARKER = Symbol.for('cascada.resolve');
+/*const RESOLVE_MARKER = Symbol.for('cascada.resolve');*/
 let resolveSinkCommand = null;
 
 function setResolveSinkCommand(resolver) {
@@ -140,7 +140,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
     return false;
   }
 
-  function hasAsyncArg(arg) {
+  /*function hasAsyncArg(arg) {
     if (!arg) return false;
     if (isPoison(arg)) return false;
     if (typeof arg.then === 'function') return true;
@@ -149,7 +149,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
       return arg.some(hasAsyncArg);
     }
     return false;
-  }
+  }*/
 
   // Resolve the Output object for a handler name from state.outputCtxs.
   // Returns null if not found (e.g. template mode or undeclared handler).
@@ -294,11 +294,11 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
       return;
     }
 
-    if (hasAsyncArg(args)) {
+    /*if (hasAsyncArg(args)) {
       asyncMode = true;
       queueAsync(() => processCommandItemAsync(item));
       return;
-    }
+    }*/
 
     const target = resolveCommandTarget(handlerName);
     if (target.kind === 'text') {
@@ -457,6 +457,20 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
     const isSinkHandler = targetObject && typeof targetObject._resolveSink === 'function';
     if (isSinkHandler) {
+      const sinkVal = targetObject._resolveSink();
+      if (sinkVal && typeof sinkVal.then === 'function') {
+        return sinkVal.then((resolvedSink) => {
+          targetObject._sink = resolvedSink;
+          return resolveSinkCommand(
+            targetObject,
+            commandName,
+            args,
+            pos,
+            formatHandlerRef(handlerName, subpath, commandName),
+            context ? context.path : null
+          );
+        });
+      }
       return resolveSinkCommand(
         targetObject,
         commandName,
@@ -555,10 +569,10 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
         queueAsync(() => processCommandItemAsync(item));
         return;
       }
-      if (asyncMode) {
+      /*if (asyncMode) {
         queueAsync(() => processCommandItemAsync(item));
         return;
-      }
+      }*/
       processCommandItem(item);
       return;
     }
