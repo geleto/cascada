@@ -1,6 +1,6 @@
 'use strict';
 
-// Flatten populates Output._target / Output._base (via emitText / getOrInstantiateHandler).
+// Flatten populates Output._target / Output._base (via emitText / built-in handlers).
 // snapshot() on Output objects reads from _target/_base after flatten completes.
 
 const {
@@ -10,7 +10,8 @@ const {
   getPosonedBufferErrors
 } = require('./buffer');
 const { PoisonError, RuntimeFatalError, isPoison, handleError } = require('./errors');
-const { Command, ErrorCommand, HandlerCommand } = require('./commands');
+const { Command, ErrorCommand, OutputCommand } = require('./commands');
+const DataHandler = require('../script/data-handler');
 const {
   createFlattenState,
   resolveOutputTypeFromState,
@@ -21,6 +22,8 @@ const {
   resolveOutputValue
 } = require('./flatten-shared');
 const { suppressValue, suppressValueScript } = require('./safe-output');
+
+const BUILTIN_OUTPUT_TYPES = new Set(['data', 'text', 'value', 'sink']);
 
 function flattenCommandBuffer(buffer, context, outputName, sharedState) {
   if (outputName) {
@@ -130,7 +133,11 @@ function flattenCommands(arr, context, outputName, sharedState) {
     return null;
   }
 
-  function getOrInstantiateHandler(handlerName) {
+  function resolveDeclaredType(handlerName) {
+    return resolveOutputTypeFromState(state, handlerName) || (BUILTIN_OUTPUT_TYPES.has(handlerName) ? handlerName : null);
+  }
+
+  function getOrInstantiateDataHandler(handlerName) {
     if (state.handlerInstances[handlerName]) {
       return state.handlerInstances[handlerName];
     }
@@ -139,62 +146,28 @@ function flattenCommands(arr, context, outputName, sharedState) {
       state.handlerInstances[handlerName] = outputCtx._base;
       return outputCtx._base;
     }
-    if (state.outputHandlers && state.outputHandlers[handlerName]) {
-      const instance = state.outputHandlers[handlerName];
-      state.handlerInstances[handlerName] = instance;
-      return instance;
-    }
-    const declaredType = resolveOutputTypeFromState(state, handlerName);
 
-    if (declaredType && declaredType !== handlerName && declaredType !== 'text') {
-      if (env.commandHandlerInstances[declaredType]) {
-        const instance = env.commandHandlerInstances[declaredType];
-        if (typeof instance._init === 'function') {
-          instance._init(context.getVariables());
-        }
-        state.handlerInstances[handlerName] = instance;
-        // Wire _base on the Output ctx for this handler
-        if (outputCtx && !outputCtx._base) {
-          outputCtx._base = instance;
-        }
-        return instance;
-      }
-      if (env.commandHandlerClasses[declaredType]) {
-        const HandlerClass = env.commandHandlerClasses[declaredType];
-        const instance = new HandlerClass(context.getVariables(), env);
-        state.handlerInstances[handlerName] = instance;
-        if (outputCtx && !outputCtx._base) {
-          outputCtx._base = instance;
-        }
-        return instance;
-      }
+    const instance = new DataHandler(context ? context.getVariables() : {}, env);
+    state.handlerInstances[handlerName] = instance;
+    if (outputCtx && !outputCtx._base) {
+      outputCtx._base = instance;
     }
+    return instance;
+  }
 
-    if (env.commandHandlerInstances[handlerName]) {
-      const instance = env.commandHandlerInstances[handlerName];
-      if (typeof instance._init === 'function') {
-        instance._init(context.getVariables());
-      }
-      state.handlerInstances[handlerName] = instance;
-      if (outputCtx && !outputCtx._base) {
-        outputCtx._base = instance;
-      }
-      return instance;
+  function getSinkOutputHandler(handlerName) {
+    const outputCtx = getOutputCtx(handlerName);
+    if (outputCtx && typeof outputCtx._resolveSink === 'function') {
+      return outputCtx;
     }
-    if (env.commandHandlerClasses[handlerName]) {
-      const HandlerClass = env.commandHandlerClasses[handlerName];
-      const instance = new HandlerClass(context.getVariables(), env);
-      state.handlerInstances[handlerName] = instance;
-      if (outputCtx && !outputCtx._base) {
-        outputCtx._base = instance;
-      }
-      return instance;
+    if (state.outputHandlers && state.outputHandlers[handlerName] && typeof state.outputHandlers[handlerName]._resolveSink === 'function') {
+      return state.outputHandlers[handlerName];
     }
     return null;
   }
 
   function resolveCommandTarget(handlerName) {
-    const handlerType = resolveOutputTypeFromState(state, handlerName);
+    const handlerType = resolveDeclaredType(handlerName);
     const isTextHandler = !handlerName || handlerName === 'text' || handlerType === 'text';
     if (isTextHandler) {
       const targetName = (outputName && isTextOutputNameFromState(state, outputName))
@@ -203,7 +176,17 @@ function flattenCommands(arr, context, outputName, sharedState) {
       return { kind: 'text', name: targetName };
     }
 
-    return { kind: 'handler', name: handlerName, instance: getOrInstantiateHandler(handlerName) };
+    if (handlerType === 'value') {
+      return { kind: 'value', name: handlerName };
+    }
+    if (handlerType === 'data') {
+      return { kind: 'data', name: handlerName, instance: getOrInstantiateDataHandler(handlerName) };
+    }
+    if (handlerType === 'sink') {
+      return { kind: 'sink', name: handlerName, output: getSinkOutputHandler(handlerName) };
+    }
+
+    return { kind: 'unsupported', name: handlerName };
   }
 
   function getPosition(item) {
@@ -244,8 +227,8 @@ function flattenCommands(arr, context, outputName, sharedState) {
     }
   }
 
-  function invokeSinkCommand(targetObject, commandName, args, pos, handlerRef, contextPath) {
-    const sinkVal = targetObject._sink;
+  function invokeSinkCommand(sinkOutput, sinkTarget, commandName, args, pos, handlerRef, contextPath) {
+    const sinkVal = sinkOutput._sink;
     if (sinkVal && typeof sinkVal.then === 'function') {
       throw new RuntimeFatalError(
         new Error('Sink must be resolved before command execution'),
@@ -256,7 +239,7 @@ function flattenCommands(arr, context, outputName, sharedState) {
       );
     }
     return invokeResolvedSinkCommand(
-      sinkVal,
+      sinkTarget,
       commandName,
       args,
       pos,
@@ -289,6 +272,20 @@ function flattenCommands(arr, context, outputName, sharedState) {
     }
 
     return current;
+  }
+
+  function resolveSinkSubpath(sinkOutput, subpath, handlerName, pos) {
+    const sinkVal = sinkOutput._sink;
+    if (sinkVal && typeof sinkVal.then === 'function') {
+      throw new RuntimeFatalError(
+        new Error('Sink must be resolved before command execution'),
+        pos.lineno,
+        pos.colno,
+        formatHandlerRef(handlerName, subpath, null),
+        context ? context.path : null
+      );
+    }
+    return resolveSubpath(sinkVal, subpath, handlerName, pos);
   }
 
   function emitText(name, values) {
@@ -328,26 +325,56 @@ function flattenCommands(arr, context, outputName, sharedState) {
     }
 
     try {
-      const handlerInstance = target.instance;
-      if (!handlerInstance) {
-        const err1 = handleError(
-          new Error(`Unknown command handler: ${handlerName}`),
+      if (target.kind === 'unsupported') {
+        const errUnsupported = handleError(
+          new Error(`Unsupported output command target: ${handlerName}`),
           pos.lineno,
           pos.colno,
           handlerName,
           context ? context.path : null
         );
-        state.collectedErrors.push(err1);
+        state.collectedErrors.push(errUnsupported);
         return;
       }
 
-      const targetObject = resolveSubpath(handlerInstance, subpath, handlerName, pos);
-      if (!targetObject) return;
+      if (target.kind === 'value') {
+        const outputCtx = getOutputCtx(handlerName);
+        const value = args.length > 0 ? args[args.length - 1] : undefined;
+        if (outputCtx) {
+          outputCtx._target = value;
+        } else {
+          if (!state.handlerInstances[handlerName]) {
+            state.handlerInstances[handlerName] = {
+              _value: undefined,
+              getReturnValue() {
+                return this._value;
+              }
+            };
+          }
+          state.handlerInstances[handlerName]._value = value;
+        }
+        return;
+      }
 
-      const isSinkHandler = targetObject && typeof targetObject._resolveSink === 'function';
-      if (isSinkHandler) {
+      if (target.kind === 'sink') {
+        if (!target.output) {
+          const errSink = handleError(
+            new Error(`Unsupported output command target: ${handlerName}`),
+            pos.lineno,
+            pos.colno,
+            handlerName,
+            context ? context.path : null
+          );
+          state.collectedErrors.push(errSink);
+          return;
+        }
+
+        const sinkTarget = resolveSinkSubpath(target.output, subpath, handlerName, pos);
+        if (!sinkTarget) return;
+
         invokeSinkCommand(
-          targetObject,
+          target.output,
+          sinkTarget,
           commandName,
           args,
           pos,
@@ -357,37 +384,36 @@ function flattenCommands(arr, context, outputName, sharedState) {
         return;
       }
 
-      const commandFunc = commandName ? targetObject[commandName] : targetObject;
+      const handlerInstance = target.instance;
+      if (!handlerInstance) {
+        const errMissing = handleError(
+          new Error(`Unsupported output command target: ${handlerName}`),
+          pos.lineno,
+          pos.colno,
+          handlerName,
+          context ? context.path : null
+        );
+        state.collectedErrors.push(errMissing);
+        return;
+      }
 
+      const targetObject = resolveSubpath(handlerInstance, subpath, handlerName, pos);
+      if (!targetObject) return;
+
+      const commandFunc = commandName ? targetObject[commandName] : targetObject;
       if (typeof commandFunc === 'function') {
         commandFunc.apply(targetObject, args);
         return;
       }
 
-      if (!commandName) {
-        try {
-          commandFunc(...args);
-        } catch (e) {
-          const err3 = handleError(
-            new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable`),
-            pos.lineno,
-            pos.colno,
-            `${handlerName}${subpath ? '.' + subpath.join('.') : ''}`,
-            context ? context.path : null
-          );
-          state.collectedErrors.push(err3);
-        }
-        return;
-      }
-
-      const err5 = handleError(
+      const errMethod = handleError(
         new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`),
         pos.lineno,
         pos.colno,
         formatHandlerRef(handlerName, subpath, commandName),
         context ? context.path : null
       );
-      state.collectedErrors.push(err5);
+      state.collectedErrors.push(errMethod);
     } catch (err) {
       throw new RuntimeFatalError(
         err,
@@ -424,7 +450,7 @@ function flattenCommands(arr, context, outputName, sharedState) {
       if (key === 'text') return;
       if (outputName && key !== outputName) return;
       if (key === 'data') {
-        const instance = getOrInstantiateHandler('data');
+        const instance = getOrInstantiateDataHandler('data');
         if (instance && typeof instance.merge === 'function') {
           instance.merge(null, item[key]);
         }
@@ -447,7 +473,7 @@ function flattenCommands(arr, context, outputName, sharedState) {
         return;
       }
 
-      if (item instanceof HandlerCommand) {
+      if (item instanceof OutputCommand) {
         item.apply({ invokeOutputCommand: processCommandItem });
         return;
       }

@@ -886,6 +886,9 @@ class Parser extends Obj {
         this.fail('parseOutputCommand: expected output type', tag.lineno, tag.colno);
       }
       outputType = this.nextToken().value;
+      if (outputType !== 'data' && outputType !== 'text' && outputType !== 'value' && outputType !== 'sink') {
+        this.fail(`parseOutputCommand: unsupported output type '${outputType}'`, tag.lineno, tag.colno);
+      }
     } else if (!this.skipSymbol('output_command')) {
       this.fail('parseOutputCommand: expected output or output_command', tag.lineno, tag.colno);
     }

@@ -37,7 +37,18 @@
   const flatten = (buffer, context = null, outputName = 'text') => (
     runtime.flattenBuffer(makeOutput(buffer, context, outputName), context)
   );
-  const cmd = (spec) => new runtime.HandlerCommand(spec);
+  const cmd = (spec) => {
+    if (spec.handler === 'data') {
+      return new runtime.DataCommand(spec);
+    }
+    if (spec.handler === 'text') {
+      return new runtime.TextCommand(spec);
+    }
+    if (spec.handler === 'value') {
+      return new runtime.ValueCommand(spec);
+    }
+    return new runtime.SinkCommand(spec);
+  };
 
 
   describe('Error Propagation Dataflow Poisoning - Unit Tests', () => {
@@ -803,10 +814,7 @@
       let context, env;
 
       beforeEach(() => {
-        env = {
-          commandHandlerInstances: {},
-          commandHandlerClasses: {}
-        };
+        env = {};
         context = {
           env,
           path: '/test.html',
@@ -917,7 +925,7 @@
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
-          expect(err.errors[0].message).to.contain('Unknown command handler');
+          expect(err.errors[0].message).to.contain('Unsupported output command target');
         }
       });
 
@@ -934,7 +942,7 @@
 
       beforeEach(() => {
         context = {
-          env: { commandHandlerInstances: {}, commandHandlerClasses: {} },
+          env: {},
           path: '/test.html',
           getVariables: () => ({})
         };
@@ -976,7 +984,7 @@
 
       beforeEach(() => {
         context = {
-          env: { commandHandlerInstances: {}, commandHandlerClasses: {} },
+          env: {},
           path: '/test.html',
           getVariables: () => ({})
         };
@@ -1023,28 +1031,23 @@
       });
     });
 
-    describe('Handler error collection', () => {
+    describe('Output command error collection', () => {
       let context;
 
       beforeEach(() => {
         context = {
-          env: { commandHandlerInstances: {}, commandHandlerClasses: {} },
+          env: {},
           path: '/test.html',
           getVariables: () => ({})
         };
       });
 
-      it('should collect handler property access errors', () => {
-        const mockHandler = {
-          getReturnValue: () => 'test'
-        };
-        context.env.commandHandlerInstances = { testHandler: mockHandler };
-
+      it('should collect data output method errors', () => {
         const arr = [cmd({
-          handler: 'testHandler',
+          handler: 'data',
           command: 'nonexistentMethod',
           subpath: [],
-          arguments: [],
+          arguments: [null],
           pos: { lineno: 1, colno: 1 }
         })];
 
@@ -1057,7 +1060,7 @@
         }
       });
 
-      it('should collect handler instantiation errors', () => {
+      it('should collect unsupported output target errors', () => {
         const arr = [cmd({
           handler: 'badHandler',
           command: 'method',
@@ -1071,7 +1074,7 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-          expect(thrown.errors[0].message).to.contain('Unknown command handler');
+          expect(thrown.errors[0].message).to.contain('Unsupported output command target');
         }
       });
     });
@@ -1081,7 +1084,7 @@
 
       beforeEach(() => {
         context = {
-          env: { commandHandlerInstances: {}, commandHandlerClasses: {} },
+          env: {},
           path: '/test.html',
           getVariables: () => ({})
         };
@@ -1118,7 +1121,7 @@
 
       beforeEach(() => {
         context = {
-          env: { commandHandlerInstances: {}, commandHandlerClasses: {} },
+          env: {},
           path: '/test.html',
           getVariables: () => ({})
         };

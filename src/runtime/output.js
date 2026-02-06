@@ -2,7 +2,7 @@
 
 const { flattenBuffer } = require('./flatten-buffer');
 const { CommandBuffer } = require('./buffer');
-const { TextCommand, ValueCommand, DataCommand, HandlerCommand } = require('./commands');
+const { TextCommand, ValueCommand, DataCommand, SinkCommand } = require('./commands');
 
 class Output {
   constructor(frame, outputName, context, outputType = null) {
@@ -35,13 +35,15 @@ class Output {
         args,
         pos: { lineno: 0, colno: 0 }
       });
-    } else {
-      entry = new HandlerCommand({
+    } else if (this._outputType === 'sink') {
+      entry = new SinkCommand({
         handler: this._outputName,
         command: command || null,
-        arguments: args,
+        args,
         pos: { lineno: 0, colno: 0 }
       });
+    } else {
+      throw new Error(`Unsupported output type '${this._outputType}' for command enqueueing`);
     }
     this._buffer.add(entry, this._outputName);
   }

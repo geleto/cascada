@@ -25,9 +25,8 @@ class AsyncEnvironment extends BaseEnvironment {
   }
 
   /**
-   * Registers a command handler class that will be instantiated for each script run.
-   * @param {string} name - The name used to invoke the handler (e.g., 'turtle').
-   * @param {Class} handlerClass - The class constructor.
+   * Stores a command handler class registration for compatibility.
+   * NOTE: Stored values are currently inert for output-command execution.
    */
   addCommandHandlerClass(name, handlerClass) {
     this.commandHandlerClasses[name] = handlerClass;
@@ -35,9 +34,8 @@ class AsyncEnvironment extends BaseEnvironment {
   }
 
   /**
-   * Registers a pre-existing object instance as a command handler (singleton).
-   * @param {string} name - The name used to invoke the handler.
-   * @param {object} handlerInstance - The object instance to use.
+   * Stores a command handler instance registration for compatibility.
+   * NOTE: Stored values are currently inert for output-command execution.
    */
   addCommandHandler(name, handlerInstance) {
     this.commandHandlerInstances[name] = handlerInstance;

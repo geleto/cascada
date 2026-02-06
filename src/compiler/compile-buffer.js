@@ -184,13 +184,20 @@ class CompileBuffer {
     };
 
     wrapper((f) => {
+      if (outputType !== 'data' && outputType !== 'sink' && outputType !== 'text' && outputType !== 'value') {
+        this.compiler.fail(
+          `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/value/sink).`,
+          node.lineno,
+          node.colno,
+          node
+        );
+      }
+
       const commandClass = outputType === 'data'
         ? 'DataCommand'
         : (outputType === 'sink'
           ? 'SinkCommand'
-          : (outputType === 'text'
-            ? 'TextCommand'
-            : (outputType === 'value' ? 'ValueCommand' : 'HandlerCommand')));
+          : (outputType === 'text' ? 'TextCommand' : 'ValueCommand'));
       this.compiler.emit(`new runtime.${commandClass}({ handler: '${handler}', `);
       if (command) {
         this.compiler.emit(`command: '${command}', `);

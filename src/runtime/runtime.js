@@ -144,7 +144,7 @@ module.exports = {
   createSinkOutput: output.createSinkOutput,
   getOutputHandler: output.getOutputHandler,
   declareOutput: output.declareOutput,
-  HandlerCommand: commands.HandlerCommand,
+  OutputCommand: commands.OutputCommand,
   TextCommand: commands.TextCommand,
   ValueCommand: commands.ValueCommand,
   DataCommand: commands.DataCommand,

@@ -20,13 +20,13 @@ class Command {
   }
 }
 
-// Generic handler-dispatch command used for custom/non-specialized handlers.
-class HandlerCommand extends Command {
-  constructor({ handler, command = null, arguments: args = [], subpath = null, pos = null }) {
+// Base command for declared outputs only (text/value/data/sink).
+class OutputCommand extends Command {
+  constructor({ handler, command = null, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
     super();
     this.handler = handler;
     this.command = command;
-    this.arguments = args;
+    this.arguments = args || legacyArgs || [];
     this.subpath = subpath;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
@@ -36,7 +36,7 @@ class HandlerCommand extends Command {
   }
 }
 
-class TextCommand extends HandlerCommand {
+class TextCommand extends OutputCommand {
   constructor(specOrValue) {
     const isSpecObject = !!specOrValue &&
       typeof specOrValue === 'object' &&
@@ -44,6 +44,7 @@ class TextCommand extends HandlerCommand {
       (
         Object.prototype.hasOwnProperty.call(specOrValue, 'handler') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'args') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'arguments') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'command') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'subpath') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'pos')
@@ -52,7 +53,7 @@ class TextCommand extends HandlerCommand {
       super({
         handler: specOrValue.handler,
         command: null,
-        arguments: specOrValue.args || [],
+        args: specOrValue.args || specOrValue.arguments || [],
         subpath: null,
         pos: specOrValue.pos || null
       });
@@ -68,7 +69,7 @@ class TextCommand extends HandlerCommand {
   }
 }
 
-class ValueCommand extends HandlerCommand {
+class ValueCommand extends OutputCommand {
   constructor(specOrValue) {
     const isSpecObject = !!specOrValue &&
       typeof specOrValue === 'object' &&
@@ -76,6 +77,7 @@ class ValueCommand extends HandlerCommand {
       (
         Object.prototype.hasOwnProperty.call(specOrValue, 'handler') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'args') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'arguments') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'command') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'subpath') ||
         Object.prototype.hasOwnProperty.call(specOrValue, 'pos')
@@ -84,7 +86,7 @@ class ValueCommand extends HandlerCommand {
       super({
         handler: specOrValue.handler,
         command: null,
-        arguments: specOrValue.args || [],
+        args: specOrValue.args || specOrValue.arguments || [],
         subpath: null,
         pos: specOrValue.pos || null
       });
@@ -100,24 +102,24 @@ class ValueCommand extends HandlerCommand {
   }
 }
 
-class DataCommand extends HandlerCommand {
-  constructor({ handler, command, args = [], pos = null }) {
+class DataCommand extends OutputCommand {
+  constructor({ handler, command, args = null, arguments: legacyArgs = null, pos = null }) {
     super({
       handler,
       command: command || null,
-      arguments: args,
+      args: args || legacyArgs || [],
       subpath: null,
       pos
     });
   }
 }
 
-class SinkCommand extends HandlerCommand {
-  constructor({ handler, command, args = [], subpath = null, pos = null }) {
+class SinkCommand extends OutputCommand {
+  constructor({ handler, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
     super({
       handler,
       command: command || null,
-      arguments: args,
+      args: args || legacyArgs || [],
       subpath: subpath || null,
       pos
     });
@@ -137,7 +139,7 @@ class ErrorCommand extends Command {
 
 module.exports = {
   Command,
-  HandlerCommand,
+  OutputCommand,
   TextCommand,
   ValueCommand,
   DataCommand,

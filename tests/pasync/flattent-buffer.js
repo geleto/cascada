@@ -4,23 +4,29 @@ let expect;
 let AsyncEnvironment;
 let flattenBuffer;
 let expectAsyncError;
-let DataHandler;
-let HandlerCommand;
+let TextCommand;
+let DataCommand;
+let SinkCommand;
+let CommandBuffer;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
   flattenBuffer = require('../../src/runtime/runtime').flattenBuffer;
-  HandlerCommand = require('../../src/runtime/runtime').HandlerCommand;
+  TextCommand = require('../../src/runtime/runtime').TextCommand;
+  DataCommand = require('../../src/runtime/runtime').DataCommand;
+  SinkCommand = require('../../src/runtime/runtime').SinkCommand;
+  CommandBuffer = require('../../src/runtime/runtime').CommandBuffer;
   expectAsyncError = require('../util').expectAsyncError;
-  DataHandler = require('../../src/script/data-handler');
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   flattenBuffer = nunjucks.runtime.flattenBuffer;
-  HandlerCommand = nunjucks.runtime.HandlerCommand;
+  TextCommand = nunjucks.runtime.TextCommand;
+  DataCommand = nunjucks.runtime.DataCommand;
+  SinkCommand = nunjucks.runtime.SinkCommand;
+  CommandBuffer = nunjucks.runtime.CommandBuffer;
   expectAsyncError = nunjucks.util.expectAsyncError;
-  DataHandler = nunjucks.DataHandler;
 }
 
 describe('flattenBuffer', function () {
@@ -35,12 +41,45 @@ describe('flattenBuffer', function () {
   const flatten = (buffer, ctx, outputName) => (
     flattenBuffer(makeOutput(buffer, ctx, outputName), ctx)
   );
-  const cmd = (spec) => new HandlerCommand(spec);
+  const flattenSink = (commands, ctx, outputName, sink) => {
+    const buffer = new CommandBuffer(ctx, null);
+    const sinkOutput = {
+      _buffer: buffer,
+      _context: ctx || null,
+      _outputName: outputName,
+      _outputType: 'sink',
+      _sink: sink,
+      _sinkFinalized: false,
+      _resolveSink() {
+        return this._sink;
+      }
+    };
+
+    buffer._scriptMode = true;
+    buffer._outputTypes = Object.create(null);
+    buffer._outputTypes[outputName] = 'sink';
+    buffer._outputs = Object.create(null);
+    buffer._outputs[outputName] = sinkOutput;
+    buffer._outputHandlers = Object.create(null);
+    buffer._outputHandlers[outputName] = sinkOutput;
+
+    commands.forEach((entry) => buffer.add(entry, outputName));
+    flattenBuffer(sinkOutput, ctx);
+    return sink;
+  };
+  const cmd = (spec) => {
+    if (spec.handler === 'data') {
+      return new DataCommand(spec);
+    }
+    if (spec.handler === 'text') {
+      return new TextCommand(spec);
+    }
+    return new SinkCommand(spec);
+  };
 
   // For each test, create a fresh environment and context.
   beforeEach(() => {
     env = new AsyncEnvironment();
-    env.addCommandHandlerClass('data', DataHandler);
     context = {
       getVariables: () => ({ userId: 123 }),
       env: env,
@@ -123,9 +162,9 @@ describe('flattenBuffer', function () {
     });
   });
 
-  describe('Command Handlers (Factory & Singleton)', function () {
-    it('should instantiate and use a factory handler', async function () {
-      class CounterHandler {
+  describe('Sink Outputs (Factory & Singleton)', function () {
+    it('should instantiate and use a factory-style sink instance', function () {
+      class CounterSink {
         constructor() {
           this.count = 0;
         }
@@ -136,35 +175,35 @@ describe('flattenBuffer', function () {
           return { count: this.count };
         }
       }
-      env.addCommandHandlerClass('counter', CounterHandler);
-      const buffer = [
+
+      const sink = new CounterSink();
+      const commands = [
         cmd({ handler: 'counter', command: 'increment', subpath: [], arguments: [] })
       ];
-      const result = await flatten(buffer, context, 'counter');
-      expect(result).to.eql({ count: 1 });
+
+      flattenSink(commands, context, 'counter', sink);
+      expect(sink.getReturnValue()).to.eql({ count: 1 });
     });
 
-    it('should use a singleton handler and call its _init hook', function () {
-      const singletonHandler = {
+    it('should use a singleton sink instance', function () {
+      const singletonSink = {
         value: 0,
-        _init(ctx) { this.value = ctx.userId; },
         set(val) { this.value = val; },
         getReturnValue() { return { value: this.value }; }
       };
-      env.addCommandHandler('singleton', singletonHandler);
-      const buffer = [cmd({ handler: 'singleton', command: 'set', subpath: [], arguments: [456] })];
-      const result = flatten(buffer, context, 'singleton');
-      expect(result).to.eql({ value: 456 });
+      const commands = [cmd({ handler: 'singleton', command: 'set', subpath: [], arguments: [456] })];
+
+      flattenSink(commands, context, 'singleton', singletonSink);
+      expect(singletonSink.getReturnValue()).to.eql({ value: 456 });
     });
 
-    it('should support callable handlers (handler is a function)', function () {
-      const callableHandler = function() {};
-      callableHandler.set = function(val) { this.lastValue = val; };
-      callableHandler.getReturnValue = function() { return { result: 'called', lastValue: this.lastValue }; };
-      env.addCommandHandler('callable', callableHandler);
-      const buffer = [cmd({ handler: 'callable', command: 'set', subpath: [], arguments: ['test'] })];
-      const result = flatten(buffer, context, 'callable');
-      expect(result).to.eql({ result: 'called', lastValue: 'test' });
+    it('should support callable sink targets (sink is a function)', function () {
+      const callableSink = function(val) { this.lastValue = val; };
+      callableSink.getReturnValue = function() { return { result: 'called', lastValue: this.lastValue }; };
+      const commands = [cmd({ handler: 'callable', command: null, subpath: [], arguments: ['test'] })];
+
+      flattenSink(commands, context, 'callable', callableSink);
+      expect(callableSink.getReturnValue()).to.eql({ result: 'called', lastValue: 'test' });
     });
   });
 
@@ -181,22 +220,19 @@ describe('flattenBuffer', function () {
       expect(result).to.equal('HelloWorld');
     });
 
-    it('should throw an error for an unknown command handler', async function () {
+    it('should throw an error for an unsupported output command target', async function () {
       const buffer = [cmd({ handler: 'nonexistent', command: 'method', subpath: [], arguments: [] })];
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'text');
       }, (err) => {
-        expect(err.message).to.contain('Unknown command handler: nonexistent');
+        expect(err.message).to.contain('Unsupported output command target: nonexistent');
       });
     });
 
-    it('should throw an error for an unknown command method on a handler', async function () {
-      env.addCommandHandler('testHandler', {
-        getReturnValue: () => ({ test: true })
-      });
-      const buffer = [cmd({ handler: 'testHandler', command: 'nonexistent', subpath: [], arguments: [] })];
+    it('should throw an error for an unknown command method on data output', async function () {
+      const buffer = [cmd({ handler: 'data', command: 'nonexistent', subpath: [], arguments: [null] })];
       await expectAsyncError(async () => {
-        await flatten(buffer, context, 'text');
+        await flatten(buffer, context, 'data');
       }, (err) => {
         expect(err.message).to.contain('has no method');
       });
