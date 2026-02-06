@@ -7,7 +7,7 @@ const {
   handleError
 } = require('./errors');
 
-const { ErrorCommand } = require('./commands');
+const { Command, ErrorCommand, TextCommand } = require('./commands');
 
 const {
   setParentPosition,
@@ -46,12 +46,12 @@ class CommandBuffer {
   }
 
   /**
-   * Coerces a value into a command object and stamps chain properties on it.
+   * Coerces a value into a command instance and stamps chain properties on it.
    * Containers (CommandBuffer, Array) and error values (PoisonedValue) pass through unchanged.
-   * Existing command objects (have 'handler') get chain properties stamped directly.
-   * Everything else becomes a text command: { handler: 'text', arguments: [value] }.
+   * Existing Command instances get chain properties stamped directly.
+   * Everything else becomes a text command.
    * @param {*} value - The value to wrap
-   * @returns {Object} Command object with chain properties
+   * @returns {Object} Command instance with chain properties
    */
   _wrapCommand(value) {
     // Containers and error values pass through unchanged
@@ -64,10 +64,14 @@ class CommandBuffer {
       return value;
     }
 
-    // Coerce to command object if not already one
-    const cmd = (value && typeof value === 'object' && 'handler' in value)
-      ? value
-      : { handler: 'text', arguments: [value] };
+    let cmd;
+    if (value instanceof Command) {
+      cmd = value;
+    } else if (value && typeof value === 'object' && 'handler' in value) {
+      throw new Error('Plain command objects are not allowed; emit Command instances');
+    } else {
+      cmd = new TextCommand(value);
+    }
 
     // Stamp chain properties
     cmd[WRAPPED_COMMAND_SYMBOL] = true;

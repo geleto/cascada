@@ -2,6 +2,7 @@
 
 const { flattenBuffer } = require('./flatten-buffer');
 const { CommandBuffer } = require('./buffer');
+const { TextCommand, ValueCommand, DataCommand, HandlerCommand } = require('./commands');
 
 class Output {
   constructor(frame, outputName, context, outputType = null) {
@@ -14,12 +15,34 @@ class Output {
 
   _enqueueCommand(command, args) {
     if (!this._buffer) return;
-    const entry = {
-      handler: this._outputName,
-      command: command || null,
-      arguments: args,
-      pos: { lineno: 0, colno: 0 }
-    };
+    let entry;
+    if (this._outputType === 'text') {
+      entry = new TextCommand({
+        handler: this._outputName,
+        args,
+        pos: { lineno: 0, colno: 0 }
+      });
+    } else if (this._outputType === 'value') {
+      entry = new ValueCommand({
+        handler: this._outputName,
+        args,
+        pos: { lineno: 0, colno: 0 }
+      });
+    } else if (this._outputType === 'data') {
+      entry = new DataCommand({
+        handler: this._outputName,
+        command: command || null,
+        args,
+        pos: { lineno: 0, colno: 0 }
+      });
+    } else {
+      entry = new HandlerCommand({
+        handler: this._outputName,
+        command: command || null,
+        arguments: args,
+        pos: { lineno: 0, colno: 0 }
+      });
+    }
     this._buffer.add(entry, this._outputName);
   }
 

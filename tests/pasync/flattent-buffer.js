@@ -5,17 +5,20 @@ let AsyncEnvironment;
 let flattenBuffer;
 let expectAsyncError;
 let DataHandler;
+let HandlerCommand;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
   flattenBuffer = require('../../src/runtime/runtime').flattenBuffer;
+  HandlerCommand = require('../../src/runtime/runtime').HandlerCommand;
   expectAsyncError = require('../util').expectAsyncError;
   DataHandler = require('../../src/script/data-handler');
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
   flattenBuffer = nunjucks.runtime.flattenBuffer;
+  HandlerCommand = nunjucks.runtime.HandlerCommand;
   expectAsyncError = nunjucks.util.expectAsyncError;
   DataHandler = nunjucks.DataHandler;
 }
@@ -32,6 +35,7 @@ describe('flattenBuffer', function () {
   const flatten = (buffer, ctx, outputName) => (
     flattenBuffer(makeOutput(buffer, ctx, outputName), ctx)
   );
+  const cmd = (spec) => new HandlerCommand(spec);
 
   // For each test, create a fresh environment and context.
   beforeEach(() => {
@@ -45,34 +49,34 @@ describe('flattenBuffer', function () {
 
   describe('Data Assembly (@put, @push, etc.)', function () {
     it('should handle a simple @data.set command', async function () {
-      const buffer = [{ handler: 'data', command: 'set', arguments: [['user'], { name: 'Alice' }] }];
+      const buffer = [cmd({ handler: 'data', command: 'set', arguments: [['user'], { name: 'Alice' }] })];
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ user: { name: 'Alice' } });
     });
 
     it('should create nested objects with @data.set', async function () {
-      const buffer = [{ handler: 'data', command: 'set', arguments: [['config', 'theme', 'color'], 'dark'] }];
+      const buffer = [cmd({ handler: 'data', command: 'set', arguments: [['config', 'theme', 'color'], 'dark'] })];
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ config: { theme: { color: 'dark' } } });
     });
 
     it('should handle a simple @data.push command', async function () {
-      const buffer = [{ handler: 'data', command: 'push', arguments: [['users'], 'Alice'] }];
+      const buffer = [cmd({ handler: 'data', command: 'push', arguments: [['users'], 'Alice'] })];
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ users: ['Alice'] });
     });
 
     it('should create an array with @data.push if it does not exist', async function () {
-      const buffer = [{ handler: 'data', command: 'push', arguments: [['config', 'admins'], 'root'] }];
+      const buffer = [cmd({ handler: 'data', command: 'push', arguments: [['config', 'admins'], 'root'] })];
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ config: { admins: ['root'] } });
     });
 
     it('should handle the "[]" path syntax for creating and populating array items', async function () {
       const buffer = [
-        { handler: 'data', command: 'push', arguments: [['users'], { id: 0 }] },
-        { handler: 'data', command: 'set', arguments: [['users', '[]', 'id'], 1] },
-        { handler: 'data', command: 'set', arguments: [['users', 0, 'name'], 'Alice'] }
+        cmd({ handler: 'data', command: 'push', arguments: [['users'], { id: 0 }] }),
+        cmd({ handler: 'data', command: 'set', arguments: [['users', '[]', 'id'], 1] }),
+        cmd({ handler: 'data', command: 'set', arguments: [['users', 0, 'name'], 'Alice'] })
       ];
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ users: [{ id: 1, name: 'Alice' }] });
@@ -80,8 +84,8 @@ describe('flattenBuffer', function () {
 
     it('should handle the @data.merge command', async function () {
       const buffer = [
-        { handler: 'data', command: 'set', arguments: [['user'], { id: 1, name: 'Alice' }] },
-        { handler: 'data', command: 'merge', arguments: [['user'], { name: 'Alicia', active: true }] },
+        cmd({ handler: 'data', command: 'set', arguments: [['user'], { id: 1, name: 'Alice' }] }),
+        cmd({ handler: 'data', command: 'merge', arguments: [['user'], { name: 'Alicia', active: true }] }),
       ];
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ user: { id: 1, name: 'Alicia', active: true } });
@@ -89,7 +93,7 @@ describe('flattenBuffer', function () {
 
     it('should handle null path to work on the root of the data object', async function () {
       const buffer = [
-        { handler: 'data', command: 'set', arguments: [null, { id: 5, name: 'Bob' }] }
+        cmd({ handler: 'data', command: 'set', arguments: [null, { id: 5, name: 'Bob' }] })
       ];
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ id: 5, name: 'Bob' });
@@ -97,8 +101,8 @@ describe('flattenBuffer', function () {
 
     it('should handle null path with merge to combine with existing root data', async function () {
       const buffer = [
-        { handler: 'data', command: 'set', arguments: [['id'], 10] },
-        { handler: 'data', command: 'merge', arguments: [null, { name: 'Charlie' }] }
+        cmd({ handler: 'data', command: 'set', arguments: [['id'], 10] }),
+        cmd({ handler: 'data', command: 'merge', arguments: [null, { name: 'Charlie' }] })
       ];
       const result = await flatten(buffer, context, 'data');
       expect(result).to.eql({ id: 10, name: 'Charlie' });
@@ -134,7 +138,7 @@ describe('flattenBuffer', function () {
       }
       env.addCommandHandlerClass('counter', CounterHandler);
       const buffer = [
-        { handler: 'counter', command: 'increment', subpath: [], arguments: [] }
+        cmd({ handler: 'counter', command: 'increment', subpath: [], arguments: [] })
       ];
       const result = await flatten(buffer, context, 'counter');
       expect(result).to.eql({ count: 1 });
@@ -148,7 +152,7 @@ describe('flattenBuffer', function () {
         getReturnValue() { return { value: this.value }; }
       };
       env.addCommandHandler('singleton', singletonHandler);
-      const buffer = [{ handler: 'singleton', command: 'set', subpath: [], arguments: [456] }];
+      const buffer = [cmd({ handler: 'singleton', command: 'set', subpath: [], arguments: [456] })];
       const result = flatten(buffer, context, 'singleton');
       expect(result).to.eql({ value: 456 });
     });
@@ -158,7 +162,7 @@ describe('flattenBuffer', function () {
       callableHandler.set = function(val) { this.lastValue = val; };
       callableHandler.getReturnValue = function() { return { result: 'called', lastValue: this.lastValue }; };
       env.addCommandHandler('callable', callableHandler);
-      const buffer = [{ handler: 'callable', command: 'set', subpath: [], arguments: ['test'] }];
+      const buffer = [cmd({ handler: 'callable', command: 'set', subpath: [], arguments: ['test'] })];
       const result = flatten(buffer, context, 'callable');
       expect(result).to.eql({ result: 'called', lastValue: 'test' });
     });
@@ -178,7 +182,7 @@ describe('flattenBuffer', function () {
     });
 
     it('should throw an error for an unknown command handler', async function () {
-      const buffer = [{ handler: 'nonexistent', command: 'method', subpath: [], arguments: [] }];
+      const buffer = [cmd({ handler: 'nonexistent', command: 'method', subpath: [], arguments: [] })];
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'text');
       }, (err) => {
@@ -190,7 +194,7 @@ describe('flattenBuffer', function () {
       env.addCommandHandler('testHandler', {
         getReturnValue: () => ({ test: true })
       });
-      const buffer = [{ handler: 'testHandler', command: 'nonexistent', subpath: [], arguments: [] }];
+      const buffer = [cmd({ handler: 'testHandler', command: 'nonexistent', subpath: [], arguments: [] })];
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'text');
       }, (err) => {
@@ -199,7 +203,7 @@ describe('flattenBuffer', function () {
     });
 
     it('should throw an error for a non-string/non-number path segment', async function () {
-      const buffer = [{ handler: 'data', command: 'set', arguments: [[{}], 'value'] }];
+      const buffer = [cmd({ handler: 'data', command: 'set', arguments: [[{}], 'value'] })];
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'data');
       }, (err) => {

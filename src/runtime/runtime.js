@@ -13,6 +13,7 @@ const { flattenBuffer, flattenBufferText, finalizeUnobservedSinks } = require('.
 const guard = require('./guard');
 const loop = require('./loop');
 const outputValue = require('./safe-output');
+const commands = require('./commands');
 
 function makeMacro(argNames, kwargNames, func, astate) {
   const macro = function macro(...macroArgs) {
@@ -143,6 +144,11 @@ module.exports = {
   createSinkOutput: output.createSinkOutput,
   getOutputHandler: output.getOutputHandler,
   declareOutput: output.declareOutput,
+  HandlerCommand: commands.HandlerCommand,
+  TextCommand: commands.TextCommand,
+  ValueCommand: commands.ValueCommand,
+  DataCommand: commands.DataCommand,
+  SinkCommand: commands.SinkCommand,
 
   AsyncState: require('./async-state').AsyncState,
 

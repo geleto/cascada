@@ -20,100 +20,109 @@ class Command {
   }
 }
 
-// ---------------------------------------------------------------------------
-// TextCommand  –  pushes escaped value into ctx._target (array)
-// ---------------------------------------------------------------------------
-
-class TextCommand extends Command {
-  constructor(value) {
-    super();
-    this.value = value;
-  }
-
-  apply(ctx) {
-    ctx._target.push(this.value);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// ValueCommand  –  replaces ctx._target with the new value
-// ---------------------------------------------------------------------------
-
-class ValueCommand extends Command {
-  constructor(value) {
-    super();
-    this.value = value;
-  }
-
-  apply(ctx) {
-    ctx._target = this.value;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// HandlerCommand  –  shared base for commands that dispatch to ctx._base
-// ---------------------------------------------------------------------------
-
+// Generic handler-dispatch command used for custom/non-specialized handlers.
 class HandlerCommand extends Command {
-  constructor(subpath) {
+  constructor({ handler, command = null, arguments: args = [], subpath = null, pos = null }) {
     super();
-    this.subpath = subpath || null;
+    this.handler = handler;
+    this.command = command;
+    this.arguments = args;
+    this.subpath = subpath;
+    this.pos = pos || { lineno: 0, colno: 0 };
+  }
+
+  apply(dispatchCtx) {
+    return dispatchCtx.invokeOutputCommand(this);
   }
 }
 
-// ---------------------------------------------------------------------------
-// DataCommand  –  dispatches to ctx._base (DataHandler)
-//   path      – path array for the data handler method
-//   command   – method name on the handler (e.g. 'set', 'push')
-//   args      – argument array passed to the method
-// ---------------------------------------------------------------------------
+class TextCommand extends HandlerCommand {
+  constructor(specOrValue) {
+    const isSpecObject = !!specOrValue &&
+      typeof specOrValue === 'object' &&
+      !Array.isArray(specOrValue) &&
+      (
+        Object.prototype.hasOwnProperty.call(specOrValue, 'handler') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'args') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'command') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'subpath') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'pos')
+      );
+    if (isSpecObject) {
+      super({
+        handler: specOrValue.handler,
+        command: null,
+        arguments: specOrValue.args || [],
+        subpath: null,
+        pos: specOrValue.pos || null
+      });
+      return;
+    }
+    super({
+      handler: 'text',
+      command: null,
+      arguments: [specOrValue],
+      subpath: null,
+      pos: null
+    });
+  }
+}
+
+class ValueCommand extends HandlerCommand {
+  constructor(specOrValue) {
+    const isSpecObject = !!specOrValue &&
+      typeof specOrValue === 'object' &&
+      !Array.isArray(specOrValue) &&
+      (
+        Object.prototype.hasOwnProperty.call(specOrValue, 'handler') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'args') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'command') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'subpath') ||
+        Object.prototype.hasOwnProperty.call(specOrValue, 'pos')
+      );
+    if (isSpecObject) {
+      super({
+        handler: specOrValue.handler,
+        command: null,
+        arguments: specOrValue.args || [],
+        subpath: null,
+        pos: specOrValue.pos || null
+      });
+      return;
+    }
+    super({
+      handler: 'value',
+      command: null,
+      arguments: [specOrValue],
+      subpath: null,
+      pos: null
+    });
+  }
+}
 
 class DataCommand extends HandlerCommand {
-  constructor(path, command, args) {
-    super(null);
-    this.path = path;
-    this.command = command;
-    this.args = args;
-  }
-
-  apply(ctx) {
-    // _base must already be resolved before apply is called
-    if (!ctx._base) return;
-    const method = this.command ? ctx._base[this.command] : ctx._base;
-    if (typeof method === 'function') {
-      method.apply(ctx._base, this.args);
-    }
+  constructor({ handler, command, args = [], pos = null }) {
+    super({
+      handler,
+      command: command || null,
+      arguments: args,
+      subpath: null,
+      pos
+    });
   }
 }
-
-// ---------------------------------------------------------------------------
-// SinkCommand  –  dispatches to ctx._base (resolved sink)
-//   command   – method name on the sink
-//   args      – argument array
-//   subpath   – subpath into the handler before the sink
-// ---------------------------------------------------------------------------
 
 class SinkCommand extends HandlerCommand {
-  constructor(command, args, subpath) {
-    super(subpath);
-    this.command = command;
-    this.args = args;
-  }
-
-  apply(ctx) {
-    // _base must already be resolved before apply is called
-    if (!ctx._base) return;
-    const method = this.command ? ctx._base[this.command] : ctx._base;
-    if (typeof method === 'function') {
-      method.apply(ctx._base, this.args);
-    }
+  constructor({ handler, command, args = [], subpath = null, pos = null }) {
+    super({
+      handler,
+      command: command || null,
+      arguments: args,
+      subpath: subpath || null,
+      pos
+    });
   }
 }
-
-// ---------------------------------------------------------------------------
-// ErrorCommand  –  replaces ctx._target with a PoisonedValue
-//   value  – the PoisonedValue to store
-// ---------------------------------------------------------------------------
 
 class ErrorCommand extends Command {
   constructor(value) {
@@ -128,9 +137,9 @@ class ErrorCommand extends Command {
 
 module.exports = {
   Command,
+  HandlerCommand,
   TextCommand,
   ValueCommand,
-  HandlerCommand,
   DataCommand,
   SinkCommand,
   ErrorCommand

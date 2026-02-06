@@ -37,6 +37,7 @@
   const flatten = (buffer, context = null, outputName = 'text') => (
     runtime.flattenBuffer(makeOutput(buffer, context, outputName), context)
   );
+  const cmd = (spec) => new runtime.HandlerCommand(spec);
 
 
   describe('Error Propagation Dataflow Poisoning - Unit Tests', () => {
@@ -886,13 +887,13 @@
 
       it('should handle command objects with poisoned args', () => {
         const poison = createPoison(new Error('Arg error'));
-        const arr = [{
+        const arr = [cmd({
           handler: 'text',
           command: null,
           subpath: [],
           arguments: ['valid', poison],
           pos: { lineno: 1, colno: 1 }
-        }];
+        })];
 
         try {
           flatten(arr, context, 'text');
@@ -903,13 +904,13 @@
       });
 
       it('should collect errors from handler instantiation failures', () => {
-        const arr = [{
+        const arr = [cmd({
           handler: 'nonexistent',
           command: 'method',
           subpath: [],
           arguments: ['arg'],
           pos: { lineno: 5, colno: 10 }
-        }];
+        })];
 
         try {
           flatten(arr, context, 'text');
@@ -1039,13 +1040,13 @@
         };
         context.env.commandHandlerInstances = { testHandler: mockHandler };
 
-        const arr = [{
+        const arr = [cmd({
           handler: 'testHandler',
           command: 'nonexistentMethod',
           subpath: [],
           arguments: [],
           pos: { lineno: 1, colno: 1 }
-        }];
+        })];
 
         try {
           flatten(arr, context, 'text');
@@ -1057,13 +1058,13 @@
       });
 
       it('should collect handler instantiation errors', () => {
-        const arr = [{
+        const arr = [cmd({
           handler: 'badHandler',
           command: 'method',
           subpath: ['nested', 'path'],
           arguments: [],
           pos: { lineno: 2, colno: 5 }
-        }];
+        })];
 
         try {
           flatten(arr, context, 'text');

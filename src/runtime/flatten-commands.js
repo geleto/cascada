@@ -10,6 +10,7 @@ const {
   getPosonedBufferErrors
 } = require('./buffer');
 const { PoisonError, RuntimeFatalError, isPoison, handleError } = require('./errors');
+const { Command, ErrorCommand, HandlerCommand } = require('./commands');
 const {
   createFlattenState,
   resolveOutputTypeFromState,
@@ -20,7 +21,6 @@ const {
   resolveOutputValue
 } = require('./flatten-shared');
 const { suppressValue, suppressValueScript } = require('./safe-output');
-const { ErrorCommand } = require('./commands');
 
 function flattenCommandBuffer(buffer, context, outputName, sharedState) {
   if (outputName) {
@@ -435,16 +435,22 @@ function flattenCommands(arr, context, outputName, sharedState) {
   function processItem(item) {
     if (item === null || item === undefined) return;
 
-    // ErrorCommand: apply to the Output ctx and collect errors into state
-    if (item instanceof ErrorCommand) {
-      const outputCtx = getOutputCtx(outputName || 'text');
-      if (outputCtx) {
-        item.apply(outputCtx);
+    if (item instanceof Command) {
+      if (item instanceof ErrorCommand) {
+        const outputCtx = getOutputCtx(outputName || 'text');
+        if (outputCtx) {
+          item.apply(outputCtx);
+        }
+        if (item.value && item.value.errors) {
+          state.collectedErrors.push(...item.value.errors);
+        }
+        return;
       }
-      if (item.value && item.value.errors) {
-        state.collectedErrors.push(...item.value.errors);
+
+      if (item instanceof HandlerCommand) {
+        item.apply({ invokeOutputCommand: processCommandItem });
+        return;
       }
-      return;
     }
 
     if (isPoison(item)) {
@@ -463,12 +469,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
 
     if (Array.isArray(item)) {
       processArrayItem(item);
-      return;
-    }
-
-    // All buffer items are command objects - dispatch to handler
-    if (item.handler !== undefined) {
-      processCommandItem(item);
       return;
     }
 

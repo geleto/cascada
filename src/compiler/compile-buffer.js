@@ -184,17 +184,24 @@ class CompileBuffer {
     };
 
     wrapper((f) => {
-      this.compiler.emit(`{ handler: '${handler}', `);
+      const commandClass = outputType === 'data'
+        ? 'DataCommand'
+        : (outputType === 'sink'
+          ? 'SinkCommand'
+          : (outputType === 'text'
+            ? 'TextCommand'
+            : (outputType === 'value' ? 'ValueCommand' : 'HandlerCommand')));
+      this.compiler.emit(`new runtime.${commandClass}({ handler: '${handler}', `);
       if (command) {
         this.compiler.emit(`command: '${command}', `);
       }
-      if (subpath && subpath.length > 0) {
+      if (outputType === 'sink' && subpath && subpath.length > 0) {
         this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
       }
 
       let argList = node.call.args;
       const asyncArgs = argList.isAsync;
-      this.compiler.emit('arguments: ' + (asyncArgs ? 'await ' : ''));
+      this.compiler.emit((outputType === 'data' || outputType === 'sink' || outputType === 'text' || outputType === 'value' ? 'args: ' : 'arguments: ') + (asyncArgs ? 'await ' : ''));
 
       if (outputType === 'data') {
         // For data outputs, we create a new "virtual" AST for the arguments,
@@ -224,7 +231,7 @@ class CompileBuffer {
 
       this.compiler._compileAggregate(argList, f, '[', ']', isAsync, true);
 
-      this.compiler.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} }`);
+      this.compiler.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`);
     });
   }
 
