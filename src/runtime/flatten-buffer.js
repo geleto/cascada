@@ -2,8 +2,8 @@
 
 const { CommandBuffer, resolveBufferArray } = require('./buffer');
 const { flattenText } = require('./flatten-text');
-const { flattenCommands, flattenCommandBuffer, setResolveSinkCommand } = require('./flatten-commands');
-const { PoisonError, RuntimeFatalError } = require('./errors');
+const { flattenCommands, flattenCommandBuffer } = require('./flatten-commands');
+const { PoisonError } = require('./errors');
 const { createFlattenState, buildFinalResultFromState, resolveOutputValue } = require('./flatten-shared');
 
 function doFlattenBuffer(arr, context = null, outputName = null, sharedState = null) {
@@ -96,39 +96,6 @@ function flattenCommandBufferCached(buffer, context, outputName) {
 // Output carries buffer, context, and outputName — all flatten needs.
 // Internal recursion (nested CommandBuffers) goes through doFlattenBuffer.
 function flattenBuffer(output, errorContext = null) {
-  function resolveSinkCommand(targetObject, commandName, args, pos, handlerRef, contextPath) {
-    const sink = targetObject._resolveSink();
-    return invokeSinkCommand(sink, commandName, args, pos, handlerRef, contextPath);
-  }
-
-  function invokeSinkCommand(sink, commandName, args, pos, handlerRef, contextPath) {
-    if (!sink) return undefined;
-    const sinkCommand = commandName ? sink[commandName] : sink;
-    if (typeof sinkCommand !== 'function') {
-      throw new RuntimeFatalError(
-        new Error(`Sink method '${commandName}' not found`),
-        pos.lineno,
-        pos.colno,
-        handlerRef,
-        contextPath
-      );
-    }
-    let result;
-    try {
-      result = sinkCommand.apply(sink, args);
-    } catch (err) {
-      throw new RuntimeFatalError(
-        err,
-        pos.lineno,
-        pos.colno,
-        handlerRef,
-        contextPath
-      );
-    }
-    return result;
-  }
-
-  setResolveSinkCommand(resolveSinkCommand);
 
   if (!output || (typeof output !== 'object' && typeof output !== 'function')) {
     return undefined;

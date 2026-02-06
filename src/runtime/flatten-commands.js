@@ -23,13 +23,6 @@ const {
 const { suppressValue, suppressValueScript } = require('./safe-output');
 const { ErrorCommand } = require('./commands');
 
-/*const RESOLVE_MARKER = Symbol.for('cascada.resolve');*/
-let resolveSinkCommand = null;
-
-function setResolveSinkCommand(resolver) {
-  resolveSinkCommand = resolver;
-}
-
 function flattenCommandBuffer(buffer, context, outputName, sharedState, flattenBuffer) {
   if (outputName) {
     const state = createFlattenState(sharedState, buffer._outputTypes || null);
@@ -248,6 +241,56 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
     return `${handlerName}${pathSuffix}${commandSuffix}`;
   }
 
+  function invokeResolvedSinkCommand(sink, commandName, args, pos, handlerRef, contextPath) {
+    if (!sink) return undefined;
+    const sinkCommand = commandName ? sink[commandName] : sink;
+    if (typeof sinkCommand !== 'function') {
+      throw new RuntimeFatalError(
+        new Error(`Sink method '${commandName}' not found`),
+        pos.lineno,
+        pos.colno,
+        handlerRef,
+        contextPath
+      );
+    }
+    try {
+      return sinkCommand.apply(sink, args);
+    } catch (err) {
+      throw new RuntimeFatalError(
+        err,
+        pos.lineno,
+        pos.colno,
+        handlerRef,
+        contextPath
+      );
+    }
+  }
+
+  function invokeSinkCommand(targetObject, commandName, args, pos, handlerRef, contextPath) {
+    const sinkVal = targetObject._resolveSink();
+    if (sinkVal && typeof sinkVal.then === 'function') {
+      return sinkVal.then((resolvedSink) => {
+        targetObject._sink = resolvedSink;
+        return invokeResolvedSinkCommand(
+          resolvedSink,
+          commandName,
+          args,
+          pos,
+          handlerRef,
+          contextPath
+        );
+      });
+    }
+    return invokeResolvedSinkCommand(
+      sinkVal,
+      commandName,
+      args,
+      pos,
+      handlerRef,
+      contextPath
+    );
+  }
+
   function resolveSubpath(targetObject, subpath, handlerName, pos) {
     if (!subpath || subpath.length === 0) {
       return targetObject;
@@ -332,6 +375,19 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
       const targetObject = resolveSubpath(handlerInstance, subpath, handlerName, pos);
       if (!targetObject) return;
+
+      const isSinkHandler = targetObject && typeof targetObject._resolveSink === 'function';
+      if (isSinkHandler) {
+        invokeSinkCommand(
+          targetObject,
+          commandName,
+          args,
+          pos,
+          formatHandlerRef(handlerName, subpath, commandName),
+          context ? context.path : null
+        );
+        return;
+      }
 
       const commandFunc = commandName ? targetObject[commandName] : targetObject;
 
@@ -457,21 +513,7 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
     const isSinkHandler = targetObject && typeof targetObject._resolveSink === 'function';
     if (isSinkHandler) {
-      const sinkVal = targetObject._resolveSink();
-      if (sinkVal && typeof sinkVal.then === 'function') {
-        return sinkVal.then((resolvedSink) => {
-          targetObject._sink = resolvedSink;
-          return resolveSinkCommand(
-            targetObject,
-            commandName,
-            args,
-            pos,
-            formatHandlerRef(handlerName, subpath, commandName),
-            context ? context.path : null
-          );
-        });
-      }
-      return resolveSinkCommand(
+      return invokeSinkCommand(
         targetObject,
         commandName,
         args,
@@ -480,8 +522,6 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
         context ? context.path : null
       );
     }
-
-    if (!targetObject) return;
 
     const commandFunc = commandName ? targetObject[commandName] : targetObject;
 
@@ -649,6 +689,5 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
 module.exports = {
   flattenCommandBuffer,
-  flattenCommands,
-  setResolveSinkCommand
+  flattenCommands
 };
