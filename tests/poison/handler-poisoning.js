@@ -598,7 +598,7 @@
           test.log("This should be poisoned")
           test.setValue("key", "value")
         endif
-        return null
+        return test.snapshot()
       `;
 
       try {
@@ -617,7 +617,7 @@
           test.log("Handler 1")
           logger.log("Handler 2")
         endif
-        return null`;
+        return { test: test.snapshot(), logger: logger.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context);
@@ -636,7 +636,7 @@
         else
           test.log("else branch")
         endif
-        return null
+        return test.snapshot()
       `;
 
       try {
@@ -665,6 +665,10 @@
         getReturnValue() {
           return this.state;
         }
+
+        snapshot() {
+          return this.state;
+        }
       }
 
       const script = `
@@ -672,7 +676,7 @@
         if asyncReject()
           chain.subcommand.doSomething("test")
         endif
-        return null
+        return chain.snapshot()
       `;
 
       try {
@@ -714,7 +718,7 @@
           endif
           test.log("outer end")
         endif
-        return null
+        return { test: test.snapshot(), logger: logger.snapshot() }
       `;
 
       try {
@@ -743,7 +747,7 @@
         if asyncReject()
           loggerSink.log("Should be poisoned")
         endif
-        return null
+        return loggerSink.snapshot()
       `;
 
       try {

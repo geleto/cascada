@@ -307,52 +307,62 @@ function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
   const allErrors = [];
   if (!arr) return allErrors;
 
-  const handlerAllowed = !allowedHandlers || allowedHandlers.includes(handlerName);
-  if (!handlerAllowed) {
-    return allErrors;
+  const isHandlerAllowed = (name) => !allowedHandlers || allowedHandlers.includes(name);
+  if (!isHandlerAllowed(handlerName)) return allErrors;
+
+  function pushPoison(errOrPoison) {
+    if (!errOrPoison) return;
+    if (errOrPoison.errors) {
+      allErrors.push(...errOrPoison.errors);
+    } else {
+      allErrors.push(errOrPoison);
+    }
   }
 
-  if (arr instanceof CommandBuffer) {
-    return getPoisonedCommandBufferErrors(arr, allowedHandlers);
-  }
+  function walk(value, currentHandler) {
+    if (!value) return;
 
-  for (const item of arr) {
-    if (!item) continue;
-    if (item instanceof CommandBuffer) {
-      const nestedErrors = getPoisonedCommandBufferErrors(item, allowedHandlers);
-      if (nestedErrors.length > 0) {
-        allErrors.push(...nestedErrors);
-      }
-      continue;
-    }
-    // Check for ErrorCommand (script-mode poison entries)
-    if (item instanceof ErrorCommand) {
-      if (item.value && item.value.errors) {
-        allErrors.push(...item.value.errors);
-      }
-      continue;
+    if (value instanceof CommandBuffer) {
+      allErrors.push(...getPoisonedCommandBufferErrors(value, allowedHandlers));
+      return;
     }
 
-    // @todo - when we switch to all-command implementation, even for
-    // templates, we can remove the below code:
-    // Check for direct poison value or PoisonError
-    const isDirectPoison = isPoison(item) || isPoisonError(item);
-    if (isDirectPoison) {
-      if (item.errors) {
-        allErrors.push(...item.errors);
-      } else {
-        allErrors.push(item);
-      }
-      continue;
+    if (Array.isArray(value)) {
+      value.forEach((item) => walk(item, currentHandler));
+      return;
     }
-    // Recursive check for nested arrays
-    if (Array.isArray(item)) {
-      const nestedErrors = getPoisonedArrayErrors(item, handlerName, allowedHandlers);
-      if (nestedErrors.length > 0) {
-        allErrors.push(...nestedErrors);
+
+    // Handle script-mode poison markers.
+    if (value instanceof ErrorCommand) {
+      if (isHandlerAllowed(currentHandler)) {
+        pushPoison(value.value);
       }
+      return;
+    }
+
+    if (isPoison(value) || isPoisonError(value)) {
+      if (isHandlerAllowed(currentHandler)) {
+        pushPoison(value);
+      }
+      return;
+    }
+
+    if (typeof value === 'object') {
+      // Command object: recurse into argument payloads under its handler.
+      if (value.handler !== undefined) {
+        const commandHandler = value.handler || currentHandler;
+        if (!isHandlerAllowed(commandHandler)) return;
+        if (Array.isArray(value.arguments)) {
+          value.arguments.forEach((arg) => walk(arg, commandHandler));
+        }
+        return;
+      }
+
+      Object.keys(value).forEach((key) => walk(value[key], currentHandler));
     }
   }
+
+  walk(arr, handlerName);
 
   return allErrors;
 }

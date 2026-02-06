@@ -149,11 +149,13 @@ class SinkOutputHandler {
   constructor(frame, outputName, context, sink) {
     this._frame = frame;
     this._outputName = outputName;
+    this._outputType = 'sink';
     this._context = context;
     this._sink = sink;
     this._target = undefined;
     this._base = null;
     this._buffer = frame ? frame._outputBuffer : null;
+    this._sinkFinalized = false;
   }
 
   _resolveSink() {
@@ -169,18 +171,12 @@ class SinkOutputHandler {
   }
 
   snapshot() {
-    const buffer = this._buffer;
     const runSnapshot = (resolvedSink) => {
-      // Normalize sink once so flatten and final snapshot read the same value.
       this._sink = resolvedSink;
-
-      if (buffer) {
-        const flattened = flattenBuffer(this, this._context);
-        if (flattened && typeof flattened.then === 'function') {
-          return flattened.then(() => this._snapshotFromSink(this._sink));
-        }
+      if (this._buffer) {
+        flattenBuffer(this, this._context);
       }
-
+      this._sinkFinalized = true;
       return this._snapshotFromSink(this._sink);
     };
 
@@ -188,6 +184,7 @@ class SinkOutputHandler {
     if (sinkVal && typeof sinkVal.then === 'function') {
       return sinkVal.then((resolved) => runSnapshot(resolved));
     }
+
     return runSnapshot(sinkVal);
   }
 }

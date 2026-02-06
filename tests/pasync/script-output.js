@@ -262,14 +262,15 @@ describe('Cascada Script: Output commands', function () {
             acc = caller(acc, item)
           endfor
           data.value = acc
-          return {data: data.snapshot() }
+          return data.snapshot()
         endmacro
 
-        call recursive([1, 2, 3], 0) (sum, num)
+        var result = call recursive([1, 2, 3], 0) (sum, num)
           data data
           data = sum + num
           return data.snapshot()
         endcall
+        data = result
 
         return data.snapshot()`;
       const result = await env.renderScriptString(script);
@@ -287,14 +288,15 @@ describe('Cascada Script: Output commands', function () {
             acc = acc + res.value
           endfor
           data.value = acc
-          return {data: data.snapshot() }
+          return data.snapshot()
         endmacro
 
-        call recursive([1, 2, 3])
+        var result = call recursive([1, 2, 3])
           data data
           data.value = 1
           return data.snapshot()
         endcall
+        data = result
 
         return data.snapshot()`;
       const result = await env.renderScriptString(script);
@@ -309,17 +311,18 @@ describe('Cascada Script: Output commands', function () {
           var acc = 0
           for item in list
             var res = caller(item)
-            acc = acc + res.data.val
+            acc = acc + res.val
           endfor
           data.value = acc
-          return {data: data.snapshot() }
+          return data.snapshot()
         endmacro
 
-        call recursive([1, 2, 3]) (item)
+        var result = call recursive([1, 2, 3]) (item)
           data data
           data.val = item * 2
-          return {data: data.snapshot() }
+          return data.snapshot()
         endcall
+        data = result
 
         return data.snapshot()`;
       const result = await env.renderScriptString(script);
@@ -334,17 +337,18 @@ describe('Cascada Script: Output commands', function () {
           var acc = 0
           for item in list
              var res = caller()
-             acc = acc + res.data.val
+             acc = acc + res.val
           endfor
           data.value = acc
-          return {data: data.snapshot() }
+          return data.snapshot()
         endmacro
 
-        call recursive([1, 2, 3])
+        var result = call recursive([1, 2, 3])
           data data
           data.val = 1
-          return {data: data.snapshot() }
+          return data.snapshot()
         endcall
+        data = result
 
         return data.snapshot()`;
       const result = await env.renderScriptString(script);
@@ -358,14 +362,15 @@ describe('Cascada Script: Output commands', function () {
           data data
           var res = caller()
           data.value = res.val
-          return {data: data.snapshot() }
+          return data.snapshot()
         endmacro
 
-        call runner() ()
+        var result = call runner() ()
            data data
            data.val = 42
            return data.snapshot()
         endcall
+        data = result
 
         return data.snapshot()`;
       const result = await env.renderScriptString(script);
@@ -380,14 +385,15 @@ describe('Cascada Script: Output commands', function () {
           data data
           var res = caller()
           data.val = res.val
-          return {data: data.snapshot() }
+          return data.snapshot()
         endmacro
 
-        call runner()
+        var result = call runner()
           data data
           data.val = outer
           return data.snapshot()
         endcall
+        data = result
 
         return data.snapshot()`;
       const result = await env.renderScriptString(script);
@@ -403,14 +409,15 @@ describe('Cascada Script: Output commands', function () {
           var x = "inner"
           var res = caller()
           data.val = res.val
-          return {data: data.snapshot() }
+          return data.snapshot()
         endmacro
 
-        call runner()
+        var result = call runner()
           data data
           data.val = x
           return data.snapshot()
         endcall
+        data = result
 
         return data.snapshot()`;
       const result = await env.renderScriptString(script);
@@ -425,14 +432,15 @@ describe('Cascada Script: Output commands', function () {
           data data
           var res = caller("arg")
           data.val = res.val
-          return {data: data.snapshot() }
+          return data.snapshot()
         endmacro
 
-        call runner() (x)
+        var result = call runner() (x)
           data data
           data.val = x
           return data.snapshot()
         endcall
+        data = result
 
         return data.snapshot()`;
       const result = await env.renderScriptString(script);
@@ -447,14 +455,15 @@ describe('Cascada Script: Output commands', function () {
           var secret = "inner"
           var res = caller()
           data.val = res.val
-          return {data: data.snapshot() }
+          return data.snapshot()
         endmacro
 
-        call runner()
+        var result = call runner()
            data data
            data.val = secret
            return data.snapshot()
         endcall
+        data = result
 
         return data.snapshot()`;
       try {

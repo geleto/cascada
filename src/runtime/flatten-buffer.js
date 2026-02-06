@@ -3,8 +3,6 @@
 const { CommandBuffer, resolveBufferArray } = require('./buffer');
 const { flattenText } = require('./flatten-text');
 const { flattenCommands, flattenCommandBuffer } = require('./flatten-commands');
-const { PoisonError } = require('./errors');
-const { createFlattenState, buildFinalResultFromState, resolveOutputValue } = require('./flatten-shared');
 
 function doFlattenBuffer(arr, context = null, outputName = null, sharedState = null) {
   if (arr instanceof CommandBuffer) {
@@ -37,61 +35,6 @@ function flattenBufferText(arr, outputName = null, sharedState = null) {
   return flattenText(target, name, sharedState, doFlattenBuffer);
 }
 
-// In script mode, multiple snapshots/returns may request flattening the same
-// CommandBuffer more than once (e.g. implicit return + explicit snapshots).
-// Flattening is idempotent: it populates Output._target/_base once, and
-// subsequent snapshot() calls read from those without re-executing commands.
-// We cache the flattened state per CommandBuffer instance to enforce this.
-function flattenCommandBufferCached(buffer, context, outputName) {
-  const resolveFromState = (state) => {
-    if (state && state.collectedErrors && state.collectedErrors.length > 0) {
-      throw new PoisonError(state.collectedErrors);
-    }
-    const finalResult = buildFinalResultFromState(state || {});
-
-    if (!outputName) {
-      return finalResult;
-    }
-
-    return resolveOutputValue(state || {}, outputName);
-  };
-
-  if (buffer._flattenState) {
-    try {
-      return resolveFromState(buffer._flattenState);
-    } catch (e) {
-      return Promise.reject(e);
-    }
-  }
-
-  if (buffer._flattenStatePromise) {
-    return buffer._flattenStatePromise.then((state) => resolveFromState(state));
-  }
-
-  // Always flatten the full buffer once to ensure all output commands execute.
-  // Use a properly-shaped shared state so flattening logic can mutate it
-  // without re-initializing on each recursive call.
-  const sharedState = createFlattenState(null, buffer._outputTypes || null);
-  const computed = doFlattenBuffer(buffer, context, null, sharedState);
-
-  const store = (state) => {
-    buffer._flattenState = state;
-    buffer._flattenStatePromise = null;
-    return state;
-  };
-
-  if (computed && typeof computed.then === 'function') {
-    buffer._flattenStatePromise = computed.then(store, (err) => {
-      buffer._flattenStatePromise = null;
-      throw err;
-    });
-    return buffer._flattenStatePromise.then((state) => resolveFromState(state));
-  }
-
-  const state = store(computed);
-  return resolveFromState(state);
-}
-
 // Output-driven entry point for script mode.
 // Output carries buffer, context, and outputName — all flatten needs.
 // Internal recursion (nested CommandBuffers) goes through doFlattenBuffer.
@@ -116,9 +59,7 @@ function flattenBuffer(output, errorContext = null) {
 
   // Script mode: flatten populates _target/_base as a side effect;
   // resolve the final value from them after flatten completes.
-  const result = (context && buffer instanceof CommandBuffer)
-    ? flattenCommandBufferCached(buffer, context, outputName)
-    : doFlattenBuffer(buffer, context, outputName);
+  const result = doFlattenBuffer(buffer, context, outputName);
   const resolveFromOutput = () => {
     if (!output || typeof output !== 'object') {
       return result;
@@ -136,13 +77,34 @@ function flattenBuffer(output, errorContext = null) {
     }
     return output._target !== undefined ? output._target : result;
   };
-  if (result && typeof result.then === 'function') {
-    return result.then(() => resolveFromOutput());
-  }
   return resolveFromOutput();
+}
+
+// Execute unobserved sink commands for side effects without surfacing errors.
+// This is used at script return when sinks were not explicitly snapshotted.
+function finalizeUnobservedSinks(frame, context) {
+  if (!frame || !frame._outputs) {
+    return undefined;
+  }
+
+  Object.keys(frame._outputs).forEach((name) => {
+    const out = frame._outputs[name];
+    if (!out || out._outputType !== 'sink' || out._sinkFinalized) {
+      return;
+    }
+    try {
+      flattenBuffer(out, context);
+      out._sinkFinalized = true;
+    } catch (e) {
+      // Ignore unused sink errors by design.
+    }
+  });
+
+  return undefined;
 }
 
 module.exports = {
   flattenBuffer,
-  flattenBufferText
+  flattenBufferText,
+  finalizeUnobservedSinks
 };

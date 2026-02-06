@@ -1394,23 +1394,7 @@ class Compiler extends CompilerBase {
         this.emit.line(';');
         this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
         this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
-        // Ensure all deferred output commands are executed before returning.
-        // Scripts must not skip output processing just because the return value
-        // doesn't explicitly snapshot outputs.
-
-        // @todo - rewrite once we have proper snapshot()
-        this.emit.line('  if (frame && frame._outputBuffer) {');
-        this.emit.line('    if (frame._outputs) {');
-        this.emit.line('      const __outs = frame._outputs;');
-        this.emit.line('      const __pending = [];');
-        this.emit.line('      for (const __name in __outs) {');
-        this.emit.line('        if (!Object.prototype.hasOwnProperty.call(__outs, __name)) continue;');
-        this.emit.line('        const __res = runtime.flattenBuffer(__outs[__name], context);');
-        this.emit.line('        if (__res && typeof __res.then === "function") { __pending.push(__res); }');
-        this.emit.line('      }');
-        this.emit.line('      if (__pending.length > 0) { await Promise.all(__pending); }');
-        this.emit.line('    }');
-        this.emit.line('  }');
+        this.emit.line('  await runtime.finalizeUnobservedSinks(frame, context);');
         this.emit.line('  cb(null, resolved);');
         this.emit.line('}).catch(e => {');
         this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${errorContext}", context.path);`);
@@ -1428,21 +1412,7 @@ class Compiler extends CompilerBase {
         this.emit.line(';');
         this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
         this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
-        // Ensure all deferred output commands are executed before returning.
-
-        // @todo - rewrite once we have proper snapshot()
-        this.emit.line('  if (frame && frame._outputBuffer) {');
-        this.emit.line('    if (frame._outputs) {');
-        this.emit.line('      const __outs = frame._outputs;');
-        this.emit.line('      const __pending = [];');
-        this.emit.line('      for (const __name in __outs) {');
-        this.emit.line('        if (!Object.prototype.hasOwnProperty.call(__outs, __name)) continue;');
-        this.emit.line('        const __res = runtime.flattenBuffer(__outs[__name], context);');
-        this.emit.line('        if (__res && typeof __res.then === "function") { __pending.push(__res); }');
-        this.emit.line('      }');
-        this.emit.line('      if (__pending.length > 0) { await Promise.all(__pending); }');
-        this.emit.line('    }');
-        this.emit.line('  }');
+        this.emit.line('  await runtime.finalizeUnobservedSinks(frame, context);');
         this.emit.line('  return resolved;');
         this.emit.line('});');
       }

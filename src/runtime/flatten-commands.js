@@ -5,7 +5,6 @@
 
 const {
   CommandBuffer,
-  resolveBufferArray,
   resolveOutputTargets,
   isCommandBuffer,
   getPosonedBufferErrors
@@ -35,29 +34,30 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState) {
     if (!state.outputCtxs && buffer && buffer._outputs) {
       state.outputCtxs = buffer._outputs;
     }
-    const resultState = flattenCommands(resolveBufferArray(buffer, outputName), context, outputName, state);
+    flattenCommands(buffer._getOutputArray(outputName), context, outputName, state);
+
+    const finalizeOutput = () => {
+      if (sharedState) {
+        return state;
+      }
+      if (state && state.collectedErrors && state.collectedErrors.length > 0) {
+        throw new PoisonError(state.collectedErrors);
+      }
+      return resolveOutputValue(state, outputName);
+    };
+
+    const resultState = finalizeOutput();
     if (sharedState) {
       return resultState;
     }
-    if (resultState && typeof resultState.then === 'function') {
-      return resultState.then((res) => {
-        if (res && res.collectedErrors && res.collectedErrors.length > 0) {
-          throw new PoisonError(res.collectedErrors);
-        }
-        return resolveOutputValue(res, outputName);
-      });
-    }
-    if (resultState && resultState.collectedErrors && resultState.collectedErrors.length > 0) {
-      throw new PoisonError(resultState.collectedErrors);
-    }
-    return resolveOutputValue(resultState, outputName);
+    return resultState;
   }
 
   if (!context) {
-    const textArray = resolveBufferArray(buffer, 'text');
+    const textArray = buffer._getOutputArray('text');
     const fallbackArray = (Array.isArray(textArray) && textArray.length > 0)
       ? textArray
-      : resolveBufferArray(buffer, 'output');
+      : buffer._getOutputArray('output');
     return flattenCommands(fallbackArray, null, 'text', sharedState);
   }
 
@@ -80,19 +80,11 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState) {
     ? ['text', ...outputNames.filter(name => name !== 'text')]
     : outputNames.slice();
 
-  const pending = [];
-  const queueFlatten = (name, arrayName) => {
-    const res = flattenCommands(resolveBufferArray(buffer, arrayName), context, name, state);
-    if (res && typeof res.then === 'function') {
-      pending.push(res);
-    }
-  };
-
   if (orderedNames.length === 0) {
-    queueFlatten('text', 'output');
+    flattenCommands(buffer._getOutputArray('output'), context, 'text', state);
   } else {
     orderedNames.forEach((name) => {
-      queueFlatten(name, name);
+      flattenCommands(buffer._getOutputArray(name), context, name, state);
     });
   }
 
@@ -107,10 +99,6 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState) {
 
     return buildFinalResultFromState(state);
   };
-
-  if (pending.length > 0) {
-    return Promise.all(pending).then(() => finalize());
-  }
 
   return finalize();
 }
@@ -133,17 +121,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
     return false;
   }
 
-  /*function hasAsyncArg(arg) {
-    if (!arg) return false;
-    if (isPoison(arg)) return false;
-    if (typeof arg.then === 'function') return true;
-    if (arg[RESOLVE_MARKER]) return true;
-    if (Array.isArray(arg)) {
-      return arg.some(hasAsyncArg);
-    }
-    return false;
-  }*/
-
   // Resolve the Output object for a handler name from state.outputCtxs.
   // Returns null if not found (e.g. template mode or undeclared handler).
   function getOutputCtx(handlerName) {
@@ -156,6 +133,11 @@ function flattenCommands(arr, context, outputName, sharedState) {
   function getOrInstantiateHandler(handlerName) {
     if (state.handlerInstances[handlerName]) {
       return state.handlerInstances[handlerName];
+    }
+    const outputCtx = getOutputCtx(handlerName);
+    if (outputCtx && outputCtx._base) {
+      state.handlerInstances[handlerName] = outputCtx._base;
+      return outputCtx._base;
     }
     if (state.outputHandlers && state.outputHandlers[handlerName]) {
       const instance = state.outputHandlers[handlerName];
@@ -172,7 +154,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
         }
         state.handlerInstances[handlerName] = instance;
         // Wire _base on the Output ctx for this handler
-        const outputCtx = getOutputCtx(handlerName);
         if (outputCtx && !outputCtx._base) {
           outputCtx._base = instance;
         }
@@ -182,7 +163,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
         const HandlerClass = env.commandHandlerClasses[declaredType];
         const instance = new HandlerClass(context.getVariables(), env);
         state.handlerInstances[handlerName] = instance;
-        const outputCtx = getOutputCtx(handlerName);
         if (outputCtx && !outputCtx._base) {
           outputCtx._base = instance;
         }
@@ -196,7 +176,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
         instance._init(context.getVariables());
       }
       state.handlerInstances[handlerName] = instance;
-      const outputCtx = getOutputCtx(handlerName);
       if (outputCtx && !outputCtx._base) {
         outputCtx._base = instance;
       }
@@ -206,7 +185,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
       const HandlerClass = env.commandHandlerClasses[handlerName];
       const instance = new HandlerClass(context.getVariables(), env);
       state.handlerInstances[handlerName] = instance;
-      const outputCtx = getOutputCtx(handlerName);
       if (outputCtx && !outputCtx._base) {
         outputCtx._base = instance;
       }
@@ -267,19 +245,15 @@ function flattenCommands(arr, context, outputName, sharedState) {
   }
 
   function invokeSinkCommand(targetObject, commandName, args, pos, handlerRef, contextPath) {
-    const sinkVal = targetObject._resolveSink();
+    const sinkVal = targetObject._sink;
     if (sinkVal && typeof sinkVal.then === 'function') {
-      return sinkVal.then((resolvedSink) => {
-        targetObject._sink = resolvedSink;
-        return invokeResolvedSinkCommand(
-          resolvedSink,
-          commandName,
-          args,
-          pos,
-          handlerRef,
-          contextPath
-        );
-      });
+      throw new RuntimeFatalError(
+        new Error('Sink must be resolved before command execution'),
+        pos.lineno,
+        pos.colno,
+        handlerRef,
+        contextPath
+      );
     }
     return invokeResolvedSinkCommand(
       sinkVal,
@@ -336,12 +310,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
     if (collectPoisonArgs(args)) {
       return;
     }
-
-    /*if (hasAsyncArg(args)) {
-      asyncMode = true;
-      queueAsync(() => processCommandItemAsync(item));
-      return;
-    }*/
 
     const target = resolveCommandTarget(handlerName);
     if (target.kind === 'text') {
@@ -440,18 +408,21 @@ function flattenCommands(arr, context, outputName, sharedState) {
     const isPromise = typeof item.then === 'function';
 
     if (hasCustomToString || isPromise) {
-      emitText(outputName || 'text', [item]);
+      if (!outputName || isTextOutputNameFromState(state, outputName)) {
+        emitText(outputName || 'text', [item]);
+      }
       return;
     }
 
-    if (item.text) {
+    if (item.text && (!outputName || isTextOutputNameFromState(state, outputName))) {
       emitText(outputName || 'text', [item.text]);
     }
 
-    // Merge named handler values (e.g. {data: ...} from macro/call-block returns).
-    // getOrInstantiateHandler also wires Output._base for the new pipeline.
+    // Merge named handler values (e.g. {data: ...} from macro/call-block returns)
+    // regardless of which output buffer is being flattened.
     Object.keys(item).forEach(key => {
       if (key === 'text') return;
+      if (outputName && key !== outputName) return;
       if (key === 'data') {
         const instance = getOrInstantiateHandler('data');
         if (instance && typeof instance.merge === 'function') {
@@ -459,111 +430,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
         }
       }
     });
-  }
-
-  let asyncChain = null;
-  let asyncMode = false;
-
-  function queueAsync(fn) {
-    asyncChain = asyncChain ? asyncChain.then(fn) : Promise.resolve().then(fn);
-  }
-
-  function processCommandItemAsync(item) {
-    const handlerName = item.handler;
-    const commandName = item.command;
-    const subpath = item.subpath;
-    const args = item.arguments;
-    const pos = getPosition(item);
-
-    if (collectPoisonArgs(args)) {
-      return;
-    }
-
-    const target = resolveCommandTarget(handlerName);
-    if (target.kind === 'text') {
-      const autoescape = env && env.opts ? env.opts.autoescape : false;
-      if (state.scriptMode) {
-        args.forEach((arg) => {
-          const normalized = suppressValueScript(arg, autoescape);
-          processItem(normalized);
-        });
-      } else {
-        args.forEach((arg) => {
-          emitText(target.name, [suppressValue(arg, autoescape)]);
-        });
-      }
-      return;
-    }
-
-    const handlerInstance = target.instance;
-    if (!handlerInstance) {
-      const err1 = handleError(
-        new Error(`Unknown command handler: ${handlerName}`),
-        pos.lineno,
-        pos.colno,
-        handlerName,
-        context ? context.path : null
-      );
-      state.collectedErrors.push(err1);
-      return;
-    }
-
-    const targetObject = resolveSubpath(handlerInstance, subpath, handlerName, pos);
-    if (!targetObject) return;
-
-    const isSinkHandler = targetObject && typeof targetObject._resolveSink === 'function';
-    if (isSinkHandler) {
-      return invokeSinkCommand(
-        targetObject,
-        commandName,
-        args,
-        pos,
-        formatHandlerRef(handlerName, subpath, commandName),
-        context ? context.path : null
-      );
-    }
-
-    const commandFunc = commandName ? targetObject[commandName] : targetObject;
-
-    if (typeof commandFunc === 'function') {
-      try {
-        commandFunc.apply(targetObject, args);
-      } catch (err) {
-        throw new RuntimeFatalError(
-          err,
-          pos.lineno,
-          pos.colno,
-          formatHandlerRef(handlerName, subpath, commandName),
-          context ? context.path : null
-        );
-      }
-      return;
-    }
-
-    if (!commandName) {
-      try {
-        commandFunc(...args);
-      } catch (e) {
-        const err3 = handleError(
-          new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} is not callable`),
-          pos.lineno,
-          pos.colno,
-          `${handlerName}${subpath ? '.' + subpath.join('.') : ''}`,
-          context ? context.path : null
-        );
-        state.collectedErrors.push(err3);
-      }
-      return;
-    }
-
-    const err5 = handleError(
-      new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`),
-      pos.lineno,
-      pos.colno,
-      formatHandlerRef(handlerName, subpath, commandName),
-      context ? context.path : null
-    );
-    state.collectedErrors.push(err5);
   }
 
   function processItem(item) {
@@ -600,30 +466,19 @@ function flattenCommands(arr, context, outputName, sharedState) {
       return;
     }
 
-    // All buffer items are command objects — dispatch to handler
+    // All buffer items are command objects - dispatch to handler
     if (item.handler !== undefined) {
-      const handlerInstance = getOrInstantiateHandler(item.handler);
-      const isSinkHandler = handlerInstance && typeof handlerInstance._resolveSink === 'function';
-      if (isSinkHandler) {
-        asyncMode = true;
-        queueAsync(() => processCommandItemAsync(item));
-        return;
-      }
-      /*if (asyncMode) {
-        queueAsync(() => processCommandItemAsync(item));
-        return;
-      }*/
       processCommandItem(item);
-      return;
-    }
-
-    // Fallback for items from nested arrays that bypassed _wrapCommand
-    if (outputName !== null && !isTextOutputNameFromState(state, outputName)) {
       return;
     }
 
     if (typeof item === 'object') {
       processObjectItem(item);
+      return;
+    }
+
+    // Fallback for primitive items from nested arrays that bypassed _wrapCommand.
+    if (outputName !== null && !isTextOutputNameFromState(state, outputName)) {
       return;
     }
 
@@ -656,7 +511,7 @@ function flattenCommands(arr, context, outputName, sharedState) {
     }
 
   } else {
-    // Not a CommandBuffer or not in async mode - use array iteration
+    // Not a CommandBuffer - use array iteration
     if (Array.isArray(arr)) {
       arr.forEach(processItem);
     } else {
@@ -679,10 +534,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
 
     return buildFinalResultFromState(state);
   };
-
-  if (asyncMode) {
-    return asyncChain.then(() => finalize());
-  }
 
   return finalize();
 }

@@ -432,9 +432,9 @@
 
     it('shoukld report correct path when using unknown handler in script', async () => {
       var scriptName = 'error-script-unknown-handler.scr';
-      loader.addTemplate(scriptName, 'sink logger = loggerRef\nlogger.missing("Hi")\nreturn null');
+      loader.addTemplate(scriptName, 'sink logger = loggerRef\nlogger.missing("Hi")\nreturn logger.snapshot()');
       try {
-        await env.renderScript(scriptName, { loggerRef: {} });
+        await env.renderScript(scriptName, { loggerRef: { snapshot() { return []; } } });
         expect().fail('Expected an error to be thrown');
       } catch (err) {
         expect(err.message).to.contain(`(${scriptName})`).and.contain('Sink method').and.contain('missing');
