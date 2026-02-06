@@ -281,6 +281,27 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
   return output;
 }
 
+function finalizeUnobservedSinks(frame, context) {
+  if (!frame || !frame._outputs) {
+    return undefined;
+  }
+
+  Object.keys(frame._outputs).forEach((name) => {
+    const out = frame._outputs[name];
+    if (!out || out._outputType !== 'sink' || out._sinkFinalized) {
+      return;
+    }
+    try {
+      // Snapshot owns sink finalization semantics and sink resolution.
+      out.snapshot();
+    } catch (e) {
+      // Ignore unused sink errors by design.
+    }
+  });
+
+  return undefined;
+}
+
 module.exports = {
   Output,
   DataOutput,
@@ -291,5 +312,6 @@ module.exports = {
   createSinkOutput,
   getOutputHandler,
   declareOutput,
-  findOutputBuffer
+  findOutputBuffer,
+  finalizeUnobservedSinks
 };

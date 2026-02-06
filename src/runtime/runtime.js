@@ -9,7 +9,7 @@ const frame = require('./frame');
 const output = require('./output');
 const resolve = require('./resolve');
 const buffer = require('./buffer');
-const { flattenBuffer, flattenBufferText, finalizeUnobservedSinks } = require('./flatten-buffer');
+const { flattenBuffer, flattenBufferText } = require('./flatten-buffer');
 const guard = require('./guard');
 const loop = require('./loop');
 const outputValue = require('./safe-output');
@@ -176,7 +176,7 @@ module.exports = {
 
   flattenBuffer: flattenBuffer,
   flattenBufferText: flattenBufferText,
-  finalizeUnobservedSinks,
+  finalizeUnobservedSinks: output.finalizeUnobservedSinks,
   CommandBuffer: buffer.CommandBuffer,
   addPoisonMarkersToBuffer: buffer.addPoisonMarkersToBuffer,
   clearBuffer: buffer.clearBuffer,

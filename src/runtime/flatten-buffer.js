@@ -80,31 +80,7 @@ function flattenBuffer(output, errorContext = null) {
   return resolveFromOutput();
 }
 
-// Execute unobserved sink commands for side effects without surfacing errors.
-// This is used at script return when sinks were not explicitly snapshotted.
-function finalizeUnobservedSinks(frame, context) {
-  if (!frame || !frame._outputs) {
-    return undefined;
-  }
-
-  Object.keys(frame._outputs).forEach((name) => {
-    const out = frame._outputs[name];
-    if (!out || out._outputType !== 'sink' || out._sinkFinalized) {
-      return;
-    }
-    try {
-      flattenBuffer(out, context);
-      out._sinkFinalized = true;
-    } catch (e) {
-      // Ignore unused sink errors by design.
-    }
-  });
-
-  return undefined;
-}
-
 module.exports = {
   flattenBuffer,
-  flattenBufferText,
-  finalizeUnobservedSinks
+  flattenBufferText
 };
