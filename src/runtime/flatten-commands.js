@@ -202,52 +202,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
     return `${handlerName}${pathSuffix}${commandSuffix}`;
   }
 
-  function invokeResolvedSinkCommand(sink, commandName, args, pos, handlerRef, contextPath) {
-    if (!sink) return undefined;
-    const sinkCommand = commandName ? sink[commandName] : sink;
-    if (typeof sinkCommand !== 'function') {
-      throw new RuntimeFatalError(
-        new Error(`Sink method '${commandName}' not found`),
-        pos.lineno,
-        pos.colno,
-        handlerRef,
-        contextPath
-      );
-    }
-    try {
-      return sinkCommand.apply(sink, args);
-    } catch (err) {
-      throw new RuntimeFatalError(
-        err,
-        pos.lineno,
-        pos.colno,
-        handlerRef,
-        contextPath
-      );
-    }
-  }
-
-  function invokeSinkCommand(sinkOutput, sinkTarget, commandName, args, pos, handlerRef, contextPath) {
-    const sinkVal = sinkOutput._sink;
-    if (sinkVal && typeof sinkVal.then === 'function') {
-      throw new RuntimeFatalError(
-        new Error('Sink must be resolved before command execution'),
-        pos.lineno,
-        pos.colno,
-        handlerRef,
-        contextPath
-      );
-    }
-    return invokeResolvedSinkCommand(
-      sinkTarget,
-      commandName,
-      args,
-      pos,
-      handlerRef,
-      contextPath
-    );
-  }
-
   function resolveSubpath(targetObject, subpath, handlerName, pos) {
     if (!subpath || subpath.length === 0) {
       return targetObject;
@@ -297,131 +251,103 @@ function flattenCommands(arr, context, outputName, sharedState) {
     }
   }
 
-  function processCommandItem(item) {
+  function pushUnsupportedTargetError(handlerName, pos) {
+    const errUnsupported = handleError(
+      new Error(`Unsupported output command target: ${handlerName}`),
+      pos.lineno,
+      pos.colno,
+      handlerName,
+      context ? context.path : null
+    );
+    state.collectedErrors.push(errUnsupported);
+  }
+
+  function processOutputCommand(item) {
     const handlerName = item.handler;
     const commandName = item.command;
     const subpath = item.subpath;
-    const args = item.arguments;
     const pos = getPosition(item);
-
-    if (collectPoisonArgs(args)) {
-      return;
-    }
-
+    const args = item.arguments;
+    if (collectPoisonArgs(args)) return;
     const target = resolveCommandTarget(handlerName);
-    if (target.kind === 'text') {
-      const autoescape = env && env.opts ? env.opts.autoescape : false;
-      if (state.scriptMode) {
-        args.forEach((arg) => {
-          const normalized = suppressValueScript(arg, autoescape);
-          processItem(normalized);
-        });
-      } else {
-        args.forEach((arg) => {
-          emitText(target.name, [suppressValue(arg, autoescape)]);
-        });
-      }
-      return;
-    }
-
     try {
       if (target.kind === 'unsupported') {
-        const errUnsupported = handleError(
-          new Error(`Unsupported output command target: ${handlerName}`),
-          pos.lineno,
-          pos.colno,
-          handlerName,
-          context ? context.path : null
-        );
-        state.collectedErrors.push(errUnsupported);
+        pushUnsupportedTargetError(handlerName, pos);
+        return;
+      }
+
+      if (target.kind === 'text') {
+        const autoescape = env && env.opts ? env.opts.autoescape : false;
+        if (state.scriptMode) {
+          args.forEach((arg) => {
+            const normalized = suppressValueScript(arg, autoescape);
+            processItem(normalized);
+          });
+          return;
+        }
+
+        const normalizedArgs = args.map((arg) => suppressValue(arg, autoescape));
+        const tempOutput = { _target: [] };
+        const originalArgs = item.arguments;
+        item.arguments = normalizedArgs;
+        item.apply(tempOutput);
+        item.arguments = originalArgs;
+        emitText(target.name, tempOutput._target);
         return;
       }
 
       if (target.kind === 'value') {
         const outputCtx = getOutputCtx(handlerName);
-        const value = args.length > 0 ? args[args.length - 1] : undefined;
         if (outputCtx) {
-          outputCtx._target = value;
-        } else {
-          if (!state.handlerInstances[handlerName]) {
-            state.handlerInstances[handlerName] = {
-              _value: undefined,
-              getReturnValue() {
-                return this._value;
-              }
-            };
-          }
-          state.handlerInstances[handlerName]._value = value;
+          item.apply(outputCtx);
+          return;
         }
+        if (!state.handlerInstances[handlerName]) {
+          state.handlerInstances[handlerName] = {
+            _value: undefined,
+            getReturnValue() {
+              return this._value;
+            }
+          };
+        }
+        const valueHolder = { _target: state.handlerInstances[handlerName]._value };
+        item.apply(valueHolder);
+        state.handlerInstances[handlerName]._value = valueHolder._target;
+        return;
+      }
+
+      if (target.kind === 'data') {
+        if (!target.instance) {
+          pushUnsupportedTargetError(handlerName, pos);
+          return;
+        }
+        const targetObject = resolveSubpath(target.instance, subpath, handlerName, pos);
+        if (!targetObject) return;
+        item.apply({ _base: targetObject });
         return;
       }
 
       if (target.kind === 'sink') {
         if (!target.output) {
-          const errSink = handleError(
-            new Error(`Unsupported output command target: ${handlerName}`),
-            pos.lineno,
-            pos.colno,
-            handlerName,
-            context ? context.path : null
-          );
-          state.collectedErrors.push(errSink);
+          pushUnsupportedTargetError(handlerName, pos);
           return;
         }
-
         const sinkTarget = resolveSinkSubpath(target.output, subpath, handlerName, pos);
         if (!sinkTarget) return;
-
-        invokeSinkCommand(
-          target.output,
-          sinkTarget,
-          commandName,
-          args,
-          pos,
-          formatHandlerRef(handlerName, subpath, commandName),
-          context ? context.path : null
-        );
-        return;
+        item.apply({ _sink: sinkTarget });
       }
-
-      const handlerInstance = target.instance;
-      if (!handlerInstance) {
-        const errMissing = handleError(
-          new Error(`Unsupported output command target: ${handlerName}`),
-          pos.lineno,
-          pos.colno,
-          handlerName,
-          context ? context.path : null
-        );
-        state.collectedErrors.push(errMissing);
-        return;
-      }
-
-      const targetObject = resolveSubpath(handlerInstance, subpath, handlerName, pos);
-      if (!targetObject) return;
-
-      const commandFunc = commandName ? targetObject[commandName] : targetObject;
-      if (typeof commandFunc === 'function') {
-        commandFunc.apply(targetObject, args);
-        return;
-      }
-
-      const errMethod = handleError(
-        new Error(`Handler '${handlerName}'${subpath ? '.' + subpath.join('.') : ''} has no method '${commandName}'`),
-        pos.lineno,
-        pos.colno,
-        formatHandlerRef(handlerName, subpath, commandName),
-        context ? context.path : null
-      );
-      state.collectedErrors.push(errMethod);
     } catch (err) {
-      throw new RuntimeFatalError(
+      if (err instanceof RuntimeFatalError) {
+        throw err;
+      }
+      const handled = handleError(
         err,
         pos.lineno,
         pos.colno,
         formatHandlerRef(handlerName, subpath, commandName),
         context ? context.path : null
       );
+      state.collectedErrors.push(handled);
     }
   }
 
@@ -474,7 +400,7 @@ function flattenCommands(arr, context, outputName, sharedState) {
       }
 
       if (item instanceof OutputCommand) {
-        item.apply({ invokeOutputCommand: processCommandItem });
+        processOutputCommand(item);
         return;
       }
     }

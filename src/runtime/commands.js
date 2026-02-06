@@ -32,7 +32,7 @@ class OutputCommand extends Command {
   }
 
   apply(dispatchCtx) {
-    return dispatchCtx.invokeOutputCommand(this);
+    throw new Error('OutputCommand.apply() must be implemented by concrete command classes');
   }
 }
 
@@ -67,6 +67,17 @@ class TextCommand extends OutputCommand {
       pos: null
     });
   }
+
+  apply(dispatchCtx) {
+    if (!dispatchCtx || !Array.isArray(dispatchCtx._target)) {
+      if (dispatchCtx) {
+        dispatchCtx._target = [];
+      } else {
+        return;
+      }
+    }
+    dispatchCtx._target.push(...this.arguments);
+  }
 }
 
 class ValueCommand extends OutputCommand {
@@ -100,6 +111,11 @@ class ValueCommand extends OutputCommand {
       pos: null
     });
   }
+
+  apply(dispatchCtx) {
+    if (!dispatchCtx) return;
+    dispatchCtx._target = this.arguments.length > 0 ? this.arguments[this.arguments.length - 1] : undefined;
+  }
 }
 
 class DataCommand extends OutputCommand {
@@ -112,6 +128,15 @@ class DataCommand extends OutputCommand {
       pos
     });
   }
+
+  apply(dispatchCtx) {
+    if (!dispatchCtx || !dispatchCtx._base) return;
+    const method = this.command ? dispatchCtx._base[this.command] : dispatchCtx._base;
+    if (typeof method !== 'function') {
+      throw new Error(`has no method '${this.command}'`);
+    }
+    method.apply(dispatchCtx._base, this.arguments);
+  }
 }
 
 class SinkCommand extends OutputCommand {
@@ -123,6 +148,16 @@ class SinkCommand extends OutputCommand {
       subpath: subpath || null,
       pos
     });
+  }
+
+  apply(dispatchCtx) {
+    if (!dispatchCtx) return;
+    const sink = dispatchCtx._sink;
+    const method = this.command ? (sink && sink[this.command]) : sink;
+    if (typeof method !== 'function') {
+      throw new Error(`Sink method '${this.command}' not found`);
+    }
+    method.apply(sink, this.arguments);
   }
 }
 
