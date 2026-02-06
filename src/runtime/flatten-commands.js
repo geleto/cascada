@@ -23,7 +23,7 @@ const {
 const { suppressValue, suppressValueScript } = require('./safe-output');
 const { ErrorCommand } = require('./commands');
 
-function flattenCommandBuffer(buffer, context, outputName, sharedState, flattenBuffer) {
+function flattenCommandBuffer(buffer, context, outputName, sharedState) {
   if (outputName) {
     const state = createFlattenState(sharedState, buffer._outputTypes || null);
     if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
@@ -35,7 +35,7 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState, flattenB
     if (!state.outputCtxs && buffer && buffer._outputs) {
       state.outputCtxs = buffer._outputs;
     }
-    const resultState = flattenBuffer(resolveBufferArray(buffer, outputName), context, outputName, state);
+    const resultState = flattenCommands(resolveBufferArray(buffer, outputName), context, outputName, state);
     if (sharedState) {
       return resultState;
     }
@@ -58,7 +58,7 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState, flattenB
     const fallbackArray = (Array.isArray(textArray) && textArray.length > 0)
       ? textArray
       : resolveBufferArray(buffer, 'output');
-    return flattenBuffer(fallbackArray, null, 'text', sharedState);
+    return flattenCommands(fallbackArray, null, 'text', sharedState);
   }
 
   const state = createFlattenState(sharedState, buffer._outputTypes || null);
@@ -82,7 +82,7 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState, flattenB
 
   const pending = [];
   const queueFlatten = (name, arrayName) => {
-    const res = flattenBuffer(resolveBufferArray(buffer, arrayName), context, name, state);
+    const res = flattenCommands(resolveBufferArray(buffer, arrayName), context, name, state);
     if (res && typeof res.then === 'function') {
       pending.push(res);
     }
@@ -115,7 +115,7 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState, flattenB
   return finalize();
 }
 
-function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
+function flattenCommands(arr, context, outputName, sharedState) {
   if (Array.isArray(arr)) {
     ensureBufferScopeMetadata(arr);
   }
@@ -588,10 +588,10 @@ function flattenCommands(arr, context, outputName, sharedState, flattenBuffer) {
 
     if (item instanceof CommandBuffer) {
       if (state.scriptMode && isTextOutputNameFromState(state, outputName || 'text')) {
-        flattenBuffer(item, context, null, state);
+        flattenCommandBuffer(item, context, null, state);
         return;
       }
-      flattenBuffer(resolveBufferArray(item, outputName), context, outputName, state);
+      flattenCommandBuffer(item, context, outputName, state);
       return;
     }
 

@@ -8,14 +8,14 @@ const { createFlattenState, buildFinalResultFromState, resolveOutputValue } = re
 
 function doFlattenBuffer(arr, context = null, outputName = null, sharedState = null) {
   if (arr instanceof CommandBuffer) {
-    return flattenCommandBuffer(arr, context, outputName, sharedState, doFlattenBuffer);
+    return flattenCommandBuffer(arr, context, outputName, sharedState);
   }
 
   if (!context) {
     return flattenText(arr, outputName, sharedState, doFlattenBuffer);
   }
 
-  return flattenCommands(arr, context, outputName, sharedState, doFlattenBuffer);
+  return flattenCommands(arr, context, outputName, sharedState);
 }
 
 // Template-mode entry point: flatten text from a buffer or raw array.
