@@ -271,9 +271,6 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
   if (!buffer) {
     buffer = new CommandBuffer(context, null);
     frame._outputBuffer = buffer;
-    if (isScript) {
-      buffer._scriptMode = true;
-    }
   }
 
   if (!buffer._outputs) {

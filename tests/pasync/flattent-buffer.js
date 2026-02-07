@@ -55,7 +55,6 @@ describe('flattenBuffer', function () {
       }
     };
 
-    buffer._scriptMode = true;
     buffer._outputTypes = Object.create(null);
     buffer._outputTypes[outputName] = 'sink';
     buffer._outputs = Object.create(null);

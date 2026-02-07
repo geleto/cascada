@@ -297,9 +297,8 @@ function flattenCommands(arr, context, outputName, sharedState, fromCommandBuffe
 
   function processObjectValue(item) {
     const hasCustomToString = item.toString && item.toString !== Object.prototype.toString;
-    const isPromise = false;//typeof item.then === 'function';
 
-    if (hasCustomToString || isPromise) {
+    if (hasCustomToString) {
       if (!outputName || isTextOutputNameFromState(state, outputName)) {
         emitText(outputName || 'text', [item]);
       }
