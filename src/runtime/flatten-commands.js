@@ -27,16 +27,13 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState) {
   const targetOutputName = outputName || 'text';
   const effectiveContext = context || (buffer && buffer._context) || null;
   const state = createFlattenState(sharedState, buffer._outputTypes || null);
-  if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
-    state.scriptMode = buffer._scriptMode;
-  }
   if (state.outputHandlers === undefined && buffer && buffer._outputHandlers) {
     state.outputHandlers = buffer._outputHandlers;
   }
   if (!state.outputCtxs && buffer && buffer._outputs) {
     state.outputCtxs = buffer._outputs;
   }
-  flattenCommands(buffer._getOutputArray(targetOutputName), effectiveContext, targetOutputName, state);
+  flattenCommands(buffer._getOutputArray(targetOutputName), effectiveContext, targetOutputName, state, true);
 
   const finalize = () => {
     if (sharedState) {
@@ -53,7 +50,7 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState) {
   return finalize();
 }
 
-function flattenCommands(arr, context, outputName, sharedState) {
+function flattenCommands(arr, context, outputName, sharedState, fromCommandBuffer = false) {
   if (Array.isArray(arr)) {
     ensureBufferScopeMetadata(arr);
   }
@@ -286,7 +283,7 @@ function flattenCommands(arr, context, outputName, sharedState) {
   }
 
   function processArrayItem(item) {
-    if (state.scriptMode === false) {
+    if (fromCommandBuffer) {
       throw new RuntimeFatalError(
         new Error(`Unexpected raw array entry in template command buffer for output '${outputName || 'text'}'`),
         null,
@@ -298,19 +295,9 @@ function flattenCommands(arr, context, outputName, sharedState) {
     item.forEach(processItem);
   }
 
-  function processObjectItem(item) {
-    if (state.scriptMode === false) {
-      throw new RuntimeFatalError(
-        new Error(`Unexpected raw object entry in template command buffer for output '${outputName || 'text'}'`),
-        null,
-        null,
-        outputName || 'text',
-        context ? context.path : null
-      );
-    }
-
+  function processObjectValue(item) {
     const hasCustomToString = item.toString && item.toString !== Object.prototype.toString;
-    const isPromise = typeof item.then === 'function';
+    const isPromise = false;//typeof item.then === 'function';
 
     if (hasCustomToString || isPromise) {
       if (!outputName || isTextOutputNameFromState(state, outputName)) {
@@ -335,6 +322,19 @@ function flattenCommands(arr, context, outputName, sharedState) {
         }
       }
     });
+  }
+
+  function processObjectItem(item) {
+    if (fromCommandBuffer) {
+      throw new RuntimeFatalError(
+        new Error(`Unexpected raw object entry in template command buffer for output '${outputName || 'text'}'`),
+        null,
+        null,
+        outputName || 'text',
+        context ? context.path : null
+      );
+    }
+    processObjectValue(item);
   }
 
   function processItem(item) {
@@ -378,7 +378,7 @@ function flattenCommands(arr, context, outputName, sharedState) {
       return;
     }
 
-    if (state.scriptMode === false) {
+    if (fromCommandBuffer) {
       throw new RuntimeFatalError(
         new Error(`Unexpected raw primitive entry in template command buffer for output '${outputName || 'text'}'`),
         null,
@@ -388,11 +388,10 @@ function flattenCommands(arr, context, outputName, sharedState) {
       );
     }
 
-    // Fallback for primitive items from nested arrays that bypassed _wrapCommand.
+    // Legacy raw-array flattening path for non-CommandBuffer callers.
     if (outputName !== null && !isTextOutputNameFromState(state, outputName)) {
       return;
     }
-
     emitText(outputName || 'text', [item]);
   }
 
@@ -420,13 +419,7 @@ function flattenCommands(arr, context, outputName, sharedState) {
     }
 
     if (typeof arg === 'object') {
-      const hasCustomToString = arg.toString && arg.toString !== Object.prototype.toString;
-      const isPromise = typeof arg.then === 'function';
-      if (hasCustomToString || isPromise) {
-        emitText(outputName || 'text', [arg]);
-        return;
-      }
-      processObjectItem(arg);
+      processObjectValue(arg);
       return;
     }
 
