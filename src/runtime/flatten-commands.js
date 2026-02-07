@@ -5,7 +5,6 @@
 
 const {
   CommandBuffer,
-  resolveOutputTargets,
   isCommandBuffer,
   getPosonedBufferErrors
 } = require('./buffer');
@@ -18,50 +17,14 @@ const {
   isTextOutputNameFromState,
   getTextOutputFromState,
   ensureBufferScopeMetadata,
-  buildFinalResultFromState,
   resolveOutputValue
 } = require('./flatten-shared');
 
 const BUILTIN_OUTPUT_TYPES = new Set(['data', 'text', 'value', 'sink']);
 
 function flattenCommandBuffer(buffer, context, outputName, sharedState) {
-  if (outputName) {
-    const effectiveContext = context || (buffer && buffer._context) || null;
-    const state = createFlattenState(sharedState, buffer._outputTypes || null);
-    if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
-      state.scriptMode = buffer._scriptMode;
-    }
-    if (state.outputHandlers === undefined && buffer && buffer._outputHandlers) {
-      state.outputHandlers = buffer._outputHandlers;
-    }
-    if (!state.outputCtxs && buffer && buffer._outputs) {
-      state.outputCtxs = buffer._outputs;
-    }
-    flattenCommands(buffer._getOutputArray(outputName), effectiveContext, outputName, state);
-
-    const finalizeOutput = () => {
-      if (sharedState) {
-        return state;
-      }
-      if (state && state.collectedErrors && state.collectedErrors.length > 0) {
-        throw new PoisonError(state.collectedErrors);
-      }
-      return resolveOutputValue(state, outputName);
-    };
-
-    const resultState = finalizeOutput();
-    if (sharedState) {
-      return resultState;
-    }
-    return resultState;
-  }
-
-  if (!context) {
-    const effectiveContext = (buffer && buffer._context) ? buffer._context : null;
-    const textArray = buffer._getOutputArray('text');
-    return flattenCommands(textArray, effectiveContext, 'text', sharedState);
-  }
-
+  const targetOutputName = outputName || 'text';
+  const effectiveContext = context || (buffer && buffer._context) || null;
   const state = createFlattenState(sharedState, buffer._outputTypes || null);
   if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
     state.scriptMode = buffer._scriptMode;
@@ -72,22 +35,7 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState) {
   if (!state.outputCtxs && buffer && buffer._outputs) {
     state.outputCtxs = buffer._outputs;
   }
-  const outputTargets = resolveOutputTargets(buffer, null);
-  const outputNames = outputTargets
-    .map(target => target.name)
-    .filter(name => name && name !== 'output');
-
-  const orderedNames = outputNames.includes('text')
-    ? ['text', ...outputNames.filter(name => name !== 'text')]
-    : outputNames.slice();
-
-  if (orderedNames.length === 0) {
-    flattenCommands(buffer._getOutputArray('output'), context, 'text', state);
-  } else {
-    orderedNames.forEach((name) => {
-      flattenCommands(buffer._getOutputArray(name), context, name, state);
-    });
-  }
+  flattenCommands(buffer._getOutputArray(targetOutputName), effectiveContext, targetOutputName, state);
 
   const finalize = () => {
     if (sharedState) {
@@ -98,7 +46,7 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState) {
       throw new PoisonError(state.collectedErrors);
     }
 
-    return buildFinalResultFromState(state);
+    return resolveOutputValue(state, targetOutputName);
   };
 
   return finalize();
@@ -426,10 +374,6 @@ function flattenCommands(arr, context, outputName, sharedState) {
     }
 
     if (item instanceof CommandBuffer) {
-      if (state.scriptMode && isTextOutputNameFromState(state, outputName || 'text')) {
-        flattenCommandBuffer(item, context, null, state);
-        return;
-      }
       flattenCommandBuffer(item, context, outputName, state);
       return;
     }
