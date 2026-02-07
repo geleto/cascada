@@ -223,19 +223,8 @@ function flattenCommands(arr, context, outputName, sharedState) {
       }
 
       if (target.kind === 'text') {
-        if (state.scriptMode) {
-          args.forEach((arg) => {
-            processItem(arg);
-          });
-          return;
-        }
-
         args.forEach((arg) => {
-          if (arg instanceof CommandBuffer) {
-            flattenCommandBuffer(arg, context, 'text', state);
-            return;
-          }
-          emitText(target.name, [arg]);
+          processTextArg(arg);
         });
         return;
       }
@@ -404,6 +393,43 @@ function flattenCommands(arr, context, outputName, sharedState) {
     }
 
     emitText(outputName || 'text', [item]);
+  }
+
+  function processTextArg(arg) {
+    if (arg === null || arg === undefined) return;
+
+    if (arg instanceof CommandBuffer) {
+      flattenCommandBuffer(arg, context, outputName, state);
+      return;
+    }
+
+    if (arg instanceof Command) {
+      processItem(arg);
+      return;
+    }
+
+    if (isPoison(arg)) {
+      state.collectedErrors.push(...arg.errors);
+      return;
+    }
+
+    if (Array.isArray(arg)) {
+      processArrayItem(arg);
+      return;
+    }
+
+    if (typeof arg === 'object') {
+      const hasCustomToString = arg.toString && arg.toString !== Object.prototype.toString;
+      const isPromise = typeof arg.then === 'function';
+      if (hasCustomToString || isPromise) {
+        emitText(outputName || 'text', [arg]);
+        return;
+      }
+      processObjectItem(arg);
+      return;
+    }
+
+    emitText(outputName || 'text', [arg]);
   }
 
   // Try chain-based iteration first (for CommandBuffers)

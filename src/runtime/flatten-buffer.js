@@ -57,18 +57,6 @@ function flattenBuffer(output, errorContext = null) {
   }
 
   const outputName = (output._outputName && output._outputName !== 'output') ? output._outputName : null;
-  const isTemplateMode = (buffer instanceof CommandBuffer) && !buffer._scriptMode;
-  if (isTemplateMode) {
-    // Template mode should use text flattening (no second-pass suppression).
-    throw new RuntimeFatalError(
-      'flattenBuffer should not be called directly in template mode; use flattenBufferText instead',
-      context ? context.lineno : null,
-      context ? context.colno : null,
-      context ? context.errorContextString : null,
-      context ? context.path : null
-    );
-  }
-
   return doFlattenBuffer(buffer, context, outputName);
 }
 

@@ -139,14 +139,10 @@ class TextOutput extends Output {
   invoke(...args) {
     if (!this._buffer) return;
     if (args.length === 0) return;
-    if (this._buffer._scriptMode) {
-      const autoescape = this._context && this._context.env && this._context.env.opts
-        ? this._context.env.opts.autoescape
-        : false;
-      this._enqueueCommand(null, normalizeScriptTextArgs(args, autoescape));
-      return;
-    }
-    this._enqueueCommand(null, args);
+    const autoescape = this._context && this._context.env && this._context.env.opts
+      ? this._context.env.opts.autoescape
+      : false;
+    this._enqueueCommand(null, normalizeScriptTextArgs(args, autoescape));
   }
 }
 
