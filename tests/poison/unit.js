@@ -28,6 +28,28 @@
     collectErrors = nunjucks.runtime.collectErrors;
   }
 
+  const createBuffer = (input, context, outputName = 'text') => {
+    const cb = new runtime.CommandBuffer(context || null, null);
+    const addItem = (targetBuffer, item) => {
+      if (item instanceof runtime.CommandBuffer) {
+        targetBuffer.add(item, outputName);
+        return;
+      }
+      if (Array.isArray(item)) {
+        const nested = new runtime.CommandBuffer(context || null, null);
+        item.forEach((child) => addItem(nested, child));
+        targetBuffer.add(nested, outputName);
+        return;
+      }
+      targetBuffer.add(item, outputName);
+    };
+    if (Array.isArray(input)) {
+      input.forEach((item) => addItem(cb, item));
+    } else if (input !== null && input !== undefined) {
+      addItem(cb, input);
+    }
+    return cb;
+  };
   const makeOutput = (buffer, context, outputName) => ({
     _buffer: buffer,
     _context: context || null,
@@ -796,14 +818,14 @@
     describe('flattenBuffer with simple templates', () => {
       it('should concatenate simple values', () => {
         const arr = ['Hello', ' ', 'World'];
-        const result = flatten(arr);
+        const result = flatten(createBuffer(arr));
 
         expect(result).to.equal('Hello World');
       });
 
       it('should handle nested arrays', () => {
         const arr = ['A', ['B', 'C'], 'D'];
-        const result = flatten(arr);
+        const result = flatten(createBuffer(arr));
 
         expect(result).to.equal('ABCD');
       });
@@ -827,7 +849,7 @@
         const arr = ['Valid text', poison, 'More text'];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -841,7 +863,7 @@
         const arr = [poison1, 'text', poison2];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -854,7 +876,7 @@
         const arr = [poison, 'Valid', 'Text'];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -872,7 +894,7 @@
         ];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -886,7 +908,7 @@
         ];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -904,7 +926,7 @@
         })];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -921,7 +943,7 @@
         })];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -931,7 +953,7 @@
 
       it('should return valid output when no poison found', () => {
         const arr = ['Hello', ' ', 'World'];
-        const result = flatten(arr, context, 'text');
+        const result = flatten(createBuffer(arr, context, 'text'), context, 'text');
 
         expect(result).to.equal('Hello World');
       });
@@ -955,7 +977,7 @@
         const arr = [poison1, poison2];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -970,7 +992,7 @@
         const arr = [poison1, poison2];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1000,7 +1022,7 @@
         ];
 
         try {
-          flatten(errors, context, 'text');
+          flatten(createBuffer(errors, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1022,7 +1044,7 @@
         ];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1052,7 +1074,7 @@
         })];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1070,7 +1092,7 @@
         })];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1106,7 +1128,7 @@
         ];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1132,7 +1154,7 @@
         const arr = [poison, 'text'];
 
         try {
-          flatten(arr, context, 'text');
+          flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1141,7 +1163,7 @@
 
       it('should return text output when no poison', () => {
         const arr = ['Hello', ' ', 'World'];
-        const result = flatten(arr, context, 'text');
+        const result = flatten(createBuffer(arr, context, 'text'), context, 'text');
 
         expect(result).to.equal('Hello World');
       });

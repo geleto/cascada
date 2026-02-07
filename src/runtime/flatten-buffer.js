@@ -1,12 +1,9 @@
 'use strict';
 
 const { CommandBuffer } = require('./buffer');
-const { flattenCommands, flattenCommandBuffer } = require('./flatten-commands');
+const { flattenCommandBuffer } = require('./flatten-commands');
 const { RuntimeFatalError } = require('./errors');
 
-// Output-driven entry point for script mode.
-// Output carries buffer, context, and outputName — all flatten needs.
-// Internal recursion (nested CommandBuffers) goes through doFlattenBuffer.
 function flattenBuffer(output, errorContext = null) {
 
   let context = errorContext || output._context || null;
@@ -32,11 +29,17 @@ function flattenBuffer(output, errorContext = null) {
     );
   }
 
-  const outputName = (output._outputName && output._outputName !== 'output') ? output._outputName : null;
-  if (buffer instanceof CommandBuffer) {
-    return flattenCommandBuffer(buffer, context, outputName);
+  if (!(buffer instanceof CommandBuffer)) {
+    throw new RuntimeFatalError(
+      `Output _buffer must be a CommandBuffer, got: ${typeof buffer}`,
+      context ? context.lineno : null,
+      context ? context.colno : null,
+      context ? context.errorContextString : null,
+      context ? context.path : null
+    );
   }
-  return flattenCommands(buffer, context, outputName);
+
+  return flattenCommandBuffer(buffer, context, output._outputName);
 }
 
 module.exports = {
