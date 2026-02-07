@@ -989,7 +989,7 @@ class Compiler extends CompilerBase {
       if (this.scriptMode) {
         returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return undefined;});`;
       } else {
-        const flattenCall = `runtime.flattenBuffer({ _buffer: ${bufferId}, _outputName: "text", _outputType: "text", _context: context })`;
+        const flattenCall = `runtime.flattenBuffer(${bufferId}_textOutput, context)`;
 
         const needsSafeString = !this.scriptMode;
         const safeStringCall = needsSafeString
@@ -1100,7 +1100,7 @@ class Compiler extends CompilerBase {
         } else {
           this.compile(n.body, f);//write to output
           this.emit.line('await astate.waitAllClosures(1)');
-          this.emit.line(`let ${res} = runtime.flattenBuffer({ _buffer: output, _outputName: "text", _outputType: "text", _context: context });`);
+          this.emit.line(`let ${res} = runtime.flattenBuffer(output_textOutput, context);`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
       }, res, node.body, true);
@@ -1279,7 +1279,7 @@ class Compiler extends CompilerBase {
         // In script mode we expect a {%- return ... -%} in the template body to provide the result.
         // this.emit.line('    cb(null, frame._outputs.output.snapshot());');
       } else {
-        this.emit.line(`    cb(null, runtime.flattenBuffer({ _buffer: ${this.buffer.currentBuffer}, _outputName: "text", _outputType: "text", _context: context }));`);
+        this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer.getCurrentTextOutput()}, context));`);
       }
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');

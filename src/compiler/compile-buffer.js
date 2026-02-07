@@ -17,7 +17,9 @@ class CompileBuffer {
   constructor(compiler) {
     this.compiler = compiler;
     this.currentBuffer = null;
+    this.currentTextOutput = null;
     this.bufferStack = [];
+    this.textOutputStack = [];
     // Temp value ids for split buffer writes (asyncAddToBufferBegin/End), supports nesting.
     // @otodo - evaluate these buffers, we shall be able to store
     // the values in the frame, the only probblem is when node.isAsync
@@ -35,12 +37,15 @@ class CompileBuffer {
   push() {
     const id = this.compiler._tmpid();
     this.bufferStack.push(this.currentBuffer);
+    this.textOutputStack.push(this.currentTextOutput);
     this.currentBuffer = id;
+    this.currentTextOutput = `${id}_textOutput`;
     if (this.compiler.asyncMode) {
       this.compiler.emit.line(`let ${this.currentBuffer} = new runtime.CommandBuffer(context, null);`);
-      this.compiler.emit.initOutputHandlers(this.currentBuffer);
+      this.compiler.emit.initOutputHandlers(this.currentBuffer, this.currentTextOutput);
     } else {
       this.compiler.emit.line(`let ${this.currentBuffer} = "";`);
+      this.currentTextOutput = null;
     }
     return id;
   }
@@ -50,6 +55,7 @@ class CompileBuffer {
    */
   pop() {
     this.currentBuffer = this.bufferStack.pop();
+    this.currentTextOutput = this.textOutputStack.pop();
   }
 
   /**
@@ -57,6 +63,10 @@ class CompileBuffer {
    */
   getCurrentBuffer() {
     return this.currentBuffer;
+  }
+
+  getCurrentTextOutput() {
+    return this.currentTextOutput;
   }
 
   _getBufferAccess() {
@@ -461,14 +471,16 @@ class CompileBuffer {
 
       // Push the current buffer onto the stack
       this.bufferStack.push(this.currentBuffer);
+      this.textOutputStack.push(this.currentTextOutput);
       const parentBuffer = this.currentBuffer;
 
       // Create a new buffer array for the nested block
       const newBuffer = this.compiler._tmpid();
+      const newTextOutput = `${newBuffer}_textOutput`;
 
       // Initialize the new buffer and its index inside the async closure
       this.compiler.emit.line(`let ${newBuffer} = new runtime.CommandBuffer(context, null);`);
-      this.compiler.emit.initOutputHandlers(newBuffer);
+      this.compiler.emit.initOutputHandlers(newBuffer, newTextOutput);
 
       // Defer adding the buffer to the parent until we know which outputs were used.
       const addPos = this.compiler.codebuf.length;
@@ -477,6 +489,7 @@ class CompileBuffer {
 
       // Update the buffer reference
       this.currentBuffer = newBuffer;
+      this.currentTextOutput = newTextOutput;
       return frame;
     } else if (createScope) {
       frame = frame.push();
@@ -505,6 +518,7 @@ class CompileBuffer {
 
       // Restore the previous buffer from the stack
       this.currentBuffer = this.bufferStack.pop();
+      this.currentTextOutput = this.textOutputStack.pop();
       return frame;
     } else if (createScope) {
       frame = frame.pop();

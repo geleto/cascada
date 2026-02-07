@@ -8,6 +8,8 @@ let TextCommand;
 let DataCommand;
 let SinkCommand;
 let CommandBuffer;
+let createOutput;
+let createSinkOutput;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -17,6 +19,8 @@ if (typeof require !== 'undefined') {
   DataCommand = require('../../src/runtime/runtime').DataCommand;
   SinkCommand = require('../../src/runtime/runtime').SinkCommand;
   CommandBuffer = require('../../src/runtime/runtime').CommandBuffer;
+  createOutput = require('../../src/runtime/runtime').createOutput;
+  createSinkOutput = require('../../src/runtime/runtime').createSinkOutput;
   expectAsyncError = require('../util').expectAsyncError;
 } else {
   expect = window.expect;
@@ -26,6 +30,8 @@ if (typeof require !== 'undefined') {
   DataCommand = nunjucks.runtime.DataCommand;
   SinkCommand = nunjucks.runtime.SinkCommand;
   CommandBuffer = nunjucks.runtime.CommandBuffer;
+  createOutput = nunjucks.runtime.createOutput;
+  createSinkOutput = nunjucks.runtime.createSinkOutput;
   expectAsyncError = nunjucks.util.expectAsyncError;
 }
 
@@ -55,28 +61,18 @@ describe('flattenBuffer', function () {
     }
     return cb;
   };
-  const makeOutput = (buffer, ctx, outputName) => ({
-    _buffer: buffer,
-    _context: ctx || null,
-    _outputName: outputName || 'output',
-    _outputType: outputName || 'text'
-  });
+  const makeOutput = (buffer, ctx, outputName) => {
+    const name = outputName || 'text';
+    const frame = { _outputBuffer: buffer, parent: null };
+    return createOutput(frame, name, ctx || null, name);
+  };
   const flatten = (buffer, ctx, outputName) => (
     flattenBuffer(makeOutput(buffer, ctx, outputName), ctx)
   );
   const flattenSink = (commands, ctx, outputName, sink) => {
     const buffer = new CommandBuffer(ctx, null);
-    const sinkOutput = {
-      _buffer: buffer,
-      _context: ctx || null,
-      _outputName: outputName,
-      _outputType: 'sink',
-      _sink: sink,
-      _sinkFinalized: false,
-      _resolveSink() {
-        return this._sink;
-      }
-    };
+    const frame = { _outputBuffer: buffer, parent: null };
+    const sinkOutput = createSinkOutput(frame, outputName, ctx || null, sink);
 
     buffer._outputTypes = Object.create(null);
     buffer._outputTypes[outputName] = 'sink';

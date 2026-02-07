@@ -40,12 +40,15 @@ function flattenBuffer(output, errorContext = null) {
     );
   }
 
-  // Ensure command apply() has the minimum output shape to target.
+  // Require proper output handlers; flattenBuffer no longer supports ad-hoc stubs.
   if (output._outputType === 'text' && !Array.isArray(output._target)) {
-    output._target = [];
-  }
-  if (output._outputType === 'value' && output._target === undefined) {
-    output._target = undefined;
+    throw new RuntimeFatalError(
+      'Text output must provide an array _target',
+      context ? context.lineno : null,
+      context ? context.colno : null,
+      context ? context.errorContextString : null,
+      context ? context.path : null
+    );
   }
   if (output._outputType === 'data' && !output._base) {
     const env = context && context.env ? context.env : null;
@@ -176,14 +179,14 @@ function flattenCommands(command, output, errorContext) {
       }
       // Route built-in data handler commands to a DataHandler target.
       if (command instanceof OutputCommand && command.handler === 'data') {
-        if (!output.__flattenDataHandler) {
+        if (!output._base) {
           const vars = errorContext && typeof errorContext.getVariables === 'function'
             ? errorContext.getVariables()
             : {};
           const env = errorContext && errorContext.env ? errorContext.env : null;
-          output.__flattenDataHandler = output._base || new DataHandler(vars, env);
+          output._base = new DataHandler(vars, env);
         }
-        command.apply({ _base: output.__flattenDataHandler });
+        command.apply({ _base: output._base });
       } else {
         command.apply(output);
       }

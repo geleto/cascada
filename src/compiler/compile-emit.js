@@ -58,6 +58,7 @@ module.exports = class CompileEmit {
 
   funcBegin(node, name) {
     this.compiler.buffer.currentBuffer = 'output';
+    this.compiler.buffer.currentTextOutput = 'output_textOutput';
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
@@ -76,16 +77,17 @@ module.exports = class CompileEmit {
       // note, the below frame.data/text/value assignments are temporarily here
       // for backward compatibility while we refactor the output implementation
       this.emit(`let ${this.compiler.buffer.currentBuffer} = new runtime.CommandBuffer(context, null);`);
-      this.initOutputHandlers(this.compiler.buffer.currentBuffer);
+      this.initOutputHandlers(this.compiler.buffer.currentBuffer, this.compiler.buffer.currentTextOutput);
     } else {
       this.emit(`let ${this.compiler.buffer.currentBuffer} = "";`);
     }
     this.line('try {');
   }
 
-  initOutputHandlers(bufferVar) {
+  initOutputHandlers(bufferVar, textOutputVar = null) {
     this.line(`frame._outputBuffer = ${bufferVar};`);
-    this.line(`runtime.declareOutput(frame, "text", "text", context, null);`);
+    const outputVar = textOutputVar || `${bufferVar}_textOutput`;
+    this.line(`let ${outputVar} = runtime.declareOutput(frame, "text", "text", context, null);`);
   }
 
   funcEnd(node, noReturn) { // Added node parameter
@@ -115,6 +117,7 @@ module.exports = class CompileEmit {
     this.line('}');
     this.line('}');
     this.compiler.buffer.currentBuffer = null;
+    this.compiler.buffer.currentTextOutput = null;
   }
 
   //todo: use only simple async block if you know that:
@@ -256,7 +259,7 @@ module.exports = class CompileEmit {
 
     if (!this.compiler.scriptMode) {
       this.line('await astate.waitAllClosures(1);');
-      this.line(`${id} = runtime.flattenBuffer({ _buffer: ${id}, _outputName: "text", _outputType: "text", _context: context });`);
+      this.line(`${id} = runtime.flattenBuffer(${id}_textOutput, context);`);
     }
     /*this.line(`let ${id}_flat = runtime.flattenBuffer(${id});`);
     this.line(`if (${id}_flat && typeof ${id}_flat.then === 'function') { ${id}_flat = await ${id}_flat; }`);

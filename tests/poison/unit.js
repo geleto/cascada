@@ -50,12 +50,11 @@
     }
     return cb;
   };
-  const makeOutput = (buffer, context, outputName) => ({
-    _buffer: buffer,
-    _context: context || null,
-    _outputName: outputName || 'output',
-    _outputType: outputName || 'text'
-  });
+  const makeOutput = (buffer, context, outputName) => {
+    const name = outputName || 'text';
+    const frame = { _outputBuffer: buffer, parent: null };
+    return runtime.createOutput(frame, name, context || null, name);
+  };
   const flatten = (buffer, context = null, outputName = 'text') => (
     runtime.flattenBuffer(makeOutput(buffer, context, outputName), context)
   );
