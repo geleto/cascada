@@ -264,7 +264,7 @@ function findOutputBuffer(frame) {
   return null;
 }
 
-function declareOutput(frame, outputName, outputType, context, initializer = null, isScript = false) {
+function declareOutput(frame, outputName, outputType, context, initializer = null) {
   frame._outputs = frame._outputs || Object.create(null);
 
   let buffer = findOutputBuffer(frame);

@@ -85,7 +85,7 @@ module.exports = class CompileEmit {
 
   initOutputHandlers(bufferVar) {
     this.line(`frame._outputBuffer = ${bufferVar};`);
-    this.line(`runtime.declareOutput(frame, "text", "text", context, null, false);`);
+    this.line(`runtime.declareOutput(frame, "text", "text", context, null);`);
   }
 
   funcEnd(node, noReturn) { // Added node parameter

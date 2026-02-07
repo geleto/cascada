@@ -20,12 +20,7 @@ function doFlattenBuffer(arr, context = null, outputName = null, sharedState = n
 // Template-mode entry point: flatten text from a buffer or raw array.
 function flattenBufferText(arr, outputName = null, sharedState = null) {
   const name = outputName || 'text';
-
-  if (arr instanceof CommandBuffer) {
-    return flattenCommandBuffer(arr, null, name, sharedState);
-  }
-
-  return flattenText(arr, name, sharedState, doFlattenBuffer);
+  return doFlattenBuffer(arr, null, name, sharedState);
 }
 
 // Output-driven entry point for script mode.

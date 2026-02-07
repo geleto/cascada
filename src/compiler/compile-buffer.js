@@ -216,7 +216,7 @@ class CompileBuffer {
 
       let argList = node.call.args;
       const asyncArgs = argList.isAsync;
-      if (outputType === 'text' && this.compiler.scriptMode) {
+      if (outputType === 'text') {
         this.compiler.emit('args: runtime.normalizeScriptTextArgs(' + (asyncArgs ? 'await ' : ''));
       } else {
         this.compiler.emit('args: ' + (asyncArgs ? 'await ' : ''));
@@ -249,7 +249,7 @@ class CompileBuffer {
       }
 
       this.compiler._compileAggregate(argList, f, '[', ']', isAsync, true);
-      if (outputType === 'text' && this.compiler.scriptMode) {
+      if (outputType === 'text') {
         this.compiler.emit(', env.opts.autoescape)');
       }
 
@@ -268,7 +268,7 @@ class CompileBuffer {
       this.compiler.async.updateOutputUsage(frame, resolvedOutputName);
     }
     if (this.compiler.asyncMode) {
-      if (emitTextCommand && !this.compiler.scriptMode) {
+      if (emitTextCommand) {
         this.compiler.emit(`${this.currentBuffer}.add(new runtime.TextCommand({ handler: "text", args: [`);
         renderFunction.call(this.compiler, frame);
         const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
@@ -319,7 +319,7 @@ class CompileBuffer {
       this.compiler.emit.line(`  let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       this.compiler.emit.line(';');
-      const valueExpr = (emitTextCommand && !this.compiler.scriptMode)
+      const valueExpr = emitTextCommand
         ? this._emitTemplateTextCommandExpression(returnId, positionNode)
         : returnId;
       if (resolvedOutputName) {
@@ -349,7 +349,7 @@ class CompileBuffer {
     } else {
       this.compiler.emit.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
-      const valueExpr = (emitTextCommand && !this.compiler.scriptMode)
+      const valueExpr = emitTextCommand
         ? this._emitTemplateTextCommandExpression(returnId, positionNode)
         : returnId;
       if (this.compiler.asyncMode) {
@@ -412,7 +412,7 @@ class CompileBuffer {
       //const handlerName = this._pendingHandler;
       //this._pendingHandler = null;
 
-      const valueExpr = (emitTextCommand && !this.compiler.scriptMode)
+      const valueExpr = emitTextCommand
         ? this._emitTemplateTextCommandExpression(valueId, positionNode)
         : valueId;
       if (resolvedOutputName) {
@@ -437,7 +437,7 @@ class CompileBuffer {
       return frame.pop();
     }
     if (this.compiler.asyncMode) {
-      const valueExpr = (emitTextCommand && !this.compiler.scriptMode)
+      const valueExpr = emitTextCommand
         ? this._emitTemplateTextCommandExpression(valueId, positionNode)
         : valueId;
       if (resolvedOutputName) {

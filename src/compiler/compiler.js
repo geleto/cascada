@@ -1459,7 +1459,7 @@ class Compiler extends CompilerBase {
     } else {
       this.emit('null');
     }
-    this.emit.line(`, ${this.scriptMode ? 'true' : 'false'});`);
+    this.emit.line(');');
   }
 
 
