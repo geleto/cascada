@@ -56,7 +56,7 @@ function flattenCommands(arr, context, outputName, sharedState, fromCommandBuffe
   }
 
   const state = createFlattenState(sharedState, null);
-  const env = context.env;
+  const env = context && context.env ? context.env : null;
 
   function collectPoisonArgs(args) {
     for (const arg of args) {

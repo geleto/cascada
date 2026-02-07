@@ -1,27 +1,8 @@
 'use strict';
 
 const { CommandBuffer } = require('./buffer');
-const { flattenText } = require('./flatten-text');
 const { flattenCommands, flattenCommandBuffer } = require('./flatten-commands');
 const { RuntimeFatalError } = require('./errors');
-
-function doFlattenBuffer(arr, context = null, outputName = null, sharedState = null) {
-  if (arr instanceof CommandBuffer) {
-    return flattenCommandBuffer(arr, context, outputName, sharedState);
-  }
-
-  if (!context) {
-    return flattenText(arr, outputName, sharedState, doFlattenBuffer);
-  }
-
-  return flattenCommands(arr, context, outputName, sharedState);
-}
-
-// Template-mode entry point: flatten text from a buffer or raw array.
-function flattenBufferText(arr, outputName = null, sharedState = null) {
-  const name = outputName || 'text';
-  return doFlattenBuffer(arr, null, name, sharedState);
-}
 
 // Output-driven entry point for script mode.
 // Output carries buffer, context, and outputName — all flatten needs.
@@ -52,10 +33,12 @@ function flattenBuffer(output, errorContext = null) {
   }
 
   const outputName = (output._outputName && output._outputName !== 'output') ? output._outputName : null;
-  return doFlattenBuffer(buffer, context, outputName);
+  if (buffer instanceof CommandBuffer) {
+    return flattenCommandBuffer(buffer, context, outputName);
+  }
+  return flattenCommands(buffer, context, outputName);
 }
 
 module.exports = {
-  flattenBuffer,
-  flattenBufferText
+  flattenBuffer
 };
