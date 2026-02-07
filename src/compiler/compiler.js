@@ -1079,7 +1079,9 @@ class Compiler extends CompilerBase {
     // we need to temporarily override the current buffer id as 'output'
     // so the set block writes to the capture output instead of the buffer
     const buffer = this.buffer.currentBuffer;
+    const textOutput = this.buffer.currentTextOutput;
     this.buffer.currentBuffer = 'output';
+    this.buffer.currentTextOutput = 'output_textOutput';
     if (node.isAsync) {
       const res = this._tmpid();
       // Use node.body as position node for the capture block evaluation
@@ -1100,7 +1102,7 @@ class Compiler extends CompilerBase {
         } else {
           this.compile(n.body, f);//write to output
           this.emit.line('await astate.waitAllClosures(1)');
-          this.emit.line(`let ${res} = runtime.flattenBuffer(output_textOutput, context);`);
+          this.emit.line(`let ${res} = runtime.flattenBuffer(${this.buffer.currentTextOutput}, context);`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
       }, res, node.body, true);
@@ -1117,6 +1119,7 @@ class Compiler extends CompilerBase {
 
     // and of course, revert back to the old buffer id
     this.buffer.currentBuffer = buffer;
+    this.buffer.currentTextOutput = textOutput;
   }
 
   compileOutput(node, frame) {
