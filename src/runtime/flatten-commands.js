@@ -17,7 +17,8 @@ const {
   isTextOutputNameFromState,
   getTextOutputFromState,
   ensureBufferScopeMetadata,
-  resolveOutputValue
+  resolveOutputValue,
+  buildFinalResultFromState
 } = require('./flatten-shared');
 
 const BUILTIN_OUTPUT_TYPES = new Set(['data', 'text', 'value', 'sink']);
