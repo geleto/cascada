@@ -279,16 +279,11 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
     errors;
 
   // Add one poison entry per handler that would have been written to.
-  // In script mode, emit ErrorCommand instances; in template mode, push PoisonedValue directly.
-  const isScript = buffer instanceof CommandBuffer && buffer._scriptMode;
+  // Always use ErrorCommand so poison markers remain command-native.
   const targets = resolveOutputTargets(buffer, handlerNames);
   targets.forEach(({ name, array }) => {
     if (Array.isArray(array)) {
-      if (isScript) {
-        array.push(new ErrorCommand(new PoisonedValue(processedErrors)));
-      } else {
-        array.push(new PoisonedValue(processedErrors));
-      }
+      array.push(new ErrorCommand(new PoisonedValue(processedErrors)));
     }
   });
 }
