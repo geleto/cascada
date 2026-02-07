@@ -1,14 +1,14 @@
 'use strict';
 
 const { CommandBuffer } = require('./buffer');
-const { flattenCommandBuffer } = require('./flatten-commands');
-const { RuntimeFatalError } = require('./errors');
+const { Command, ErrorCommand, OutputCommand, TextCommand } = require('./commands');
+const { RuntimeFatalError, PoisonError, isPoison } = require('./errors');
+const DataHandler = require('../script/data-handler');
+const BUILTIN_HANDLERS = new Set(['text', 'data', 'value', 'sink']);
 
 function flattenBuffer(output, errorContext = null) {
-
-  let context = errorContext || output._context || null;
-
   if (!output || (typeof output !== 'object' && typeof output !== 'function')) {
+    const context = errorContext || null;
     throw new RuntimeFatalError(
       `Invalid output object for flattening: ${output}`,
       context ? context.lineno : null,
@@ -18,6 +18,7 @@ function flattenBuffer(output, errorContext = null) {
     );
   }
 
+  let context = errorContext || output._context || null;
   const buffer = output._buffer;
   if (!buffer) {
     throw new RuntimeFatalError(
@@ -39,7 +40,176 @@ function flattenBuffer(output, errorContext = null) {
     );
   }
 
-  return flattenCommandBuffer(buffer, context, output._outputName);
+  // Ensure command apply() has the minimum output shape to target.
+  if (output._outputType === 'text' && !Array.isArray(output._target)) {
+    output._target = [];
+  }
+  if (output._outputType === 'value' && output._target === undefined) {
+    output._target = undefined;
+  }
+  if (output._outputType === 'data' && !output._base) {
+    const env = context && context.env ? context.env : null;
+    output._base = new DataHandler(context && context.getVariables ? context.getVariables() : {}, env);
+  }
+
+  const errors = flattenCommandBuffer(buffer, output, context);
+  if (errors.length > 0) {
+    throw new PoisonError(errors);
+  }
+
+  if (output._outputType === 'text') {
+    return Array.isArray(output._target) ? output._target.join('') : '';
+  }
+  if (output._base) {
+    return typeof output._base.getReturnValue === 'function'
+      ? output._base.getReturnValue()
+      : output._base;
+  }
+  return output._target;
+}
+
+function flattenCommandBuffer(buffer, output, errorContext) {
+  const errors = [];
+  const arr = buffer._getOutputArray(output && output._outputName ? output._outputName : null);
+  for (const command of arr) {
+    if (command === undefined || command === null) {
+      continue;
+    }
+    errors.push(...flattenCommands(command, output, errorContext));
+  }
+  return errors;
+}
+
+function flattenCommands(command, output, errorContext) {
+  const errors = [];
+
+  if (command === undefined || command === null) {
+    return errors;
+  }
+
+  function pushTextValue(val) {
+    if (!output || !Array.isArray(output._target)) {
+      return;
+    }
+    output._target.push(val);
+  }
+
+  function processTextArg(arg) {
+    if (arg === null || arg === undefined) return;
+    if (isPoison(arg)) {
+      errors.push(...arg.errors);
+      return;
+    }
+    if (arg instanceof CommandBuffer) {
+      errors.push(...flattenCommandBuffer(arg, output, errorContext));
+      return;
+    }
+    if (arg instanceof Command) {
+      errors.push(...flattenCommands(arg, output, errorContext));
+      return;
+    }
+    if (Array.isArray(arg)) {
+      for (const item of arg) {
+        processTextArg(item);
+      }
+      return;
+    }
+    if (typeof arg === 'object') {
+      const hasCustomToString = arg.toString && arg.toString !== Object.prototype.toString;
+      if (hasCustomToString) {
+        pushTextValue(arg);
+        return;
+      }
+      // Support envelope objects returned by macro/call/filter flows.
+      if (arg.text !== undefined && arg.text !== null) {
+        processTextArg(arg.text);
+      }
+      return;
+    }
+    pushTextValue(arg);
+  }
+
+  if (isPoison(command)) {
+    errors.push(...command.errors);
+    return errors;
+  }
+
+  if (command instanceof ErrorCommand) {
+    const errList = command.value && command.value.errors
+      ? command.value.errors
+      : [command.value || new Error('Command buffer entry produced an unspecified error')];
+    errors.push(...errList);
+    return errors;
+  }
+
+  if (command instanceof Command) {
+    if (command instanceof OutputCommand) {
+      // Collect poison from command args before attempting apply().
+      if (Array.isArray(command.arguments)) {
+        for (const arg of command.arguments) {
+          if (isPoison(arg)) {
+            errors.push(...arg.errors);
+          }
+        }
+        if (errors.length > 0) {
+          return errors;
+        }
+      }
+
+      // Unknown handlers are unsupported. Built-ins are allowed even if the
+      // current flattened output name differs.
+      const handlerName = command.handler;
+      const isKnownCustomOutput = !!(output && output._outputName && handlerName === output._outputName);
+      if (handlerName && !BUILTIN_HANDLERS.has(handlerName) && !isKnownCustomOutput) {
+        errors.push(new Error(`Unsupported output command target: ${handlerName}`));
+        return errors;
+      }
+    }
+
+    try {
+      if (command instanceof TextCommand) {
+        const args = Array.isArray(command.arguments) ? command.arguments : [];
+        for (const arg of args) {
+          processTextArg(arg);
+        }
+        return errors;
+      }
+      // Route built-in data handler commands to a DataHandler target.
+      if (command instanceof OutputCommand && command.handler === 'data') {
+        if (!output.__flattenDataHandler) {
+          const vars = errorContext && typeof errorContext.getVariables === 'function'
+            ? errorContext.getVariables()
+            : {};
+          const env = errorContext && errorContext.env ? errorContext.env : null;
+          output.__flattenDataHandler = output._base || new DataHandler(vars, env);
+        }
+        command.apply({ _base: output.__flattenDataHandler });
+      } else {
+        command.apply(output);
+      }
+    } catch (err) {
+      errors.push(err);
+      return errors;
+    }
+    return errors;
+  }
+
+  if (command instanceof CommandBuffer) {
+    errors.push(...flattenCommandBuffer(command, output, errorContext));
+    return errors;
+  }
+
+  if (errorContext) {
+    throw new RuntimeFatalError(
+      `Invalid command in buffer: ${command}`,
+      errorContext.lineno,
+      errorContext.colno,
+      errorContext.errorContextString,
+      errorContext.path
+    );
+  }
+
+  return errors;
 }
 
 module.exports = {
