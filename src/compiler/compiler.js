@@ -185,7 +185,7 @@ class Compiler extends CompilerBase {
       } else {
         this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
       }
-      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text');
+      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text', true);
     } else {
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
@@ -196,7 +196,7 @@ class Compiler extends CompilerBase {
       } else {
         this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
       }
-      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text');
+      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text', true);
 
       this.emit.addScopeLevel();
     }
@@ -1132,7 +1132,7 @@ class Compiler extends CompilerBase {
           // Position node is the TemplateData node itself
           this.buffer.addToBuffer(node, frame, function () {
             this.compileLiteral(child, frame);
-          }, child, 'text'); // Pass TemplateData as position
+          }, child, 'text', true); // Pass TemplateData as position
         }
       } else {
         if (this.asyncMode) {
@@ -1170,7 +1170,7 @@ class Compiler extends CompilerBase {
         }
         this.emit(';\n');
 
-        frame = this.buffer.asyncAddToBufferEnd(node, frame, child, 'text', 'text'); // Pass Output node as op, child as pos
+        frame = this.buffer.asyncAddToBufferEnd(node, frame, child, 'text', 'text', true); // Pass Output node as op, child as pos
       }
     });
   }

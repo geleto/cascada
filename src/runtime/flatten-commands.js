@@ -21,12 +21,13 @@ const {
   buildFinalResultFromState,
   resolveOutputValue
 } = require('./flatten-shared');
-const { suppressValue, suppressValueScript } = require('./safe-output');
+const { suppressValueScript } = require('./safe-output');
 
 const BUILTIN_OUTPUT_TYPES = new Set(['data', 'text', 'value', 'sink']);
 
 function flattenCommandBuffer(buffer, context, outputName, sharedState) {
   if (outputName) {
+    const effectiveContext = context || (buffer && buffer._context) || null;
     const state = createFlattenState(sharedState, buffer._outputTypes || null);
     if (state.scriptMode === undefined && buffer && buffer._scriptMode !== undefined) {
       state.scriptMode = buffer._scriptMode;
@@ -37,7 +38,7 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState) {
     if (!state.outputCtxs && buffer && buffer._outputs) {
       state.outputCtxs = buffer._outputs;
     }
-    flattenCommands(buffer._getOutputArray(outputName), context, outputName, state);
+    flattenCommands(buffer._getOutputArray(outputName), effectiveContext, outputName, state);
 
     const finalizeOutput = () => {
       if (sharedState) {
@@ -57,11 +58,9 @@ function flattenCommandBuffer(buffer, context, outputName, sharedState) {
   }
 
   if (!context) {
+    const effectiveContext = (buffer && buffer._context) ? buffer._context : null;
     const textArray = buffer._getOutputArray('text');
-    const fallbackArray = (Array.isArray(textArray) && textArray.length > 0)
-      ? textArray
-      : buffer._getOutputArray('output');
-    return flattenCommands(fallbackArray, null, 'text', sharedState);
+    return flattenCommands(textArray, effectiveContext, 'text', sharedState);
   }
 
   const state = createFlattenState(sharedState, buffer._outputTypes || null);
@@ -277,8 +276,8 @@ function flattenCommands(arr, context, outputName, sharedState) {
       }
 
       if (target.kind === 'text') {
-        const autoescape = env && env.opts ? env.opts.autoescape : false;
         if (state.scriptMode) {
+          const autoescape = env && env.opts ? env.opts.autoescape : false;
           args.forEach((arg) => {
             const normalized = suppressValueScript(arg, autoescape);
             processItem(normalized);
@@ -286,13 +285,13 @@ function flattenCommands(arr, context, outputName, sharedState) {
           return;
         }
 
-        const normalizedArgs = args.map((arg) => suppressValue(arg, autoescape));
-        const tempOutput = { _target: [] };
-        const originalArgs = item.arguments;
-        item.arguments = normalizedArgs;
-        item.apply(tempOutput);
-        item.arguments = originalArgs;
-        emitText(target.name, tempOutput._target);
+        args.forEach((arg) => {
+          if (arg instanceof CommandBuffer) {
+            flattenCommandBuffer(arg, context, 'text', state);
+            return;
+          }
+          emitText(target.name, [arg]);
+        });
         return;
       }
 
@@ -352,10 +351,29 @@ function flattenCommands(arr, context, outputName, sharedState) {
   }
 
   function processArrayItem(item) {
+    if (state.scriptMode === false) {
+      throw new RuntimeFatalError(
+        new Error(`Unexpected raw array entry in template command buffer for output '${outputName || 'text'}'`),
+        null,
+        null,
+        outputName || 'text',
+        context ? context.path : null
+      );
+    }
     item.forEach(processItem);
   }
 
   function processObjectItem(item) {
+    if (state.scriptMode === false) {
+      throw new RuntimeFatalError(
+        new Error(`Unexpected raw object entry in template command buffer for output '${outputName || 'text'}'`),
+        null,
+        null,
+        outputName || 'text',
+        context ? context.path : null
+      );
+    }
+
     const hasCustomToString = item.toString && item.toString !== Object.prototype.toString;
     const isPromise = typeof item.then === 'function';
 
@@ -427,6 +445,16 @@ function flattenCommands(arr, context, outputName, sharedState) {
     if (typeof item === 'object') {
       processObjectItem(item);
       return;
+    }
+
+    if (state.scriptMode === false) {
+      throw new RuntimeFatalError(
+        new Error(`Unexpected raw primitive entry in template command buffer for output '${outputName || 'text'}'`),
+        null,
+        null,
+        outputName || 'text',
+        context ? context.path : null
+      );
     }
 
     // Fallback for primitive items from nested arrays that bypassed _wrapCommand.

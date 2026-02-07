@@ -87,6 +87,10 @@ module.exports = class CompileEmit {
     this.line(`frame._outputBuffer = ${bufferVar};`);
     if (this.compiler.scriptMode) {
       this.line(`${bufferVar}._scriptMode = true;`);
+    } else {
+      this.line(`${bufferVar}._scriptMode = false;`);
+      this.line(`${bufferVar}._outputTypes = ${bufferVar}._outputTypes || Object.create(null);`);
+      this.line(`${bufferVar}._outputTypes["text"] = "text";`);
     }
   }
 

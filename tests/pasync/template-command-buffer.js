@@ -1,0 +1,95 @@
+(function () {
+  'use strict';
+
+  var expect;
+  var AsyncEnvironment;
+  var AsyncTemplate;
+  var StringLoader;
+
+  if (typeof require !== 'undefined') {
+    expect = require('expect.js');
+    const envModule = require('../../src/environment/environment');
+    AsyncEnvironment = envModule.AsyncEnvironment;
+    AsyncTemplate = envModule.AsyncTemplate;
+    StringLoader = require('../util').StringLoader;
+  } else {
+    expect = window.expect;
+    AsyncEnvironment = nunjucks.AsyncEnvironment;
+    AsyncTemplate = nunjucks.AsyncTemplate;
+    StringLoader = window.util.StringLoader;
+  }
+
+  describe('Async template command buffering parity', function () {
+    it('should compile async template output to text commands on text output', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{{ value }}', env);
+      const source = tmpl._compileSource();
+      expect(source).to.contain('handler: "text"');
+      expect(source).to.contain('new runtime.TextCommand');
+    });
+
+    it('should preserve literal/interpolation parity and source ordering', async function () {
+      const env = new AsyncEnvironment();
+      const result = await env.renderTemplateString('A{{ one() }}B{{ two() }}C', {
+        one: async () => '1',
+        two: async () => '2'
+      });
+      expect(result).to.equal('A1B2C');
+    });
+
+    it('should preserve loop/conditional output parity', async function () {
+      const env = new AsyncEnvironment();
+      const result = await env.renderTemplateString(
+        '{% for n in nums %}{% if n % 2 === 0 %}E{{ n }}{% else %}O{{ n }}{% endif %}|{% endfor %}',
+        { nums: [1, 2, 3, 4] }
+      );
+      expect(result).to.equal('O1|E2|O3|E4|');
+    });
+
+    it('should preserve macro/call/capture parity', async function () {
+      const env = new AsyncEnvironment();
+      const template = `
+        {% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}
+        {% set captured %}X{{ value }}Y{% endset %}
+        {% call wrap("span") %}{{ captured }}{% endcall %}
+      `;
+      const result = await env.renderTemplateString(template, { value: 'v' });
+      expect(result.replace(/\s+/g, '')).to.equal('<span>XvY</span>');
+    });
+
+    it('should preserve include/import/extends parity', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+
+      loader.addTemplate('base.njk', 'B[{% block body %}{% endblock %}]');
+      loader.addTemplate('part.njk', '<i>{{ value }}</i>');
+      loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
+      loader.addTemplate(
+        'child.njk',
+        '{% extends "base.njk" %}{% import "macros.njk" as m %}{% block body %}{% include "part.njk" %} {{ m.hi(user) }}{% endblock %}'
+      );
+
+      const result = await env.renderTemplate('child.njk', { value: 'V', user: 'U' });
+      expect(result.replace(/\s+/g, ' ').trim()).to.equal('B[<i>V</i> Hi U]');
+    });
+
+    it('should keep observed vs unobserved async errors behavior', async function () {
+      const env = new AsyncEnvironment();
+      const context = {
+        bad: async () => {
+          throw new Error('boom');
+        }
+      };
+
+      const safeResult = await env.renderTemplateString('{% if false %}{{ bad() }}{% endif %}ok', context);
+      expect(safeResult).to.equal('ok');
+
+      try {
+        await env.renderTemplateString('{{ bad() }}', context);
+        expect().fail('Expected observed error');
+      } catch (err) {
+        expect(err.message).to.contain('boom');
+      }
+    });
+  });
+}());

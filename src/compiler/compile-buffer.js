@@ -58,6 +58,12 @@ class CompileBuffer {
     return this.compiler.asyncMode ? `${this.currentBuffer}.output` : this.currentBuffer;
   }
 
+  _emitTemplateTextCommandExpression(valueExpression, positionNode) {
+    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
+    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
+    return `new runtime.TextCommand({ handler: "text", args: [${valueExpression}], pos: {lineno: ${lineno}, colno: ${colno}} })`;
+  }
+
   // === HANDLER ANALYSIS ===
 
   /**
@@ -247,19 +253,29 @@ class CompileBuffer {
   /**
    * Add value to buffer (sync mode)
    */
-  addToBuffer(node, frame, renderFunction, positionNode = node, outputName = null) {
-    if (this.compiler.asyncMode && outputName) {
-      this.compiler.async.updateOutputUsage(frame, outputName);
+  addToBuffer(node, frame, renderFunction, positionNode = node, outputName = null, emitTextCommand = false) {
+    const resolvedOutputName = outputName;
+    if (this.compiler.asyncMode && resolvedOutputName) {
+      this.compiler.async.updateOutputUsage(frame, resolvedOutputName);
     }
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`${this.currentBuffer}.add(`);
+      if (emitTextCommand && !this.compiler.scriptMode) {
+        this.compiler.emit(`${this.currentBuffer}.add(new runtime.TextCommand({ handler: "text", args: [`);
+        renderFunction.call(this.compiler, frame);
+        const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
+        const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
+        this.compiler.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} })`);
+      } else {
+        this.compiler.emit.line(`${this.currentBuffer}.add(`);
+        renderFunction.call(this.compiler, frame);
+      }
     } else {
       this.compiler.emit(`${this.currentBuffer} += `);
+      renderFunction.call(this.compiler, frame);
     }
-    renderFunction.call(this.compiler, frame);
     if (this.compiler.asyncMode) {
-      if (outputName) {
-        this.compiler.emit(`, ${JSON.stringify(outputName)}`);
+      if (resolvedOutputName) {
+        this.compiler.emit(`, ${JSON.stringify(resolvedOutputName)}`);
       }
       this.compiler.emit.line(');');
     } else {
@@ -270,18 +286,19 @@ class CompileBuffer {
   /**
    * Add value to buffer (async mode with error handling)
    */
-  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null, outputName = null) {
+  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null, outputName = null, emitTextCommand = false) {
     const returnId = this.compiler._tmpid();
-    if (this.compiler.asyncMode && outputName) {
-      this.compiler.async.updateOutputUsage(frame, outputName);
+    const resolvedOutputName = outputName;
+    if (this.compiler.asyncMode && resolvedOutputName) {
+      this.compiler.async.updateOutputUsage(frame, resolvedOutputName);
     }
     if (node.isAsync) {
       this.compiler.emit.asyncClosureDepth++;
       frame = frame.push(false, false);
 
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
-      if (outputName) {
-        this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot(${JSON.stringify(outputName)});`);
+      if (resolvedOutputName) {
+        this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot(${JSON.stringify(resolvedOutputName)});`);
       } else {
         this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot();`);
       }
@@ -293,10 +310,13 @@ class CompileBuffer {
       this.compiler.emit.line(`  let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       this.compiler.emit.line(';');
-      if (outputName) {
-        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${returnId}, ${JSON.stringify(outputName)});`);
+      const valueExpr = (emitTextCommand && !this.compiler.scriptMode)
+        ? this._emitTemplateTextCommandExpression(returnId, positionNode)
+        : returnId;
+      if (resolvedOutputName) {
+        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueExpr}, ${JSON.stringify(resolvedOutputName)});`);
       } else {
-        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${returnId});`);
+        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueExpr});`);
       }
 
       if (handlerName) {
@@ -320,11 +340,14 @@ class CompileBuffer {
     } else {
       this.compiler.emit.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
+      const valueExpr = (emitTextCommand && !this.compiler.scriptMode)
+        ? this._emitTemplateTextCommandExpression(returnId, positionNode)
+        : returnId;
       if (this.compiler.asyncMode) {
-        if (outputName) {
-          this.compiler.emit.line(`${this.currentBuffer}.add(${returnId}, ${JSON.stringify(outputName)});`);
+        if (resolvedOutputName) {
+          this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, ${JSON.stringify(resolvedOutputName)});`);
         } else {
-          this.compiler.emit.line(`${this.currentBuffer}.add(${returnId});`);
+          this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr});`);
         }
       } else {
         this.compiler.emit.line(`${this.currentBuffer} += ${returnId};`);
@@ -336,13 +359,14 @@ class CompileBuffer {
    * Begin async buffer addition (split pattern)
    */
   asyncAddToBufferBegin(node, frame, positionNode = node, handlerName = null, outputName = null) {
-    if (this.compiler.asyncMode && outputName) {
-      this.compiler.async.updateOutputUsage(frame, outputName);
+    const resolvedOutputName = outputName;
+    if (this.compiler.asyncMode && resolvedOutputName) {
+      this.compiler.async.updateOutputUsage(frame, resolvedOutputName);
     }
     if (node.isAsync) {
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame) => {`);
-      if (outputName) {
-        this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot(${JSON.stringify(outputName)});`);
+      if (resolvedOutputName) {
+        this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot(${JSON.stringify(resolvedOutputName)});`);
       } else {
         this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot();`);
       }
@@ -371,17 +395,21 @@ class CompileBuffer {
   /**
    * End async buffer addition (split pattern)
    */
-  asyncAddToBufferEnd(node, frame, positionNode = node, handlerName = null, outputName = null) {
+  asyncAddToBufferEnd(node, frame, positionNode = node, handlerName = null, outputName = null, emitTextCommand = false) {
+    const resolvedOutputName = outputName;
     const valueId = this.compiler.asyncMode ? this._bufferValueStack.pop() : null;
     this.compiler.emit.line(';');
     if (node.isAsync) {
       //const handlerName = this._pendingHandler;
       //this._pendingHandler = null;
 
-      if (outputName) {
-        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueId}, ${JSON.stringify(outputName)});`);
+      const valueExpr = (emitTextCommand && !this.compiler.scriptMode)
+        ? this._emitTemplateTextCommandExpression(valueId, positionNode)
+        : valueId;
+      if (resolvedOutputName) {
+        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueExpr}, ${JSON.stringify(resolvedOutputName)});`);
       } else {
-        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueId});`);
+        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueExpr});`);
       }
       if (handlerName) {
         // if there is a handler, we need to catch errors and poison the handler/buffer
@@ -400,10 +428,13 @@ class CompileBuffer {
       return frame.pop();
     }
     if (this.compiler.asyncMode) {
-      if (outputName) {
-        this.compiler.emit.line(`${this.currentBuffer}.add(${valueId}, ${JSON.stringify(outputName)});`);
+      const valueExpr = (emitTextCommand && !this.compiler.scriptMode)
+        ? this._emitTemplateTextCommandExpression(valueId, positionNode)
+        : valueId;
+      if (resolvedOutputName) {
+        this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, ${JSON.stringify(resolvedOutputName)});`);
       } else {
-        this.compiler.emit.line(`${this.currentBuffer}.add(${valueId});`);
+        this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr});`);
       }
     }
     return frame;
@@ -455,7 +486,8 @@ class CompileBuffer {
       if (addInfo) {
         const usedOutputs = frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
         usedOutputs.forEach((outputName) => {
-          this.compiler.emit.insertLine(addInfo.pos, `${addInfo.parentBuffer}.add(${addInfo.newBuffer}, ${JSON.stringify(outputName)});`);
+          const resolvedOutputName = outputName;
+          this.compiler.emit.insertLine(addInfo.pos, `${addInfo.parentBuffer}.add(${addInfo.newBuffer}, ${JSON.stringify(resolvedOutputName)});`);
         });
       }
 

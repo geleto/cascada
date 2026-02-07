@@ -1,6 +1,6 @@
 'use strict';
 
-const { CommandBuffer, resolveBufferArray } = require('./buffer');
+const { CommandBuffer } = require('./buffer');
 const { flattenText } = require('./flatten-text');
 const { flattenCommands, flattenCommandBuffer } = require('./flatten-commands');
 const { RuntimeFatalError } = require('./errors');
@@ -19,24 +19,13 @@ function doFlattenBuffer(arr, context = null, outputName = null, sharedState = n
 
 // Template-mode entry point: flatten text from a buffer or raw array.
 function flattenBufferText(arr, outputName = null, sharedState = null) {
-  let target = arr;
   const name = outputName || 'text';
 
   if (arr instanceof CommandBuffer) {
-    //@todo - this should not happen, but it does
-    //we will probably remove array in the future and just use commands
-    //for both templates and scripts
-    const textArray = resolveBufferArray(arr, name);
-    if (!outputName && name === 'text') {
-      target = (Array.isArray(textArray) && textArray.length > 0)
-        ? textArray
-        : resolveBufferArray(arr, 'output');
-    } else {
-      target = textArray;
-    }
+    return flattenCommandBuffer(arr, null, name, sharedState);
   }
 
-  return flattenText(target, name, sharedState, doFlattenBuffer);
+  return flattenText(arr, name, sharedState, doFlattenBuffer);
 }
 
 // Output-driven entry point for script mode.
