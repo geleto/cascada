@@ -50,27 +50,15 @@ class Output {
     this._buffer.add(entry, this._outputName);
   }
 
-  _resolveSnapshotValue(result) {
-    if (this._outputType === 'text') {
-      if (Array.isArray(this._target)) {
-        return this._target.join('');
-      }
-      return result;
-    }
-    if (this._base) {
-      return typeof this._base.getReturnValue === 'function'
-        ? this._base.getReturnValue()
-        : this._base;
-    }
-    return this._target !== undefined ? this._target : result;
+  getCurrentResult() {
+    throw new Error(`Output type '${this._outputType}' must implement getCurrentResult()`);
   }
 
   // Resolve the final value from _target/_base after flatten has populated them.
   // @todo - find a way to pass the errorContext rather than using the declaring context
   snapshot() {
     if (this._buffer) {
-      const result = flattenBuffer(this);
-      return this._resolveSnapshotValue(result);
+      return flattenBuffer(this);
     }
 
     // No CommandBuffer available; legacy array fallback removed.
@@ -103,6 +91,9 @@ function createOutputFacade(output, options) {
     get: (proxyTarget, prop) => {
       if (prop === 'snapshot') {
         return output.snapshot.bind(output);
+      }
+      if (prop === 'getCurrentResult') {
+        return output.getCurrentResult.bind(output);
       }
       if (OUTPUT_API_PROPS.has(prop)) {
         return output[prop];
@@ -145,6 +136,17 @@ class TextOutput extends Output {
       : false;
     this._enqueueCommand(null, normalizeScriptTextArgs(args, autoescape));
   }
+
+  getCurrentResult() {
+    if (!Array.isArray(this._target) || this._target.length === 0) {
+      this._target = [''];
+      return '';
+    }
+    const result = this._target.join('');
+    // Compact accumulated fragments so future appends keep O(1)-ish growth.
+    this._target = [result];
+    return result;
+  }
 }
 
 class ValueOutput extends Output {
@@ -158,6 +160,10 @@ class ValueOutput extends Output {
     if (!this._buffer) return;
     this._enqueueCommand(null, [value]);
   }
+
+  getCurrentResult() {
+    return this._target;
+  }
 }
 
 class DataOutput extends Output {
@@ -166,6 +172,12 @@ class DataOutput extends Output {
     this._target = {};
     const env = context && context.env ? context.env : null;
     this._base = new DataHandler(context && context.getVariables ? context.getVariables() : {}, env);
+  }
+
+  getCurrentResult() {
+    return this._base && typeof this._base.getReturnValue === 'function'
+      ? this._base.getReturnValue()
+      : this._base;
   }
 }
 
@@ -215,6 +227,10 @@ class SinkOutputHandler {
     if (typeof sink.getReturnValue === 'function') return sink.getReturnValue();
     if (typeof sink.finalize === 'function') return sink.finalize();
     return sink;
+  }
+
+  getCurrentResult() {
+    return this._snapshotFromSink(this._sink);
   }
 
   snapshot() {

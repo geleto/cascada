@@ -45,15 +45,7 @@ function flattenBuffer(output, errorContext = null) {
     throw new PoisonError(errors);
   }
 
-  if (output._outputType === 'text') {
-    return Array.isArray(output._target) ? output._target.join('') : '';
-  }
-  if (output._base) {
-    return typeof output._base.getReturnValue === 'function'
-      ? output._base.getReturnValue()
-      : output._base;
-  }
-  return output._target;
+  return output.getCurrentResult();
 }
 
 function flattenCommandBuffer(buffer, output, errorContext) {
