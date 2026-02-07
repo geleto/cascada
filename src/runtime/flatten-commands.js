@@ -21,7 +21,6 @@ const {
   buildFinalResultFromState,
   resolveOutputValue
 } = require('./flatten-shared');
-const { suppressValueScript } = require('./safe-output');
 
 const BUILTIN_OUTPUT_TYPES = new Set(['data', 'text', 'value', 'sink']);
 
@@ -277,10 +276,8 @@ function flattenCommands(arr, context, outputName, sharedState) {
 
       if (target.kind === 'text') {
         if (state.scriptMode) {
-          const autoescape = env && env.opts ? env.opts.autoescape : false;
           args.forEach((arg) => {
-            const normalized = suppressValueScript(arg, autoescape);
-            processItem(normalized);
+            processItem(arg);
           });
           return;
         }

@@ -123,6 +123,7 @@ module.exports = {
   suppressValue: outputValue.suppressValue,
   suppressValueAsync: outputValue.suppressValueAsync,
   suppressValueScript: outputValue.suppressValueScript,
+  normalizeScriptTextArgs: outputValue.normalizeScriptTextArgs,
   suppressValueScriptAsync: outputValue.suppressValueScriptAsync,
   ensureDefined: outputValue.ensureDefined,
   ensureDefinedAsync: outputValue.ensureDefinedAsync,

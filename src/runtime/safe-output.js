@@ -256,6 +256,12 @@ function suppressValueScript(val, autoescape) {
   return suppressValue(val, autoescape);
 }
 
+function normalizeScriptTextArgs(args, autoescape) {
+  if (!Array.isArray(args)) {
+    return [suppressValueScript(args, autoescape)];
+  }
+  return args.map((arg) => suppressValueScript(arg, autoescape));
+}
 
 
 
@@ -292,6 +298,7 @@ module.exports = {
   suppressValueAsync,
   _suppressValueAsyncComplex,
   suppressValueScript,
+  normalizeScriptTextArgs,
   suppressValueScriptAsync,
   SafeString,
   copySafeness,

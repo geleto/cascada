@@ -6,6 +6,12 @@
  */
 
 const nodes = require('../nodes');
+const OUTPUT_COMMAND_CLASS = {
+  data: 'DataCommand',
+  sink: 'SinkCommand',
+  text: 'TextCommand',
+  value: 'ValueCommand'
+};
 
 class CompileBuffer {
   constructor(compiler) {
@@ -190,7 +196,8 @@ class CompileBuffer {
     };
 
     wrapper((f) => {
-      if (outputType !== 'data' && outputType !== 'sink' && outputType !== 'text' && outputType !== 'value') {
+      const commandClass = OUTPUT_COMMAND_CLASS[outputType];
+      if (!commandClass) {
         this.compiler.fail(
           `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/value/sink).`,
           node.lineno,
@@ -199,11 +206,6 @@ class CompileBuffer {
         );
       }
 
-      const commandClass = outputType === 'data'
-        ? 'DataCommand'
-        : (outputType === 'sink'
-          ? 'SinkCommand'
-          : (outputType === 'text' ? 'TextCommand' : 'ValueCommand'));
       this.compiler.emit(`new runtime.${commandClass}({ handler: '${handler}', `);
       if (command) {
         this.compiler.emit(`command: '${command}', `);
@@ -214,7 +216,11 @@ class CompileBuffer {
 
       let argList = node.call.args;
       const asyncArgs = argList.isAsync;
-      this.compiler.emit((outputType === 'data' || outputType === 'sink' || outputType === 'text' || outputType === 'value' ? 'args: ' : 'arguments: ') + (asyncArgs ? 'await ' : ''));
+      if (outputType === 'text' && this.compiler.scriptMode) {
+        this.compiler.emit('args: runtime.normalizeScriptTextArgs(' + (asyncArgs ? 'await ' : ''));
+      } else {
+        this.compiler.emit('args: ' + (asyncArgs ? 'await ' : ''));
+      }
 
       if (outputType === 'data') {
         // For data outputs, we create a new "virtual" AST for the arguments,
@@ -243,6 +249,9 @@ class CompileBuffer {
       }
 
       this.compiler._compileAggregate(argList, f, '[', ']', isAsync, true);
+      if (outputType === 'text' && this.compiler.scriptMode) {
+        this.compiler.emit(', env.opts.autoescape)');
+      }
 
       this.compiler.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`);
     });
