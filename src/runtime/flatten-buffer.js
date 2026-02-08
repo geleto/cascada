@@ -48,14 +48,14 @@ function flattenBuffer(output, errorContext = null) {
 
 function flattenCommandBuffer(buffer, output, errorContext) {
   const errors = [];
-  const arr = buffer._getOutputArray(output && output._outputName ? output._outputName : null);
-  for (const entry of arr) {
-    flattenEntry(entry, output, errorContext, errors);
+  const arr = buffer.arrays[output._outputName] ?? [];
+  for (const command of arr) {
+    flattenCommand(command, output, errorContext, errors);
   }
   return errors;
 }
 
-function flattenEntry(entry, output, errorContext, errors) {
+function flattenCommand(entry, output, errorContext, errors) {
   if (entry instanceof Command) {
     try {
       entry.apply(output);

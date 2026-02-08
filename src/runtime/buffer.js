@@ -145,6 +145,9 @@ class CommandBuffer {
     return true;
   }
 
+  /**
+   * Creates the output array if it doesn't exist.
+   */
   _getOutputArray(outputName) {
     if (!this.arrays[outputName]) {
       const arr = [];
@@ -180,7 +183,7 @@ class CommandBuffer {
     checkFinishedBuffer(this);
 
     const slot = this.reserveSlot(outputName);
-    const target = this._getOutputArray(outputName);
+    const target = this.arrays[outputName] ?? [];
 
     // Link to previous command
     if (target.length > 0) {
@@ -202,7 +205,7 @@ class CommandBuffer {
   fillSlot(slot, value, outputName) {
     // Don't check finished here - fillSlot fills pre-reserved slots
     // that may have been reserved before the buffer was marked finished
-    const target = this._getOutputArray(outputName);
+    const target = this.arrays[outputName];
 
     // Link to previous and next commands
     if (slot > 0) {
