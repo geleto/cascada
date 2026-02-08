@@ -165,17 +165,17 @@ class CompileBuffer {
           this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
           this.compiler.emit.line(`let ${handlerVar} = runtime.getOutputHandler(frame, "${handler}");`);
           this.compiler.emit.line(`let ${bufferVar} = (${handlerVar} && ${handlerVar}._frame && ${handlerVar}._frame._outputBuffer) ? ${handlerVar}._frame._outputBuffer : ${this.currentBuffer};`);
-          this.compiler.emit.line(`let index = ${bufferVar}.reserveSlot(${JSON.stringify(handler)});`);
+          this.compiler.emit.line(`let index = ${bufferVar}.reserveSlot("${handler}");`);
           this.compiler.emit.line('try {');
           this.compiler.emit.line(`  let ${returnId};`);
           this.compiler.emit(`${returnId} = `);
           emitLogic(innerFrame);
           this.compiler.emit.line(';');
-          this.compiler.emit.line(`  ${bufferVar}.fillSlot(index, ${returnId}, ${JSON.stringify(handler)});`);
+          this.compiler.emit.line(`  ${bufferVar}.fillSlot(index, ${returnId}, "${handler}");`);
           this.compiler.emit.line('} catch(e) {');
           this.compiler.emit.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
-          this.compiler.emit.line(`  const processedErrors = errors.map(err => runtime.handleError(err, ${node.lineno}, ${node.colno}, ${JSON.stringify(this.compiler._generateErrorContext(node, node))}, context.path));`);
-          this.compiler.emit.line(`  ${bufferVar}.fillSlot(index, new runtime.ErrorCommand(processedErrors), ${JSON.stringify(handler)});`);
+          this.compiler.emit.line(`  const processedErrors = errors.map(err => runtime.handleError(err, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node, node)}", context.path));`);
+          this.compiler.emit.line(`  ${bufferVar}.fillSlot(index, new runtime.ErrorCommand(processedErrors), "${handler}");`);
           this.compiler.emit.line('}');
           this.compiler.emit.asyncClosureDepth--;
           this.compiler.emit.line('}');
@@ -198,7 +198,7 @@ class CompileBuffer {
           this.compiler.emit(`let ${valueId} = `);
           emitLogic(frame);
           this.compiler.emit.line(';');
-          this.compiler.emit.line(`${bufferVar}.add(${valueId}, ${JSON.stringify(handler)});`);
+          this.compiler.emit.line(`${bufferVar}.add(${valueId}, "${handler}");`);
         } else {
           this.addToBuffer(node, frame, () => {
             emitLogic(frame); // Pass the current frame.
@@ -286,7 +286,7 @@ class CompileBuffer {
         this.compiler.emit.line(';');
         const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
         const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-        this.compiler.emit.line(`${this.currentBuffer}.addText(${valueId}, {lineno: ${lineno}, colno: ${colno}}, ${JSON.stringify(outputName)});`);
+        this.compiler.emit.line(`${this.currentBuffer}.addText(${valueId}, {lineno: ${lineno}, colno: ${colno}}, "${outputName}");`);
         return;
       } else {
         this.compiler.emit.line(`${this.currentBuffer}.add(`);
@@ -298,7 +298,7 @@ class CompileBuffer {
     }
     if (this.compiler.asyncMode) {
       if (outputName) {
-        this.compiler.emit(`, ${JSON.stringify(outputName)}`);
+        this.compiler.emit(`, "${outputName}"`);
       }
       this.compiler.emit.line(');');
     } else {
@@ -319,7 +319,7 @@ class CompileBuffer {
       }
 
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
-      this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot(${JSON.stringify(outputName)});`);
+      this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot("${outputName}");`);
 
       this.compiler.emit.line(`try {`);
       this.compiler.emit.line(`  let ${returnId};`);
@@ -328,15 +328,15 @@ class CompileBuffer {
       const valueExpr = emitTextCommand
         ? this._emitTemplateTextCommandExpression(returnId, positionNode)
         : returnId;
-      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueExpr}, ${JSON.stringify(outputName)});`);
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueExpr}, "${outputName}");`);
 
       this.compiler.emit.line(`} catch(e) {`);
       this.compiler.emit.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
-      this.compiler.emit.line(`  const processedErrors = errors.map(err => runtime.handleError(err, ${positionNode.lineno}, ${positionNode.colno}, ${JSON.stringify(this.compiler._generateErrorContext(node, positionNode))}, context.path));`);
+      this.compiler.emit.line(`  const processedErrors = errors.map(err => runtime.handleError(err, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path));`);
       // For reserveSlot/fillSlot paths, always materialize failure in the reserved slot.
       // Avoid addPoisonMarkersToBuffer here: it uses buffer.add(), which can throw if the
       // child buffer finished before this async write settled.
-      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, new runtime.ErrorCommand(processedErrors), ${JSON.stringify(outputName)});`);
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, new runtime.ErrorCommand(processedErrors), "${outputName}");`);
       this.compiler.emit.line(`}`);
 
       this.compiler.emit.asyncClosureDepth--;
@@ -354,7 +354,7 @@ class CompileBuffer {
         ? this._emitTemplateTextCommandExpression(returnId, positionNode)
         : returnId;
       if (this.compiler.asyncMode) {
-        this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, ${JSON.stringify(outputName)});`);
+        this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${outputName}");`);
       } else {
         this.compiler.emit.line(`${this.currentBuffer} += ${returnId};`);
       }
@@ -367,7 +367,7 @@ class CompileBuffer {
   asyncAddToBufferBegin(node, frame, positionNode = node, handlerName = null, outputName = 'text') {
     if (node.isAsync) {
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame) => {`);
-      this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot(${JSON.stringify(outputName)});`);
+      this.compiler.emit.line(`let index = ${this.currentBuffer}.reserveSlot("${outputName}");`);
       const valueId = this.compiler._tmpid();
       this._bufferValueStack.push(valueId);
       this.compiler.emit.line(`try {`);
@@ -404,13 +404,13 @@ class CompileBuffer {
       const valueExpr = emitTextCommand
         ? this._emitTemplateTextCommandExpression(valueId, positionNode)
         : valueId;
-      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueExpr}, ${JSON.stringify(outputName)});`);
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, ${valueExpr}, "${outputName}");`);
       this.compiler.emit.line(`} catch(e) {`);
       this.compiler.emit.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
-      this.compiler.emit.line(`  const processedErrors = errors.map(err => runtime.handleError(err, ${positionNode.lineno}, ${positionNode.colno}, ${JSON.stringify(this.compiler._generateErrorContext(node, positionNode))}, context.path));`);
+      this.compiler.emit.line(`  const processedErrors = errors.map(err => runtime.handleError(err, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path));`);
       // Same reasoning as asyncAddToBuffer(): never use addPoisonMarkersToBuffer in
       // reserveSlot/fillSlot catch blocks; fill the reserved slot directly.
-      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, new runtime.ErrorCommand(processedErrors), ${JSON.stringify(outputName)});`);
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, new runtime.ErrorCommand(processedErrors), "${outputName}");`);
       this.compiler.emit.line(`}`);
 
       this.compiler.emit.asyncClosureDepth--;
@@ -424,7 +424,7 @@ class CompileBuffer {
       const valueExpr = emitTextCommand
         ? this._emitTemplateTextCommandExpression(valueId, positionNode)
         : valueId;
-      this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, ${JSON.stringify(outputName)});`);
+      this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${outputName}");`);
     }
     return frame;
   }
@@ -478,7 +478,7 @@ class CompileBuffer {
       if (addInfo) {
         const usedOutputs = frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
         usedOutputs.forEach((outputName) => {
-          this.compiler.emit.insertLine(addInfo.pos, `${addInfo.parentBuffer}.add(${addInfo.newBuffer}, ${JSON.stringify(outputName)});`);
+          this.compiler.emit.insertLine(addInfo.pos, `${addInfo.parentBuffer}.add(${addInfo.newBuffer}, "${outputName}");`);
         });
       }
 

@@ -375,7 +375,7 @@ class CompilerBase extends Obj {
         this.async.updateFrameWrites(frame, readLockKey);
         // Use sequential lookup as a lock for this node exists
         // sequentialContextLookup will `set` the path key, thus releasing it (by decrementing the lock writeCount)
-        this.emit(`runtime.sequentialContextLookup(context, frame, "${name}", ${JSON.stringify(nodeStaticPathKey)}, ${JSON.stringify(readLockKey)}, ${!!node.sequentialRepair})`);
+        this.emit(`runtime.sequentialContextLookup(context, frame, "${name}", "${nodeStaticPathKey}", "${readLockKey}", ${!!node.sequentialRepair})`);
         return;
       }
     }
@@ -742,7 +742,7 @@ class CompilerBase extends Obj {
         this.compile(node.val, frame); // Compile the property/key expression.
         // Pass the static path key and the read lock key with error context.
         // The runtime function will also release the lock.
-        this.emit(`, ${JSON.stringify(nodeStaticPathKey)}, ${JSON.stringify(readLockKey)}, ${errorContextJson}, ${!!node.sequentialRepair})`);
+        this.emit(`, "${nodeStaticPathKey}", "${readLockKey}", ${errorContextJson}, ${!!node.sequentialRepair})`);
         return;
       }
 

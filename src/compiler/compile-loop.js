@@ -143,7 +143,7 @@ class CompileLoop {
         elseWriteCounts: ${JSON.stringify(elseWriteCounts || {})},
         elseHandlers: ${JSON.stringify(elseHandlers ? Array.from(elseHandlers) : [])},
         concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
-        errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this.compiler._generateErrorContext(node))}, path: context.path }
+        errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this.compiler._generateErrorContext(node)}", path: context.path }
       }`;
     }
 
