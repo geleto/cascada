@@ -244,7 +244,6 @@ This ensures composed super text is concrete before suppression/append.
 - Async `reserveSlot`/`fillSlot` catch blocks also wrap errors in `ErrorCommand` before filling the slot.
 - Buffer invariant: no raw `PoisonedValue` ever sits in a buffer array.
 - Flatten collects all errors via `apply()` + `try/catch` and throws one `PoisonError` with aggregated errors.
-- `getPoisonedArrayErrors` (used by guards) walks the buffer calling `command.getError()` to detect poison without executing commands.
 - Policy remains: never miss any error during flatten of observed outputs.
 
 ## Invariants

@@ -4,7 +4,7 @@ const {
   handleError
 } = require('./errors');
 
-const { Command, ErrorCommand, TextCommand } = require('./commands');
+const { ErrorCommand, TextCommand } = require('./commands');
 
 const {
   linkToPrevious,
@@ -220,6 +220,7 @@ class CommandBuffer {
 }
 
 // Check if value is a CommandBuffer using symbol
+// @todo, get rif of this, use instanceof instead
 function isCommandBuffer(value) {
   return value && typeof value === 'object' && value[COMMAND_BUFFER_SYMBOL] === true;
 }
@@ -288,40 +289,6 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
   });
 }
 
-function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
-  const allErrors = [];
-  if (!arr) return allErrors;
-
-  const isHandlerAllowed = (name) => !allowedHandlers || allowedHandlers.includes(name);
-  if (!isHandlerAllowed(handlerName)) return allErrors;
-
-  function walk(value, currentHandler) {
-    if (!value) return;
-
-    if (value instanceof CommandBuffer) {
-      allErrors.push(...getPosonedBufferErrors(value, allowedHandlers));
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach((item) => walk(item, currentHandler));
-      return;
-    }
-
-    if (value instanceof Command) {
-      const commandHandler = value.handler || currentHandler;
-      if (!isHandlerAllowed(commandHandler)) return;
-      const err = value.getError();
-      if (err) {
-        allErrors.push(...err.errors);
-      }
-    }
-  }
-
-  walk(arr, handlerName);
-
-  return allErrors;
-}
 
 function getPosonedBufferErrors(buffer, allowedHandlers = null) {
   const allErrors = [];
@@ -332,7 +299,16 @@ function getPosonedBufferErrors(buffer, allowedHandlers = null) {
   names.forEach((name) => {
     const arr = buffer.arrays[name];
     if (arr) {
-      allErrors.push(...getPoisonedArrayErrors(arr, name, allowedHandlers));
+      arr.forEach((item) => {
+        if (item instanceof CommandBuffer) {
+          allErrors.push(...getPosonedBufferErrors(item, allowedHandlers));
+        } else {
+          const err = item.getError();
+          if (err) {
+            allErrors.push(...err.errors);
+          }
+        }
+      });
     }
   });
   return allErrors;
