@@ -175,7 +175,7 @@ class CompileBuffer {
           this.compiler.emit.line('} catch(e) {');
           this.compiler.emit.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
           this.compiler.emit.line(`  const processedErrors = errors.map(err => runtime.handleError(err, ${node.lineno}, ${node.colno}, ${JSON.stringify(this.compiler._generateErrorContext(node, node))}, context.path));`);
-          this.compiler.emit.line(`  ${bufferVar}.fillSlot(index, runtime.createPoison(processedErrors), ${JSON.stringify(handler)});`);
+          this.compiler.emit.line(`  ${bufferVar}.fillSlot(index, new runtime.ErrorCommand(processedErrors), ${JSON.stringify(handler)});`);
           this.compiler.emit.line('}');
           this.compiler.emit.asyncClosureDepth--;
           this.compiler.emit.line('}');
@@ -336,7 +336,7 @@ class CompileBuffer {
       // For reserveSlot/fillSlot paths, always materialize failure in the reserved slot.
       // Avoid addPoisonMarkersToBuffer here: it uses buffer.add(), which can throw if the
       // child buffer finished before this async write settled.
-      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, runtime.createPoison(processedErrors), ${JSON.stringify(outputName)});`);
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, new runtime.ErrorCommand(processedErrors), ${JSON.stringify(outputName)});`);
       this.compiler.emit.line(`}`);
 
       this.compiler.emit.asyncClosureDepth--;
@@ -410,7 +410,7 @@ class CompileBuffer {
       this.compiler.emit.line(`  const processedErrors = errors.map(err => runtime.handleError(err, ${positionNode.lineno}, ${positionNode.colno}, ${JSON.stringify(this.compiler._generateErrorContext(node, positionNode))}, context.path));`);
       // Same reasoning as asyncAddToBuffer(): never use addPoisonMarkersToBuffer in
       // reserveSlot/fillSlot catch blocks; fill the reserved slot directly.
-      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, runtime.createPoison(processedErrors), ${JSON.stringify(outputName)});`);
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(index, new runtime.ErrorCommand(processedErrors), ${JSON.stringify(outputName)});`);
       this.compiler.emit.line(`}`);
 
       this.compiler.emit.asyncClosureDepth--;

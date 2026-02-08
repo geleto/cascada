@@ -93,7 +93,7 @@ Behavior:
 File: `src/runtime/buffer.js`
 
 - `arrays[name]` stores entries for a named output.
-- Entries can be command instances, nested `CommandBuffer`, poison markers, or reserved-slot fills.
+- Entries are `Command` instances, nested `CommandBuffer`s, or `ErrorCommand`s. No raw `PoisonedValue` objects in buffers.
 - `addText(value, pos, outputName)` creates `TextCommand` explicitly.
 - `reserveSlot` / `fillSlot` support async ordering.
 - Nested buffers keep parent/position linkage for chain patching.
@@ -110,9 +110,23 @@ File: `src/runtime/commands.js`
 - `SinkCommand`
 - `ErrorCommand`
 
-### Current `TextCommand` contract
+### Error handling: `getError()` and `apply()`
 
-`TextCommand.apply(ctx)` is strict:
+Every command has two error-related methods:
+
+- `getError()` — returns a `PoisonError` if the command carries poison, or `null`. Used for pre-flatten error detection (guards, buffer walkers) without executing the command.
+- `apply(ctx)` — executes the command, throwing on any error (poison or runtime).
+
+Contracts per class:
+
+- `Command.getError()` → `null`. `Command.apply()` → throws "must be overridden".
+- `OutputCommand.getError()` → scans `this.arguments` for poison via `isPoison()`, combines all `.errors` into one `PoisonError`, or returns `null`.
+- `OutputCommand.apply(ctx)` → calls `this.getError()`, throws if non-null. Subclasses call `super.apply(ctx)` first, then their own logic (which may also throw for non-poison reasons).
+- `ErrorCommand(errors)` → constructor accepts an error or array of errors directly (no `PoisonedValue` wrapper). `getError()` always returns `PoisonError`. `apply()` always throws.
+
+### `TextCommand` contract
+
+`TextCommand.apply(ctx)` is strict (after the `super.apply()` poison check):
 
 - accepts text-like scalar arguments (`string`, `number`, `boolean`, `bigint`)
 - accepts objects only when they provide custom `toString`
@@ -132,19 +146,17 @@ Flow:
 
 1. Validate output and `_buffer` (`CommandBuffer` required).
 2. Flatten one output array at a time via `flattenCommandBuffer(...)`.
-3. For each entry in sequence:
-   - collect poison from `ErrorCommand` / poison markers
-   - for `OutputCommand`, pre-scan args for poison before `apply(...)`
-   - validate output handler target (builtin or current custom output)
-   - call `command.apply(...)`
-   - recurse nested `CommandBuffer`
+3. For each entry (`flattenEntry`):
+   - if `Command`: call `entry.apply(output)` inside `try/catch`. Errors (including `PoisonError` from poison args or `ErrorCommand`) are collected. `PoisonError` is unwrapped into individual errors.
+   - if `CommandBuffer`: recurse via `flattenCommandBuffer`.
 4. If any errors collected: throw `PoisonError(errors)`.
 5. Return `output.getCurrentResult()`.
 
+The flattener is type-agnostic — it does not inspect command types or pre-scan arguments. All error detection is delegated to `apply()` (which internally uses `getError()` for poison checks).
+
 Notes:
 
-- Text commands are not special-cased in flattener anymore; they run through `TextCommand.apply(...)`.
-- Data commands lazily instantiate `DataHandler` base when needed.
+- Data commands route through a `DataHandler` target instantiated lazily by the flattener when `command.handler === 'data'`.
 
 ## Safe Output and Text Materialization
 
@@ -228,8 +240,11 @@ This ensures composed super text is concrete before suppression/append.
 
 ## Error and Poison
 
-- Poison markers are inserted via `addPoisonMarkersToBuffer(...)` as `ErrorCommand(PoisonedValue)` entries.
-- Flatten collects all poison/command errors and throws one `PoisonError` with aggregated errors.
+- Poison markers are inserted via `addPoisonMarkersToBuffer(...)` as `ErrorCommand(errors)` entries (no `PoisonedValue` wrapper).
+- Async `reserveSlot`/`fillSlot` catch blocks also wrap errors in `ErrorCommand` before filling the slot.
+- Buffer invariant: no raw `PoisonedValue` ever sits in a buffer array.
+- Flatten collects all errors via `apply()` + `try/catch` and throws one `PoisonError` with aggregated errors.
+- `getPoisonedArrayErrors` (used by guards) walks the buffer calling `command.getError()` to detect poison without executing commands.
 - Policy remains: never miss any error during flatten of observed outputs.
 
 ## Invariants
@@ -238,6 +253,8 @@ This ensures composed super text is concrete before suppression/append.
 2. `_outputs` is the lexical output registry used by lookup/finalization paths (not the direct flatten mutation target).
 3. Output name and output type are distinct concepts.
 4. Text command validity is enforced in `TextCommand.apply(...)`.
+7. All buffer entries are `Command` instances or nested `CommandBuffer`s — no raw `PoisonedValue` in buffers.
+8. Error detection is polymorphic via `getError()`; error execution is polymorphic via `apply()` throwing.
 5. Flatten is replay/error-collection; final shaping is in output objects (`getCurrentResult` / sink snapshot semantics).
 6. Sync template path remains string-based; async template path remains command-buffer based.
 

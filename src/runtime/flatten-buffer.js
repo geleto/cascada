@@ -1,10 +1,9 @@
 'use strict';
 
 const { CommandBuffer } = require('./buffer');
-const { Command, ErrorCommand, OutputCommand } = require('./commands');
-const { RuntimeFatalError, PoisonError, isPoison } = require('./errors');
+const { Command, OutputCommand } = require('./commands');
+const { RuntimeFatalError, PoisonError, isPoisonError } = require('./errors');
 const DataHandler = require('../script/data-handler');
-const BUILTIN_HANDLERS = new Set(['text', 'data', 'value', 'sink']);
 
 function flattenBuffer(output, errorContext = null) {
   if (!output || (typeof output !== 'object' && typeof output !== 'function')) {
@@ -51,63 +50,17 @@ function flattenBuffer(output, errorContext = null) {
 function flattenCommandBuffer(buffer, output, errorContext) {
   const errors = [];
   const arr = buffer._getOutputArray(output && output._outputName ? output._outputName : null);
-  for (const command of arr) {
-    errors.push(...flattenCommands(command, output, errorContext));
+  for (const entry of arr) {
+    flattenEntry(entry, output, errorContext, errors);
   }
   return errors;
 }
 
-function flattenCommands(command, output, errorContext) {
-  const errors = [];
-
-
-  function pushTextValue(val) {
-    if (!output || !Array.isArray(output._target)) {
-      return;
-    }
-    output._target.push(val);
-  }
-
-  if (isPoison(command)) {
-    errors.push(...command.errors);
-    return errors;
-  }
-
-  if (command instanceof ErrorCommand) {
-    const errList = command.value && command.value.errors
-      ? command.value.errors
-      : [command.value || new Error('Command buffer entry produced an unspecified error')];
-    errors.push(...errList);
-    return errors;
-  }
-
-  if (command instanceof Command) {
-    if (command instanceof OutputCommand) {
-      // Collect poison from command args before attempting apply().
-      if (Array.isArray(command.arguments)) {
-        for (const arg of command.arguments) {
-          if (isPoison(arg)) {
-            errors.push(...arg.errors);
-          }
-        }
-        if (errors.length > 0) {
-          return errors;
-        }
-      }
-
-      // Unknown handlers are unsupported. Built-ins are allowed even if the
-      // current flattened output name differs.
-      const handlerName = command.handler;
-      const isKnownCustomOutput = !!(output && output._outputName && handlerName === output._outputName);
-      if (handlerName && !BUILTIN_HANDLERS.has(handlerName) && !isKnownCustomOutput) {
-        errors.push(new Error(`Unsupported output command target: ${handlerName}`));
-        return errors;
-      }
-    }
-
+function flattenEntry(entry, output, errorContext, errors) {
+  if (entry instanceof Command) {
     try {
       // Route built-in data handler commands to a DataHandler target.
-      if (command instanceof OutputCommand && command.handler === 'data') {
+      if (entry instanceof OutputCommand && entry.handler === 'data') {
         let base = output._base;
         if (!base) {
           const vars = errorContext && typeof errorContext.getVariables === 'function'
@@ -116,33 +69,37 @@ function flattenCommands(command, output, errorContext) {
           const env = errorContext && errorContext.env ? errorContext.env : null;
           base = new DataHandler(vars, env);
         }
-        command.apply({ _base: base });
+        entry.apply({ _base: base });
       } else {
-        command.apply(output);
+        entry.apply(output);
       }
     } catch (err) {
-      errors.push(err);
-      return errors;
+      if (isPoisonError(err)) {
+        errors.push(...err.errors);
+      } else {
+        errors.push(err);
+      }
     }
-    return errors;
+    return;
   }
 
-  if (command instanceof CommandBuffer) {
-    errors.push(...flattenCommandBuffer(command, output, errorContext));
-    return errors;
+  if (entry instanceof CommandBuffer) {
+    const nested = flattenCommandBuffer(entry, output, errorContext);
+    if (nested.length > 0) {
+      errors.push(...nested);
+    }
+    return;
   }
 
   if (errorContext) {
     throw new RuntimeFatalError(
-      `Invalid command in buffer: ${command}`,
+      `Invalid command in buffer: ${entry}`,
       errorContext.lineno,
       errorContext.colno,
       errorContext.errorContextString,
       errorContext.path
     );
   }
-
-  return errors;
 }
 
 module.exports = {

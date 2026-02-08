@@ -1,13 +1,10 @@
 'use strict';
 
 const {
-  isPoison,
-  isPoisonError,
-  PoisonedValue,
   handleError
 } = require('./errors');
 
-const { ErrorCommand, TextCommand } = require('./commands');
+const { Command, ErrorCommand, TextCommand } = require('./commands');
 
 const {
   linkToPrevious,
@@ -317,7 +314,7 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
   // Always use ErrorCommand so poison markers remain command-native.
   const targets = resolveOutputTargets(buffer, handlerNames);
   targets.forEach(({ name }) => {
-    buffer.add(new ErrorCommand(new PoisonedValue(processedErrors)), name);
+    buffer.add(new ErrorCommand(processedErrors), name);
   });
 }
 
@@ -342,15 +339,6 @@ function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
   const isHandlerAllowed = (name) => !allowedHandlers || allowedHandlers.includes(name);
   if (!isHandlerAllowed(handlerName)) return allErrors;
 
-  function pushPoison(errOrPoison) {
-    if (!errOrPoison) return;
-    if (errOrPoison.errors) {
-      allErrors.push(...errOrPoison.errors);
-    } else {
-      allErrors.push(errOrPoison);
-    }
-  }
-
   function walk(value, currentHandler) {
     if (!value) return;
 
@@ -364,33 +352,13 @@ function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
       return;
     }
 
-    // Handle script-mode poison markers.
-    if (value instanceof ErrorCommand) {
-      if (isHandlerAllowed(currentHandler)) {
-        pushPoison(value.value);
+    if (value instanceof Command) {
+      const commandHandler = value.handler || currentHandler;
+      if (!isHandlerAllowed(commandHandler)) return;
+      const err = value.getError();
+      if (err) {
+        allErrors.push(...err.errors);
       }
-      return;
-    }
-
-    if (isPoison(value) || isPoisonError(value)) {
-      if (isHandlerAllowed(currentHandler)) {
-        pushPoison(value);
-      }
-      return;
-    }
-
-    if (typeof value === 'object') {
-      // Command object: recurse into argument payloads under its handler.
-      if (value.handler !== undefined) {
-        const commandHandler = value.handler || currentHandler;
-        if (!isHandlerAllowed(commandHandler)) return;
-        if (Array.isArray(value.arguments)) {
-          value.arguments.forEach((arg) => walk(arg, commandHandler));
-        }
-        return;
-      }
-
-      Object.keys(value).forEach((key) => walk(value[key], currentHandler));
     }
   }
 

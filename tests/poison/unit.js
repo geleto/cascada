@@ -954,7 +954,7 @@
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
-          expect(err.errors[0].message).to.contain('Unsupported output command target');
+          expect(err.errors[0].message).to.contain('Sink method \'method\' not found');
         }
       });
 
@@ -1103,7 +1103,7 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-          expect(thrown.errors[0].message).to.contain('Unsupported output command target');
+          expect(thrown.errors[0].message).to.contain('Sink method \'method\' not found');
         }
       });
     });

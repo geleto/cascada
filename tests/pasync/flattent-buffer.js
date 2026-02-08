@@ -251,7 +251,7 @@ describe('flattenBuffer', function () {
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'text');
       }, (err) => {
-        expect(err.message).to.contain('Unsupported output command target: nonexistent');
+        expect(err.message).to.contain('Sink method \'method\' not found');
       });
     });
 

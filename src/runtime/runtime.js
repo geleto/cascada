@@ -151,6 +151,7 @@ module.exports = {
   ValueCommand: commands.ValueCommand,
   DataCommand: commands.DataCommand,
   SinkCommand: commands.SinkCommand,
+  ErrorCommand: commands.ErrorCommand,
 
   AsyncState: require('./async-state').AsyncState,
 

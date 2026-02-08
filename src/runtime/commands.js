@@ -1,5 +1,7 @@
 'use strict';
 
+const { isPoison, PoisonError } = require('./errors');
+
 /**
  * Command classes for the script-mode output pipeline.
  *
@@ -7,7 +9,8 @@
  * The flattener calls command.apply(outputCtx) in source order; ctx is the
  * Output instance for the target handler.
  *
- * apply() mutates ctx in place; callers must not rely on return values.
+ * apply() mutates ctx in place and throws on error (including poison).
+ * getError() returns a PoisonError if the command carries poison, or null.
  */
 
 // ---------------------------------------------------------------------------
@@ -21,6 +24,10 @@ class Command {
     this.resolved = false;
     this.promise = null;
     this.resolve = null;
+  }
+
+  getError() {
+    return null;
   }
 
   apply(ctx) {
@@ -39,8 +46,22 @@ class OutputCommand extends Command {
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  apply(dispatchCtx) {
-    throw new Error('OutputCommand.apply() must be implemented by concrete command classes');
+  getError() {
+    const args = this.arguments;
+    if (!Array.isArray(args)) return null;
+    let errors = null;
+    for (const arg of args) {
+      if (isPoison(arg)) {
+        if (!errors) errors = [];
+        errors.push(...arg.errors);
+      }
+    }
+    return errors ? new PoisonError(errors) : null;
+  }
+
+  apply(ctx) {
+    const err = this.getError();
+    if (err) throw err;
   }
 }
 
@@ -77,6 +98,7 @@ class TextCommand extends OutputCommand {
   }
 
   apply(dispatchCtx) {
+    super.apply(dispatchCtx);
     if (!dispatchCtx || !Array.isArray(dispatchCtx._target)) {
       if (dispatchCtx) {
         dispatchCtx._target = [];
@@ -141,6 +163,7 @@ class ValueCommand extends OutputCommand {
   }
 
   apply(dispatchCtx) {
+    super.apply(dispatchCtx);
     if (!dispatchCtx) return;
     dispatchCtx._target = this.arguments.length > 0 ? this.arguments[this.arguments.length - 1] : undefined;
   }
@@ -158,6 +181,7 @@ class DataCommand extends OutputCommand {
   }
 
   apply(dispatchCtx) {
+    super.apply(dispatchCtx);
     if (!dispatchCtx || !dispatchCtx._base) return;
     const method = this.command ? dispatchCtx._base[this.command] : dispatchCtx._base;
     if (typeof method !== 'function') {
@@ -179,6 +203,7 @@ class SinkCommand extends OutputCommand {
   }
 
   apply(dispatchCtx) {
+    super.apply(dispatchCtx);
     if (!dispatchCtx) return;
     const sink = dispatchCtx._sink;
     const method = this.command ? (sink && sink[this.command]) : sink;
@@ -190,13 +215,17 @@ class SinkCommand extends OutputCommand {
 }
 
 class ErrorCommand extends Command {
-  constructor(value) {
+  constructor(errors) {
     super();
-    this.value = value;
+    this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
+  }
+
+  getError() {
+    return new PoisonError(this.errors);
   }
 
   apply(ctx) {
-    ctx._target = this.value;
+    throw this.getError();
   }
 }
 
