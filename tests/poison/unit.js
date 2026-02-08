@@ -1081,7 +1081,7 @@
         })];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          flatten(createBuffer(arr, context, 'data'), context, 'data');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);

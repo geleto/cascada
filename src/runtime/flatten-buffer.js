@@ -1,9 +1,8 @@
 'use strict';
 
 const { CommandBuffer } = require('./buffer');
-const { Command, OutputCommand } = require('./commands');
+const { Command } = require('./commands');
 const { RuntimeFatalError, PoisonError, isPoisonError } = require('./errors');
-const DataHandler = require('../script/data-handler');
 
 function flattenBuffer(output, errorContext = null) {
   if (!output || (typeof output !== 'object' && typeof output !== 'function')) {
@@ -59,20 +58,7 @@ function flattenCommandBuffer(buffer, output, errorContext) {
 function flattenEntry(entry, output, errorContext, errors) {
   if (entry instanceof Command) {
     try {
-      // Route built-in data handler commands to a DataHandler target.
-      if (entry instanceof OutputCommand && entry.handler === 'data') {
-        let base = output._base;
-        if (!base) {
-          const vars = errorContext && typeof errorContext.getVariables === 'function'
-            ? errorContext.getVariables()
-            : {};
-          const env = errorContext && errorContext.env ? errorContext.env : null;
-          base = new DataHandler(vars, env);
-        }
-        entry.apply({ _base: base });
-      } else {
-        entry.apply(output);
-      }
+      entry.apply(output);
     } catch (err) {
       if (isPoisonError(err)) {
         errors.push(...err.errors);
