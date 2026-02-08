@@ -7,7 +7,7 @@ const {
   handleError
 } = require('./errors');
 
-const { ErrorCommand } = require('./commands');
+const { ErrorCommand, TextCommand } = require('./commands');
 
 const {
   linkToPrevious,
@@ -165,6 +165,17 @@ class CommandBuffer {
 
   _setOutputIndex(outputName, nextIndex) {
     this._outputIndexes[outputName] = nextIndex;
+  }
+
+  addText(value, pos = null, outputName = 'text') {
+    const textPos = pos && typeof pos === 'object'
+      ? pos
+      : { lineno: 0, colno: 0 };
+    return this.add(new TextCommand({
+      handler: 'text',
+      args: [value],
+      pos: textPos
+    }), outputName);
   }
 
   add(value, outputName) {

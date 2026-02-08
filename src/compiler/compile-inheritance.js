@@ -252,7 +252,7 @@ class CompileInheritance {
       if (this.compiler.asyncMode) {
         //non-async node but in async mode -> use the proper buffer implementation
         this.compiler.async.updateOutputUsage(frame, 'text');
-        this.emit(`${this.compiler.buffer.currentBuffer}.add(new runtime.TextCommand({ handler: "text", args: [${id}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "text");`);
+        this.emit(`${this.compiler.buffer.currentBuffer}.addText(${id}, {lineno: ${node.lineno}, colno: ${node.colno}}, "text");`);
       } else {
         this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
       }
@@ -377,7 +377,7 @@ class CompileInheritance {
     if (this.compiler.asyncMode) {
       //non-async node but in async mode -> use the proper buffer implementation
       this.compiler.async.updateOutputUsage(frame, 'text');
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.add(new runtime.TextCommand({ handler: "text", args: [result], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "text");`);
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.addText(result, {lineno: ${node.lineno}, colno: ${node.colno}}, "text");`);
     } else {
       this.emit.line(`${this.compiler.buffer.currentBuffer} += result;`);
     }

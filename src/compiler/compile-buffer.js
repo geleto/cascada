@@ -280,11 +280,14 @@ class CompileBuffer {
         this.compiler.async.updateOutputUsage(frame, outputName);
       }
       if (emitTextCommand) {
-        this.compiler.emit(`${this.currentBuffer}.add(new runtime.TextCommand({ handler: "text", args: [`);
+        const valueId = this.compiler._tmpid();
+        this.compiler.emit(`let ${valueId} = `);
         renderFunction.call(this.compiler, frame);
+        this.compiler.emit.line(';');
         const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
         const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-        this.compiler.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} })`);
+        this.compiler.emit.line(`${this.currentBuffer}.addText(${valueId}, {lineno: ${lineno}, colno: ${colno}}, ${JSON.stringify(outputName)});`);
+        return;
       } else {
         this.compiler.emit.line(`${this.currentBuffer}.add(`);
         renderFunction.call(this.compiler, frame);
