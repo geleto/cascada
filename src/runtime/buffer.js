@@ -145,20 +145,12 @@ class CommandBuffer {
     return true;
   }
 
-  /**
-   * Creates the output array if it doesn't exist.
-   */
-  _getOutputArray(outputName) {
-    if (!this.arrays[outputName]) {
-      const arr = [];
-      this.arrays[outputName] = arr;
-    }
-    return this.arrays[outputName];
-  }
-
   reserveSlot(outputName) {
     if (this._outputIndexes[outputName] === undefined) {
       this._outputIndexes[outputName] = 0;
+    }
+    if (!this.arrays[outputName]) {
+      this.arrays[outputName] = [];
     }
     return this._outputIndexes[outputName]++;
   }
@@ -183,7 +175,7 @@ class CommandBuffer {
     checkFinishedBuffer(this);
 
     const slot = this.reserveSlot(outputName);
-    const target = this.arrays[outputName] ?? [];
+    const target = this.arrays[outputName];
 
     // Link to previous command
     if (target.length > 0) {
@@ -227,13 +219,6 @@ class CommandBuffer {
   }
 }
 
-function resolveBufferArray(buffer, outputName) {
-  if (buffer instanceof CommandBuffer) {
-    return buffer._getOutputArray(outputName);
-  }
-  return buffer;
-}
-
 function resolveOutputTargets(buffer, handlerNames = null) {
   if (!(buffer instanceof CommandBuffer)) {
     return Array.isArray(buffer) ? [{ name: null, array: buffer }] : [];
@@ -254,7 +239,7 @@ function resolveOutputTargets(buffer, handlerNames = null) {
 
   return names.map((name) => ({
     name,
-    array: buffer._getOutputArray(name)
+    array: buffer.arrays[name] ?? []
   }));
 }
 
@@ -315,24 +300,10 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
 
   // Add one poison entry per handler that would have been written to.
   // Always use ErrorCommand so poison markers remain command-native.
-  const targets = resolveOutputTargets(buffer, handlerNames);
-  targets.forEach(({ name }) => {
-    buffer.add(new ErrorCommand(processedErrors), name);
+  handlerNames.forEach((name) => {
+    buffer.arrays[name] = buffer.arrays[name] ?? [];
+    buffer.arrays[name].push(new ErrorCommand(processedErrors));
   });
-}
-
-function getPoisonedCommandBufferErrors(buffer, allowedHandlers = null) {
-  const allErrors = [];
-  if (!buffer) return allErrors;
-  const targets = resolveOutputTargets(buffer, allowedHandlers);
-  targets.forEach(({ name, array }) => {
-    const handlerName = name || 'text';
-    const nestedErrors = getPoisonedArrayErrors(array, handlerName, allowedHandlers);
-    if (nestedErrors.length > 0) {
-      allErrors.push(...nestedErrors);
-    }
-  });
-  return allErrors;
 }
 
 function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
@@ -346,7 +317,7 @@ function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
     if (!value) return;
 
     if (value instanceof CommandBuffer) {
-      allErrors.push(...getPoisonedCommandBufferErrors(value, allowedHandlers));
+      allErrors.push(...getPosonedBufferErrors(value, allowedHandlers));
       return;
     }
 
@@ -370,19 +341,18 @@ function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
   return allErrors;
 }
 
-function getPosonedBufferErrors(arr, allowedHandlers = null) {
-  if (!arr) return [];
-  if (arr instanceof CommandBuffer) {
-    return getPoisonedCommandBufferErrors(arr, allowedHandlers);
-  }
-  return getPoisonedArrayErrors(arr, 'text', allowedHandlers);
+function getPosonedBufferErrors(buffer, allowedHandlers = null) {
+  const allErrors = [];
+  const targets = resolveOutputTargets(buffer, allowedHandlers);
+  targets.forEach(({ name, array }) => {
+    allErrors.push(...getPoisonedArrayErrors(array, name, allowedHandlers));
+  });
+  return allErrors;
 }
 
 module.exports = {
   CommandBuffer,
   addPoisonMarkersToBuffer,
-  resolveBufferArray,
-  resolveOutputTargets,
   clearBuffer,
   getPosonedBufferErrors,
   isCommandBuffer,

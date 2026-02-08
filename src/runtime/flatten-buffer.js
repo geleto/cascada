@@ -38,7 +38,8 @@ function flattenBuffer(output, errorContext = null) {
     );
   }
 
-  const errors = flattenCommandBuffer(buffer, output, context);
+  const errors = [];
+  flattenCommandBuffer(buffer, output, context, errors);
   if (errors.length > 0) {
     throw new PoisonError(errors);
   }
@@ -46,13 +47,11 @@ function flattenBuffer(output, errorContext = null) {
   return output.getCurrentResult();
 }
 
-function flattenCommandBuffer(buffer, output, errorContext) {
-  const errors = [];
+function flattenCommandBuffer(buffer, output, errorContext, errors) {
   const arr = buffer.arrays[output._outputName] ?? [];
   for (const command of arr) {
     flattenCommand(command, output, errorContext, errors);
   }
-  return errors;
 }
 
 function flattenCommand(entry, output, errorContext, errors) {
@@ -70,10 +69,7 @@ function flattenCommand(entry, output, errorContext, errors) {
   }
 
   if (entry instanceof CommandBuffer) {
-    const nested = flattenCommandBuffer(entry, output, errorContext);
-    if (nested.length > 0) {
-      errors.push(...nested);
-    }
+    flattenCommandBuffer(entry, output, errorContext, errors);
     return;
   }
 
