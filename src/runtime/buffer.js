@@ -219,49 +219,31 @@ class CommandBuffer {
   }
 }
 
-function resolveOutputTargets(buffer, handlerNames = null) {
-  if (!(buffer instanceof CommandBuffer)) {
-    return Array.isArray(buffer) ? [{ name: null, array: buffer }] : [];
-  }
-
-  const allNames = Object.keys(buffer.arrays || {});
-  const hasHandlerList = Array.isArray(handlerNames);
-  const targetsAll = !hasHandlerList ||
-    handlerNames.includes('_');
-
-  const names = targetsAll
-    ? allNames
-    : handlerNames.filter(name => name && name !== '_');
-
-  if (hasHandlerList && handlerNames.length === 0) {
-    return [];
-  }
-
-  return names.map((name) => ({
-    name,
-    array: buffer.arrays[name] ?? []
-  }));
-}
-
 // Check if value is a CommandBuffer using symbol
 function isCommandBuffer(value) {
   return value && typeof value === 'object' && value[COMMAND_BUFFER_SYMBOL] === true;
 }
 
-// Clear buffer contents for guard error recovery
-// This is used by guards to discard output when an error occurs
+/*
+ * @param {CommandBuffer} buffer - The buffer to clear
+ * @param {Array<string>} handlerNames - Names of handlers to clear (optional)
+ * @returns {void}
+ * Clear buffer contents for guard error recovery
+ This is used by guards to discard output when an error occurs
+If no handler names are provided, all handlers are cleared.
+ */
 function clearBuffer(buffer, handlerNames = null) {
   if (!buffer) {
     return;
   }
 
   if (buffer instanceof CommandBuffer) {
-    const targets = resolveOutputTargets(buffer, handlerNames);
-    targets.forEach(({ name, array }) => {
-      if (Array.isArray(array)) {
-        array.length = 0;
+    const names = handlerNames || Object.keys(buffer.arrays);
+    names.forEach((name) => {
+      if (buffer.arrays[name]) {
+        buffer.arrays[name].length = 0;
+        buffer._setOutputIndex(name, 0);
       }
-      buffer._setOutputIndex(name, 0);
     });
 
     // Update next chains to skip this buffer if it has a parent
@@ -343,9 +325,15 @@ function getPoisonedArrayErrors(arr, handlerName, allowedHandlers = null) {
 
 function getPosonedBufferErrors(buffer, allowedHandlers = null) {
   const allErrors = [];
-  const targets = resolveOutputTargets(buffer, allowedHandlers);
-  targets.forEach(({ name, array }) => {
-    allErrors.push(...getPoisonedArrayErrors(array, name, allowedHandlers));
+  if (!buffer || !(buffer instanceof CommandBuffer)) return allErrors;
+  if (Array.isArray(allowedHandlers) && allowedHandlers.length === 0) return allErrors;
+
+  const names = allowedHandlers || Object.keys(buffer.arrays);
+  names.forEach((name) => {
+    const arr = buffer.arrays[name];
+    if (arr) {
+      allErrors.push(...getPoisonedArrayErrors(arr, name, allowedHandlers));
+    }
   });
   return allErrors;
 }
