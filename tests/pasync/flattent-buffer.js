@@ -272,6 +272,32 @@ describe('flattenBuffer', function () {
         expect(err.message).to.contain('Invalid path segment');
       });
     });
+
+    it('should reject CommandBuffer values inside TextCommand arguments', async function () {
+      const nested = new CommandBuffer(context, null);
+      nested.add(new TextCommand({ handler: 'text', args: ['x'], pos: { lineno: 0, colno: 0 } }), 'text');
+      const buffer = createBuffer([
+        new TextCommand({ handler: 'text', args: [nested], pos: { lineno: 1, colno: 1 } })
+      ], context, 'text');
+
+      await expectAsyncError(async () => {
+        await flatten(buffer, context, 'text');
+      }, (err) => {
+        expect(err.message).to.contain('Invalid TextCommand argument type');
+      });
+    });
+
+    it('should reject plain object envelope values inside TextCommand arguments', async function () {
+      const buffer = createBuffer([
+        new TextCommand({ handler: 'text', args: [{ text: 'wrapped' }], pos: { lineno: 1, colno: 1 } })
+      ], context, 'text');
+
+      await expectAsyncError(async () => {
+        await flatten(buffer, context, 'text');
+      }, (err) => {
+        expect(err.message).to.contain('Invalid TextCommand argument type');
+      });
+    });
   });
 
   describe('Async Autoescape — integration', function () {

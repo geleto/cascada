@@ -84,7 +84,27 @@ class TextCommand extends OutputCommand {
         return;
       }
     }
-    dispatchCtx._target.push(...this.arguments);
+    const args = Array.isArray(this.arguments) ? this.arguments : [];
+    const pos = this.pos || { lineno: 0, colno: 0 };
+    for (const arg of args) {
+      if (arg === null || arg === undefined) {
+        continue;
+      }
+      const type = typeof arg;
+      if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
+        dispatchCtx._target.push(arg);
+        continue;
+      }
+      if (type === 'object') {
+        const hasCustomToString = arg.toString && arg.toString !== Object.prototype.toString;
+        if (hasCustomToString) {
+          dispatchCtx._target.push(arg);
+          continue;
+        }
+      }
+      const argType = Array.isArray(arg) ? 'array' : type;
+      throw new Error(`Invalid TextCommand argument type '${argType}' at ${pos.lineno}:${pos.colno}. TextCommand only accepts text-like scalar values.`);
+    }
   }
 }
 

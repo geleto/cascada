@@ -1,7 +1,7 @@
 'use strict';
 
 const { CommandBuffer } = require('./buffer');
-const { Command, ErrorCommand, OutputCommand, TextCommand } = require('./commands');
+const { Command, ErrorCommand, OutputCommand } = require('./commands');
 const { RuntimeFatalError, PoisonError, isPoison } = require('./errors');
 const DataHandler = require('../script/data-handler');
 const BUILTIN_HANDLERS = new Set(['text', 'data', 'value', 'sink']);
@@ -68,41 +68,6 @@ function flattenCommands(command, output, errorContext) {
     output._target.push(val);
   }
 
-  function processTextArg(arg) {
-    if (arg === null || arg === undefined) return;
-    if (isPoison(arg)) {
-      errors.push(...arg.errors);
-      return;
-    }
-    if (arg instanceof CommandBuffer) {
-      errors.push(...flattenCommandBuffer(arg, output, errorContext));
-      return;
-    }
-    if (arg instanceof Command) {
-      errors.push(...flattenCommands(arg, output, errorContext));
-      return;
-    }
-    if (Array.isArray(arg)) {
-      for (const item of arg) {
-        processTextArg(item);
-      }
-      return;
-    }
-    if (typeof arg === 'object') {
-      const hasCustomToString = arg.toString && arg.toString !== Object.prototype.toString;
-      if (hasCustomToString) {
-        pushTextValue(arg);
-        return;
-      }
-      // Support envelope objects returned by macro/call/filter flows.
-      if (arg.text !== undefined && arg.text !== null) {
-        processTextArg(arg.text);
-      }
-      return;
-    }
-    pushTextValue(arg);
-  }
-
   if (isPoison(command)) {
     errors.push(...command.errors);
     return errors;
@@ -141,13 +106,6 @@ function flattenCommands(command, output, errorContext) {
     }
 
     try {
-      if (command instanceof TextCommand) {
-        const args = Array.isArray(command.arguments) ? command.arguments : [];
-        for (const arg of args) {
-          processTextArg(arg);
-        }
-        return errors;
-      }
       // Route built-in data handler commands to a DataHandler target.
       if (command instanceof OutputCommand && command.handler === 'data') {
         let base = output._base;

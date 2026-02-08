@@ -3,11 +3,10 @@
 var lib = require('../lib');
 const errors = require('./errors');
 const { CommandBuffer } = require('./buffer');
+const { flattenBuffer } = require('./flatten-buffer');
 
 function normalizeBufferValue(val) {
   if (val && typeof val === 'object') {
-    // Don't extract arrays from CommandBuffers - they contain wrapped commands
-    // Let them pass through to be handled by buffer flattening logic
     if (val instanceof CommandBuffer) {
       return val;
     }
@@ -19,6 +18,36 @@ function normalizeBufferValue(val) {
     }
   }
   return val;
+}
+
+function flattenTextCommandBuffer(buffer, errorContext) {
+  const output = {
+    _buffer: buffer,
+    _outputName: 'text',
+    _target: [],
+    getCurrentResult() {
+      if (!Array.isArray(this._target) || this._target.length === 0) {
+        this._target = [''];
+        return '';
+      }
+      const result = this._target.join('');
+      this._target = [result];
+      return result;
+    }
+  };
+  return flattenBuffer(output, errorContext || null);
+}
+
+// @todo - rewrite when command chain is implemented
+async function materializeTemplateTextValue(val, context, astate, waitCount = 1) {
+  val = normalizeBufferValue(val);
+  if (!(val instanceof CommandBuffer)) {
+    return val;
+  }
+  if (astate && typeof astate.waitAllClosures === 'function') {
+    await astate.waitAllClosures(waitCount);
+  }
+  return flattenTextCommandBuffer(val, context || null);
 }
 
 // A SafeString object indicates that the string should not be
@@ -97,9 +126,10 @@ function suppressValueAsync(val, autoescape, errorContext) {
     return val;
   }
 
-  // CommandBuffer check - return as-is to be handled by flattening logic
+  // CommandBuffer should normally be materialized at async boundaries.
+  // Keep this as a compatibility fallback.
   if (val instanceof CommandBuffer) {
-    return val;
+    return flattenTextCommandBuffer(val, errorContext);
   }
 
   // Simple literal value (not array, not promise) - return synchronously
@@ -241,16 +271,26 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
 }
 
 function suppressValueScript(val, autoescape) {
-  // Pass through any objects in script mode so they can be handled by the buffer processor
-  // (flattenBuffer -> processItem). This avoids stringifying objects like { value: ... }
-  // to "[object Object]".
-  if (val && typeof val === 'object' && !val.handler && !val.method && !Array.isArray(val)) {
+  if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof CommandBuffer)) {
     const hasCustomToString = val.toString && val.toString !== Object.prototype.toString;
     const isPromise = typeof val.then === 'function';
-    // If it's a plain object (no custom toString, not specific class), pass it through.
-    // SafeString has custom toString, so it falls through to suppressValue.
     if (!hasCustomToString && !isPromise) {
-      return val;
+      // Call-block/filter envelopes can expose a text field.
+      if (Object.prototype.hasOwnProperty.call(val, 'text')) {
+        const textVal = val.text;
+        if (textVal === null || textVal === undefined) {
+          return '';
+        }
+        if (Array.isArray(textVal)) {
+          return suppressValue(textVal.join(''), autoescape);
+        }
+        return suppressValue(textVal, autoescape);
+      }
+      if (Object.prototype.hasOwnProperty.call(val, 'output') && Array.isArray(val.output)) {
+        return suppressValue(val.output.join(''), autoescape);
+      }
+      // Plain objects are ignored in script text output by design.
+      return '';
     }
   }
   return suppressValue(val, autoescape);
@@ -303,6 +343,7 @@ module.exports = {
   SafeString,
   copySafeness,
   markSafe,
+  materializeTemplateTextValue,
   ensureDefined,
   ensureDefinedAsync,
   _ensureDefinedAsyncComplex
