@@ -1,45 +1,49 @@
 # Output Architecture
 
-Status: current for this branch.
+Status: current as of this branch state.
 
-This document describes how outputs are represented and resolved in Cascada today, with emphasis on async mode and command-buffer flattening.
+This document describes the current output pipeline in Cascada, with focus on async command-buffer execution and where text materialization happens.
 
 ## Big Picture
 
-Output handling in async mode is command-based:
+Async output handling is command-based:
 
 1. Compiler emits `CommandBuffer` writes.
-2. Runtime stores commands per output name.
-3. `snapshot()` triggers flatten for that output context.
-4. Flatten replays commands (`apply`) and populates output state.
-5. `snapshot()` resolves final value.
+2. Runtime stores entries per output name (`buffer.arrays[name]`).
+3. `snapshot()` (or root/capture/call-block finalization) triggers flatten for a target output context.
+4. Flatten replays commands via `apply(...)` and mutates output state (`_target`, `_base`, `_sink`).
+5. Final value is shaped by output type (`text`, `data`, `value`, `sink`).
 
 Key distinction:
 
-- Output names: user-declared identifiers (`myData`, `resultText`, `auditSink`).
-- Output types: handler kinds (`data`, `text`, `value`, `sink`).
+- Output name: declared identifier (`data`, `text`, `auditSink`, etc.)
+- Output type: runtime behavior (`data`, `text`, `value`, `sink`)
 
-## Script vs Template Output Models
+## Sync vs Async Models
 
-## Script mode
+## Sync template mode
 
-- Uses `CommandBuffer` as root output container.
-- Outputs are declared explicitly and stored in `frame._outputs`.
-- Commands are appended under named handler arrays (`buffer.arrays[name]`).
+- Root output is a string buffer (`let output = ""`).
+- Compiler emits direct string concatenation (`output += ...`).
+- `runtime.suppressValue(...)` runs on expression results before append.
+
+## Async template mode
+
+- Root output is `new runtime.CommandBuffer(context, null)`.
+- Compiler emits command-buffer writes (typically `TextCommand` for text output).
+- Root resolves with `runtime.flattenBuffer(output_textOutput, context)` after `astate.waitAllClosures()`.
+
+## Script mode (async scripts)
+
+- Uses command-buffer outputs declared by `runtime.declareOutput(...)`.
 - Return values are explicit (`return data.snapshot()`, `return text.snapshot()`, etc.).
-
-## Template mode
-
-- Sync template path remains legacy string/flat-buffer based.
-- Async template path uses `CommandBuffer` and emits command entries (mostly `TextCommand` currently).
-- Compiler locals like `output`/`buf` are runtime buffer variables, not user output names.
-- Root template rendering resolves to text.
+- Text output uses script-specific suppression (`suppressValueScript` / `normalizeScriptTextArgs`).
 
 ## Runtime Output Objects
 
 File: `src/runtime/output.js`
 
-## `Output` base
+## Output base
 
 Fields:
 
@@ -49,251 +53,195 @@ Fields:
 - `_frame`
 - `_buffer`
 
-Key behavior:
+Behavior:
 
-- `_enqueueCommand(command, args)` creates concrete command instances by output type (`TextCommand`, `ValueCommand`, `DataCommand`, `SinkCommand`) and appends to `_buffer`.
-- `snapshot()` calls `flattenBuffer(this)` when `_buffer` exists, then resolves via `_resolveSnapshotValue(...)`.
+- `_enqueueCommand(...)` creates concrete command type by output type and appends to buffer.
+- `snapshot()` calls `flattenBuffer(this)` when `_buffer` exists.
 
-## `TextOutput`
+## TextOutput
 
-- `_target` is initialized as `[]`.
-- `invoke(...args)` normalizes text args (`normalizeScriptTextArgs`) and enqueues a text command.
-- Snapshot result is joined text when `_target` is array-backed.
+- `_target` is an array of text fragments.
+- `invoke(...args)` normalizes args with `normalizeScriptTextArgs(...)` and enqueues `TextCommand`.
+- `getCurrentResult()` joins fragments and compacts to one element.
 
-## `ValueOutput`
+## ValueOutput
 
-- `_target` starts as `undefined`.
-- `_base` starts as `null`.
-- `invoke(value)` enqueues value command.
+- `_target` stores last value command result.
 
-## `DataOutput`
+## DataOutput
 
-- `_target` starts as `{}`.
-- `_base` starts as `null`.
-- Facade supports dynamic command calls (`myData.set(...)`, `myData.push(...)`, etc.) that enqueue `DataCommand`.
+- `_base` is `DataHandler`; data commands mutate `_base`.
 
-## `SinkOutputHandler`
+## SinkOutputHandler
 
-- Standalone class for `sink` outputs.
-- Holds `_sink`, `_buffer`, `_context`, `_sinkFinalized`.
-- `snapshot()` resolves sink, flattens sink output buffer, marks finalized, then returns one of:
-  - `sink.snapshot()`
-  - `sink.getReturnValue()`
-  - `sink.finalize()`
-  - sink itself.
+- Holds `_sink` and sink lifecycle flags.
+- `snapshot()` resolves sink (sync/async), flattens sink commands, marks finalized, then returns sink-shaped result.
 
-## Output Facades (Callable + Proxy)
+## Output declaration and lookup
 
-File: `src/runtime/output.js`
-
-`createOutputFacade(...)` wraps output instances so user-facing syntax maps to command enqueueing while preserving internal state access.
-
-- Callable facade for `text` and `value`.
-- Dynamic command facade for `data`.
-- Internal properties (`_target`, `_base`, `_buffer`, etc.) are read/write-through to backing `Output`.
-- `then` is forced to `undefined` to avoid accidental thenable behavior.
-
-## Declaration, Scope, and Maps
-
-File: `src/runtime/output.js`
-
-`declareOutput(frame, name, type, context, initializer)`:
-
-- ensures `frame._outputs`
-- finds/creates output buffer (`findOutputBuffer` -> fallback `new CommandBuffer(...)`)
-- sets `buffer._outputs` reference and `buffer._outputTypes[name]`
-- creates output object and stores it in `frame._outputs[name]`
-- for sinks: also stores in `buffer._outputHandlers[name]`
-
-Scope lookup:
-
-- `getOutputHandler(frame, name)` walks lexical parent chain (`frame.parent`).
-
-Map roles:
-
-- `buffer._outputs`: output contexts used for `_target`/`_base` mutation.
-- `buffer._outputHandlers`: sink handler lookup (sink-only path).
+- `declareOutput(frame, name, type, context, initializer)`:
+  - ensures `frame._outputs`
+  - finds/creates output buffer
+  - sets `buffer._outputTypes[name] = type`
+  - stores output in `frame._outputs`
+  - mirrors output into `buffer._outputs` when needed
+  - for sinks also stores `buffer._outputHandlers[name]`
+- `getOutputHandler(frame, name)` performs lexical parent lookup.
 
 ## CommandBuffer Semantics
 
 File: `src/runtime/buffer.js`
 
-- `CommandBuffer.arrays[name]` stores entries for that output.
-- `add(value, outputName)` wraps values and stores with chain linkage.
-- Non-command primitives become `TextCommand` via `_wrapCommand`.
-- Plain object pseudo-commands are rejected (`Plain command objects are not allowed; emit Command instances`).
-- Nested `CommandBuffer` gets parent/position linkage.
+- `arrays[name]` stores entries for a named output.
+- Entries can be command instances, nested `CommandBuffer`, poison markers, or reserved-slot fills.
+- `addText(value, pos, outputName)` creates `TextCommand` explicitly.
+- `reserveSlot` / `fillSlot` support async ordering.
+- Nested buffers keep parent/position linkage for chain patching.
 
-Default output name behavior:
-
-- Buffer storage defaults to `'output'` when no name is provided.
-- Compiler/runtime paths generally pass explicit names for output handlers.
-
-## Command Classes and `apply(...)`
+## Command Classes
 
 File: `src/runtime/commands.js`
 
-- `Command` (abstract)
-- `OutputCommand` (base for output-targeted commands)
-- `TextCommand.apply(ctx)` appends args into `ctx._target`
-- `ValueCommand.apply(ctx)` sets `ctx._target` to last arg (or `undefined`)
-- `DataCommand.apply(ctx)` invokes `ctx._base[command](...args)`
-- `SinkCommand.apply(ctx)` invokes sink method on `ctx._sink`
-- `ErrorCommand.apply(ctx)` sets `ctx._target` to poison payload
+- `Command` base
+- `OutputCommand` base
+- `TextCommand`
+- `ValueCommand`
+- `DataCommand`
+- `SinkCommand`
+- `ErrorCommand`
+
+### Current `TextCommand` contract
+
+`TextCommand.apply(ctx)` is strict:
+
+- accepts text-like scalar arguments (`string`, `number`, `boolean`, `bigint`)
+- accepts objects only when they provide custom `toString`
+- rejects arrays/plain objects/unsupported types with position-aware error
+
+This is the authoritative text-command validation path.
 
 ## Flatten Pipeline
 
-Files:
+File: `src/runtime/flatten-buffer.js`
 
-- `src/runtime/flatten-buffer.js`
-- `src/runtime/flatten-commands.js`
-- `src/runtime/flatten-text.js`
-
-## Entrypoints
+Entrypoint:
 
 - `flattenBuffer(output, errorContext?)`
-  - output-driven flatten; validates output + buffer.
-- `flattenBufferText(arr, outputName?, sharedState?)`
-  - template text flatten entry (thin wrapper over `doFlattenBuffer(...)`).
 
-Dispatcher (`doFlattenBuffer`) routes by input kind:
+Flow:
 
-- `CommandBuffer` -> `flattenCommandBuffer`
-- no context -> `flattenText`
-- array + context -> `flattenCommands`
+1. Validate output and `_buffer` (`CommandBuffer` required).
+2. Flatten one output array at a time via `flattenCommandBuffer(...)`.
+3. For each entry in sequence:
+   - collect poison from `ErrorCommand` / poison markers
+   - for `OutputCommand`, pre-scan args for poison before `apply(...)`
+   - validate output handler target (builtin or current custom output)
+   - call `command.apply(...)`
+   - recurse nested `CommandBuffer`
+4. If any errors collected: throw `PoisonError(errors)`.
+5. Return `output.getCurrentResult()`.
 
-## `flattenCommandBuffer`
+Notes:
 
-Current behavior:
+- Text commands are not special-cased in flattener anymore; they run through `TextCommand.apply(...)`.
+- Data commands lazily instantiate `DataHandler` base when needed.
 
-- builds/uses shared flatten state
-- pulls state maps from buffer (`_outputHandlers`, `_outputs`)
-- flattens one output array at a time
-- collects errors and throws `PoisonError` when finalizing non-shared state
-- resolves final value with `resolveOutputValue(...)`
+## Safe Output and Text Materialization
 
-Note:
+File: `src/runtime/safe-output.js`
 
-- Current default target when `outputName` is omitted is `'text'` in `flatten-commands.js`.
+### Core suppressors
 
-## `flattenCommands`
+- `suppressValue(val, autoescape)` (sync)
+- `suppressValueAsync(val, autoescape, errorContext)` (async template expression path)
+- `suppressValueScript(...)` and async variant (script text behavior)
 
-Handles:
+Normalization detail used by template suppress/ensure/materialization helpers:
 
-- `ErrorCommand`
-- `OutputCommand` subclasses
-- poison values
-- nested `CommandBuffer`
-- legacy raw array/object/primitive entries for compatibility non-`CommandBuffer` callers
+- `normalizeBufferValue(...)` unwraps envelope-like values:
+  - `{ text: [...] }` -> `text` array
+  - `{ output: [...] }` -> `output` array
+  - `CommandBuffer` passthrough
 
-Important policy points:
+### CommandBuffer-to-text conversion
 
-- target kind resolution uses declared output type (`text/value/data/sink`)
-- data handler (`DataHandler`) can be lazily instantiated and bound to output `_base`
-- sink dispatch requires resolved sink (`_sink` must not be promise at dispatch time)
-- command dispatch failures are wrapped with `handleError(...)` and collected
-- strict command-stream validation is source-based: arrays from `CommandBuffer` are treated as command streams and reject raw entries
+Current utilities:
 
-## Error and Poison
+- `flattenTextCommandBuffer(buffer, errorContext)`:
+  - builds temporary text output facade (`_target` array + `getCurrentResult`)
+  - calls `flattenBuffer(...)` to get concrete text
 
-Files:
+- `materializeTemplateTextValue(val, context, astate, waitCount = 1)`:
+  - boundary helper for template composition values
+  - if value is `CommandBuffer`, optionally waits `astate.waitAllClosures(waitCount)`, then flattens to text
+  - normalizes envelope-like values before CommandBuffer detection
 
-- `src/runtime/buffer.js`
-- `src/runtime/flatten-commands.js`
+Compiler currently uses this in async `super()` path before `markSafe`.
 
-Poison markers:
+### Script text suppression behavior
 
-- `addPoisonMarkersToBuffer(...)` inserts `ErrorCommand(new PoisonedValue(...))` into selected handler arrays.
+`suppressValueScript` intentionally:
 
-Collection:
+- suppresses plain objects to empty text by default
+- supports envelope objects with `text` or `output` fields
+- preserves custom `toString` objects
 
-- flatten collects errors from `ErrorCommand`, poison entries, and handled dispatch errors.
-
-Guard scanning:
-
-- `getPosonedBufferErrors(...)` recursively inspects command-buffer structures for poisoned entries.
-
-## snapshot() Resolution
-
-File: `src/runtime/output.js`
-
-For `Output`-based outputs (`text`, `data`, `value`):
-
-1. flatten output buffer via `flattenBuffer(this)`
-2. resolve with `_resolveSnapshotValue(result)`:
-   - `text`: join `_target` when array-backed, else return flatten result
-   - non-text: return `_base.getReturnValue()` when present, else `_base`, else `_target`, else flatten result
-
-For sink outputs:
-
-- `SinkOutputHandler.snapshot()` owns sink-specific finalization and return shaping.
-
-## finalizeUnobservedSinks
-
-File: `src/runtime/output.js`
-
-`finalizeUnobservedSinks(frame, context)`:
-
-- walks `frame._outputs`
-- for each non-finalized sink output, calls `snapshot()`
-- ignores thrown errors for unobserved sinks by design
-
-Used by async return paths in compiler to finalize side-effect sinks before completing return.
-
-## Compiler Emission Flow
+## Compiler Emission Overview
 
 Files:
 
 - `src/compiler/compile-emit.js`
 - `src/compiler/compile-buffer.js`
 - `src/compiler/compiler.js`
+- `src/compiler/compile-inheritance.js`
 
-Root setup (`funcBegin`, async):
+## Root setup
 
-- emits `let output = new runtime.CommandBuffer(context, null);`
-- sets `frame._outputBuffer = output`
-- declares default text output via `runtime.declareOutput(frame, "text", "text", context, null)`
+- Sync root: string buffer.
+- Async root: command buffer + default `text` output declaration.
 
-Script output declarations:
+## Text output emission
 
-- `compileOutputDeclaration` emits `runtime.declareOutput(...)`
+- Template text expressions compile through `suppressValue`/`suppressValueAsync` and are emitted as `TextCommand` writes in async mode.
+- Sync mode appends directly to string buffer.
 
-Output commands:
+## Return handling
 
-- `compileOutputCommand` emits concrete command constructors (`DataCommand`, `SinkCommand`, `TextCommand`, `ValueCommand`)
-- writes command into current buffer via `add` or slot (`reserveSlot` + `fillSlot`) in async blocks
+- Async `compileReturn` waits closures, resolves return value, checks poison, finalizes unobserved sinks, then returns/callbacks.
+- Sync `compileReturn` emits direct callback return.
+- `finalizeUnobservedSinks(...)` intentionally ignores errors for sinks that were never observed.
 
-Async template text emission:
+## Capture/Call Blocks
 
-- template output paths emit `TextCommand` for command-buffer writes
+- Async `compileCapture` creates a temporary command buffer/output scope, waits `astate.waitAllClosures(1)`, then flattens that temporary text output.
+- `compile-emit.asyncBlockRender` uses the same pattern for template call-block rendering in async mode (`waitAllClosures(1)` + `flattenBuffer` on temporary text output).
 
-Return handling:
+## Inheritance-specific note (`super()`)
 
-- async `compileReturn` waits closures, resolves return value, checks poison, finalizes unobserved sinks, then returns/callbacks
+Async `compileSuper` path currently:
 
-## Buffer Allocation Checklist
+1. gets super block result via `context.getSuper(...)`
+2. materializes command-buffer text via `runtime.materializeTemplateTextValue(...)`
+3. applies `runtime.markSafe(...)`
 
-Create new `CommandBuffer` for:
+This ensures composed super text is concrete before suppression/append.
 
-- async root render function
-- async nested buffer scopes (`asyncBufferNodeBegin`)
-- async capture/call-render style isolated output scopes
+## Error and Poison
 
-Use current buffer writes (`add`/slot fill) for:
+- Poison markers are inserted via `addPoisonMarkersToBuffer(...)` as `ErrorCommand(PoisonedValue)` entries.
+- Flatten collects all poison/command errors and throws one `PoisonError` with aggregated errors.
+- Policy remains: never miss any error during flatten of observed outputs.
 
-- single expression output writes
-- emitted output commands
-- async template text fragments
+## Invariants
 
-Keep sync template path unchanged.
+1. `_outputHandlers` is sink-focused runtime map.
+2. `_outputs` is the lexical output registry used by lookup/finalization paths (not the direct flatten mutation target).
+3. Output name and output type are distinct concepts.
+4. Text command validity is enforced in `TextCommand.apply(...)`.
+5. Flatten is replay/error-collection; final shaping is in output objects (`getCurrentResult` / sink snapshot semantics).
+6. Sync template path remains string-based; async template path remains command-buffer based.
 
-## Invariants and Gotchas
+## Transitional Notes
 
-1. `_outputHandlers` should be sink-only.
-2. `_outputs` is the authoritative output context map for flatten-time `_target/_base` mutation.
-3. Types (`data/text/value/sink`) are not output names.
-4. Sink dispatch expects resolved `_sink` at apply time.
-5. Output value shaping belongs in `snapshot()`; flatten should focus on replay + error collection.
-6. `CommandBuffer` entries should be command instances (or nested command buffers), not ad hoc command objects.
-7. Legacy non-command array/object handling still exists for compatibility paths; strict command-buffer streams reject raw entries.
-8. Async template command-path migration is ongoing; sync templates remain legacy by design.
+- `suppressValueAsync` still has a compatibility fallback for direct `CommandBuffer` input; preferred long-term direction is boundary materialization (`materializeTemplateTextValue`) in compiler/runtime call boundaries.
+- Some composition paths still rely on evolving boundary conventions; keep tests around inheritance/caller/capture paths as guardrails.
