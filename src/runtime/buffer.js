@@ -36,10 +36,7 @@ class CommandBuffer {
     this[COMMAND_BUFFER_SYMBOL] = true;
 
     // Create arrays namespace (handlers created lazily on first write/snapshot).
-    // Note: templates write to the default arrays 'output' stream,
     this.arrays = Object.create(null);
-
-    this._index = 0;
     // `_outputTypes` is script-only metadata used by the flattener to interpret
     // explicit output handler types. Templates don't need it.
     this._outputIndexes = Object.create(null);
@@ -108,35 +105,25 @@ class CommandBuffer {
   }
 
   _getOutputArray(outputName) {
-    const name = outputName || 'output';
-    if (!this.arrays[name]) {
+    if (!this.arrays[outputName]) {
       const arr = [];
-      this.arrays[name] = arr;
+      this.arrays[outputName] = arr;
     }
-    return this.arrays[name];
+    return this.arrays[outputName];
   }
 
   reserveSlot(outputName) {
-    const name = outputName || 'output';
-    if (name === 'output') {
-      return this._index++;
+    if (this._outputIndexes[outputName] === undefined) {
+      this._outputIndexes[outputName] = 0;
     }
-    if (this._outputIndexes[name] === undefined) {
-      this._outputIndexes[name] = 0;
-    }
-    return this._outputIndexes[name]++;
+    return this._outputIndexes[outputName]++;
   }
 
   _setOutputIndex(outputName, nextIndex) {
-    const name = outputName || 'output';
-    if (name === 'output') {
-      this._index = nextIndex;
-      return;
-    }
-    this._outputIndexes[name] = nextIndex;
+    this._outputIndexes[outputName] = nextIndex;
   }
 
-  add(value, outputName = null) {
+  add(value, outputName) {
     // Check if buffer is finished
     checkFinishedBuffer(this);
 
@@ -147,7 +134,7 @@ class CommandBuffer {
     // Link to previous command
     if (target.length > 0) {
       const prev = target[target.length - 1];
-      linkToPrevious(prev, wrappedValue, outputName || 'output');
+      linkToPrevious(prev, wrappedValue, outputName);
     }
 
     target[slot] = wrappedValue;
@@ -155,13 +142,13 @@ class CommandBuffer {
     // If adding a CommandBuffer as a child, set up parent relationship
     if (wrappedValue instanceof CommandBuffer) {
       wrappedValue.parent = this;
-      wrappedValue._setParentPosition(outputName || 'output', slot);
+      wrappedValue._setParentPosition(outputName, slot);
     }
 
     return slot;
   }
 
-  fillSlot(slot, value, outputName = null) {
+  fillSlot(slot, value, outputName) {
     // Don't check finished here - fillSlot fills pre-reserved slots
     // that may have been reserved before the buffer was marked finished
     const target = this._getOutputArray(outputName);
@@ -170,11 +157,11 @@ class CommandBuffer {
     // Link to previous and next commands
     if (slot > 0) {
       const prev = target[slot - 1];
-      linkToPrevious(prev, wrappedValue, outputName || 'output');
+      linkToPrevious(prev, wrappedValue, outputName);
     }
     if (slot < target.length - 1) {
       const next = target[slot + 1];
-      linkToNext(wrappedValue, next, outputName || 'output');
+      linkToNext(wrappedValue, next, outputName);
     }
 
     target[slot] = wrappedValue;
@@ -182,12 +169,12 @@ class CommandBuffer {
     // If adding a CommandBuffer as a child, set up parent relationship
     if (wrappedValue instanceof CommandBuffer) {
       wrappedValue.parent = this;
-      wrappedValue._setParentPosition(outputName || 'output', slot);
+      wrappedValue._setParentPosition(outputName, slot);
     }
   }
 }
 
-function resolveBufferArray(buffer, outputName = null) {
+function resolveBufferArray(buffer, outputName) {
   if (buffer instanceof CommandBuffer) {
     return buffer._getOutputArray(outputName);
   }
@@ -200,21 +187,16 @@ function resolveOutputTargets(buffer, handlerNames = null) {
   }
 
   const allNames = Object.keys(buffer.arrays || {});
-  const outputNames = allNames.filter(name => name !== 'output');
   const hasHandlerList = Array.isArray(handlerNames);
   const targetsAll = !hasHandlerList ||
-    handlerNames.includes('_') || handlerNames.includes(null);
+    handlerNames.includes('_');
 
   const names = targetsAll
-    ? outputNames
+    ? allNames
     : handlerNames.filter(name => name && name !== '_');
 
   if (hasHandlerList && handlerNames.length === 0) {
     return [];
-  }
-
-  if (names.length === 0 && buffer.arrays && buffer.arrays.output) {
-    return [{ name: 'output', array: buffer.arrays.output }];
   }
 
   return names.map((name) => ({
@@ -241,7 +223,7 @@ function clearBuffer(buffer, handlerNames = null) {
       if (Array.isArray(array)) {
         array.length = 0;
       }
-      buffer._setOutputIndex(name === 'output' ? null : name, 0);
+      buffer._setOutputIndex(name, 0);
     });
 
     // Update next chains to skip this buffer if it has a parent
