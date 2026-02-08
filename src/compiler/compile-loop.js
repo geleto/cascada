@@ -450,7 +450,7 @@ class CompileLoop {
       if (this.compiler.asyncMode) {
         //non-async node but in async mode -> use the proper buffer implementation
         this.compiler.async.updateOutputUsage(frame, 'text');
-        this.compiler.emit(`${this.compiler.buffer.currentBuffer}.add(${output}, "text");`);
+        this.compiler.emit(`${this.compiler.buffer.currentBuffer}.add(new runtime.TextCommand({ handler: "text", args: [${output}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "text");`);
       } else {
         this.compiler.emit.line(`${this.compiler.buffer.currentBuffer} += ${output};`);
       }

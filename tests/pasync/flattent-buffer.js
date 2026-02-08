@@ -52,6 +52,14 @@ describe('flattenBuffer', function () {
         buffer.add(nested, targetName);
         return;
       }
+      if (item instanceof TextCommand || item instanceof DataCommand || item instanceof SinkCommand) {
+        buffer.add(item, targetName);
+        return;
+      }
+      if (targetName === 'text') {
+        buffer.add(new TextCommand({ handler: 'text', args: [item], pos: { lineno: 0, colno: 0 } }), targetName);
+        return;
+      }
       buffer.add(item, targetName);
     };
     if (Array.isArray(input)) {

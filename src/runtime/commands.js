@@ -15,6 +15,14 @@
 // ---------------------------------------------------------------------------
 
 class Command {
+  constructor() {
+    // Native command-chain metadata for buffer linking/snapshots.
+    this.next = null;
+    this.resolved = false;
+    this.promise = null;
+    this.resolve = null;
+  }
+
   apply(ctx) {
     throw new Error('Command.apply() must be overridden');
   }

@@ -41,6 +41,14 @@
         targetBuffer.add(nested, outputName);
         return;
       }
+      if (item && typeof item === 'object' && typeof item.apply === 'function') {
+        targetBuffer.add(item, outputName);
+        return;
+      }
+      if (outputName === 'text') {
+        targetBuffer.add(new runtime.TextCommand({ handler: 'text', args: [item], pos: { lineno: 0, colno: 0 } }), outputName);
+        return;
+      }
       targetBuffer.add(item, outputName);
     };
     if (Array.isArray(input)) {

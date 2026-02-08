@@ -7,7 +7,7 @@ const {
   handleError
 } = require('./errors');
 
-const { Command, ErrorCommand, TextCommand } = require('./commands');
+const { ErrorCommand } = require('./commands');
 
 const {
   linkToPrevious,
@@ -19,7 +19,6 @@ const { checkFinishedBuffer } = require('./checks');
 
 // Unique symbols for type identification
 const COMMAND_BUFFER_SYMBOL = Symbol.for('cascada.CommandBuffer');
-const WRAPPED_COMMAND_SYMBOL = Symbol.for('cascada.WrappedCommand');
 
 class CommandBuffer {
   constructor(context, parent = null) {
@@ -34,43 +33,6 @@ class CommandBuffer {
     // `_outputTypes` is script-only metadata used by the flattener to interpret
     // explicit output handler types. Templates don't need it.
     this._outputIndexes = Object.create(null);
-  }
-
-  /**
-   * Coerces a value into a command instance and stamps chain properties on it.
-   * Containers (CommandBuffer, Array) and error values (PoisonedValue) pass through unchanged.
-   * Existing Command instances get chain properties stamped directly.
-   * Everything else becomes a text command.
-   * @param {*} value - The value to wrap
-   * @returns {Object} Command instance with chain properties
-   */
-  _wrapCommand(value) {
-    // Containers and error values pass through unchanged
-    if (value instanceof CommandBuffer || Array.isArray(value) || isPoison(value)) {
-      return value;
-    }
-
-    // Already stamped - return as-is
-    if (value && value[WRAPPED_COMMAND_SYMBOL]) {
-      return value;
-    }
-
-    let cmd;
-    if (value instanceof Command) {
-      cmd = value;
-    } else if (value && typeof value === 'object' && 'handler' in value) {
-      throw new Error('Plain command objects are not allowed; emit Command instances');
-    } else {
-      cmd = new TextCommand(value);
-    }
-
-    // Stamp chain properties
-    cmd[WRAPPED_COMMAND_SYMBOL] = true;
-    cmd.next = null;
-    cmd.resolved = false;
-    cmd.promise = null;
-    cmd.resolve = null;
-    return cmd;
   }
 
   // Snapshot and command chain methods
@@ -211,20 +173,19 @@ class CommandBuffer {
 
     const slot = this.reserveSlot(outputName);
     const target = this._getOutputArray(outputName);
-    const wrappedValue = this._wrapCommand(value);
 
     // Link to previous command
     if (target.length > 0) {
       const prev = target[target.length - 1];
-      linkToPrevious(prev, wrappedValue, outputName);
+      linkToPrevious(prev, value, outputName);
     }
 
-    target[slot] = wrappedValue;
+    target[slot] = value;
 
     // If adding a CommandBuffer as a child, set up parent relationship
-    if (wrappedValue instanceof CommandBuffer) {
-      wrappedValue.parent = this;
-      wrappedValue._setParentPosition(outputName, slot);
+    if (value instanceof CommandBuffer) {
+      value.parent = this;
+      value._setParentPosition(outputName, slot);
     }
 
     return slot;
@@ -234,24 +195,23 @@ class CommandBuffer {
     // Don't check finished here - fillSlot fills pre-reserved slots
     // that may have been reserved before the buffer was marked finished
     const target = this._getOutputArray(outputName);
-    const wrappedValue = this._wrapCommand(value);
 
     // Link to previous and next commands
     if (slot > 0) {
       const prev = target[slot - 1];
-      linkToPrevious(prev, wrappedValue, outputName);
+      linkToPrevious(prev, value, outputName);
     }
     if (slot < target.length - 1) {
       const next = target[slot + 1];
-      linkToNext(wrappedValue, next, outputName);
+      linkToNext(value, next, outputName);
     }
 
-    target[slot] = wrappedValue;
+    target[slot] = value;
 
     // If adding a CommandBuffer as a child, set up parent relationship
-    if (wrappedValue instanceof CommandBuffer) {
-      wrappedValue.parent = this;
-      wrappedValue._setParentPosition(outputName, slot);
+    if (value instanceof CommandBuffer) {
+      value.parent = this;
+      value._setParentPosition(outputName, slot);
     }
   }
 }
@@ -444,7 +404,6 @@ module.exports = {
   clearBuffer,
   getPosonedBufferErrors,
   isCommandBuffer,
-  COMMAND_BUFFER_SYMBOL,
-  WRAPPED_COMMAND_SYMBOL
+  COMMAND_BUFFER_SYMBOL
 };
 
