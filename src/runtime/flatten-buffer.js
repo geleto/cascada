@@ -52,9 +52,6 @@ function flattenCommandBuffer(buffer, output, errorContext) {
   const errors = [];
   const arr = buffer._getOutputArray(output && output._outputName ? output._outputName : null);
   for (const command of arr) {
-    if (command === undefined || command === null) {
-      continue;
-    }
     errors.push(...flattenCommands(command, output, errorContext));
   }
   return errors;
@@ -63,9 +60,6 @@ function flattenCommandBuffer(buffer, output, errorContext) {
 function flattenCommands(command, output, errorContext) {
   const errors = [];
 
-  if (command === undefined || command === null) {
-    return errors;
-  }
 
   function pushTextValue(val) {
     if (!output || !Array.isArray(output._target)) {

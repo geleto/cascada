@@ -281,10 +281,8 @@ function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorCont
   // Add one poison entry per handler that would have been written to.
   // Always use ErrorCommand so poison markers remain command-native.
   const targets = resolveOutputTargets(buffer, handlerNames);
-  targets.forEach(({ name, array }) => {
-    if (Array.isArray(array)) {
-      array.push(new ErrorCommand(new PoisonedValue(processedErrors)));
-    }
+  targets.forEach(({ name }) => {
+    buffer.add(new ErrorCommand(new PoisonedValue(processedErrors)), name);
   });
 }
 
