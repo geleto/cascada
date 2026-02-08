@@ -10,15 +10,9 @@ const {
 const { Command, ErrorCommand, TextCommand } = require('./commands');
 
 const {
-  setParentPosition,
-  firstCommand,
-  lastCommand,
-  markFinishedAndPatchLinks,
-  debugChain,
   linkToPrevious,
   linkToNext,
-  patchLinksAfterClear,
-  traverseChain
+  patchLinksAfterClear
 } = require('./buffer-snapshot');
 
 const { checkFinishedBuffer } = require('./checks');
@@ -79,29 +73,117 @@ class CommandBuffer {
     return cmd;
   }
 
-  // Snapshot and command chain methods (imported from buffer-snapshot.js)
+  // Snapshot and command chain methods
   _setParentPosition(handlerName, index) {
-    return setParentPosition.call(this, handlerName, index);
+    this.positions.set(handlerName, index);
   }
 
   firstCommand(handlerName) {
-    return firstCommand.call(this, handlerName);
+    const arr = this.arrays[handlerName];
+    if (!arr || arr.length === 0) {
+      return null;
+    }
+
+    for (const item of arr) {
+      if (!isCommandBuffer(item)) {
+        return item;
+      }
+      const nestedFirst = item.firstCommand(handlerName);
+      if (nestedFirst) {
+        return nestedFirst;
+      }
+    }
+
+    return null;
   }
 
   lastCommand(handlerName) {
-    return lastCommand.call(this, handlerName);
+    const arr = this.arrays[handlerName];
+    if (!arr || arr.length === 0) {
+      return null;
+    }
+
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const item = arr[i];
+      if (!isCommandBuffer(item)) {
+        return item;
+      }
+      const nestedLast = item.lastCommand(handlerName);
+      if (nestedLast) {
+        return nestedLast;
+      }
+    }
+
+    return null;
   }
 
   markFinishedAndPatchLinks() {
-    return markFinishedAndPatchLinks.call(this);
+    this.finished = true;
+
+    if (!this.parent) {
+      return;
+    }
+
+    for (const [handlerName, position] of this.positions.entries()) {
+      const parentArray = this.parent.arrays[handlerName];
+      if (!parentArray) {
+        continue;
+      }
+
+      const firstCmd = this.firstCommand(handlerName);
+      const lastCmd = this.lastCommand(handlerName);
+
+      // Link backward: previous element -> this.first
+      if (position > 0 && firstCmd) {
+        const prev = parentArray[position - 1];
+        if (!isCommandBuffer(prev)) {
+          prev.next = firstCmd;
+        } else if (prev.finished) {
+          const prevLast = prev.lastCommand(handlerName);
+          if (prevLast) {
+            prevLast.next = firstCmd;
+          }
+        }
+      }
+
+      // Link forward: this.last -> next element
+      if (position < parentArray.length - 1 && lastCmd) {
+        const next = parentArray[position + 1];
+        if (!isCommandBuffer(next)) {
+          lastCmd.next = next;
+        } else if (next.finished) {
+          const nextFirst = next.firstCommand(handlerName);
+          if (nextFirst) {
+            lastCmd.next = nextFirst;
+          }
+        }
+      }
+    }
   }
 
   debugChain(handlerName) {
-    return debugChain.call(this, handlerName);
+    const first = this.firstCommand(handlerName);
+    let cmd = first;
+    const chain = [];
+    while (cmd) {
+      chain.push(cmd.handler || 'unknown');
+      cmd = cmd.next;
+    }
+    return chain;
   }
 
   traverseChain(handlerName, processCommand) {
-    return traverseChain.call(this, handlerName, processCommand);
+    let current = this.firstCommand(handlerName);
+    if (!current) {
+      return false;
+    }
+
+    while (current) {
+      processCommand(current);
+      current = current.next;
+    }
+
+    return true;
   }
 
   _getOutputArray(outputName) {
@@ -362,7 +444,6 @@ module.exports = {
   clearBuffer,
   getPosonedBufferErrors,
   isCommandBuffer,
-  traverseChain,
   COMMAND_BUFFER_SYMBOL,
   WRAPPED_COMMAND_SYMBOL
 };

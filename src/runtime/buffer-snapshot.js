@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * Command chain and snapshot support for CommandBuffer
+ * Command chain helpers for CommandBuffer
  *
- * This module provides the infrastructure for building command chains with next pointers,
- * which will be used for incremental snapshot materialization in future phases.
+ * This module only contains shared link/patch helpers.
+ * Command lookup/traversal behavior lives directly on CommandBuffer methods.
  */
 
 // Import symbols for robust type checking (avoids circular dependency)
@@ -15,136 +15,6 @@ const COMMAND_BUFFER_SYMBOL = Symbol.for('cascada.CommandBuffer');
  */
 function isCommandBuffer(value) {
   return value && typeof value === 'object' && value[COMMAND_BUFFER_SYMBOL] === true;
-}
-
-/**
- * Track position when adding this buffer to a parent
- * @param {string} handlerName - The handler name (e.g., 'data', 'text')
- * @param {number} index - The index in the parent's array
- */
-function setParentPosition(handlerName, index) {
-  this.positions.set(handlerName, index);
-}
-
-/**
- * Find first actual command in handler array (recursive through nested buffers)
- * @param {string} handlerName - The handler name
- * @returns {Object|null} First command object or null if empty
- */
-function firstCommand(handlerName) {
-  const arr = this.arrays[handlerName];
-  if (!arr || arr.length === 0) {
-    return null;
-  }
-
-  for (const item of arr) {
-    // For script buffers, non-CommandBuffer entries are commands
-    if (!isCommandBuffer(item)) {
-      return item;
-    }
-    // If it's a nested CommandBuffer, recurse
-    const nestedFirst = item.firstCommand(handlerName);
-    if (nestedFirst) {
-      return nestedFirst;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Find last actual command in handler array (recursive through nested buffers)
- * @param {string} handlerName - The handler name
- * @returns {Object|null} Last command object or null if empty
- */
-function lastCommand(handlerName) {
-  const arr = this.arrays[handlerName];
-  if (!arr || arr.length === 0) {
-    return null;
-  }
-
-  // Iterate backwards
-  for (let i = arr.length - 1; i >= 0; i--) {
-    const item = arr[i];
-    // For script buffers, non-CommandBuffer entries are commands
-    if (!isCommandBuffer(item)) {
-      return item;
-    }
-    // If it's a nested CommandBuffer, recurse
-    const nestedLast = item.lastCommand(handlerName);
-    if (nestedLast) {
-      return nestedLast;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Called when async block completes - patches next pointers
- * This creates the command chain by linking commands in parent buffer
- */
-function markFinishedAndPatchLinks() {
-  this.finished = true;
-
-  if (!this.parent) {
-    return; // Root buffer needs no patching
-  }
-
-  // For each handler this buffer has position in:
-  for (const [handlerName, position] of this.positions.entries()) {
-    const parentArray = this.parent.arrays[handlerName];
-    if (!parentArray) {
-      continue;
-    }
-
-    const firstCmd = this.firstCommand(handlerName);
-    const lastCmd = this.lastCommand(handlerName);
-
-    // Link backward: previous element → this.first
-    if (position > 0 && firstCmd) {
-      const prev = parentArray[position - 1];
-      if (!isCommandBuffer(prev)) {
-        // prev is a command object
-        prev.next = firstCmd;
-      } else if (prev.finished) {
-        const prevLast = prev.lastCommand(handlerName);
-        if (prevLast) {
-          prevLast.next = firstCmd;
-        }
-      }
-    }
-
-    // Link forward: this.last → next element
-    if (position < parentArray.length - 1 && lastCmd) {
-      const next = parentArray[position + 1];
-      if (!isCommandBuffer(next)) {
-        // next is a command object
-        lastCmd.next = next;
-      } else if (next.finished) {
-        const nextFirst = next.firstCommand(handlerName);
-        if (nextFirst) {
-          lastCmd.next = nextFirst;
-        }
-      }
-    }
-  }
-}
-
-/**
- * Debug helper to visualize command chain
- * @param {string} handlerName - The handler name
- * @returns {Array<string>} Array of command types in chain
- */
-function debugChain(handlerName) {
-  const first = this.firstCommand(handlerName);
-  let cmd = first;
-  const chain = [];
-  while (cmd) {
-    chain.push(cmd.handler || 'unknown');
-    cmd = cmd.next;
-  }
-  return chain;
 }
 
 /**
@@ -238,38 +108,8 @@ function patchLinksAfterClear(buffer) {
   }
 }
 
-/**
- * Traverse command chain and call processor for each command
- * @param {Object} buffer - The buffer to traverse
- * @param {string} handlerName - The handler name (e.g., 'data', 'text')
- * @param {Function} processCommand - Function to call for each command
- * @returns {boolean} True if chain was used, false if fell back to array
- */
-function traverseChain(buffer, handlerName, processCommand) {
-  let current = buffer.firstCommand(handlerName);
-
-  // If no chain exists, fall back to array
-  if (!current) {
-    return false;
-  }
-
-  // Traverse the chain using next pointers
-  while (current) {
-    processCommand(current);
-    current = current.next;
-  }
-
-  return true;
-}
-
 module.exports = {
-  setParentPosition,
-  firstCommand,
-  lastCommand,
-  markFinishedAndPatchLinks,
-  debugChain,
   linkToPrevious,
   linkToNext,
-  patchLinksAfterClear,
-  traverseChain
+  patchLinksAfterClear
 };
