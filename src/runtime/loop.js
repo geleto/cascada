@@ -2,7 +2,6 @@
 
 const lib = require('../lib');
 const { createPoison, isPoison, isPoisonError, PoisonError, handleError } = require('./errors');
-const { addPoisonMarkersToBuffer } = require('./buffer');
 
 const STOP_WHILE = Symbol('STOP_WHILE');
 
@@ -631,11 +630,10 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
  * been empty (else runs) or non-empty (body runs).
  *
  * @param {AsyncFrame} frame - The loop frame
- * @param {Array} buffer - The output buffer array
+ * @param {Object} buffer - The CommandBuffer instance
  * @param {Object} asyncOptions - Options containing write counts and handlers
  * @param {Array} errors - Array of error objects to propagate
  * @param {boolean} didIterate - Whether any iterations occurred
- * @param {Function} addPoisonMarkersToBuffer - Function to add poison markers to buffer
  */
 function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
   //replace the errors with the handleError'd errors
@@ -646,7 +644,9 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
     frame.poisonBranchWrites(errors, asyncOptions.bodyWriteCounts);
   }
   if (asyncOptions.bodyHandlers && asyncOptions.bodyHandlers.length > 0) {
-    addPoisonMarkersToBuffer(buffer, errors, asyncOptions.bodyHandlers, asyncOptions.errorContext);
+    for (const handler of asyncOptions.bodyHandlers) {
+      buffer.addPoison(errors, handler);
+    }
   }
 
   if (didIterate) {
@@ -658,7 +658,9 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
     frame.poisonBranchWrites(errors, asyncOptions.elseWriteCounts);
   }
   if (asyncOptions.elseHandlers && asyncOptions.elseHandlers.length > 0) {
-    addPoisonMarkersToBuffer(buffer, errors, asyncOptions.elseHandlers, asyncOptions.errorContext);
+    for (const handler of asyncOptions.elseHandlers) {
+      buffer.addPoison(errors, handler);
+    }
   }
 }
 

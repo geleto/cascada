@@ -300,8 +300,9 @@ class CompileLoop {
         }
         const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
         if (bodyHandlers && bodyHandlers.size > 0) {
-          const handlerArray = Array.from(bodyHandlers);
-          this.compiler.emit.insertLine(catchPoisonPos, `  runtime.addPoisonMarkersToBuffer(${this.compiler.buffer.currentBuffer}, contextualError, ${JSON.stringify(handlerArray)});`);
+          for (const handler of bodyHandlers) {
+            this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+          }
         }
       }
     }

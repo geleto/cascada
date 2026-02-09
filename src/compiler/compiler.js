@@ -502,9 +502,10 @@ class Compiler extends CompilerBase {
 
         // Handler (buffer) poisoning in catch block
         if (hasHandlers) {
-          const handlerArray = Array.from(allHandlers);
-          this.emit.insertLine(catchPoisonPos,
-            `    runtime.addPoisonMarkersToBuffer(${this.buffer.currentBuffer}, contextualError, ${JSON.stringify(handlerArray)});`);
+          for (const handler of allHandlers) {
+            this.emit.insertLine(catchPoisonPos,
+              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+          }
         }
       }
     }
@@ -788,11 +789,12 @@ class Compiler extends CompilerBase {
 
         // Handler (buffer) poisoning
         if (hasHandlers) {
-          const handlerArray = Array.from(allHandlers);
-          this.emit.insertLine(poisonCheckPos,
-            `  runtime.addPoisonMarkersToBuffer(${this.buffer.currentBuffer}, ${condResultId}, ${JSON.stringify(handlerArray)});`);
-          this.emit.insertLine(catchPoisonPos,
-            `    runtime.addPoisonMarkersToBuffer(${this.buffer.currentBuffer}, contextualError, ${JSON.stringify(handlerArray)});`);
+          for (const handler of allHandlers) {
+            this.emit.insertLine(poisonCheckPos,
+              `  ${this.buffer.currentBuffer}.addPoison(${condResultId}, "${handler}");`);
+            this.emit.insertLine(catchPoisonPos,
+              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+          }
         }
       }
     } else {

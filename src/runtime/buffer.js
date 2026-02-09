@@ -1,9 +1,5 @@
 'use strict';
 
-const {
-  handleError
-} = require('./errors');
-
 const { ErrorCommand, TextCommand } = require('./commands');
 
 const {
@@ -44,6 +40,9 @@ class CommandBuffer {
     }
 
     for (const item of arr) {
+      if (item == null) {
+        continue; // skip unfilled slots in sparse arrays
+      }
       if (!isCommandBuffer(item)) {
         return item;
       }
@@ -64,6 +63,9 @@ class CommandBuffer {
 
     for (let i = arr.length - 1; i >= 0; i--) {
       const item = arr[i];
+      if (item == null) {
+        continue; // skip unfilled slots in sparse arrays
+      }
       if (!isCommandBuffer(item)) {
         return item;
       }
@@ -92,29 +94,40 @@ class CommandBuffer {
       const firstCmd = this.firstCommand(handlerName);
       const lastCmd = this.lastCommand(handlerName);
 
-      // Link backward: previous element -> this.first
-      if (position > 0 && firstCmd) {
+      // Find the previous command (resolving buffers and skipping unfilled slots)
+      let prevCmd = null;
+      if (position > 0) {
         const prev = parentArray[position - 1];
-        if (!isCommandBuffer(prev)) {
-          prev.next = firstCmd;
-        } else if (prev.finished) {
-          const prevLast = prev.lastCommand(handlerName);
-          if (prevLast) {
-            prevLast.next = firstCmd;
-          }
+        if (prev && !isCommandBuffer(prev)) {
+          prevCmd = prev;
+        } else if (prev && isCommandBuffer(prev) && prev.finished) {
+          prevCmd = prev.lastCommand(handlerName);
         }
       }
 
-      // Link forward: this.last -> next element
-      if (position < parentArray.length - 1 && lastCmd) {
+      // Find the next command (resolving buffers and skipping unfilled slots)
+      let nextCmd = null;
+      if (position < parentArray.length - 1) {
         const next = parentArray[position + 1];
-        if (!isCommandBuffer(next)) {
-          lastCmd.next = next;
-        } else if (next.finished) {
-          const nextFirst = next.firstCommand(handlerName);
-          if (nextFirst) {
-            lastCmd.next = nextFirst;
-          }
+        if (next && !isCommandBuffer(next)) {
+          nextCmd = next;
+        } else if (next && isCommandBuffer(next) && next.finished) {
+          nextCmd = next.firstCommand(handlerName);
+        }
+      }
+
+      if (firstCmd && lastCmd) {
+        // Non-empty buffer: link prev -> firstCmd, lastCmd -> next
+        if (prevCmd) {
+          prevCmd.next = firstCmd;
+        }
+        if (nextCmd) {
+          lastCmd.next = nextCmd;
+        }
+      } else {
+        // Empty buffer for this handler: link prev directly to next, skipping this buffer
+        if (prevCmd && nextCmd) {
+          prevCmd.next = nextCmd;
         }
       }
     }
@@ -168,6 +181,11 @@ class CommandBuffer {
       args: [value],
       pos: textPos
     }), outputName);
+  }
+
+  addPoison(errors, outputName) {
+    const errs = Array.isArray(errors) ? errors : [errors];
+    return this.add(new ErrorCommand(errs), outputName);
   }
 
   add(value, outputName) {
@@ -259,37 +277,6 @@ function clearBuffer(buffer, handlerNames = null) {
   }
 }
 
-/**
- * Add poison markers to output buffer for handlers that would have been written
- * in a branch that wasn't executed due to poisoned condition.
- *
- * When a condition evaluates to poison (error), branches aren't executed but would
- * have written to output handlers. This function adds markers to the buffer so that
- * flattenBuffer can collect these errors.
- *
- * @param {Array} buffer - The output buffer array to add markers to
- * @param {PoisonedValue|Error} error - The poison value or error from failed condition
- * @param {Array<string>} handlerNames - Names of handlers (e.g., ['text', 'data'])
- * @param {Object} errorContext - Context object with lineno, colno, errorContextString, and path
- */
-function addPoisonMarkersToBuffer(buffer, errorOrErrors, handlerNames, errorContext = null) {
-  const errors = (Array.isArray(errorOrErrors) ? errorOrErrors : [errorOrErrors]);
-
-  // Process errors with proper context if available
-  const processedErrors = errorContext ?
-    errors.map(err => handleError(err, errorContext.lineno, errorContext.colno,
-      errorContext.errorContextString, errorContext.path)) :
-    errors;
-
-  // Add one poison entry per handler that would have been written to.
-  // Always use ErrorCommand so poison markers remain command-native.
-  handlerNames.forEach((name) => {
-    buffer.arrays[name] = buffer.arrays[name] ?? [];
-    buffer.arrays[name].push(new ErrorCommand(processedErrors));
-  });
-}
-
-
 function getPosonedBufferErrors(buffer, allowedHandlers = null) {
   const allErrors = [];
   if (!buffer || !(buffer instanceof CommandBuffer)) return allErrors;
@@ -316,7 +303,6 @@ function getPosonedBufferErrors(buffer, allowedHandlers = null) {
 
 module.exports = {
   CommandBuffer,
-  addPoisonMarkersToBuffer,
   clearBuffer,
   getPosonedBufferErrors,
   isCommandBuffer,

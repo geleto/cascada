@@ -121,6 +121,7 @@ File: `src/runtime/buffer.js`
 - `arrays[name]` stores entries for a named output.
 - Entries are `Command` instances, nested `CommandBuffer`s, or `ErrorCommand`s. No raw `PoisonedValue` objects in buffers.
 - `addText(value, pos, outputName)` creates `TextCommand` explicitly.
+- `addPoison(errors, outputName)` creates `ErrorCommand` and routes through `add()` for proper chain linking.
 - `reserveSlot` / `fillSlot` support async ordering.
 - Nested buffers keep parent/position linkage for chain patching.
 
@@ -130,9 +131,9 @@ Commands are linked into a singly-linked list via the `next` field for snapshot/
 
 - `Command` base has `next`, `resolved`, `promise`, `resolve` fields.
 - `linkToPrevious(prev, current, handlerName)` / `linkToNext(current, next, handlerName)` — called during `add`/`fillSlot` to maintain the chain.
-- `markFinishedAndPatchLinks()` — called when a nested buffer completes; links its commands into the parent chain.
-- `patchLinksAfterClear(buffer)` — updates chain links when a buffer is cleared (guard recovery).
-- `firstCommand(handlerName)` / `lastCommand(handlerName)` — traverse buffer arrays (recursing into nested buffers) to find chain endpoints.
+- `markFinishedAndPatchLinks()` — called when a nested buffer completes; links its commands into the parent chain. Handles empty child buffers by linking prev directly to next. Guards against unfilled slots (undefined) in parent arrays.
+- `patchLinksAfterClear(buffer)` — updates chain links when a buffer is cleared (guard recovery). Links prev to next, skipping the cleared buffer.
+- `firstCommand(handlerName)` / `lastCommand(handlerName)` — traverse buffer arrays (recursing into nested buffers, skipping unfilled slots) to find chain endpoints.
 - `traverseChain(handlerName, fn)` — walks the linked list from first command.
 
 ### Buffer utilities
@@ -290,7 +291,7 @@ This ensures composed super text is concrete before suppression/append.
 
 ## Error and Poison
 
-- Poison markers are inserted via `addPoisonMarkersToBuffer(...)` as `ErrorCommand(errors)` entries (no `PoisonedValue` wrapper).
+- Poison markers are inserted via `addPoison(...)` as `ErrorCommand(errors)` entries.
 - Async `reserveSlot`/`fillSlot` catch blocks also wrap errors in `ErrorCommand` before filling the slot.
 - Buffer invariant: no raw `PoisonedValue` ever sits in a buffer array.
 - Flatten collects all errors via `apply()` + `try/catch` and throws one `PoisonError` with aggregated errors.

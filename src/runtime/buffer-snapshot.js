@@ -68,7 +68,7 @@ function linkToNext(current, next, handlerName) {
  * @param {Object} buffer - The buffer being cleared
  */
 function patchLinksAfterClear(buffer) {
-  if (!buffer.parent || !buffer.asyncMode) {
+  if (!buffer.parent) {
     return;
   }
 
@@ -82,9 +82,9 @@ function patchLinksAfterClear(buffer) {
     let prevCmd = null;
     if (position > 0) {
       const prev = parentArray[position - 1];
-      if (!isCommandBuffer(prev)) {
+      if (prev && !isCommandBuffer(prev)) {
         prevCmd = prev;
-      } else if (prev.finished) {
+      } else if (prev && prev.finished) {
         prevCmd = prev.lastCommand(handlerName);
       }
     }
@@ -92,9 +92,9 @@ function patchLinksAfterClear(buffer) {
     let nextCmd = null;
     if (position < parentArray.length - 1) {
       const next = parentArray[position + 1];
-      if (!isCommandBuffer(next)) {
+      if (next && !isCommandBuffer(next)) {
         nextCmd = next;
-      } else if (next.finished) {
+      } else if (next && next.finished) {
         nextCmd = next.firstCommand(handlerName);
       }
     }
