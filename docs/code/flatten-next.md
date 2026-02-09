@@ -30,150 +30,44 @@ It intentionally omits detailed flattening logic that will be rewritten.
 
 ## Current System (Data Layout and Flow)
 
-### 1) Buffers and Output Arrays
+### 1) Outputs, Buffers and Output Arrays
 - In async mode, output is written into a CommandBuffer.
-- Each output handler has its own array inside CommandBuffer.arrays.
-  - Common handlers: text, data, value.
-  - There is also output as a default stream.
-- The buffer stores items, not just raw strings.
+- Each output handler has its own Output object, and separately array inside a CommandBuffer created for each async context (AsyncState)
+  - Common handlers: text, data, value, sink. There is an output class for each one (TextOutput, DataOutput, etc...)
+  - For templates only text output is used
+- The buffer stores instances of Command extending classes (TextCommand, DataCommand, etc)
+-
 
 ### 2) What Can Be Inside a Handler Array Today
-When CommandBuffer.add() or fillSlot() is used, values are passed through _wrapCommand().
-
-_wrapCommand() behavior (current):
-- Pass-through (not wrapped):
-  - CommandBuffer (nested buffers)
-  - Array
-  - PoisonedValue (via isPoison)
-- Wrap to a command object otherwise:
-  - If the value is already a command object (has handler), it is stamped with chain metadata.
-  - Otherwise it becomes a text command: { handler: 'text', arguments: [value] }.
-
-Therefore handler arrays can contain:
-- Wrapped command objects (the normal case)
-- Nested CommandBuffer instances
-- Arrays
-- PoisonedValue
-- Poison markers (special objects used to mark skipped outputs)
-- Plain objects in script mode (result objects with { text, data } behavior)
+When CommandBuffer.add() or fillSlot() is used the values can be either Command* class instances ot CommandBuffer (for child async contexts)
 
 ### 3) Poison Handling in Current Layout
-- Errors can be represented as:
-  - PoisonedValue inserted directly into arrays
-  - Special poison markers inserted into arrays via addPoisonMarkersToBuffer()
-- Poison markers exist to preserve handler targeting when a branch is skipped due to poison.
+- Errors can be stored inside an ErrorCommand clobjectsass or in the other Command class instances, and can be extracted using the getError() method.
 
 ### 4) Command Chains (Next Pointers)
-- Each handler array forms a linked chain of commands through next pointers.
+- Each handler array forms a linked chain of Commands through next pointers.
 - CommandBuffer containers themselves are not part of the chain.
 - Chain is patched when async blocks finish, using firstCommand/lastCommand to link.
 - Nested CommandBuffer instances are used as containers and are traversed to find real commands.
 
-### 5) Template Mode (Flatten Text)
-- Template mode uses flatten-text to reduce a text array into a string.
-- It accepts:
-  - primitives
-  - arrays
-  - PoisonedValue
-  - CommandBuffer (flattened recursively)
-
-### 6) Script Mode (Flatten Commands)
-- Script mode uses flatten-commands and processes:
-  - command objects (handler/command/subpath/arguments)
-  - CommandBuffer containers
-  - arrays
-  - plain objects with { text, data } semantics
-  - poison markers and PoisonedValue
+### 6) Flatten Commands
+- Currently the commands are flattened when the OutputData/Text/etc .snapshot() is called. In the future they will be dynamically flattened as new commands are added.
 
 ---
 
-## Target System (Future Design)
+## The New Current design:
 
-### 1) Template Mode
-- Unchanged in behavior and representation.
-- Still accepts primitives, arrays, and PoisonedValue.
-- May standardize on PoisonedValue for error collection, but no structural refactor required.
+### 1) Template Mode - uses Commands just as Script Mode
 
-### 2) Script Mode: Data Layout
+### 2) Script And Template Mode: Data Layout
 - Everything is either a Command or a CommandBuffer.
-- No raw arrays or plain objects in handler arrays.
 - Poison handling is represented as a command that carries a PoisonedValue.
 
 ### 3) Command Objects
-- Command should be a class (or a strict object type) with a single apply(target) method.
+- Command is a class (or a strict object type) with a single apply(target) method.
 - The flattener becomes a simple loop that calls apply on each command in order.
-- The flattener receives a single target object and applies only to that target.
-- We flatten one buffer at a time, not combining multiple outputs into a composite result.
+- The Command.apply() methods work with a single target object
 
-### 4) Shared CommandBuffer Context (Telemetry/Tracing)
-- We keep shared CommandBuffer objects across handlers to preserve execution-context grouping
-  for telemetry and tracing.
-- Child buffers inherit the parent trace id and remain part of the same execution context.
-
----
-
-## Migration Plan (Each Step Testable)
-
-### Step 1: Implement Producer Inventory and Coverage Checks
-Background: Before changing formats, we need a precise list of all producers that place
-non-command values into script buffers (arrays, result objects, poison markers) and ensure
-we have tests that cover each producer.
-- Identify all sources that insert non-command values into CommandBuffer arrays in script mode:
-  - arrays
-  - result objects with {text, data}
-  - poison markers
-- Confirm test coverage for each producer.
-- Tests: full suite should pass.
-
-### Step 2: Implement Command Class Interface (No Behavior Change)
-Background: We want commands to be first-class objects with apply(target) so we can simplify
-flattening. This step adds the interface without changing produced output.
-- Add a Command class with apply(target) but keep existing command object usage.
-- Implement an adapter so old command objects can be treated as Command without changing outputs.
-- Tests: full suite should pass.
-
-### Step 3: Implement Poison Command Support (No Producer Changes)
-Background: Script mode should represent poison as a command instead of a special marker. First,
-teach the flattener to understand poison commands while leaving producers unchanged.
-- Teach the flattener to accept a poison command and collect errors from it.
-- Keep template behavior unchanged.
-- Tests: full suite should pass.
-
-### Step 4: Implement Script Poison Marker Switch
-Background: Once the flattener accepts poison commands, switch script-mode producers away from
-poison markers to poison commands.
-- Replace addPoisonMarkersToBuffer for script output with a command that carries PoisonedValue.
-- Keep template behavior unchanged.
-- Tests: full suite should pass.
-
-### Step 5: Implement Result Object Removal in Script Buffers
-Background: Result objects ({text, data}) are a script-mode shortcut. We will replace them with
-explicit commands per handler.
-- Stop emitting {text, data} objects into script output arrays.
-- Replace their use with explicit commands per handler.
-- Deprecate object handling in flatten-commands (keep temporarily if needed).
-- Tests: full suite should pass.
-
-### Step 6: Implement Script Buffer Invariants
-Background: Enforce the target data layout once legacy producers are removed.
-- Add runtime checks to ensure script buffers contain only Command or CommandBuffer.
-- Remove array handling from flatten-commands in script mode.
-- Tests: full suite should pass.
-
-### Step 7: Implement flatten-commands Rewrite
-Background: With commands and invariants in place, flatten-commands can be rewritten as a clean
-pipeline that only applies command objects to a target.
-- Replace current logic with a clean pipeline:
-  - single target object
-  - iterate chain or array of commands
-  - call apply(target)
-- Keep template flattening unchanged.
-- Tests: full suite should pass.
-
----
-
-## Notes and Constraints
-- This plan keeps template mode as-is to avoid broad changes.
-- Script mode moves to a strict command-only buffer layout.
-- Each step is intended to be testable with the existing full test suite.
-- We flatten a single buffer per call (no merging of multiple handler outputs).
+### 4) Shared CommandBuffer Context
+- We keep shared CommandBuffer objects across handlers to preserve execution-context grouping. The arrays property has an array for each output (the output name is the key)
+- In the future can be used for telemetry and tracing : child buffers inherit the parent trace id and remain part of the same execution context.
