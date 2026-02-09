@@ -84,8 +84,11 @@ describe('flattenBuffer', function () {
 
     buffer._outputTypes = Object.create(null);
     buffer._outputTypes[outputName] = 'sink';
-    buffer._outputs = Object.create(null);
-    buffer._outputs[outputName] = sinkOutput;
+    // Don't overwrite buffer._outputs - it's already a Map from the constructor
+    // Just ensure the sink output is registered (it should be from constructor)
+    if (buffer._outputs instanceof Map) {
+      buffer._outputs.set(outputName, sinkOutput);
+    }
     buffer._outputHandlers = Object.create(null);
     buffer._outputHandlers[outputName] = sinkOutput;
 
