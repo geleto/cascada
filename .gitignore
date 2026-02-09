@@ -14,3 +14,4 @@ docs/files
 /samples/express/js/templates.js
 generated-docs
 /.claude
+!/.claude/memory/
