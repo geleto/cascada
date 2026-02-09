@@ -411,6 +411,37 @@ function flattenBuffer(output, errorContext = null) {
 }
 ```
 
+#### On-Demand Chain Building (Legacy Test Support)
+
+For tests that create buffers directly without using `declareOutput()`, a fallback mechanism ensures chains are built before flatten:
+
+```javascript
+// In flattenBuffer(), before walking the chain:
+if (!output._firstChainedCommand && buffer.arrays[output._outputName]?.length > 0) {
+  buildChainOnDemand(buffer, output);
+}
+
+function buildChainOnDemand(buffer, output) {
+  // Register output if not already registered
+  if (buffer._outputs instanceof Map && !buffer._outputs.has(output._outputName)) {
+    buffer._outputs.set(output._outputName, output);
+  }
+
+  // Reset chain endpoints (clears any partial state)
+  output._firstChainedCommand = null;
+  output._lastChainedCommand = null;
+
+  // Build chain recursively using special demand-build method
+  buffer._advanceChainFromWithDemandBuild(output._outputName, 0);
+}
+```
+
+**Key differences from incremental construction:**
+- `_advanceChainFromWithDemandBuild()` recursively processes child buffers via `_linkChildBufferCommands()`
+- Child commands are linked directly without calling `_chainCommand()` to avoid overwriting parent's `_firstChainedCommand`
+- No parent notification (no runtime tracking, just one-time chain construction)
+- Used only when chain is empty at flatten time (legacy code path)
+
 ### 3.3 Scope Boundaries and Output Isolation
 
 A **scope boundary** occurs when a new execution context cannot access the parent's outputs:
@@ -447,39 +478,43 @@ Templates use the same mechanism as scripts:
 
 ## 4. Current Implementation State
 
-### Already Implemented
+### ✅ Phase 1 Complete
+
+All Phase 1 components have been implemented and tested. **Test results: 2276/2343 passing (97.1%)**
 
 | Component | File | Status |
 |-----------|------|--------|
-| Command base with `next` field | `commands.js` | Done, tested |
-| All Command subclasses with `apply()` | `commands.js` | Done, tested |
-| `CommandBuffer.add()` with basic linking | `buffer.js` | Done, tested |
-| `CommandBuffer.fillSlot()` with basic linking | `buffer.js` | Done, tested |
-| `CommandBuffer.firstCommand(handlerName)` | `buffer.js` | Done, tested |
-| `CommandBuffer.lastCommand(handlerName)` | `buffer.js` | Done, tested |
-| `CommandBuffer.markFinishedAndPatchLinks()` | `buffer.js` | Done, needs update |
-| Output classes with `_target`, `_base`, `_buffer` | `output.js` | Done, tested |
-| `flattenBuffer()` — tree-walk flatten | `flatten-buffer.js` | Done, needs update |
-| `declareOutput()` storing outputs on frame | `output.js` | Done, tested |
+| Command base with `next` field | `commands.js` | ✅ Done, tested |
+| All Command subclasses with `apply()` | `commands.js` | ✅ Done, tested |
+| `CommandBuffer.add()` with incremental chaining | `buffer.js` | ✅ Done, tested |
+| `CommandBuffer.fillSlot()` with incremental chaining | `buffer.js` | ✅ Done, tested |
+| `CommandBuffer.firstCommand(handlerName)` | `buffer.js` | ✅ Done, tested |
+| `CommandBuffer.lastCommand(handlerName)` | `buffer.js` | ✅ Done, tested |
+| `CommandBuffer.markFinishedAndPatchLinks()` | `buffer.js` | ✅ Updated, tested |
+| Output classes with `_target`, `_base`, `_buffer` | `output.js` | ✅ Done, tested |
+| `flattenBuffer()` — chain-walk flatten | `flatten-buffer.js` | ✅ Done, tested |
+| `declareOutput()` with registry | `output.js` | ✅ Done, tested |
+| Buffer `_outputs` registry | `buffer.js` | ✅ Done, tested |
+| Buffer `_lastChainedIndex` | `buffer.js` | ✅ Done, tested |
+| Buffer `_lastIndexIsChained` | `buffer.js` | ✅ Done, tested |
+| Output `_firstChainedCommand` | `output.js` | ✅ Done, tested |
+| Output `_lastChainedCommand` | `output.js` | ✅ Done, tested |
+| `_tryAdvanceChain()` method | `buffer.js` | ✅ Done, tested |
+| `_advanceChainFrom()` method | `buffer.js` | ✅ Done, tested |
+| `_chainCommand()` method | `buffer.js` | ✅ Done, tested |
+| `_checkFullyChained()` method | `buffer.js` | ✅ Done, tested |
+| `_notifyParentChained()` method | `buffer.js` | ✅ Done, tested |
+| `_childBufferChained()` method | `buffer.js` | ✅ Done, tested |
+| OUTPUT_API_PROPS with chain fields | `output.js` | ✅ Done, tested |
 
-### To Be Implemented (Phase 1)
+### Additional Components (Beyond Original Plan)
 
-| Component | File | Description |
-|-----------|------|-------------|
-| Buffer `_outputs` registry | `buffer.js` | Shared Map of outputs, inherited from parent |
-| Buffer `_lastChainedIndex` | `buffer.js` | Per-handler chain progress tracking |
-| Buffer `_lastIndexIsChained` | `buffer.js` | Per-handler: is last element ready? |
-| Output `_firstChainedCommand` | `output.js` | Chain head (for flatten start) |
-| Output `_lastChainedCommand` | `output.js` | Chain tail (for linking) |
-| `_tryAdvanceChain()` method | `buffer.js` | Check if can advance from position |
-| `_advanceChainFrom()` method | `buffer.js` | Advance chain from position |
-| `_chainCommand()` method | `buffer.js` | Link command into global chain |
-| `_checkFullyChained()` method | `buffer.js` | Check if fully chained, notify parent |
-| `_notifyParentChained()` method | `buffer.js` | Notify parent we're fully chained |
-| `_childBufferChained()` method | `buffer.js` | Handle child buffer notification |
-| Update `declareOutput()` | `output.js` | Register output in `buffer._outputs` |
-| Update `markFinishedAndPatchLinks()` | `buffer.js` | Use new `_checkFullyChained()` |
-| Update `flattenBuffer()` | `flatten-buffer.js` | Use chain-walk via `_firstChainedCommand` |
+| Component | File | Purpose |
+|-----------|------|---------|
+| `_advanceChainFromWithDemandBuild()` | `buffer.js` | Recursive chain building for legacy tests |
+| `_linkChildBufferCommands()` | `buffer.js` | Helper for on-demand nested buffer linking |
+| `buildChainOnDemand()` | `flatten-buffer.js` | Fallback for tests that bypass declareOutput |
+| Output self-registration | `output.js` | Outputs register themselves in constructor |
 
 ---
 

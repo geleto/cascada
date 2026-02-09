@@ -92,7 +92,7 @@ Outputs are not exposed directly to user code. `createOutputFacade(output, optio
 - **Callable outputs** (text, value): proxy target is a function that calls `output.invoke(...)`. User code invokes the output directly, e.g., `text("hello")`.
 - **Dynamic-command outputs** (data): proxy intercepts property access and returns `(...args) => output._enqueueCommand(prop, args)`. User code calls methods like `data.set(...)`, `data.push(...)`.
 
-`OUTPUT_API_PROPS` whitelist (`_outputName`, `_outputType`, `_frame`, `_context`, `_target`, `_base`, `_buffer`) ensures get/set on these properties read/write through to the underlying Output instance — critical for flattener writes to be visible to `snapshot()`.
+`OUTPUT_API_PROPS` whitelist (`_outputName`, `_outputType`, `_frame`, `_context`, `_target`, `_base`, `_buffer`, `_firstChainedCommand`, `_lastChainedCommand`) ensures get/set on these properties read/write through to the underlying Output instance — critical for flattener writes and chain construction to be visible to `snapshot()`.
 
 The proxy also intercepts `then` (returns `undefined` to prevent promise detection) and `snapshot`/`getCurrentResult` (bound to the Output instance).
 
@@ -105,12 +105,14 @@ The proxy also intercepts `then` (returns `undefined` to prevent promise detecti
 
 - `findOutputBuffer(frame)` walks the frame parent chain looking for an existing `_outputBuffer`, stopping at `outputScope` boundaries.
 - `declareOutput(frame, name, type, context, initializer)`:
-  - ensures `frame._outputs`
+  - ensures `frame._outputs` (Object for lexical lookup)
   - finds/creates output buffer via `findOutputBuffer`
   - sets `buffer._outputTypes[name] = type`
-  - stores output in `frame._outputs`
-  - mirrors output into `buffer._outputs` when needed
+  - creates output via `createOutput()` or `createSinkOutput()`
+  - stores output in `frame._outputs[name]` (lexical scope)
+  - registers output in `buffer._outputs.set(name, output)` (Map for chain construction)
   - for sinks also stores `buffer._outputHandlers[name]`
+  - Note: Output also self-registers in constructor if buffer already exists
 - `getOutputHandler(frame, name)` performs lexical parent lookup through `frame._outputs`. Also used by compiler-generated code in `compile-buffer.js` for output command routing.
 - `finalizeUnobservedSinks(frame, context)` calls `snapshot()` on all non-finalized sink outputs, ignoring errors by design.
 
@@ -125,16 +127,33 @@ File: `src/runtime/buffer.js`
 - `reserveSlot` / `fillSlot` support async ordering.
 - Nested buffers keep parent/position linkage for chain patching.
 
-### Command chain (`buffer-snapshot.js`)
+### Command chain and incremental construction
 
-Commands are linked into a singly-linked list via the `next` field for snapshot/streaming traversal:
+Commands are linked into a singly-linked list via the `next` field, built incrementally as commands are added:
 
-- `Command` base has `next`, `resolved`, `promise`, `resolve` fields.
-- `linkToPrevious(prev, current, handlerName)` / `linkToNext(current, next, handlerName)` — called during `add`/`fillSlot` to maintain the chain.
-- `markFinishedAndPatchLinks()` — called when a nested buffer completes; links its commands into the parent chain. Handles empty child buffers by linking prev directly to next. Guards against unfilled slots (undefined) in parent arrays.
-- `patchLinksAfterClear(buffer)` — updates chain links when a buffer is cleared (guard recovery). Links prev to next, skipping the cleared buffer.
-- `firstCommand(handlerName)` / `lastCommand(handlerName)` — traverse buffer arrays (recursing into nested buffers, skipping unfilled slots) to find chain endpoints.
-- `traverseChain(handlerName, fn)` — walks the linked list from first command.
+**Data structures:**
+- `Command` base has `next`, `resolved`, `promise`, `resolve` fields
+- `CommandBuffer._outputs` — shared Map of Output objects (inherited from parent)
+- `CommandBuffer._lastChainedIndex` — per-handler tracking of last chained position
+- `CommandBuffer._lastIndexIsChained` — per-handler flag for whether last element is ready
+- `Output._firstChainedCommand` — head of the chain (for flatten start)
+- `Output._lastChainedCommand` — tail of the chain (for linking new commands)
+
+**Incremental chain construction:**
+- `add()` / `fillSlot()` call `_tryAdvanceChain(handlerName, position)` after storing command
+- `_advanceChainFrom(handlerName, fromIndex)` — walks forward from position, linking consecutive commands/buffers until hitting a gap or unchained child
+- `_chainCommand(cmd, prev, handlerName)` — links command into global chain, updates Output endpoints
+- Child buffers notify parents via `_notifyParentChained(handlerName)` when fully chained
+- `_childBufferChained(handlerName, position)` — handles child notification, continues advancing
+- `markFinishedAndPatchLinks()` — marks buffer finished, checks all handlers via `_checkFullyChained()`, maintains legacy link patching for compatibility
+
+**Legacy helpers:**
+- `linkToPrevious(prev, current, handlerName)` / `linkToNext(current, next, handlerName)` — legacy link helpers from `buffer-snapshot.js`, still used by some paths
+- `patchLinksAfterClear(buffer)` — updates chain links when a buffer is cleared (guard recovery)
+- `firstCommand(handlerName)` / `lastCommand(handlerName)` — tree-walk helpers for finding endpoints (used in legacy patching, not in chain-walk flatten)
+- `traverseChain(handlerName, fn)` — walks the linked list from first command
+
+By flatten time, the chain is complete — no gaps from unfilled slots or unfinished buffers. See `docs/code/snapshot.md` for complete algorithm details.
 
 ### Buffer utilities
 
@@ -181,21 +200,37 @@ This is the authoritative text-command validation path.
 
 File: `src/runtime/flatten-buffer.js`
 
-Entrypoint:
-
-- `flattenBuffer(output, errorContext?)`
+Entrypoint: `flattenBuffer(output, errorContext?)`
 
 Flow:
 
 1. Validate output and `_buffer` (`CommandBuffer` required).
-2. Flatten the target output's array (`buffer.arrays[output._outputName]`) via `flattenCommandBuffer(...)`.
-3. For each entry (`flattenCommand`):
-   - if `Command`: call `entry.apply(output)` inside `try/catch`. Errors (including `PoisonError` from poison args or `ErrorCommand`) are collected. `PoisonError` is unwrapped into individual errors.
-   - if `CommandBuffer`: recurse via `flattenCommandBuffer`.
+2. **Check if chain needs on-demand building** (for legacy tests that bypass `declareOutput()`):
+   - If `!output._firstChainedCommand` but `buffer.arrays[output._outputName]` has commands, call `buildChainOnDemand(buffer, output)`
+   - This recursively builds the chain structure that should have been built incrementally
+3. **Walk the command chain** via `.next` pointers:
+   ```javascript
+   let cmd = output._firstChainedCommand;
+   while (cmd) {
+     try {
+       cmd.apply(output);
+     } catch (err) {
+       // collect errors
+     }
+     cmd = cmd.next;
+   }
+   ```
 4. If any errors collected: throw `PoisonError(errors)`.
 5. Return `output.getCurrentResult()`.
 
-The flattener is type-agnostic — it does not inspect command types or pre-scan arguments. All error detection is delegated to `apply()` (which internally uses `getError()` for poison checks).
+**Key characteristics:**
+- Uses **chain-walk** (not tree-walk) — follows pre-constructed `.next` pointers through a linked list
+- No recursion into `CommandBuffer` instances — they've already been linked through during chain construction
+- Type-agnostic — does not inspect command types or pre-scan arguments
+- All error detection delegated to `command.apply()` (which internally uses `getError()` for poison checks)
+- Chain is guaranteed complete by flatten time (built incrementally as commands were added)
+
+See `docs/code/snapshot.md` for complete incremental chain construction algorithm.
 
 ## Safe Output and Text Materialization
 
