@@ -13,6 +13,15 @@ class Output {
     this._outputType = outputType || outputName;//@todo rename to type
     this._context = context;
     this._buffer = frame ? frame._outputBuffer : null;
+
+    // Incremental chain construction: track chain endpoints for this output
+    this._firstChainedCommand = null;
+    this._lastChainedCommand = null;
+
+    // Register this output in the buffer's shared _outputs Map
+    if (this._buffer && this._buffer._outputs instanceof Map) {
+      this._buffer._outputs.set(this._outputName, this);
+    }
   }
 
   _enqueueCommand(command, args) {
@@ -75,7 +84,9 @@ const OUTPUT_API_PROPS = new Set([
   '_context',
   '_target',
   '_base',
-  '_buffer'
+  '_buffer',
+  '_firstChainedCommand',
+  '_lastChainedCommand'
 ]);
 
 // Create a facade that can be callable (text/value) or dynamic-command (data).
@@ -291,9 +302,6 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
     frame._outputBuffer = buffer;
   }
 
-  if (!buffer._outputs) {
-    buffer._outputs = frame._outputs;
-  }
   buffer._outputTypes = buffer._outputTypes || Object.create(null);
   buffer._outputTypes[outputName] = outputType;
 
@@ -304,8 +312,9 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
   output._buffer = buffer;
   frame._outputs[outputName] = output;
 
-  if (buffer._outputs && buffer._outputs !== frame._outputs) {
-    buffer._outputs[outputName] = output;
+  // Register output in the shared buffer._outputs Map for incremental chain construction
+  if (buffer._outputs instanceof Map) {
+    buffer._outputs.set(outputName, output);
   }
 
   if (outputType === 'sink') {

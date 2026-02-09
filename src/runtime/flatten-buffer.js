@@ -1,7 +1,6 @@
 'use strict';
 
 const { CommandBuffer } = require('./buffer');
-const { Command } = require('./commands');
 const { RuntimeFatalError, PoisonError, isPoisonError } = require('./errors');
 
 function flattenBuffer(output, errorContext = null) {
@@ -38,8 +37,17 @@ function flattenBuffer(output, errorContext = null) {
     );
   }
 
+  // Phase 1: Chain-walk flatten using incrementally constructed chains
+  // The chain has been built incrementally as commands were added via add()/fillSlot()
+  // and child buffers notified parents via _childBufferChained()
+  // If the chain wasn't built (e.g., in tests that bypass declareOutput), build it now
+  if (!output._firstChainedCommand && buffer.arrays[output._outputName]?.length > 0) {
+    buildChainOnDemand(buffer, output);
+  }
+
   const errors = [];
-  flattenCommandBuffer(buffer, output, context, errors);
+  flattenChain(output, errors);
+
   if (errors.length > 0) {
     throw new PoisonError(errors);
   }
@@ -47,17 +55,26 @@ function flattenBuffer(output, errorContext = null) {
   return output.getCurrentResult();
 }
 
-function flattenCommandBuffer(buffer, output, errorContext, errors) {
-  const arr = buffer.arrays[output._outputName] ?? [];
-  for (const command of arr) {
-    flattenCommand(command, output, errorContext, errors);
+function buildChainOnDemand(buffer, output) {
+  // Register output in buffer's _outputs Map if not already there
+  if (buffer._outputs instanceof Map && !buffer._outputs.has(output._outputName)) {
+    buffer._outputs.set(output._outputName, output);
   }
+
+  // Reset chain endpoints before building
+  output._firstChainedCommand = null;
+  output._lastChainedCommand = null;
+
+  // Build the chain from the root, letting _advanceChainFrom handle child buffers recursively
+  buffer._advanceChainFromWithDemandBuild(output._outputName, 0);
 }
 
-function flattenCommand(entry, output, errorContext, errors) {
-  if (entry instanceof Command) {
+function flattenChain(output, errors) {
+  let cmd = output._firstChainedCommand;
+
+  while (cmd) {
     try {
-      entry.apply(output);
+      cmd.apply(output);
     } catch (err) {
       if (isPoisonError(err)) {
         errors.push(...err.errors);
@@ -65,22 +82,7 @@ function flattenCommand(entry, output, errorContext, errors) {
         errors.push(err);
       }
     }
-    return;
-  }
-
-  if (entry instanceof CommandBuffer) {
-    flattenCommandBuffer(entry, output, errorContext, errors);
-    return;
-  }
-
-  if (errorContext) {
-    throw new RuntimeFatalError(
-      `Invalid command in buffer: ${entry}`,
-      errorContext.lineno,
-      errorContext.colno,
-      errorContext.errorContextString,
-      errorContext.path
-    );
+    cmd = cmd.next;
   }
 }
 
