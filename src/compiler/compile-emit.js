@@ -95,6 +95,7 @@ module.exports = class CompileEmit {
       if (this.compiler.asyncMode) {
         // In async mode, blocks return output directly (not via callback)
         // The callback is only used for error propagation
+        this.line(this.compiler.buffer.currentBuffer + '.markFinishedAndPatchLinks();');
         this.line('return ' + this.compiler.buffer.currentBuffer + ';');
       } else {
         // Sync mode blocks use callback for both success and error

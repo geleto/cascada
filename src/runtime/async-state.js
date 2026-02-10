@@ -73,14 +73,12 @@ class AsyncState {
     }
 
     const promise = func(childState, childFrame)
-      .then((result) => {
-        // Patch command chain when async function completes
+      .finally(() => {
+        // Finalize this block's buffer on both success and failure so parent
+        // chaining can progress in error paths as well.
         if (childFrame._outputBuffer) {
           childFrame._outputBuffer.markFinishedAndPatchLinks();
         }
-        return result;
-      })
-      .finally(() => {
         // Ensure per-block finalization always runs (decrementing counters, releasing locks, etc.)
         if (sequentialAsyncBlock) {
           // This is the best place to do it rather than when the counter reaches 0

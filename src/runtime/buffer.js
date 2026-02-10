@@ -2,11 +2,7 @@
 
 const { ErrorCommand, TextCommand } = require('./commands');
 
-const {
-  linkToPrevious,
-  linkToNext,
-  patchLinksAfterClear
-} = require('./buffer-snapshot');
+const { patchLinksAfterClear } = require('./buffer-snapshot');
 
 const { checkFinishedBuffer } = require('./checks');
 
@@ -34,6 +30,10 @@ class CommandBuffer {
     this._lastChainedIndex = new Map();
     // Track whether the last chained index has a chained command (per-buffer, per-handler)
     this._lastIndexIsChained = new Map();
+    // Local chain endpoints for this buffer segment (per handler).
+    // Only the root buffer mirrors these to Output._first/_last endpoints.
+    this._firstLocalChainedCommand = new Map();
+    this._lastLocalChainedCommand = new Map();
   }
 
   // Snapshot and command chain methods
@@ -100,57 +100,8 @@ class CommandBuffer {
       }
     }
 
-    // Legacy link patching (will be removed in Phase 2 when we switch to pure chain-walk)
-    if (!this.parent) {
-      return;
-    }
-
-    for (const [handlerName, position] of this.positions.entries()) {
-      const parentArray = this.parent.arrays[handlerName];
-      if (!parentArray) {
-        continue;
-      }
-
-      const firstCmd = this.firstCommand(handlerName);
-      const lastCmd = this.lastCommand(handlerName);
-
-      // Find the previous command (resolving buffers and skipping unfilled slots)
-      let prevCmd = null;
-      if (position > 0) {
-        const prev = parentArray[position - 1];
-        if (prev && !isCommandBuffer(prev)) {
-          prevCmd = prev;
-        } else if (prev && isCommandBuffer(prev) && prev.finished) {
-          prevCmd = prev.lastCommand(handlerName);
-        }
-      }
-
-      // Find the next command (resolving buffers and skipping unfilled slots)
-      let nextCmd = null;
-      if (position < parentArray.length - 1) {
-        const next = parentArray[position + 1];
-        if (next && !isCommandBuffer(next)) {
-          nextCmd = next;
-        } else if (next && isCommandBuffer(next) && next.finished) {
-          nextCmd = next.firstCommand(handlerName);
-        }
-      }
-
-      if (firstCmd && lastCmd) {
-        // Non-empty buffer: link prev -> firstCmd, lastCmd -> next
-        if (prevCmd) {
-          prevCmd.next = firstCmd;
-        }
-        if (nextCmd) {
-          lastCmd.next = nextCmd;
-        }
-      } else {
-        // Empty buffer for this handler: link prev directly to next, skipping this buffer
-        if (prevCmd && nextCmd) {
-          prevCmd.next = nextCmd;
-        }
-      }
-    }
+    // No legacy next-pointer patching here.
+    // In incremental mode, _chainCommand is the single source of truth.
   }
 
   debugChain(handlerName) {
@@ -189,8 +140,10 @@ class CommandBuffer {
     const lastIdx = this._lastChainedIndex.get(handlerName) ?? -1;
     const lastChained = this._lastIndexIsChained.get(handlerName) ?? true;
 
-    // Can only advance if this position is the next sequential one and no gap exists
-    if (position !== lastIdx + 1 || !lastChained) {
+    // If chain is contiguous, we can only advance from the next index.
+    // If blocked on a gap, we can only resume by filling that exact gap index.
+    const expectedPosition = lastChained ? (lastIdx + 1) : lastIdx;
+    if (position !== expectedPosition) {
       return;
     }
 
@@ -205,10 +158,14 @@ class CommandBuffer {
     const arr = this.arrays[handlerName];
     if (!arr) return;
 
-    const output = this._outputs?.get(handlerName);
-    if (!output) return;
+    const lastIdx = this._lastChainedIndex.get(handlerName) ?? -1;
+    const lastChained = this._lastIndexIsChained.get(handlerName) ?? true;
+    // Ignore redundant re-advances over already fully chained positions.
+    if (lastChained && fromIndex <= lastIdx) {
+      return;
+    }
 
-    let prev = output._lastChainedCommand;
+    let prev = this._lastLocalChainedCommand.get(handlerName) || null;
     let i = fromIndex;
 
     while (i < arr.length) {
@@ -222,19 +179,19 @@ class CommandBuffer {
       }
 
       if (isCommandBuffer(item)) {
-        // Child buffer - link to its first command if it has one
-        const childFirst = item._outputs?.get(handlerName)?._firstChainedCommand;
-        if (childFirst) {
-          prev = this._chainCommand(childFirst, prev, handlerName);
-          const childLast = item._outputs?.get(handlerName)?._lastChainedCommand;
-          if (childLast) {
-            prev = childLast;
-          }
-        } else {
-          // Child buffer has no chained commands yet - stop here
+        // Child buffer: only proceed once it is fully chained for this handler.
+        // Then splice its local command segment (if any) into the parent chain.
+        if (!item._isFullyChained(handlerName)) {
           this._lastChainedIndex.set(handlerName, i);
           this._lastIndexIsChained.set(handlerName, false);
           return;
+        }
+
+        const childFirst = item.firstCommand(handlerName);
+        const childLast = item.lastCommand(handlerName);
+        if (childFirst && childLast) {
+          prev = this._chainRange(childFirst, childLast, prev, handlerName);
+          prev = childLast;
         }
       } else {
         // Regular command
@@ -256,18 +213,32 @@ class CommandBuffer {
    * Link a command into the chain and update Output endpoints.
    */
   _chainCommand(cmd, prev, handlerName) {
-    const output = this._outputs?.get(handlerName);
-    if (!output) return cmd;
+    this._chainRange(cmd, cmd, prev, handlerName);
+    return cmd;
+  }
 
+  _chainRange(firstCmd, lastCmd, prev, handlerName) {
     if (prev) {
-      prev.next = cmd;
+      prev.next = firstCmd;
     } else {
-      // This is the first command in the chain
-      output._firstChainedCommand = cmd;
+      this._firstLocalChainedCommand.set(handlerName, firstCmd);
+      if (!this.parent) {
+        const output = this._outputs?.get(handlerName);
+        if (output) {
+          output._firstChainedCommand = firstCmd;
+        }
+      }
     }
 
-    output._lastChainedCommand = cmd;
-    return cmd;
+    this._lastLocalChainedCommand.set(handlerName, lastCmd);
+    if (!this.parent) {
+      const output = this._outputs?.get(handlerName);
+      if (output) {
+        output._lastChainedCommand = lastCmd;
+      }
+    }
+
+    return lastCmd;
   }
 
   /**
@@ -290,8 +261,9 @@ class CommandBuffer {
     const lastIdx = this._lastChainedIndex.get(handlerName) ?? -1;
     const lastChained = this._lastIndexIsChained.get(handlerName) ?? true;
 
-    // Only advance if this is the next position we were waiting for
-    if (position === lastIdx + 1 && lastChained) {
+    const expectedPosition = lastChained ? (lastIdx + 1) : lastIdx;
+    // Advance if this notification unblocks the exact position we were waiting on.
+    if (position === expectedPosition) {
       this._advanceChainFrom(handlerName, position);
     }
   }
@@ -301,7 +273,15 @@ class CommandBuffer {
    */
   _checkFullyChained(handlerName) {
     const arr = this.arrays[handlerName];
-    if (!arr) return; // No array for this handler in this buffer
+    if (!arr) {
+      // No writes for this handler in this buffer. Once finished, this handler
+      // is trivially fully chained and parent progression can continue.
+      if (!this.finished) {
+        return;
+      }
+      this._notifyParentChained(handlerName);
+      return;
+    }
 
     const lastIdx = this._lastChainedIndex.get(handlerName) ?? -1;
     const lastChained = this._lastIndexIsChained.get(handlerName) ?? true;
@@ -312,6 +292,21 @@ class CommandBuffer {
     if (isFullyChained) {
       this._notifyParentChained(handlerName);
     }
+  }
+
+  _isFullyChained(handlerName) {
+    if (!this.finished) {
+      return false;
+    }
+
+    const arr = this.arrays[handlerName];
+    if (!arr) {
+      return true;
+    }
+
+    const lastIdx = this._lastChainedIndex.get(handlerName) ?? -1;
+    const lastChained = this._lastIndexIsChained.get(handlerName) ?? true;
+    return (lastIdx === arr.length - 1) && lastChained;
   }
 
   /**
@@ -425,18 +420,17 @@ class CommandBuffer {
     const slot = this.reserveSlot(outputName);
     const target = this.arrays[outputName];
 
-    // Link to previous command
-    if (target.length > 0) {
-      const prev = target[target.length - 1];
-      linkToPrevious(prev, value, outputName);
-    }
-
     target[slot] = value;
 
     // If adding a CommandBuffer as a child, set up parent relationship
     if (value instanceof CommandBuffer) {
       value.parent = this;
       value._setParentPosition(outputName, slot);
+      // Child buffers created by the compiler start detached (parent = null).
+      // Share outputs when attaching so child chaining can resolve Output objects.
+      value._outputs = this._outputs;
+      // Process commands that may have been added before attachment.
+      value._advanceChainFrom(outputName, 0);
     }
 
     // Try to advance the chain incrementally
@@ -450,22 +444,14 @@ class CommandBuffer {
     // that may have been reserved before the buffer was marked finished
     const target = this.arrays[outputName];
 
-    // Link to previous and next commands
-    if (slot > 0) {
-      const prev = target[slot - 1];
-      linkToPrevious(prev, value, outputName);
-    }
-    if (slot < target.length - 1) {
-      const next = target[slot + 1];
-      linkToNext(value, next, outputName);
-    }
-
     target[slot] = value;
 
     // If adding a CommandBuffer as a child, set up parent relationship
     if (value instanceof CommandBuffer) {
       value.parent = this;
       value._setParentPosition(outputName, slot);
+      value._outputs = this._outputs;
+      value._advanceChainFrom(outputName, 0);
     }
 
     // Try to advance the chain incrementally (filling a gap may unblock chain advancement)
@@ -499,6 +485,10 @@ function clearBuffer(buffer, handlerNames = null) {
         buffer.arrays[name].length = 0;
         buffer._setOutputIndex(name, 0);
       }
+      buffer._lastChainedIndex.delete(name);
+      buffer._lastIndexIsChained.delete(name);
+      buffer._firstLocalChainedCommand.delete(name);
+      buffer._lastLocalChainedCommand.delete(name);
     });
 
     // Update next chains to skip this buffer if it has a parent

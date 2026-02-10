@@ -37,12 +37,15 @@ function flattenBuffer(output, errorContext = null) {
     );
   }
 
-  // Phase 1: Chain-walk flatten using incrementally constructed chains
-  // The chain has been built incrementally as commands were added via add()/fillSlot()
-  // and child buffers notified parents via _childBufferChained()
-  // If the chain wasn't built (e.g., in tests that bypass declareOutput), build it now
-  if (!output._firstChainedCommand && buffer.arrays[output._outputName]?.length > 0) {
-    buildChainOnDemand(buffer, output);
+  // Some call sites provide a synthetic output facade for an existing buffer/handler.
+  // Flatten against the registered output instance so we walk the chain that was
+  // built at runtime for that handler.
+  if (!output._frame && buffer._outputs instanceof Map) {
+    const registered = buffer._outputs.get(output._outputName);
+    if (registered && registered !== output) {
+      output = registered;
+      context = errorContext || output._context || context;
+    }
   }
 
   const errors = [];
@@ -55,24 +58,19 @@ function flattenBuffer(output, errorContext = null) {
   return output.getCurrentResult();
 }
 
-function buildChainOnDemand(buffer, output) {
-  // Register output in buffer's _outputs Map if not already there
-  if (buffer._outputs instanceof Map && !buffer._outputs.has(output._outputName)) {
-    buffer._outputs.set(output._outputName, output);
-  }
-
-  // Reset chain endpoints before building
-  output._firstChainedCommand = null;
-  output._lastChainedCommand = null;
-
-  // Build the chain from the root, letting _advanceChainFrom handle child buffers recursively
-  buffer._advanceChainFromWithDemandBuild(output._outputName, 0);
-}
-
 function flattenChain(output, errors) {
   let cmd = output._firstChainedCommand;
+  const visited = new Set();
 
   while (cmd) {
+    if (visited.has(cmd)) {
+      errors.push(new RuntimeFatalError(
+        `Detected cyclic command chain while flattening output '${output._outputName}'`
+      ));
+      break;
+    }
+    visited.add(cmd);
+
     try {
       cmd.apply(output);
     } catch (err) {
