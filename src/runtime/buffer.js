@@ -37,6 +37,20 @@ class CommandBuffer {
   }
 
   // Snapshot and command chain methods
+  _registerOutput(handlerName, output) {
+    if (!(this._outputs instanceof Map)) {
+      this._outputs = new Map();
+    }
+    this._outputs.set(handlerName, output);
+
+    // If commands were already chained before this output was registered,
+    // bind this output to the existing local chain segment.
+    if (!this.parent) {
+      output._firstChainedCommand = this._firstLocalChainedCommand.get(handlerName) || null;
+      output._lastChainedCommand = this._lastLocalChainedCommand.get(handlerName) || null;
+    }
+  }
+
   _setParentPosition(handlerName, index) {
     this.positions.set(handlerName, index);
   }
@@ -309,80 +323,6 @@ class CommandBuffer {
     return (lastIdx === arr.length - 1) && lastChained;
   }
 
-  /**
-   * Variant of _advanceChainFrom used for on-demand chain building.
-   * Recursively builds child buffer chains when encountering them.
-   */
-  _advanceChainFromWithDemandBuild(handlerName, fromIndex) {
-    const arr = this.arrays[handlerName];
-    if (!arr) return;
-
-    const output = this._outputs?.get(handlerName);
-    if (!output) return;
-
-    let prev = output._lastChainedCommand;
-    let i = fromIndex;
-
-    while (i < arr.length) {
-      const item = arr[i];
-
-      if (item == null) {
-        // Hit a gap - stop advancing but record this position
-        this._lastChainedIndex.set(handlerName, i);
-        this._lastIndexIsChained.set(handlerName, false);
-        return;
-      }
-
-      if (isCommandBuffer(item)) {
-        // Recursively process child buffer
-        prev = this._linkChildBufferCommands(item, handlerName, prev, output);
-        // If child is empty, prev stays the same
-      } else {
-        // Regular command
-        prev = this._chainCommand(item, prev, handlerName);
-      }
-
-      i++;
-    }
-
-    // Successfully advanced through all remaining elements
-    this._lastChainedIndex.set(handlerName, i - 1);
-    this._lastIndexIsChained.set(handlerName, true);
-
-    // Check if buffer is now fully chained
-    this._checkFullyChained(handlerName);
-  }
-
-  /**
-   * Helper for on-demand building: recursively link all commands in a child buffer
-   * without updating global chain endpoints (to avoid overwriting parent's first command).
-   */
-  _linkChildBufferCommands(childBuffer, handlerName, prev, output) {
-    const arr = childBuffer.arrays[handlerName];
-    if (!arr || arr.length === 0) return prev;
-
-    for (const item of arr) {
-      if (item == null) {
-        continue; // Skip gaps
-      }
-
-      if (isCommandBuffer(item)) {
-        // Recursively process nested child
-        prev = this._linkChildBufferCommands(item, handlerName, prev, output);
-      } else {
-        // Link command without calling _chainCommand (to avoid updating global endpoints)
-        if (prev) {
-          prev.next = item;
-        } else {
-          output._firstChainedCommand = item;
-        }
-        prev = item;
-      }
-    }
-
-    return prev;
-  }
-
   reserveSlot(outputName) {
     if (this._outputIndexes[outputName] === undefined) {
       this._outputIndexes[outputName] = 0;
@@ -426,11 +366,12 @@ class CommandBuffer {
     if (value instanceof CommandBuffer) {
       value.parent = this;
       value._setParentPosition(outputName, slot);
-      // Child buffers created by the compiler start detached (parent = null).
       // Share outputs when attaching so child chaining can resolve Output objects.
-      value._outputs = this._outputs;
-      // Process commands that may have been added before attachment.
-      value._advanceChainFrom(outputName, 0);
+      // Only re-run retroactive chaining when the shared registry actually changed.
+      if (value._outputs !== this._outputs) {
+        value._outputs = this._outputs;
+        value._advanceChainFrom(outputName, 0);
+      }
     }
 
     // Try to advance the chain incrementally
@@ -450,8 +391,10 @@ class CommandBuffer {
     if (value instanceof CommandBuffer) {
       value.parent = this;
       value._setParentPosition(outputName, slot);
-      value._outputs = this._outputs;
-      value._advanceChainFrom(outputName, 0);
+      if (value._outputs !== this._outputs) {
+        value._outputs = this._outputs;
+        value._advanceChainFrom(outputName, 0);
+      }
     }
 
     // Try to advance the chain incrementally (filling a gap may unblock chain advancement)

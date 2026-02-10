@@ -21,20 +21,37 @@ function normalizeBufferValue(val) {
 }
 
 function flattenTextCommandBuffer(buffer, errorContext) {
-  const output = {
-    _buffer: buffer,
-    _outputName: 'text',
-    _target: [],
-    getCurrentResult() {
-      if (!Array.isArray(this._target) || this._target.length === 0) {
-        this._target = [''];
-        return '';
+  let output = null;
+  if (buffer && buffer._outputs instanceof Map) {
+    output = buffer._outputs.get('text') || null;
+  }
+
+  if (!output) {
+    output = {
+      _frame: { _outputBuffer: buffer, parent: null },
+      _buffer: buffer,
+      _outputName: 'text',
+      _target: [],
+      _firstChainedCommand: null,
+      _lastChainedCommand: null,
+      getCurrentResult() {
+        if (!Array.isArray(this._target) || this._target.length === 0) {
+          this._target = [''];
+          return '';
+        }
+        const result = this._target.join('');
+        this._target = [result];
+        return result;
       }
-      const result = this._target.join('');
-      this._target = [result];
-      return result;
+    };
+
+    if (buffer && typeof buffer._registerOutput === 'function') {
+      buffer._registerOutput('text', output);
+    } else if (buffer && buffer._outputs instanceof Map) {
+      buffer._outputs.set('text', output);
     }
-  };
+  }
+
   return flattenBuffer(output, errorContext || null);
 }
 

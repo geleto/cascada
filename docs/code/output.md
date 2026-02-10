@@ -1,351 +1,230 @@
 # Output Architecture
 
-Status: current as of `output-refactor-2` branch.
+This document describes the output pipeline as implemented in the current runtime/compiler code.
 
-This document describes the current output pipeline in Cascada, with focus on async command-buffer execution and where text materialization happens.
+## Scope
 
-## Big Picture
+Covers:
 
-Async output handling is command-based:
+- Output declaration and lookup
+- CommandBuffer write model
+- Incremental command-chain construction
+- Chain-walk flatten execution
+- Output-type result shaping (`text`, `data`, `value`, `sink`)
+- Async lifecycle hooks that finalize buffers
 
-1. Compiler emits `CommandBuffer` writes.
-2. Runtime stores entries per output name (`buffer.arrays[name]`).
-3. `snapshot()` (or root/capture/call-block finalization) triggers flatten for a target output context.
-4. Flatten replays commands via `apply(...)` and mutates output state (`_target`, `_base`).
-5. Final value is shaped by output type (`text`, `data`, `value`, `sink`).
+Does not cover historical transitions or deprecated behavior.
 
-Key distinction:
+## End-to-End Flow
 
-- Output name: declared identifier (`data`, `text`, `auditSink`, etc.)
-- Output type: runtime behavior (`data`, `text`, `value`, `sink`)
+1. Compiler emits writes into `CommandBuffer` instances.
+2. Writes are grouped by handler/output name in `buffer.arrays[outputName]`.
+3. `CommandBuffer` incrementally links commands into a per-output singly linked chain (`next` pointers).
+4. `Output.snapshot()` (or template/capture/call-block flatten paths) calls `flattenBuffer(output)`.
+5. `flattenBuffer` walks only `output._firstChainedCommand -> next`, applies commands, aggregates errors, returns `output.getCurrentResult()`.
 
-## Sync vs Async Models
+## Core Runtime Objects
 
-### Sync template mode
+## `CommandBuffer` (`src/runtime/buffer.js`)
 
-- Root output is a string buffer (`let output = ""`).
-- Compiler emits direct string concatenation (`output += ...`).
-- `runtime.suppressValue(...)` runs on expression results before append.
+Primary fields:
 
-### Async template mode
+- `arrays`: sparse per-handler arrays of entries (`Command` or child `CommandBuffer`)
+- `_outputIndexes`: next slot index per handler (`reserveSlot`)
+- `parent`: parent `CommandBuffer` when attached as child
+- `positions`: map of child position in parent per handler
+- `finished`: marks this buffer's write lifecycle completion
+- `_outputs`: shared `Map<handlerName, Output>` registry across a buffer tree
+- `_lastChainedIndex`: per handler chain progress cursor
+- `_lastIndexIsChained`: per handler readiness at cursor
+- `_firstLocalChainedCommand` / `_lastLocalChainedCommand`: local segment endpoints for this buffer
 
-- Root output is `new runtime.CommandBuffer(context, null)`.
-- Compiler emits command-buffer writes (typically `TextCommand` for text output).
-- Root resolves with `runtime.flattenBuffer(output_textOutput, context)` after `astate.waitAllClosures()`.
+Entry writes:
 
-### Script mode (async scripts)
+- `add(value, outputName)`
+- `fillSlot(slot, value, outputName)`
+- `addText(...)` convenience for `TextCommand`
+- `addPoison(...)` convenience for `ErrorCommand`
 
-- Uses command-buffer outputs declared by `runtime.declareOutput(...)`.
-- Return values are explicit (`return data.snapshot()`, `return text.snapshot()`, etc.).
-- Text output uses script-specific suppression (`suppressValueScript` / `normalizeScriptTextArgs`).
+Both `add` and `fillSlot` call `_tryAdvanceChain(outputName, position)` after storing the entry.
 
-## Runtime Output Objects
+Child attach behavior (`value instanceof CommandBuffer`):
 
-File: `src/runtime/output.js`
+- child `parent` is set
+- child parent position is stored with `_setParentPosition(outputName, slot)`
+- child `_outputs` is replaced with parent's shared `_outputs`
+- child `_advanceChainFrom(outputName, 0)` is invoked to pick up pre-attachment writes
 
-### Output base
+## Output objects (`src/runtime/output.js`)
 
-Fields:
+Base fields:
 
-- `_outputName`
-- `_outputType`
-- `_context`
-- `_frame`
-- `_buffer`
+- `_outputName`, `_outputType`
+- `_frame`, `_context`
+- `_buffer` (source `CommandBuffer`)
+- `_firstChainedCommand`, `_lastChainedCommand` (global chain endpoints used by flatten)
 
-Behavior:
+Concrete output types:
 
-- `_enqueueCommand(...)` creates concrete command type by output type and appends to buffer.
-- `snapshot()` calls `flattenBuffer(this)` when `_buffer` exists.
+- `TextOutput`: `_target` array; joins fragments in `getCurrentResult()`
+- `DataOutput`: `_base` is `DataHandler`; `getCurrentResult()` returns handler return value
+- `ValueOutput`: `_target` scalar-like last value
+- `SinkOutputHandler`: executes sink commands against `_sink`; snapshot protocol uses `snapshot()` -> `getReturnValue()` -> `finalize()` fallback order
 
-### TextOutput
+Output registration:
 
-- `_target` is an array of text fragments.
-- `invoke(...args)` normalizes args with `normalizeScriptTextArgs(...)` and enqueues `TextCommand`.
-- `getCurrentResult()` joins fragments and compacts to one element.
+- Output constructor registers itself in `buffer._outputs`
+- For root buffers, constructor also binds already-built local chain endpoints to output endpoints (late binding support)
+- `declareOutput(...)` also registers in `buffer._outputs`
 
-### ValueOutput
+## Output facade/proxy model
 
-- `_target` stores last value command result (initialized to `undefined`).
-- `_base` initialized to `null`.
-- `getCurrentResult()` returns `_target`.
+`createOutputFacade(...)` wraps outputs to preserve script/template API shape:
 
-### DataOutput
+- text/value are callable facades
+- data is dynamic-command facade (`output.someMethod(...)` -> command enqueue)
+- reads/writes for internal runtime fields are forwarded via `OUTPUT_API_PROPS`
 
-- `_target` initialized to `{}`.
-- `_base` is a `DataHandler` instantiated eagerly in the constructor (with context variables and env).
-- Data commands call methods on `_base` directly (e.g., `_base.set(...)`, `_base.push(...)`).
-- `getCurrentResult()` returns `_base.getReturnValue()` if available, otherwise `_base`.
+## Command model (`src/runtime/commands.js`)
 
-### SinkOutputHandler
+Flatten depends on polymorphic command behavior:
 
-- Holds `_sink` and sink lifecycle flags (`_sinkFinalized`).
-- `_resolveSink()` returns the sink (may be a promise from the initializer).
-- `_snapshotFromSink(sink)` defines the finalization protocol: tries `sink.snapshot()` → `sink.getReturnValue()` → `sink.finalize()` → identity.
-- `snapshot()` resolves sink (sync/async), flattens sink commands, marks finalized, then returns sink-shaped result via `_snapshotFromSink`.
-- `getCurrentResult()` delegates to `_snapshotFromSink`.
+- `cmd.apply(output)` performs runtime mutation and may throw
+- `ErrorCommand.apply(...)` throws stored errors
+- output commands (text/data/value/sink) mutate the output-specific accumulator state
 
-### Output Facade (Proxy)
+## Incremental Chain Construction
 
-Outputs are not exposed directly to user code. `createOutputFacade(output, options)` wraps each Output instance in a `Proxy`:
+## Progress model
 
-- **Callable outputs** (text, value): proxy target is a function that calls `output.invoke(...)`. User code invokes the output directly, e.g., `text("hello")`.
-- **Dynamic-command outputs** (data): proxy intercepts property access and returns `(...args) => output._enqueueCommand(prop, args)`. User code calls methods like `data.set(...)`, `data.push(...)`.
+Per handler, each buffer tracks:
 
-`OUTPUT_API_PROPS` whitelist (`_outputName`, `_outputType`, `_frame`, `_context`, `_target`, `_base`, `_buffer`, `_firstChainedCommand`, `_lastChainedCommand`) ensures get/set on these properties read/write through to the underlying Output instance — critical for flattener writes and chain construction to be visible to `snapshot()`.
+- `_lastChainedIndex` (default `-1`)
+- `_lastIndexIsChained` (default `true`)
 
-The proxy also intercepts `then` (returns `undefined` to prevent promise detection) and `snapshot`/`getCurrentResult` (bound to the Output instance).
+Interpretation:
 
-### Factory functions
+- if `_lastIndexIsChained === true`, next writable position to advance is `lastIdx + 1`
+- if `_lastIndexIsChained === false`, buffer is waiting for the current blocked position `lastIdx`
 
-- `createOutput(frame, outputName, context, outputType)` — creates TextOutput, ValueOutput, or DataOutput wrapped in a facade proxy.
-- `createSinkOutput(frame, outputName, context, sink)` — creates SinkOutputHandler (not proxied).
+`_tryAdvanceChain(handler, position)` enforces this expected-position rule.
 
-## Output declaration and lookup
+## `_advanceChainFrom(handler, fromIndex)`
 
-- `findOutputBuffer(frame)` walks the frame parent chain looking for an existing `_outputBuffer`, stopping at `outputScope` boundaries.
-- `declareOutput(frame, name, type, context, initializer)`:
-  - ensures `frame._outputs` (Object for lexical lookup)
-  - finds/creates output buffer via `findOutputBuffer`
-  - sets `buffer._outputTypes[name] = type`
-  - creates output via `createOutput()` or `createSinkOutput()`
-  - stores output in `frame._outputs[name]` (lexical scope)
-  - registers output in `buffer._outputs.set(name, output)` (Map for chain construction)
-  - for sinks also stores `buffer._outputHandlers[name]`
-  - Note: Output also self-registers in constructor if buffer already exists
-- `getOutputHandler(frame, name)` performs lexical parent lookup through `frame._outputs`. Also used by compiler-generated code in `compile-buffer.js` for output command routing.
-- `finalizeUnobservedSinks(frame, context)` calls `snapshot()` on all non-finalized sink outputs, ignoring errors by design.
+Algorithm:
 
-## CommandBuffer Semantics
+1. Ignore redundant full re-advances when already contiguous (`fromIndex <= lastIdx` and last is chained).
+2. Iterate forward through `arrays[handler]`.
+3. On `null` gap:
+- record blocked state (`lastIdx = gapIndex`, `lastIndexIsChained = false`)
+- stop
+4. On `Command`:
+- chain via `_chainCommand` (actually `_chainRange(cmd, cmd, prev, handler)`)
+- continue
+5. On child `CommandBuffer`:
+- if child is not fully chained for handler, record blocked state at this index and stop
+- if child is fully chained, splice child's `[firstCommand, lastCommand]` into parent chain and continue
+6. If end reached:
+- mark contiguous complete (`lastIdx = end`, `lastIndexIsChained = true`)
+- call `_checkFullyChained(handler)`
 
-File: `src/runtime/buffer.js`
+## Parent/child completion signaling
 
-- `arrays[name]` stores entries for a named output.
-- Entries are `Command` instances, nested `CommandBuffer`s, or `ErrorCommand`s. No raw `PoisonedValue` objects in buffers.
-- `addText(value, pos, outputName)` creates `TextCommand` explicitly.
-- `addPoison(errors, outputName)` creates `ErrorCommand` and routes through `add()` for proper chain linking.
-- `reserveSlot` / `fillSlot` support async ordering.
-- Nested buffers keep parent/position linkage for chain patching.
-
-### Command chain and incremental construction
-
-Commands are linked into a singly-linked list via the `next` field, built incrementally as commands are added:
-
-**Data structures:**
-- `Command` base has `next`, `resolved`, `promise`, `resolve` fields
-- `CommandBuffer._outputs` — shared Map of Output objects (inherited from parent)
-- `CommandBuffer._lastChainedIndex` — per-handler tracking of last chained position
-- `CommandBuffer._lastIndexIsChained` — per-handler flag for whether last element is ready
-- `Output._firstChainedCommand` — head of the chain (for flatten start)
-- `Output._lastChainedCommand` — tail of the chain (for linking new commands)
+- Child calls `_notifyParentChained(handler)` when fully chained
+- Parent receives `_childBufferChained(handler, position)` and attempts to resume from that position if it matches expected progression
 
-**Incremental chain construction:**
-- `add()` / `fillSlot()` call `_tryAdvanceChain(handlerName, position)` after storing command
-- `_advanceChainFrom(handlerName, fromIndex)` — walks forward from position, linking consecutive commands/buffers until hitting a gap or unchained child
-- `_chainCommand(cmd, prev, handlerName)` — links command into global chain, updates Output endpoints
-- Child buffers notify parents via `_notifyParentChained(handlerName)` when fully chained
-- `_childBufferChained(handlerName, position)` — handles child notification, continues advancing
-- `markFinishedAndPatchLinks()` — marks buffer finished, checks all handlers via `_checkFullyChained()`, maintains legacy link patching for compatibility
+## Buffer completion
 
-**Legacy helpers:**
-- `linkToPrevious(prev, current, handlerName)` / `linkToNext(current, next, handlerName)` — legacy link helpers from `buffer-snapshot.js`, still used by some paths
-- `patchLinksAfterClear(buffer)` — updates chain links when a buffer is cleared (guard recovery)
-- `firstCommand(handlerName)` / `lastCommand(handlerName)` — tree-walk helpers for finding endpoints (used in legacy patching, not in chain-walk flatten)
-- `traverseChain(handlerName, fn)` — walks the linked list from first command
+`markFinishedAndPatchLinks()`:
 
-By flatten time, the chain is complete — no gaps from unfilled slots or unfinished buffers. See `docs/code/snapshot.md` for complete algorithm details.
+- sets `finished = true`
+- runs `_checkFullyChained(handler)` for each handler known in `_outputs`
+- does not recursively finish children
+- does not perform legacy cross-boundary pointer patching
 
-### Buffer utilities
+`_checkFullyChained(handler)`:
 
-- `clearBuffer(buffer, handlerNames)` — clears buffer contents for guard error recovery. Resets arrays and output indexes, patches chain links.
-- `getPosonedBufferErrors(buffer, allowedHandlers)` — pre-flatten error scan. Walks buffer arrays recursively, calling `getError()` on each command to collect errors without executing.
+- if handler array does not exist:
+- fully chained only when `finished === true`, then notify parent
+- if array exists:
+- fully chained when `finished` and `lastIdx === arr.length - 1` and `lastIndexIsChained === true`, then notify parent
 
-## Command Classes
+`_isFullyChained(handler)` uses the same condition for child readiness checks.
 
-File: `src/runtime/commands.js`
+## Flatten Execution
 
-- `Command` base
-- `OutputCommand` base
-- `TextCommand`
-- `ValueCommand`
-- `DataCommand`
-- `SinkCommand`
-- `ErrorCommand`
+## `flattenBuffer(output, errorContext?)` (`src/runtime/flatten-buffer.js`)
 
-### Error handling: `getError()` and `apply()`
+Validation:
 
-Every command has two error-related methods:
+- output must be object/function
+- output must carry `_buffer`
+- `_buffer` must be `CommandBuffer`
 
-- `getError()` — returns a `PoisonError` if the command carries poison, or `null`. Used for pre-flatten error detection (guards, buffer walkers) without executing the command.
-- `apply(ctx)` — executes the command, throwing on any error (poison or runtime).
+Execution:
 
-Contracts per class:
+- starts at `output._firstChainedCommand`
+- follows `.next` pointers only
+- calls `cmd.apply(output)` for each command
+- aggregates all thrown errors
+- unwraps `PoisonError` into constituent errors
+- detects linked-list cycles via `visited` set and records `RuntimeFatalError`
 
-- `Command.getError()` → `null`. `Command.apply()` → throws "must be overridden".
-- `OutputCommand.getError()` → scans `this.arguments` for poison via `isPoison()`, combines all `.errors` into one `PoisonError`, or returns `null`.
-- `OutputCommand.apply(ctx)` → calls `this.getError()`, throws if non-null. Subclasses call `super.apply(ctx)` first, then their own logic (which may also throw for non-poison reasons).
-- `ErrorCommand(errors)` → constructor accepts an error or array of errors directly (no `PoisonedValue` wrapper). `getError()` always returns `PoisonError`. `apply()` always throws.
+Result:
 
-### `TextCommand` contract
+- throws `PoisonError` if any errors were collected
+- otherwise returns `output.getCurrentResult()`
 
-`TextCommand.apply(ctx)` is strict (after the `super.apply()` poison check):
+There is no tree-walk command extraction in flatten path.
 
-- accepts text-like scalar arguments (`string`, `number`, `boolean`, `bigint`)
-- accepts objects only when they provide custom `toString`
-- rejects arrays/plain objects/unsupported types with position-aware error
+## Compiler Interaction
 
-This is the authoritative text-command validation path.
+## Root and nested buffers
 
-## Flatten Pipeline
+- Async function roots initialize `new runtime.CommandBuffer(context, null)`
+- `initOutputHandlers(...)` declares default text output
+- Async function end calls `currentBuffer.markFinishedAndPatchLinks()` before returning buffer
 
-File: `src/runtime/flatten-buffer.js`
+## Async writes
 
-Entrypoint: `flattenBuffer(output, errorContext?)`
+`compile-buffer.js` emits `reserveSlot` before async blocks and uses `fillSlot` in both success and catch paths. This preserves positional ordering and guarantees each reserved slot is eventually materialized with either a command or an `ErrorCommand`.
 
-Flow:
+## Nested async buffer nodes
 
-1. Validate output and `_buffer` (`CommandBuffer` required).
-2. **Check if chain needs on-demand building** (for legacy tests that bypass `declareOutput()`):
-   - If `!output._firstChainedCommand` but `buffer.arrays[output._outputName]` has commands, call `buildChainOnDemand(buffer, output)`
-   - This recursively builds the chain structure that should have been built incrementally
-3. **Walk the command chain** via `.next` pointers:
-   ```javascript
-   let cmd = output._firstChainedCommand;
-   while (cmd) {
-     try {
-       cmd.apply(output);
-     } catch (err) {
-       // collect errors
-     }
-     cmd = cmd.next;
-   }
-   ```
-4. If any errors collected: throw `PoisonError(errors)`.
-5. Return `output.getCurrentResult()`.
+Nested async blocks create detached child buffers (`new CommandBuffer(context, null)`), then parent attaches them with `parent.add(child, outputName)` once used outputs are known. Attachment is where parent/position/output-registry linkage is established.
 
-**Key characteristics:**
-- Uses **chain-walk** (not tree-walk) — follows pre-constructed `.next` pointers through a linked list
-- No recursion into `CommandBuffer` instances — they've already been linked through during chain construction
-- Type-agnostic — does not inspect command types or pre-scan arguments
-- All error detection delegated to `command.apply()` (which internally uses `getError()` for poison checks)
-- Chain is guaranteed complete by flatten time (built incrementally as commands were added)
+## Async Lifecycle Finalization
 
-See `docs/code/snapshot.md` for complete incremental chain construction algorithm.
+`AsyncState.asyncBlock(...)` (`src/runtime/async-state.js`) finalizes block buffers in `.finally(...)`:
 
-## Safe Output and Text Materialization
+- `childFrame._outputBuffer.markFinishedAndPatchLinks()` executes on both success and failure
+- this allows parent chain progression through child-buffer slots even on error paths
 
-File: `src/runtime/safe-output.js`
+## Output Declaration and Lookup
 
-### Core suppressors
+- `declareOutput(frame, outputName, outputType, context, initializer)`:
+- finds nearest output buffer (`findOutputBuffer`)
+- creates one if needed
+- creates output object/facade
+- registers in lexical `frame._outputs`
+- registers in buffer `_outputs` map
+- stores sink handlers in `_outputHandlers` for sink-specific lifecycle
 
-- `suppressValue(val, autoescape)` (sync)
-- `suppressValueAsync(val, autoescape, errorContext)` (async template expression path)
-- `suppressValueScript(...)` and async variant (script text behavior)
+- `getOutputHandler(frame, name)` is lexical lookup over `frame._outputs` chain.
 
-### Defined-value validators
+## Guard/Clear Behavior
 
-- `ensureDefined(val, lineno, colno, context)` (sync) — throws if val is null/undefined.
-- `ensureDefinedAsync(val, lineno, colno, context, errorContext)` (async) — poison-aware, delegates complex cases to `_ensureDefinedAsyncComplex`.
+`clearBuffer(...)`:
 
-### Normalization
-
-`normalizeBufferValue(...)` unwraps envelope-like values:
-
-- `{ text: [...] }` -> `text` array
-- `{ output: [...] }` -> `output` array
-- `CommandBuffer` passthrough
-
-### CommandBuffer-to-text conversion
-
-Current utilities:
-
-- `flattenTextCommandBuffer(buffer, errorContext)`:
-  - builds temporary text output facade (`_target` array + `getCurrentResult`)
-  - calls `flattenBuffer(...)` to get concrete text
-
-- `materializeTemplateTextValue(val, context, astate, waitCount = 1)`:
-  - boundary helper for template composition values
-  - if value is `CommandBuffer`, optionally waits `astate.waitAllClosures(waitCount)`, then flattens to text
-  - normalizes envelope-like values before CommandBuffer detection
-
-Compiler currently uses this in async `super()` path before `markSafe`.
-
-### Script text suppression behavior
-
-`suppressValueScript` intentionally:
-
-- suppresses plain objects to empty text by default
-- supports envelope objects with `text` or `output` fields
-- preserves custom `toString` objects
-
-## Compiler Emission Overview
-
-Files:
-
-- `src/compiler/compile-emit.js` — async block helpers, root setup, scope management
-- `src/compiler/compile-buffer.js` — output command compilation, `reserveSlot`/`fillSlot` patterns, async-to-buffer emission for output commands
-- `src/compiler/compiler.js` — statement compilation (if, for, capture, return, output declarations)
-- `src/compiler/compile-inheritance.js` — template inheritance (extends, super, include)
-
-### Root setup
-
-- Sync root: string buffer.
-- Async root: command buffer + default `text` output declaration.
-
-### Text output emission
-
-- Template text expressions compile through `suppressValue`/`suppressValueAsync` and are emitted as `TextCommand` writes in async mode.
-- Sync mode appends directly to string buffer.
-
-### Return handling
-
-- Async `compileReturn` waits closures, resolves return value (via `resolveSingle`), checks poison, finalizes unobserved sinks, then returns/callbacks.
-- Sync `compileReturn` emits direct callback return.
-- `finalizeUnobservedSinks(...)` intentionally ignores errors for sinks that were never observed.
-
-### Capture/Call Blocks
-
-- Async `compileCapture` creates a temporary command buffer/output scope, waits `astate.waitAllClosures(1)`, then flattens that temporary text output.
-- `compile-emit.asyncBlockRender` uses the same pattern for template call-block rendering in async mode (`waitAllClosures(1)` + `flattenBuffer` on temporary text output).
-
-### Output command compilation (`compile-buffer.js`)
-
-- Sync output commands emit direct buffer writes.
-- Async output commands use `reserveSlot`/`fillSlot` with error wrapping: catch blocks create `ErrorCommand(processedErrors)` and fill the slot, maintaining the buffer invariant.
-- When the target output is declared on a different frame, compiler emits `runtime.getOutputHandler(frame, name)` to locate the output and its buffer at runtime.
-
-### Inheritance-specific note (`super()`)
-
-Async `compileSuper` path currently:
-
-1. gets super block result via `context.getSuper(...)`
-2. materializes command-buffer text via `runtime.materializeTemplateTextValue(...)`
-3. applies `runtime.markSafe(...)`
-
-This ensures composed super text is concrete before suppression/append.
-
-## Error and Poison
-
-- Poison markers are inserted via `addPoison(...)` as `ErrorCommand(errors)` entries.
-- Async `reserveSlot`/`fillSlot` catch blocks also wrap errors in `ErrorCommand` before filling the slot.
-- Buffer invariant: no raw `PoisonedValue` ever sits in a buffer array.
-- Flatten collects all errors via `apply()` + `try/catch` and throws one `PoisonError` with aggregated errors.
-- Policy remains: never miss any error during flatten of observed outputs.
+- clears handler arrays and resets indexes
+- resets per-handler chain progress and local endpoints
+- invokes `patchLinksAfterClear(buffer)` to repair links around cleared segments
 
 ## Invariants
 
-1. `_outputHandlers` is sink-focused runtime map.
-2. `_outputs` is the lexical output registry used by lookup/finalization paths (not the direct flatten mutation target).
-3. Output name and output type are distinct concepts.
-4. Text command validity is enforced in `TextCommand.apply(...)`.
-5. All buffer entries are `Command` instances or nested `CommandBuffer`s — no raw `PoisonedValue` in buffers.
-6. Error detection is polymorphic via `getError()`; error execution is polymorphic via `apply()` throwing.
-7. Flatten is replay/error-collection; final shaping is in output objects (`getCurrentResult` / sink snapshot semantics).
-8. Sync template path remains string-based; async template path remains command-buffer based.
-9. Output facades (proxies) ensure flattener mutations on `_target`/`_base` propagate to the Output instance visible to `snapshot()`.
-
-## Transitional Notes
-
-- `suppressValueAsync` still has a compatibility fallback for direct `CommandBuffer` input; preferred long-term direction is boundary materialization (`materializeTemplateTextValue`) in compiler/runtime call boundaries.
-- Some composition paths still rely on evolving boundary conventions; keep tests around inheritance/caller/capture paths as guardrails.
-- `src/script/value-handler.js` exists but is currently unused — `ValueOutput` handles values directly via `_target`. Candidate for removal.
+- Buffer entries are commands or child command buffers; poison payloads are represented as `ErrorCommand` entries.
+- Chain endpoints consumed by flatten are owned by `Output` (`_firstChainedCommand`, `_lastChainedCommand`).
+- Chain construction occurs at write/attach/finish time, not during flatten.
+- Child buffers are finalized by their own async lifecycle.
+- Flatten is chain-walk only and applies commands against output accumulators.
+- Error handling during flatten is aggregate: all reachable commands are attempted, all errors are collected.

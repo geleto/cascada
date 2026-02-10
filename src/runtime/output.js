@@ -18,25 +18,10 @@ class Output {
     this._firstChainedCommand = null;
     this._lastChainedCommand = null;
 
-    // Register this output in the buffer's shared _outputs Map
-    if (this._buffer && this._buffer._outputs instanceof Map) {
+    if (this._buffer && typeof this._buffer._registerOutput === 'function') {
+      this._buffer._registerOutput(this._outputName, this);
+    } else if (this._buffer && this._buffer._outputs instanceof Map) {
       this._buffer._outputs.set(this._outputName, this);
-      // Handle late output binding (e.g. tests/manual buffers): if the buffer
-      // already has a locally chained segment, bind this output to it.
-      if (this._buffer.parent == null) {
-        const localFirst = this._buffer._firstLocalChainedCommand
-          ? this._buffer._firstLocalChainedCommand.get(this._outputName)
-          : null;
-        const localLast = this._buffer._lastLocalChainedCommand
-          ? this._buffer._lastLocalChainedCommand.get(this._outputName)
-          : null;
-        if (localFirst) {
-          this._firstChainedCommand = localFirst;
-        }
-        if (localLast) {
-          this._lastChainedCommand = localLast;
-        }
-      }
     }
   }
 
@@ -328,8 +313,9 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
   output._buffer = buffer;
   frame._outputs[outputName] = output;
 
-  // Register output in the shared buffer._outputs Map for incremental chain construction
-  if (buffer._outputs instanceof Map) {
+  if (typeof buffer._registerOutput === 'function') {
+    buffer._registerOutput(outputName, output);
+  } else if (buffer._outputs instanceof Map) {
     buffer._outputs.set(outputName, output);
   }
 
