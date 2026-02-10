@@ -24,9 +24,9 @@ class CompileBuffer {
     // @otodo - evaluate these buffers, we shall be able to store
     // the values in the frame, the only probblem is when node.isAsync
     // is false in asyncMode, then new frame is not created?
-      this._bufferValueStack = [];
-      this._bufferIndexStack = [];
-      this._bufferAddStack = [];
+    this._bufferValueStack = [];
+    this._bufferIndexStack = [];
+    this._bufferAddStack = [];
   }
 
   // === BUFFER STACK MANAGEMENT ===
@@ -310,27 +310,27 @@ class CompileBuffer {
   /**
    * Add value to buffer (async mode with error handling)
    */
-    asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null, outputName = 'text', emitTextCommand = false) {
-      const returnId = this.compiler._tmpid();
-      if (this.compiler.asyncMode) {
-        this.compiler.emit.asyncClosureDepth++;
-        frame = frame.push(false, false);
-        if (outputName) {
-          this.compiler.async.updateOutputUsage(frame, outputName);
-        }
+  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null, outputName = 'text', emitTextCommand = false) {
+    const returnId = this.compiler._tmpid();
+    if (this.compiler.asyncMode) {
+      this.compiler.emit.asyncClosureDepth++;
+      frame = frame.push(false, false);
+      if (outputName) {
+        this.compiler.async.updateOutputUsage(frame, outputName);
+      }
 
-        const indexId = this.compiler._tmpid();
-        this.compiler.emit.line(`let ${indexId} = ${this.currentBuffer}.reserveSlot("${outputName}");`);
-        this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
+      const indexId = this.compiler._tmpid();
+      this.compiler.emit.line(`let ${indexId} = ${this.currentBuffer}.reserveSlot("${outputName}");`);
+      this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
 
-        this.compiler.emit.line(`try {`);
-        this.compiler.emit.line(`  let ${returnId};`);
-        renderFunction.call(this.compiler, returnId, frame);
-        this.compiler.emit.line(';');
-        const valueExpr = emitTextCommand
-          ? this._emitTemplateTextCommandExpression(returnId, positionNode)
-          : returnId;
-        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(${indexId}, ${valueExpr}, "${outputName}");`);
+      this.compiler.emit.line(`try {`);
+      this.compiler.emit.line(`  let ${returnId};`);
+      renderFunction.call(this.compiler, returnId, frame);
+      this.compiler.emit.line(';');
+      const valueExpr = emitTextCommand
+        ? this._emitTemplateTextCommandExpression(returnId, positionNode)
+        : returnId;
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(${indexId}, ${valueExpr}, "${outputName}");`);
 
       this.compiler.emit.line(`} catch(e) {`);
       this.compiler.emit.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
@@ -338,7 +338,7 @@ class CompileBuffer {
       // For reserveSlot/fillSlot paths, always materialize failure in the reserved slot.
       // Avoid addPoison here: it uses buffer.add(), which can throw if the
       // child buffer finished before this async write settled.
-        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(${indexId}, new runtime.ErrorCommand(processedErrors), "${outputName}");`);
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(${indexId}, new runtime.ErrorCommand(processedErrors), "${outputName}");`);
       this.compiler.emit.line(`}`);
 
       this.compiler.emit.asyncClosureDepth--;
@@ -366,14 +366,14 @@ class CompileBuffer {
   /**
    * Begin async buffer addition (split pattern)
    */
-    asyncAddToBufferBegin(node, frame, positionNode = node, handlerName = null, outputName = 'text') {
-      if (node.isAsync) {
-        const indexId = this.compiler._tmpid();
-        this._bufferIndexStack.push(indexId);
-        this.compiler.emit.line(`let ${indexId} = ${this.currentBuffer}.reserveSlot("${outputName}");`);
-        this.compiler.emit.line(`astate.asyncBlock(async (astate, frame) => {`);
-        const valueId = this.compiler._tmpid();
-        this._bufferValueStack.push(valueId);
+  asyncAddToBufferBegin(node, frame, positionNode = node, handlerName = null, outputName = 'text') {
+    if (node.isAsync) {
+      const indexId = this.compiler._tmpid();
+      this._bufferIndexStack.push(indexId);
+      this.compiler.emit.line(`let ${indexId} = ${this.currentBuffer}.reserveSlot("${outputName}");`);
+      this.compiler.emit.line(`astate.asyncBlock(async (astate, frame) => {`);
+      const valueId = this.compiler._tmpid();
+      this._bufferValueStack.push(valueId);
       this.compiler.emit.line(`try {`);
       this.compiler.emit(`  let ${valueId} = `);
       this.compiler.emit.asyncClosureDepth++;
@@ -398,24 +398,24 @@ class CompileBuffer {
   /**
    * End async buffer addition (split pattern)
    */
-    asyncAddToBufferEnd(node, frame, positionNode = node, handlerName = null, outputName = 'text', emitTextCommand = false) {
-      const valueId = this.compiler.asyncMode ? this._bufferValueStack.pop() : null;
-      this.compiler.emit.line(';');
-      if (node.isAsync) {
-        const indexId = this._bufferIndexStack.pop();
-        //const handlerName = this._pendingHandler;
-        //this._pendingHandler = null;
+  asyncAddToBufferEnd(node, frame, positionNode = node, handlerName = null, outputName = 'text', emitTextCommand = false) {
+    const valueId = this.compiler.asyncMode ? this._bufferValueStack.pop() : null;
+    this.compiler.emit.line(';');
+    if (node.isAsync) {
+      const indexId = this._bufferIndexStack.pop();
+      //const handlerName = this._pendingHandler;
+      //this._pendingHandler = null;
 
       const valueExpr = emitTextCommand
         ? this._emitTemplateTextCommandExpression(valueId, positionNode)
         : valueId;
-        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(${indexId}, ${valueExpr}, "${outputName}");`);
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(${indexId}, ${valueExpr}, "${outputName}");`);
       this.compiler.emit.line(`} catch(e) {`);
       this.compiler.emit.line(`  const errors = runtime.isPoisonError(e) ? e.errors : [e];`);
       this.compiler.emit.line(`  const processedErrors = errors.map(err => runtime.handleError(err, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path));`);
       // Same reasoning as asyncAddToBuffer(): never use addPoison in
       // reserveSlot/fillSlot catch blocks; fill the reserved slot directly.
-        this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(${indexId}, new runtime.ErrorCommand(processedErrors), "${outputName}");`);
+      this.compiler.emit.line(`  ${this.currentBuffer}.fillSlot(${indexId}, new runtime.ErrorCommand(processedErrors), "${outputName}");`);
       this.compiler.emit.line(`}`);
 
       this.compiler.emit.asyncClosureDepth--;
