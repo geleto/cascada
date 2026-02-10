@@ -87,18 +87,8 @@ class CommandBuffer {
   }
 
   markFinishedAndPatchLinks() {
-    // First, recursively finish all child buffers (bottom-up finishing)
-    // This ensures the full structure is complete before we patch links
-    for (const handlerName in this.arrays) {
-      const arr = this.arrays[handlerName];
-      if (arr) {
-        for (const item of arr) {
-          if (isCommandBuffer(item) && !item.finished) {
-            item.markFinishedAndPatchLinks();
-          }
-        }
-      }
-    }
+    // Do not recursively finish child buffers.
+    // Each child buffer is finished by its own async block lifecycle.
 
     this.finished = true;
 
