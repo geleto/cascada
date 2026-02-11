@@ -427,7 +427,8 @@ class CompileLoop {
     this.compiler.emit.withScopedSyntax(() => {
       let buf;
       if (parallel) {
-        buf = this.compiler.buffer.push();
+        const managed = this.compiler.emit.beginManagedBlock(frame, false, true);
+        buf = managed.bufferId;
       }
 
       this.compiler.compile(node.body, frame);
@@ -439,7 +440,7 @@ class CompileLoop {
       this.compiler.emit.line('next(' + i + (buf ? ',' + buf : '') + ');');
 
       if (parallel) {
-        this.compiler.buffer.pop();
+        this.compiler.emit.endManagedBlock(frame, false, true);
       }
     });
 

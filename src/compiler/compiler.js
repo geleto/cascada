@@ -977,7 +977,7 @@ class Compiler extends CompilerBase {
     if (node.isAsync) {
       this._addDeclaredVar(currFrame, 'caller');
     }
-    const bufferId = this.buffer.push();
+    const { bufferId } = this.emit.beginManagedBlock(currFrame, false, true);
 
     this.emit.withScopedSyntax(() => {
       this.compile(node.body, currFrame);
@@ -1021,7 +1021,7 @@ class Compiler extends CompilerBase {
     } else {
       this.emit.line('});'); // 2b. Closes the main function for sync
     }
-    this.buffer.pop();
+    this.emit.endManagedBlock(currFrame, false, true);
 
     this.sequential.isCompilingMacroBody = oldIsCompilingMacroBody; // Restore state
 
@@ -1089,8 +1089,9 @@ class Compiler extends CompilerBase {
       // Use node.body as position node for the capture block evaluation
       this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
-        this.emit.line('let output = new runtime.CommandBuffer(context, null);');
-        this.emit.initOutputHandlers('output');
+        this.emit.line('let output = frame._outputBuffer;');
+        this.emit.line('if (!output) { throw new Error("Capture block requires async block output buffer"); }');
+        this.emit.line('let output_textOutput = runtime.declareOutput(frame, "text", "text", context, null);');
         // Capture bodies should not be treated as root-scope returns.
         f._seesRootScope = false;
         // Capture returns run inside an async block; wait for sibling closures.

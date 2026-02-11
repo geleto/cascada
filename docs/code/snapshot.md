@@ -13,6 +13,12 @@ The architecture is designed around:
 - parent/child buffer coordination
 - chain-only flatten traversal
 
+CommandBuffer creation model:
+
+- root scope setup
+- managed non-async scope-root blocks
+- runtime async blocks (`AsyncState.asyncBlock`) when outputs are used
+
 ## Core Concepts
 
 ## Output-specific command chain
@@ -173,7 +179,7 @@ When a child buffer is inserted into parent slot:
 
 Async lifecycle integration:
 
-- `AsyncState.asyncBlock(...)` calls `childFrame._outputBuffer.markFinishedAndPatchLinks()` in `.finally(...)`
+- `AsyncState.asyncBlock(...)` calls `childFrame._outputBuffer.markFinishedAndPatchLinks()` in `.finally(...)` only when the async block owns that buffer (`_ownsOutputBuffer`)
 - this runs on both success and failure and is the primary completion trigger for child buffers
 
 ## Flatten contract

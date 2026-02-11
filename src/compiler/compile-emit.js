@@ -73,14 +73,10 @@ module.exports = class CompileEmit {
       this.line(`let colno = ${node.colno};`);
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
-    if (this.compiler.asyncMode) {
-      // note, the below frame.data/text/value assignments are temporarily here
-      // for backward compatibility while we refactor the output implementation
-      this.emit(`let ${this.compiler.buffer.currentBuffer} = new runtime.CommandBuffer(context, null);`);
-      this.initOutputHandlers(this.compiler.buffer.currentBuffer, this.compiler.buffer.currentTextOutput);
-    } else {
-      this.emit(`let ${this.compiler.buffer.currentBuffer} = "";`);
-    }
+    this.compiler.buffer.createScopeRootBuffer(
+      this.compiler.buffer.currentBuffer,
+      this.compiler.buffer.currentTextOutput
+    );
     this.line('try {');
   }
 
@@ -127,6 +123,34 @@ module.exports = class CompileEmit {
   // - there is only one active child (e.g. if/else) that has output
   //in all other cases, use AsyncBlockBufferNode
   //to make sure there are no race conditions for the buffer position
+  // Managed block for non-astate paths (scope/frame + optional scope-root buffer).
+  // If createScopeRootBuffer=true, this is a sanctioned scope-root buffer
+  // creation site and must be paired with endManagedBlock(..., true).
+  beginManagedBlock(frame, createScope = false, createScopeRootBuffer = false) {
+    let nextFrame = frame;
+    if (createScope) {
+      this.line('frame = frame.push();');
+      nextFrame = frame.push();
+    }
+    let bufferId = null;
+    if (createScopeRootBuffer) {
+      bufferId = this.compiler.buffer.pushBuffer();
+      this.compiler.buffer.createScopeRootBuffer(bufferId, `${bufferId}_textOutput`);
+    }
+    return { frame: nextFrame, bufferId };
+  }
+
+  endManagedBlock(frame, createScope = false, createScopeRootBuffer = false) {
+    if (createScopeRootBuffer) {
+      this.compiler.buffer.popBuffer();
+    }
+    if (createScope) {
+      this.line('frame = frame.pop();');
+      return frame.pop();
+    }
+    return frame;
+  }
+
   asyncBlock(node, frame, createScope, emitFunc, positionNode = node) {
     const aframe = this.asyncBlockBegin(node, frame, createScope, positionNode);
     emitFunc(aframe);
@@ -224,9 +248,9 @@ module.exports = class CompileEmit {
 
   asyncBlockRender(node, frame, innerBodyFunction, callbackName = null, positionNode = node) {
     if (!node.isAsync) {
-      const id = this.compiler.buffer.push();
-      innerBodyFunction.call(this.compiler, frame);
-      this.compiler.buffer.pop();
+      const { frame: blockFrame, bufferId: id } = this.beginManagedBlock(frame, false, true);
+      innerBodyFunction.call(this.compiler, blockFrame);
+      this.endManagedBlock(blockFrame, false, true);
       if (callbackName) {
         this.line(`${callbackName}(null, ${id});`);
       }
@@ -235,9 +259,18 @@ module.exports = class CompileEmit {
     }
 
     frame = frame.push(false, false);//unscoped frame for the async block
+    // asyncBlockRender always materializes text output; ensure async block
+    // allocates an output buffer via usedOutputs.
+    this.compiler.async.updateOutputUsage(frame, 'text');
     this.line(`astate.asyncBlock(async (astate, frame) =>{`);
 
-    const id = this.compiler.buffer.push();//@todo - better way to get the buffer, see compileCapture
+    const id = this.compiler._tmpid();
+    // IMPORTANT: no createScopeRootBuffer() here.
+    // For async blocks, CommandBuffer is owned/created by AsyncState.asyncBlock.
+    this.line(`let ${id} = frame._outputBuffer;`);
+    this.line(`if (!${id}) { throw new Error("asyncBlockRender requires async block output buffer"); }`);
+    this.line(`let ${id}_textOutput = runtime.declareOutput(frame, "text", "text", context, null);`);
+    const prevBufferState = this.compiler.buffer.setBufferAlias(id, `${id}_textOutput`);
 
     const originalAsyncClosureDepth = this.asyncClosureDepth;
     this.asyncClosureDepth = 0;
@@ -246,7 +279,7 @@ module.exports = class CompileEmit {
       // Call blocks in script mode return values via explicit/implicit return.
       frame._seesRootScope = false;
       frame._returnWaitCount = 1;
-      this.line(`let ${id} = (async function(frame) {`);
+      this.line(`${id} = (async function(frame) {`);
       innerBodyFunction.call(this.compiler, frame);
       this.line('}).call(this, frame);');
     } else {
@@ -254,9 +287,7 @@ module.exports = class CompileEmit {
     }
 
     this.asyncClosureDepth = originalAsyncClosureDepth;
-
-    //this.Line(';');//this may be needed in some cases
-    this.compiler.buffer.pop();
+    this.compiler.buffer.restoreBufferAlias(prevBufferState);
 
     if (!this.compiler.scriptMode) {
       this.line('await astate.waitAllClosures(1);');

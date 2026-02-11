@@ -180,6 +180,7 @@ module.exports = {
   flattenBuffer: flattenBuffer,
   finalizeUnobservedSinks: output.finalizeUnobservedSinks,
   CommandBuffer: buffer.CommandBuffer,
+  createCommandBuffer: buffer.createCommandBuffer,
   clearBuffer: buffer.clearBuffer,
   getPosonedBufferErrors: buffer.getPosonedBufferErrors,
 

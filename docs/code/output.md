@@ -179,11 +179,25 @@ There is no tree-walk command extraction in flatten path.
 
 ## Compiler Interaction
 
-## Root and nested buffers
+## Buffer Creation Contract
 
-- Async function roots initialize `new runtime.CommandBuffer(context, null)`
-- `initOutputHandlers(...)` declares default text output
-- Async function end calls `currentBuffer.markFinishedAndPatchLinks()` before returning buffer
+`CommandBuffer` is created in exactly three places:
+
+- Root scope setup (`funcBegin` -> `createScopeRootBuffer(...)`)
+- Managed non-async scope-root blocks (`beginManagedBlock(..., createScopeRootBuffer=true)`)
+- Runtime async blocks (`AsyncState.asyncBlock(...)` when `usedOutputs` is non-empty)
+
+Important constraints:
+
+- `pushBuffer/popBuffer` are compiler-side id/stack tracking only.
+- `declareOutput(...)` does not create fallback buffers; it requires an active buffer.
+
+## Root and managed buffers
+
+- Root setup uses `createScopeRootBuffer(...)` and declares default text output.
+- Managed non-async scope roots (macro/call/loop-local render scopes) also use `createScopeRootBuffer(...)`.
+- In async mode, these emit `runtime.createCommandBuffer(context, null)`; in sync mode they emit string buffers.
+- Async function end calls `currentBuffer.markFinishedAndPatchLinks()` before returning buffer.
 
 ## Async writes
 
@@ -191,20 +205,22 @@ There is no tree-walk command extraction in flatten path.
 
 ## Nested async buffer nodes
 
-Nested async blocks create detached child buffers (`new CommandBuffer(context, null)`), then parent attaches them with `parent.add(child, outputName)` once used outputs are known. Attachment is where parent/position/output-registry linkage is established.
+Nested async blocks do not create buffers in compiler code. Compiler routes writes through `frame._outputBuffer` and parent-child linkage is emitted with `addBuffer(...)` once used outputs are known.
+
+`asyncBlockRender` async branch follows the same rule: it binds to `frame._outputBuffer` and does not call `createScopeRootBuffer(...)`.
 
 ## Async Lifecycle Finalization
 
 `AsyncState.asyncBlock(...)` (`src/runtime/async-state.js`) finalizes block buffers in `.finally(...)`:
 
-- `childFrame._outputBuffer.markFinishedAndPatchLinks()` executes on both success and failure
+- for block-owned buffers (`childFrame._ownsOutputBuffer === true`), `childFrame._outputBuffer.markFinishedAndPatchLinks()` executes on both success and failure
 - this allows parent chain progression through child-buffer slots even on error paths
 
 ## Output Declaration and Lookup
 
 - `declareOutput(frame, outputName, outputType, context, initializer)`:
 - finds nearest output buffer (`findOutputBuffer`)
-- creates one if needed
+- throws if no active output buffer is found
 - creates output object/facade
 - registers in lexical `frame._outputs`
 - registers in buffer `_outputs` map

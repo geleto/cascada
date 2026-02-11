@@ -380,6 +380,10 @@ class CommandBuffer {
     return slot;
   }
 
+  addBuffer(buffer, outputName) {
+    return this.add(buffer, outputName);
+  }
+
   fillSlot(slot, value, outputName) {
     // Don't check finished here - fillSlot fills pre-reserved slots
     // that may have been reserved before the buffer was marked finished
@@ -400,6 +404,15 @@ class CommandBuffer {
     // Try to advance the chain incrementally (filling a gap may unblock chain advancement)
     this._tryAdvanceChain(outputName, slot);
   }
+}
+
+// Canonical CommandBuffer factory.
+// Creation contract:
+// 1) Root scope setup
+// 2) Managed non-async scope-root blocks
+// 3) Runtime async blocks (AsyncState.asyncBlock)
+function createCommandBuffer(context, parent = null) {
+  return new CommandBuffer(context, parent);
 }
 
 // Check if value is a CommandBuffer using symbol
@@ -472,6 +485,7 @@ function getPosonedBufferErrors(buffer, allowedHandlers = null) {
 
 module.exports = {
   CommandBuffer,
+  createCommandBuffer,
   clearBuffer,
   getPosonedBufferErrors,
   isCommandBuffer,

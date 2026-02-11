@@ -32,20 +32,33 @@ class CompileBuffer {
   // === BUFFER STACK MANAGEMENT ===
 
   /**
-   * Push a new buffer onto the stack and initialize it.
+   * Create a scope-root buffer and initialize output handlers.
+   * This is one of the sanctioned creation points for CommandBuffer and is
+   * used by root/managed non-async scope-root blocks.
+   * It only allocates/initializes runtime variables; it does not push stack state.
+   */
+  createScopeRootBuffer(bufferId = this.currentBuffer, textOutputId = this.currentTextOutput) {
+    if (this.compiler.asyncMode) {
+      this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, null);`);
+      this.compiler.emit.initOutputHandlers(bufferId, textOutputId || `${bufferId}_textOutput`);
+    } else {
+      this.compiler.emit.line(`let ${bufferId} = "";`);
+    }
+  }
+
+  /**
+   * Push a new buffer identifier onto the stack.
+   * Does not allocate/initialize the underlying buffer.
+   * Pair with popBuffer() to keep compiler-side buffer tracking balanced.
    * Returns the new buffer identifier.
    */
-  push() {
+  pushBuffer() {
     const id = this.compiler._tmpid();
     this.bufferStack.push(this.currentBuffer);
     this.textOutputStack.push(this.currentTextOutput);
     this.currentBuffer = id;
     this.currentTextOutput = `${id}_textOutput`;
-    if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`let ${this.currentBuffer} = new runtime.CommandBuffer(context, null);`);
-      this.compiler.emit.initOutputHandlers(this.currentBuffer, this.currentTextOutput);
-    } else {
-      this.compiler.emit.line(`let ${this.currentBuffer} = "";`);
+    if (!this.compiler.asyncMode) {
       this.currentTextOutput = null;
     }
     return id;
@@ -54,9 +67,27 @@ class CompileBuffer {
   /**
    * Restore the previous buffer from the stack.
    */
-  pop() {
+  popBuffer() {
     this.currentBuffer = this.bufferStack.pop();
     this.currentTextOutput = this.textOutputStack.pop();
+  }
+
+  setBufferAlias(bufferId, textOutputId = null) {
+    const prev = {
+      currentBuffer: this.currentBuffer,
+      currentTextOutput: this.currentTextOutput
+    };
+    this.currentBuffer = bufferId;
+    this.currentTextOutput = textOutputId;
+    return prev;
+  }
+
+  restoreBufferAlias(prev) {
+    if (!prev) {
+      return;
+    }
+    this.currentBuffer = prev.currentBuffer;
+    this.currentTextOutput = prev.currentTextOutput;
   }
 
   /**
@@ -150,8 +181,7 @@ class CompileBuffer {
       this.compiler.async.updateOutputUsage(frame, handler);
     }
 
-    const declaredInCurrentFrame = frame.declaredOutputs && frame.declaredOutputs.has(handler);
-    const useExplicitOutputBuffer = outputDecl && !declaredInCurrentFrame && !frame.outputScope;
+    const useExplicitOutputBuffer = outputDecl && !frame.outputScope;
 
     // Use a wrapper to avoid duplicating the sync/async logic.
     const wrapper = (emitLogic) => {
@@ -449,22 +479,18 @@ class CompileBuffer {
       this.textOutputStack.push(this.currentTextOutput);
       const parentBuffer = this.currentBuffer;
 
-      // Create a new buffer array for the nested block
+      // Create a new buffer reference for this nested block.
       const newBuffer = this.compiler._tmpid();
-      const newTextOutput = `${newBuffer}_textOutput`;
+      this.compiler.emit.line(`let ${newBuffer} = frame._outputBuffer || ${parentBuffer};`);
 
-      // Initialize the new buffer and its index inside the async closure
-      this.compiler.emit.line(`let ${newBuffer} = new runtime.CommandBuffer(context, null);`);
-      this.compiler.emit.initOutputHandlers(newBuffer, newTextOutput);
-
-      // Defer adding the buffer to the parent until we know which outputs were used.
+      // Defer parent-child buffer linking until async block body is emitted.
       const addPos = this.compiler.codebuf.length;
       this.compiler.emit.line('');
       this._bufferAddStack.push({ pos: addPos, parentBuffer, newBuffer });
 
       // Update the buffer reference
       this.currentBuffer = newBuffer;
-      this.currentTextOutput = newTextOutput;
+      this.currentTextOutput = null;
       return frame;
     } else if (createScope) {
       frame = frame.push();
@@ -483,7 +509,14 @@ class CompileBuffer {
       if (addInfo) {
         const usedOutputs = frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
         usedOutputs.forEach((outputName) => {
-          this.compiler.emit.insertLine(addInfo.pos, `${addInfo.parentBuffer}.add(${addInfo.newBuffer}, "${outputName}");`);
+          // Do not bubble outputs declared in this async block's lexical scope.
+          if (frame.declaredOutputs && frame.declaredOutputs.has(outputName)) {
+            return;
+          }
+          this.compiler.emit.insertLine(
+            addInfo.pos,
+            `if (${addInfo.newBuffer} !== ${addInfo.parentBuffer}) { ${addInfo.parentBuffer}.addBuffer(${addInfo.newBuffer}, "${outputName}"); }`
+          );
         });
       }
 

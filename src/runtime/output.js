@@ -299,8 +299,9 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
 
   let buffer = findOutputBuffer(frame);
   if (!buffer) {
-    buffer = new CommandBuffer(context, null);
-    frame._outputBuffer = buffer;
+    // No implicit CommandBuffer creation here by design.
+    // Buffer ownership/creation must come from root/managed scope-root/async block setup.
+    throw new Error(`Output "${outputName}" declared without an active CommandBuffer`);
   }
 
   buffer._outputTypes = buffer._outputTypes || Object.create(null);
