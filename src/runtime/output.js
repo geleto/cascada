@@ -1,7 +1,6 @@
 'use strict';
 
 const { flattenBuffer } = require('./flatten-buffer');
-const { CommandBuffer } = require('./buffer');
 const { TextCommand, ValueCommand, DataCommand, SinkCommand } = require('./commands');
 const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
