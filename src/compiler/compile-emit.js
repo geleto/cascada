@@ -85,6 +85,7 @@ module.exports = class CompileEmit {
         const usedOutputsVar = this.compiler._tmpid();
         this.line(`let ${usedOutputsVar} = null;`);
         const usedOutputsPos = this.compiler.codebuf.length;
+        this.line('');
         this.compiler.buffer.createScopeRootBuffer(bufferId, `${bufferId}_textOutput`, usedOutputsVar);
         this._managedRootBufferStack.push({ usedOutputsVar, usedOutputsPos });
       } else {

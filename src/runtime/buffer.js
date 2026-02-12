@@ -17,7 +17,7 @@ class CommandBuffer {
     this.finished = false;
     this[COMMAND_BUFFER_SYMBOL] = true;
 
-    // Create arrays namespace (handlers created lazily on first write/snapshot).
+    // Create arrays namespace for known handlers only.
     this.arrays = Object.create(null);
     // `_outputTypes` is script-only metadata used by the flattener to interpret
     // explicit output handler types. Templates don't need it.
@@ -34,7 +34,26 @@ class CommandBuffer {
     // Only the root buffer mirrors these to Output._first/_last endpoints.
     this._firstLocalChainedCommand = new Map();
     this._lastLocalChainedCommand = new Map();
-    this._usedOutputs = Array.isArray(usedOutputs) ? new Set(usedOutputs) : null;
+    this._usedOutputs = Array.isArray(usedOutputs) ? new Set(usedOutputs) : new Set();
+
+    // Initialize per-handler state eagerly from compiler/runtime analysis.
+    this._usedOutputs.forEach((handlerName) => {
+      this.arrays[handlerName] = [];
+      this._outputIndexes[handlerName] = 0;
+      this._lastChainedIndex.set(handlerName, -1);
+      this._lastIndexIsChained.set(handlerName, true);
+    });
+  }
+
+  _fatalUnknownOutput(outputName, runtime = null, cb = null, lineno = null, colno = null, errorContextString = null, context = null) {
+    const path = (context && context.path) || (this._context && this._context.path) || null;
+    const message = `Unknown output handler "${outputName}" for CommandBuffer. This indicates missing usedOutputs metadata.`;
+    const FatalCtor = runtime && runtime.RuntimeFatalError ? runtime.RuntimeFatalError : require('./errors').RuntimeFatalError;
+    const fatal = new FatalCtor(message, lineno, colno, errorContextString, path);
+    if (typeof cb === 'function') {
+      cb(fatal);
+    }
+    throw fatal;
   }
 
   // Snapshot and command chain methods
@@ -324,12 +343,9 @@ class CommandBuffer {
     return (lastIdx === arr.length - 1) && lastChained;
   }
 
-  _reserveSlot(outputName) {
-    if (this._outputIndexes[outputName] === undefined) {
-      this._outputIndexes[outputName] = 0;
-    }
-    if (!this.arrays[outputName]) {
-      this.arrays[outputName] = [];
+  _reserveSlot(outputName, runtime = null, cb = null, lineno = null, colno = null, errorContextString = null, context = null) {
+    if (!Object.prototype.hasOwnProperty.call(this.arrays, outputName)) {
+      this._fatalUnknownOutput(outputName, runtime, cb, lineno, colno, errorContextString, context);
     }
     const slot = this._outputIndexes[outputName]++;
     // Materialize the reserved position as an explicit gap so chain completion
@@ -390,7 +406,7 @@ class CommandBuffer {
   }
 
   async addAsyncArgsCommand(outputName, producer, runtime, context, lineno, colno, errorContextString, cb = null) {
-    const slot = this._reserveSlot(outputName);
+    const slot = this._reserveSlot(outputName, runtime, cb, lineno, colno, errorContextString, context);
     try {
       const value = await producer();
       this._fillSlot(slot, value, outputName);
@@ -440,6 +456,9 @@ class CommandBuffer {
   _fillSlot(slot, value, outputName) {
     // Don't check finished here - fillSlot fills pre-reserved slots
     // that may have been reserved before the buffer was marked finished
+    if (!Object.prototype.hasOwnProperty.call(this.arrays, outputName)) {
+      this._fatalUnknownOutput(outputName);
+    }
     const target = this.arrays[outputName];
 
     target[slot] = value;

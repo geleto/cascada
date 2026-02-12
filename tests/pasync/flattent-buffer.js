@@ -40,14 +40,14 @@ describe('flattenBuffer', function () {
   let context;
   const createBuffer = (input, ctx, outputName) => {
     const targetName = outputName || 'text';
-    const cb = new CommandBuffer(ctx || null, null);
+    const cb = new CommandBuffer(ctx || null, null, [targetName]);
     const addItem = (buffer, item) => {
       if (item instanceof CommandBuffer) {
         buffer.add(item, targetName);
         return;
       }
       if (Array.isArray(item)) {
-        const nested = new CommandBuffer(ctx || null, null);
+        const nested = new CommandBuffer(ctx || null, null, [targetName]);
         item.forEach((child) => addItem(nested, child));
         nested.markFinishedAndPatchLinks();
         buffer.add(nested, targetName);
@@ -80,7 +80,7 @@ describe('flattenBuffer', function () {
     flattenBuffer(makeOutput(buffer, ctx, outputName), ctx)
   );
   const flattenSink = (commands, ctx, outputName, sink) => {
-    const buffer = new CommandBuffer(ctx, null);
+    const buffer = new CommandBuffer(ctx, null, [outputName]);
     const frame = { _outputBuffer: buffer, parent: null };
     const sinkOutput = createSinkOutput(frame, outputName, ctx || null, sink);
 
@@ -279,7 +279,7 @@ describe('flattenBuffer', function () {
     });
 
     it('should reject CommandBuffer values inside TextCommand arguments', async function () {
-      const nested = new CommandBuffer(context, null);
+      const nested = new CommandBuffer(context, null, ['text']);
       nested.add(new TextCommand({ handler: 'text', args: ['x'], pos: { lineno: 0, colno: 0 } }), 'text');
       const buffer = createBuffer([
         new TextCommand({ handler: 'text', args: [nested], pos: { lineno: 1, colno: 1 } })

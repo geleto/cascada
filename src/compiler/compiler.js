@@ -89,6 +89,7 @@ class Compiler extends CompilerBase {
       usedOutputsVar = this._tmpid();
       this.emit.line(`let ${usedOutputsVar} = null;`);
       usedOutputsPos = this.codebuf.length;
+      this.emit.line('');
       this.buffer.createScopeRootBuffer(
         this.buffer.currentBuffer,
         this.buffer.currentTextOutput,

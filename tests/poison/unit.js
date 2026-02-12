@@ -29,14 +29,14 @@
   }
 
   const createBuffer = (input, context, outputName = 'text') => {
-    const cb = new runtime.CommandBuffer(context || null, null);
+    const cb = new runtime.CommandBuffer(context || null, null, [outputName]);
     const addItem = (targetBuffer, item) => {
       if (item instanceof runtime.CommandBuffer) {
         targetBuffer.add(item, outputName);
         return;
       }
       if (Array.isArray(item)) {
-        const nested = new runtime.CommandBuffer(context || null, null);
+        const nested = new runtime.CommandBuffer(context || null, null, [outputName]);
         item.forEach((child) => addItem(nested, child));
         nested.markFinishedAndPatchLinks();
         targetBuffer.add(nested, outputName);
