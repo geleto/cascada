@@ -218,7 +218,14 @@ class Template extends Obj {
 
     if (this.asyncMode) {
       // Run template in composition mode
-      this.rootRenderFunc(this.env, context, frame, globalRuntime, astate, cb, true);
+      const output = this.rootRenderFunc(this.env, context, frame, globalRuntime, astate, cb, true);
+      if (output && typeof output.markFinishedAndPatchLinks === 'function') {
+        // include in async mode intentionally returns a CommandBuffer from
+        // composition and inserts it into the parent output buffer as a child segment.
+        // That preserves deferred chain assembly and parent-controlled ordering
+        // Without marking this composition root buffer as finished, parent chaining can remain blocked at child slots.
+        output.markFinishedAndPatchLinks();
+      }
 
       // Immediately export the variables (they may be promises)
       const exported = context.getExported();
@@ -389,7 +396,11 @@ class AsyncTemplate extends Template {
     // Call the root function in composition mode. It will synchronously return
     // the output array, while any async operations it starts will use the
     // provided `astate` to link into the parent's lifecycle.
-    return this.rootRenderFunc(this.env, context, frame, globalRuntime, astate, cb, true);
+    const output = this.rootRenderFunc(this.env, context, frame, globalRuntime, astate, cb, true);
+    if (output && typeof output.markFinishedAndPatchLinks === 'function') {
+      output.markFinishedAndPatchLinks();
+    }
+    return output;
   }
 }
 

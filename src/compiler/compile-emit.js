@@ -86,6 +86,7 @@ module.exports = class CompileEmit {
     this.line(`let ${outputVar} = runtime.declareOutput(frame, "text", "text", context, null);`);
   }
 
+  // This is currently used only in compileRoot()
   funcEnd(node, noReturn) { // Added node parameter
     if (!noReturn) {
       if (this.compiler.asyncMode) {
