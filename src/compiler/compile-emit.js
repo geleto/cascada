@@ -142,6 +142,11 @@ module.exports = class CompileEmit {
 
   endManagedBlock(frame, createScope = false, createScopeRootBuffer = false) {
     if (createScopeRootBuffer) {
+      if (this.compiler.asyncMode) {
+        // Managed scope-root buffers are lifecycle-owned by this block and must
+        // be finalized before detaching from the compiler buffer stack.
+        this.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+      }
       this.compiler.buffer.popBuffer();
     }
     if (createScope) {

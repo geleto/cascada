@@ -49,6 +49,7 @@ describe('flattenBuffer', function () {
       if (Array.isArray(item)) {
         const nested = new CommandBuffer(ctx || null, null);
         item.forEach((child) => addItem(nested, child));
+        nested.markFinishedAndPatchLinks();
         buffer.add(nested, targetName);
         return;
       }
@@ -67,6 +68,7 @@ describe('flattenBuffer', function () {
     } else if (input !== null && input !== undefined) {
       addItem(cb, input);
     }
+    cb.markFinishedAndPatchLinks();
     return cb;
   };
   const makeOutput = (buffer, ctx, outputName) => {
@@ -509,4 +511,3 @@ describe('flattenBuffer', function () {
     });
   });
 });
-

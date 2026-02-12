@@ -1008,6 +1008,8 @@ class Compiler extends CompilerBase {
         : bufferId;
     }
 
+    this.emit.endManagedBlock(currFrame, false, true);
+
     this.emit.line('return ' + returnStatement);
 
     // Close the macro-body IIFE.
@@ -1021,7 +1023,6 @@ class Compiler extends CompilerBase {
     } else {
       this.emit.line('});'); // 2b. Closes the main function for sync
     }
-    this.emit.endManagedBlock(currFrame, false, true);
 
     this.sequential.isCompilingMacroBody = oldIsCompilingMacroBody; // Restore state
 

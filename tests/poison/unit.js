@@ -38,6 +38,7 @@
       if (Array.isArray(item)) {
         const nested = new runtime.CommandBuffer(context || null, null);
         item.forEach((child) => addItem(nested, child));
+        nested.markFinishedAndPatchLinks();
         targetBuffer.add(nested, outputName);
         return;
       }
@@ -56,6 +57,7 @@
     } else if (input !== null && input !== undefined) {
       addItem(cb, input);
     }
+    cb.markFinishedAndPatchLinks();
     return cb;
   };
   const makeOutput = (buffer, context, outputName) => {
