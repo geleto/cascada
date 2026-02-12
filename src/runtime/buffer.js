@@ -323,14 +323,18 @@ class CommandBuffer {
     return (lastIdx === arr.length - 1) && lastChained;
   }
 
-  reserveSlot(outputName) {
+  _reserveSlot(outputName) {
     if (this._outputIndexes[outputName] === undefined) {
       this._outputIndexes[outputName] = 0;
     }
     if (!this.arrays[outputName]) {
       this.arrays[outputName] = [];
     }
-    return this._outputIndexes[outputName]++;
+    const slot = this._outputIndexes[outputName]++;
+    // Materialize the reserved position as an explicit gap so chain completion
+    // logic sees pending async writes before buffer finalization.
+    this.arrays[outputName][slot] = null;
+    return slot;
   }
 
   _setOutputIndex(outputName, nextIndex) {
@@ -357,7 +361,7 @@ class CommandBuffer {
     // Check if buffer is finished
     checkFinishedBuffer(this);
 
-    const slot = this.reserveSlot(outputName);
+    const slot = this._reserveSlot(outputName);
     const target = this.arrays[outputName];
 
     target[slot] = value;
@@ -384,7 +388,55 @@ class CommandBuffer {
     return this.add(buffer, outputName);
   }
 
-  fillSlot(slot, value, outputName) {
+  async addAsyncArgsCommand(outputName, producer, runtime, context, lineno, colno, errorContextString, cb = null) {
+    const slot = this._reserveSlot(outputName);
+    try {
+      const value = await producer();
+      this._fillSlot(slot, value, outputName);
+      return slot;
+    } catch (e) {
+      if (runtime && e instanceof runtime.RuntimeFatalError) {
+        if (typeof cb === 'function') {
+          cb(e);
+        }
+        throw e;
+      }
+
+      const errors = runtime && runtime.isPoisonError && runtime.isPoisonError(e) ? e.errors : [e];
+      const processedErrors = runtime && runtime.handleError
+        ? errors.map(err => runtime.handleError(err, lineno, colno, errorContextString, context ? context.path : null))
+        : errors;
+
+      try {
+        this._fillSlot(slot, new ErrorCommand(processedErrors), outputName);
+      } catch (fillErr) {
+        if (runtime && runtime.RuntimeFatalError) {
+          const fatal = fillErr instanceof runtime.RuntimeFatalError
+            ? fillErr
+            : new runtime.RuntimeFatalError(
+              fillErr,
+              lineno,
+              colno,
+              errorContextString,
+              context ? context.path : null
+            );
+          if (typeof cb === 'function') {
+            cb(fatal);
+          }
+          throw fatal;
+        }
+
+        if (typeof cb === 'function') {
+          cb(fillErr);
+        }
+        throw fillErr;
+      }
+
+      return slot;
+    }
+  }
+
+  _fillSlot(slot, value, outputName) {
     // Don't check finished here - fillSlot fills pre-reserved slots
     // that may have been reserved before the buffer was marked finished
     const target = this.arrays[outputName];
@@ -471,7 +523,7 @@ function getPosonedBufferErrors(buffer, allowedHandlers = null) {
       arr.forEach((item) => {
         if (item instanceof CommandBuffer) {
           allErrors.push(...getPosonedBufferErrors(item, allowedHandlers));
-        } else {
+        } else if (item) {
           const err = item.getError();
           if (err) {
             allErrors.push(...err.errors);
