@@ -1266,6 +1266,11 @@ class Compiler extends CompilerBase {
     if (this.asyncMode) {
       this.emit.line('if (!compositionMode) {');
       this.emit.line('astate.waitAllClosures().then(async () => {');
+      // Includes/imports in async mode may return CommandBuffer values from
+      // composition and insert them into the parent output buffer as child
+      // segments. Chain advancement through child slots requires each child
+      // root buffer to be marked finished once root execution has completed.
+      this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
 
       if (this.hasDynamicExtends) {
         // Dynamic extends: check frame variable
@@ -1295,6 +1300,9 @@ class Compiler extends CompilerBase {
       this.emit.line('} else {');
       // If in composition mode, synchronously return the output array.
       // The caller is responsible for the lifecycle.
+      // Mark finished before returning so a parent buffer that attaches this
+      // composition result can advance chaining through the child-buffer slot.
+      this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
       this.emit.line(`  return ${this.buffer.currentBuffer};`);
       this.emit.line('}');
     }
