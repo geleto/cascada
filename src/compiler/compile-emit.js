@@ -11,6 +11,7 @@ module.exports = class CompileEmit {
     this.scopeClosers = '';
     this.compiler = compiler;
     this.asyncClosureDepth = 0;
+    this._managedRootBufferStack = [];
     const callable = (code) => this.emit(code);
     Object.setPrototypeOf(callable, CompileEmit.prototype);
     Object.assign(callable, this);
@@ -56,65 +57,10 @@ module.exports = class CompileEmit {
     this.scopeClosers = _scopeClosers;
   }
 
-  funcBegin(node, name) {
-    this.compiler.buffer.currentBuffer = 'output';
-    this.compiler.buffer.currentTextOutput = 'output_textOutput';
-    this.scopeClosers = '';
-    if (this.compiler.asyncMode) {
-      if (name === 'root') {
-        this.line(`function ${name}(env, context, frame, runtime, astate, cb, compositionMode = false) {`);
-      } else {
-        this.line(`function ${name}(env, context, frame, runtime, astate, cb) {`);
-      }
-    } else {
-      this.line(`function ${name}(env, context, frame, runtime, cb) {`);
-      // Declare lineno/colno vars only in sync mode
-      this.line(`let lineno = ${node.lineno};`);
-      this.line(`let colno = ${node.colno};`);
-    }
-    // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
-    this.compiler.buffer.createScopeRootBuffer(
-      this.compiler.buffer.currentBuffer,
-      this.compiler.buffer.currentTextOutput
-    );
-    this.line('try {');
-  }
-
   initOutputHandlers(bufferVar, textOutputVar = null) {
     this.line(`frame._outputBuffer = ${bufferVar};`);
     const outputVar = textOutputVar || `${bufferVar}_textOutput`;
     this.line(`let ${outputVar} = runtime.declareOutput(frame, "text", "text", context, null);`);
-  }
-
-  funcEnd(node, noReturn) { // Added node parameter
-    if (!noReturn) {
-      if (this.compiler.asyncMode) {
-        // In async mode, blocks return output directly (not via callback)
-        // The callback is only used for error propagation
-        this.line(this.compiler.buffer.currentBuffer + '.markFinishedAndPatchLinks();');
-        this.line('return ' + this.compiler.buffer.currentBuffer + ';');
-      } else {
-        // Sync mode blocks use callback for both success and error
-        this.line('cb(null, ' + this.compiler.buffer.currentBuffer + ');');
-      }
-    }
-
-    this.closeScopeLevels();
-    this.line('} catch (e) {');
-    if (this.compiler.asyncMode) {
-      // In async mode, use the static position from the node and handlePromise for internal errors
-      // The top-level catch uses the function's start position as a fallback.
-      this.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}${node ? `, "${this.compiler._generateErrorContext(node)}"` : ''}, context.path);`); // Store and update the handled error
-      this.line('  cb(err);'); // Pass the updated error to the callback
-    } else {
-      this.line(`  var err = runtime.handleError(e, lineno, colno${node ? `, "${this.compiler._generateErrorContext(node)}"` : ''}, context.path);`); // Store and update the handled error
-      this.line('  cb(err);'); // Pass the updated error to the callback
-    }
-    //this.Line('  throw e;');//the returned promise should not resolve
-    this.line('}');
-    this.line('}');
-    this.compiler.buffer.currentBuffer = null;
-    this.compiler.buffer.currentTextOutput = null;
   }
 
   //todo: use only simple async block if you know that:
@@ -135,7 +81,15 @@ module.exports = class CompileEmit {
     let bufferId = null;
     if (createScopeRootBuffer) {
       bufferId = this.compiler.buffer.pushBuffer();
-      this.compiler.buffer.createScopeRootBuffer(bufferId, `${bufferId}_textOutput`);
+      if (this.compiler.asyncMode) {
+        const usedOutputsVar = this.compiler._tmpid();
+        this.line(`let ${usedOutputsVar} = null;`);
+        const usedOutputsPos = this.compiler.codebuf.length;
+        this.compiler.buffer.createScopeRootBuffer(bufferId, `${bufferId}_textOutput`, usedOutputsVar);
+        this._managedRootBufferStack.push({ usedOutputsVar, usedOutputsPos });
+      } else {
+        this.compiler.buffer.createScopeRootBuffer(bufferId, `${bufferId}_textOutput`);
+      }
     }
     return { frame: nextFrame, bufferId };
   }
@@ -143,6 +97,10 @@ module.exports = class CompileEmit {
   endManagedBlock(frame, createScope = false, createScopeRootBuffer = false) {
     if (createScopeRootBuffer) {
       if (this.compiler.asyncMode) {
+        const current = this._managedRootBufferStack.pop();
+        if (current) {
+          this.insertLine(current.usedOutputsPos, `${current.usedOutputsVar} = ${this.compiler.buffer.serializeUsedOutputs(frame)};`);
+        }
         // Managed scope-root buffers are lifecycle-owned by this block and must
         // be finalized before detaching from the compiler buffer stack.
         this.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
@@ -353,9 +311,7 @@ module.exports = class CompileEmit {
     }
     const readArgs = reads.length ? JSON.stringify(reads) : 'null';
     const writeArgs = frame.writeCounts ? JSON.stringify(frame.writeCounts) : 'null';
-    const outputArgs = frame.usedOutputs && frame.usedOutputs.size > 0
-      ? JSON.stringify(Array.from(frame.usedOutputs))
-      : 'null';
+    const outputArgs = this.compiler.buffer.serializeUsedOutputs(frame);
     return { readArgs, writeArgs, outputArgs };
   }
 };

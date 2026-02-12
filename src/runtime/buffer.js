@@ -10,7 +10,7 @@ const { checkFinishedBuffer } = require('./checks');
 const COMMAND_BUFFER_SYMBOL = Symbol.for('cascada.CommandBuffer');
 
 class CommandBuffer {
-  constructor(context, parent = null) {
+  constructor(context, parent = null, usedOutputs = null) {
     this._context = context;
     this.parent = parent;
     this.positions = new Map();
@@ -34,6 +34,7 @@ class CommandBuffer {
     // Only the root buffer mirrors these to Output._first/_last endpoints.
     this._firstLocalChainedCommand = new Map();
     this._lastLocalChainedCommand = new Map();
+    this._usedOutputs = Array.isArray(usedOutputs) ? new Set(usedOutputs) : null;
   }
 
   // Snapshot and command chain methods
@@ -463,8 +464,8 @@ class CommandBuffer {
 // 1) Root scope setup
 // 2) Managed non-async scope-root blocks
 // 3) Runtime async blocks (AsyncState.asyncBlock)
-function createCommandBuffer(context, parent = null) {
-  return new CommandBuffer(context, parent);
+function createCommandBuffer(context, parent = null, usedOutputs = null) {
+  return new CommandBuffer(context, parent, usedOutputs);
 }
 
 // Check if value is a CommandBuffer using symbol

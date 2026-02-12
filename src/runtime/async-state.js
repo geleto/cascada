@@ -69,7 +69,7 @@ class AsyncState {
     // Runtime async-block creation site for CommandBuffer.
     // This avoids compiler-side duplicate creation for async block execution.
     if (Array.isArray(usedOutputs) && usedOutputs.length > 0) {
-      childFrame._outputBuffer = runtime.createCommandBuffer(context, null);
+      childFrame._outputBuffer = runtime.createCommandBuffer(context, null, usedOutputs);
       childFrame._ownsOutputBuffer = true;
     }
 

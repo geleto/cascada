@@ -28,7 +28,12 @@ class CompileBuffer {
     this._bufferAddStack = [];
   }
 
-  // === BUFFER STACK MANAGEMENT ===
+  serializeUsedOutputs(frame) {
+    if (!frame || !frame.usedOutputs || frame.usedOutputs.size === 0) {
+      return 'null';
+    }
+    return JSON.stringify(Array.from(frame.usedOutputs));
+  }
 
   /**
    * Create a scope-root buffer and initialize output handlers.
@@ -36,9 +41,9 @@ class CompileBuffer {
    * used by root/managed non-async scope-root blocks.
    * It only allocates/initializes runtime variables; it does not push stack state.
    */
-  createScopeRootBuffer(bufferId = this.currentBuffer, textOutputId = this.currentTextOutput) {
+  createScopeRootBuffer(bufferId = this.currentBuffer, textOutputId = this.currentTextOutput, usedOutputsExpr = 'null') {
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, null);`);
+      this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, null, ${usedOutputsExpr});`);
       this.compiler.emit.initOutputHandlers(bufferId, textOutputId || `${bufferId}_textOutput`);
     } else {
       this.compiler.emit.line(`let ${bufferId} = "";`);

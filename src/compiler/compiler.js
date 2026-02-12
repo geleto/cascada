@@ -65,6 +65,73 @@ class Compiler extends CompilerBase {
     });
   }
 
+  // Compiles function wrapper boilerplate for root and block render functions.
+  _compileTemplateFunctionScope(node, name, emitBody, { noReturn = false, isRoot = false } = {}) {
+    this.buffer.currentBuffer = 'output';
+    this.buffer.currentTextOutput = 'output_textOutput';
+    this.emit.scopeClosers = '';
+
+    if (this.asyncMode) {
+      if (isRoot) {
+        this.emit.line(`function ${name}(env, context, frame, runtime, astate, cb, compositionMode = false) {`);
+      } else {
+        this.emit.line(`function ${name}(env, context, frame, runtime, astate, cb) {`);
+      }
+    } else {
+      this.emit.line(`function ${name}(env, context, frame, runtime, cb) {`);
+      this.emit.line(`let lineno = ${node.lineno};`);
+      this.emit.line(`let colno = ${node.colno};`);
+    }
+
+    let usedOutputsPos = null;
+    let usedOutputsVar = null;
+    if (this.asyncMode) {
+      usedOutputsVar = this._tmpid();
+      this.emit.line(`let ${usedOutputsVar} = null;`);
+      usedOutputsPos = this.codebuf.length;
+      this.buffer.createScopeRootBuffer(
+        this.buffer.currentBuffer,
+        this.buffer.currentTextOutput,
+        usedOutputsVar
+      );
+    } else {
+      this.buffer.createScopeRootBuffer(
+        this.buffer.currentBuffer,
+        this.buffer.currentTextOutput
+      );
+    }
+
+    this.emit.line('try {');
+    const usedOutputsFrame = emitBody.call(this);
+
+    if (this.asyncMode && usedOutputsPos !== null) {
+      this.emit.insertLine(usedOutputsPos, `${usedOutputsVar} = ${this.buffer.serializeUsedOutputs(usedOutputsFrame)};`);
+    }
+
+    if (!noReturn) {
+      if (this.asyncMode) {
+        this.emit.line(this.buffer.currentBuffer + '.markFinishedAndPatchLinks();');
+        this.emit.line('return ' + this.buffer.currentBuffer + ';');
+      } else {
+        this.emit.line('cb(null, ' + this.buffer.currentBuffer + ');');
+      }
+    }
+
+    this.emit.closeScopeLevels();
+    this.emit.line('} catch (e) {');
+    if (this.asyncMode) {
+      this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}${node ? `, "${this._generateErrorContext(node)}"` : ''}, context.path);`);
+      this.emit.line('  cb(err);');
+    } else {
+      this.emit.line(`  var err = runtime.handleError(e, lineno, colno${node ? `, "${this._generateErrorContext(node)}"` : ''}, context.path);`);
+      this.emit.line('  cb(err);');
+    }
+    this.emit.line('}');
+    this.emit.line('}');
+    this.buffer.currentBuffer = null;
+    this.buffer.currentTextOutput = null;
+  }
+
   //todo
 
 
@@ -1259,66 +1326,65 @@ class Compiler extends CompilerBase {
       // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
     }
 
-    this.emit.funcBegin(node, 'root');
-    this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-    // Always declare parentTemplate (needed even for dynamic-only extends)
-    this.emit.line('let parentTemplate = null;');
-    this._compileChildren(node, frame);
-    if (this.asyncMode) {
-      this.emit.line('if (!compositionMode) {');
-      this.emit.line('astate.waitAllClosures().then(async () => {');
-      // Includes/imports in async mode may return CommandBuffer values from
-      // composition and insert them into the parent output buffer as child
-      // segments. Chain advancement through child slots requires each child
-      // root buffer to be marked finished once root execution has completed.
-      this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+    this._compileTemplateFunctionScope(node, 'root', function () {
+      this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+      // Always declare parentTemplate (needed even for dynamic-only extends)
+      this.emit.line('let parentTemplate = null;');
+      this._compileChildren(node, frame);
+      if (this.asyncMode) {
+        this.emit.line('if (!compositionMode) {');
+        this.emit.line('astate.waitAllClosures().then(async () => {');
+        // Includes/imports in async mode may return CommandBuffer values from
+        // composition and insert them into the parent output buffer as child
+        // segments. Chain advancement through child slots requires each child
+        // root buffer to be marked finished once root execution has completed.
+        this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
 
-      if (this.hasDynamicExtends) {
-        // Dynamic extends: check frame variable
-        this.emit.line('  let finalParent = await runtime.contextOrFrameLookup(context, frame, "__parentTemplate");');
-        if (this.hasStaticExtends) {
-          this.emit.line('  if (!finalParent) finalParent = parentTemplate;');
+        if (this.hasDynamicExtends) {
+          // Dynamic extends: check frame variable
+          this.emit.line('  let finalParent = await runtime.contextOrFrameLookup(context, frame, "__parentTemplate");');
+          if (this.hasStaticExtends) {
+            this.emit.line('  if (!finalParent) finalParent = parentTemplate;');
+          }
+        } else {
+          // Static extends only: use JS variable
+          this.emit.line('  let finalParent = parentTemplate;');
         }
-      } else {
-        // Static extends only: use JS variable
-        this.emit.line('  let finalParent = parentTemplate;');
-      }
 
-      this.emit.line('  if(finalParent) {');
-      this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
-      this.emit.line('  } else {');
-      if (this.scriptMode) {
-        // In script mode we expect a {%- return ... -%} in the template body to provide the result.
-        // this.emit.line('    cb(null, frame._outputs.output.snapshot());');
-      } else {
-        this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer.getCurrentTextOutput()}, context));`);
+        this.emit.line('  if(finalParent) {');
+        this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
+        this.emit.line('  } else {');
+        if (this.scriptMode) {
+          // In script mode we expect a {%- return ... -%} in the template body to provide the result.
+          // this.emit.line('    cb(null, frame._outputs.output.snapshot());');
+        } else {
+          this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer.getCurrentTextOutput()}, context));`);
+        }
+        this.emit.line('  }');
+        this.emit.line('}).catch(e => {');
+        this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`); // Store and update the handled error
+        this.emit.line('  cb(err);'); // Pass the updated error to the callback
+        this.emit.line('});');
+        this.emit.line('} else {');
+        // If in composition mode, synchronously return the output array.
+        // The caller is responsible for the lifecycle.
+        // Mark finished before returning so a parent buffer that attaches this
+        // composition result can advance chaining through the child-buffer slot.
+        this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+        this.emit.line(`  return ${this.buffer.currentBuffer};`);
+        this.emit.line('}');
       }
-      this.emit.line('  }');
-      this.emit.line('}).catch(e => {');
-      this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`); // Store and update the handled error
-      this.emit.line('  cb(err);'); // Pass the updated error to the callback
-      this.emit.line('});');
-      this.emit.line('} else {');
-      // If in composition mode, synchronously return the output array.
-      // The caller is responsible for the lifecycle.
-      // Mark finished before returning so a parent buffer that attaches this
-      // composition result can advance chaining through the child-buffer slot.
-      this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-      this.emit.line(`  return ${this.buffer.currentBuffer};`);
-      this.emit.line('}');
-    }
-    else {
-      // SYNC Handoff Logic
-      this.emit.line('if(parentTemplate) {');
-      this.emit.line('  let parentContext = context.forkForPath(parentTemplate.path);');
-      this.emit.line('  parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, cb);');
-      this.emit.line('} else {');
-      this.emit.line(`  cb(null, ${this.buffer.currentBuffer});`);
-      this.emit.line('}');
-    }
-
-    // Pass the node to _emitFuncEnd for error position info (used in sync catch)
-    this.emit.funcEnd(node, true);
+      else {
+        // SYNC Handoff Logic
+        this.emit.line('if(parentTemplate) {');
+        this.emit.line('  let parentContext = context.forkForPath(parentTemplate.path);');
+        this.emit.line('  parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, cb);');
+        this.emit.line('} else {');
+        this.emit.line(`  cb(null, ${this.buffer.currentBuffer});`);
+        this.emit.line('}');
+      }
+      return frame;
+    }, { noReturn: true, isRoot: true });
 
     this.inBlock = true;
 
@@ -1334,15 +1400,15 @@ class Compiler extends CompilerBase {
       }
       blockNames.push(name);
 
-      this.emit.funcBegin(block, `b_${name}`);
-
-      if (this.asyncMode) {
-        this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
-      }
-      let tmpFrame = frame.new();//new Frame();
-      this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
-      this.compile(block.body, tmpFrame);
-      this.emit.funcEnd(block);
+      this._compileTemplateFunctionScope(block, `b_${name}`, function () {
+        if (this.asyncMode) {
+          this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
+        }
+        let tmpFrame = frame.new();//new Frame();
+        this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
+        this.compile(block.body, tmpFrame);
+        return tmpFrame;
+      });
     });
 
     this.emit.line('return {');
