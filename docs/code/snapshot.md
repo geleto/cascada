@@ -193,3 +193,63 @@ These can be layered later without changing iterator traversal semantics.
    - empty child buffer finish at `-1`
    - nested child completion unwind
    - out-of-order async slot fills preserving deterministic chain
+
+---
+
+# Snapshot3: On-The-Fly Apply (Incremental Plan)
+
+This section defines the next incremental step after iterator-based chaining.
+
+## Goal
+
+- Stop building/using a command `next` chain for execution.
+- Apply commands as soon as iterator order allows.
+- Keep current user-visible semantics unchanged.
+
+## Core Execution Change
+
+- Iterator progression becomes the execution driver.
+- When iterator visits a command, it runs `command.apply(output)` immediately.
+- Output stores accumulated command errors.
+- Output exposes a single completion promise that resolves when root buffer execution is complete.
+- `snapshot()` returns/awaits this completion promise and then:
+  - throws `PoisonError` if accumulated errors exist
+  - otherwise returns current output value (`getCurrentResult()` / sink snapshot result)
+
+## Guard Temporary Strategy
+
+- Entering a guard-owned `CommandBuffer` pauses iteration/execution.
+- `CommandBuffer` has a pause refcount (not a boolean).
+- Nested paused child buffers increment pause refcount on paused parent buffers.
+- On guard completion, resume decrements refcount and iterator continues only when refcount reaches zero.
+- Resume must be wired in `finally` paths to avoid deadlocks.
+
+This is temporary. Future approach will snapshot/restore output targets for true guard rollback.
+
+## Snapshot Semantics (Temporary Phase)
+
+- Current phase supports end-of-flow snapshot usage only.
+- Existing test expectations are assumed to conform to this.
+- Future phase will support mid-flow snapshots via explicit `SnapshotCommand` entries that resolve per-snapshot promises in deterministic order.
+
+## Sink Semantics
+
+- Sink commands execute immediately when iterator reaches them.
+- `snapshot()` is the observation boundary for sink errors.
+- Observed sink (`snapshot()` called): propagate accumulated errors.
+- Unobserved sink (`snapshot()` not called): side effects still run, errors do not propagate.
+
+This preserves current intended behavior where unused sink failures are non-fatal.
+
+## `flattenBuffer` Compatibility
+
+- `flattenBuffer(output)` becomes a compatibility wrapper:
+  - returns/awaits output completion promise
+  - performs final error throw / result read semantics only
+- Chain-walk flattening logic is removed from `flattenBuffer`.
+
+## Invariants To Preserve
+
+- Deterministic command apply order remains source-order via slot order + gap waiting.
+- "Never Miss Any Error": continue applying reachable commands and collect all errors before final throw at snapshot/completion boundary.
+- Async slot fill order must not affect final deterministic output.
