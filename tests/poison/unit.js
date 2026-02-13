@@ -66,7 +66,7 @@
     return runtime.createOutput(frame, name, context || null, name);
   };
   const flatten = (buffer, context = null, outputName = 'text') => (
-    runtime.flattenBuffer(makeOutput(buffer, context, outputName), context)
+    makeOutput(buffer, context, outputName).snapshot()
   );
   const cmd = (spec) => {
     if (spec.handler === 'data') {
@@ -822,26 +822,26 @@
     });
   });
 
-  describe('Buffer Flattening Poison Handling', () => {
+  describe('Output Snapshot Poison Handling', () => {
 
-    describe('flattenBuffer with simple templates', () => {
-      it('should concatenate simple values', () => {
+    describe('snapshot with simple templates', () => {
+      it('should concatenate simple values', async () => {
         const arr = ['Hello', ' ', 'World'];
-        const result = flatten(createBuffer(arr));
+        const result = await flatten(createBuffer(arr));
 
         expect(result).to.equal('Hello World');
       });
 
-      it('should handle nested arrays', () => {
+      it('should handle nested arrays', async () => {
         const arr = ['A', ['B', 'C'], 'D'];
-        const result = flatten(createBuffer(arr));
+        const result = await flatten(createBuffer(arr));
 
         expect(result).to.equal('ABCD');
       });
 
     });
 
-    describe('flattenBuffer with script context - poison detection', () => {
+    describe('snapshot with script context - poison detection', () => {
       let context, env;
 
       beforeEach(() => {
@@ -853,12 +853,12 @@
         };
       });
 
-      it('should collect poison from text output', () => {
+      it('should collect poison from text output', async () => {
         const poison = createPoison(new Error('Output error'));
         const arr = ['Valid text', poison, 'More text'];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -866,13 +866,13 @@
         }
       });
 
-      it('should collect multiple poisons', () => {
+      it('should collect multiple poisons', async () => {
         const poison1 = createPoison(new Error('Error 1'));
         const poison2 = createPoison(new Error('Error 2'));
         const arr = [poison1, 'text', poison2];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -880,12 +880,12 @@
         }
       });
 
-      it('should continue processing after finding poison', () => {
+      it('should continue processing after finding poison', async () => {
         const poison = createPoison(new Error('Early error'));
         const arr = [poison, 'Valid', 'Text'];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -894,7 +894,7 @@
         }
       });
 
-      it('should collect poison from nested arrays', () => {
+      it('should collect poison from nested arrays', async () => {
         const poison = createPoison(new Error('Nested error'));
         const arr = [
           'text',
@@ -903,28 +903,28 @@
         ];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
         }
       });
 
-      it('should collect poison from arrays with functions', () => {
+      it('should collect poison from arrays with functions', async () => {
         const poison = createPoison(new Error('Func array error'));
         const arr = [
           ['prefix', poison, (val) => val.toUpperCase()]
         ];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
         }
       });
 
-      it('should handle command objects with poisoned args', () => {
+      it('should handle command objects with poisoned args', async () => {
         const poison = createPoison(new Error('Arg error'));
         const arr = [cmd({
           handler: 'text',
@@ -935,14 +935,14 @@
         })];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
         }
       });
 
-      it('should collect errors from handler instantiation failures', () => {
+      it('should collect errors from handler instantiation failures', async () => {
         const arr = [cmd({
           handler: 'nonexistent',
           command: 'method',
@@ -952,7 +952,7 @@
         })];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
@@ -960,15 +960,15 @@
         }
       });
 
-      it('should return valid output when no poison found', () => {
+      it('should return valid output when no poison found', async () => {
         const arr = ['Hello', ' ', 'World'];
-        const result = flatten(createBuffer(arr, context, 'text'), context, 'text');
+        const result = await flatten(createBuffer(arr, context, 'text'), context, 'text');
 
         expect(result).to.equal('Hello World');
       });
     });
 
-    describe('Error deduplication in flattenBuffer', () => {
+    describe('Error deduplication in snapshot', () => {
       let context;
 
       beforeEach(() => {
@@ -979,14 +979,14 @@
         };
       });
 
-      it('should deduplicate identical errors', () => {
+      it('should deduplicate identical errors', async () => {
         const err = new Error('Duplicate');
         const poison1 = createPoison(err);
         const poison2 = createPoison(err);
         const arr = [poison1, poison2];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -995,13 +995,13 @@
         }
       });
 
-      it('should keep distinct errors', () => {
+      it('should keep distinct errors', async () => {
         const poison1 = createPoison(new Error('Error A'));
         const poison2 = createPoison(new Error('Error B'));
         const arr = [poison1, poison2];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1021,7 +1021,7 @@
         };
       });
 
-      it('should process entire buffer even with early errors', () => {
+      it('should process entire buffer even with early errors', async () => {
         const errors = [
           createPoison(new Error('Error 1')),
           'valid',
@@ -1031,7 +1031,7 @@
         ];
 
         try {
-          flatten(createBuffer(errors, context, 'text'), context, 'text');
+          await flatten(createBuffer(errors, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1040,7 +1040,7 @@
         }
       });
 
-      it('should collect errors from multiple nested levels', () => {
+      it('should collect errors from multiple nested levels', async () => {
         const arr = [
           createPoison(new Error('Level 0')),
           [
@@ -1053,7 +1053,7 @@
         ];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1073,7 +1073,7 @@
         };
       });
 
-      it('should collect data output method errors', () => {
+      it('should collect data output method errors', async () => {
         const arr = [cmd({
           handler: 'data',
           command: 'nonexistentMethod',
@@ -1083,7 +1083,7 @@
         })];
 
         try {
-          flatten(createBuffer(arr, context, 'data'), context, 'data');
+          await flatten(createBuffer(arr, context, 'data'), context, 'data');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1091,7 +1091,7 @@
         }
       });
 
-      it('should collect unsupported output target errors', () => {
+      it('should collect unsupported output target errors', async () => {
         const arr = [cmd({
           handler: 'badHandler',
           command: 'method',
@@ -1101,7 +1101,7 @@
         })];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1121,7 +1121,7 @@
         };
       });
 
-      it('should handle poison in deeply nested structures', () => {
+      it('should handle poison in deeply nested structures', async () => {
         const arr = [
           'start',
           [
@@ -1137,7 +1137,7 @@
         ];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -1158,21 +1158,21 @@
         };
       });
 
-      it('should handle output name with poison', () => {
+      it('should handle output name with poison', async () => {
         const poison = createPoison(new Error('Focus poison'));
         const arr = [poison, 'text'];
 
         try {
-          flatten(createBuffer(arr, context, 'text'), context, 'text');
+          await flatten(createBuffer(arr, context, 'text'), context, 'text');
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
         }
       });
 
-      it('should return text output when no poison', () => {
+      it('should return text output when no poison', async () => {
         const arr = ['Hello', ' ', 'World'];
-        const result = flatten(createBuffer(arr, context, 'text'), context, 'text');
+        const result = await flatten(createBuffer(arr, context, 'text'), context, 'text');
 
         expect(result).to.equal('Hello World');
       });

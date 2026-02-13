@@ -43,7 +43,7 @@ const noopTmplSrcAsync = {
         // In composition mode, we do nothing and let the caller handle success.
         // We still need to return an empty value, like a real template would.
         if (compositionMode) {
-          return ''; // A real template would return [], but '' works for flattenBuffer.
+          return ''; // A real template would return [], but '' works for snapshot-based composition.
         }
       } catch (e) {
         const err = handleError(e, null, null, null, context ? context.path : null);

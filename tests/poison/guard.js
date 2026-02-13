@@ -162,6 +162,30 @@
       expect(result.data).to.eql({ status: 'ok' });
     });
 
+    it('should keep pre-guard snapshot while reverting guard output on failure', async () => {
+      const script = `
+        text text
+        var snap = ""
+        text("BEFORE")
+        snap = text.snapshot()
+        guard @text
+          text("INNER")
+          text(explode())
+        endguard
+        text("OUTER")
+        return { snap: snap, final: text.snapshot() }
+      `;
+
+      const result = await env.renderScriptString(script, {
+        explode: () => {
+          throw new Error('boom');
+        }
+      });
+
+      expect(result.snap.trim()).to.equal('BEFORE');
+      expect(result.final.trim()).to.equal('BEFOREOUTER');
+    });
+
     it('should propagate handler poison when only variables are guarded', async () => {
       const script = `
         text text

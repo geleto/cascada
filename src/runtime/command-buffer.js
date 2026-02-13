@@ -293,6 +293,17 @@ class CommandBuffer {
 
     return allErrors;
   }
+
+  getOutput(outputName = 'text') {
+    if (!(this._outputs instanceof Map)) {
+      throw new Error('CommandBuffer outputs are unavailable');
+    }
+    const output = this._outputs.get(outputName);
+    if (!output) {
+      throw new Error(`CommandBuffer output '${outputName}' is unavailable`);
+    }
+    return output;
+  }
 }
 
 function ensureOutputIterator(output) {

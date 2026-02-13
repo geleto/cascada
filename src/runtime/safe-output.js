@@ -3,8 +3,6 @@
 var lib = require('../lib');
 const errors = require('./errors');
 const { CommandBuffer } = require('./command-buffer');
-const { flattenBuffer } = require('./flatten-buffer');
-const { PoisonError, isPoisonError } = require('./errors');
 
 function normalizeBufferValue(val) {
   if (val && typeof val === 'object') {
@@ -21,36 +19,16 @@ function normalizeBufferValue(val) {
   return val;
 }
 
-function flattenTextCommandBuffer(buffer, errorContext) {
-  let output = null;
-  if (buffer && buffer._outputs instanceof Map) {
-    output = buffer._outputs.get('text') || null;
-  }
-
-  if (!output) {
-    const context = errorContext || null;
-    throw new errors.RuntimeFatalError(
-      'flattenTextCommandBuffer requires a registered text output',
-      context ? context.lineno : null,
-      context ? context.colno : null,
-      context ? context.errorContextString : null,
-      context ? context.path : null
-    );
-  }
-
-  return flattenBuffer(output, errorContext || null);
-}
-
-// @todo - rewrite when command chain is implemented
-async function materializeTemplateTextValue(val, context, astate, waitCount = 1) {
+// Snapshot-first materialization for template text values.
+function materializeTemplateTextValue(val, context) {
   val = normalizeBufferValue(val);
-  if (!(val instanceof CommandBuffer)) {
-    return val;
+  if (val instanceof CommandBuffer) {
+    return val.getOutput('text').snapshot();
   }
-  if (astate && typeof astate.waitAllClosures === 'function') {
-    await astate.waitAllClosures(waitCount);
+  if (val && typeof val.snapshot === 'function') {
+    return val.snapshot();
   }
-  return flattenTextCommandBuffer(val, context || null);
+  return val;
 }
 
 // A SafeString object indicates that the string should not be
@@ -94,7 +72,7 @@ function markSafe(val) {
     })(val);
   }
 
-  var type = typeof val;
+  let type = typeof val;
 
   if (type === 'string') {
     return new SafeString(val);
@@ -131,10 +109,12 @@ function suppressValueAsync(val, autoescape, errorContext) {
     return val;
   }
 
-  // CommandBuffer should normally be materialized at async boundaries.
-  // Keep this as a compatibility fallback.
   if (val instanceof CommandBuffer) {
-    return flattenTextCommandBuffer(val, errorContext);
+    return val.getOutput('text').snapshot();
+  }
+
+  if (val && typeof val.snapshot === 'function') {
+    return val.snapshot();
   }
 
   // Simple literal value (not array, not promise) - return synchronously

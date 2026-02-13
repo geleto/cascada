@@ -292,7 +292,8 @@ This means snapshot timing is defined by command position, not by output complet
 
 - `return` uses normal expression evaluation.
 - If return expression includes `x.snapshot()`, it receives that snapshot promise directly.
-- `return` does not trigger special output finishing and does not require explicit snapshot waiting logic.
+- Current implementation note: return codegen still waits `astate.waitAllClosures(...)` and marks the root output buffer finished in the return path for end-of-function correctness with existing async block scheduling.
+- Target state: `return` should not require special output waiting/finishing logic once return control-flow and scheduling are fully decoupled.
 - Buffer finishing remains owned by normal block/root completion paths.
 
 Current assumption for this phase:

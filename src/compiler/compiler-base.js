@@ -321,9 +321,8 @@ class CompilerBase extends Obj {
     let name = node.value;
     const declaredOutput = this.async._getDeclaredOutput(frame, name);
     if (declaredOutput && !this._isDeclared(frame, name)) {
-      if (this.asyncMode) {
-        this.async.updateOutputUsage(frame, name, node);
-      }
+      // Reading an output symbol (e.g. myData.snapshot()) should not allocate
+      // async-block output buffers for this handler. Only writes/commands do that.
       this.emit(`runtime.getOutputHandler(frame, "${name}")`);
       return;
     }

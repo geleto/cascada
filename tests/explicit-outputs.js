@@ -240,8 +240,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql({ value: 42 });
     });
 
-    // Skipped: snapshots are not point-in-time; they currently reflect later writes.
-    it.skip('should allow multiple snapshots at different points', async () => {
+    it('should allow multiple snapshots at different points', async () => {
       const script = `
         data myData
         myData.x = 1
@@ -251,15 +250,11 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         return { snap1: snap1, snap2: snap2 }
       `;
       const result = await render(script);
-      // TODO: Implement snapshot caching so snapshots are point-in-time.
-      // Current behavior flattens the buffer at snapshot time, so earlier snapshots
-      // can reflect later writes.
       expect(result.snap1).to.eql({ x: 1 });
       expect(result.snap2).to.eql({ x: 1, y: 2 });
     });
 
-    // Skipped: snapshots are not immutable; they currently reflect later writes.
-    it.skip('should keep snapshot values immutable after further writes', async () => {
+    it('should keep snapshot values immutable after further writes', async () => {
       const script = `
         data myData
         myData.x = 1
@@ -268,9 +263,6 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         return { snap: snap, current: myData.snapshot() }
       `;
       const result = await render(script);
-      // TODO: Implement snapshot caching so snapshots are point-in-time.
-      // Current behavior flattens the buffer at snapshot time, so earlier snapshots
-      // can reflect later writes.
       expect(result.snap).to.eql({ x: 1 });
       expect(result.current).to.eql({ x: 1, y: 2 });
     });
@@ -287,6 +279,38 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       `;
       const result = await render(script);
       expect(result).to.eql({ ok: true });
+    });
+
+    it('should preserve snapshot point with async writes interleaving', async () => {
+      const script = `
+        data myData
+        myData.x = 1
+        var snap1 = myData.snapshot()
+        myData.y = slowValue()
+        var snap2 = myData.snapshot()
+        return { snap1: snap1, snap2: snap2 }
+      `;
+      const result = await render(script, {
+        slowValue: () => delay(10, 2)
+      });
+      expect(result.snap1).to.eql({ x: 1 });
+      expect(result.snap2).to.eql({ x: 1, y: 2 });
+    });
+
+    it('should keep earlier snapshot resolved even if later output command fails', async () => {
+      const script = `
+        text out
+        out("A")
+        var snap = out.snapshot()
+        out(explode())
+        return snap
+      `;
+      const result = await render(script, {
+        explode: () => {
+          throw new Error('later failure');
+        }
+      });
+      expect(result).to.be('A');
     });
 
     // Skipped: early return is not supported yet.
@@ -480,6 +504,45 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       `;
       const result = await render(script, context);
       expect(result).to.eql(['msg']);
+    });
+
+    it('should surface synchronous sink snapshot errors', async () => {
+      const script = `
+        sink logger = makeLogger()
+        return logger.snapshot()
+      `;
+      try {
+        await render(script, {
+          makeLogger: () => ({
+            snapshot: () => {
+              throw new Error('sink snapshot failed');
+            }
+          })
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('sink snapshot failed');
+      }
+    });
+
+    it('should surface async sink snapshot rejections', async () => {
+      const script = `
+        sink logger = makeLogger()
+        return logger.snapshot()
+      `;
+      try {
+        await render(script, {
+          makeLogger: () => ({
+            snapshot: async () => {
+              await delay(5);
+              throw new Error('sink snapshot rejected');
+            }
+          })
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('sink snapshot rejected');
+      }
     });
   });
 

@@ -308,7 +308,7 @@ class CompileInheritance {
       // Call getSuper directly - it returns the output synchronously
       // The callback (cb) is passed through for error propagation
       this.emit.line(`let ${id} = context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, cb);`);
-      this.emit.line(`${id} = runtime.materializeTemplateTextValue(${id}, context, astate, 1);`);
+      this.emit.line(`${id} = runtime.materializeTemplateTextValue(${id}, context);`);
       this.emit.line(`${id} = (${id} && typeof ${id}.then === "function") ? ${id}.then(v => runtime.markSafe(v)) : runtime.markSafe(${id});`);
     }
     else {

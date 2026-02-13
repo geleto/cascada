@@ -9,7 +9,6 @@ const frame = require('./frame');
 const output = require('./output');
 const resolve = require('./resolve');
 const buffer = require('./command-buffer');
-const { flattenBuffer } = require('./flatten-buffer');
 const guard = require('./guard');
 const loop = require('./loop');
 const outputValue = require('./safe-output');
@@ -152,6 +151,7 @@ module.exports = {
   DataCommand: commands.DataCommand,
   SinkCommand: commands.SinkCommand,
   ErrorCommand: commands.ErrorCommand,
+  SetTargetCommand: commands.SetTargetCommand,
 
   AsyncState: require('./async-state').AsyncState,
 
@@ -177,7 +177,6 @@ module.exports = {
   createObject: resolve.createObject,
   createArray: resolve.createArray,
 
-  flattenBuffer: flattenBuffer,
   finalizeUnobservedSinks: output.finalizeUnobservedSinks,
   CommandBuffer: buffer.CommandBuffer,
   createCommandBuffer: buffer.createCommandBuffer,

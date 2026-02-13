@@ -18,12 +18,41 @@ const { isPoison, PoisonError } = require('./errors');
 // ---------------------------------------------------------------------------
 
 class Command {
-  constructor() {
+  constructor(options = null) {
+    const opts = options || {};
     // Native command-chain metadata for buffer linking/snapshots.
     this.next = null;
     this.resolved = false;
     this.promise = null;
     this.resolve = null;
+    this.reject = null;
+    this.mutatesOutput = false;
+    this.isSnapshotCommand = false;
+
+    if (opts.withDeferredResult) {
+      this.promise = new Promise((resolve, reject) => {
+        this.resolve = resolve;
+        this.reject = reject;
+      });
+    }
+  }
+
+  resolveResult(value) {
+    if (!this.resolve) {
+      return;
+    }
+    this.resolve(value);
+    this.resolve = null;
+    this.reject = null;
+  }
+
+  rejectResult(err) {
+    if (!this.reject) {
+      return;
+    }
+    this.reject(err);
+    this.resolve = null;
+    this.reject = null;
   }
 
   getError() {
@@ -44,6 +73,7 @@ class OutputCommand extends Command {
     this.arguments = args || legacyArgs || [];
     this.subpath = subpath;
     this.pos = pos || { lineno: 0, colno: 0 };
+    this.mutatesOutput = true;
   }
 
   getError() {
@@ -188,6 +218,7 @@ class DataCommand extends OutputCommand {
       throw new Error(`has no method '${this.command}'`);
     }
     method.apply(dispatchCtx._base, this.arguments);
+    dispatchCtx._target = dispatchCtx._base.data;
   }
 }
 
@@ -229,6 +260,59 @@ class ErrorCommand extends Command {
   }
 }
 
+class SnapshotCommand extends Command {
+  constructor({ handler, pos = null }) {
+    super({ withDeferredResult: true });
+    this.handler = handler;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.isSnapshotCommand = true;
+  }
+
+  apply(dispatchCtx) {
+    if (!dispatchCtx || typeof dispatchCtx._resolveSnapshotCommandResult !== 'function') {
+      this.rejectResult(new Error('SnapshotCommand requires an output handler with _resolveSnapshotCommandResult()'));
+      return;
+    }
+
+    try {
+      const result = dispatchCtx._resolveSnapshotCommandResult();
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(
+          (value) => {
+            this.resolveResult(value);
+          },
+          (err) => {
+            this.rejectResult(err);
+          }
+        );
+      }
+      this.resolveResult(result);
+    } catch (err) {
+      this.rejectResult(err);
+    }
+  }
+}
+
+class SetTargetCommand extends Command {
+  constructor({ handler, target, pos = null }) {
+    super();
+    this.handler = handler;
+    this.target = target;
+    this.pos = pos || { lineno: 0, colno: 0 };
+  }
+
+  apply(dispatchCtx) {
+    if (!dispatchCtx) {
+      return;
+    }
+    if (typeof dispatchCtx._restoreGuardState === 'function') {
+      dispatchCtx._restoreGuardState(this.target);
+      return;
+    }
+    dispatchCtx._target = this.target;
+  }
+}
+
 module.exports = {
   Command,
   OutputCommand,
@@ -236,5 +320,7 @@ module.exports = {
   ValueCommand,
   DataCommand,
   SinkCommand,
-  ErrorCommand
+  ErrorCommand,
+  SnapshotCommand,
+  SetTargetCommand
 };

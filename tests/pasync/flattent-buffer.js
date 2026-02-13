@@ -2,7 +2,6 @@
 
 let expect;
 let AsyncEnvironment;
-let flattenBuffer;
 let expectAsyncError;
 let TextCommand;
 let DataCommand;
@@ -14,7 +13,6 @@ let createSinkOutput;
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
   AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
-  flattenBuffer = require('../../src/runtime/runtime').flattenBuffer;
   TextCommand = require('../../src/runtime/runtime').TextCommand;
   DataCommand = require('../../src/runtime/runtime').DataCommand;
   SinkCommand = require('../../src/runtime/runtime').SinkCommand;
@@ -25,7 +23,6 @@ if (typeof require !== 'undefined') {
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
-  flattenBuffer = nunjucks.runtime.flattenBuffer;
   TextCommand = nunjucks.runtime.TextCommand;
   DataCommand = nunjucks.runtime.DataCommand;
   SinkCommand = nunjucks.runtime.SinkCommand;
@@ -35,7 +32,7 @@ if (typeof require !== 'undefined') {
   expectAsyncError = nunjucks.util.expectAsyncError;
 }
 
-describe('flattenBuffer', function () {
+describe('output.snapshot', function () {
   let env;
   let context;
   const createBuffer = (input, ctx, outputName) => {
@@ -77,7 +74,7 @@ describe('flattenBuffer', function () {
     return createOutput(frame, name, ctx || null, name);
   };
   const flatten = (buffer, ctx, outputName) => (
-    flattenBuffer(makeOutput(buffer, ctx, outputName), ctx)
+    makeOutput(buffer, ctx, outputName).snapshot()
   );
   const flattenSink = (commands, ctx, outputName, sink) => {
     const buffer = new CommandBuffer(ctx, null);
@@ -95,7 +92,7 @@ describe('flattenBuffer', function () {
     buffer._outputHandlers[outputName] = sinkOutput;
 
     commands.forEach((entry) => buffer.add(entry, outputName));
-    flattenBuffer(sinkOutput, ctx);
+    sinkOutput.snapshot();
     return sink;
   };
   const cmd = (spec) => {
@@ -239,6 +236,31 @@ describe('flattenBuffer', function () {
   });
 
   describe('Error Handling & Edge Cases', function () {
+    it('should resolve snapshot at command position before later writes', async function () {
+      const buffer = new CommandBuffer(context, null);
+      const frame = { _outputBuffer: buffer, parent: null };
+      const textOut = createOutput(frame, 'text', context, 'text');
+
+      textOut('A');
+      const snap = textOut.snapshot();
+      textOut('B');
+      buffer.markFinishedAndPatchLinks();
+
+      const early = await snap;
+      const final = await textOut.snapshot();
+      expect(early).to.equal('A');
+      expect(final).to.equal('AB');
+    });
+
+    it('should allow snapshot calls after buffer is already finished', async function () {
+      const buffer = createBuffer(['A'], context, 'text');
+      const output = makeOutput(buffer, context, 'text');
+      const first = await output.snapshot();
+      const second = await output.snapshot();
+      expect(first).to.equal('A');
+      expect(second).to.equal('A');
+    });
+
     it('should handle an empty buffer', async function () {
       const buffer = createBuffer([], context, 'text');
       const result = await flatten(buffer, context, 'text');
@@ -376,7 +398,7 @@ describe('flattenBuffer', function () {
 
     describe('macro boundary — no double-escape', function () {
       // Each {{ }} inside a macro is escaped per-expression. The macro output
-      // is wrapped in SafeString at the boundary (new SafeString(flattenBuffer(...))).
+      // is wrapped in SafeString at the boundary (new SafeString(snapshot(...))).
       // Interpolating the result in the outer template must not escape again.
       beforeEach(() => {
         env = new AsyncEnvironment(null, { autoescape: true });
@@ -451,7 +473,7 @@ describe('flattenBuffer', function () {
 
     describe('script @text output', function () {
       // Script output uses suppressValueScriptAsync (not suppressValueAsync)
-      // and flattens through flatten-commands.js processArrayItem — a separate
+      // and resolves through command snapshots in processArrayItem - a separate
       // path from template {{ }} which goes through flattenText.
       beforeEach(() => {
         env = new AsyncEnvironment(null, { autoescape: true });

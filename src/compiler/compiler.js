@@ -527,6 +527,8 @@ class Compiler extends CompilerBase {
     if (handlerTargetsAll && handlerTargets) {
       handlerTargets = null;
     }
+    const hasAnySelectors = !!variableTargets || hasSequenceTargets || handlerTargetsAll || !!handlerTargets;
+    const needsOutputSnapshot = handlerTargetsAll || !!handlerTargets || !hasAnySelectors;
     // We need guard state if we have variables OR if we have sequence targets (for error detection)
     // Note: We don't fully resolve sequence targets here yet, but if the user *requested* sequence targets,
     // we should prepare the state. If it turns out they are empty/unused, init() handles empty lists fine.
@@ -549,6 +551,17 @@ class Compiler extends CompilerBase {
     this.emit.line(`${this.buffer.currentBuffer}.pause();`);
     this.emit.line('try {');
     let guardInitLinePos = null;
+    let guardRepairLinePos = null;
+    let outputGuardInitLinePos = null;
+    const outputGuardStateVar = needsOutputSnapshot ? this._tmpid() : null;
+    if (outputGuardStateVar) {
+      if (handlerTargets) {
+        this.emit.line(`const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(handlerTargets)});`);
+      } else {
+        outputGuardInitLinePos = this.codebuf.length;
+        this.emit.line('');
+      }
+    }
     if (guardStateVar) {
       if (variableTargets === '*') {
         guardInitLinePos = this.codebuf.length;
@@ -557,6 +570,9 @@ class Compiler extends CompilerBase {
         this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)});`);
       }
     }
+    // Sequence lock repair must run before guard body starts scheduling work.
+    guardRepairLinePos = this.codebuf.length;
+    this.emit.line('');
 
     // 3. Compile Body
     this.compile(node.body, frame);
@@ -607,7 +623,10 @@ class Compiler extends CompilerBase {
       if (resolvedSequenceTargets.size > 0) {
         // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
         // Note: guardStateVar is guaranteed to exist because variableTargets OR resolvedSequenceTargets > 0 triggers init
-        this.emit.line(`  runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`);
+        this.emit.insertLine(
+          guardRepairLinePos,
+          `runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
+        );
       }
     }
 
@@ -632,6 +651,14 @@ class Compiler extends CompilerBase {
       }
     }
 
+    if (outputGuardStateVar && outputGuardInitLinePos !== null) {
+      const usedOutputs = frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
+      this.emit.insertLine(
+        outputGuardInitLinePos,
+        `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(usedOutputs)});`
+      );
+    }
+
 
     // 4. Inject Logic BEFORE closing the block
     // We need to wait for all inner async operations to complete so the buffer is fully populated
@@ -646,7 +673,7 @@ class Compiler extends CompilerBase {
 
     // If no specific selectors are provided (neither variables nor handlers),
     // it functions as a global guard (catch everything).
-    if (handlerTargetsAll) {
+    if (!hasAnySelectors || handlerTargetsAll) {
       allowedBufferHandlers = 'null';
     } else if (handlerTargets) {
       allowedBufferHandlers = JSON.stringify(handlerTargets);
@@ -655,10 +682,11 @@ class Compiler extends CompilerBase {
     this.emit.line(`const ${guardErrorsVar} = await runtime.guard.getErrors(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${allowedBufferHandlers});`);
 
     this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
-    if (handlerTargetsAll) {
+    if (outputGuardStateVar) {
+      this.emit.line(`  runtime.guard.restoreOutputs(${this.buffer.currentBuffer}, ${outputGuardStateVar});`);
+    } else if (handlerTargetsAll || !hasAnySelectors) {
       this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer});`);
     } else if (handlerTargets) {
-      // Clear specific handlers when guard fails with selective targets
       this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
     }
 
@@ -992,17 +1020,19 @@ class Compiler extends CompilerBase {
     this.emit.line('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
 
     let returnStatement;
+    const snapshotVar = this._tmpid();
     if (node.isAsync) {
       const errorCheck = `if (${err}) throw ${err};`;
       if (this.scriptMode) {
         returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return undefined;});`;
       } else {
-        const flattenCall = `runtime.flattenBuffer(${bufferId}_textOutput, context)`;
+        // Snapshot must be enqueued before this managed buffer is finished.
+        this.emit.line(`const ${snapshotVar} = ${bufferId}_textOutput.snapshot();`);
 
         const needsSafeString = !this.scriptMode;
         const safeStringCall = needsSafeString
-          ? `runtime.markSafe(${flattenCall})`
-          : flattenCall;
+          ? `runtime.markSafe(${snapshotVar})`
+          : snapshotVar;
 
         returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;
       }
@@ -1112,7 +1142,7 @@ class Compiler extends CompilerBase {
         } else {
           this.compile(n.body, f);//write to output
           this.emit.line('await astate.waitAllClosures(1)');
-          this.emit.line(`let ${res} = runtime.flattenBuffer(${this.buffer.currentTextOutput}, context);`);
+          this.emit.line(`let ${res} = await ${this.buffer.currentTextOutput}.snapshot();`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
       }, res, node.body, true);
@@ -1273,11 +1303,6 @@ class Compiler extends CompilerBase {
     if (this.asyncMode) {
       this.emit.line('if (!compositionMode) {');
       this.emit.line('astate.waitAllClosures().then(async () => {');
-      // Includes/imports in async mode may return CommandBuffer values from
-      // composition and insert them into the parent output buffer as child
-      // segments. Chain advancement through child slots requires each child
-      // root buffer to be marked finished once root execution has completed.
-      this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
 
       if (this.hasDynamicExtends) {
         // Dynamic extends: check frame variable
@@ -1291,13 +1316,20 @@ class Compiler extends CompilerBase {
       }
 
       this.emit.line('  if(finalParent) {');
+      // Includes/imports in async mode may return CommandBuffer values from
+      // composition and insert them into the parent output buffer as child
+      // segments. Chain advancement through child slots requires each child
+      // root buffer to be marked finished once root execution has completed.
+      this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
       this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
       this.emit.line('  } else {');
       if (this.scriptMode) {
         // In script mode we expect a {%- return ... -%} in the template body to provide the result.
         // this.emit.line('    cb(null, frame._outputs.output.snapshot());');
       } else {
-        this.emit.line(`    cb(null, runtime.flattenBuffer(${this.buffer.getCurrentTextOutput()}, context));`);
+        this.emit.line(`    const __rootSnapshot = ${this.buffer.getCurrentTextOutput()}.snapshot();`);
+        this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+        this.emit.line('    cb(null, await __rootSnapshot);');
       }
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');
@@ -1406,7 +1438,6 @@ class Compiler extends CompilerBase {
       if (returnTarget === 'root') {
         const errorContext = this._generateErrorContext(node);
         this.emit.line('return astate.waitAllClosures(0).then(async () => {');
-        this.emit.line('frame._outputBuffer.markFinishedAndPatchLinks();');
         this.emit(`  let ${resultVar} = `);
         if (hasValue) {
           this._compileExpression(node.value, frame, true, node);
@@ -1416,7 +1447,7 @@ class Compiler extends CompilerBase {
         this.emit.line(';');
         this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
         this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
-        this.emit.line('  await runtime.finalizeUnobservedSinks(frame, context);');
+        this.emit.line('  frame._outputBuffer.markFinishedAndPatchLinks();');
         this.emit.line('  cb(null, resolved);');
         this.emit.line('}).catch(e => {');
         this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${errorContext}", context.path);`);
@@ -1425,7 +1456,6 @@ class Compiler extends CompilerBase {
       } else {
         const waitCount = (frame && frame._returnWaitCount !== undefined) ? frame._returnWaitCount : 0;
         this.emit.line(`return astate.waitAllClosures(${waitCount}).then(async () => {`);
-        this.emit.line('frame._outputBuffer.markFinishedAndPatchLinks();');
         this.emit(`  let ${resultVar} = `);
         if (hasValue) {
           this._compileExpression(node.value, frame, true, node);
@@ -1435,7 +1465,7 @@ class Compiler extends CompilerBase {
         this.emit.line(';');
         this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
         this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
-        this.emit.line('  await runtime.finalizeUnobservedSinks(frame, context);');
+        this.emit.line('  frame._outputBuffer.markFinishedAndPatchLinks();');
         this.emit.line('  return resolved;');
         this.emit.line('});');
       }

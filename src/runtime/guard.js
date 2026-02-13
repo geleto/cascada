@@ -1,6 +1,9 @@
 
 const { isError } = require('./errors');
 const { getPosonedBufferErrors } = require('./command-buffer');
+const { getOutputHandler } = require('./output');
+const { SetTargetCommand } = require('./commands');
+const { clearBuffer } = require('./command-buffer');
 
 const DEBUG_GUARD = typeof process !== 'undefined' &&
   process.env &&
@@ -29,6 +32,73 @@ function init(frame, varNames) {
   }
 
   return guardState;
+}
+
+function initOutputSnapshots(frame, handlerNames = null) {
+  const state = {
+    snapshots: Object.create(null),
+    sinkHandlers: [],
+    clearHandlers: []
+  };
+
+  const targets = handlerNames ?? [];
+  const outputBuffer = frame && frame._outputBuffer;
+  const bufferScopedOnly = !!(
+    outputBuffer &&
+    outputBuffer.parent &&
+    typeof outputBuffer.parent.isPaused === 'function' &&
+    outputBuffer.parent.isPaused()
+  );
+
+  if (bufferScopedOnly) {
+    state.clearHandlers = targets.slice();
+    return state;
+  }
+
+  for (const handlerName of targets) {
+    const output = getOutputHandler(frame, handlerName);
+    if (!output) {
+      continue;
+    }
+    if (output._outputType === 'sink') {
+      state.sinkHandlers.push(handlerName);
+      continue;
+    }
+    if (typeof output._captureGuardState !== 'function') {
+      continue;
+    }
+    state.snapshots[handlerName] = output._captureGuardState();
+  }
+
+  return state;
+}
+
+function restoreOutputs(buffer, outputGuardState) {
+  if (!outputGuardState || !buffer) {
+    return;
+  }
+
+  if (Array.isArray(outputGuardState.clearHandlers) && outputGuardState.clearHandlers.length > 0) {
+    clearBuffer(buffer, outputGuardState.clearHandlers);
+    return;
+  }
+
+  const snapshotNames = Object.keys(outputGuardState.snapshots || {});
+  const handlersToClear = snapshotNames.slice();
+  if (Array.isArray(outputGuardState.sinkHandlers) && outputGuardState.sinkHandlers.length > 0) {
+    handlersToClear.push(...outputGuardState.sinkHandlers);
+  }
+  if (handlersToClear.length > 0) {
+    clearBuffer(buffer, handlersToClear);
+  }
+
+  for (const handlerName of snapshotNames) {
+    buffer.add(new SetTargetCommand({
+      handler: handlerName,
+      target: outputGuardState.snapshots[handlerName],
+      pos: { lineno: 0, colno: 0 }
+    }), handlerName);
+  }
 }
 
 async function collectGuardVariableErrors(frame, guardState) {
@@ -220,8 +290,10 @@ function repairSequenceLocks(frame, guardState, lockNames) {
 
 module.exports = {
   init,
+  initOutputSnapshots,
   getErrors,
   complete,
-  repairSequenceLocks
+  repairSequenceLocks,
+  restoreOutputs
 };
 

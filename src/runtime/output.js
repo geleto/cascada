@@ -1,6 +1,6 @@
 'use strict';
 
-const { TextCommand, ValueCommand, DataCommand, SinkCommand } = require('./commands');
+const { TextCommand, ValueCommand, DataCommand, SinkCommand, SnapshotCommand } = require('./commands');
 const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
@@ -81,9 +81,14 @@ class Output {
     this._errors.push(err);
   }
 
+  _beforeApplyCommand(cmd) {
+    // Hook for output types that need copy-on-write before mutations.
+  }
+
   _applyCommand(cmd) {
     if (!cmd) return;
     try {
+      this._beforeApplyCommand(cmd);
       const result = cmd.apply(this);
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).catch((err) => {
@@ -103,30 +108,43 @@ class Output {
     this._resolveCompletion();
   }
 
-  _buildSnapshotPromise() {
-    return this._completionPromise.then(() => {
-      if (this._errors.length > 0) {
-        throw new PoisonError(this._errors.slice());
-      }
-      return this.getCurrentResult();
-    });
+  _getResultOrThrow() {
+    if (this._errors.length > 0) {
+      throw new PoisonError(this._errors.slice());
+    }
+    return this.getCurrentResult();
   }
 
-  // Resolve the final value from _target/_base after flatten has populated them.
-  // @todo - find a way to pass the errorContext rather than using the declaring context
+  _resolveSnapshotCommandResult() {
+    return this._getResultOrThrow();
+  }
+
+  _captureGuardState() {
+    return cloneSnapshotValue(this._target);
+  }
+
+  _restoreGuardState(state) {
+    this._target = state;
+  }
+
   snapshot() {
-    if (this._buffer) {
-      if (!this._iterator.finished) {
-        if (this._errors.length > 0) {
-          throw new PoisonError(this._errors.slice());
-        }
-        return this.getCurrentResult();
-      }
-      return this._buildSnapshotPromise();
+    if (this._buffer && !this._buffer.finished) {
+      const cmd = new SnapshotCommand({
+        handler: this._outputName,
+        pos: { lineno: 0, colno: 0 }
+      });
+      this._buffer.add(cmd, this._outputName);
+      return cmd.promise;
     }
 
-    // No CommandBuffer available; legacy array fallback removed.
-    return this._outputName === 'text' ? '' : undefined;
+    try {
+      if (this._completionResolved) {
+        return Promise.resolve(this._resolveSnapshotCommandResult());
+      }
+      return Promise.resolve(this._completionPromise).then(() => this._resolveSnapshotCommandResult());
+    } catch (err) {
+      return Promise.reject(err);
+    }
   }
 }
 
@@ -157,7 +175,10 @@ function createOutputFacade(output, options) {
   return new Proxy(target, {
     get: (proxyTarget, prop) => {
       if (prop === 'snapshot') {
-        return output.snapshot.bind(output);
+        if (!output._snapshotCallable) {
+          output._snapshotCallable = output.snapshot.bind(output);
+        }
+        return output._snapshotCallable;
       }
       if (prop === 'getCurrentResult') {
         return output.getCurrentResult.bind(output);
@@ -167,6 +188,15 @@ function createOutputFacade(output, options) {
       }
       if (prop === '_onIteratorFinished') {
         return output._onIteratorFinished.bind(output);
+      }
+      if (prop === '_resolveSnapshotCommandResult') {
+        return output._resolveSnapshotCommandResult.bind(output);
+      }
+      if (prop === '_captureGuardState') {
+        return output._captureGuardState.bind(output);
+      }
+      if (prop === '_restoreGuardState') {
+        return output._restoreGuardState.bind(output);
       }
       if (OUTPUT_API_PROPS.has(prop)) {
         return output[prop];
@@ -244,15 +274,45 @@ class DataOutput extends Output {
       outputName,
       context,
       outputType,
-      {},
+      null,
       new DataHandler(context && context.getVariables ? context.getVariables() : {}, env)
     );
+    this._target = this._base ? this._base.data : {};
+    this._snapshotShared = false;
   }
 
   getCurrentResult() {
-    return this._base && typeof this._base.getReturnValue === 'function'
-      ? this._base.getReturnValue()
-      : this._base;
+    return this._target;
+  }
+
+  _resolveSnapshotCommandResult() {
+    const value = super._resolveSnapshotCommandResult();
+    if (value && typeof value === 'object') {
+      this._snapshotShared = true;
+    }
+    return value;
+  }
+
+  _beforeApplyCommand(cmd) {
+    if (!cmd || !cmd.mutatesOutput || !this._snapshotShared || !this._base) {
+      return;
+    }
+    const cloned = cloneSnapshotValue(this._target);
+    this._target = cloned;
+    this._base.data = cloned;
+    this._snapshotShared = false;
+  }
+
+  _captureGuardState() {
+    return cloneSnapshotValue(this._target);
+  }
+
+  _restoreGuardState(state) {
+    this._target = state;
+    if (this._base) {
+      this._base.data = state;
+    }
+    this._snapshotShared = false;
   }
 }
 
@@ -289,7 +349,6 @@ class SinkOutputHandler {
     this._target = undefined;
     this._base = null;
     this._buffer = frame ? frame._outputBuffer : null;
-    this._sinkFinalized = false;
     this._iterator = new BufferIterator(this);
     this._errors = [];
     this._completionResolved = false;
@@ -346,6 +405,16 @@ class SinkOutputHandler {
   _applyCommand(cmd) {
     if (!cmd) return;
     try {
+      if (cmd.isSnapshotCommand) {
+        const snapshotResult = cmd.apply(this);
+        if (snapshotResult && typeof snapshotResult.then === 'function') {
+          return Promise.resolve(snapshotResult).catch((err) => {
+            this._recordError(err);
+          });
+        }
+        return snapshotResult;
+      }
+
       const sink = this._ensureSinkResolved();
       const apply = () => cmd.apply(this);
       const result = (sink && typeof sink.then === 'function')
@@ -377,34 +446,48 @@ class SinkOutputHandler {
     return sink;
   }
 
+  _getResultOrThrow() {
+    if (this._errors.length > 0) {
+      throw new PoisonError(this._errors.slice());
+    }
+    return this.getCurrentResult();
+  }
+
+  _resolveSnapshotCommandResult() {
+    const sinkVal = this._ensureSinkResolved();
+    if (sinkVal && typeof sinkVal.then === 'function') {
+      return sinkVal.then((resolved) => {
+        if (this._errors.length > 0) {
+          throw new PoisonError(this._errors.slice());
+        }
+        return this._snapshotFromSink(resolved);
+      });
+    }
+    return this._getResultOrThrow();
+  }
+
   getCurrentResult() {
     return this._snapshotFromSink(this._sink);
   }
 
   snapshot() {
-    if (!this._buffer) {
-      return this.getCurrentResult();
+    if (this._buffer && !this._buffer.finished) {
+      const cmd = new SnapshotCommand({
+        handler: this._outputName,
+        pos: { lineno: 0, colno: 0 }
+      });
+      this._buffer.add(cmd, this._outputName);
+      return cmd.promise;
     }
 
-    if (!this._iterator.finished) {
-      if (this._errors.length > 0) {
-        throw new PoisonError(this._errors.slice());
+    try {
+      if (this._completionResolved) {
+        return Promise.resolve(this._resolveSnapshotCommandResult());
       }
-      const sinkVal = this._ensureSinkResolved();
-      if (sinkVal && typeof sinkVal.then === 'function') {
-        return sinkVal.then((resolved) => this._snapshotFromSink(resolved));
-      }
-      return this._snapshotFromSink(sinkVal);
+      return Promise.resolve(this._completionPromise).then(() => this._resolveSnapshotCommandResult());
+    } catch (err) {
+      return Promise.reject(err);
     }
-
-    return this._completionPromise.then(async () => {
-      await this._ensureSinkResolved();
-      if (this._errors.length > 0) {
-        throw new PoisonError(this._errors.slice());
-      }
-      this._sinkFinalized = true;
-      return this._snapshotFromSink(this._sink);
-    });
   }
 }
 
@@ -492,3 +575,23 @@ module.exports = {
   findOutputBuffer,
   finalizeUnobservedSinks
 };
+
+function cloneSnapshotValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneSnapshotValue(item));
+  }
+  if (isPlainObject(value)) {
+    const out = {};
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        out[key] = cloneSnapshotValue(value[key]);
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
+}

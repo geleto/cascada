@@ -155,7 +155,23 @@ async function resolveSingle(value) {
   return resolvedValue;
 }
 
-async function resolveSingleArr(value) {
+function resolveSingleArr(value) {
+  if (isPoison(value)) {
+    return value;
+  }
+
+  if (!value || (typeof value.then !== 'function' && !value[RESOLVE_MARKER])) {
+    return {
+      then(onFulfilled) {
+        return onFulfilled ? onFulfilled([value]) : [value];
+      }
+    };
+  }
+
+  return _resolveSingleArrAsync(value);
+}
+
+async function _resolveSingleArrAsync(value) {
   try {
     const resolved = await resolveSingle(value);
     return [resolved];
