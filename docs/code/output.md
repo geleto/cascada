@@ -143,15 +143,15 @@ Current role is compatibility validation + delegation:
 
 `flattenBuffer` does not walk command chains or buffer trees.
 
-## `safe-output` Text Fallback (`src/runtime/safe-output.js`)
+## `safe-output` Text Flattening (`src/runtime/safe-output.js`)
 
 `flattenTextCommandBuffer(buffer, errorContext)`:
 
 - tries `buffer._outputs.get('text')`
-- if missing, creates a temporary compatibility text output object and registers it
+- if missing, throws `RuntimeFatalError` (`flattenTextCommandBuffer requires a registered text output`)
 - forwards to `flattenBuffer(output, errorContext)`
 
-This fallback exists for legacy paths/tests where only a `CommandBuffer` is available without a declared text output.
+There is no fallback shim anymore. The invariant is enforced: a flattenable `CommandBuffer` must already have a registered `text` output.
 
 ## Output Declaration and Lookup
 

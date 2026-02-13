@@ -28,80 +28,14 @@ function flattenTextCommandBuffer(buffer, errorContext) {
   }
 
   if (!output) {
-    output = {
-      // A compatabilty shim that will be removed
-      _frame: { _outputBuffer: buffer, parent: null },
-      _buffer: buffer,
-      _outputName: 'text',
-      _target: [],
-      _errors: [],
-      _iteratorFinished: false,
-      _completionResolved: false,
-      _completionPromise: null,
-      _snapshotPromise: null,
-      _recordError(err) {
-        if (!err) return;
-        if (isPoisonError(err)) {
-          if (Array.isArray(err.errors) && err.errors.length > 0) {
-            this._errors.push(...err.errors);
-          }
-          return;
-        }
-        this._errors.push(err);
-      },
-      _applyCommand(cmd) {
-        if (!cmd) return;
-        try {
-          const result = cmd.apply(this);
-          if (result && typeof result.then === 'function') {
-            return Promise.resolve(result).catch((err) => {
-              this._recordError(err);
-            });
-          }
-        } catch (err) {
-          this._recordError(err);
-        }
-      },
-      _onIteratorFinished() {
-        this._iteratorFinished = true;
-        if (this._completionResolved) {
-          return;
-        }
-        this._completionResolved = true;
-        if (this._resolveCompletion) {
-          this._resolveCompletion();
-        }
-      },
-      getCurrentResult() {
-        if (!Array.isArray(this._target) || this._target.length === 0) {
-          this._target = [''];
-          return '';
-        }
-        const result = this._target.join('');
-        this._target = [result];
-        return result;
-      },
-      snapshot() {
-        if (!this._snapshotPromise) {
-          this._snapshotPromise = this._completionPromise.then(() => {
-            if (this._errors.length > 0) {
-              throw new PoisonError(this._errors.slice());
-            }
-            return this.getCurrentResult();
-          });
-        }
-        return this._snapshotPromise;
-      }
-    };
-    output._completionPromise = new Promise((resolve) => {
-      output._resolveCompletion = resolve;
-    });
-
-    if (buffer && buffer._registerOutput) {
-      buffer._registerOutput('text', output);
-    } else if (buffer && buffer._outputs instanceof Map) {
-      buffer._outputs.set('text', output);
-    }
+    const context = errorContext || null;
+    throw new errors.RuntimeFatalError(
+      'flattenTextCommandBuffer requires a registered text output',
+      context ? context.lineno : null,
+      context ? context.colno : null,
+      context ? context.errorContextString : null,
+      context ? context.path : null
+    );
   }
 
   return flattenBuffer(output, errorContext || null);
