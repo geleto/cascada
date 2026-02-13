@@ -546,6 +546,8 @@ class Compiler extends CompilerBase {
 
     // 2. Link for explicit reversion (optional, if we want to support manual revert)
     this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+    this.emit.line(`${this.buffer.currentBuffer}.pause();`);
+    this.emit.line('try {');
     let guardInitLinePos = null;
     if (guardStateVar) {
       if (variableTargets === '*') {
@@ -690,6 +692,10 @@ class Compiler extends CompilerBase {
     if (guardStateVar) {
       this.emit.line(`  runtime.guard.complete(frame, ${guardStateVar}, false);`);
     }
+    this.emit.line('}');
+
+    this.emit.line('} finally {');
+    this.emit.line(`  ${this.buffer.currentBuffer}.resume();`);
     this.emit.line('}');
 
     // 6. End Async Block
@@ -995,7 +1001,7 @@ class Compiler extends CompilerBase {
 
         const needsSafeString = !this.scriptMode;
         const safeStringCall = needsSafeString
-          ? `new runtime.SafeString(${flattenCall})`
+          ? `runtime.markSafe(${flattenCall})`
           : flattenCall;
 
         returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;
@@ -1400,6 +1406,7 @@ class Compiler extends CompilerBase {
       if (returnTarget === 'root') {
         const errorContext = this._generateErrorContext(node);
         this.emit.line('return astate.waitAllClosures(0).then(async () => {');
+        this.emit.line('frame._outputBuffer.markFinishedAndPatchLinks();');
         this.emit(`  let ${resultVar} = `);
         if (hasValue) {
           this._compileExpression(node.value, frame, true, node);
@@ -1418,6 +1425,7 @@ class Compiler extends CompilerBase {
       } else {
         const waitCount = (frame && frame._returnWaitCount !== undefined) ? frame._returnWaitCount : 0;
         this.emit.line(`return astate.waitAllClosures(${waitCount}).then(async () => {`);
+        this.emit.line('frame._outputBuffer.markFinishedAndPatchLinks();');
         this.emit(`  let ${resultVar} = `);
         if (hasValue) {
           this._compileExpression(node.value, frame, true, node);

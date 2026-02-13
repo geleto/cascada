@@ -1,7 +1,7 @@
 'use strict';
 
 const { CommandBuffer } = require('./command-buffer');
-const { RuntimeFatalError, PoisonError, isPoisonError } = require('./errors');
+const { RuntimeFatalError, PoisonError } = require('./errors');
 
 function flattenBuffer(output, errorContext = null) {
   if (!output || (typeof output !== 'object' && typeof output !== 'function')) {
@@ -37,40 +37,26 @@ function flattenBuffer(output, errorContext = null) {
     );
   }
 
-  const errors = [];
-  flattenChain(output, errors);
-
-  if (errors.length > 0) {
-    throw new PoisonError(errors);
+  if (typeof output.snapshot !== 'function') {
+    throw new RuntimeFatalError(
+      `Output object is missing snapshot() for flatten compatibility`,
+      context ? context.lineno : null,
+      context ? context.colno : null,
+      context ? context.errorContextString : null,
+      context ? context.path : null
+    );
   }
 
-  return output.getCurrentResult();
-}
-
-function flattenChain(output, errors) {
-  let cmd = output._firstChainedCommand;
-  const visited = new Set();
-
-  while (cmd) {
-    if (visited.has(cmd)) {
-      errors.push(new RuntimeFatalError(
-        `Detected cyclic command chain while flattening output '${output._outputName}'`
-      ));
-      break;
+  // Sync-first compatibility: if output execution is fully completed,
+  // return/throw synchronously (legacy flattenBuffer behavior in tests).
+  if (output._completionResolved === true) {
+    if (Array.isArray(output._errors) && output._errors.length > 0) {
+      throw new PoisonError(output._errors.slice());
     }
-    visited.add(cmd);
-
-    try {
-      cmd.apply(output);
-    } catch (err) {
-      if (isPoisonError(err)) {
-        errors.push(...err.errors);
-      } else {
-        errors.push(err);
-      }
-    }
-    cmd = cmd.next;
+    return output.getCurrentResult();
   }
+
+  return output.snapshot();
 }
 
 module.exports = {

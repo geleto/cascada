@@ -7,6 +7,9 @@ class BufferIterator {
     this.output = output;
     this.stack = [];
     this._enteredBuffer = null;
+    this.finished = false;
+    this._isAdvancing = false;
+    this._needsAdvance = false;
   }
 
   bindToCurrentBuffer() {
@@ -14,11 +17,15 @@ class BufferIterator {
   }
 
   onSlotFilled(buffer) {
-    this._advance();
+    this._requestAdvance();
   }
 
   onBufferFinished(buffer) {
-    this._advance();
+    this._requestAdvance();
+  }
+
+  onBufferResumed(buffer) {
+    this._requestAdvance();
   }
 
   _reset(rootBuffer) {
@@ -28,6 +35,7 @@ class BufferIterator {
 
     this.stack = [];
     this._enteredBuffer = null;
+    this.finished = false;
 
     if (!rootBuffer) {
       return;
@@ -35,13 +43,36 @@ class BufferIterator {
 
     this.stack.push({ buffer: rootBuffer, index: -1 });
     this._setCurrentBuffer(rootBuffer);
-    this._advance();
+    this._requestAdvance();
   }
 
-  _advance() {
+  _requestAdvance() {
+    if (this.finished) {
+      return;
+    }
+
+    if (this._isAdvancing) {
+      this._needsAdvance = true;
+      return;
+    }
+
+    this._isAdvancing = true;
+    this._advanceLoop();
+  }
+
+  _advanceLoop() {
+    if (this.finished) {
+      this._isAdvancing = false;
+      return;
+    }
+
     while (this.stack.length > 0) {
       const cursor = this._currentCursor();
       const buffer = cursor.buffer;
+      if (buffer && buffer.isPaused()) {
+        this._isAdvancing = false;
+        return;
+      }
       const arr = buffer.arrays[this.outputName];
       const nextIndex = cursor.index + 1;
 
@@ -51,30 +82,48 @@ class BufferIterator {
         if (isCommandBuffer(item)) {
           this._enterChild(item);
         } else {
-          this._linkCommand(item);
+          const applyResult = this._applyCommand(item);
+          if (applyResult && typeof applyResult.then === 'function') {
+            Promise.resolve(applyResult).finally(() => {
+              if (this.finished) {
+                this._isAdvancing = false;
+                return;
+              }
+              this._advanceLoop();
+            });
+            return;
+          }
         }
       }
       else if (buffer.finished && this.stack.length > 1) {
         this._leaveCurrentToParent();
+      } else if (buffer.finished) {
+        this.stack.pop();
+        this._setCurrentBuffer(null);
+        this.finished = true;
+        if (this.output) {
+          this.output._onIteratorFinished();
+        }
+        this._isAdvancing = false;
+        return;
       } else {
+        this._isAdvancing = false;
+        if (this._needsAdvance && !this.finished) {
+          this._needsAdvance = false;
+          this._requestAdvance();
+        }
         return; // buffer not finished or no parent
       }
     }
+
+    this._isAdvancing = false;
   }
 
-  _linkCommand(cmd) {
-    if (!cmd) {
+  _applyCommand(cmd) {
+    if (!cmd || !this.output) {
       return;
     }
-
-    const output = this.output;
-    const prev = output._lastChainedCommand || null;
-    if (prev) {
-      prev.next = cmd;
-    } else if (!output._firstChainedCommand) {
-      output._firstChainedCommand = cmd;
-    }
-    output._lastChainedCommand = cmd;
+    return this.output._applyCommand(cmd);
   }
 
   _enterChild(childBuffer) {

@@ -1,25 +1,29 @@
 'use strict';
 
-const { flattenBuffer } = require('./flatten-buffer');
 const { TextCommand, ValueCommand, DataCommand, SinkCommand } = require('./commands');
 const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
+const { PoisonError, isPoisonError } = require('./errors');
 
 class Output {
-  constructor(frame, outputName, context, outputType = null) {
+  constructor(frame, outputName, context, outputType = null, target = undefined, base = null) {
     this._frame = frame;
     this._outputName = outputName;//@todo rename to name
     this._outputType = outputType || outputName;//@todo rename to type
     this._context = context;
     this._buffer = frame ? frame._outputBuffer : null;
+    this._target = target;
+    this._base = base;
 
-    // Command chain endpoints used by flatten.
-    this._firstChainedCommand = null;
-    this._lastChainedCommand = null;
     this._iterator = new BufferIterator(this);
+    this._errors = [];
+    this._completionResolved = false;
+    this._completionPromise = new Promise((resolve) => {
+      this._resolveCompletion = resolve;
+    });
 
-    if (this._buffer && typeof this._buffer._registerOutput === 'function') {
+    if (this._buffer && this._buffer._registerOutput) {
       this._buffer._registerOutput(this._outputName, this);
     } else if (this._buffer && this._buffer._outputs instanceof Map) {
       this._buffer._outputs.set(this._outputName, this);
@@ -66,11 +70,59 @@ class Output {
     throw new Error(`Output type '${this._outputType}' must implement getCurrentResult()`);
   }
 
+  _recordError(err) {
+    if (!err) return;
+    if (isPoisonError(err)) {
+      if (Array.isArray(err.errors) && err.errors.length > 0) {
+        this._errors.push(...err.errors);
+      }
+      return;
+    }
+    this._errors.push(err);
+  }
+
+  _applyCommand(cmd) {
+    if (!cmd) return;
+    try {
+      const result = cmd.apply(this);
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).catch((err) => {
+          this._recordError(err);
+        });
+      }
+    } catch (err) {
+      this._recordError(err);
+    }
+  }
+
+  _onIteratorFinished() {
+    if (this._completionResolved) {
+      return;
+    }
+    this._completionResolved = true;
+    this._resolveCompletion();
+  }
+
+  _buildSnapshotPromise() {
+    return this._completionPromise.then(() => {
+      if (this._errors.length > 0) {
+        throw new PoisonError(this._errors.slice());
+      }
+      return this.getCurrentResult();
+    });
+  }
+
   // Resolve the final value from _target/_base after flatten has populated them.
   // @todo - find a way to pass the errorContext rather than using the declaring context
   snapshot() {
     if (this._buffer) {
-      return flattenBuffer(this);
+      if (!this._iterator.finished) {
+        if (this._errors.length > 0) {
+          throw new PoisonError(this._errors.slice());
+        }
+        return this.getCurrentResult();
+      }
+      return this._buildSnapshotPromise();
     }
 
     // No CommandBuffer available; legacy array fallback removed.
@@ -88,8 +140,9 @@ const OUTPUT_API_PROPS = new Set([
   '_target',
   '_base',
   '_buffer',
-  '_firstChainedCommand',
-  '_lastChainedCommand'
+  '_iterator',
+  '_errors',
+  '_completionResolved'
 ]);
 
 // Create a facade that can be callable (text/value) or dynamic-command (data).
@@ -108,6 +161,12 @@ function createOutputFacade(output, options) {
       }
       if (prop === 'getCurrentResult') {
         return output.getCurrentResult.bind(output);
+      }
+      if (prop === '_applyCommand') {
+        return output._applyCommand.bind(output);
+      }
+      if (prop === '_onIteratorFinished') {
+        return output._onIteratorFinished.bind(output);
       }
       if (OUTPUT_API_PROPS.has(prop)) {
         return output[prop];
@@ -138,8 +197,7 @@ function createOutputFacade(output, options) {
 
 class TextOutput extends Output {
   constructor(frame, outputName, context, outputType) {
-    super(frame, outputName, context, outputType);
-    this._target = [];
+    super(frame, outputName, context, outputType, [], null);
   }
 
   invoke(...args) {
@@ -165,9 +223,7 @@ class TextOutput extends Output {
 
 class ValueOutput extends Output {
   constructor(frame, outputName, context, outputType) {
-    super(frame, outputName, context, outputType);
-    this._target = undefined;
-    this._base = null;
+    super(frame, outputName, context, outputType, undefined, null);
   }
 
   invoke(value) {
@@ -182,10 +238,15 @@ class ValueOutput extends Output {
 
 class DataOutput extends Output {
   constructor(frame, outputName, context, outputType) {
-    super(frame, outputName, context, outputType);
-    this._target = {};
     const env = context && context.env ? context.env : null;
-    this._base = new DataHandler(context && context.getVariables ? context.getVariables() : {}, env);
+    super(
+      frame,
+      outputName,
+      context,
+      outputType,
+      {},
+      new DataHandler(context && context.getVariables ? context.getVariables() : {}, env)
+    );
   }
 
   getCurrentResult() {
@@ -229,11 +290,16 @@ class SinkOutputHandler {
     this._base = null;
     this._buffer = frame ? frame._outputBuffer : null;
     this._sinkFinalized = false;
-    this._firstChainedCommand = null;
-    this._lastChainedCommand = null;
     this._iterator = new BufferIterator(this);
+    this._errors = [];
+    this._completionResolved = false;
+    this._completionPromise = new Promise((resolve) => {
+      this._resolveCompletion = resolve;
+    });
+    this._sinkReady = false;
+    this._sinkReadyPromise = null;
 
-    if (this._buffer && typeof this._buffer._registerOutput === 'function') {
+    if (this._buffer && this._buffer._registerOutput) {
       this._buffer._registerOutput(this._outputName, this);
     } else if (this._buffer && this._buffer._outputs instanceof Map) {
       this._buffer._outputs.set(this._outputName, this);
@@ -243,6 +309,64 @@ class SinkOutputHandler {
 
   _resolveSink() {
     return this._sink;
+  }
+
+  _ensureSinkResolved() {
+    if (this._sinkReady) {
+      return this._sink;
+    }
+    if (!this._sinkReadyPromise) {
+      const sinkVal = this._resolveSink();
+      if (!sinkVal || typeof sinkVal.then !== 'function') {
+        this._sink = sinkVal;
+        this._sinkReady = true;
+        return this._sink;
+      }
+      this._sinkReadyPromise = Promise.resolve(sinkVal)
+        .then((resolvedSink) => {
+          this._sink = resolvedSink;
+          this._sinkReady = true;
+          return resolvedSink;
+        });
+    }
+    return this._sinkReadyPromise;
+  }
+
+  _recordError(err) {
+    if (!err) return;
+    if (isPoisonError(err)) {
+      if (Array.isArray(err.errors) && err.errors.length > 0) {
+        this._errors.push(...err.errors);
+      }
+      return;
+    }
+    this._errors.push(err);
+  }
+
+  _applyCommand(cmd) {
+    if (!cmd) return;
+    try {
+      const sink = this._ensureSinkResolved();
+      const apply = () => cmd.apply(this);
+      const result = (sink && typeof sink.then === 'function')
+        ? Promise.resolve(sink).then(apply)
+        : apply();
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).catch((err) => {
+          this._recordError(err);
+        });
+      }
+    } catch (err) {
+      this._recordError(err);
+    }
+  }
+
+  _onIteratorFinished() {
+    if (this._completionResolved) {
+      return;
+    }
+    this._completionResolved = true;
+    this._resolveCompletion();
   }
 
   _snapshotFromSink(sink) {
@@ -258,21 +382,29 @@ class SinkOutputHandler {
   }
 
   snapshot() {
-    const runSnapshot = (resolvedSink) => {
-      this._sink = resolvedSink;
-      if (this._buffer) {
-        flattenBuffer(this, this._context);
+    if (!this._buffer) {
+      return this.getCurrentResult();
+    }
+
+    if (!this._iterator.finished) {
+      if (this._errors.length > 0) {
+        throw new PoisonError(this._errors.slice());
+      }
+      const sinkVal = this._ensureSinkResolved();
+      if (sinkVal && typeof sinkVal.then === 'function') {
+        return sinkVal.then((resolved) => this._snapshotFromSink(resolved));
+      }
+      return this._snapshotFromSink(sinkVal);
+    }
+
+    return this._completionPromise.then(async () => {
+      await this._ensureSinkResolved();
+      if (this._errors.length > 0) {
+        throw new PoisonError(this._errors.slice());
       }
       this._sinkFinalized = true;
       return this._snapshotFromSink(this._sink);
-    };
-
-    const sinkVal = this._resolveSink();
-    if (sinkVal && typeof sinkVal.then === 'function') {
-      return sinkVal.then((resolved) => runSnapshot(resolved));
-    }
-
-    return runSnapshot(sinkVal);
+    });
   }
 }
 
@@ -326,13 +458,11 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
   output._buffer = buffer;
   frame._outputs[outputName] = output;
 
-  if (typeof buffer._registerOutput === 'function') {
+  if (buffer._registerOutput) {
     buffer._registerOutput(outputName, output);
   } else if (buffer._outputs instanceof Map) {
     buffer._outputs.set(outputName, output);
-    if (output._iterator && typeof output._iterator.bindToCurrentBuffer === 'function') {
-      output._iterator.bindToCurrentBuffer();
-    }
+    output._iterator.bindToCurrentBuffer();
   }
 
   if (outputType === 'sink') {
@@ -344,23 +474,8 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
 }
 
 function finalizeUnobservedSinks(frame, context) {
-  if (!frame || !frame._outputs) {
-    return undefined;
-  }
-
-  Object.keys(frame._outputs).forEach((name) => {
-    const out = frame._outputs[name];
-    if (!out || out._outputType !== 'sink' || out._sinkFinalized) {
-      return;
-    }
-    try {
-      // Snapshot owns sink finalization semantics and sink resolution.
-      out.snapshot();
-    } catch (e) {
-      // Ignore unused sink errors by design.
-    }
-  });
-
+  // No-op: sink commands execute on the fly as iterator progresses.
+  // Unobserved sink errors remain non-fatal and are surfaced only by snapshot().
   return undefined;
 }
 

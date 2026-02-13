@@ -19,6 +19,8 @@ class CommandBuffer {
     this._pendingReservedSlots = 0;
     // finish was requested, but may be deferred until pending slots are filled.
     this._finishRequested = false;
+    // Pause refcount used by guard-temporary execution gating.
+    this._pauseRefCount = 0;
   }
 
   _registerOutput(handlerName, output) {
@@ -28,7 +30,7 @@ class CommandBuffer {
     this._outputs.set(handlerName, output);
 
     const iterator = ensureOutputIterator(output);
-    if (iterator && typeof iterator.bindToCurrentBuffer === 'function') {
+    if (iterator) {
       iterator.bindToCurrentBuffer();
     }
   }
@@ -52,6 +54,30 @@ class CommandBuffer {
     const current = this._visitingIterators.get(outputName);
     if (current === iterator) {
       this._visitingIterators.delete(outputName);
+    }
+  }
+
+  pause() {
+    this._adjustPause(1);
+  }
+
+  resume() {
+    this._adjustPause(-1);
+  }
+
+  isPaused() {
+    return this._pauseRefCount > 0;
+  }
+
+  _adjustPause(delta) {
+    let current = this;
+    while (current) {
+      const before = current._pauseRefCount || 0;
+      current._pauseRefCount = Math.max(0, before + delta);
+      if (before > 0 && current._pauseRefCount === 0) {
+        current._notifyBufferResumed();
+      }
+      current = current.parent;
     }
   }
 
@@ -167,7 +193,7 @@ class CommandBuffer {
 
   _notifySlotFilled(outputName) {
     const iterator = this._visitingIterators.get(outputName);
-    if (iterator && typeof iterator.onSlotFilled === 'function') {
+    if (iterator) {
       iterator.onSlotFilled(this);
     }
   }
@@ -196,8 +222,32 @@ class CommandBuffer {
         continue;
       }
       seen.add(iterator);
-      if (typeof iterator.onBufferFinished === 'function') {
-        iterator.onBufferFinished(this);
+      iterator.onBufferFinished(this);
+    }
+  }
+
+  _notifyBufferResumed() {
+    const seen = new Set();
+
+    for (const iterator of this._visitingIterators.values()) {
+      if (!iterator || seen.has(iterator)) {
+        continue;
+      }
+      seen.add(iterator);
+      iterator.onBufferResumed(this);
+    }
+
+    if (this._outputs) {
+      for (const output of this._outputs.values()) {
+        if (!output || !output._iterator) {
+          continue;
+        }
+        const iterator = output._iterator;
+        if (seen.has(iterator)) {
+          continue;
+        }
+        seen.add(iterator);
+        iterator.onBufferResumed(this);
       }
     }
   }
@@ -215,23 +265,6 @@ class CommandBuffer {
     this.finished = false;
     this._finishRequested = false;
     this._pendingReservedSlots = 0;
-
-    const iterators = new Set(this._visitingIterators.values());
-    for (const iterator of iterators) {
-      if (!iterator || typeof iterator.bindToCurrentBuffer !== 'function') {
-        continue;
-      }
-      const output = iterator.output;
-      if (!output || !output._buffer || !output._outputName) {
-        iterator.bindToCurrentBuffer();
-        continue;
-      }
-
-      resetOutputChainLinks(output._buffer, output._outputName);
-      output._firstChainedCommand = null;
-      output._lastChainedCommand = null;
-      iterator.bindToCurrentBuffer();
-    }
   }
 
   getPosonedBufferErrors(allowedHandlers = null) {
@@ -259,34 +292,6 @@ class CommandBuffer {
     });
 
     return allErrors;
-  }
-}
-
-function resetOutputChainLinks(buffer, outputName, seen = null) {
-  if (!buffer || !isCommandBuffer(buffer)) {
-    return;
-  }
-
-  const visited = seen || new Set();
-  if (visited.has(buffer)) {
-    return;
-  }
-  visited.add(buffer);
-
-  const arr = buffer.arrays[outputName];
-  if (!arr || arr.length === 0) {
-    return;
-  }
-
-  for (const item of arr) {
-    if (!item) {
-      continue;
-    }
-    if (isCommandBuffer(item)) {
-      resetOutputChainLinks(item, outputName, visited);
-      continue;
-    }
-    item.next = null;
   }
 }
 

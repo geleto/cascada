@@ -4,6 +4,7 @@ var lib = require('../lib');
 const errors = require('./errors');
 const { CommandBuffer } = require('./command-buffer');
 const { flattenBuffer } = require('./flatten-buffer');
+const { PoisonError, isPoisonError } = require('./errors');
 
 function normalizeBufferValue(val) {
   if (val && typeof val === 'object') {
@@ -28,12 +29,49 @@ function flattenTextCommandBuffer(buffer, errorContext) {
 
   if (!output) {
     output = {
+      // A compatabilty shim that will be removed
       _frame: { _outputBuffer: buffer, parent: null },
       _buffer: buffer,
       _outputName: 'text',
       _target: [],
-      _firstChainedCommand: null,
-      _lastChainedCommand: null,
+      _errors: [],
+      _iteratorFinished: false,
+      _completionResolved: false,
+      _completionPromise: null,
+      _snapshotPromise: null,
+      _recordError(err) {
+        if (!err) return;
+        if (isPoisonError(err)) {
+          if (Array.isArray(err.errors) && err.errors.length > 0) {
+            this._errors.push(...err.errors);
+          }
+          return;
+        }
+        this._errors.push(err);
+      },
+      _applyCommand(cmd) {
+        if (!cmd) return;
+        try {
+          const result = cmd.apply(this);
+          if (result && typeof result.then === 'function') {
+            return Promise.resolve(result).catch((err) => {
+              this._recordError(err);
+            });
+          }
+        } catch (err) {
+          this._recordError(err);
+        }
+      },
+      _onIteratorFinished() {
+        this._iteratorFinished = true;
+        if (this._completionResolved) {
+          return;
+        }
+        this._completionResolved = true;
+        if (this._resolveCompletion) {
+          this._resolveCompletion();
+        }
+      },
       getCurrentResult() {
         if (!Array.isArray(this._target) || this._target.length === 0) {
           this._target = [''];
@@ -42,10 +80,24 @@ function flattenTextCommandBuffer(buffer, errorContext) {
         const result = this._target.join('');
         this._target = [result];
         return result;
+      },
+      snapshot() {
+        if (!this._snapshotPromise) {
+          this._snapshotPromise = this._completionPromise.then(() => {
+            if (this._errors.length > 0) {
+              throw new PoisonError(this._errors.slice());
+            }
+            return this.getCurrentResult();
+          });
+        }
+        return this._snapshotPromise;
       }
     };
+    output._completionPromise = new Promise((resolve) => {
+      output._resolveCompletion = resolve;
+    });
 
-    if (buffer && typeof buffer._registerOutput === 'function') {
+    if (buffer && buffer._registerOutput) {
       buffer._registerOutput('text', output);
     } else if (buffer && buffer._outputs instanceof Map) {
       buffer._outputs.set('text', output);
@@ -102,16 +154,18 @@ function copySafeness(dest, target) {
 }
 
 function markSafe(val) {
+  if (val && typeof val === 'object' && val.then && typeof val.then === 'function') {
+    return (async (v) => {
+      return markSafe(await v);
+    })(val);
+  }
+
   var type = typeof val;
 
   if (type === 'string') {
     return new SafeString(val);
   } else if (type !== 'function') {
     return val;
-  } else if (type === 'object' && val.then && typeof val.then === 'function') {
-    return (async (v) => {
-      return markSafe(await v);
-    })(val);
   }
   else {
     return function wrapSafe(args) {

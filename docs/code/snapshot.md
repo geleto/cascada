@@ -228,8 +228,11 @@ This is temporary. Future approach will snapshot/restore output targets for true
 
 ## Snapshot Semantics (Temporary Phase)
 
-- Current phase supports end-of-flow snapshot usage only.
-- Existing test expectations are assumed to conform to this.
+- `snapshot()` is completion-promise based by default.
+- Temporary compatibility workaround is enabled:
+  - if snapshot is requested before iterator/root completion, return current materialized value (and current accumulated errors) instead of waiting for finish.
+  - this avoids circular waits in legacy/non-terminal snapshot usage paths.
+- This workaround is transitional and will be removed once `SnapshotCommand` is implemented.
 - Future phase will support mid-flow snapshots via explicit `SnapshotCommand` entries that resolve per-snapshot promises in deterministic order.
 
 ## Sink Semantics
@@ -246,6 +249,7 @@ This preserves current intended behavior where unused sink failures are non-fata
 - `flattenBuffer(output)` becomes a compatibility wrapper:
   - returns/awaits output completion promise
   - performs final error throw / result read semantics only
+- includes a sync-fast compatibility path when output is already fully completed.
 - Chain-walk flattening logic is removed from `flattenBuffer`.
 
 ## Invariants To Preserve
