@@ -1,241 +1,195 @@
-# Snapshot and Chain Construction Architecture
+# Snapshot2: Iterator-Based Command Chain Construction
 
-This document defines the runtime architecture for output snapshots based on incremental command-chain construction.
+This document defines a simplified replacement for the current chain-construction logic.
 
-## Purpose
+## Scope
 
-`snapshot()` materializes an output by replaying a prebuilt command chain.
+Covers:
 
-The architecture is designed around:
+- per-output iterator ownership
+- event-driven chain construction
+- parent/child buffer traversal semantics
+- gap waiting and finish handling
+- compatibility with existing `flattenBuffer` chain walk
 
-- incremental chaining during execution
-- deterministic ordering through reserved slots
-- parent/child buffer coordination
-- chain-only flatten traversal
+Does not cover:
 
-CommandBuffer creation model:
+- repeated snapshot idempotency/caching (deferred)
+- changes to flatten execution semantics
 
-- root scope setup
-- managed non-async scope-root blocks
-- runtime async blocks (`AsyncState.asyncBlock`) when outputs are used
+## Core Model
 
-## Core Concepts
+## Ownership
 
-## Output-specific command chain
+- There is one iterator per utput object.
+- The iterator is stored on the output object (for example `output._iterator`).
+- The iterator builds and updates the `next` chain for that output only.
+- The iterator never traverses above its root buffer.
 
-Each output handler (for example `text`, `data`, `value`, custom sink names) has an independent logical chain of commands linked via `Command.next`.
+This replaces per-buffer per-handler chain progress maps.
 
-Flatten starts at the output head:
+## Root Binding
 
-- `output._firstChainedCommand`
+Output can exist before its root `CommandBuffer` is available.
 
-and traverses:
+- Output starts with no attached root buffer.
+- Once root buffer exists, output attaches the iterator to that root for the output name.
+- Existing chain endpoints on output (`_firstChainedCommand`, `_lastChainedCommand`) remain the single flatten entrypoints.
 
-- `cmd = cmd.next`
+## Traversal State
 
-until null.
+Iterator state:
 
-## Buffer tree vs command chain
+- `output`: owning output object
+- `outputName`: handler name for this output
+- `rootBuffer`: traversal boundary
+- `stack`: array of frames `{ buffer, index }`
+  - `index` is current position in that buffer for `outputName`
+  - initial frame is `{ rootBuffer, -1 }`
+- `finished`: iterator-level completion marker (root traversal complete)
 
-- Buffer tree (`CommandBuffer` nesting) is the execution-time storage graph.
-- Command chain is the flatten-time replay graph.
+Interpretation:
 
-Buffers are structural containers. Flatten does not recurse buffers; it walks the already-linked chain.
+- `index = -1` means "entered buffer, no slot consumed yet".
+- next candidate slot is `index + 1`.
 
-## Data Structures
+## Buffer/Iterator Contract
 
-## `CommandBuffer` state
+Buffers notify iterator of lifecycle events for this output:
 
-Per buffer:
+- `onSlotReserved(buffer, outputName, slot)`
+  - Optional trigger. No immediate advance required unless this unblocks expected traversal checks.
+- `onSlotFilled(buffer, outputName, slot, value)`
+  - Primary trigger. Iterator attempts to advance from current state.
+- `onBufferFinished(buffer)`
+  - Trigger when buffer is marked finished.
+- `onEnterBuffer(buffer)` / `onLeaveBuffer(buffer)`
+  - Internal iterator hooks for bookkeeping only.
 
-- `arrays[handler]`: sparse ordered entries (`Command` or child `CommandBuffer`)
-- `_outputIndexes[handler]`: next slot index for `reserveSlot`
-- `finished`: buffer lifecycle completion marker
-- `parent`: parent buffer if attached
-- `positions`: parent slot index mapping by handler
+A buffer must notify only iterators for outputs it participates in.
 
-Shared registry across buffer hierarchy:
+## Main Traversal Rules
 
-- `_outputs: Map<handler, Output>`
+## Enter Rule
 
-Per-handler chain progress state:
+When iterator reaches a slot containing a child `CommandBuffer`:
 
-- `_lastChainedIndex: Map<handler, number>`
-- `_lastIndexIsChained: Map<handler, boolean>`
-- `_firstLocalChainedCommand: Map<handler, Command>`
-- `_lastLocalChainedCommand: Map<handler, Command>`
+1. Enter child immediately (push `{ child, -1 }`).
+2. Do not process parent next slot until child is left.
+3. Child is left only when child buffer is finished and no further reachable slots exist.
 
-## `Output` chain endpoints
+## Leave Rule
 
-Per output:
+When current buffer is finished and iterator has no next allocated slot in that buffer:
 
-- `_firstChainedCommand`
-- `_lastChainedCommand`
+1. If current buffer is root: mark iterator finished.
+2. Else pop to parent and continue advancing in parent.
 
-For root buffers, local endpoints are mirrored to these global endpoints while chaining.
+This includes empty buffers entered at `index = -1`.
 
-## Incremental Chain Algorithm
+## Gap Rule
 
-## Write path entry points
+Iterator only advances to `index + 1` when that slot is allocated/filled.
 
-- `add(value, outputName)`
-- `fillSlot(slot, value, outputName)`
+- Reserved/unfilled gap blocks progression.
+- No skipping over missing slots.
 
-Both:
+## Chain Link Rule
 
-1. Store entry into `arrays[outputName]`
-2. Attach child linkage when value is `CommandBuffer`
-3. Call `_tryAdvanceChain(outputName, position)`
+Whenever iterator moves from command `A` to command `B`, it sets:
 
-## Position gating (`_tryAdvanceChain`)
+- `A.next = B`
 
-Given:
+And maintains output endpoints:
 
-- `lastIdx = _lastChainedIndex.get(handler) ?? -1`
-- `lastReady = _lastIndexIsChained.get(handler) ?? true`
+- if first command discovered: `output._firstChainedCommand = B`
+- always update tail: `output._lastChainedCommand = B`
 
-Expected position:
+If next visited item is a child buffer, no link is created at that step; linking occurs when first command inside child is encountered.
 
-- `lastReady ? lastIdx + 1 : lastIdx`
+## Advance Loop
 
-Advancement starts only when the newly written position matches expected.
+After every event and after every buffer enter/leave transition, iterator runs:
 
-This prevents out-of-order chain mutation and enables gap resume.
+1. Read current frame `{ buffer, index }`.
+2. Inspect `nextIndex = index + 1` for this output array.
+3. If next slot is not allocated/filled: stop (wait).
+4. Move to `nextIndex`.
+5. If entry is command:
+   - link previous visited command to it
+   - set as current visited command
+   - continue loop
+6. If entry is child buffer:
+   - enter child at `-1`
+   - continue loop from child context
+7. If current buffer has no next slot and is finished:
+   - leave to parent (or finish at root)
+   - continue loop
+8. Otherwise stop (waiting for future slot fill or finish)
 
-## Forward advancement (`_advanceChainFrom`)
+This is the only progression path.
 
-For `arrays[handler]` starting at `fromIndex`:
+## Data Structures in CommandBuffer
 
-1. Redundant full re-advances are ignored if buffer is already contiguous through `lastIdx`.
-2. Iterate entries until stop condition.
+`CommandBuffer` keeps storage/lifecycle responsibilities only:
 
-Entry handling:
+- `arrays[outputName]` sparse entries (`Command` or child `CommandBuffer`)
+- `finished`
+- `parent` and per-output position metadata
+- shared output registry as needed for lookup
 
-- `null`/gap:
-- mark blocked at current index
-- `lastIndexIsChained = false`
-- stop
+Removed from buffer chaining model:
 
-- `Command`:
-- link into chain using `_chainCommand`/`_chainRange`
-- continue
+- `_lastChainedIndex`
+- `_lastIndexIsChained`
+- `_firstLocalChainedCommand`
+- `_lastLocalChainedCommand`
+- child chained notification methods tied to those fields
 
-- child `CommandBuffer`:
-- if child not fully chained for handler, mark blocked here and stop
-- if fully chained, splice child command segment `[firstCommand, lastCommand]` into parent chain and continue
+## Parent/Child Completion
 
-After reaching array end:
+No explicit "child fully chained" signaling is required.
 
-- mark contiguous complete at last index
-- set `lastIndexIsChained = true`
-- call `_checkFullyChained(handler)`
+Simplified behavior:
 
-## Link primitive (`_chainRange`)
+- Parent blocks naturally while iterator is inside child.
+- Child completion is represented by `child.finished` and absence of next slot.
+- On child completion, iterator pops and resumes parent automatically.
 
-`_chainRange(firstCmd, lastCmd, prev, handler)`:
+## Flatten Compatibility
 
-- if `prev` exists: `prev.next = firstCmd`
-- else: set local first endpoint for handler
-- update local last endpoint
-- if this is root buffer (`!parent`), mirror to `Output` endpoints
+`flattenBuffer(output)` stays chain-only and unchanged:
 
-Returns `lastCmd` as new `prev`.
+- starts at `output._firstChainedCommand`
+- follows `next`
+- applies all commands
+- collects all errors
 
-## Child buffer coordination
+Iterator design guarantees chain is already built before/while flatten is invoked.
 
-## Attachment
+## Invariants
 
-When a child buffer is inserted into parent slot:
+- Deterministic source order is preserved by slot order plus gap waiting.
+- Parent cannot outpace child for child-buffer slots.
+- Iterator never crosses above its root buffer.
+- Empty finished buffers unwind correctly.
+- Chain endpoints on output always represent current replay chain.
 
-- `child.parent = parent`
-- `child._setParentPosition(handler, slot)`
-- `child._outputs = parent._outputs` (shared registry)
-- `child._advanceChainFrom(handler, 0)` to process pre-attachment writes
+## Non-Goals (Current Phase)
 
-## Completion signaling
+- Snapshot caching / point-in-time immutability.
+- Deduplication of already-applied commands across repeated snapshots.
 
-- child calls `_notifyParentChained(handler)` when fully chained
-- parent receives `_childBufferChained(handler, position)`
-- parent resumes advancement only if notification matches expected position
+These can be layered later without changing iterator traversal semantics.
 
-## Fully chained semantics
+## Migration Notes
 
-`_isFullyChained(handler)` is true when:
-
-- `finished === true`
-- and either:
-- no array exists for handler
-- or array exists and `lastIdx` is final index and `lastIndexIsChained === true`
-
-`_checkFullyChained(handler)` enforces same logic and notifies parent.
-
-## Buffer lifecycle finalization
-
-`markFinishedAndPatchLinks()`:
-
-- sets `finished = true`
-- checks all handlers known in `_outputs` with `_checkFullyChained`
-- does not recursively finish child buffers
-
-Async lifecycle integration:
-
-- `AsyncState.asyncBlock(...)` calls `childFrame._outputBuffer.markFinishedAndPatchLinks()` in `.finally(...)` only when the async block owns that buffer (`_ownsOutputBuffer`)
-- this runs on both success and failure and is the primary completion trigger for child buffers
-
-## Flatten contract
-
-`flattenBuffer(output, errorContext?)`:
-
-1. validates output object and `CommandBuffer`
-2. walks chain from `output._firstChainedCommand`
-3. applies every command, aggregating all errors
-4. detects and reports chain cycles
-5. returns `output.getCurrentResult()` or throws aggregated `PoisonError`
-
-Important: flatten does not build or rebuild chains from buffer arrays.
-
-## Snapshot contract
-
-`Output.snapshot()` delegates to `flattenBuffer(this)` when `_buffer` exists.
-
-Per output type:
-
-- text: returns joined string from `_target`
-- value: returns `_target`
-- data: returns `DataHandler.getReturnValue()` (or base object)
-- sink: flattens sink commands, then returns sink-derived value (`snapshot`/`getReturnValue`/`finalize`)
-
-## Ordering guarantees
-
-Ordering is driven by slot reservation plus chain gating:
-
-- async producers reserve exact output positions (`reserveSlot`)
-- completion fills reserved slots (`fillSlot`)
-- chain advances only when next expected position is ready
-
-This preserves deterministic replay order even when async tasks resolve out of order.
-
-## Error model in snapshot/flatten
-
-- Command execution errors are collected, not fail-fast
-- `PoisonError` is unwrapped to individual errors and merged
-- non-poison errors are included as-is
-- after traversal, if any errors exist, flatten throws `PoisonError(errors)`
-
-## Operational invariants
-
-- Every filled command slot is either linked into chain or blocks chain progression until ready conditions are met.
-- Parent buffers advance through child-buffer slots only after child is fully chained.
-- Root output endpoints always represent the visible replay chain for that handler.
-- Snapshot materialization depends on chain correctness, not tree recursion.
-- Buffer completion and chain completion are separate states; both are required for full-chained status.
-
-## Debug helpers and non-flatten utilities
-
-Runtime includes helper methods useful for diagnostics and compatibility paths:
-
-- `firstCommand(handler)` / `lastCommand(handler)`
-- `debugChain(handler)`
-- `traverseChain(handler, fn)`
-
-These do not change the flatten contract: snapshot flatten traversal is chain-only.
+1. Add iterator field to `Output` and bind it when output gets/changes root buffer.
+2. Update `CommandBuffer.add/fillSlot/markFinished...` to notify iterator events.
+3. Remove legacy incremental chain fields/methods.
+4. Keep existing command classes and flatten logic unchanged.
+5. Validate with current poison/output tests; add focused iterator tests for:
+   - reserved gaps
+   - empty child buffer finish at `-1`
+   - nested child completion unwind
+   - out-of-order async slot fills preserving deterministic chain
