@@ -257,3 +257,73 @@ This preserves current intended behavior where unused sink failures are non-fata
 - Deterministic command apply order remains source-order via slot order + gap waiting.
 - "Never Miss Any Error": continue applying reachable commands and collect all errors before final throw at snapshot/completion boundary.
 - Async slot fill order must not affect final deterministic output.
+
+---
+
+# Snapshot4: Command-Resolved Snapshots (Planned)
+
+This section defines the next step that replaces the temporary completion-based snapshot behavior.
+
+## Goal
+
+- Make `snapshot()` an ordered command in the output stream.
+- Allow mid-flow snapshots without waiting for root `CommandBuffer` completion.
+- Keep iterator-driven apply semantics unchanged.
+
+## Core Semantics
+
+- `snapshot()` enqueues a `SnapshotCommand` into the same output handler stream.
+- `snapshot()` immediately returns a promise tied to that command.
+- The promise resolves/rejects when that specific command is applied by the iterator.
+- Resolution does not wait for containing buffer/root finish.
+
+This means snapshot timing is defined by command position, not by output completion.
+
+## `SnapshotCommand`
+
+- Added as a first-class command type.
+- Carries a deferred result handle created at command construction.
+- In `apply(output)`:
+  - if output has accumulated errors up to this point, reject with `PoisonError`
+  - else resolve with the output's current snapshot value
+- Promise settlement happens exactly once, from `apply()`.
+
+## Return Integration
+
+- `return` uses normal expression evaluation.
+- If return expression includes `x.snapshot()`, it receives that snapshot promise directly.
+- `return` does not trigger special output finishing and does not require explicit snapshot waiting logic.
+- Buffer finishing remains owned by normal block/root completion paths.
+
+Current assumption for this phase:
+
+- `return` is only used at end-of-function/end-of-scope flow (no early-return control flow changes in this phase).
+
+## Copy Safety For Snapshot Values
+
+Returned snapshot values must not be mutated by later internal commands.
+
+- `data` / `text`: copy-on-write protection.
+  - Snapshot returns a stable view.
+  - Internal state is lazily cloned before the first post-snapshot mutation.
+- `value`: no cloning required (replaced as scalar/reference by `ValueCommand`, not mutated in place by output commands).
+- `sink`: sink object defines snapshot safety via its own `snapshot()` implementation.
+
+## Buffer Finish Relationship
+
+- `CommandBuffer.finished` still controls iterator lifecycle/completion signaling.
+- Snapshot promise settlement is independent of `finished`.
+- No dependency on `markFinishedAndPatchLinks()` for snapshot correctness.
+
+## Error Boundary
+
+- Snapshot observes errors accumulated up to its apply position.
+- Errors from commands after the snapshot position do not retroactively affect that snapshot promise.
+
+## Migration Notes
+
+1. Add `SnapshotCommand` to runtime command set.
+2. Extend output API `snapshot()` to enqueue `SnapshotCommand` and return its promise.
+3. Add per-output copy-on-write helpers for snapshot-safe returned values (`data`/`text`).
+4. Keep iterator traversal/apply flow unchanged; only add command handling.
+5. Remove temporary "pre-finish snapshot returns current value" compatibility behavior once command-based snapshots are fully wired.
