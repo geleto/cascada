@@ -1,59 +1,60 @@
 # Output Architecture
 
-This document describes the output pipeline as implemented in the current runtime/compiler code.
+This document reflects the current runtime/compiler output pipeline.
 
 ## Scope
 
 Covers:
 
 - Output declaration and lookup
-- CommandBuffer write model
-- Incremental command-chain construction
-- Chain-walk flatten execution
-- Output-type result shaping (`text`, `data`, `value`, `sink`)
+- `CommandBuffer` write lifecycle
+- Iterator-based command chain construction
+- `flattenBuffer` execution
+- Output result shaping (`text`, `data`, `value`, `sink`)
 - Async lifecycle hooks that finalize buffers
 
-Does not cover historical transitions or deprecated behavior.
+Does not cover historical implementations.
 
 ## End-to-End Flow
 
 1. Compiler emits writes into `CommandBuffer` instances.
-2. Writes are grouped by handler/output name in `buffer.arrays[outputName]`.
-3. `CommandBuffer` incrementally links commands into a per-output singly linked chain (`next` pointers).
-4. `Output.snapshot()` (or template/capture/call-block flatten paths) calls `flattenBuffer(output)`.
-5. `flattenBuffer` walks only `output._firstChainedCommand -> next`, applies commands, aggregates errors, returns `output.getCurrentResult()`.
+2. Writes are grouped by handler in `buffer.arrays[outputName]`.
+3. Per-output `BufferIterator` builds a linked command chain (`next`) as slots are filled/finished.
+4. `snapshot()` paths call `flattenBuffer(output)`.
+5. `flattenBuffer` walks `output._firstChainedCommand -> next`, applies commands, aggregates errors, returns `output.getCurrentResult()`.
 
 ## Core Runtime Objects
 
-## `CommandBuffer` (`src/runtime/buffer.js`)
+## `CommandBuffer` (`src/runtime/command-buffer.js`)
 
 Primary fields:
 
-- `arrays`: sparse per-handler arrays of entries (`Command` or child `CommandBuffer`)
-- `_outputIndexes`: next slot index per handler (`reserveSlot`)
+- `arrays`: per-handler arrays of entries (`Command`, child `CommandBuffer`, or `null` reserved slots)
 - `parent`: parent `CommandBuffer` when attached as child
-- `positions`: map of child position in parent per handler
-- `finished`: marks this buffer's write lifecycle completion
-- `_outputs`: shared `Map<handlerName, Output>` registry across a buffer tree
-- `_lastChainedIndex`: per handler chain progress cursor
-- `_lastIndexIsChained`: per handler readiness at cursor
-- `_firstLocalChainedCommand` / `_lastLocalChainedCommand`: local segment endpoints for this buffer
+- `finished`: true when finish is requested and no reserved slots remain
+- `_outputs`: shared `Map<handlerName, Output>` across a buffer tree
+- `_visitingIterators`: active iterators keyed by output name
+- `_pendingReservedSlots`: reserved-but-not-filled slot count
+- `_finishRequested`: finish requested, completion deferred until pending slots are filled
 
-Entry writes:
+Write APIs:
 
-- `add(value, outputName)`
-- `fillSlot(slot, value, outputName)`
-- `addText(...)` convenience for `TextCommand`
-- `addPoison(...)` convenience for `ErrorCommand`
-
-Both `add` and `fillSlot` call `_tryAdvanceChain(outputName, position)` after storing the entry.
+- `add(value, outputName)`: reserve slot + store value + notify iterator
+- `_fillSlot(slot, value, outputName)`: fill an existing reserved slot + notify iterator
+- `addAsyncArgsCommand(...)`: reserves a slot, awaits producer, fills with command or `ErrorCommand`
+- `addText(...)`, `addPoison(...)`, `addBuffer(...)`
 
 Child attach behavior (`value instanceof CommandBuffer`):
 
 - child `parent` is set
-- child parent position is stored with `_setParentPosition(outputName, slot)`
-- child `_outputs` is replaced with parent's shared `_outputs`
-- child `_advanceChainFrom(outputName, 0)` is invoked to pick up pre-attachment writes
+- child `_outputs` is replaced with parent shared map
+- no child-chained signaling; iterator traversal handles parent/child sequencing
+
+Finish behavior:
+
+- `markFinishedAndPatchLinks()` only requests finish
+- actual `finished = true` occurs when `_pendingReservedSlots === 0`
+- when finished, iterators currently visiting this buffer are notified via `onBufferFinished`
 
 ## Output objects (`src/runtime/output.js`)
 
@@ -61,95 +62,49 @@ Base fields:
 
 - `_outputName`, `_outputType`
 - `_frame`, `_context`
-- `_buffer` (source `CommandBuffer`)
-- `_firstChainedCommand`, `_lastChainedCommand` (global chain endpoints used by flatten)
-
-Concrete output types:
-
-- `TextOutput`: `_target` array; joins fragments in `getCurrentResult()`
-- `DataOutput`: `_base` is `DataHandler`; `getCurrentResult()` returns handler return value
-- `ValueOutput`: `_target` scalar-like last value
-- `SinkOutputHandler`: executes sink commands against `_sink`; snapshot protocol uses `snapshot()` -> `getReturnValue()` -> `finalize()` fallback order
+- `_buffer`
+- `_firstChainedCommand`, `_lastChainedCommand`
+- `_iterator` (`BufferIterator`)
 
 Output registration:
 
-- Output constructor registers itself in `buffer._outputs`
-- For root buffers, constructor also binds already-built local chain endpoints to output endpoints (late binding support)
-- `declareOutput(...)` also registers in `buffer._outputs`
+- output constructors register with buffer (`_registerOutput`) when possible
+- `declareOutput(...)` also registers and stores in lexical `frame._outputs`
+
+Concrete output types:
+
+- `TextOutput`: accumulates into `_target[]`; snapshot returns joined string
+- `DataOutput`: uses `DataHandler` in `_base`; snapshot returns `getReturnValue()`
+- `ValueOutput`: keeps last assigned value in `_target`
+- `SinkOutputHandler`: applies `SinkCommand`s to `_sink`; snapshot uses `snapshot()`/`getReturnValue()`/`finalize()` fallback
 
 ## Output facade/proxy model
 
-`createOutputFacade(...)` wraps outputs to preserve script/template API shape:
+`createOutputFacade(...)` preserves script/template API shape:
 
-- text/value are callable facades
-- data is dynamic-command facade (`output.someMethod(...)` -> command enqueue)
-- reads/writes for internal runtime fields are forwarded via `OUTPUT_API_PROPS`
+- `text`/`value` are callable facades
+- `data` is dynamic-command facade (`output.someMethod(...)`)
+- internal runtime fields are forwarded through `OUTPUT_API_PROPS`
 
-## Command model (`src/runtime/commands.js`)
+## Iterator-Based Chain Construction
 
-Flatten depends on polymorphic command behavior:
+## `BufferIterator` (`src/runtime/buffer-iterator.js`)
 
-- `cmd.apply(output)` performs runtime mutation and may throw
-- `ErrorCommand.apply(...)` throws stored errors
-- output commands (text/data/value/sink) mutate the output-specific accumulator state
+Each output owns one iterator. Iterator state:
 
-## Incremental Chain Construction
+- `output`
+- `stack`: traversal stack of `{ buffer, index }`
+- `_enteredBuffer`: current buffer used for enter/leave notifications
 
-## Progress model
+Traversal rules:
 
-Per handler, each buffer tracks:
+- advance only when `arr[nextIndex] != null`
+- if slot is a command: link via `prev.next = cmd`, update output chain endpoints
+- if slot is child buffer: push child and traverse it first
+- when current buffer is finished and stack depth > 1: pop to parent and continue
+- if no progress is possible: wait for `onSlotFilled` or `onBufferFinished`
 
-- `_lastChainedIndex` (default `-1`)
-- `_lastIndexIsChained` (default `true`)
-
-Interpretation:
-
-- if `_lastIndexIsChained === true`, next writable position to advance is `lastIdx + 1`
-- if `_lastIndexIsChained === false`, buffer is waiting for the current blocked position `lastIdx`
-
-`_tryAdvanceChain(handler, position)` enforces this expected-position rule.
-
-## `_advanceChainFrom(handler, fromIndex)`
-
-Algorithm:
-
-1. Ignore redundant full re-advances when already contiguous (`fromIndex <= lastIdx` and last is chained).
-2. Iterate forward through `arrays[handler]`.
-3. On `null` gap:
-- record blocked state (`lastIdx = gapIndex`, `lastIndexIsChained = false`)
-- stop
-4. On `Command`:
-- chain via `_chainCommand` (actually `_chainRange(cmd, cmd, prev, handler)`)
-- continue
-5. On child `CommandBuffer`:
-- if child is not fully chained for handler, record blocked state at this index and stop
-- if child is fully chained, splice child's `[firstCommand, lastCommand]` into parent chain and continue
-6. If end reached:
-- mark contiguous complete (`lastIdx = end`, `lastIndexIsChained = true`)
-- call `_checkFullyChained(handler)`
-
-## Parent/child completion signaling
-
-- Child calls `_notifyParentChained(handler)` when fully chained
-- Parent receives `_childBufferChained(handler, position)` and attempts to resume from that position if it matches expected progression
-
-## Buffer completion
-
-`markFinishedAndPatchLinks()`:
-
-- sets `finished = true`
-- runs `_checkFullyChained(handler)` for each handler known in `_outputs`
-- does not recursively finish children
-- does not perform legacy cross-boundary pointer patching
-
-`_checkFullyChained(handler)`:
-
-- if handler array does not exist:
-- fully chained only when `finished === true`, then notify parent
-- if array exists:
-- fully chained when `finished` and `lastIdx === arr.length - 1` and `lastIndexIsChained === true`, then notify parent
-
-`_isFullyChained(handler)` uses the same condition for child readiness checks.
+No per-buffer chain progress fields are used anymore.
 
 ## Flatten Execution
 
@@ -158,89 +113,97 @@ Algorithm:
 Validation:
 
 - output must be object/function
-- output must carry `_buffer`
-- `_buffer` must be `CommandBuffer`
+- output must have `_buffer`
+- `_buffer` must be a `CommandBuffer`
 
 Execution:
 
-- starts at `output._firstChainedCommand`
-- follows `.next` pointers only
-- calls `cmd.apply(output)` for each command
-- aggregates all thrown errors
-- unwraps `PoisonError` into constituent errors
-- detects linked-list cycles via `visited` set and records `RuntimeFatalError`
+- starts from `output._firstChainedCommand`
+- walks `.next`
+- calls `cmd.apply(output)`
+- aggregates all errors
+- unwraps `PoisonError` into underlying errors
+- detects chain cycles with a `visited` set and records `RuntimeFatalError`
 
 Result:
 
-- throws `PoisonError` if any errors were collected
+- throws `PoisonError` if any errors collected
 - otherwise returns `output.getCurrentResult()`
 
-There is no tree-walk command extraction in flatten path.
+Flatten does not tree-walk buffers.
 
 ## Compiler Interaction
 
-## Buffer Creation Contract
+## Buffer creation contract
 
-`CommandBuffer` is created in exactly three places:
+`CommandBuffer` creation points:
 
-- Root scope setup (`funcBegin` -> `createScopeRootBuffer(...)`)
-- Managed non-async scope-root blocks (`beginManagedBlock(..., createScopeRootBuffer=true)`)
-- Runtime async blocks (`AsyncState.asyncBlock(...)` when `usedOutputs` is non-empty)
+- root function setup (`funcBegin` -> `createScopeRootBuffer(...)`)
+- managed non-async scope-root blocks (`beginManagedBlock(..., createScopeRootBuffer=true)`)
+- runtime async blocks (`AsyncState.asyncBlock(...)` when `usedOutputs` is non-empty)
 
-Important constraints:
+Constraints:
 
-- `pushBuffer/popBuffer` are compiler-side id/stack tracking only.
-- `declareOutput(...)` does not create fallback buffers; it requires an active buffer.
+- `pushBuffer/popBuffer` are compiler-side identifier stack operations only
+- `declareOutput(...)` requires an active output buffer and throws if missing
 
-## Root and managed buffers
+## Async writes and slot reservation
 
-- Root setup uses `createScopeRootBuffer(...)` and declares default text output.
-- Managed non-async scope roots (macro/call/loop-local render scopes) also use `createScopeRootBuffer(...)`.
-- In async mode, these emit `runtime.createCommandBuffer(context, null)`; in sync mode they emit string buffers.
-- Async function end calls `currentBuffer.markFinishedAndPatchLinks()` before returning buffer.
+Compiler async output writes call `addAsyncArgsCommand(...)`, which:
 
-## Async writes
+- reserves a slot before async producer execution
+- fills the same slot on success
+- fills the same slot with `ErrorCommand` on handled errors
 
-`compile-buffer.js` emits `reserveSlot` before async blocks and uses `fillSlot` in both success and catch paths. This preserves positional ordering and guarantees each reserved slot is eventually materialized with either a command or an `ErrorCommand`.
+This preserves deterministic slot order while allowing out-of-order promise completion.
 
-## Nested async buffer nodes
+## Nested async buffers
 
-Nested async blocks do not create buffers in compiler code. Compiler routes writes through `frame._outputBuffer` and parent-child linkage is emitted with `addBuffer(...)` once used outputs are known.
+- compiler async blocks bind writes to `frame._outputBuffer`
+- parent-child linking is emitted with `parent.addBuffer(child, outputName)` once used outputs are known
+- `asyncBlockRender` async path also uses `frame._outputBuffer` (no extra scope-root buffer creation)
 
-`asyncBlockRender` async branch follows the same rule: it binds to `frame._outputBuffer` and does not call `createScopeRootBuffer(...)`.
+## Async lifecycle finalization
 
-## Async Lifecycle Finalization
+`AsyncState.asyncBlock(...)` finalizes owned block buffers in `.finally(...)`:
 
-`AsyncState.asyncBlock(...)` (`src/runtime/async-state.js`) finalizes block buffers in `.finally(...)`:
+- if `childFrame._ownsOutputBuffer`, call `childFrame._outputBuffer.markFinishedAndPatchLinks()`
+- runs on both success and failure
+- enables iterator progression through child-buffer slots on error paths
 
-- for block-owned buffers (`childFrame._ownsOutputBuffer === true`), `childFrame._outputBuffer.markFinishedAndPatchLinks()` executes on both success and failure
-- this allows parent chain progression through child-buffer slots even on error paths
+`finalizeUnobservedSinks(frame, context)` (used by compiled return paths):
+
+- scans lexical `frame._outputs` for sink outputs not yet finalized
+- calls `out.snapshot()` in a best-effort `try/catch`
+- intentionally ignores errors from unused sinks
+- currently does not await promise-returning sink snapshots
 
 ## Output Declaration and Lookup
 
 - `declareOutput(frame, outputName, outputType, context, initializer)`:
 - finds nearest output buffer (`findOutputBuffer`)
-- throws if no active output buffer is found
-- creates output object/facade
-- registers in lexical `frame._outputs`
-- registers in buffer `_outputs` map
-- stores sink handlers in `_outputHandlers` for sink-specific lifecycle
+- throws if no active output buffer exists
+- creates output instance/facade
+- stores in lexical `frame._outputs`
+- registers in buffer `_outputs`
+- stores sink handlers in `buffer._outputHandlers`
 
-- `getOutputHandler(frame, name)` is lexical lookup over `frame._outputs` chain.
+- `getOutputHandler(frame, name)` walks lexical `frame._outputs` chain.
 
 ## Guard/Clear Behavior
 
-`clearBuffer(...)`:
+`clearBuffer(...)` calls `patchLinksAfterClear(...)` for `CommandBuffer`:
 
-- clears handler arrays and resets indexes
-- resets per-handler chain progress and local endpoints
-- invokes `patchLinksAfterClear(buffer)` to repair links around cleared segments
+- clears selected handler arrays
+- resets writable lifecycle state (`finished`, `_finishRequested`, `_pendingReservedSlots`)
+- clears existing command `next` links for affected outputs
+- resets output chain endpoints and rebinds iterators
 
 ## Invariants
 
-- Buffer entries are commands or child command buffers; poison payloads are represented as `ErrorCommand` entries.
-- Chain endpoints consumed by flatten are owned by `Output` (`_firstChainedCommand`, `_lastChainedCommand`).
-- Chain construction occurs at write/attach/finish time, not during flatten.
-- Child buffers are finalized by their own async lifecycle.
-- Flatten is chain-walk only and applies commands against output accumulators.
-- Error handling during flatten is aggregate: all reachable commands are attempted, all errors are collected.
+- buffer entries are commands, child buffers, or reserved `null` slots
+- chain endpoints consumed by flatten are owned by output objects
+- chain construction is iterator-driven and event-driven (slot fill/finish), not performed by flatten
+- child buffers are finalized by their own lifecycle hooks
+- flatten is chain-walk only
+- flatten error handling is aggregate (all reachable commands attempted, all errors collected)
