@@ -4,6 +4,7 @@ const { flattenBuffer } = require('./flatten-buffer');
 const { TextCommand, ValueCommand, DataCommand, SinkCommand } = require('./commands');
 const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
+const { BufferIterator } = require('./buffer-iterator');
 
 class Output {
   constructor(frame, outputName, context, outputType = null) {
@@ -13,14 +14,16 @@ class Output {
     this._context = context;
     this._buffer = frame ? frame._outputBuffer : null;
 
-    // Incremental chain construction: track chain endpoints for this output
+    // Command chain endpoints used by flatten.
     this._firstChainedCommand = null;
     this._lastChainedCommand = null;
+    this._iterator = new BufferIterator(this);
 
     if (this._buffer && typeof this._buffer._registerOutput === 'function') {
       this._buffer._registerOutput(this._outputName, this);
     } else if (this._buffer && this._buffer._outputs instanceof Map) {
       this._buffer._outputs.set(this._outputName, this);
+      this._iterator.bindToCurrentBuffer();
     }
   }
 
@@ -226,6 +229,16 @@ class SinkOutputHandler {
     this._base = null;
     this._buffer = frame ? frame._outputBuffer : null;
     this._sinkFinalized = false;
+    this._firstChainedCommand = null;
+    this._lastChainedCommand = null;
+    this._iterator = new BufferIterator(this);
+
+    if (this._buffer && typeof this._buffer._registerOutput === 'function') {
+      this._buffer._registerOutput(this._outputName, this);
+    } else if (this._buffer && this._buffer._outputs instanceof Map) {
+      this._buffer._outputs.set(this._outputName, this);
+      this._iterator.bindToCurrentBuffer();
+    }
   }
 
   _resolveSink() {
@@ -317,6 +330,9 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
     buffer._registerOutput(outputName, output);
   } else if (buffer._outputs instanceof Map) {
     buffer._outputs.set(outputName, output);
+    if (output._iterator && typeof output._iterator.bindToCurrentBuffer === 'function') {
+      output._iterator.bindToCurrentBuffer();
+    }
   }
 
   if (outputType === 'sink') {

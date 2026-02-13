@@ -1,6 +1,6 @@
 
 const { isError } = require('./errors');
-const { getPosonedBufferErrors } = require('./buffer');
+const { getPosonedBufferErrors } = require('./command-buffer');
 
 const DEBUG_GUARD = typeof process !== 'undefined' &&
   process.env &&

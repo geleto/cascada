@@ -2,7 +2,7 @@
 
 var lib = require('../lib');
 const errors = require('./errors');
-const { CommandBuffer } = require('./buffer');
+const { CommandBuffer } = require('./command-buffer');
 const { flattenBuffer } = require('./flatten-buffer');
 
 function normalizeBufferValue(val) {

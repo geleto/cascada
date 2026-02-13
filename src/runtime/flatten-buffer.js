@@ -1,6 +1,6 @@
 'use strict';
 
-const { CommandBuffer } = require('./buffer');
+const { CommandBuffer } = require('./command-buffer');
 const { RuntimeFatalError, PoisonError, isPoisonError } = require('./errors');
 
 function flattenBuffer(output, errorContext = null) {
