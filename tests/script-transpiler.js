@@ -769,6 +769,17 @@ endif`;
       expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50) -%}');
     });
 
+    it('should convert sequence declaration and calls', () => {
+      const script = 'sequence db = makeDb()\nvar user = db.getUser(1)\nreturn user';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- sequence db = makeDb() -%}\n{%- var user = db.getUser(1) -%}\n{%- return user -%}');
+    });
+
+    it('should reject sequence property assignment syntax', () => {
+      const script = 'sequence db = makeDb()\ndb.state = "x"';
+      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/does not support property assignment/);
+    });
+
     it('should preserve comments on output operations', () => {
       const script = 'data data\ndata.user.name = "Alice" // Set user name';
       const template = scriptTranspiler.scriptToTemplate(script);

@@ -468,6 +468,27 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql(['a', 'b']);
     });
 
+    it('should support sink method calls through subpaths', async () => {
+      const context = {
+        makeLogger() {
+          return {
+            nested: {
+              msgs: [],
+              write(msg) { this.msgs.push(msg); }
+            },
+            snapshot() { return this.nested.msgs.slice(); }
+          };
+        }
+      };
+      const script = `
+        sink logger = makeLogger()
+        logger.nested.write("msg")
+        return logger.snapshot()
+      `;
+      const result = await render(script, context);
+      expect(result).to.eql(['msg']);
+    });
+
     it('should use getReturnValue when snapshot is missing', async () => {
       const context = {
         makeLogger() {
@@ -576,6 +597,24 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       });
     });
 
+    it('should return values from sequence subpath property reads', async () => {
+      const script = `
+        sequence db = makeDb()
+        var status = db.api.client.status
+        return status
+      `;
+      const result = await render(script, {
+        makeDb: () => ({
+          api: {
+            client: {
+              status: 'ready'
+            }
+          }
+        })
+      });
+      expect(result).to.be('ready');
+    });
+
     it('should support async sequence call return values', async () => {
       const script = `
         sequence db = makeDb()
@@ -654,6 +693,375 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         fail: () => createPoison([new Error('guard failure')])
       });
       expect(failure).to.eql(['begin', 'write:fail', 'rollback']);
+    });
+
+    it('should pass begin token to commit/rollback hooks', async () => {
+      const successScript = `
+        sequence tx = makeTx()
+        guard @tx
+          var value = tx.run("ok")
+        endguard
+        return tx.snapshot()
+      `;
+      const success = await render(successScript, {
+        makeTx: () => {
+          const events = [];
+          return {
+            begin() {
+              events.push('begin');
+              return 't1';
+            },
+            run(v) {
+              events.push('run:' + v);
+              return v;
+            },
+            commit(token) {
+              events.push('commit:' + token);
+            },
+            rollback(token) {
+              events.push('rollback:' + token);
+            },
+            snapshot() {
+              return events.slice();
+            }
+          };
+        }
+      });
+      expect(success).to.eql(['begin', 'run:ok', 'commit:t1']);
+
+      const failureScript = `
+        sequence tx = makeTx()
+        var value = "ok"
+        guard @tx, value
+          tx.run("ok")
+          value = fail()
+        endguard
+        return tx.snapshot()
+      `;
+      const failure = await render(failureScript, {
+        fail: () => createPoison([new Error('guard-fail')]),
+        makeTx: () => {
+          const events = [];
+          return {
+            begin() {
+              events.push('begin');
+              return 't2';
+            },
+            run(v) {
+              events.push('run:' + v);
+              return v;
+            },
+            commit(token) {
+              events.push('commit:' + token);
+            },
+            rollback(token) {
+              events.push('rollback:' + token);
+            },
+            snapshot() {
+              return events.slice();
+            }
+          };
+        }
+      });
+      expect(failure).to.eql(['begin', 'run:ok', 'rollback:t2']);
+    });
+
+    it('should skip sequence transaction hooks when they are missing', async () => {
+      const script = `
+        sequence db = makeDb()
+        var flag = "ok"
+        guard @db, flag
+          db.write("x")
+          flag = fail()
+        endguard
+        return { events: db.snapshot(), flag: flag }
+      `;
+      const result = await render(script, {
+        fail: () => createPoison([new Error('guard-fail')]),
+        makeDb: () => ({
+          events: [],
+          write(v) {
+            this.events.push('write:' + v);
+            return v;
+          },
+          snapshot() {
+            return this.events.slice();
+          }
+        })
+      });
+      expect(result.events).to.eql(['write:x']);
+      expect(result.flag).to.be('ok');
+    });
+
+    it('should treat begin/commit hook failures as guard errors', async () => {
+      const beginFailScript = `
+        sequence tx = makeTx()
+        var state = "ok"
+        guard @tx, state
+          state = "changed"
+          tx.run("x")
+        endguard
+        return { state: state, events: tx.snapshot() }
+      `;
+      const beginFail = await render(beginFailScript, {
+        makeTx: () => ({
+          events: [],
+          begin() { this.events.push('begin'); throw new Error('begin-fail'); },
+          run(v) { this.events.push('run:' + v); return v; },
+          snapshot() { return this.events.slice(); }
+        })
+      });
+      expect(beginFail.state).to.be('ok');
+      expect(beginFail.events).to.contain('begin');
+      expect(beginFail.events.some(e => e.indexOf('commit:') === 0)).to.be(false);
+
+      const commitFailScript = `
+        sequence tx = makeTx()
+        var state = "ok"
+        guard @tx, state
+          state = "changed"
+          tx.run("x")
+        endguard
+        return { state: state, events: tx.snapshot() }
+      `;
+      const commitFail = await render(commitFailScript, {
+        makeTx: () => ({
+          events: [],
+          begin() { this.events.push('begin'); return 't'; },
+          run(v) { this.events.push('run:' + v); return v; },
+          commit(token) { this.events.push('commit:' + token); throw new Error('commit-fail'); },
+          rollback(token) { this.events.push('rollback:' + token); },
+          snapshot() { return this.events.slice(); }
+        })
+      });
+      expect(commitFail.state).to.be('ok');
+      expect(commitFail.events).to.eql(['begin', 'run:x', 'commit:t', 'rollback:t']);
+    });
+
+    it('should unwind multi-handler sequence transactions in LIFO order', async () => {
+      const successEvents = [];
+      const successScript = `
+        sequence a = makeA()
+        sequence b = makeB()
+        guard @a, @b
+          a.run()
+          b.run()
+        endguard
+        return events
+      `;
+      const success = await render(successScript, {
+        events: successEvents,
+        makeA: function () {
+          const ev = successEvents;
+          return {
+            begin() { ev.push('a:begin'); return 'ta'; },
+            run() { ev.push('a:run'); },
+            commit(t) { ev.push('a:commit:' + t); },
+            rollback(t) { ev.push('a:rollback:' + t); }
+          };
+        },
+        makeB: function () {
+          const ev = successEvents;
+          return {
+            begin() { ev.push('b:begin'); return 'tb'; },
+            run() { ev.push('b:run'); },
+            commit(t) { ev.push('b:commit:' + t); },
+            rollback(t) { ev.push('b:rollback:' + t); }
+          };
+        }
+      });
+      expect(success).to.eql(['a:begin', 'b:begin', 'a:run', 'b:run', 'b:commit:tb', 'a:commit:ta']);
+
+      const failureEvents = [];
+      const failureScript = `
+        sequence a = makeA()
+        sequence b = makeB()
+        var gate = "ok"
+        guard @a, @b, gate
+          a.run()
+          b.run()
+          gate = fail()
+        endguard
+        return events
+      `;
+      const failure = await render(failureScript, {
+        events: failureEvents,
+        fail: () => createPoison([new Error('guard-fail')]),
+        makeA: function () {
+          const ev = failureEvents;
+          return {
+            begin() { ev.push('a:begin'); return 'ta'; },
+            run() { ev.push('a:run'); },
+            commit(t) { ev.push('a:commit:' + t); },
+            rollback(t) { ev.push('a:rollback:' + t); }
+          };
+        },
+        makeB: function () {
+          const ev = failureEvents;
+          return {
+            begin() { ev.push('b:begin'); return 'tb'; },
+            run() { ev.push('b:run'); },
+            commit(t) { ev.push('b:commit:' + t); },
+            rollback(t) { ev.push('b:rollback:' + t); }
+          };
+        }
+      });
+      expect(failure).to.eql(['a:begin', 'b:begin', 'a:run', 'b:run', 'b:rollback:tb', 'a:rollback:ta']);
+    });
+
+    it('should avoid deadlock for sequence call expressions while guard buffer is paused', async function () {
+      this.timeout(4000);
+      const script = `
+        data data
+        sequence db = makeDb()
+        var gate = "ok"
+        guard @data, gate
+          data.value = db.getValue()
+          gate = fail()
+        endguard
+        return { data: data.snapshot(), events: db.snapshot(), gate: gate }
+      `;
+
+      const run = render(script, {
+        fail: () => createPoison([new Error('guard-fail')]),
+        makeDb: () => ({
+          events: [],
+          async getValue() {
+            await delay(10);
+            this.events.push('call');
+            return 7;
+          },
+          snapshot() {
+            return this.events.slice();
+          }
+        })
+      });
+
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('timed out (possible paused-buffer deadlock)')), 2000)
+      );
+      const result = await Promise.race([run, timeout]);
+      expect(result.data.value).to.be(undefined);
+      expect(result.events).to.eql(['call']);
+      expect(result.gate).to.be('ok');
+    });
+
+    it('should avoid deadlock for sequence expressions in foreign async child buffers', async function () {
+      this.timeout(4000);
+      const script = `
+        sequence db = makeDb()
+        data out
+        var cond = asyncTrue()
+        if cond
+          out.value = db.next(5)
+        endif
+        return { out: out.snapshot(), events: db.snapshot() }
+      `;
+
+      const run = render(script, {
+        asyncTrue: async () => {
+          await delay(5);
+          return true;
+        },
+        makeDb: () => ({
+          events: [],
+          async next(v) {
+            await delay(10);
+            this.events.push('call:' + v);
+            return v * 2;
+          },
+          snapshot() {
+            return this.events.slice();
+          }
+        })
+      });
+
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('timed out (possible foreign-buffer deadlock)')), 2000)
+      );
+      const result = await Promise.race([run, timeout]);
+      expect(result.out.value).to.be(10);
+      expect(result.events).to.eql(['call:5']);
+    });
+  });
+
+  describe('Buffer Tree Ordering', function () {
+    it('should preserve source order for root output writes emitted from async child blocks (data)', async () => {
+      const script = `
+        data out
+        var cond = slowTrue()
+        if cond
+          out.items.push(slowValue("inner", 40))
+        endif
+        out.items.push(slowValue("outer", 5))
+        return out.snapshot()
+      `;
+      const result = await render(script, {
+        slowTrue: async () => {
+          await delay(15);
+          return true;
+        },
+        slowValue: (value, ms) => delay(ms, value)
+      });
+      expect(result).to.eql({ items: ['outer', 'inner'] });
+    });
+
+    it('should preserve source order for sink writes emitted from async child blocks', async () => {
+      const script = `
+        sink logger = makeLogger()
+        var cond = slowTrue()
+        if cond
+          logger.write(slowValue("inner", 40))
+        endif
+        logger.write(slowValue("outer", 5))
+        return logger.snapshot()
+      `;
+      const result = await render(script, {
+        slowTrue: async () => {
+          await delay(15);
+          return true;
+        },
+        slowValue: (value, ms) => delay(ms, value),
+        makeLogger: () => ({
+          msgs: [],
+          write(msg) { this.msgs.push(msg); },
+          snapshot() { return this.msgs.slice(); }
+        })
+      });
+      expect(result).to.eql(['outer', 'inner']);
+    });
+
+    it('should preserve sequence call order across async child and parent buffers with irregular timings', async () => {
+      const script = `
+        sequence db = makeDb()
+        data out
+        var cond = slowTrue()
+        if cond
+          out.first = db.next(slowValue("inner", 40))
+        endif
+        out.second = db.next(slowValue("outer", 5))
+        return { out: out.snapshot(), events: db.snapshot() }
+      `;
+      const result = await render(script, {
+        slowTrue: async () => {
+          await delay(15);
+          return true;
+        },
+        slowValue: (value, ms) => delay(ms, value),
+        makeDb: () => ({
+          events: [],
+          next(label) {
+            this.events.push(label);
+            return label;
+          },
+          snapshot() {
+            return this.events.slice();
+          }
+        })
+      });
+      expect(result.out.first).to.be('inner');
+      expect(result.out.second).to.be('outer');
+      expect(result.events).to.eql(['outer', 'inner']);
     });
   });
 

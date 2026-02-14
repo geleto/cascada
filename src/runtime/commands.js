@@ -237,11 +237,12 @@ class SinkCommand extends OutputCommand {
     super.apply(dispatchCtx);
     if (!dispatchCtx) return;
     const sink = dispatchCtx._sink;
-    const method = this.command ? (sink && sink[this.command]) : sink;
+    const target = resolveSubpath(sink, this.subpath);
+    const method = this.command ? (target && target[this.command]) : target;
     if (typeof method !== 'function') {
       throw new Error(`Sink method '${this.command}' not found`);
     }
-    method.apply(sink, this.arguments);
+    method.apply(target, this.arguments);
   }
 }
 
