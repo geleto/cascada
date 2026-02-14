@@ -20,8 +20,6 @@ const { isPoison, isPoisonError, PoisonError, handleError } = require('./errors'
 class Command {
   constructor(options = null) {
     const opts = options || {};
-    // Native command-chain metadata for buffer linking/snapshots.
-    this.next = null;
     this.resolved = false;
     this.promise = null;
     this.resolve = null;
