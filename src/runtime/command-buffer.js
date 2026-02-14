@@ -162,9 +162,6 @@ class CommandBuffer {
 
     if (isCommandBuffer(value)) {
       value.parent = this;
-      if (value._outputs !== this._outputs) {
-        value._outputs = this._outputs;
-      }
     }
 
     this._notifySlotFilled(outputName);
@@ -289,9 +286,6 @@ class CommandBuffer {
 
     if (isCommandBuffer(value)) {
       value.parent = this;
-      if (value._outputs !== this._outputs) {
-        value._outputs = this._outputs;
-      }
     }
 
     this._notifySlotFilled(outputName);
