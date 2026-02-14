@@ -719,7 +719,7 @@ class CompilerBase extends Obj {
           const propertyName = sequencePath[sequencePath.length - 1];
           if (outputDecl && outputDecl.type === 'sequence' && propertyName !== 'snapshot') {
             const subpath = sequencePath.slice(1, -1);
-            this.emit(`runtime.sequenceGet(frame, "${sequencePath[0]}", ${JSON.stringify(subpath)}, "${propertyName}")`);
+            this.buffer.emitAddSequenceGet(frame, sequencePath[0], propertyName, subpath, node);
             return;
           }
         }
@@ -801,10 +801,16 @@ class CompilerBase extends Obj {
         if (sequencePath && sequencePath.length >= 2) {
           const outputDecl = this.async._getDeclaredOutput(frame, sequencePath[0]);
           const methodName = sequencePath[sequencePath.length - 1];
+          if (outputDecl && methodName === 'snapshot' && sequencePath.length === 2) {
+            this.buffer.emitAddSnapshot(frame, sequencePath[0], node);
+            return;
+          }
           if (outputDecl && outputDecl.type === 'sequence' && methodName !== 'snapshot') {
             const subpath = sequencePath.slice(1, -1);
             this._compileAggregate(node.args, frame, '[', ']', true, false, function (resolvedArgs) {
-              this.emit(`return runtime.sequenceCall(frame, "${sequencePath[0]}", ${JSON.stringify(subpath)}, "${methodName}", ${resolvedArgs});`);
+              this.emit('return ');
+              this.buffer.emitAddSequenceCall(frame, sequencePath[0], methodName, subpath, resolvedArgs, node);
+              this.emit(';');
             });
             return;
           }

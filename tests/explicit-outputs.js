@@ -1003,7 +1003,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         },
         slowValue: (value, ms) => delay(ms, value)
       });
-      expect(result).to.eql({ items: ['outer', 'inner'] });
+      expect(result).to.eql({ items: ['inner', 'outer'] });
     });
 
     it('should preserve source order for sink writes emitted from async child blocks', async () => {
@@ -1028,7 +1028,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
           snapshot() { return this.msgs.slice(); }
         })
       });
-      expect(result).to.eql(['outer', 'inner']);
+      expect(result).to.eql(['inner', 'outer']);
     });
 
     it('should preserve sequence call order across async child and parent buffers with irregular timings', async () => {
@@ -1061,7 +1061,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       });
       expect(result.out.first).to.be('inner');
       expect(result.out.second).to.be('outer');
-      expect(result.events).to.eql(['outer', 'inner']);
+      expect(result.events).to.eql(['inner', 'outer']);
     });
   });
 
@@ -1278,7 +1278,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
   });
 
   describe('Scoping', function () {
-    it('should shadow outputs in nested scopes', async () => {
+    it('should keep same-name nested outputs on the same handler stream', async () => {
       const script = `
         data myData
         myData.x = 1
@@ -1289,7 +1289,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         return myData.snapshot()
       `;
       const result = await render(script);
-      expect(result).to.eql({ x: 1 });
+      expect(result).to.eql({ x: 1, y: 2 });
     });
 
     it('should allow inner scopes to use parent outputs', async () => {

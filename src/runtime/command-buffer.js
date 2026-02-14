@@ -1,7 +1,8 @@
 'use strict';
 
-const { ErrorCommand, TextCommand } = require('./commands');
+const { ErrorCommand, TextCommand, SequenceCallCommand, SequenceGetCommand, SnapshotCommand } = require('./commands');
 const { checkFinishedBuffer } = require('./checks');
+const { handleError } = require('./errors');
 
 class CommandBuffer {
   constructor(context, parent = null) {
@@ -21,6 +22,7 @@ class CommandBuffer {
     this._finishRequested = false;
     // Pause refcount used by guard-temporary execution gating.
     this._pauseRefCount = 0;
+    this._pausedHandlers = Object.create(null);
   }
 
   _registerOutput(handlerName, output) {
@@ -66,6 +68,13 @@ class CommandBuffer {
   }
 
   isPaused() {
+    if (arguments.length > 0) {
+      const outputName = arguments[0];
+      if (this._pauseRefCount > 0) {
+        return true;
+      }
+      return !!(outputName && this._pausedHandlers && this._pausedHandlers[outputName] > 0);
+    }
     return this._pauseRefCount > 0;
   }
 
@@ -75,6 +84,43 @@ class CommandBuffer {
       const before = current._pauseRefCount || 0;
       current._pauseRefCount = Math.max(0, before + delta);
       if (before > 0 && current._pauseRefCount === 0) {
+        current._notifyBufferResumed();
+      }
+      current = current.parent;
+    }
+  }
+
+  pauseHandlers(handlerNames) {
+    this._adjustHandlerPause(handlerNames, 1);
+  }
+
+  resumeHandlers(handlerNames) {
+    this._adjustHandlerPause(handlerNames, -1);
+  }
+
+  _adjustHandlerPause(handlerNames, delta) {
+    if (!Array.isArray(handlerNames) || handlerNames.length === 0) {
+      return;
+    }
+    let current = this;
+    while (current) {
+      let resumedAny = false;
+      for (const handlerName of handlerNames) {
+        if (!handlerName) {
+          continue;
+        }
+        const before = current._pausedHandlers[handlerName] || 0;
+        const after = Math.max(0, before + delta);
+        if (after === 0) {
+          delete current._pausedHandlers[handlerName];
+        } else {
+          current._pausedHandlers[handlerName] = after;
+        }
+        if (before > 0 && after === 0) {
+          resumedAny = true;
+        }
+      }
+      if (resumedAny) {
         current._notifyBufferResumed();
       }
       current = current.parent;
@@ -127,6 +173,66 @@ class CommandBuffer {
 
   addBuffer(buffer, outputName) {
     return this.add(buffer, outputName);
+  }
+
+  addSequenceGet(outputName, command, subpath = null, pos = null) {
+    const cmd = new SequenceGetCommand({
+      handler: outputName,
+      command: command || null,
+      subpath: Array.isArray(subpath) ? subpath : [],
+      pos: pos || { lineno: 0, colno: 0 },
+      withDeferredResult: true
+    });
+    this.add(cmd, outputName);
+    return cmd.promise;
+  }
+
+  addSequenceCall(outputName, command, subpath = null, args = null, pos = null) {
+    const cmd = new SequenceCallCommand({
+      handler: outputName,
+      command: command || null,
+      subpath: Array.isArray(subpath) ? subpath : [],
+      args: Array.isArray(args) ? args : [],
+      pos: pos || { lineno: 0, colno: 0 },
+      withDeferredResult: true
+    });
+    this.add(cmd, outputName);
+    return cmd.promise;
+  }
+
+  addSnapshot(outputName, pos = null) {
+    const cmd = new SnapshotCommand({
+      handler: outputName,
+      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
+    });
+
+    if (!this.finished) {
+      this.add(cmd, outputName);
+      return cmd.promise;
+    }
+
+    const output = (this._outputs instanceof Map) ? this._outputs.get(outputName) : null;
+    const path = (this._context && this._context.path) ? this._context.path : null;
+    if (!output) {
+      cmd.rejectResult(handleError(new Error(`CommandBuffer output '${outputName}' is unavailable`), cmd.pos.lineno, cmd.pos.colno, null, path));
+      return cmd.promise;
+    }
+
+    const applySnapshot = () => {
+      try {
+        cmd.apply(output);
+      } catch (err) {
+        const outputPath = output && output._context && output._context.path ? output._context.path : path;
+        cmd.rejectResult(handleError(err, cmd.pos.lineno, cmd.pos.colno, null, outputPath));
+      }
+      return cmd.promise;
+    };
+
+    if (!output._completionResolved && output._completionPromise) {
+      return Promise.resolve(output._completionPromise).then(applySnapshot);
+    }
+
+    return applySnapshot();
   }
 
   async addAsyncArgsCommand(outputName, producer, runtime, context, lineno, colno, errorContextString, cb = null) {

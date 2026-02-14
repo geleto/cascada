@@ -250,9 +250,10 @@ class CompileInheritance {
       this.emit.line('(env, context, frame, runtime, ' + this.compiler._makeCallback(id));
 
       if (this.compiler.asyncMode) {
-        //non-async node but in async mode -> use the proper buffer implementation
-        this.compiler.async.updateOutputUsage(frame, 'text');
-        this.emit(`${this.compiler.buffer.currentBuffer}.addText(${id}, {lineno: ${node.lineno}, colno: ${node.colno}}, "text");`);
+        //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
+        this.compiler.buffer.addToBuffer(node, frame, function () {
+          this.emit(id);
+        }, node, 'text', true);
       } else {
         this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
       }
@@ -377,9 +378,10 @@ class CompileInheritance {
 
     // Adding to buffer is synchronous here
     if (this.compiler.asyncMode) {
-      //non-async node but in async mode -> use the proper buffer implementation
-      this.compiler.async.updateOutputUsage(frame, 'text');
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.addText(result, {lineno: ${node.lineno}, colno: ${node.colno}}, "text");`);
+      //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
+      this.compiler.buffer.addToBuffer(node, frame, function () {
+        this.emit('result');
+      }, node, 'text', true);
     } else {
       this.emit.line(`${this.compiler.buffer.currentBuffer} += result;`);
     }

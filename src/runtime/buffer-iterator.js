@@ -69,7 +69,7 @@ class BufferIterator {
     while (this.stack.length > 0) {
       const cursor = this._currentCursor();
       const buffer = cursor.buffer;
-      if (buffer && buffer.isPaused()) {
+      if (buffer && buffer.isPaused(this.outputName)) {
         this._isAdvancing = false;
         return;
       }

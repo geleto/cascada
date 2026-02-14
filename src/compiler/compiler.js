@@ -86,10 +86,6 @@ class Compiler extends CompilerBase {
     var resolveArgs = node.resolveArgs && node.isAsync;
     const positionNode = args || node; // Prefer args position if available
 
-    if (this.asyncMode) {
-      this.async.updateOutputUsage(frame, 'text');
-    }
-
     let errorContextJson;
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
@@ -671,12 +667,15 @@ class Compiler extends CompilerBase {
     };
 
     const guardedOutputNames = resolveGuardedOutputNames();
-    const shouldPauseGuardBuffer = guardedOutputNames.some((name) => {
+    const pausedGuardHandlers = guardedOutputNames.filter((name) => {
       const decl = this.async._getDeclaredOutput(frame, name);
       return !(decl && decl.type === 'sequence');
     });
-    if (shouldPauseGuardBuffer) {
-      this.emit.insertLine(pauseLinePos, `${this.buffer.currentBuffer}.pause();`);
+    if (pausedGuardHandlers.length > 0) {
+      this.emit.insertLine(
+        pauseLinePos,
+        `${this.buffer.currentBuffer}.pauseHandlers(${JSON.stringify(pausedGuardHandlers)});`
+      );
     }
 
 
@@ -753,8 +752,8 @@ class Compiler extends CompilerBase {
     this.emit.line('}');
 
     this.emit.line('} finally {');
-    if (shouldPauseGuardBuffer) {
-      this.emit.line(`  ${this.buffer.currentBuffer}.resume();`);
+    if (pausedGuardHandlers.length > 0) {
+      this.emit.line(`  ${this.buffer.currentBuffer}.resumeHandlers(${JSON.stringify(pausedGuardHandlers)});`);
     }
     this.emit.line('}');
 
@@ -1201,18 +1200,12 @@ class Compiler extends CompilerBase {
       // autoescaped, so simply output it for optimization
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
-          if (this.asyncMode) {
-            this.async.updateOutputUsage(frame, 'text');
-          }
           // Position node is the TemplateData node itself
           this.buffer.addToBuffer(node, frame, function () {
             this.compileLiteral(child, frame);
           }, child, 'text', true); // Pass TemplateData as position
         }
       } else {
-        if (this.asyncMode) {
-          this.async.updateOutputUsage(frame, 'text');
-        }
         // Use the specific child expression node for position
         frame = this.buffer.asyncAddToBufferBegin(node, frame, child, 'text', 'text');
         const errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, child)) : '';

@@ -147,8 +147,6 @@ module.exports = {
   createSequenceOutput: output.createSequenceOutput,
   getOutputHandler: output.getOutputHandler,
   declareOutput: output.declareOutput,
-  sequenceCall: output.sequenceCall,
-  sequenceGet: output.sequenceGet,
   OutputCommand: commands.OutputCommand,
   TextCommand: commands.TextCommand,
   ValueCommand: commands.ValueCommand,

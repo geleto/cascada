@@ -4,15 +4,12 @@ const {
   TextCommand,
   ValueCommand,
   DataCommand,
-  SinkCommand,
-  SequenceCallCommand,
-  SequenceGetCommand,
-  SnapshotCommand
+  SinkCommand
 } = require('./commands');
 const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
-const { PoisonError, isPoisonError } = require('./errors');
+const { PoisonError, isPoisonError, handleError } = require('./errors');
 
 class Output {
   constructor(frame, outputName, context, outputType = null, target = undefined, base = null) {
@@ -78,15 +75,21 @@ class Output {
     throw new Error(`Output type '${this._outputType}' must implement getCurrentResult()`);
   }
 
-  _recordError(err) {
+  _recordError(err, cmd = null) {
     if (!err) return;
+    const pos = cmd && cmd.pos ? cmd.pos : { lineno: 0, colno: 0 };
+    const path = this._context && this._context.path ? this._context.path : null;
+
     if (isPoisonError(err)) {
       if (Array.isArray(err.errors) && err.errors.length > 0) {
+        // Preserve poison payload identity/messages as-is.
+        // This keeps deduplication semantics stable and avoids rewriting
+        // already-collected underlying errors.
         this._errors.push(...err.errors);
       }
       return;
     }
-    this._errors.push(err);
+    this._errors.push(handleError(err, pos.lineno, pos.colno, null, path));
   }
 
   _beforeApplyCommand(cmd) {
@@ -100,11 +103,11 @@ class Output {
       const result = cmd.apply(this);
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).catch((err) => {
-          this._recordError(err);
+          this._recordError(err, cmd);
         });
       }
     } catch (err) {
-      this._recordError(err);
+      this._recordError(err, cmd);
     }
   }
 
@@ -136,13 +139,8 @@ class Output {
   }
 
   snapshot() {
-    if (this._buffer && !this._buffer.finished) {
-      const cmd = new SnapshotCommand({
-        handler: this._outputName,
-        pos: { lineno: 0, colno: 0 }
-      });
-      this._buffer.add(cmd, this._outputName);
-      return cmd.promise;
+    if (this._buffer && typeof this._buffer.addSnapshot === 'function') {
+      return this._buffer.addSnapshot(this._outputName, { lineno: 0, colno: 0 });
     }
 
     try {
@@ -402,15 +400,21 @@ class SinkOutputHandler {
     return this._sinkReadyPromise;
   }
 
-  _recordError(err) {
+  _recordError(err, cmd = null) {
     if (!err) return;
+    const pos = cmd && cmd.pos ? cmd.pos : { lineno: 0, colno: 0 };
+    const path = this._context && this._context.path ? this._context.path : null;
+
     if (isPoisonError(err)) {
       if (Array.isArray(err.errors) && err.errors.length > 0) {
+        // Preserve poison payload identity/messages as-is.
+        // This keeps deduplication semantics stable and avoids rewriting
+        // already-collected underlying errors.
         this._errors.push(...err.errors);
       }
       return;
     }
-    this._errors.push(err);
+    this._errors.push(handleError(err, pos.lineno, pos.colno, null, path));
   }
 
   _applyCommand(cmd) {
@@ -420,7 +424,7 @@ class SinkOutputHandler {
         const snapshotResult = cmd.apply(this);
         if (snapshotResult && typeof snapshotResult.then === 'function') {
           return Promise.resolve(snapshotResult).catch((err) => {
-            this._recordError(err);
+            this._recordError(err, cmd);
           });
         }
         return snapshotResult;
@@ -433,11 +437,11 @@ class SinkOutputHandler {
         : apply();
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).catch((err) => {
-          this._recordError(err);
+          this._recordError(err, cmd);
         });
       }
     } catch (err) {
-      this._recordError(err);
+      this._recordError(err, cmd);
     }
   }
 
@@ -482,13 +486,8 @@ class SinkOutputHandler {
   }
 
   snapshot() {
-    if (this._buffer && !this._buffer.finished) {
-      const cmd = new SnapshotCommand({
-        handler: this._outputName,
-        pos: { lineno: 0, colno: 0 }
-      });
-      this._buffer.add(cmd, this._outputName);
-      return cmd.promise;
+    if (this._buffer && typeof this._buffer.addSnapshot === 'function') {
+      return this._buffer.addSnapshot(this._outputName, { lineno: 0, colno: 0 });
     }
 
     try {
@@ -638,53 +637,6 @@ function finalizeUnobservedSinks(frame, context) {
   return undefined;
 }
 
-function sequenceCall(frame, outputName, subpath, command, args) {
-  const cmd = new SequenceCallCommand({
-    handler: outputName,
-    command,
-    subpath: Array.isArray(subpath) ? subpath : [],
-    args: Array.isArray(args) ? args : [],
-    pos: { lineno: 0, colno: 0 },
-    withDeferredResult: true
-  });
-  return dispatchSequenceCommand(frame, outputName, cmd);
-}
-
-function sequenceGet(frame, outputName, subpath, command) {
-  const cmd = new SequenceGetCommand({
-    handler: outputName,
-    command,
-    subpath: Array.isArray(subpath) ? subpath : [],
-    pos: { lineno: 0, colno: 0 },
-    withDeferredResult: true
-  });
-  return dispatchSequenceCommand(frame, outputName, cmd);
-}
-
-function dispatchSequenceCommand(frame, outputName, command) {
-  const output = getOutputHandler(frame, outputName);
-  if (!output || output._outputType !== 'sequence') {
-    throw new Error(`'${outputName}' is not a declared sequence output`);
-  }
-
-  const activeBuffer = frame && frame._outputBuffer ? frame._outputBuffer : null;
-  const outputBuffer = output._buffer || null;
-  const canBuffer = !!(
-    activeBuffer &&
-    outputBuffer &&
-    activeBuffer === outputBuffer &&
-    typeof outputBuffer.isPaused === 'function' &&
-    !outputBuffer.isPaused()
-  );
-
-  if (canBuffer) {
-    outputBuffer.add(command, outputName);
-    return command.promise;
-  }
-
-  return command.apply(output);
-}
-
 module.exports = {
   Output,
   DataOutput,
@@ -698,9 +650,7 @@ module.exports = {
   getOutputHandler,
   declareOutput,
   findOutputBuffer,
-  finalizeUnobservedSinks,
-  sequenceCall,
-  sequenceGet
+  finalizeUnobservedSinks
 };
 
 function cloneSnapshotValue(value) {

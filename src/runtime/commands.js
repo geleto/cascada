@@ -1,6 +1,6 @@
 'use strict';
 
-const { isPoison, PoisonError } = require('./errors');
+const { isPoison, isPoisonError, PoisonError, handleError } = require('./errors');
 
 /**
  * Command classes for the script-mode output pipeline.
@@ -366,8 +366,13 @@ class SnapshotCommand extends Command {
   }
 
   apply(dispatchCtx) {
+    const path = dispatchCtx && dispatchCtx._context ? dispatchCtx._context.path : null;
+    const contextualize = (err) => (isPoisonError(err)
+      ? err
+      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+
     if (!dispatchCtx || typeof dispatchCtx._resolveSnapshotCommandResult !== 'function') {
-      this.rejectResult(new Error('SnapshotCommand requires an output handler with _resolveSnapshotCommandResult()'));
+      this.rejectResult(contextualize(new Error('SnapshotCommand requires an output handler with _resolveSnapshotCommandResult()')));
       return;
     }
 
@@ -379,13 +384,13 @@ class SnapshotCommand extends Command {
             this.resolveResult(value);
           },
           (err) => {
-            this.rejectResult(err);
+            this.rejectResult(contextualize(err));
           }
         );
       }
       this.resolveResult(result);
     } catch (err) {
-      this.rejectResult(err);
+      this.rejectResult(contextualize(err));
     }
   }
 }

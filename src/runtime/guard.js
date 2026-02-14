@@ -49,7 +49,8 @@ function initOutputSnapshots(frame, handlerNames = null) {
     outputBuffer &&
     outputBuffer.parent &&
     typeof outputBuffer.parent.isPaused === 'function' &&
-    outputBuffer.parent.isPaused()
+    Array.isArray(targets) &&
+    targets.some((handlerName) => outputBuffer.parent.isPaused(handlerName))
   );
 
   if (bufferScopedOnly) {

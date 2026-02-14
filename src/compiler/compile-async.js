@@ -161,31 +161,6 @@ module.exports = class CompileAsync {
     }
   }
 
-  updateOutputUsage(frame, outputName) {
-    if (!outputName) {
-      return;
-    }
-
-    let df = frame;
-    while (df) {
-      if (df.declaredOutputs && df.declaredOutputs.has(outputName)) {
-        break;
-      }
-      // Outputs follow lexical scoping only (same as variables).
-      df = df.parent;
-    }
-
-    let current = frame;
-    while (current) {
-      current.usedOutputs = current.usedOutputs || new Set();
-      current.usedOutputs.add(outputName);
-      if (current === df) {
-        break;
-      }
-      current = current.parent;
-    }
-  }
-
   _addDeclaredOutput(frame, name, outputType, initializer = null, node = null) {
     validateDeclarationScope(frame, name, this.compiler, node);
     frame.declaredOutputs = frame.declaredOutputs || new Map();

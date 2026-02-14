@@ -266,7 +266,7 @@ module.exports = class CompileEmit {
     frame = frame.push(false, false);//unscoped frame for the async block
     // asyncBlockRender always materializes text output; ensure async block
     // allocates an output buffer via usedOutputs.
-    this.compiler.async.updateOutputUsage(frame, 'text');
+    //this.compiler.buffer.registerOutputUsage(frame, 'text');
     this.line(`astate.asyncBlock(async (astate, frame) =>{`);
 
     const id = this.compiler._tmpid();
