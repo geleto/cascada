@@ -322,6 +322,12 @@ class CompilerBase extends Obj {
     let name = node.value;
     const declaredOutput = this.async._getDeclaredOutput(frame, name);
     if (declaredOutput && !this._isDeclared(frame, name)) {
+      if (declaredOutput.type === 'value') {
+        // Value outputs are read as point-in-stream snapshots when used as symbols.
+        // This makes `x` equivalent to `x.snapshot()` in expressions.
+        this.buffer.emitAddSnapshot(frame, name, node);
+        return;
+      }
       // Reading an output symbol (e.g. myData.snapshot()) should not allocate
       // async-block output buffers for this handler. Only writes/commands do that.
       this.emit(`runtime.getOutput(frame, "${name}")`);

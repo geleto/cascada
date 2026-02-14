@@ -185,6 +185,66 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be(100);
     });
 
+    it('should implicitly snapshot value outputs in expressions', async () => {
+      const script = `
+        value x
+        x = 5
+        var y = x * 2
+        return y
+      `;
+      const result = await render(script);
+      expect(result).to.be(10);
+    });
+
+    it('should allow value output initializer and use it in expressions', async () => {
+      const script = `
+        value x = 3
+        var y = x + 4
+        return y
+      `;
+      const result = await render(script);
+      expect(result).to.be(7);
+    });
+
+    it('should use initialized value output across chained expressions', async () => {
+      const script = `
+        value score = 10
+        var boosted = score + 5
+        var finalScore = boosted * score
+        return finalScore
+      `;
+      const result = await render(script);
+      expect(result).to.be(150);
+    });
+
+    it('should support implicit value snapshots inside for loops', async () => {
+      const script = `
+        value current = 0
+        for i in [1, 2, 3]
+          current = i * 10
+        endfor
+        var doubled = current * 2
+        return { current: current, doubled: doubled }
+      `;
+      const result = await render(script);
+      expect(result).to.eql({ current: 30, doubled: 60 });
+    });
+
+    it('should support implicit value snapshots inside while loops', async () => {
+      const script = `
+        value last = 0
+        var i = 1
+        while i <= 4
+          last = i
+          i = i + 1
+        endwhile
+        var plus = last + 6
+        return { last: last, plus: plus }
+      `;
+      const result = await render(script);
+      expect(result).to.eql({ last: 4, plus: 10 });
+    });
+
     it('should handle null and undefined in data output', async () => {
       const context = { undef: undefined };
       const script = `
@@ -1446,16 +1506,13 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       }
     });
 
-    it('should throw when value outputs have initializers', async () => {
+    it('should allow value outputs with initializers', async () => {
       const script = `
         value result = 1
+        return result
       `;
-      try {
-        await render(script);
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('cannot have initializers');
-      }
+      const result = await render(script);
+      expect(result).to.be(1);
     });
 
     it('should throw when sink outputs have no initializer', async () => {

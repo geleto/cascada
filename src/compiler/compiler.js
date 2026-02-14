@@ -1529,7 +1529,7 @@ class Compiler extends CompilerBase {
     }
     const name = nameNode.value;
 
-    if ((outputType === 'data' || outputType === 'text' || outputType === 'value') && node.initializer) {
+    if ((outputType === 'data' || outputType === 'text') && node.initializer) {
       this.fail(`${outputType} outputs cannot have initializers`, node.lineno, node.colno, node);
     }
     if ((outputType === 'sink' || outputType === 'sequence') && !node.initializer) {
@@ -1545,6 +1545,16 @@ class Compiler extends CompilerBase {
       this.emit('null');
     }
     this.emit.line(');');
+
+    if (outputType === 'value' && node.initializer) {
+      const initialValueId = this._tmpid();
+      const initCommandId = this._tmpid();
+      this.emit(`let ${initialValueId} = `);
+      this._compileAwaitedExpression(node.initializer, frame, true);
+      this.emit.line(';');
+      this.emit.line(`let ${initCommandId} = new runtime.ValueCommand({ handler: "${name}", args: [${initialValueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} });`);
+      this.buffer.emitAddCommand(frame, name, initCommandId, node);
+    }
   }
 
 

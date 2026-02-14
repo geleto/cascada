@@ -753,6 +753,13 @@ class Parser extends Obj {
       initializer = this.parseExpression();
     } else {
       if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
+        if (outputType === 'value') {
+          initializer = this.parseExpression();
+        } else {
+          this.fail(`parseOutputDeclaration: ${outputType} outputs cannot have initializers`, tag.lineno, tag.colno);
+        }
+      }
+      if ((outputType === 'data' || outputType === 'text') && initializer) {
         this.fail(`parseOutputDeclaration: ${outputType} outputs cannot have initializers`, tag.lineno, tag.colno);
       }
     }
