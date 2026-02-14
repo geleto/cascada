@@ -546,223 +546,223 @@ class Compiler extends CompilerBase {
 
     try {
 
-    // 2. Link for explicit reversion (optional, if we want to support manual revert)
-    this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-    const pauseLinePos = this.codebuf.length;
-    this.emit.line('');
-    this.emit.line('try {');
-    let guardInitLinePos = null;
-    let guardRepairLinePos = null;
-    let outputGuardInitLinePos = null;
-    const outputGuardStateVar = needsOutputSnapshot ? this._tmpid() : null;
-    if (outputGuardStateVar) {
-      if (handlerTargets) {
-        this.emit.line(`const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(handlerTargets)});`);
-      } else {
-        outputGuardInitLinePos = this.codebuf.length;
-        this.emit.line('');
-      }
-    }
-    if (guardStateVar) {
-      if (variableTargets === '*') {
-        guardInitLinePos = this.codebuf.length;
-        this.emit.line(``);
-      } else {
-        this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)});`);
-      }
-    }
-    // Sequence lock repair must run before guard body starts scheduling work.
-    guardRepairLinePos = this.codebuf.length;
-    this.emit.line('');
-
-    // 3. Compile Body
-    this.compile(node.body, frame);
-
-    // Resolve and Validate Sequence Targets
-    // We do this by checking frame.writeCounts which contains all variables and sequence locks modified in the block
-    const resolvedSequenceTargets = new Set();
-    const modifiedLocks = new Set();
-
-    if (frame.writeCounts) {
-      for (const key of Object.keys(frame.writeCounts)) {
-        if (key.startsWith('!')) {
-          modifiedLocks.add(key);
+      // 2. Link for explicit reversion (optional, if we want to support manual revert)
+      this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+      const pauseLinePos = this.codebuf.length;
+      this.emit.line('');
+      this.emit.line('try {');
+      let guardInitLinePos = null;
+      let guardRepairLinePos = null;
+      let outputGuardInitLinePos = null;
+      const outputGuardStateVar = needsOutputSnapshot ? this._tmpid() : null;
+      if (outputGuardStateVar) {
+        if (handlerTargets) {
+          this.emit.line(`const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(handlerTargets)});`);
+        } else {
+          outputGuardInitLinePos = this.codebuf.length;
+          this.emit.line('');
         }
       }
-    }
-
-    if (node.sequenceTargets && node.sequenceTargets.length > 0) {
-      for (const target of node.sequenceTargets) {
-        let matchFound = false;
-
-        if (target === '!') {
-          // Global guard: all modified sequence locks
-          for (const lock of modifiedLocks) {
-            resolvedSequenceTargets.add(lock);
-            matchFound = true;
-          }
+      if (guardStateVar) {
+        if (variableTargets === '*') {
+          guardInitLinePos = this.codebuf.length;
+          this.emit.line(``);
         } else {
-          // Specific target: lock! -> !lock
-          // target ends with '!' as per parser
-          const baseKey = '!' + target.slice(0, -1);
+          this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)});`);
+        }
+      }
+      // Sequence lock repair must run before guard body starts scheduling work.
+      guardRepairLinePos = this.codebuf.length;
+      this.emit.line('');
 
-          for (const lock of modifiedLocks) {
-            // Check for exact match or child match (e.g. !lock matching !lock or !lock!sub)
-            // Also include read-lock keys (suffix '~') for the same base.
-            if (lock === baseKey || lock.startsWith(baseKey + '!') || lock.startsWith(baseKey + '~')) {
+      // 3. Compile Body
+      this.compile(node.body, frame);
+
+      // Resolve and Validate Sequence Targets
+      // We do this by checking frame.writeCounts which contains all variables and sequence locks modified in the block
+      const resolvedSequenceTargets = new Set();
+      const modifiedLocks = new Set();
+
+      if (frame.writeCounts) {
+        for (const key of Object.keys(frame.writeCounts)) {
+          if (key.startsWith('!')) {
+            modifiedLocks.add(key);
+          }
+        }
+      }
+
+      if (node.sequenceTargets && node.sequenceTargets.length > 0) {
+        for (const target of node.sequenceTargets) {
+          let matchFound = false;
+
+          if (target === '!') {
+            // Global guard: all modified sequence locks
+            for (const lock of modifiedLocks) {
               resolvedSequenceTargets.add(lock);
               matchFound = true;
             }
-          }
+          } else {
+            // Specific target: lock! -> !lock
+            // target ends with '!' as per parser
+            const baseKey = '!' + target.slice(0, -1);
 
-          if (!matchFound) {
-            this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
+            for (const lock of modifiedLocks) {
+              // Check for exact match or child match (e.g. !lock matching !lock or !lock!sub)
+              // Also include read-lock keys (suffix '~') for the same base.
+              if (lock === baseKey || lock.startsWith(baseKey + '!') || lock.startsWith(baseKey + '~')) {
+                resolvedSequenceTargets.add(lock);
+                matchFound = true;
+              }
+            }
+
+            if (!matchFound) {
+              this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
+            }
           }
+        }
+
+        if (resolvedSequenceTargets.size > 0) {
+          // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
+          // Note: guardStateVar is guaranteed to exist because variableTargets OR resolvedSequenceTargets > 0 triggers init
+          this.emit.insertLine(
+            guardRepairLinePos,
+            `runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
+          );
         }
       }
 
-      if (resolvedSequenceTargets.size > 0) {
-        // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
-        // Note: guardStateVar is guaranteed to exist because variableTargets OR resolvedSequenceTargets > 0 triggers init
+
+      let finalVariableTargets = variableTargets;
+      if (variableTargets === '*') {
+        const writtenVars = frame.writeCounts
+          ? Object.keys(frame.writeCounts).filter((key) => !key.startsWith('!'))
+          : [];
+        finalVariableTargets = writtenVars;
+        if (guardStateVar && guardInitLinePos !== null) {
+          this.emit.insertLine(guardInitLinePos,
+            `const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(writtenVars)});`);
+        }
+      }
+
+      validateGuardVariablesModified(finalVariableTargets, frame, this, node);
+
+      if (finalVariableTargets && finalVariableTargets.length > 0) {
+        for (const varName of finalVariableTargets) {
+          this.async.updateFrameWrites(frame, varName);
+        }
+      }
+
+      if (outputGuardStateVar && outputGuardInitLinePos !== null) {
+        const usedOutputs = frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
         this.emit.insertLine(
-          guardRepairLinePos,
-          `runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
+          outputGuardInitLinePos,
+          `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(usedOutputs)});`
         );
       }
-    }
 
-
-    let finalVariableTargets = variableTargets;
-    if (variableTargets === '*') {
-      const writtenVars = frame.writeCounts
-        ? Object.keys(frame.writeCounts).filter((key) => !key.startsWith('!'))
-        : [];
-      finalVariableTargets = writtenVars;
-      if (guardStateVar && guardInitLinePos !== null) {
-        this.emit.insertLine(guardInitLinePos,
-          `const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(writtenVars)});`);
-      }
-    }
-
-    validateGuardVariablesModified(finalVariableTargets, frame, this, node);
-
-    if (finalVariableTargets && finalVariableTargets.length > 0) {
-      for (const varName of finalVariableTargets) {
-        this.async.updateFrameWrites(frame, varName);
-      }
-    }
-
-    if (outputGuardStateVar && outputGuardInitLinePos !== null) {
-      const usedOutputs = frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
-      this.emit.insertLine(
-        outputGuardInitLinePos,
-        `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(usedOutputs)});`
-      );
-    }
-
-    const resolveGuardedOutputNames = () => {
-      if (!needsOutputSnapshot) {
-        return [];
-      }
-      if (handlerTargets && handlerTargets.length > 0) {
-        return handlerTargets.slice();
-      }
-      return frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
-    };
-
-    const guardedOutputNames = resolveGuardedOutputNames();
-    const pausedGuardHandlers = guardedOutputNames.filter((name) => {
-      const decl = this.async._getDeclaredOutput(frame, name);
-      return !(decl && decl.type === 'sequence');
-    });
-    if (pausedGuardHandlers.length > 0) {
-      this.emit.insertLine(
-        pauseLinePos,
-        `${this.buffer.currentBuffer}.pauseHandlers(${JSON.stringify(pausedGuardHandlers)});`
-      );
-    }
-
-
-    // 4. Inject Logic BEFORE closing the block
-    // We need to wait for all inner async operations to complete so the buffer is fully populated
-    // We wait for 1 because the current block itself is an active closure
-    this.emit.line('await astate.waitAllClosures(1);');
-
-    // 5. Check Buffer/Variables for Poison
-    const guardErrorsVar = this._tmpid();
-
-    // Calculate allowed handlers for poison detection based on selectors
-    let allowedBufferHandlers = '[]';
-
-    // If no specific selectors are provided (neither variables nor handlers),
-    // it functions as a global guard (catch everything).
-    if (!hasAnySelectors || handlerTargetsAll) {
-      allowedBufferHandlers = 'null';
-    } else if (handlerTargets) {
-      allowedBufferHandlers = JSON.stringify(handlerTargets);
-    }
-
-    this.emit.line(`const ${guardErrorsVar} = await runtime.guard.getErrors(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${allowedBufferHandlers});`);
-    if (outputGuardStateVar) {
-      const guardCommitErrorsVar = this._tmpid();
-      this.emit.line(`let ${guardCommitErrorsVar} = [];`);
-      this.emit.line(`if (${guardErrorsVar}.length === 0) {`);
-      this.emit.line(`  ${guardCommitErrorsVar} = await runtime.guard.commitOutputTransactions(${outputGuardStateVar});`);
-      this.emit.line(`  if (${guardCommitErrorsVar}.length > 0) { ${guardErrorsVar}.push(...${guardCommitErrorsVar}); }`);
-      this.emit.line('}');
-    }
-
-    this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
-    if (outputGuardStateVar) {
-      const rollbackErrorsVar = this._tmpid();
-      this.emit.line(`  const ${rollbackErrorsVar} = await runtime.guard.restoreOutputs(${this.buffer.currentBuffer}, ${outputGuardStateVar});`);
-      this.emit.line(`  if (${rollbackErrorsVar}.length > 0) { ${guardErrorsVar}.push(...${rollbackErrorsVar}); }`);
-    } else if (handlerTargetsAll || !hasAnySelectors) {
-      this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer});`);
-    } else if (handlerTargets) {
-      this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
-    }
-
-    if (guardStateVar) {
-      this.emit.line(`  runtime.guard.complete(frame, ${guardStateVar}, true);`);
-    }
-
-    let recoveryWriteCounts;
-    if (node.recoveryBody) {
-      this.emit.asyncBlock(node, frame, true, (f) => {
-        if (node.errorVar) {
-          // Declare the error variable in the compiled scope
-          this._addDeclaredVar(f, node.errorVar);
-          this.async.updateFrameWrites(f, node.errorVar);
-          // Directly set the variable in the frame.
-          // Note: using 'true' for resolveUp is irrelevant here as it's a new variable in new scope (if logic holds),
-          // but we set it in 'f' specifically.
-          this.emit.line(`frame.set('${node.errorVar}', new runtime.PoisonError(${guardErrorsVar}));`);
+      const resolveGuardedOutputNames = () => {
+        if (!needsOutputSnapshot) {
+          return [];
         }
-        this.compile(node.recoveryBody, f);
-        recoveryWriteCounts = this.async.countsTo1(f.writeCounts);
+        if (handlerTargets && handlerTargets.length > 0) {
+          return handlerTargets.slice();
+        }
+        return frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
+      };
+
+      const guardedOutputNames = resolveGuardedOutputNames();
+      const pausedGuardHandlers = guardedOutputNames.filter((name) => {
+        const decl = this.async._getDeclaredOutput(frame, name);
+        return !(decl && decl.type === 'sequence');
       });
-    }
+      if (pausedGuardHandlers.length > 0) {
+        this.emit.insertLine(
+          pauseLinePos,
+          `${this.buffer.currentBuffer}.pauseHandlers(${JSON.stringify(pausedGuardHandlers)});`
+        );
+      }
 
-    this.emit.line('} else {');
 
-    if (recoveryWriteCounts) {
-      this.emit.line(`frame.skipBranchWrites(${JSON.stringify(recoveryWriteCounts)});`);
-    }
+      // 4. Inject Logic BEFORE closing the block
+      // We need to wait for all inner async operations to complete so the buffer is fully populated
+      // We wait for 1 because the current block itself is an active closure
+      this.emit.line('await astate.waitAllClosures(1);');
 
-    if (guardStateVar) {
-      this.emit.line(`  runtime.guard.complete(frame, ${guardStateVar}, false);`);
-    }
-    this.emit.line('}');
+      // 5. Check Buffer/Variables for Poison
+      const guardErrorsVar = this._tmpid();
 
-    this.emit.line('} finally {');
-    if (pausedGuardHandlers.length > 0) {
-      this.emit.line(`  ${this.buffer.currentBuffer}.resumeHandlers(${JSON.stringify(pausedGuardHandlers)});`);
-    }
-    this.emit.line('}');
+      // Calculate allowed handlers for poison detection based on selectors
+      let allowedBufferHandlers = '[]';
 
-    // 6. End Async Block
-    frame = this.buffer.asyncBufferNodeEnd(node, frame, true, false, node);
+      // If no specific selectors are provided (neither variables nor handlers),
+      // it functions as a global guard (catch everything).
+      if (!hasAnySelectors || handlerTargetsAll) {
+        allowedBufferHandlers = 'null';
+      } else if (handlerTargets) {
+        allowedBufferHandlers = JSON.stringify(handlerTargets);
+      }
+
+      this.emit.line(`const ${guardErrorsVar} = await runtime.guard.getErrors(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${allowedBufferHandlers});`);
+      if (outputGuardStateVar) {
+        const guardCommitErrorsVar = this._tmpid();
+        this.emit.line(`let ${guardCommitErrorsVar} = [];`);
+        this.emit.line(`if (${guardErrorsVar}.length === 0) {`);
+        this.emit.line(`  ${guardCommitErrorsVar} = await runtime.guard.commitOutputTransactions(${outputGuardStateVar});`);
+        this.emit.line(`  if (${guardCommitErrorsVar}.length > 0) { ${guardErrorsVar}.push(...${guardCommitErrorsVar}); }`);
+        this.emit.line('}');
+      }
+
+      this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
+      if (outputGuardStateVar) {
+        const rollbackErrorsVar = this._tmpid();
+        this.emit.line(`  const ${rollbackErrorsVar} = await runtime.guard.restoreOutputs(${this.buffer.currentBuffer}, ${outputGuardStateVar});`);
+        this.emit.line(`  if (${rollbackErrorsVar}.length > 0) { ${guardErrorsVar}.push(...${rollbackErrorsVar}); }`);
+      } else if (handlerTargetsAll || !hasAnySelectors) {
+        this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer});`);
+      } else if (handlerTargets) {
+        this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
+      }
+
+      if (guardStateVar) {
+        this.emit.line(`  runtime.guard.complete(frame, ${guardStateVar}, true);`);
+      }
+
+      let recoveryWriteCounts;
+      if (node.recoveryBody) {
+        this.emit.asyncBlock(node, frame, true, (f) => {
+          if (node.errorVar) {
+            // Declare the error variable in the compiled scope
+            this._addDeclaredVar(f, node.errorVar);
+            this.async.updateFrameWrites(f, node.errorVar);
+            // Directly set the variable in the frame.
+            // Note: using 'true' for resolveUp is irrelevant here as it's a new variable in new scope (if logic holds),
+            // but we set it in 'f' specifically.
+            this.emit.line(`frame.set('${node.errorVar}', new runtime.PoisonError(${guardErrorsVar}));`);
+          }
+          this.compile(node.recoveryBody, f);
+          recoveryWriteCounts = this.async.countsTo1(f.writeCounts);
+        });
+      }
+
+      this.emit.line('} else {');
+
+      if (recoveryWriteCounts) {
+        this.emit.line(`frame.skipBranchWrites(${JSON.stringify(recoveryWriteCounts)});`);
+      }
+
+      if (guardStateVar) {
+        this.emit.line(`  runtime.guard.complete(frame, ${guardStateVar}, false);`);
+      }
+      this.emit.line('}');
+
+      this.emit.line('} finally {');
+      if (pausedGuardHandlers.length > 0) {
+        this.emit.line(`  ${this.buffer.currentBuffer}.resumeHandlers(${JSON.stringify(pausedGuardHandlers)});`);
+      }
+      this.emit.line('}');
+
+      // 6. End Async Block
+      frame = this.buffer.asyncBufferNodeEnd(node, frame, true, false, node);
     } finally {
       this.guardDepth = previousGuardDepth;
     }
@@ -1547,13 +1547,19 @@ class Compiler extends CompilerBase {
     this.emit.line(');');
 
     if (outputType === 'value' && node.initializer) {
-      const initialValueId = this._tmpid();
-      const initCommandId = this._tmpid();
-      this.emit(`let ${initialValueId} = `);
-      this._compileAwaitedExpression(node.initializer, frame, true);
-      this.emit.line(';');
-      this.emit.line(`let ${initCommandId} = new runtime.ValueCommand({ handler: "${name}", args: [${initialValueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} });`);
-      this.buffer.emitAddCommand(frame, name, initCommandId, node);
+      const callName = new nodes.Symbol(node.lineno, node.colno, name);
+      const callArgs = new nodes.NodeList(
+        node.initializer.lineno || node.lineno,
+        node.initializer.colno || node.colno,
+        [node.initializer]
+      );
+      callArgs.isAsync = !!node.initializer.isAsync;
+      const callNode = new nodes.FunCall(node.lineno, node.colno, callName, callArgs);
+      callNode.isAsync = !!node.initializer.isAsync;
+
+      const initCommandNode = new nodes.OutputCommand(node.lineno, node.colno, callNode);
+      initCommandNode.isAsync = !!node.initializer.isAsync;
+      this.buffer.compileOutputCommand(initCommandNode, frame);
     }
   }
 

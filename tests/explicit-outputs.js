@@ -206,6 +206,18 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be(7);
     });
 
+    it('should support async value initializer in expressions', async () => {
+      const script = `
+        value x = delayed(11, 20)
+        var y = x * 3
+        return y
+      `;
+      const result = await render(script, {
+        delayed: (v, ms) => delay(ms, v)
+      });
+      expect(result).to.be(33);
+    });
+
     it('should use initialized value output across chained expressions', async () => {
       const script = `
         value score = 10
@@ -228,6 +240,27 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       `;
       const result = await render(script);
       expect(result).to.eql({ current: 30, doubled: 60 });
+    });
+
+    it('should preserve source-order value result when parallel loop writes resolve out of order', async () => {
+      const finished = [];
+      const script = `
+        value current = 0
+        for item in [{v: 1, d: 30}, {v: 2, d: 5}, {v: 3, d: 20}]
+          current = delayed(item.v, item.d)
+        endfor
+        var doubled = current * 2
+        return { current: current, doubled: doubled }
+      `;
+      const result = await render(script, {
+        delayed: (v, ms) => delay(ms, v).then((resolved) => {
+          finished.push(resolved);
+          return resolved;
+        })
+      });
+
+      expect(finished).to.eql([2, 3, 1]);
+      expect(result).to.eql({ current: 3, doubled: 6 });
     });
 
     it('should support implicit value snapshots inside while loops', async () => {
