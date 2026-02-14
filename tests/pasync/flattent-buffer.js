@@ -32,7 +32,7 @@ if (typeof require !== 'undefined') {
   expectAsyncError = nunjucks.util.expectAsyncError;
 }
 
-describe('output.snapshot', function () {
+describe('output.finalSnapshot', function () {
   let env;
   let context;
   const createBuffer = (input, ctx, outputName) => {
@@ -74,7 +74,7 @@ describe('output.snapshot', function () {
     return createOutput(frame, name, ctx || null, name);
   };
   const flatten = (buffer, ctx, outputName) => (
-    makeOutput(buffer, ctx, outputName).snapshot()
+    makeOutput(buffer, ctx, outputName).finalSnapshot()
   );
   const flattenSink = (commands, ctx, outputName, sink) => {
     const buffer = new CommandBuffer(ctx, null);
@@ -92,7 +92,7 @@ describe('output.snapshot', function () {
     buffer._outputHandlers[outputName] = sinkOutput;
 
     commands.forEach((entry) => buffer.add(entry, outputName));
-    sinkOutput.snapshot();
+    sinkOutput.finalSnapshot();
     return sink;
   };
   const cmd = (spec) => {
@@ -242,12 +242,12 @@ describe('output.snapshot', function () {
       const textOut = createOutput(frame, 'text', context, 'text');
 
       textOut('A');
-      const snap = textOut.snapshot();
+      const snap = buffer.addSnapshot('text', { lineno: 0, colno: 0 });
       textOut('B');
       buffer.markFinishedAndPatchLinks();
 
       const early = await snap;
-      const final = await textOut.snapshot();
+      const final = await textOut.finalSnapshot();
       expect(early).to.equal('A');
       expect(final).to.equal('AB');
     });
@@ -255,8 +255,8 @@ describe('output.snapshot', function () {
     it('should allow snapshot calls after buffer is already finished', async function () {
       const buffer = createBuffer(['A'], context, 'text');
       const output = makeOutput(buffer, context, 'text');
-      const first = await output.snapshot();
-      const second = await output.snapshot();
+      const first = await output.finalSnapshot();
+      const second = await output.finalSnapshot();
       expect(first).to.equal('A');
       expect(second).to.equal('A');
     });

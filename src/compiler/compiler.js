@@ -1058,7 +1058,7 @@ class Compiler extends CompilerBase {
         returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return undefined;});`;
       } else {
         // Snapshot must be enqueued before this managed buffer is finished.
-        this.emit.line(`const ${snapshotVar} = ${bufferId}_textOutput.snapshot();`);
+        this.emit.line(`const ${snapshotVar} = ${bufferId}.addSnapshot("text", {lineno: ${node.lineno}, colno: ${node.colno}});`);
 
         const needsSafeString = !this.scriptMode;
         const safeStringCall = needsSafeString
@@ -1173,7 +1173,7 @@ class Compiler extends CompilerBase {
         } else {
           this.compile(n.body, f);//write to output
           this.emit.line('await astate.waitAllClosures(1)');
-          this.emit.line(`let ${res} = await ${this.buffer.currentTextOutput}.snapshot();`);
+          this.emit.line(`let ${res} = await ${this.buffer.currentBuffer}.addSnapshot("text", {lineno: ${node.body.lineno}, colno: ${node.body.colno}});`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
       }, res, node.body, true);
@@ -1352,7 +1352,7 @@ class Compiler extends CompilerBase {
         // In script mode we expect a {%- return ... -%} in the template body to provide the result.
         // this.emit.line('    cb(null, frame._outputs.output.snapshot());');
       } else {
-        this.emit.line(`    const __rootSnapshot = ${this.buffer.getCurrentTextOutput()}.snapshot();`);
+        this.emit.line(`    const __rootSnapshot = ${this.buffer.getCurrentTextOutput()}.finalSnapshot();`);
         this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
         this.emit.line('    cb(null, await __rootSnapshot);');
       }

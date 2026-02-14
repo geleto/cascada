@@ -138,11 +138,7 @@ class Output {
     this._target = state;
   }
 
-  snapshot() {
-    if (this._buffer && typeof this._buffer.addSnapshot === 'function') {
-      return this._buffer.addSnapshot(this._outputName, { lineno: 0, colno: 0 });
-    }
-
+  finalSnapshot() {
     try {
       if (this._completionResolved) {
         return Promise.resolve(this._resolveSnapshotCommandResult());
@@ -180,11 +176,11 @@ function createOutputFacade(output, options) {
 
   return new Proxy(target, {
     get: (proxyTarget, prop) => {
-      if (prop === 'snapshot') {
-        if (!output._snapshotCallable) {
-          output._snapshotCallable = output.snapshot.bind(output);
+      if (prop === 'finalSnapshot') {
+        if (!output._finalSnapshotCallable) {
+          output._finalSnapshotCallable = output.finalSnapshot.bind(output);
         }
-        return output._snapshotCallable;
+        return output._finalSnapshotCallable;
       }
       if (prop === 'getCurrentResult') {
         return output.getCurrentResult.bind(output);
@@ -348,31 +344,12 @@ function createOutput(frame, outputName, context, outputType = null) {
   throw new Error(`Unsupported output type '${type}'`);
 }
 
-class SinkOutputHandler {
+class SinkOutput extends Output {
   constructor(frame, outputName, context, sink) {
-    this._frame = frame;
-    this._outputName = outputName;
-    this._outputType = 'sink';
-    this._context = context;
+    super(frame, outputName, context, 'sink', undefined, null);
     this._sink = sink;
-    this._target = undefined;
-    this._base = null;
-    this._buffer = frame ? frame._outputBuffer : null;
-    this._iterator = new BufferIterator(this);
-    this._errors = [];
-    this._completionResolved = false;
-    this._completionPromise = new Promise((resolve) => {
-      this._resolveCompletion = resolve;
-    });
     this._sinkReady = false;
     this._sinkReadyPromise = null;
-
-    if (this._buffer && this._buffer._registerOutput) {
-      this._buffer._registerOutput(this._outputName, this);
-    } else if (this._buffer && this._buffer._outputs instanceof Map) {
-      this._buffer._outputs.set(this._outputName, this);
-      this._iterator.bindToCurrentBuffer();
-    }
   }
 
   _resolveSink() {
@@ -398,23 +375,6 @@ class SinkOutputHandler {
         });
     }
     return this._sinkReadyPromise;
-  }
-
-  _recordError(err, cmd = null) {
-    if (!err) return;
-    const pos = cmd && cmd.pos ? cmd.pos : { lineno: 0, colno: 0 };
-    const path = this._context && this._context.path ? this._context.path : null;
-
-    if (isPoisonError(err)) {
-      if (Array.isArray(err.errors) && err.errors.length > 0) {
-        // Preserve poison payload identity/messages as-is.
-        // This keeps deduplication semantics stable and avoids rewriting
-        // already-collected underlying errors.
-        this._errors.push(...err.errors);
-      }
-      return;
-    }
-    this._errors.push(handleError(err, pos.lineno, pos.colno, null, path));
   }
 
   _applyCommand(cmd) {
@@ -445,27 +405,12 @@ class SinkOutputHandler {
     }
   }
 
-  _onIteratorFinished() {
-    if (this._completionResolved) {
-      return;
-    }
-    this._completionResolved = true;
-    this._resolveCompletion();
-  }
-
   _snapshotFromSink(sink) {
     if (!sink) return sink;
     if (typeof sink.snapshot === 'function') return sink.snapshot();
     if (typeof sink.getReturnValue === 'function') return sink.getReturnValue();
     if (typeof sink.finalize === 'function') return sink.finalize();
     return sink;
-  }
-
-  _getResultOrThrow() {
-    if (this._errors.length > 0) {
-      throw new PoisonError(this._errors.slice());
-    }
-    return this.getCurrentResult();
   }
 
   _resolveSnapshotCommandResult() {
@@ -478,34 +423,20 @@ class SinkOutputHandler {
         return this._snapshotFromSink(resolved);
       });
     }
-    return this._getResultOrThrow();
+    return super._resolveSnapshotCommandResult();
   }
 
   getCurrentResult() {
     return this._snapshotFromSink(this._sink);
   }
 
-  snapshot() {
-    if (this._buffer && typeof this._buffer.addSnapshot === 'function') {
-      return this._buffer.addSnapshot(this._outputName, { lineno: 0, colno: 0 });
-    }
-
-    try {
-      if (this._completionResolved) {
-        return Promise.resolve(this._resolveSnapshotCommandResult());
-      }
-      return Promise.resolve(this._completionPromise).then(() => this._resolveSnapshotCommandResult());
-    } catch (err) {
-      return Promise.reject(err);
-    }
-  }
 }
 
 function createSinkOutput(frame, outputName, context, sink) {
-  return new SinkOutputHandler(frame, outputName, context, sink);
+  return new SinkOutput(frame, outputName, context, sink);
 }
 
-class SequenceOutputHandler extends SinkOutputHandler {
+class SequenceOutput extends SinkOutput {
   constructor(frame, outputName, context, sink) {
     super(frame, outputName, context, sink);
     this._outputType = 'sequence';
@@ -565,10 +496,10 @@ class SequenceOutputHandler extends SinkOutputHandler {
 }
 
 function createSequenceOutput(frame, outputName, context, sink) {
-  return new SequenceOutputHandler(frame, outputName, context, sink);
+  return new SequenceOutput(frame, outputName, context, sink);
 }
 
-function getOutputHandler(frame, outputName) {
+function getOutput(frame, outputName) {
   let current = frame;
   while (current) {
     if (current._outputs && Object.prototype.hasOwnProperty.call(current._outputs, outputName)) {
@@ -643,11 +574,11 @@ module.exports = {
   TextOutput,
   ValueOutput,
   createOutput,
-  SinkOutputHandler,
+  SinkOutput,
   createSinkOutput,
-  SequenceOutputHandler,
+  SequenceOutput,
   createSequenceOutput,
-  getOutputHandler,
+  getOutput,
   declareOutput,
   findOutputBuffer,
   finalizeUnobservedSinks

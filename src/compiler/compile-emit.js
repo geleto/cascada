@@ -296,7 +296,7 @@ module.exports = class CompileEmit {
 
     if (!this.compiler.scriptMode) {
       this.line('await astate.waitAllClosures(1);');
-      this.line(`${id} = await ${id}_textOutput.snapshot();`);
+      this.line(`${id} = await ${id}.addSnapshot("text", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
     }
     /*this.line(`let ${id}_flat = runtime.flattenBuffer(${id});`);
     this.line(`if (${id}_flat && typeof ${id}_flat.then === 'function') { ${id}_flat = await ${id}_flat; }`);

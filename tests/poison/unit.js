@@ -66,7 +66,7 @@
     return runtime.createOutput(frame, name, context || null, name);
   };
   const flatten = (buffer, context = null, outputName = 'text') => (
-    makeOutput(buffer, context, outputName).snapshot()
+    makeOutput(buffer, context, outputName).finalSnapshot()
   );
   const cmd = (spec) => {
     if (spec.handler === 'data') {

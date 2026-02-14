@@ -1,7 +1,7 @@
 
 const { isError } = require('./errors');
 const { getPosonedBufferErrors } = require('./command-buffer');
-const { getOutputHandler } = require('./output');
+const { getOutput } = require('./output');
 const { SetTargetCommand } = require('./commands');
 const { clearBuffer } = require('./command-buffer');
 
@@ -59,7 +59,7 @@ function initOutputSnapshots(frame, handlerNames = null) {
   }
 
   for (const handlerName of targets) {
-    const output = getOutputHandler(frame, handlerName);
+    const output = getOutput(frame, handlerName);
     if (!output) {
       continue;
     }

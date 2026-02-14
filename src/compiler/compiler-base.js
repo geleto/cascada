@@ -323,7 +323,7 @@ class CompilerBase extends Obj {
     if (declaredOutput && !this._isDeclared(frame, name)) {
       // Reading an output symbol (e.g. myData.snapshot()) should not allocate
       // async-block output buffers for this handler. Only writes/commands do that.
-      this.emit(`runtime.getOutputHandler(frame, "${name}")`);
+      this.emit(`runtime.getOutput(frame, "${name}")`);
       return;
     }
     let v = frame.lookup(name);
