@@ -11,6 +11,8 @@ let createOutput;
 let createSinkOutput;
 let materializeTemplateTextValue;
 let suppressValueAsync;
+let createPoison;
+let isPoisonError;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
@@ -23,6 +25,8 @@ if (typeof require !== 'undefined') {
   createSinkOutput = require('../../src/runtime/runtime').createSinkOutput;
   materializeTemplateTextValue = require('../../src/runtime/runtime').materializeTemplateTextValue;
   suppressValueAsync = require('../../src/runtime/runtime').suppressValueAsync;
+  createPoison = require('../../src/runtime/runtime').createPoison;
+  isPoisonError = require('../../src/runtime/runtime').isPoisonError;
   expectAsyncError = require('../util').expectAsyncError;
 } else {
   expect = window.expect;
@@ -35,6 +39,8 @@ if (typeof require !== 'undefined') {
   createSinkOutput = nunjucks.runtime.createSinkOutput;
   materializeTemplateTextValue = nunjucks.runtime.materializeTemplateTextValue;
   suppressValueAsync = nunjucks.runtime.suppressValueAsync;
+  createPoison = nunjucks.runtime.createPoison;
+  isPoisonError = nunjucks.runtime.isPoisonError;
   expectAsyncError = nunjucks.util.expectAsyncError;
 }
 
@@ -463,6 +469,332 @@ describe('output.finalSnapshot', function () {
         await flatten(buffer, context, 'text');
       }, (err) => {
         expect(err.message).to.contain('Invalid TextCommand argument type');
+      });
+    });
+  });
+
+  describe('Output Snapshot Poison Handling', function () {
+    describe('snapshot with simple templates', function () {
+      it('should concatenate simple values', async function () {
+        const arr = ['Hello', ' ', 'World'];
+        const result = await flatten(createBuffer(arr));
+        expect(result).to.equal('Hello World');
+      });
+
+      it('should handle nested arrays', async function () {
+        const arr = ['A', ['B', 'C'], 'D'];
+        const result = await flatten(createBuffer(arr));
+        expect(result).to.equal('ABCD');
+      });
+    });
+
+    describe('snapshot with script context - poison detection', function () {
+      let poisonContext;
+
+      beforeEach(() => {
+        poisonContext = {
+          env: {},
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should collect poison from text output', async function () {
+        const poison = createPoison(new Error('Output error'));
+        const arr = ['Valid text', poison, 'More text'];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.errors[0].message).to.equal('Output error');
+        }
+      });
+
+      it('should collect multiple poisons', async function () {
+        const poison1 = createPoison(new Error('Error 1'));
+        const poison2 = createPoison(new Error('Error 2'));
+        const arr = [poison1, 'text', poison2];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.errors).to.have.length(2);
+        }
+      });
+
+      it('should continue processing after finding poison', async function () {
+        const poison = createPoison(new Error('Early error'));
+        const arr = [poison, 'Valid', 'Text'];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.errors).to.have.length(1);
+        }
+      });
+
+      it('should collect poison from nested arrays', async function () {
+        const poison = createPoison(new Error('Nested error'));
+        const arr = ['text', ['nested', poison, 'more'], 'end'];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+        }
+      });
+
+      it('should collect poison from arrays with functions', async function () {
+        const poison = createPoison(new Error('Func array error'));
+        const arr = [['prefix', poison, (val) => val.toUpperCase()]];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+        }
+      });
+
+      it('should handle command objects with poisoned args', async function () {
+        const poison = createPoison(new Error('Arg error'));
+        const arr = [cmd({
+          handler: 'text',
+          command: null,
+          subpath: [],
+          arguments: ['valid', poison],
+          pos: { lineno: 1, colno: 1 }
+        })];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+        }
+      });
+
+      it('should collect errors from handler instantiation failures', async function () {
+        const arr = [cmd({
+          handler: 'nonexistent',
+          command: 'method',
+          subpath: [],
+          arguments: ['arg'],
+          pos: { lineno: 5, colno: 10 }
+        })];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.errors[0].message).to.contain('Sink method \'method\' not found');
+        }
+      });
+
+      it('should return valid output when no poison found', async function () {
+        const arr = ['Hello', ' ', 'World'];
+        const result = await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+        expect(result).to.equal('Hello World');
+      });
+    });
+
+    describe('Error deduplication in snapshot', function () {
+      let poisonContext;
+
+      beforeEach(() => {
+        poisonContext = {
+          env: {},
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should deduplicate identical errors', async function () {
+        const err = new Error('Duplicate');
+        const poison1 = createPoison(err);
+        const poison2 = createPoison(err);
+        const arr = [poison1, poison2];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be(true);
+          expect(thrown.errors).to.have.length(1);
+        }
+      });
+
+      it('should keep distinct errors', async function () {
+        const poison1 = createPoison(new Error('Error A'));
+        const poison2 = createPoison(new Error('Error B'));
+        const arr = [poison1, poison2];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be(true);
+          expect(thrown.errors).to.have.length(2);
+        }
+      });
+    });
+
+    describe('Complete error collection', function () {
+      let poisonContext;
+
+      beforeEach(() => {
+        poisonContext = {
+          env: {},
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should process entire buffer even with early errors', async function () {
+        const errors = [
+          createPoison(new Error('Error 1')),
+          'valid',
+          createPoison(new Error('Error 2')),
+          'more valid',
+          createPoison(new Error('Error 3'))
+        ];
+
+        try {
+          await flatten(createBuffer(errors, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be(true);
+          expect(thrown.errors).to.have.length(3);
+        }
+      });
+
+      it('should collect errors from multiple nested levels', async function () {
+        const arr = [
+          createPoison(new Error('Level 0')),
+          ['text', createPoison(new Error('Level 1')), [createPoison(new Error('Level 2'))]]
+        ];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be(true);
+          expect(thrown.errors).to.have.length(3);
+        }
+      });
+    });
+
+    describe('Output command error collection', function () {
+      let poisonContext;
+
+      beforeEach(() => {
+        poisonContext = {
+          env: {},
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should collect data output method errors', async function () {
+        const arr = [cmd({
+          handler: 'data',
+          command: 'nonexistentMethod',
+          subpath: [],
+          arguments: [null],
+          pos: { lineno: 1, colno: 1 }
+        })];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'data'), poisonContext, 'data');
+          expect().fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be(true);
+          expect(thrown.errors[0].message).to.contain('has no method');
+        }
+      });
+
+      it('should collect unsupported output target errors', async function () {
+        const arr = [cmd({
+          handler: 'badHandler',
+          command: 'method',
+          subpath: ['nested', 'path'],
+          arguments: [],
+          pos: { lineno: 2, colno: 5 }
+        })];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be(true);
+          expect(thrown.errors[0].message).to.contain('Sink method \'method\' not found');
+        }
+      });
+    });
+
+    describe('Complex nested poison scenarios', function () {
+      let poisonContext;
+
+      beforeEach(() => {
+        poisonContext = {
+          env: {},
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should handle poison in deeply nested structures', async function () {
+        const arr = [
+          'start',
+          ['level1', ['level2', createPoison(new Error('Deep poison')), 'more level2'], 'more level1'],
+          'end'
+        ];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be(true);
+          expect(thrown.errors).to.have.length(1);
+        }
+      });
+    });
+
+    describe('Output name handling', function () {
+      let poisonContext;
+
+      beforeEach(() => {
+        poisonContext = {
+          env: {},
+          path: '/test.html',
+          getVariables: () => ({})
+        };
+      });
+
+      it('should handle output name with poison', async function () {
+        const poison = createPoison(new Error('Focus poison'));
+        const arr = [poison, 'text'];
+
+        try {
+          await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+          expect().fail('Should have thrown');
+        } catch (thrown) {
+          expect(isPoisonError(thrown)).to.be(true);
+        }
+      });
+
+      it('should return text output when no poison', async function () {
+        const arr = ['Hello', ' ', 'World'];
+        const result = await flatten(createBuffer(arr, poisonContext, 'text'), poisonContext, 'text');
+        expect(result).to.equal('Hello World');
       });
     });
   });
