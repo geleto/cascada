@@ -746,9 +746,9 @@ class Parser extends Obj {
     }
 
     let initializer = null;
-    if (outputType === 'sink') {
+    if (outputType === 'sink' || outputType === 'sequence') {
       if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-        this.fail('parseOutputDeclaration: sink outputs must have an initializer', tag.lineno, tag.colno);
+        this.fail(`parseOutputDeclaration: ${outputType} outputs must have an initializer`, tag.lineno, tag.colno);
       }
       initializer = this.parseExpression();
     } else {
@@ -886,7 +886,7 @@ class Parser extends Obj {
         this.fail('parseOutputCommand: expected output type', tag.lineno, tag.colno);
       }
       outputType = this.nextToken().value;
-      if (outputType !== 'data' && outputType !== 'text' && outputType !== 'value' && outputType !== 'sink') {
+      if (outputType !== 'data' && outputType !== 'text' && outputType !== 'value' && outputType !== 'sink' && outputType !== 'sequence') {
         this.fail(`parseOutputCommand: unsupported output type '${outputType}'`, tag.lineno, tag.colno);
       }
     } else if (!this.skipSymbol('output_command')) {
@@ -1088,6 +1088,7 @@ class Parser extends Obj {
       case 'text':
       case 'value':
       case 'sink':
+      case 'sequence':
         return this.parseOutputDeclaration();
       case 'macro':
         return this.parseMacro();

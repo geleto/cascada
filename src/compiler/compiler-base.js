@@ -712,6 +712,14 @@ class CompilerBase extends Obj {
 
   compileLookupVal(node, frame) {
     if (node.isAsync) {
+      const sequenceOutputAccess = this._getSequenceOutputAccess(node, frame);
+      if (sequenceOutputAccess && sequenceOutputAccess.member !== 'snapshot') {
+        this.async.updateOutputUsage(frame, sequenceOutputAccess.handler);
+        const errorContextJson = JSON.stringify(this._createErrorContext(node));
+        this.emit(`runtime.sequenceGet(frame, "${sequenceOutputAccess.handler}", "${sequenceOutputAccess.member}", ${JSON.stringify(sequenceOutputAccess.subpath)}, ${errorContextJson})`);
+        return;
+      }
+
       // Handle both sequential and standard lookups.
 
       // Check if this is a sequential lookup (marked with `!`).
@@ -783,6 +791,15 @@ class CompilerBase extends Obj {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
     if (this.asyncMode) {
+      const sequenceOutputAccess = this._getSequenceOutputAccess(node.name, frame);
+      if (sequenceOutputAccess && sequenceOutputAccess.member !== 'snapshot') {
+        this.async.updateOutputUsage(frame, sequenceOutputAccess.handler);
+        this._compileAggregate(node.args, frame, '[', ']', true, false, function (result) {
+          const errorContextJson = JSON.stringify(this._createErrorContext(node));
+          this.emit(`return runtime.sequenceCall(frame, "${sequenceOutputAccess.handler}", "${sequenceOutputAccess.member}", ${result}, ${JSON.stringify(sequenceOutputAccess.subpath)}, ${errorContextJson});`);
+        });
+        return;
+      }
 
       const sequenceLockKey = node.lockKey;//this.sequential._getSequenceKey(node.name, frame);
       if (sequenceLockKey) {
@@ -841,6 +858,30 @@ class CompilerBase extends Obj {
       this._compileAggregate(node.args, frame, '[', ']', false, false);
       this.emit('))');
     }
+  }
+
+  _getSequenceOutputAccess(node, frame) {
+    if (!this.asyncMode || !this.scriptMode) {
+      return null;
+    }
+    const staticPath = this.sequential._extractStaticPath(node);
+    if (!staticPath || staticPath.length < 2) {
+      return null;
+    }
+    const handlerName = staticPath[0];
+    // Variable declarations shadow output declarations.
+    if (this._isDeclared(frame, handlerName)) {
+      return null;
+    }
+    const outputDecl = this.async._getDeclaredOutput(frame, handlerName);
+    if (!outputDecl || outputDecl.type !== 'sequence') {
+      return null;
+    }
+    return {
+      handler: handlerName,
+      member: staticPath[staticPath.length - 1],
+      subpath: staticPath.length > 2 ? staticPath.slice(1, -1) : null
+    };
   }
 
   compileFilterGet(node, frame) {

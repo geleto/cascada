@@ -546,14 +546,24 @@ class Compiler extends CompilerBase {
     // Guard blocks should keep output writes scoped to the guard buffer.
     frame.outputScope = true;
 
-    // 2. Link for explicit reversion (optional, if we want to support manual revert)
-    this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-    this.emit.line(`${this.buffer.currentBuffer}.pause();`);
-    this.emit.line('try {');
     let guardInitLinePos = null;
     let guardRepairLinePos = null;
     let outputGuardInitLinePos = null;
     const outputGuardStateVar = needsOutputSnapshot ? this._tmpid() : null;
+    const shouldPauseBuffer = !(
+      Array.isArray(handlerTargets) &&
+      handlerTargets.length > 0 &&
+      handlerTargets.every((handlerName) => {
+        const decl = this.async._getDeclaredOutput(frame, handlerName);
+        return decl && decl.type === 'sequence';
+      })
+    );
+
+    // 2. Link for explicit reversion (optional, if we want to support manual revert)
+    this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+    if (shouldPauseBuffer) {
+      this.emit.line(`${this.buffer.currentBuffer}.pause();`);
+    }
     if (outputGuardStateVar) {
       if (handlerTargets) {
         this.emit.line(`const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(handlerTargets)});`);
@@ -561,7 +571,9 @@ class Compiler extends CompilerBase {
         outputGuardInitLinePos = this.codebuf.length;
         this.emit.line('');
       }
+      this.emit.line(`await runtime.guard.beginOutputTransactions(frame, ${outputGuardStateVar});`);
     }
+    this.emit.line('try {');
     if (guardStateVar) {
       if (variableTargets === '*') {
         guardInitLinePos = this.codebuf.length;
@@ -680,8 +692,16 @@ class Compiler extends CompilerBase {
     }
 
     this.emit.line(`const ${guardErrorsVar} = await runtime.guard.getErrors(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${allowedBufferHandlers});`);
+    if (outputGuardStateVar) {
+      this.emit.line(`if (${guardErrorsVar}.length === 0) {`);
+      this.emit.line(`  await runtime.guard.commitOutputTransactions(${outputGuardStateVar}, ${guardErrorsVar});`);
+      this.emit.line('}');
+    }
 
     this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
+    if (outputGuardStateVar) {
+      this.emit.line(`  await runtime.guard.rollbackOutputTransactions(${outputGuardStateVar}, ${guardErrorsVar});`);
+    }
     if (outputGuardStateVar) {
       this.emit.line(`  runtime.guard.restoreOutputs(${this.buffer.currentBuffer}, ${outputGuardStateVar});`);
     } else if (handlerTargetsAll || !hasAnySelectors) {
@@ -723,7 +743,9 @@ class Compiler extends CompilerBase {
     this.emit.line('}');
 
     this.emit.line('} finally {');
-    this.emit.line(`  ${this.buffer.currentBuffer}.resume();`);
+    if (shouldPauseBuffer) {
+      this.emit.line(`  ${this.buffer.currentBuffer}.resume();`);
+    }
     this.emit.line('}');
 
     // 6. End Async Block
@@ -1500,14 +1522,14 @@ class Compiler extends CompilerBase {
     if ((outputType === 'data' || outputType === 'text' || outputType === 'value') && node.initializer) {
       this.fail(`${outputType} outputs cannot have initializers`, node.lineno, node.colno, node);
     }
-    if (outputType === 'sink' && !node.initializer) {
-      this.fail('sink outputs must have an initializer', node.lineno, node.colno, node);
+    if ((outputType === 'sink' || outputType === 'sequence') && !node.initializer) {
+      this.fail(`${outputType} outputs must have an initializer`, node.lineno, node.colno, node);
     }
 
     this.async._addDeclaredOutput(frame, name, outputType, node.initializer, node);
 
     this.emit(`runtime.declareOutput(frame, "${name}", "${outputType}", context, `);
-    if (outputType === 'sink') {
+    if (outputType === 'sink' || outputType === 'sequence') {
       this.compile(node.initializer, frame);
     } else {
       this.emit('null');

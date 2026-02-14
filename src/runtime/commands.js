@@ -18,8 +18,7 @@ const { isPoison, PoisonError } = require('./errors');
 // ---------------------------------------------------------------------------
 
 class Command {
-  constructor(options = null) {
-    const opts = options || {};
+  constructor(withDeferredResult = false) {
     // Native command-chain metadata for buffer linking/snapshots.
     this.next = null;
     this.resolved = false;
@@ -29,7 +28,7 @@ class Command {
     this.mutatesOutput = false;
     this.isSnapshotCommand = false;
 
-    if (opts.withDeferredResult) {
+    if (withDeferredResult) {
       this.promise = new Promise((resolve, reject) => {
         this.resolve = resolve;
         this.reject = reject;
@@ -66,8 +65,8 @@ class Command {
 
 // Base command for declared outputs only (text/value/data/sink).
 class OutputCommand extends Command {
-  constructor({ handler, command = null, args = null, arguments: legacyArgs = null, subpath = null, pos = null }) {
-    super();
+  constructor({ handler, command = null, args = null, arguments: legacyArgs = null, subpath = null, pos = null, withDeferredResult = false }) {
+    super(withDeferredResult);
     this.handler = handler;
     this.command = command;
     this.arguments = args || legacyArgs || [];
@@ -237,11 +236,82 @@ class SinkCommand extends OutputCommand {
     super.apply(dispatchCtx);
     if (!dispatchCtx) return;
     const sink = dispatchCtx._sink;
-    const method = this.command ? (sink && sink[this.command]) : sink;
+    const target = resolveSubpath(sink, this.subpath);
+    const method = this.command ? (target && target[this.command]) : target;
     if (typeof method !== 'function') {
       throw new Error(`Sink method '${this.command}' not found`);
     }
-    method.apply(sink, this.arguments);
+    return method.apply(target, this.arguments);
+  }
+}
+
+class SequenceCallCommand extends OutputCommand {
+  constructor({ handler, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null, withDeferredResult = false }) {
+    super({
+      handler,
+      command: command || null,
+      args: args || legacyArgs || [],
+      subpath: subpath || null,
+      pos,
+      withDeferredResult
+    });
+  }
+
+  apply(dispatchCtx) {
+    super.apply(dispatchCtx);
+    if (!dispatchCtx) return;
+    const result = dispatchCtx._applySequenceCall(this.command, this.arguments, this.subpath || null);
+    if (this.promise && result && typeof result.then === 'function') {
+      return Promise.resolve(result).then(
+        (value) => {
+          this.resolveResult(value);
+          return value;
+        },
+        (err) => {
+          this.rejectResult(err);
+          throw err;
+        }
+      );
+    }
+    if (this.promise) {
+      this.resolveResult(result);
+    }
+    return result;
+  }
+}
+
+class SequenceGetCommand extends OutputCommand {
+  constructor({ handler, command, subpath = null, pos = null, withDeferredResult = false }) {
+    super({
+      handler,
+      command: command || null,
+      args: [],
+      subpath: subpath || null,
+      pos,
+      withDeferredResult
+    });
+    this.mutatesOutput = false;
+  }
+
+  apply(dispatchCtx) {
+    if (!dispatchCtx) return;
+    const result = dispatchCtx._applySequenceGet(this.command, this.subpath || null);
+    if (this.promise && result && typeof result.then === 'function') {
+      return Promise.resolve(result).then(
+        (value) => {
+          this.resolveResult(value);
+          return value;
+        },
+        (err) => {
+          this.rejectResult(err);
+          throw err;
+        }
+      );
+    }
+    if (this.promise) {
+      this.resolveResult(result);
+    }
+    return result;
   }
 }
 
@@ -262,7 +332,7 @@ class ErrorCommand extends Command {
 
 class SnapshotCommand extends Command {
   constructor({ handler, pos = null }) {
-    super({ withDeferredResult: true });
+    super(true);
     this.handler = handler;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isSnapshotCommand = true;
@@ -320,7 +390,23 @@ module.exports = {
   ValueCommand,
   DataCommand,
   SinkCommand,
+  SequenceCallCommand,
+  SequenceGetCommand,
   ErrorCommand,
   SnapshotCommand,
   SetTargetCommand
 };
+
+function resolveSubpath(root, subpath) {
+  if (!root || !Array.isArray(subpath) || subpath.length === 0) {
+    return root;
+  }
+  let current = root;
+  for (const segment of subpath) {
+    if (current === undefined || current === null) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
+}

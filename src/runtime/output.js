@@ -1,10 +1,10 @@
 'use strict';
 
-const { TextCommand, ValueCommand, DataCommand, SinkCommand, SnapshotCommand } = require('./commands');
+const { TextCommand, ValueCommand, DataCommand, SinkCommand, SequenceCallCommand, SequenceGetCommand, SnapshotCommand } = require('./commands');
 const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
-const { PoisonError, isPoisonError } = require('./errors');
+const { PoisonError, isPoisonError, createPoison } = require('./errors');
 
 class Output {
   constructor(frame, outputName, context, outputType = null, target = undefined, base = null) {
@@ -495,6 +495,94 @@ function createSinkOutput(frame, outputName, context, sink) {
   return new SinkOutputHandler(frame, outputName, context, sink);
 }
 
+class SequenceOutputHandler extends SinkOutputHandler {
+  constructor(frame, outputName, context, sequence) {
+    super(frame, outputName, context, sequence);
+    this._outputType = 'sequence';
+  }
+
+  _applySequenceCall(command, args = [], subpath = null) {
+    const sequence = this._sink;
+    const target = resolveSubpath(sequence, subpath);
+    const method = command ? (target && target[command]) : target;
+    if (typeof method !== 'function') {
+      throw new Error(`Sequence method '${command}' not found`);
+    }
+    return method.apply(target, args);
+  }
+
+  _applySequenceGet(command, subpath = null) {
+    const sequence = this._sink;
+    const target = resolveSubpath(sequence, subpath);
+    if (target === undefined || target === null) {
+      return undefined;
+    }
+    return target[command];
+  }
+
+  _enqueueSequenceDeferredCommand(command, targetBuffer = null, forceImmediate = false) {
+    const buffer = targetBuffer || this._buffer;
+    const bufferPaused = buffer && typeof buffer.isPaused === 'function' && buffer.isPaused();
+    if (forceImmediate || !buffer || buffer.finished || bufferPaused) {
+      return this._runSequenceCommandNow(command);
+    }
+    buffer.add(command, this._outputName);
+    return command.promise;
+  }
+
+  _runSequenceCommandNow(command) {
+    const run = () => {
+      try {
+        return command.apply(this);
+      } catch (err) {
+        this._recordError(err);
+        return createPoison(err);
+      }
+    };
+    const sequence = this._ensureSinkResolved();
+    const result = (sequence && typeof sequence.then === 'function')
+      ? Promise.resolve(sequence).then(run, (err) => {
+        this._recordError(err);
+        return createPoison(err);
+      })
+      : run();
+    if (result && typeof result.then === 'function') {
+      return result.catch((err) => {
+        this._recordError(err);
+        return createPoison(err);
+      });
+    }
+    return result;
+  }
+
+  enqueueSequenceCall(command, args = [], subpath = null, pos = null, targetBuffer = null, forceImmediate = false) {
+    const entry = new SequenceCallCommand({
+      handler: this._outputName,
+      command: command || null,
+      args,
+      subpath,
+      pos,
+      withDeferredResult: true
+    });
+    return this._enqueueSequenceDeferredCommand(entry, targetBuffer, forceImmediate);
+  }
+
+  enqueueSequenceGet(command, subpath = null, pos = null, targetBuffer = null, forceImmediate = false) {
+    const entry = new SequenceGetCommand({
+      handler: this._outputName,
+      command: command || null,
+      subpath,
+      pos,
+      withDeferredResult: true
+    });
+    return this._enqueueSequenceDeferredCommand(entry, targetBuffer, forceImmediate);
+  }
+}
+
+function createSequenceOutput(frame, outputName, context, sequence) {
+  return new SequenceOutputHandler(frame, outputName, context, sequence);
+}
+
 function getOutputHandler(frame, outputName) {
   let current = frame;
   while (current) {
@@ -536,7 +624,9 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
 
   const output = (outputType === 'sink')
     ? createSinkOutput(frame, outputName, context, initializer)
-    : createOutput(frame, outputName, context, outputType);
+    : (outputType === 'sequence')
+      ? createSequenceOutput(frame, outputName, context, initializer)
+      : createOutput(frame, outputName, context, outputType);
 
   output._buffer = buffer;
   frame._outputs[outputName] = output;
@@ -548,7 +638,7 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
     output._iterator.bindToCurrentBuffer();
   }
 
-  if (outputType === 'sink') {
+  if (outputType === 'sink' || outputType === 'sequence') {
     buffer._outputHandlers = buffer._outputHandlers || Object.create(null);
     buffer._outputHandlers[outputName] = output;
   }
@@ -570,10 +660,14 @@ module.exports = {
   createOutput,
   SinkOutputHandler,
   createSinkOutput,
+  SequenceOutputHandler,
+  createSequenceOutput,
   getOutputHandler,
   declareOutput,
   findOutputBuffer,
-  finalizeUnobservedSinks
+  finalizeUnobservedSinks,
+  sequenceCall,
+  sequenceGet
 };
 
 function cloneSnapshotValue(value) {
@@ -594,4 +688,38 @@ function cloneSnapshotValue(value) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function resolveSubpath(root, subpath) {
+  if (!root || !Array.isArray(subpath) || subpath.length === 0) {
+    return root;
+  }
+  let current = root;
+  for (const segment of subpath) {
+    if (current === undefined || current === null) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
+}
+
+function sequenceCall(frame, outputName, command, args = [], subpath = null, errorContext = null) {
+  const handler = getOutputHandler(frame, outputName);
+  if (!handler || handler._outputType !== 'sequence' || typeof handler.enqueueSequenceCall !== 'function') {
+    throw new Error(`Output '${outputName}' is not a sequence handler`);
+  }
+  const targetBuffer = (frame && frame._outputBuffer) ? frame._outputBuffer : null;
+  const forceImmediate = !!(frame && frame.outputScope) || !!(targetBuffer && targetBuffer !== handler._buffer);
+  return handler.enqueueSequenceCall(command, args, subpath, errorContext, targetBuffer, forceImmediate);
+}
+
+function sequenceGet(frame, outputName, command, subpath = null, errorContext = null) {
+  const handler = getOutputHandler(frame, outputName);
+  if (!handler || handler._outputType !== 'sequence' || typeof handler.enqueueSequenceGet !== 'function') {
+    throw new Error(`Output '${outputName}' is not a sequence handler`);
+  }
+  const targetBuffer = (frame && frame._outputBuffer) ? frame._outputBuffer : null;
+  const forceImmediate = !!(frame && frame.outputScope) || !!(targetBuffer && targetBuffer !== handler._buffer);
+  return handler.enqueueSequenceGet(command, subpath, errorContext, targetBuffer, forceImmediate);
 }

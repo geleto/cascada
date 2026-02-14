@@ -38,6 +38,8 @@ function initOutputSnapshots(frame, handlerNames = null) {
   const state = {
     snapshots: Object.create(null),
     sinkHandlers: [],
+    sequenceHandlers: [],
+    sequenceTransactions: [],
     clearHandlers: []
   };
 
@@ -52,7 +54,6 @@ function initOutputSnapshots(frame, handlerNames = null) {
 
   if (bufferScopedOnly) {
     state.clearHandlers = targets.slice();
-    return state;
   }
 
   for (const handlerName of targets) {
@@ -62,6 +63,13 @@ function initOutputSnapshots(frame, handlerNames = null) {
     }
     if (output._outputType === 'sink') {
       state.sinkHandlers.push(handlerName);
+      continue;
+    }
+    if (output._outputType === 'sequence') {
+      state.sequenceHandlers.push(handlerName);
+      continue;
+    }
+    if (bufferScopedOnly) {
       continue;
     }
     if (typeof output._captureGuardState !== 'function') {
@@ -88,6 +96,9 @@ function restoreOutputs(buffer, outputGuardState) {
   if (Array.isArray(outputGuardState.sinkHandlers) && outputGuardState.sinkHandlers.length > 0) {
     handlersToClear.push(...outputGuardState.sinkHandlers);
   }
+  if (Array.isArray(outputGuardState.sequenceHandlers) && outputGuardState.sequenceHandlers.length > 0) {
+    handlersToClear.push(...outputGuardState.sequenceHandlers);
+  }
   if (handlersToClear.length > 0) {
     clearBuffer(buffer, handlersToClear);
   }
@@ -99,6 +110,98 @@ function restoreOutputs(buffer, outputGuardState) {
       pos: { lineno: 0, colno: 0 }
     }), handlerName);
   }
+}
+
+function shouldPauseBuffer(outputGuardState) {
+  if (!outputGuardState) {
+    return false;
+  }
+  if (Array.isArray(outputGuardState.clearHandlers) && outputGuardState.clearHandlers.length > 0) {
+    return true;
+  }
+  if (Array.isArray(outputGuardState.sinkHandlers) && outputGuardState.sinkHandlers.length > 0) {
+    return true;
+  }
+  const snapshotNames = Object.keys(outputGuardState.snapshots || {});
+  return snapshotNames.length > 0;
+}
+
+async function beginOutputTransactions(frame, outputGuardState) {
+  if (!outputGuardState || !Array.isArray(outputGuardState.sequenceHandlers) || outputGuardState.sequenceHandlers.length === 0) {
+    return;
+  }
+
+  outputGuardState.sequenceTransactions = [];
+
+  for (const handlerName of outputGuardState.sequenceHandlers) {
+    const output = getOutputHandler(frame, handlerName);
+    if (!output || output._outputType !== 'sequence' || typeof output._ensureSinkResolved !== 'function') {
+      continue;
+    }
+    const sequence = await output._ensureSinkResolved();
+    if (!sequence ||
+      typeof sequence.begin !== 'function' ||
+      typeof sequence.commit !== 'function' ||
+      typeof sequence.rollback !== 'function') {
+      continue;
+    }
+    const token = await sequence.begin();
+    outputGuardState.sequenceTransactions.push({ sequence, token });
+  }
+}
+
+async function commitOutputTransactions(outputGuardState, errors = null) {
+  if (!outputGuardState || !Array.isArray(outputGuardState.sequenceTransactions)) {
+    return;
+  }
+
+  for (let i = outputGuardState.sequenceTransactions.length - 1; i >= 0; i--) {
+    const tx = outputGuardState.sequenceTransactions[i];
+    if (!tx || !tx.sequence || typeof tx.sequence.commit !== 'function') {
+      continue;
+    }
+    try {
+      if (tx.token === undefined) {
+        await tx.sequence.commit();
+      } else {
+        await tx.sequence.commit(tx.token);
+      }
+    } catch (err) {
+      if (Array.isArray(errors)) {
+        errors.push(err);
+      } else {
+        throw err;
+      }
+    }
+  }
+  outputGuardState.sequenceTransactions = [];
+}
+
+async function rollbackOutputTransactions(outputGuardState, errors = null) {
+  if (!outputGuardState || !Array.isArray(outputGuardState.sequenceTransactions)) {
+    return;
+  }
+
+  for (let i = outputGuardState.sequenceTransactions.length - 1; i >= 0; i--) {
+    const tx = outputGuardState.sequenceTransactions[i];
+    if (!tx || !tx.sequence || typeof tx.sequence.rollback !== 'function') {
+      continue;
+    }
+    try {
+      if (tx.token === undefined) {
+        await tx.sequence.rollback();
+      } else {
+        await tx.sequence.rollback(tx.token);
+      }
+    } catch (err) {
+      if (Array.isArray(errors)) {
+        errors.push(err);
+      } else {
+        throw err;
+      }
+    }
+  }
+  outputGuardState.sequenceTransactions = [];
 }
 
 async function collectGuardVariableErrors(frame, guardState) {
@@ -294,6 +397,10 @@ module.exports = {
   getErrors,
   complete,
   repairSequenceLocks,
-  restoreOutputs
+  restoreOutputs,
+  shouldPauseBuffer,
+  beginOutputTransactions,
+  commitOutputTransactions,
+  rollbackOutputTransactions
 };
 

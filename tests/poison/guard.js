@@ -162,6 +162,88 @@
       expect(result.data).to.eql({ status: 'ok' });
     });
 
+    it('should run sequence begin/commit hooks on successful guard', async () => {
+      const script = `
+        data data
+        sequence tx = makeTx()
+        guard @tx
+          data.value = tx.run("ok")
+        endguard
+        data.events = tx.snapshot()
+        return data.snapshot()
+      `;
+
+      const result = await env.renderScriptString(script, {
+        makeTx: () => {
+          const events = [];
+          return {
+            begin() {
+              events.push('begin');
+              return 't1';
+            },
+            run(v) {
+              events.push('run:' + v);
+              return v;
+            },
+            commit(token) {
+              events.push('commit:' + token);
+            },
+            rollback(token) {
+              events.push('rollback:' + token);
+            },
+            snapshot() {
+              return events.slice();
+            }
+          };
+        }
+      });
+
+      expect(result.value).to.equal('ok');
+      expect(result.events).to.eql(['begin', 'run:ok', 'commit:t1']);
+    });
+
+    it('should run sequence begin/rollback hooks on guard failure', async () => {
+      const script = `
+        data data
+        sequence tx = makeTx()
+        var value = "ok"
+        guard @tx, value
+          tx.run("ok")
+          value = fail()
+        endguard
+        data.events = tx.snapshot()
+        return data.snapshot()
+      `;
+
+      const result = await env.renderScriptString(script, {
+        fail: () => { throw new Error('guard-fail'); },
+        makeTx: () => {
+          const events = [];
+          return {
+            begin() {
+              events.push('begin');
+              return 't2';
+            },
+            run(v) {
+              events.push('run:' + v);
+              return v;
+            },
+            commit(token) {
+              events.push('commit:' + token);
+            },
+            rollback(token) {
+              events.push('rollback:' + token);
+            },
+            snapshot() {
+              return events.slice();
+            }
+          };
+        }
+      });
+
+      expect(result.events).to.eql(['begin', 'run:ok', 'rollback:t2']);
+    });
+
     it('should keep pre-guard snapshot while reverting guard output on failure', async () => {
       const script = `
         text text

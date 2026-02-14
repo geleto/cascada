@@ -143,6 +143,8 @@ module.exports = {
   createOutput: output.createOutput,
   SinkOutputHandler: output.SinkOutputHandler,
   createSinkOutput: output.createSinkOutput,
+  SequenceOutputHandler: output.SequenceOutputHandler,
+  createSequenceOutput: output.createSequenceOutput,
   getOutputHandler: output.getOutputHandler,
   declareOutput: output.declareOutput,
   OutputCommand: commands.OutputCommand,
@@ -150,6 +152,8 @@ module.exports = {
   ValueCommand: commands.ValueCommand,
   DataCommand: commands.DataCommand,
   SinkCommand: commands.SinkCommand,
+  SequenceCallCommand: commands.SequenceCallCommand,
+  SequenceGetCommand: commands.SequenceGetCommand,
   ErrorCommand: commands.ErrorCommand,
   SetTargetCommand: commands.SetTargetCommand,
 
@@ -193,6 +197,8 @@ module.exports = {
   contextOrFrameLookup: lookup.contextOrFrameLookup,
   contextOrFrameLookupScript: lookup.contextOrFrameLookupScript,
   contextOrFrameLookupScriptAsync: lookup.contextOrFrameLookupScriptAsync,
+  sequenceCall: output.sequenceCall,
+  sequenceGet: output.sequenceGet,
 
   isArray: lib.isArray,
   keys: lib.keys,

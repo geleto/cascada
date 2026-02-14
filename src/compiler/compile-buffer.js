@@ -9,6 +9,7 @@ const nodes = require('../nodes');
 const OUTPUT_COMMAND_CLASS = {
   data: 'DataCommand',
   sink: 'SinkCommand',
+  sequence: 'SequenceCallCommand',
   text: 'TextCommand',
   value: 'ValueCommand'
 };
@@ -133,7 +134,8 @@ class CompileBuffer {
 
       // Case 2: OutputCommand handler.method() or handler()
       if (n instanceof nodes.OutputCommand) {
-        const staticPath = this.compiler.sequential._extractStaticPath(n.call.name);
+        const pathNode = n.call instanceof nodes.FunCall ? n.call.name : n.call;
+        const staticPath = this.compiler.sequential._extractStaticPath(pathNode);
         if (staticPath && staticPath.length > 0) {
           const handlerName = staticPath[0]; // First segment is always handler name
           handlers.add(handlerName);
@@ -157,7 +159,9 @@ class CompileBuffer {
    */
   compileOutputCommand(node, frame) {
     // Extract static path once for validation and compilation
-    const staticPath = this.compiler.sequential._extractStaticPath(node.call.name);
+    const callNode = node.call;
+    const pathNode = callNode instanceof nodes.FunCall ? callNode.name : callNode;
+    const staticPath = this.compiler.sequential._extractStaticPath(pathNode);
 
     // Validate the static path
     if (!staticPath || staticPath.length === 0) {
@@ -233,10 +237,12 @@ class CompileBuffer {
     };
 
     wrapper((f) => {
-      const commandClass = OUTPUT_COMMAND_CLASS[outputType];
+      const commandClass = (outputType === 'sequence' && !(callNode instanceof nodes.FunCall))
+        ? 'SequenceGetCommand'
+        : OUTPUT_COMMAND_CLASS[outputType];
       if (!commandClass) {
         this.compiler.fail(
-          `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/value/sink).`,
+          `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/value/sink/sequence).`,
           node.lineno,
           node.colno,
           node
@@ -247,16 +253,20 @@ class CompileBuffer {
       if (command) {
         this.compiler.emit(`command: '${command}', `);
       }
-      if (outputType === 'sink' && subpath && subpath.length > 0) {
+      if ((outputType === 'sink' || outputType === 'sequence') && subpath && subpath.length > 0) {
         this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
       }
 
-      let argList = node.call.args;
+      let argList = callNode instanceof nodes.FunCall
+        ? callNode.args
+        : new nodes.NodeList(node.lineno, node.colno, []);
       const asyncArgs = argList.isAsync;
-      if (outputType === 'text') {
-        this.compiler.emit('args: runtime.normalizeScriptTextArgs(' + (asyncArgs ? 'await ' : ''));
-      } else {
-        this.compiler.emit('args: ' + (asyncArgs ? 'await ' : ''));
+      if (commandClass !== 'SequenceGetCommand') {
+        if (outputType === 'text') {
+          this.compiler.emit('args: runtime.normalizeScriptTextArgs(' + (asyncArgs ? 'await ' : ''));
+        } else {
+          this.compiler.emit('args: ' + (asyncArgs ? 'await ' : ''));
+        }
       }
 
       if (outputType === 'data') {
@@ -285,9 +295,11 @@ class CompileBuffer {
         argList.isAsync = asyncArgs;
       }
 
-      this.compiler._compileAggregate(argList, f, '[', ']', isAsync, true);
-      if (outputType === 'text') {
-        this.compiler.emit(', env.opts.autoescape)');
+      if (commandClass !== 'SequenceGetCommand') {
+        this.compiler._compileAggregate(argList, f, '[', ']', isAsync, true);
+        if (outputType === 'text') {
+          this.compiler.emit(', env.opts.autoescape)');
+        }
       }
 
       this.compiler.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`);

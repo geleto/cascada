@@ -82,6 +82,24 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql(['message']);
     });
 
+    it('should declare sequence output with initializer', async () => {
+      const context = {
+        makeSequence() {
+          return {
+            getUser(id) { return { id: id, name: 'u' + id }; },
+            snapshot() { return { ok: true }; }
+          };
+        }
+      };
+      const script = `
+        sequence db = makeSequence()
+        var user = db.getUser(1)
+        return user
+      `;
+      const result = await render(script, context);
+      expect(result).to.eql({ id: 1, name: 'u1' });
+    });
+
     it('should support multiple output declarations', async () => {
       const script = `
         data myData
@@ -468,6 +486,27 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql(['a', 'b']);
     });
 
+    it('should support sink method calls through subpaths', async () => {
+      const context = {
+        makeLogger() {
+          return {
+            nested: {
+              msgs: [],
+              write(msg) { this.msgs.push(msg); }
+            },
+            snapshot() { return this.nested.msgs.slice(); }
+          };
+        }
+      };
+      const script = `
+        sink logger = makeLogger()
+        logger.nested.write("msg")
+        return logger.snapshot()
+      `;
+      const result = await render(script, context);
+      expect(result).to.eql(['msg']);
+    });
+
     it('should use getReturnValue when snapshot is missing', async () => {
       const context = {
         makeLogger() {
@@ -543,6 +582,113 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       } catch (err) {
         expect(err.message).to.contain('sink snapshot rejected');
       }
+    });
+  });
+
+  describe('Sequence Outputs', function () {
+    it('should return values from sequence method calls', async () => {
+      const result = await render(`
+        sequence db = makeSequence()
+        var user = db.getUser(2)
+        return user
+      `, {
+        makeSequence: () => ({
+          getUser(id) { return { id: id, role: 'member' }; }
+        })
+      });
+      expect(result).to.eql({ id: 2, role: 'member' });
+    });
+
+    it('should return values from sequence property reads', async () => {
+      const result = await render(`
+        sequence db = makeSequence()
+        var state = db.connectionState
+        return state
+      `, {
+        makeSequence: () => ({
+          connectionState: 'ready'
+        })
+      });
+      expect(result).to.be('ready');
+    });
+
+    it('should return undefined for missing sequence properties', async () => {
+      const result = await render(`
+        sequence db = makeSequence()
+        var state = db.missing
+        return state
+      `, {
+        makeSequence: () => ({})
+      });
+      expect(result).to.be(undefined);
+    });
+
+    it('should preserve method receiver binding for sequence methods', async () => {
+      const result = await render(`
+        sequence db = makeSequence()
+        var value = db.read()
+        return value
+      `, {
+        makeSequence: () => ({
+          value: 42,
+          read() { return this.value; }
+        })
+      });
+      expect(result).to.be(42);
+    });
+
+    it('should support async return values from sequence methods', async () => {
+      const result = await render(`
+        sequence db = makeSequence()
+        var value = db.getAsync()
+        return value
+      `, {
+        makeSequence: () => ({
+          async getAsync() {
+            await delay(5);
+            return 7;
+          }
+        })
+      });
+      expect(result).to.be(7);
+    });
+
+    it('should preserve sequence call order', async () => {
+      const result = await render(`
+        sequence db = makeSequence()
+        var a = db.next()
+        var b = db.next()
+        return { a: a, b: b, events: db.snapshot() }
+      `, {
+        makeSequence: () => ({
+          i: 0,
+          events: [],
+          next() {
+            this.i += 1;
+            this.events.push(this.i);
+            return this.i;
+          },
+          snapshot() {
+            return this.events.slice();
+          }
+        })
+      });
+      expect(result).to.eql({ a: 1, b: 2, events: [1, 2] });
+    });
+
+    it('should support sequence subpath method calls', async () => {
+      const result = await render(`
+        sequence db = makeSequence()
+        var value = db.api.read(3)
+        return value
+      `, {
+        makeSequence: () => ({
+          api: {
+            read(v) { return v * 2; }
+          }
+        })
+      });
+      expect(result).to.be(6);
     });
   });
 
@@ -948,6 +1094,31 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         expect().fail('Should have thrown');
       } catch (err) {
         expect(err.message).to.contain('sink outputs must have an initializer');
+      }
+    });
+
+    it('should throw when sequence outputs have no initializer', async () => {
+      const script = `
+        sequence db
+      `;
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('sequence outputs must have an initializer');
+      }
+    });
+
+    it('should throw on sequence property assignment in phase 1', async () => {
+      const script = `
+        sequence db = makeSequence()
+        db.state = "x"
+      `;
+      try {
+        await render(script, { makeSequence: () => ({ state: 'y' }) });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('does not support property assignment');
       }
     });
 

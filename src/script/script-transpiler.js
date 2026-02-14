@@ -93,7 +93,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'extern', 'return', 'data', 'text', 'value', 'sink'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'extern', 'return', 'data', 'text', 'value', 'sink', 'sequence'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -1125,6 +1125,20 @@ class ScriptTranspiler {
       return true;
     }
 
+    if (outputType === 'sequence') {
+      if (opStart === '(') {
+        return false;
+      }
+      const { lex } = require('./script-lexer');
+      const parsed = this._parsePathSegments(lex(after), 0, true, true, false, lineIndex);
+      if (parsed.operator) {
+        throw new Error(`sequence output '${outputName}' does not support property assignment at line ${lineIndex + 1}`);
+      }
+      if (!parsed.remainingBuffer || !parsed.remainingBuffer.startsWith('(')) {
+        return false;
+      }
+    }
+
     if (outputType === 'value' && opStart !== '(') {
       return false;
     }
@@ -1158,7 +1172,7 @@ class ScriptTranspiler {
     const trimmed = codeContent.trim();
     const outputType = this._getFirstWord(trimmed);
     if (!outputType) return null;
-    if (!(outputType === 'data' || outputType === 'text' || outputType === 'value' || outputType === 'sink')) {
+    if (!(outputType === 'data' || outputType === 'text' || outputType === 'value' || outputType === 'sink' || outputType === 'sequence')) {
       return null;
     }
 
@@ -1188,9 +1202,9 @@ class ScriptTranspiler {
 
   _isOutputDeclarationLine(firstWord, codeContent) {
     if (!firstWord || !codeContent) return false;
-    if (firstWord === 'sink') {
-      // Sink declarations must have an assignment (e.g., "sink x = value")
-      return /^sink\s+[A-Za-z_][A-Za-z0-9_]*\s*=/.test(codeContent);
+    if (firstWord === 'sink' || firstWord === 'sequence') {
+      // Sink/sequence declarations must have an assignment.
+      return new RegExp(`^${firstWord}\\s+[A-Za-z_][A-Za-z0-9_]*\\s*=`).test(codeContent);
     }
     if (firstWord === 'data' || firstWord === 'text' || firstWord === 'value') {
       // Matches variable declarations with optional initialization
@@ -1247,7 +1261,7 @@ class ScriptTranspiler {
       this._processOutputDeclaration(parseResult, lineIndex);
     } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {
       // Output operation was processed
-    } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'value' || firstWord === 'sink') &&
+    } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'value' || firstWord === 'sink' || firstWord === 'sequence') &&
       this._isAssignment(code, lineIndex)) {
       this._processVar(parseResult, lineIndex, true);
     } else if (firstWord === 'endcapture') {
