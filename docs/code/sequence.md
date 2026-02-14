@@ -1,14 +1,10 @@
-# Sequence Output: Implementation Plan
+# Sequence Output
 
-This document defines the plan for a new output declaration:
-
-- `sequence <name> = <initializer>`
-
-`sequence` is initialized at declaration time (like `sink`), executes commands in source order, and supports value-returning operations.
-
-## Confirmed Semantics
+This document describes the current `sequence` output implementation.
 
 ## Declaration
+
+Syntax:
 
 ```cascada
 sequence db = makeDb()
@@ -17,57 +13,110 @@ sequence db = makeDb()
 Rules:
 
 - Initializer is required.
-- Same redeclaration/conflict rules as other outputs.
-- Script-only in phase 1 (same mode family as sink usage).
+- Declaration conflicts/redeclaration follow normal explicit-output rules.
+- In phase 1, this is script-mode output behavior (same family as `sink`).
 
-## Supported Operations (Phase 1)
+## What Sequence Supports
 
-1. Method call (returns value)
+1. Method calls (value-returning):
 
 ```cascada
 var user = db.getUser(1)
 ```
 
-2. Property read (returns value)
+2. Property reads (value-returning):
 
 ```cascada
-var status = db.connectionState
+var state = db.connectionState
 ```
 
-Not supported yet:
-
-- Property writes through sequence output syntax.
+3. Static subpath routing (same static-path extraction model as `sink` output commands):
 
 ```cascada
-db.connectionState = "x"   // compile-time error in phase 1
+var id = db.api.client.getId()
 ```
 
-Property-read details:
+Current non-goals:
 
-- Missing property returns `undefined`.
-- Method receiver binding must preserve `this === sequence object`.
+- Property assignment through sequence output syntax is rejected in phase 1.
 
-## Ordering Model
+```cascada
+db.connectionState = "x"   // compile error
+```
 
-- Sequence operations are ordered like sink command execution.
-- Access/call happens at command apply-time (not enqueue-time).
-- No integration with `!` sequence lock keys.
-- No use of `runtime/sequential.js` lock namespace for `sequence` output commands.
+## Runtime Model
 
-## Snapshot Model
+`sequence` is implemented as `SequenceOutputHandler` over sink-style infrastructure.
 
-- `sequence.snapshot()` uses sink-like result fallback:
+Key behavior:
+
+- The sequence initializer may be sync or async.
+- `snapshot()` fallback chain is sink-like:
   1. `snapshot()`
   2. `getReturnValue()`
   3. `finalize()`
-  4. object itself
-- No deep clone requirement in phase 1 (sink-like/reference semantics).
+  4. the object itself
+- Method receiver binding is preserved (`method.apply(target, args)`).
+- Missing properties return `undefined`.
 
-## Guard Model (Transactional Hooks)
+Relevant files:
 
-Sequence recovery in guard uses transaction-like hooks on the sequence object.
+- `src/runtime/output.js`
+- `src/runtime/commands.js`
 
-Hook shape:
+## Command Types
+
+`sequence` uses two explicit command classes:
+
+- `SequenceCallCommand`
+- `SequenceGetCommand`
+
+Why split:
+
+- Call and read semantics stay explicit.
+- `SequenceGetCommand` is non-mutating (`mutatesOutput = false`).
+- No shape-dependent branching in a single command implementation.
+
+Deferred result model:
+
+- Commands can be created with `withDeferredResult: true`.
+- The command owns `promise/resolve/reject`.
+- `apply()` resolves/rejects that promise with the call/read result.
+
+## Compiler Integration
+
+There are two emission paths.
+
+1. Statement-style output command path (`output_command`):
+
+- Emitted through `compile-buffer`.
+- Uses `SequenceCallCommand` for calls, `SequenceGetCommand` for reads.
+- Enqueue-only behavior.
+
+2. Expression path:
+
+- Emitted through `compiler-base` as:
+  - `runtime.sequenceCall(...)`
+  - `runtime.sequenceGet(...)`
+- Returns value to expressions via deferred command promise behavior.
+- `snapshot` member is intentionally not intercepted as a sequence read/call.
+
+Relevant files:
+
+- `src/compiler/compile-buffer.js`
+- `src/compiler/compiler-base.js`
+
+## Ordering Semantics
+
+- Normal flow is command-buffer ordered (same ordering model as sink command execution).
+- Access/call happens at apply-time (not at enqueue-time).
+- `sequence` output commands are not wired to `!` lock-key sequencing (`runtime/sequential.js`).
+
+## Guard Semantics
+
+`sequence` guard handling is transaction-style and independent from sink pause semantics.
+
+Hook shape on sequence objects:
 
 - `begin()`
 - `commit(token?)`
@@ -75,130 +124,54 @@ Hook shape:
 
 Behavior:
 
-- Guard targeting for `sequence` is exactly the same as `sink`.
-- Guard entry: call `begin()` and store returned token (if any).
-- Guard success: call `commit(token?)`.
-- Guard failure: call `rollback(token?)`.
-- Runtime guarantees each `begin()` pairs with exactly one `commit` or `rollback`.
+- On guard entry for targeted sequence handlers: `begin()` is called and token captured.
+- On guard success: `commit(token?)` is called.
+- On guard failure: `rollback(token?)` is called.
+- Nested transactions unwind in LIFO order.
+- Missing hooks: sequence transaction path is skipped for that handler.
+- Hook errors are collected as guard errors (poison path).
 
-Token handling:
+Buffer pause behavior:
 
-- Token is optional.
-- If returned, runtime passes it back to `commit/rollback`.
-- If not returned, implementation may use internal current transaction context.
+- Sequence-only guarded output sets do not pause the command buffer.
+- Guarded sets including non-sequence handlers still use pause/resume for snapshot/revert safety.
 
-Nesting:
+Deadlock-avoidance behavior for sequence expression calls/reads:
 
-- Nested guards create nested begin/commit/rollback scopes in LIFO order.
-- Implementations that support nesting should map to savepoints/subtransactions.
-- If implementation does not support nesting, it should fail clearly on nested `begin()`.
+- Normal flow: enqueue deferred command, return command promise.
+- Paused-buffer or foreign-buffer flow: run sequence command immediately and return its result/promise.
 
-Hook async/error semantics:
-
-- Hooks may return promises; promise-returning hooks are awaited.
-- If `begin`, `commit`, or `rollback` throws/rejects, result is poisoned.
-- On commit failure, result is poisoned (no automatic rollback retry in phase 1).
-- If hooks are missing, sequence output is ignored by guard transactional recovery path.
-
-## Implementation Plan
-
-## Phase 1: Runtime Type + Declaration
-
-Files:
-
-- `src/runtime/output.js`
-- `src/runtime/runtime.js`
-- parser/compiler declaration handling
-
-Steps:
-
-1. Add output type `"sequence"` to declaration pipeline.
-2. Implement `SequenceOutputHandler` (or extend sink-style handler) with:
-   - initializer resolution (sync/async)
-   - ordered command application
-   - snapshot fallback chain
-3. Register in output buffer maps like other outputs.
-
-## Phase 2: Command Surface
-
-Files:
-
-- `src/runtime/commands.js`
-- compiler output-command emission
-
-Steps:
-
-1. Add sequence command types:
-   - `SequenceCallCommand`
-   - `SequenceGetCommand`
-2. Ensure `apply()` can return operation values to expression paths.
-3. Preserve sink-like side-effect ordering while allowing return values.
-
-## Phase 3: Compiler Semantics
-
-Files:
-
-- `src/compiler/compiler.js`
-- `src/compiler/compiler-base.js`
-- script transpiler pieces
-
-Steps:
-
-1. Parse/emit `sequence` declaration with required initializer.
-2. For `sequenceName.foo(...)`, emit sequence call command path and return value.
-3. For `sequenceName.foo`, emit sequence property-read command path and return value.
-4. Reject property assignment on sequence outputs in phase 1.
-5. Preserve method call receiver binding.
-
-## Phase 4: Guard Integration
-
-Files:
+Relevant files:
 
 - `src/runtime/guard.js`
-- compiler guard emission where output snapshots/recovery are wired
+- `src/compiler/compiler.js`
+- `src/runtime/output.js`
 
-Steps:
+## Parser/Transpiler Notes
 
-1. On guard entry for targeted sequence outputs: call `begin()` and store token per output.
-2. On guard success: call `commit(token?)`.
-3. On guard failure: call `rollback(token?)`.
-4. Ensure nested guards unwind in strict LIFO order.
-5. Sequence targeting/selectors follow sink selector behavior.
+- `sequence` is recognized as an explicit output declaration.
+- Declarations require initializer.
+- Sequence property assignment is rejected in script transpilation/compilation path.
 
-## Phase 5: Tests
+Relevant files:
 
-Add/extend:
+- `src/parser.js`
+- `src/script/script-transpiler.js`
+
+## Current Test Coverage
+
+Primary suites:
 
 - `tests/explicit-outputs.js`
 - `tests/poison/guard.js`
 
-Coverage:
+Covered behavior includes:
 
-1. Declaration
-   - requires initializer
-   - conflicts/redeclaration
-2. Core operations
-   - method calls return values
-   - property reads return values
-   - async return values
-   - missing property returns `undefined`
-   - method `this` binding is sequence object
-3. Ordering
-   - source-order execution with mixed fast/slow ops
-   - apply-time (not enqueue-time) access behavior
-4. Guard transactions
-   - begin/commit on success
-   - begin/rollback on failure
-   - optional-token handling
-   - nesting behavior
-   - hook throw/reject poison behavior
-   - commit failure poison behavior
-   - missing-hook ignore behavior
-   - selector behavior parity with sink (`guard @`, named handlers, wildcard)
-5. Snapshot
-   - snapshot fallback chain and command-time consistency
-
-## Compatibility Notes
-
-- Existing `!` sequential semantics remain unchanged.
-- `sequence` uses separate codepaths from `runtime/sequential.js` lock mechanics.
+- declaration validation
+- return values from sequence calls/reads
+- async call return values
+- method receiver binding
+- missing-property `undefined`
+- source-order sequence execution
+- sequence subpath method calls
+- guard begin/commit and begin/rollback flows
