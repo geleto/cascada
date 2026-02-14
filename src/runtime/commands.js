@@ -245,6 +245,102 @@ class SinkCommand extends OutputCommand {
   }
 }
 
+class SequenceCallCommand extends OutputCommand {
+  constructor({ handler, command, args = null, arguments: legacyArgs = null, subpath = null, pos = null, withDeferredResult = false }) {
+    super({
+      handler,
+      command: command || null,
+      args: args || legacyArgs || [],
+      subpath: subpath || null,
+      pos
+    });
+    if (withDeferredResult) {
+      this.promise = new Promise((resolve, reject) => {
+        this.resolve = resolve;
+        this.reject = reject;
+      });
+    }
+  }
+
+  apply(dispatchCtx) {
+    super.apply(dispatchCtx);
+    if (!dispatchCtx) return undefined;
+
+    const execute = (sink) => {
+      const target = resolveSubpath(sink, this.subpath);
+      if (target === null || target === undefined) {
+        this.resolveResult(undefined);
+        return undefined;
+      }
+      const method = this.command ? target[this.command] : target;
+      if (typeof method !== 'function') {
+        this.resolveResult(undefined);
+        return undefined;
+      }
+      const result = method.apply(target, this.arguments);
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(
+          (value) => {
+            this.resolveResult(value);
+            return value;
+          },
+          (err) => {
+            this.rejectResult(err);
+            throw err;
+          }
+        );
+      }
+      this.resolveResult(result);
+      return result;
+    };
+
+    const sink = dispatchCtx._ensureSinkResolved ? dispatchCtx._ensureSinkResolved() : dispatchCtx._sink;
+    if (sink && typeof sink.then === 'function') {
+      return Promise.resolve(sink).then(execute);
+    }
+    return execute(sink);
+  }
+}
+
+class SequenceGetCommand extends OutputCommand {
+  constructor({ handler, command, subpath = null, pos = null, withDeferredResult = false }) {
+    super({
+      handler,
+      command: command || null,
+      args: [],
+      subpath: subpath || null,
+      pos
+    });
+    this.mutatesOutput = false;
+    if (withDeferredResult) {
+      this.promise = new Promise((resolve, reject) => {
+        this.resolve = resolve;
+        this.reject = reject;
+      });
+    }
+  }
+
+  apply(dispatchCtx) {
+    if (!dispatchCtx) return undefined;
+
+    const execute = (sink) => {
+      const target = resolveSubpath(sink, this.subpath);
+      const value = (target === null || target === undefined || !this.command) ? undefined : target[this.command];
+      this.resolveResult(value);
+      return value;
+    };
+
+    const sink = dispatchCtx._ensureSinkResolved ? dispatchCtx._ensureSinkResolved() : dispatchCtx._sink;
+    if (sink && typeof sink.then === 'function') {
+      return Promise.resolve(sink).then(execute, (err) => {
+        this.rejectResult(err);
+        throw err;
+      });
+    }
+    return execute(sink);
+  }
+}
+
 class ErrorCommand extends Command {
   constructor(errors) {
     super();
@@ -320,7 +416,23 @@ module.exports = {
   ValueCommand,
   DataCommand,
   SinkCommand,
+  SequenceCallCommand,
+  SequenceGetCommand,
   ErrorCommand,
   SnapshotCommand,
   SetTargetCommand
 };
+
+function resolveSubpath(target, subpath) {
+  if (!Array.isArray(subpath) || subpath.length === 0) {
+    return target;
+  }
+  let current = target;
+  for (const segment of subpath) {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
+}

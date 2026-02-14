@@ -1,6 +1,14 @@
 'use strict';
 
-const { TextCommand, ValueCommand, DataCommand, SinkCommand, SnapshotCommand } = require('./commands');
+const {
+  TextCommand,
+  ValueCommand,
+  DataCommand,
+  SinkCommand,
+  SequenceCallCommand,
+  SequenceGetCommand,
+  SnapshotCommand
+} = require('./commands');
 const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
@@ -332,11 +340,14 @@ function createOutput(frame, outputName, context, outputType = null) {
       dynamicCommands: false
     });
   }
-  // Data output supports arbitrary commands (set, push, merge, etc.).
-  return createOutputFacade(new DataOutput(frame, outputName, context, type), {
-    callable: false,
-    dynamicCommands: true
-  });
+  if (type === 'data') {
+    // Data output supports arbitrary commands (set, push, merge, etc.).
+    return createOutputFacade(new DataOutput(frame, outputName, context, type), {
+      callable: false,
+      dynamicCommands: true
+    });
+  }
+  throw new Error(`Unsupported output type '${type}'`);
 }
 
 class SinkOutputHandler {
@@ -495,6 +506,69 @@ function createSinkOutput(frame, outputName, context, sink) {
   return new SinkOutputHandler(frame, outputName, context, sink);
 }
 
+class SequenceOutputHandler extends SinkOutputHandler {
+  constructor(frame, outputName, context, sink) {
+    super(frame, outputName, context, sink);
+    this._outputType = 'sequence';
+  }
+
+  beginTransaction() {
+    const sinkVal = this._ensureSinkResolved();
+    const begin = (sink) => {
+      if (!sink || typeof sink.begin !== 'function') {
+        return { active: false, token: undefined };
+      }
+      const token = sink.begin();
+      if (token && typeof token.then === 'function') {
+        return Promise.resolve(token).then((resolvedToken) => ({ active: true, token: resolvedToken }));
+      }
+      return { active: true, token };
+    };
+    if (sinkVal && typeof sinkVal.then === 'function') {
+      return Promise.resolve(sinkVal).then(begin);
+    }
+    return begin(sinkVal);
+  }
+
+  commitTransaction(tx) {
+    if (!tx || !tx.active) {
+      return undefined;
+    }
+    const sinkVal = this._ensureSinkResolved();
+    const commit = (sink) => {
+      if (!sink || typeof sink.commit !== 'function') {
+        return undefined;
+      }
+      return sink.commit(tx.token);
+    };
+    if (sinkVal && typeof sinkVal.then === 'function') {
+      return Promise.resolve(sinkVal).then(commit);
+    }
+    return commit(sinkVal);
+  }
+
+  rollbackTransaction(tx) {
+    if (!tx || !tx.active) {
+      return undefined;
+    }
+    const sinkVal = this._ensureSinkResolved();
+    const rollback = (sink) => {
+      if (!sink || typeof sink.rollback !== 'function') {
+        return undefined;
+      }
+      return sink.rollback(tx.token);
+    };
+    if (sinkVal && typeof sinkVal.then === 'function') {
+      return Promise.resolve(sinkVal).then(rollback);
+    }
+    return rollback(sinkVal);
+  }
+}
+
+function createSequenceOutput(frame, outputName, context, sink) {
+  return new SequenceOutputHandler(frame, outputName, context, sink);
+}
+
 function getOutputHandler(frame, outputName) {
   let current = frame;
   while (current) {
@@ -536,7 +610,9 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
 
   const output = (outputType === 'sink')
     ? createSinkOutput(frame, outputName, context, initializer)
-    : createOutput(frame, outputName, context, outputType);
+    : (outputType === 'sequence')
+      ? createSequenceOutput(frame, outputName, context, initializer)
+      : createOutput(frame, outputName, context, outputType);
 
   output._buffer = buffer;
   frame._outputs[outputName] = output;
@@ -548,7 +624,7 @@ function declareOutput(frame, outputName, outputType, context, initializer = nul
     output._iterator.bindToCurrentBuffer();
   }
 
-  if (outputType === 'sink') {
+  if (outputType === 'sink' || outputType === 'sequence') {
     buffer._outputHandlers = buffer._outputHandlers || Object.create(null);
     buffer._outputHandlers[outputName] = output;
   }
@@ -562,6 +638,53 @@ function finalizeUnobservedSinks(frame, context) {
   return undefined;
 }
 
+function sequenceCall(frame, outputName, subpath, command, args) {
+  const cmd = new SequenceCallCommand({
+    handler: outputName,
+    command,
+    subpath: Array.isArray(subpath) ? subpath : [],
+    args: Array.isArray(args) ? args : [],
+    pos: { lineno: 0, colno: 0 },
+    withDeferredResult: true
+  });
+  return dispatchSequenceCommand(frame, outputName, cmd);
+}
+
+function sequenceGet(frame, outputName, subpath, command) {
+  const cmd = new SequenceGetCommand({
+    handler: outputName,
+    command,
+    subpath: Array.isArray(subpath) ? subpath : [],
+    pos: { lineno: 0, colno: 0 },
+    withDeferredResult: true
+  });
+  return dispatchSequenceCommand(frame, outputName, cmd);
+}
+
+function dispatchSequenceCommand(frame, outputName, command) {
+  const output = getOutputHandler(frame, outputName);
+  if (!output || output._outputType !== 'sequence') {
+    throw new Error(`'${outputName}' is not a declared sequence output`);
+  }
+
+  const activeBuffer = frame && frame._outputBuffer ? frame._outputBuffer : null;
+  const outputBuffer = output._buffer || null;
+  const canBuffer = !!(
+    activeBuffer &&
+    outputBuffer &&
+    activeBuffer === outputBuffer &&
+    typeof outputBuffer.isPaused === 'function' &&
+    !outputBuffer.isPaused()
+  );
+
+  if (canBuffer) {
+    outputBuffer.add(command, outputName);
+    return command.promise;
+  }
+
+  return command.apply(output);
+}
+
 module.exports = {
   Output,
   DataOutput,
@@ -570,10 +693,14 @@ module.exports = {
   createOutput,
   SinkOutputHandler,
   createSinkOutput,
+  SequenceOutputHandler,
+  createSequenceOutput,
   getOutputHandler,
   declareOutput,
   findOutputBuffer,
-  finalizeUnobservedSinks
+  finalizeUnobservedSinks,
+  sequenceCall,
+  sequenceGet
 };
 
 function cloneSnapshotValue(value) {

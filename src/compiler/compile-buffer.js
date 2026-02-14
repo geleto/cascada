@@ -9,6 +9,7 @@ const nodes = require('../nodes');
 const OUTPUT_COMMAND_CLASS = {
   data: 'DataCommand',
   sink: 'SinkCommand',
+  sequence: 'SequenceCallCommand',
   text: 'TextCommand',
   value: 'ValueCommand'
 };
@@ -133,7 +134,8 @@ class CompileBuffer {
 
       // Case 2: OutputCommand handler.method() or handler()
       if (n instanceof nodes.OutputCommand) {
-        const staticPath = this.compiler.sequential._extractStaticPath(n.call.name);
+        const pathNode = n.call instanceof nodes.FunCall ? n.call.name : n.call;
+        const staticPath = this.compiler.sequential._extractStaticPath(pathNode);
         if (staticPath && staticPath.length > 0) {
           const handlerName = staticPath[0]; // First segment is always handler name
           handlers.add(handlerName);
@@ -157,7 +159,8 @@ class CompileBuffer {
    */
   compileOutputCommand(node, frame) {
     // Extract static path once for validation and compilation
-    const staticPath = this.compiler.sequential._extractStaticPath(node.call.name);
+    const isCallNode = node.call instanceof nodes.FunCall;
+    const staticPath = this.compiler.sequential._extractStaticPath(isCallNode ? node.call.name : node.call);
 
     // Validate the static path
     if (!staticPath || staticPath.length === 0) {
@@ -233,14 +236,41 @@ class CompileBuffer {
     };
 
     wrapper((f) => {
+      if (outputType === 'sequence') {
+        if (isCallNode) {
+          if (!command) {
+            this.compiler.fail('Invalid sequence command syntax: expected sequenceOutput.method(...)', node.lineno, node.colno, node);
+          }
+          const argList = node.call.args;
+          this.compiler.emit(`new runtime.SequenceCallCommand({ handler: '${handler}', command: '${command}', `);
+          if (subpath && subpath.length > 0) {
+            this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
+          }
+          this.compiler.emit('args: ');
+          this.compiler._compileAggregate(argList, f, '[', ']', isAsync, true);
+          this.compiler.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`);
+          return;
+        }
+
+        if (!command) {
+          this.compiler.fail('Invalid sequence read syntax: expected sequenceOutput.path', node.lineno, node.colno, node);
+        }
+        this.compiler.emit(`new runtime.SequenceGetCommand({ handler: '${handler}', command: '${command}', `);
+        if (subpath && subpath.length > 0) {
+          this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
+        }
+        this.compiler.emit(`pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`);
+        return;
+      }
+
       const commandClass = OUTPUT_COMMAND_CLASS[outputType];
       if (!commandClass) {
         this.compiler.fail(
-          `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/value/sink).`,
+          `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/value/sink/sequence).`,
           node.lineno,
           node.colno,
           node
-        );
+      );
       }
 
       this.compiler.emit(`new runtime.${commandClass}({ handler: '${handler}', `);

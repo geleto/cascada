@@ -93,7 +93,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'extern', 'return', 'data', 'text', 'value', 'sink'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'extern', 'return', 'data', 'text', 'value', 'sink', 'sequence'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -1022,7 +1022,8 @@ class ScriptTranspiler {
       args,
       append,
       segments: pathSegments,
-      directCall: pathSegments.length === 0 && !operator
+      directCall: pathSegments.length === 0 && !operator,
+      operatorUsed: !!operator
     };
   }
 
@@ -1044,6 +1045,9 @@ class ScriptTranspiler {
     if (opStart === '=') {
       if (!outputInfo.writable) {
         throw new Error(`Output '${outputName}' is read-only in this scope at line ${lineIndex + 1}`);
+      }
+      if (outputType === 'sequence') {
+        throw new Error(`sequence output '${outputName}' does not support assignment at line ${lineIndex + 1}`);
       }
 
       const assignmentExpr = afterTrimmed.slice(1).trimStart();
@@ -1125,6 +1129,21 @@ class ScriptTranspiler {
       return true;
     }
 
+    if (outputType === 'sequence') {
+      const parsed = this._parseDataCommandFromOutput(after, lineIndex);
+      if (parsed.operatorUsed) {
+        throw new Error(`sequence output '${outputName}' does not support property assignment at line ${lineIndex + 1}`);
+      }
+      if (parsed.command === 'snapshot' && parsed.segments.length === 0) {
+        return false;
+      }
+      parseResult.lineType = 'TAG';
+      parseResult.tagName = 'output_command';
+      parseResult.blockType = null;
+      parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
+      return true;
+    }
+
     if (outputType === 'value' && opStart !== '(') {
       return false;
     }
@@ -1158,7 +1177,7 @@ class ScriptTranspiler {
     const trimmed = codeContent.trim();
     const outputType = this._getFirstWord(trimmed);
     if (!outputType) return null;
-    if (!(outputType === 'data' || outputType === 'text' || outputType === 'value' || outputType === 'sink')) {
+    if (!(outputType === 'data' || outputType === 'text' || outputType === 'value' || outputType === 'sink' || outputType === 'sequence')) {
       return null;
     }
 
@@ -1188,9 +1207,9 @@ class ScriptTranspiler {
 
   _isOutputDeclarationLine(firstWord, codeContent) {
     if (!firstWord || !codeContent) return false;
-    if (firstWord === 'sink') {
-      // Sink declarations must have an assignment (e.g., "sink x = value")
-      return /^sink\s+[A-Za-z_][A-Za-z0-9_]*\s*=/.test(codeContent);
+    if (firstWord === 'sink' || firstWord === 'sequence') {
+      // sink/sequence declarations must have an assignment
+      return new RegExp(`^${firstWord}\\s+[A-Za-z_][A-Za-z0-9_]*\\s*=`).test(codeContent);
     }
     if (firstWord === 'data' || firstWord === 'text' || firstWord === 'value') {
       // Matches variable declarations with optional initialization
@@ -1247,7 +1266,7 @@ class ScriptTranspiler {
       this._processOutputDeclaration(parseResult, lineIndex);
     } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {
       // Output operation was processed
-    } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'value' || firstWord === 'sink') &&
+    } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'value' || firstWord === 'sink' || firstWord === 'sequence') &&
       this._isAssignment(code, lineIndex)) {
       this._processVar(parseResult, lineIndex, true);
     } else if (firstWord === 'endcapture') {

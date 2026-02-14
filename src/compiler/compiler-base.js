@@ -712,6 +712,19 @@ class CompilerBase extends Obj {
 
   compileLookupVal(node, frame) {
     if (node.isAsync) {
+      if (this.scriptMode) {
+        const sequencePath = this.sequential._extractStaticPath(node);
+        if (sequencePath && sequencePath.length >= 2) {
+          const outputDecl = this.async._getDeclaredOutput(frame, sequencePath[0]);
+          const propertyName = sequencePath[sequencePath.length - 1];
+          if (outputDecl && outputDecl.type === 'sequence' && propertyName !== 'snapshot') {
+            const subpath = sequencePath.slice(1, -1);
+            this.emit(`runtime.sequenceGet(frame, "${sequencePath[0]}", ${JSON.stringify(subpath)}, "${propertyName}")`);
+            return;
+          }
+        }
+      }
+
       // Handle both sequential and standard lookups.
 
       // Check if this is a sequential lookup (marked with `!`).
@@ -783,6 +796,20 @@ class CompilerBase extends Obj {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
     if (this.asyncMode) {
+      if (this.scriptMode) {
+        const sequencePath = this.sequential._extractStaticPath(node.name);
+        if (sequencePath && sequencePath.length >= 2) {
+          const outputDecl = this.async._getDeclaredOutput(frame, sequencePath[0]);
+          const methodName = sequencePath[sequencePath.length - 1];
+          if (outputDecl && outputDecl.type === 'sequence' && methodName !== 'snapshot') {
+            const subpath = sequencePath.slice(1, -1);
+            this._compileAggregate(node.args, frame, '[', ']', true, false, function (resolvedArgs) {
+              this.emit(`return runtime.sequenceCall(frame, "${sequencePath[0]}", ${JSON.stringify(subpath)}, "${methodName}", ${resolvedArgs});`);
+            });
+            return;
+          }
+        }
+      }
 
       const sequenceLockKey = node.lockKey;//this.sequential._getSequenceKey(node.name, frame);
       if (sequenceLockKey) {

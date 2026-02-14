@@ -546,6 +546,117 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     });
   });
 
+  describe('Sequence Outputs', function () {
+    it('should return values from sequence calls and reads', async () => {
+      const script = `
+        sequence db = makeDb()
+        var user = db.getUser(1)
+        var state = db.connectionState
+        var id = db.api.client.getId()
+        var missing = db.notThere
+        return { user: user, state: state, id: id, missing: missing }
+      `;
+      const result = await render(script, {
+        makeDb: () => ({
+          connectionState: 'connected',
+          getUser(id) { return { id: id, name: 'u' + id }; },
+          api: {
+            client: {
+              id: 42,
+              getId() { return this.id; }
+            }
+          }
+        })
+      });
+      expect(result).to.eql({
+        user: { id: 1, name: 'u1' },
+        state: 'connected',
+        id: 42,
+        missing: undefined
+      });
+    });
+
+    it('should support async sequence call return values', async () => {
+      const script = `
+        sequence db = makeDb()
+        var user = db.getUserAsync(9)
+        return user
+      `;
+      const result = await render(script, {
+        makeDb: () => ({
+          async getUserAsync(id) {
+            await delay(5);
+            return { id: id };
+          }
+        })
+      });
+      expect(result).to.eql({ id: 9 });
+    });
+
+    it('should preserve source order for sequence calls', async () => {
+      const script = `
+        sequence db = makeDb()
+        var a = db.step("a")
+        var b = db.step("b")
+        return db.snapshot()
+      `;
+      const result = await render(script, {
+        makeDb: () => ({
+          log: [],
+          step(label) { this.log.push(label); return label; },
+          snapshot() { return this.log.slice(); }
+        })
+      });
+      expect(result).to.eql(['a', 'b']);
+    });
+
+    it('should run sequence guard transactions (begin/commit and begin/rollback)', async () => {
+      const successScript = `
+        sequence db = makeDb()
+        guard @db
+          var r = db.write("ok")
+        endguard
+        return db.snapshot()
+      `;
+      const success = await render(successScript, {
+        makeDb: () => ({
+          events: [],
+          begin() { this.events.push('begin'); return { tx: 1 }; },
+          commit() { this.events.push('commit'); },
+          rollback() { this.events.push('rollback'); },
+          write(v) { this.events.push('write:' + v); return v; },
+          snapshot() { return this.events.slice(); }
+        })
+      });
+      expect(success).to.eql(['begin', 'write:ok', 'commit']);
+
+      const failureScript = `
+        sequence db = makeDb()
+        var flag = "ok"
+        guard @db, flag
+          var r = db.write("fail")
+          flag = fail()
+        endguard
+        return db.snapshot()
+      `;
+      const failure = await render(failureScript, {
+        makeDb: () => ({
+          events: [],
+          begin() { this.events.push('begin'); return { tx: 2 }; },
+          commit() { this.events.push('commit'); },
+          rollback() { this.events.push('rollback'); },
+          write(v) {
+            this.events.push('write:' + v);
+            return v;
+          },
+          snapshot() { return this.events.slice(); }
+        }),
+        fail: () => createPoison([new Error('guard failure')])
+      });
+      expect(failure).to.eql(['begin', 'write:fail', 'rollback']);
+    });
+  });
+
   describe('Macros', function () {
     it('should support explicit outputs inside macros', async () => {
       const script = `
@@ -951,6 +1062,18 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       }
     });
 
+    it('should throw when sequence outputs have no initializer', async () => {
+      const script = `
+        sequence db
+      `;
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('sequence outputs must have an initializer');
+      }
+    });
+
     it('should throw when using undeclared outputs', async () => {
       const script = `
         myData.x = 1
@@ -1056,6 +1179,19 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
         expect(err.errors[0].message).to.contain('Target for');
+      }
+    });
+
+    it('should reject sequence property assignment syntax', async () => {
+      const script = `
+        sequence db = makeDb()
+        db.connectionState = "x"
+      `;
+      try {
+        await render(script, { makeDb: () => ({ connectionState: 'ok' }) });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('does not support property assignment');
       }
     });
   });

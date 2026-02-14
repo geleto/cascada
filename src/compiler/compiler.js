@@ -548,7 +548,8 @@ class Compiler extends CompilerBase {
 
     // 2. Link for explicit reversion (optional, if we want to support manual revert)
     this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-    this.emit.line(`${this.buffer.currentBuffer}.pause();`);
+    const pauseLinePos = this.codebuf.length;
+    this.emit.line('');
     this.emit.line('try {');
     let guardInitLinePos = null;
     let guardRepairLinePos = null;
@@ -659,6 +660,25 @@ class Compiler extends CompilerBase {
       );
     }
 
+    const resolveGuardedOutputNames = () => {
+      if (!needsOutputSnapshot) {
+        return [];
+      }
+      if (handlerTargets && handlerTargets.length > 0) {
+        return handlerTargets.slice();
+      }
+      return frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
+    };
+
+    const guardedOutputNames = resolveGuardedOutputNames();
+    const shouldPauseGuardBuffer = guardedOutputNames.some((name) => {
+      const decl = this.async._getDeclaredOutput(frame, name);
+      return !(decl && decl.type === 'sequence');
+    });
+    if (shouldPauseGuardBuffer) {
+      this.emit.insertLine(pauseLinePos, `${this.buffer.currentBuffer}.pause();`);
+    }
+
 
     // 4. Inject Logic BEFORE closing the block
     // We need to wait for all inner async operations to complete so the buffer is fully populated
@@ -680,10 +700,20 @@ class Compiler extends CompilerBase {
     }
 
     this.emit.line(`const ${guardErrorsVar} = await runtime.guard.getErrors(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${allowedBufferHandlers});`);
+    if (outputGuardStateVar) {
+      const guardCommitErrorsVar = this._tmpid();
+      this.emit.line(`let ${guardCommitErrorsVar} = [];`);
+      this.emit.line(`if (${guardErrorsVar}.length === 0) {`);
+      this.emit.line(`  ${guardCommitErrorsVar} = await runtime.guard.commitOutputTransactions(${outputGuardStateVar});`);
+      this.emit.line(`  if (${guardCommitErrorsVar}.length > 0) { ${guardErrorsVar}.push(...${guardCommitErrorsVar}); }`);
+      this.emit.line('}');
+    }
 
     this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
     if (outputGuardStateVar) {
-      this.emit.line(`  runtime.guard.restoreOutputs(${this.buffer.currentBuffer}, ${outputGuardStateVar});`);
+      const rollbackErrorsVar = this._tmpid();
+      this.emit.line(`  const ${rollbackErrorsVar} = await runtime.guard.restoreOutputs(${this.buffer.currentBuffer}, ${outputGuardStateVar});`);
+      this.emit.line(`  if (${rollbackErrorsVar}.length > 0) { ${guardErrorsVar}.push(...${rollbackErrorsVar}); }`);
     } else if (handlerTargetsAll || !hasAnySelectors) {
       this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer});`);
     } else if (handlerTargets) {
@@ -723,7 +753,9 @@ class Compiler extends CompilerBase {
     this.emit.line('}');
 
     this.emit.line('} finally {');
-    this.emit.line(`  ${this.buffer.currentBuffer}.resume();`);
+    if (shouldPauseGuardBuffer) {
+      this.emit.line(`  ${this.buffer.currentBuffer}.resume();`);
+    }
     this.emit.line('}');
 
     // 6. End Async Block
@@ -1500,14 +1532,14 @@ class Compiler extends CompilerBase {
     if ((outputType === 'data' || outputType === 'text' || outputType === 'value') && node.initializer) {
       this.fail(`${outputType} outputs cannot have initializers`, node.lineno, node.colno, node);
     }
-    if (outputType === 'sink' && !node.initializer) {
-      this.fail('sink outputs must have an initializer', node.lineno, node.colno, node);
+    if ((outputType === 'sink' || outputType === 'sequence') && !node.initializer) {
+      this.fail(`${outputType} outputs must have an initializer`, node.lineno, node.colno, node);
     }
 
     this.async._addDeclaredOutput(frame, name, outputType, node.initializer, node);
 
     this.emit(`runtime.declareOutput(frame, "${name}", "${outputType}", context, `);
-    if (outputType === 'sink') {
+    if (outputType === 'sink' || outputType === 'sequence') {
       this.compile(node.initializer, frame);
     } else {
       this.emit('null');

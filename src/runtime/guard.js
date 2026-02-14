@@ -38,7 +38,9 @@ function initOutputSnapshots(frame, handlerNames = null) {
   const state = {
     snapshots: Object.create(null),
     sinkHandlers: [],
-    clearHandlers: []
+    clearHandlers: [],
+    sequenceTransactions: [],
+    sequenceErrors: []
   };
 
   const targets = handlerNames ?? [];
@@ -64,6 +66,25 @@ function initOutputSnapshots(frame, handlerNames = null) {
       state.sinkHandlers.push(handlerName);
       continue;
     }
+    if (output._outputType === 'sequence') {
+      const tx = { handlerName, output, active: false, token: undefined, beginPromise: null };
+      if (typeof output.beginTransaction === 'function') {
+        try {
+          tx.beginPromise = Promise.resolve(output.beginTransaction()).then((result) => {
+            if (result && result.active) {
+              tx.active = true;
+              tx.token = result.token;
+            }
+          }, (err) => {
+            state.sequenceErrors.push(err);
+          });
+        } catch (err) {
+          state.sequenceErrors.push(err);
+        }
+      }
+      state.sequenceTransactions.push(tx);
+      continue;
+    }
     if (typeof output._captureGuardState !== 'function') {
       continue;
     }
@@ -73,14 +94,14 @@ function initOutputSnapshots(frame, handlerNames = null) {
   return state;
 }
 
-function restoreOutputs(buffer, outputGuardState) {
+async function restoreOutputs(buffer, outputGuardState) {
   if (!outputGuardState || !buffer) {
-    return;
+    return [];
   }
 
   if (Array.isArray(outputGuardState.clearHandlers) && outputGuardState.clearHandlers.length > 0) {
     clearBuffer(buffer, outputGuardState.clearHandlers);
-    return;
+    return settleSequenceTransactions(outputGuardState, 'rollback');
   }
 
   const snapshotNames = Object.keys(outputGuardState.snapshots || {});
@@ -99,6 +120,14 @@ function restoreOutputs(buffer, outputGuardState) {
       pos: { lineno: 0, colno: 0 }
     }), handlerName);
   }
+  return settleSequenceTransactions(outputGuardState, 'rollback');
+}
+
+async function commitOutputTransactions(outputGuardState) {
+  if (!outputGuardState) {
+    return [];
+  }
+  return settleSequenceTransactions(outputGuardState, 'commit');
 }
 
 async function collectGuardVariableErrors(frame, guardState) {
@@ -288,12 +317,47 @@ function repairSequenceLocks(frame, guardState, lockNames) {
   }
 }
 
+async function settleSequenceTransactions(outputGuardState, mode) {
+  const errors = [];
+  if (!outputGuardState || !Array.isArray(outputGuardState.sequenceTransactions)) {
+    return errors;
+  }
+
+  if (Array.isArray(outputGuardState.sequenceErrors) && outputGuardState.sequenceErrors.length > 0) {
+    errors.push(...outputGuardState.sequenceErrors);
+    outputGuardState.sequenceErrors.length = 0;
+  }
+
+  for (let i = outputGuardState.sequenceTransactions.length - 1; i >= 0; i--) {
+    const tx = outputGuardState.sequenceTransactions[i];
+    if (!tx || !tx.output) {
+      continue;
+    }
+    try {
+      if (tx.beginPromise) {
+        await tx.beginPromise;
+      }
+      if (!tx.active) {
+        continue;
+      }
+      const fn = mode === 'commit' ? tx.output.commitTransaction : tx.output.rollbackTransaction;
+      if (typeof fn !== 'function') {
+        continue;
+      }
+      await Promise.resolve(fn.call(tx.output, tx));
+    } catch (err) {
+      errors.push(err);
+    }
+  }
+  return errors;
+}
+
 module.exports = {
   init,
   initOutputSnapshots,
   getErrors,
   complete,
   repairSequenceLocks,
-  restoreOutputs
+  restoreOutputs,
+  commitOutputTransactions
 };
-
