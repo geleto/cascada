@@ -541,6 +541,10 @@ class Compiler extends CompilerBase {
     frame = this.buffer.asyncBufferNodeBegin(node, frame, true);
     // Guard blocks should keep output writes scoped to the guard buffer.
     frame.outputScope = true;
+    const previousGuardDepth = this.guardDepth;
+    this.guardDepth = previousGuardDepth + 1;
+
+    try {
 
     // 2. Link for explicit reversion (optional, if we want to support manual revert)
     this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
@@ -759,6 +763,9 @@ class Compiler extends CompilerBase {
 
     // 6. End Async Block
     frame = this.buffer.asyncBufferNodeEnd(node, frame, true, false, node);
+    } finally {
+      this.guardDepth = previousGuardDepth;
+    }
   }
 
   //todo! - get rid of the callback

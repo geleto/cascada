@@ -1886,5 +1886,59 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const result = await render(script, context);
       expect(result).to.eql({ outer: 1 });
     });
+
+    it('should reject sink snapshot() inside guard', async () => {
+      const script = `
+        sink logger = makeLogger()
+        guard @logger
+          var snap = logger.snapshot()
+          logger.write("x")
+        endguard
+        return logger.snapshot()
+      `;
+      try {
+        await render(script, {
+          makeLogger() {
+            return {
+              msgs: [],
+              write(msg) { this.msgs.push(msg); },
+              snapshot() { return this.msgs.slice(); }
+            };
+          }
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('sink snapshot() is not allowed inside guard blocks');
+      }
+    });
+
+    it('should reject sink snapshot() inside nested guard with recover', async () => {
+      const script = `
+        sink logger = makeLogger()
+        guard @logger
+          guard @logger
+            logger.write("x")
+            var snap = logger.snapshot()
+          recover
+            logger.write("r")
+          endguard
+        endguard
+        return logger.snapshot()
+      `;
+      try {
+        await render(script, {
+          makeLogger() {
+            return {
+              msgs: [],
+              write(msg) { this.msgs.push(msg); },
+              snapshot() { return this.msgs.slice(); }
+            };
+          }
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('sink snapshot() is not allowed inside guard blocks');
+      }
+    });
   });
 });

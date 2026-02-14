@@ -42,6 +42,7 @@ class CompilerBase extends Obj {
     this.throwOnUndefined = options.throwOnUndefined || false;
     this.asyncMode = options.asyncMode || false;
     this.scriptMode = options.scriptMode || false;
+    this.guardDepth = 0;
 
     // These will be instantiated by the derived Compiler class
     // and are essential for expression compilation.
@@ -802,6 +803,9 @@ class CompilerBase extends Obj {
           const outputDecl = this.async._getDeclaredOutput(frame, sequencePath[0]);
           const methodName = sequencePath[sequencePath.length - 1];
           if (outputDecl && methodName === 'snapshot' && sequencePath.length === 2) {
+            if (outputDecl.type === 'sink' && this.guardDepth > 0) {
+              this.fail('sink snapshot() is not allowed inside guard blocks', node.lineno, node.colno, node);
+            }
             this.buffer.emitAddSnapshot(frame, sequencePath[0], node);
             return;
           }
