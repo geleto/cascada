@@ -71,6 +71,8 @@
  * block structure validation, ensuring robust and accurate conversion.
  */
 
+const CONVERT_VAR_TO_VALUE = true;
+
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
 
@@ -964,6 +966,34 @@ class ScriptTranspiler {
     }
   }
 
+  _convertVarDeclarationToValue(codeContent, forceConvert = false) {
+    if (!(forceConvert || CONVERT_VAR_TO_VALUE)) {
+      return codeContent;
+    }
+
+    const trimmed = (codeContent || '').trim();
+    if (!trimmed.startsWith('var ')) {
+      return codeContent;
+    }
+
+    const varDeclMatch = trimmed.match(/^var\s+[A-Za-z_][A-Za-z0-9_]*\b(?:\s*=.*)?$/);
+    if (!varDeclMatch) {
+      return codeContent;
+    }
+
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex !== -1) {
+      const expr = trimmed.substring(eqIndex + 1).trim();
+      const isCaptureExpr = /^capture(\b|\()/.test(expr);
+      const isCallExpr = /^call(\b|\()/.test(expr);
+      if (isCaptureExpr || isCallExpr) {
+        return codeContent;
+      }
+    }
+
+    return codeContent.replace(/^var\b/, 'value');
+  }
+
   _formatOutputCommand(outputType, commandContent, includeOutputType = false) {
     if (includeOutputType) {
       return `${outputType} ${commandContent}`;
@@ -1245,6 +1275,7 @@ class ScriptTranspiler {
       parseResult.comments.push(comments[i].content);
     }
 
+    parseResult.codeContent = this._convertVarDeclarationToValue(parseResult.codeContent);
     const firstWord = this._getFirstWord(parseResult.codeContent);
     const code = parseResult.codeContent.trim();
     const continuesFromPrev = this._continuesFromPrevious(code);

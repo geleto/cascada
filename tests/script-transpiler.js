@@ -856,6 +856,35 @@ endif`;
 
   // Variable handling tests
   describe('Variable Handling', () => {
+    it('should convert simple var declarations to value when forced', () => {
+      const converted = scriptTranspiler._convertVarDeclarationToValue('var x = 1', true);
+      expect(converted).to.equal('value x = 1');
+    });
+
+    it('should skip var-to-value conversion for capture and call declarations', () => {
+      const captureConverted = scriptTranspiler._convertVarDeclarationToValue('var x = capture', true);
+      const callConverted = scriptTranspiler._convertVarDeclarationToValue('var x = call(user)', true);
+      expect(captureConverted).to.equal('var x = capture');
+      expect(callConverted).to.equal('var x = call(user)');
+    });
+
+    it('should keep capture declaration on var parsing path', () => {
+      const state = { inMultiLineComment: false, stringState: null };
+      const result = scriptTranspiler._processLine('var x = capture', state, 0);
+      expect(result.lineType).to.equal('TAG');
+      expect(result.tagName).to.equal('var');
+      expect(result.blockType).to.equal('START');
+    });
+
+    it('should keep call declaration on call_assign var parsing path', () => {
+      const state = { inMultiLineComment: false, stringState: null };
+      const result = scriptTranspiler._processLine('var x = call foo(bar)', state, 0);
+      expect(result.lineType).to.equal('TAG');
+      expect(result.tagName).to.equal('call_assign');
+      expect(result.blockType).to.equal('START');
+      expect(result.codeContent).to.equal('var x = foo(bar)');
+    });
+
     it('should handle var declarations with assignment', () => {
       const script = 'var user = fetchUser(123)';
       const template = scriptTranspiler.scriptToTemplate(script);
