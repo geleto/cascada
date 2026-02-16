@@ -255,7 +255,9 @@ class TextOutput extends Output {
 
 class ValueOutput extends Output {
   constructor(frame, outputName, context, outputType) {
-    super(frame, outputName, context, outputType, undefined, null);
+    // Keep declaration-only value outputs aligned with `none` semantics.
+    // This sets the default snapshot to null without enqueuing a write command.
+    super(frame, outputName, context, outputType, null, null);
   }
 
   invoke(value) {

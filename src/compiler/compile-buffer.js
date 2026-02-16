@@ -118,6 +118,107 @@ class CompileBuffer {
     return `{lineno: ${lineno}, colno: ${colno}}`;
   }
 
+  _compileCommandConstruction(node, frame) {
+    const isCallNode = node.call instanceof nodes.FunCall;
+    const staticPath = this.compiler.sequential._extractStaticPath(isCallNode ? node.call.name : node.call);
+    if (!staticPath || staticPath.length === 0) {
+      this.compiler.fail(
+        'Invalid command syntax. Expected format is handler(...) or handler.command(...) or handler.subpath.command(...).',
+        node.lineno, node.colno, node
+      );
+    }
+
+    const handler = staticPath[0];
+    this.registerOutputUsage(frame, handler);
+    const outputDecl = this.compiler.async._getDeclaredOutput(frame, handler);
+    const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
+    const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
+    const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
+    const isAsync = node.isAsync;
+
+    if (outputType === 'sequence') {
+      if (isCallNode) {
+        if (!command) {
+          this.compiler.fail('Invalid sequence command syntax: expected sequenceOutput.method(...)', node.lineno, node.colno, node);
+        }
+        this.compiler.emit(`new runtime.SequenceCallCommand({ handler: '${handler}', command: '${command}', `);
+        if (subpath && subpath.length > 0) {
+          this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
+        }
+        this.compiler.emit('args: ');
+        this.compiler._compileAggregate(node.call.args, frame, '[', ']', isAsync, true);
+        this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
+        return;
+      }
+
+      if (!command) {
+        this.compiler.fail('Invalid sequence read syntax: expected sequenceOutput.path', node.lineno, node.colno, node);
+      }
+      this.compiler.emit(`new runtime.SequenceGetCommand({ handler: '${handler}', command: '${command}', `);
+      if (subpath && subpath.length > 0) {
+        this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
+      }
+      this.compiler.emit(`pos: ${this._emitPositionLiteral(node)} })`);
+      return;
+    }
+
+    const commandClass = OUTPUT_COMMAND_CLASS[outputType];
+    if (!commandClass) {
+      this.compiler.fail(
+        `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/value/sink/sequence).`,
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+
+    this.compiler.emit(`new runtime.${commandClass}({ handler: '${handler}', `);
+    if (command) {
+      this.compiler.emit(`command: '${command}', `);
+    }
+    if (outputType === 'sink' && subpath && subpath.length > 0) {
+      this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
+    }
+    let argList = node.call.args;
+    const asyncArgs = argList.isAsync;
+    if (outputType === 'data') {
+      // For data outputs, we create a new "virtual" AST for the arguments,
+      // where the first argument is a path like "user.posts[0].title" that
+      // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
+      const originalArgs = node.call.args.children;
+      if (originalArgs.length === 0) {
+        this.compiler.fail(`data command '${command}' requires at least a path argument.`, node.lineno, node.colno, node);
+      }
+
+      const pathArg = originalArgs[0];
+
+      // Convert the path argument into a flat array of segments (Literal/Symbol)
+      // @todo - move this to the transformer phase?
+      // expected by the runtime data handlers.
+      const pathNodeList = this.compiler._flattenPathToNodeList(pathArg);
+      const dataPathNode = new nodes.Array(pathArg.lineno, pathArg.colno, pathNodeList.children);
+      dataPathNode.isAsync = pathNodeList.isAsync;
+      dataPathNode.mustResolve = true;
+
+      // Our array node at the front.
+      const newArgs = [dataPathNode, ...originalArgs.slice(1)];
+
+      argList = new nodes.NodeList(node.call.args.lineno, node.call.args.colno, newArgs);
+      argList.isAsync = asyncArgs;
+    }
+
+    if (outputType === 'text') {
+      this.compiler.emit('args: runtime.normalizeScriptTextArgs(' + (asyncArgs ? 'await ' : ''));
+    } else {
+      this.compiler.emit('args: ' + (asyncArgs ? 'await ' : ''));
+    }
+    this.compiler._compileAggregate(argList, frame, '[', ']', isAsync, true);
+    if (outputType === 'text') {
+      this.compiler.emit(', env.opts.autoescape)');
+    }
+    this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
+  }
+
   registerOutputUsage(frame, outputName) {
     if (!this.compiler.asyncMode || !outputName) {
       return;
@@ -227,128 +328,20 @@ class CompileBuffer {
    * Handles output variables (data/text/value/sink) and custom sinks
    */
   compileOutputCommand(node, frame) {
-    // Extract static path once for validation and compilation
-    const isCallNode = node.call instanceof nodes.FunCall;
-    const staticPath = this.compiler.sequential._extractStaticPath(isCallNode ? node.call.name : node.call);
-
-    // Validate the static path
-    if (!staticPath || staticPath.length === 0) {
-      this.compiler.fail(
-        'Invalid command syntax. Expected format is handler(...) or handler.command(...) or handler.subpath.command(...).',
-        node.lineno, node.colno, node
-      );
+    // Preserve output routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.
+    const pathNode = node.call instanceof nodes.FunCall ? node.call.name : node.call;
+    let current = pathNode;
+    while (current instanceof nodes.LookupVal) {
+      current = current.target;
     }
+    const handler = current instanceof nodes.Symbol
+      ? current.value
+      : (current instanceof nodes.Literal && typeof current.value === 'string' ? current.value : null);
 
-    // Extract handler, subpath, and command from static path
-    const handler = staticPath[0];
-    const outputDecl = this.compiler.async._getDeclaredOutput(frame, handler);
-    const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
-    const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
-    const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
-
-    const isAsync = node.isAsync;
-
-    // Use a wrapper to avoid duplicating the sync/async logic.
-    const wrapper = (emitLogic) => {
-      if (isAsync) {
-        this.asyncAddToBuffer(node, frame, (resultVar, f) => {
-          this.compiler.emit(`${resultVar} = `);
-          emitLogic(f); // Pass the inner frame to the logic.
-        }, node, handler, handler);
-      } else {
-        this.addToBuffer(node, frame, () => {
-          emitLogic(frame); // Pass the current frame.
-        }, node, handler);
-      }
-    };
-
-    wrapper((f) => {
-      if (outputType === 'sequence') {
-        if (isCallNode) {
-          if (!command) {
-            this.compiler.fail('Invalid sequence command syntax: expected sequenceOutput.method(...)', node.lineno, node.colno, node);
-          }
-          const argList = node.call.args;
-          this.compiler.emit(`new runtime.SequenceCallCommand({ handler: '${handler}', command: '${command}', `);
-          if (subpath && subpath.length > 0) {
-            this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
-          }
-          this.compiler.emit('args: ');
-          this.compiler._compileAggregate(argList, f, '[', ']', isAsync, true);
-          this.compiler.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`);
-          return;
-        }
-
-        if (!command) {
-          this.compiler.fail('Invalid sequence read syntax: expected sequenceOutput.path', node.lineno, node.colno, node);
-        }
-        this.compiler.emit(`new runtime.SequenceGetCommand({ handler: '${handler}', command: '${command}', `);
-        if (subpath && subpath.length > 0) {
-          this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
-        }
-        this.compiler.emit(`pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`);
-        return;
-      }
-
-      const commandClass = OUTPUT_COMMAND_CLASS[outputType];
-      if (!commandClass) {
-        this.compiler.fail(
-          `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/value/sink/sequence).`,
-          node.lineno,
-          node.colno,
-          node
-        );
-      }
-
-      this.compiler.emit(`new runtime.${commandClass}({ handler: '${handler}', `);
-      if (command) {
-        this.compiler.emit(`command: '${command}', `);
-      }
-      if (outputType === 'sink' && subpath && subpath.length > 0) {
-        this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
-      }
-
-      let argList = node.call.args;
-      const asyncArgs = argList.isAsync;
-      if (outputType === 'text') {
-        this.compiler.emit('args: runtime.normalizeScriptTextArgs(' + (asyncArgs ? 'await ' : ''));
-      } else {
-        this.compiler.emit('args: ' + (asyncArgs ? 'await ' : ''));
-      }
-
-      if (outputType === 'data') {
-        // For data outputs, we create a new "virtual" AST for the arguments,
-        // where the first argument is a path like "user.posts[0].title" that
-        // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
-        const originalArgs = node.call.args.children;
-        if (originalArgs.length === 0) {
-          this.compiler.fail(`data command '${command}' requires at least a path argument.`, node.lineno, node.colno, node);
-        }
-
-        const pathArg = originalArgs[0];
-
-        // Convert the path argument into a flat array of segments (Literal/Symbol)
-        // @todo - move this to the transformer phase?
-        // expected by the runtime data handlers.
-        const pathNodeList = this.compiler._flattenPathToNodeList(pathArg);
-        const dataPathNode = new nodes.Array(pathArg.lineno, pathArg.colno, pathNodeList.children);
-        dataPathNode.isAsync = pathNodeList.isAsync;
-        dataPathNode.mustResolve = true;
-
-        // Our array node at the front.
-        const newArgs = [dataPathNode, ...originalArgs.slice(1)];
-
-        argList = new nodes.NodeList(node.call.args.lineno, node.call.args.colno, newArgs);
-        argList.isAsync = asyncArgs;
-      }
-
-      this.compiler._compileAggregate(argList, f, '[', ']', isAsync, true);
-      if (outputType === 'text') {
-        this.compiler.emit(', env.opts.autoescape)');
-      }
-
-      this.compiler.emit(`, pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`);
-    });
+    this.asyncAddToBuffer(node, frame, (resultVar, f) => {
+      this.compiler.emit(`${resultVar} = `);
+      this._compileCommandConstruction(node, f);
+    }, node, handler, handler);
   }
 
   // === BUFFER EMISSION ===

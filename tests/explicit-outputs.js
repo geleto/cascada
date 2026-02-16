@@ -298,7 +298,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         return { data: myData.snapshot(), text: textOut.snapshot(), value: result.snapshot() }
       `;
       const result = await render(script);
-      expect(result).to.eql({ data: {}, text: '', value: undefined });
+      expect(result).to.eql({ data: {}, text: '', value: null });
     });
   });
 

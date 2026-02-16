@@ -607,6 +607,8 @@ module.exports = class CompileSequential {
 
   /**
    * Extracts a static path from a node for sequential operation analysis.
+   * Update - we now use this to extract path in output commands as well
+   * @todo - move it to compiler or compiler-base
    * A static path is a chain of property accesses that can be determined at compile time.
    * @param {nodes.LookupVal|nodes.Symbol|nodes.Literal} node - The node to extract path from
    * @returns {Array<string>|null} Array of path segments or null if not static

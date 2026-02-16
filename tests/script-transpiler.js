@@ -6,6 +6,8 @@ const aliasOptions = {
   useCoreOutputAliases: true
 };
 
+const DECL_TAG = scriptTranspiler.CONVERT_VAR_TO_VALUE ? 'value' : 'var';
+
 describe('Script Transpiler', () => {
   // Helper function tests
   describe('Helper Functions', () => {
@@ -460,7 +462,7 @@ describe('Script Transpiler', () => {
     it('should properly convert var declarations', () => {
       const script = 'var x = 1';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- var x = 1 -%}');
+      expect(template).to.equal(`{%- ${DECL_TAG} x = 1 -%}`);
     });
 
     it('should properly convert include statements', () => {
@@ -643,7 +645,7 @@ return { text: text.snapshot() }`;
       // Check for properly converted tags and nested structure
       expect(template).to.contain('{%- for product in products -%}');
       expect(template).to.contain('{%- if product.inStock -%}');
-      expect(template).to.contain('{%- var formattedPrice = formatCurrency(product.price) -%}');
+      expect(template).to.contain(`{%- ${DECL_TAG} formattedPrice = formatCurrency(product.price) -%}`);
       expect(template).to.contain('{%- output_command text("<div class=\'product\'>") -%}');
       expect(template).to.contain('{%- if product.hasDiscount -%}');
       expect(template).to.contain('{%- else -%}');
@@ -729,7 +731,7 @@ endif`;
 )`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('var result = calculate(');
+      expect(template).to.contain(`${DECL_TAG} result = calculate(`);
       expect(template).to.contain('first +');
       expect(template).to.contain('second * (');
       expect(template).to.contain('third /');
@@ -772,7 +774,7 @@ endif`;
     it('should convert sequence declaration and calls', () => {
       const script = 'sequence db = makeDb()\nvar user = db.getUser(1)\nreturn user';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- sequence db = makeDb() -%}\n{%- var user = db.getUser(1) -%}\n{%- return user -%}');
+      expect(template).to.equal(`{%- sequence db = makeDb() -%}\n{%- ${DECL_TAG} user = db.getUser(1) -%}\n{%- return user -%}`);
     });
 
     it('should reject sequence property assignment syntax', () => {
@@ -888,7 +890,7 @@ endif`;
     it('should handle var declarations with assignment', () => {
       const script = 'var user = fetchUser(123)';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- var user = fetchUser(123) -%}');
+      expect(template).to.equal(`{%- ${DECL_TAG} user = fetchUser(123) -%}`);
     });
 
     it('should handle var declarations with block assignment', () => {
@@ -943,7 +945,55 @@ return {}`;
     it('should handle assignments with comments', () => {
       const script = 'var user = fetchUser(123) // Get user data';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- var user = fetchUser(123) -%}{#- Get user data -#}');
+      expect(template).to.equal(`{%- ${DECL_TAG} user = fetchUser(123) -%}{#- Get user data -#}`);
+    });
+
+    it('should transpile value declarations to internal setval tags', () => {
+      const script = 'value x = 1\nx = 2\nreturn x';
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- value x = 1 -%}\n{%- setval x = 2 -%}\n{%- return x -%}');
+    });
+
+    it('should transpile value capture declarations to value/endvalue block tags', () => {
+      const script = `value x = capture
+  text text
+  text("ok")
+  return text.snapshot()
+endcapture
+return x.snapshot()`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.contain('{%- value x capture -%}');
+      expect(template).to.contain('{%- endvalue -%}');
+    });
+
+    it('should transpile value call declarations to call_assign setval', () => {
+      const script = `value result = call collect([1, 2, 3]) (n)
+  return n
+endcall`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.contain('{%- call_assign value result = collect([1, 2, 3]) (n) -%}');
+      expect(template).to.contain('{%- endcall_assign -%}');
+    });
+
+    it('should transpile value capture assignments to setval block tags', () => {
+      const script = `value x
+x = capture
+  output("ok")
+endcapture`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.contain('{%- value x -%}');
+      expect(template).to.contain('{%- setval x capture -%}');
+      expect(template).to.contain('{%- endsetval -%}');
+    });
+
+    it('should transpile value call assignments to call_assign setval', () => {
+      const script = `value result
+result = call collect([1, 2, 3]) (n)
+  return n
+endcall`;
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.contain('{%- call_assign setval result = collect([1, 2, 3]) (n) -%}');
+      expect(template).to.contain('{%- endcall_assign -%}');
     });
   });
 
@@ -971,7 +1021,7 @@ return {}`;
         {#- A complete script example -#}
         {%- data dat -%}
         {%- text tex -%}
-        {%- var user = { name: "Alice", role: "admin" } -%}
+        {%- ${DECL_TAG} user = { name: "Alice", role: "admin" } -%}
         {%- if user.role == "admin" -%}
           {%- output_command tex("Hello, " + user.name) -%}
           {%- for item in user.items -%}
@@ -994,7 +1044,7 @@ return {}`;
       return { text: text.snapshot() }`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('{%- var total = price *');
+      expect(template).to.contain(`{%- ${DECL_TAG} total = price *`);
       expect(template).to.contain('(1 + taxRate) *');
       expect(template).to.contain('(1 - discount) -%}');
       expect(template).to.contain('{%- output_command text("Total: $" + total.toFixed(2)) -%}');
@@ -1033,7 +1083,7 @@ return { text: text.snapshot() }`;
       // Check for properly converted tags and nested structure
       expect(template).to.contain('{%- for product in products -%}');
       expect(template).to.contain('{%- if product.inStock -%}');
-      expect(template).to.contain('{%- var formattedPrice = formatCurrency(product.price) -%}');
+      expect(template).to.contain(`{%- ${DECL_TAG} formattedPrice = formatCurrency(product.price) -%}`);
       expect(template).to.contain('{%- output_command text("<div class=\'product\'>") -%}');
       expect(template).to.contain('{%- if product.hasDiscount -%}');
       expect(template).to.contain('{%- else -%}');
@@ -1067,9 +1117,9 @@ return { text: text.snapshot() }`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
 
-      expect(template).to.contain('{%- var stream = createAsyncStream() -%}');
+      expect(template).to.contain(`{%- ${DECL_TAG} stream = createAsyncStream() -%}`);
       expect(template).to.contain('{%- while stream.hasNext() -%}');
-      expect(template).to.contain('{%- var chunk = stream.next() -%}');
+      expect(template).to.contain(`{%- ${DECL_TAG} chunk = stream.next() -%}`);
       expect(template).to.contain('{%- output_command text("Processing chunk " + loop.index + ": " + chunk) -%}');
       expect(template).to.contain('{%- if !chunk -%}');
       expect(template).to.contain('{%- output_command text(\'Empty chunk\') -%}');
@@ -1132,19 +1182,19 @@ return { text: text.snapshot() }`;
     it('should NOT throw an error if semicolon is in a string', () => {
       const script = 'var x = "value;"';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('{%- var x = "value;" -%}');
+      expect(template).to.contain(`{%- ${DECL_TAG} x = "value;" -%}`);
     });
 
     it('should NOT throw an error if semicolon is in a string (middle)', () => {
       const script = 'var x = "val;ue"';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('{%- var x = "val;ue" -%}');
+      expect(template).to.contain(`{%- ${DECL_TAG} x = "val;ue" -%}`);
     });
 
     it('should NOT throw an error if semicolon is in a comment', () => {
       const script = 'var x = 1 // comment;';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('{%- var x = 1 -%}{#- comment; -#}');
+      expect(template).to.contain(`{%- ${DECL_TAG} x = 1 -%}{#- comment; -#}`);
     });
   });
   describe('Macro and Capture Focus Rejection', () => {

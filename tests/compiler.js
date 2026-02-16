@@ -1580,6 +1580,25 @@
       finish(done);
     });
 
+    it('should compile value like var in template mode', function (done) {
+      equal('{% value username = "foo" %}{{ username }}',
+        {
+          username: 'james'
+        },
+        'foo');
+
+      equal('{% value x, y = "foo" %}{{ x }}{{ y }}',
+        'foofoo');
+
+      equal(
+        '{% value block_content %}test string{% endvalue %}' +
+        '{{ block_content }}',
+        'test string'
+      );
+
+      finish(done);
+    });
+
     it('should compile set with frame references', function (done) {
       equal('{% set username = user.name %}{{ username }}',
         {

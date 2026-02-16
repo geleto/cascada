@@ -207,6 +207,22 @@ class Compiler extends CompilerBase {
   }
 
   compileSet(node, frame) {
+    if (this.scriptMode && (node.varType === 'setval' || node.isSetvalDeclaration)) {
+      return this.compileSetval(node, frame);
+    }
+
+    if (this.scriptMode &&
+      node.varType === 'assignment' &&
+      node.targets &&
+      node.targets.length > 0 &&
+      node.targets.every((t) => {
+        if (!(t instanceof nodes.Symbol)) return false;
+        const out = this.async._getDeclaredOutput(frame, t.value);
+        return !!(out && out.type === 'value');
+      })) {
+      return this.compileSetval(node, frame);
+    }
+
     const ids = [];
 
     // 1. First pass: Validate, declare, and prepare temporary JS variables for all targets.
@@ -352,7 +368,125 @@ class Compiler extends CompilerBase {
 
     // Reuse the existing Set compilation path.
     const setNode = new nodes.Set(node.lineno, node.colno, node.targets, node.value, node.varType);
+    if (node.isSetvalDeclaration) {
+      setNode.isSetvalDeclaration = !!node.isSetvalDeclaration;
+    }
     return this.compileSet(setNode, frame);
+  }
+
+  compileSetval(node, frame) {
+    if (!this.scriptMode) {
+      this.fail('setval is only supported in script mode', node.lineno, node.colno, node);
+    }
+    if (!this.asyncMode) {
+      this.fail('setval is only supported in async mode', node.lineno, node.colno, node);
+    }
+    const ids = [];
+    const isDeclaration = !!node.isSetvalDeclaration;
+    const isDeclarationOnly = !!node.declarationOnly;
+    const validationNode = Object.assign({}, node, {
+      varType: isDeclaration ? 'declaration' : 'assignment'
+    });
+
+    // 1. First pass: validate + declarations + temp ids (mirrors compileSet structure).
+    node.targets.forEach((target) => {
+      const name = target.value;
+      let id;
+
+      const declaredOutput = this.async._getDeclaredOutput(frame, name);
+      const isDeclaredForValidation = isDeclaration
+        ? !!(frame.declaredOutputs && frame.declaredOutputs.has(name))
+        : !!(declaredOutput && declaredOutput.type === 'value');
+
+      if (!isDeclaration) {
+        const declaredInCurrentScope = !!(frame.declaredOutputs && frame.declaredOutputs.has(name));
+        if (frame && frame.isolateWrites && isDeclaredForValidation && !declaredInCurrentScope) {
+          this.fail(
+            `Cannot assign to outer-scope variable '${name}' from a read-only scope. ` +
+            `Call blocks can read from parent scope but cannot mutate it.`,
+            target.lineno,
+            target.colno,
+            node,
+            target
+          );
+        }
+      }
+
+      validateSetTarget(this, validationNode, target, name, isDeclaredForValidation);
+
+      if (isDeclaration) {
+        this.async._addDeclaredOutput(frame, name, 'value', null, node);
+        this.emit(`runtime.declareOutput(frame, "${name}", "value", context, null);`);
+      } else {
+        if (!(declaredOutput && declaredOutput.type === 'value')) {
+          this.fail(
+            `Cannot assign to undeclared value output '${name}'. Use 'value ${name}' to declare it first.`,
+            target.lineno,
+            target.colno,
+            node,
+            target
+          );
+        }
+      }
+
+      id = this._tmpid();
+      this.emit.line(`let ${id};`);
+      const declarationFrame = this._getDeclarationFrame(frame);
+      declarationFrame.set(name, id);
+      ids.push(id);
+    });
+
+    // 2. Compile assignment source (same shape as compileSet, including set_path).
+    let hasAssignedValue = false;
+    if (node.path) {
+      if (ids.length !== 1) {
+        this.fail('set_path only supports a single target.', node.lineno, node.colno, node);
+      }
+      const targetName = node.targets[0].value;
+      this.emit(ids[0] + ' = ');
+      this.emit('runtime.setPath(');
+      this.emit(`runtime.getOutput(frame, "${targetName}").getCurrentResult(), `);
+      this._compileAggregate(node.path, frame, '[', ']', false, false);
+      this.emit(', ');
+      this._compileExpression(node.value, frame, true);
+      this.emit(')');
+      this.emit.line(';');
+      hasAssignedValue = true;
+    } else if (node.value && !isDeclarationOnly) {
+      this.emit(ids.join(' = ') + ' = ');
+      this._compileExpression(node.value, frame, true, node.value);
+      this.emit.line(';');
+      hasAssignedValue = true;
+    } else if (node.body) {
+      this.emit(ids.join(' = ') + ' = ');
+      this.emit.asyncBlockValue(node, frame, (n, f) => {
+        this.compile(n.body, f);
+      }, undefined, node.body);
+      this.emit.line(';');
+      hasAssignedValue = true;
+    } else if (!isDeclaration) {
+      this.fail('set value assignment requires a value or capture body.', node.lineno, node.colno, node);
+    }
+
+    // 3. Second pass: emit output commands + export (mirrors compileSet second-pass shape).
+    node.targets.forEach((target, i) => {
+      const name = target.value;
+      const valueId = ids[i];
+
+      if (hasAssignedValue) {
+        this.buffer.asyncAddToBuffer(node, frame, (resultVar) => {
+          this.emit(
+            `${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: await runtime.createArray([${valueId}]), pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+          );
+        }, node, name, name);
+      }
+
+      if (name.charAt(0) !== '_' && hasAssignedValue) {
+        this.emit.line('if(frame.topLevel) {');
+        this.emit.line(`  context.addExport("${name}", ${valueId});`);
+        this.emit.line('}');
+      }
+    });
   }
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation

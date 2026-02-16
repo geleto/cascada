@@ -138,9 +138,9 @@ function validateSetTarget(compiler, node, target, name, isDeclared) {
         compiler.fail(`Unknown varType '${node.varType}' for set/var statement.`, node.lineno, node.colno, node);
     }
   } else {
-    // TEMPLATE MODE: Replicates the original behavior.
-    if (node.varType !== 'assignment') { // 'set' is the only valid type
-      compiler.fail(`'${node.varType}' is not allowed in template mode. Use 'set'.`, node.lineno, node.colno, node);
+    // TEMPLATE MODE: allow both set-style assignment and var/value-style declaration.
+    if (node.varType !== 'assignment' && node.varType !== 'declaration') {
+      compiler.fail(`'${node.varType}' is not allowed in template mode. Use 'set' or declaration tags.`, node.lineno, node.colno, node);
     }
   }
 }
