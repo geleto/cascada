@@ -1,232 +1,117 @@
-﻿# setval Design Notes (Temporary Bridge to Future `set`)
+# `setval` Implementation Notes (Current)
 
-This document records the implementation plan for introducing `setval/endsetval` as a temporary template-layer tag for **value semantics**.
+This document describes the implemented behavior of `setval` in the current codebase.
 
-It is based on the current migration goal:
-- Script mode keeps `var ...` and `value ...` declarations.
-- Template/compiler layer distinguishes `set` and `setval`.
-- Long-term goal: `setval` semantics may later become the default `set` semantics.
+## What `setval` Is
 
-No code in this document; this is design/plan only.
+`setval` is the assignment tag used for **value outputs** in script mode.
 
-## 1) Scope and Intent
+- Value declarations use `value ...`
+- Subsequent assignments to that declared value output use `setval ...`
+- Runtime writes are emitted as `ValueCommand` entries into the active `CommandBuffer`
 
-`setval` is **not** only for converted `var`.
-It is the template-mode representation of `value` semantics in general:
-- direct script `value x = ...`
-- migration conversion paths
-- mixed scripts containing both `var` and `value`
+## End-to-End Flow
 
-Key requirement:
-- `var` and `value` must coexist in the same script with their own semantics.
+1. Script transpiler identifies declared outputs in scope.
+2. For a declared `value` output, assignment forms (`x = ...`) are rewritten to `setval x = ...` (or block/call equivalents).
+3. Parser builds a `nodes.Set`/`nodes.CallAssign` shape and marks value-declaration forms with `isSetvalDeclaration`.
+4. Compiler routes these nodes to `compileSetval`.
+5. `compileSetval` validates declaration/assignment rules and emits `ValueCommand` writes.
 
-## 2) Non-Negotiable Behavioral Requirements
+## Transpiler Behavior (`src/script/script-transpiler.js`)
 
-1. Script syntax remains:
-- `var x = ...`
-- `value x = ...`
+Current script mappings:
 
-2. Template-layer tags:
-- existing: `set/endset`
-- new temporary: `setval/endsetval`
+- `value x = 1` -> `{%- value x = 1 -%}`
+- `x = 2` (where `x` is declared as value output) -> `{%- setval x = 2 -%}`
+- `value x = capture ... endcapture` -> `{%- value x capture -%}...{%- endvalue -%}`
+- `x = capture ... endcapture` (value output) -> `{%- setval x capture -%}...{%- endsetval -%}`
+- `value x = call ... endcall` -> `{%- call_assign value x = ... -%}...{%- endcall_assign -%}`
+- `x = call ... endcall` (value output) -> `{%- call_assign setval x = ... -%}...{%- endcall_assign -%}`
 
-3. Shadowing rules during migration:
-- Preserve current behavior: `value` shadowing remains allowed for now.
-- Do not force `var`-style shadowing restrictions onto `value` yet.
+Important: declarations remain `value`, not `setval`.
 
-4. `capture` / `call` compatibility:
-- `value` declarations/assignments must support capture/call assignment flows, like `var` does today.
+## Parser Behavior (`src/parser.js`)
 
-5. Property/path mutation compatibility:
-- `value`-declared mutable symbols must be recognized by `set_path` logic where intended.
+### `value` tag (script mode)
 
-6. Guard compatibility:
-- Guard selectors for variables must correctly resolve symbols declared via `value` semantics.
+`parseValue()` supports:
 
-## 3) Architectural Principle
+- declaration only: `{% value x %}` (`node.declarationOnly = true`)
+- declaration with initializer: `{% value x = expr %}`
+- declaration capture block: `{% value x capture %}...{% endvalue %}`
 
-Reuse existing var/set machinery as much as possible.
+It marks these with `node.isSetvalDeclaration = true`.
 
-Preferred approach:
-- Keep one shared compile/runtime assignment engine.
-- Distinguish declaration/assignment semantics by a small kind flag (e.g. `var`, `set`, `setval`) rather than duplicating code paths.
+### `setval` tag
 
-Goal:
-- Minimal surface changes
-- Elegant and maintainable behavior partitioning
-- Fast rollback/forward migration options
+`parseSet('setval', 'setval', 'endsetval')` supports:
 
-## 4) Syntax Layer Separation
+- assignment: `{% setval x = expr %}`
+- capture assignment block: `{% setval x capture %}...{% endsetval %}`
 
-Important distinction:
-- Script layer: `var` and `value` keywords.
-- Template layer: assignment/control tags (`set`, `setval`, etc.).
+Parser also accepts bare `{% setval x %}` syntactically, but current compiler rejects it (see mismatch below).
 
-`setval/set` discussion applies to template/compiled representation, not user script keyword syntax.
+### `call_assign`
 
-## 5) Proposed End-to-End Flow
+`parseCallAssign()` supports:
 
-### 5.1 Parsing / Tag Registration
+- `call_assign value x = ...` (declaration form; marked as `isSetvalDeclaration`)
+- `call_assign setval x = ...` (assignment form)
+- plus legacy var/set forms
 
-Add support for:
-- `setval` (start tag)
-- `endsetval` (end tag)
+## Compiler Behavior (`src/compiler/compiler.js`)
 
-Update tag/block registries and block-pair validation tables to treat `setval` as a block-capable assignment tag (analogous to `set`/`var` block behavior where applicable).
+### Routing
 
-### 5.2 Script Transpiler Mapping
+`compileSet()` routes to `compileSetval()` when any of these are true in script mode:
 
-Transpile script `value` declarations/assignment forms into `setval` template tags.
+- `node.varType === 'setval'`
+- `node.isSetvalDeclaration === true`
+- assignment targets are all declared value outputs
 
-Examples (conceptual):
-- `value x = 1` -> `{% setval x = 1 %}`
-- `value x = capture ... endcapture` -> `{% setval x %} ... {% endsetval %}`
-- call-assignment variants should emit a `setval`-kind assignment form.
+`compileCallAssign()` reuses this by constructing a `Set` node and forwarding `isSetvalDeclaration`.
 
-For mixed scripts:
-- `var` continues mapping to existing var-oriented template representation.
-- `value` maps to `setval`.
+### `compileSetval()` rules
 
-### 5.3 Compiler Canonicalization
+- only valid in `scriptMode` + `asyncMode`
+- declaration path (`isSetvalDeclaration`):
+  - declares a `value` output via `runtime.declareOutput(frame, name, "value", ...)`
+  - registers output declaration metadata (`_addDeclaredOutput`)
+- assignment path:
+  - requires target to already be a declared `value` output
+  - otherwise errors with:
+    - `Cannot assign to undeclared value output 'x'. Use 'value x' to declare it first.`
+- read-only call scopes (`frame.isolateWrites`) block outer-scope assignment, same as vars
+- `set_path` writes for value outputs use:
+  - `runtime.getOutput(frame, name).getCurrentResult()`
+- non-declaration assignment requires one of:
+  - `node.value`, `node.body`, or `node.path`
+  - otherwise errors with `set value assignment requires a value or capture body.`
 
-Compiler should normalize `set` and `setval` into the same underlying assignment pipeline, but carry assignment/declaration kind metadata.
+### Emitted runtime writes
 
-That metadata drives:
-- scope rules
-- shadowing/redeclaration checks
-- guard eligibility
-- path mutation eligibility
+Assignments emit `new runtime.ValueCommand(...)` through async buffered output writes.
 
-### 5.4 Runtime / Frame Interaction
+If assigned at top level and name does not start with `_`, compiler emits `context.addExport(name, value)`.
 
-No separate runtime engine for `setval`.
+## Expression Read Semantics
 
-Reuse existing variable write/read synchronization and async mechanisms; only enforce differing semantics where rules differ (e.g., shadowing policy, declaration checks).
+When a declared value output symbol is read in expressions, `compileSymbol()` emits a point-in-stream snapshot:
 
-## 6) capture / call Design
+- `x` behaves like `x.snapshot()` in script expressions
+- implementation uses `currentBuffer.addSnapshot("x", pos)`
 
-Current capture/call assignment logic is tied to var/set assumptions.
+This is how value outputs participate naturally in arithmetic/logic expressions.
 
-Required generalization:
-- Assignment block plumbing carries assignment-kind (`set`, `setval`, possibly `var` depending on flow).
-- Start/end pairing must close correctly:
-  - `set` -> `endset`
-  - `setval` -> `endsetval`
-- `call_assign`-style internals should become kind-aware, not hard-coded to one assignment tag kind.
+## Runtime Default Value
 
-Outcome:
-- `value` can use capture/call with behavior parity to intended mutable semantics.
+`ValueOutput` defaults to `null` when declared without assignment. This aligns declaration-only `value x` with `none`-like semantics.
 
-## 7) Property Mutation (`set_path`) Design
+## Guard Note
 
-Observed failures indicate root symbol resolution is too var-specific.
+Value outputs are outputs, not script variables. Guard **variable selectors** validate against declared vars (`_isDeclared`), not outputs. Output behavior in guards is handled via output handler tracking/snapshots.
 
-Required behavior:
-- `set_path` root validation must understand symbols declared with `value` semantics (via `setval`).
-- Errors should reflect actual path/value issues, not false undeclared-variable errors, when declaration is valid.
+## Current Known Mismatch
 
-Implementation style:
-- Centralize symbol lookup by declaration kind, not tag string checks.
-
-## 8) Scoping, Redeclaration, Shadowing
-
-Need a kind-aware symbol model:
-- `var` symbols keep current rules.
-- `value` symbols keep current migration-era rule: shadowing allowed.
-
-Checks (redeclare/conflict/lookup) must consult symbol kind policy rather than assuming one global policy.
-
-This avoids current drift where value flows are treated as output declarations and produce mismatched diagnostics.
-
-## 9) Guard Integration
-
-Guard variable selectors currently fail when declaration kind is not recognized as variable.
-
-Required:
-- Guard compile/runtime variable resolution includes `value` symbols.
-- Modification-tracking for guarded vars works for `setval` writes.
-- Guard diagnostics remain precise and kind-aware.
-
-## 10) Mixed `var` + `value` in One Script
-
-Must work as first-class scenario.
-
-Rules:
-- Both declaration kinds can appear in same scope chain.
-- Conflicts resolved by explicit kind-aware policy.
-- Assignment dispatch targets the correct symbol kind.
-
-This is critical because migration will not be all-at-once.
-
-## 11) Minimal Change Strategy
-
-1. Introduce `setval/endsetval` tags and parsing/validation support.
-2. Map script `value` flows to `setval` in transpiler.
-3. Extend existing assignment compiler path with kind metadata.
-4. Make capture/call assignment plumbing kind-aware.
-5. Make set_path and guard symbol lookup kind-aware.
-6. Preserve current value shadowing behavior.
-
-Avoid:
-- Duplicating runtime write/lock logic
-- Creating separate assignment engines for `set` vs `setval`
-
-## 12) Testing Strategy (Targeted)
-
-Focus regression/validation around known failing clusters:
-
-1. Path mutation
-- `tests/pasync/path-assignment.js`
-- `tests/pasync/structures.js`
-
-2. Guard variable handling
-- `tests/poison/guard.js`
-- sequence guard tests in `tests/explicit-outputs.js`
-
-3. Loop write tracking / mutable state
-- `tests/phase5-while-generator.js`
-- `tests/pasync/loop-phase1-two-pass.js`
-- `tests/pasync/loops.js`
-
-4. capture/call assignment
-- `tests/pasync/calls.js`
-- `tests/pasync/script-output.js`
-- capture-focused cases in `tests/pasync/script.js`
-
-5. Mixed var/value coexistence
-- add/adjust tests where both are declared and mutated in same script.
-
-## 13) Migration Plan to Future `set`
-
-Temporary phase:
-- `set` = existing semantics
-- `setval` = value semantics
-
-Future convergence phase:
-- migrate semantics from `setval` onto `set`
-- remove `setval` once behavior is stable and tests updated
-
-This reduces risk by isolating semantic changes behind an explicit temporary tag.
-
-## 14) Open Decisions to Confirm Before Coding
-
-1. Assignment to existing identifiers (`x = ...`) when both kinds are in scope:
-- exact precedence and diagnostics.
-
-2. Whether any `value`-specific immutability rules exist (if introduced later) and how they interact with set_path.
-
-3. Error message harmonization:
-- keep existing wording vs introduce kind-aware wording now.
-
-4. Call/capture AST representation:
-- whether to encode assignment kind in node payload or in emitted tag name only.
-
-## 15) Practical Summary
-
-Best path is to add `setval/endsetval` as a temporary template-layer semantic carrier for `value`, then reuse the existing var/set compiler-runtime machinery with minimal kind-aware extensions.
-
-This preserves momentum, keeps changes elegant, and directly targets current failures in:
-- path/property mutation
-- guard variable recognition
-- loop write tracking
-- capture/call assignment flows
+Parser accepts bare `{% setval x %}` but compiler currently rejects it unless the node is a declaration form (`value x`). In practice, declaration-only should use `{% value x %}`.
