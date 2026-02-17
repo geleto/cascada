@@ -1,9 +1,8 @@
 
 const { isError } = require('./errors');
-const { getPosonedBufferErrors } = require('./command-buffer');
-const { getOutput } = require('./output');
+const { getPosonedBufferErrorsAsync } = require('./command-buffer');
 const { SetTargetCommand } = require('./commands');
-const { clearBuffer } = require('./command-buffer');
+const { getOutput } = require('./output');
 
 const DEBUG_GUARD = typeof process !== 'undefined' &&
   process.env &&
@@ -37,34 +36,15 @@ function init(frame, varNames) {
 function initOutputSnapshots(frame, handlerNames = null) {
   const state = {
     snapshots: Object.create(null),
-    sinkHandlers: [],
-    clearHandlers: [],
     sequenceTransactions: [],
     sequenceErrors: []
   };
 
   const targets = handlerNames ?? [];
-  const outputBuffer = frame && frame._outputBuffer;
-  const bufferScopedOnly = !!(
-    outputBuffer &&
-    outputBuffer.parent &&
-    typeof outputBuffer.parent.isPaused === 'function' &&
-    Array.isArray(targets) &&
-    targets.some((handlerName) => outputBuffer.parent.isPaused(handlerName))
-  );
-
-  if (bufferScopedOnly) {
-    state.clearHandlers = targets.slice();
-    return state;
-  }
 
   for (const handlerName of targets) {
     const output = getOutput(frame, handlerName);
     if (!output) {
-      continue;
-    }
-    if (output._outputType === 'sink') {
-      state.sinkHandlers.push(handlerName);
       continue;
     }
     if (output._outputType === 'sequence') {
@@ -100,20 +80,7 @@ async function restoreOutputs(buffer, outputGuardState) {
     return [];
   }
 
-  if (Array.isArray(outputGuardState.clearHandlers) && outputGuardState.clearHandlers.length > 0) {
-    clearBuffer(buffer, outputGuardState.clearHandlers);
-    return settleSequenceTransactions(outputGuardState, 'rollback');
-  }
-
   const snapshotNames = Object.keys(outputGuardState.snapshots || {});
-  const handlersToClear = snapshotNames.slice();
-  if (Array.isArray(outputGuardState.sinkHandlers) && outputGuardState.sinkHandlers.length > 0) {
-    handlersToClear.push(...outputGuardState.sinkHandlers);
-  }
-  if (handlersToClear.length > 0) {
-    clearBuffer(buffer, handlersToClear);
-  }
-
   for (const handlerName of snapshotNames) {
     buffer.add(new SetTargetCommand({
       handler: handlerName,
@@ -207,7 +174,7 @@ async function collectGuardVariableErrors(frame, guardState) {
 }
 
 async function getErrors(frame, guardState, bufferArr, allowedHandlers) {
-  const bufferErrors = getPosonedBufferErrors(bufferArr, allowedHandlers) || [];
+  const bufferErrors = await getPosonedBufferErrorsAsync(bufferArr, allowedHandlers) || [];
   const { variableErrors, sequenceErrors } = await collectGuardVariableErrors(frame, guardState);
   return bufferErrors.concat(variableErrors, sequenceErrors);
 }

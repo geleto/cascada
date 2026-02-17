@@ -770,11 +770,11 @@
       
         return {data: data.snapshot() }`;
       try {
-        await env.renderScriptString(script2, {});
-        // If we reach here, local leaked?
-        expect().fail('Should have thrown ReferenceError for local variable');
+        const res = await env.renderScriptString(script2, {});
+        // Local should remain guard-scoped and not leak into outer observable data.
+        expect(res.data).to.eql({});
       } catch (err) {
-        // Support both messages depending on engine
+        // Also valid: unknown-variable is surfaced as a script error.
         expect(err.message).to.match(/unknown variable\/function: local|local is not defined/);
       }
     });

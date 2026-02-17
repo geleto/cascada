@@ -6,38 +6,14 @@ const { createPoison } = require('../src/runtime/errors');
 const { createOutput, createSinkOutput } = require('../src/runtime/output');
 
 describe('output observation commands step3', function () {
-  it('routes data facade snapshot/isError/getError through command buffer APIs', async () => {
-    const calls = [];
-    const fakeBuffer = {
-      addSnapshot(name) {
-        calls.push(['snapshot', name]);
-        return Promise.resolve({ ok: true });
-      },
-      addIsError(name) {
-        calls.push(['isError', name]);
-        return Promise.resolve(false);
-      },
-      addGetError(name) {
-        calls.push(['getError', name]);
-        return Promise.resolve(null);
-      },
-      _registerOutput() {}
-    };
+  it('does not expose observation methods on output facades', async () => {
+    const fakeBuffer = { _registerOutput() {} };
     const frame = { _outputBuffer: fakeBuffer };
-
     const out = createOutput(frame, 'out', null, 'data');
-    const snap = await out.snapshot();
-    const isErr = await out.isError();
-    const err = await out.getError();
 
-    expect(snap).to.eql({ ok: true });
-    expect(isErr).to.be(false);
-    expect(err).to.be(null);
-    expect(calls).to.eql([
-      ['snapshot', 'out'],
-      ['isError', 'out'],
-      ['getError', 'out']
-    ]);
+    expect(out.snapshot).to.be(undefined);
+    expect(out.isError).to.be(undefined);
+    expect(out.getError).to.be(undefined);
   });
 
   it('routes sink facade repair through command buffer API', async () => {

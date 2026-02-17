@@ -178,7 +178,6 @@ module.exports = {
   resolveAll: resolve.resolveAll,
   resolveDuo: resolve.resolveDuo,
   resolveSingle: resolve.resolveSingle,
-  resolveOutputCommandArgs: resolve.resolveOutputCommandArgs,
   resolveSingleArr: resolve.resolveSingleArr,
   resolveObjectProperties: resolve.resolveObjectProperties,
   resolveArguments: resolve.resolveArguments,
@@ -189,7 +188,6 @@ module.exports = {
   finalizeUnobservedSinks: output.finalizeUnobservedSinks,
   CommandBuffer: buffer.CommandBuffer,
   createCommandBuffer: buffer.createCommandBuffer,
-  clearBuffer: buffer.clearBuffer,
   getPosonedBufferErrors: buffer.getPosonedBufferErrors,
 
   guard,

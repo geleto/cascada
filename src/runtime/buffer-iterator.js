@@ -24,10 +24,6 @@ class BufferIterator {
     this._requestAdvance();
   }
 
-  onBufferResumed(buffer) {
-    this._requestAdvance();
-  }
-
   _reset(rootBuffer) {
     if (this._enteredBuffer && this.outputName) {
       this._enteredBuffer.onLeaveBuffer(this, this.outputName);
@@ -69,10 +65,6 @@ class BufferIterator {
     while (this.stack.length > 0) {
       const cursor = this._currentCursor();
       const buffer = cursor.buffer;
-      if (buffer && buffer.isPaused(this.outputName)) {
-        this._isAdvancing = false;
-        return;
-      }
       const arr = buffer.arrays[this.outputName];
       const nextIndex = cursor.index + 1;
 

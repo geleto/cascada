@@ -133,9 +133,7 @@ class CompileBuffer {
     const outputDecl = this.compiler.async._getDeclaredOutput(frame, handler);
     const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
-    const useTypedOutputArgResolver = !!outputDecl && (outputType !== 'data' || command === 'set');
     const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
-    const isAsync = node.isAsync;
 
     if (outputType === 'sequence') {
       if (isCallNode) {
@@ -147,7 +145,7 @@ class CompileBuffer {
           this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
         }
         this.compiler.emit('args: ');
-        this.compiler._compileAggregate(node.call.args, frame, '[', ']', isAsync, true);
+        this.compiler._compileAggregate(node.call.args, frame, '[', ']', false, true);
         this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
         return;
       }
@@ -176,6 +174,9 @@ class CompileBuffer {
     this.compiler.emit(`new runtime.${commandClass}({ handler: '${handler}', `);
     if (command) {
       this.compiler.emit(`command: '${command}', `);
+    }
+    if (outputType === 'text') {
+      this.compiler.emit('normalizeArgs: true, ');
     }
     if (outputType === 'sink' && subpath && subpath.length > 0) {
       this.compiler.emit(`subpath: ${JSON.stringify(subpath)}, `);
@@ -208,35 +209,10 @@ class CompileBuffer {
       argList.isAsync = asyncArgs;
     }
 
-    if (outputType === 'text') {
-      this.compiler.emit('args: runtime.normalizeScriptTextArgs(');
-      if (asyncArgs && useTypedOutputArgResolver) {
-        // Resolve async argument aggregates while preserving poison as data
-        // (returned as PoisonError) so command apply can encode it into _target.
-        this.compiler.emit('await runtime.resolveOutputCommandArgs(');
-      } else if (asyncArgs) {
-        this.compiler.emit('await ');
-      }
-    } else {
-      this.compiler.emit('args: ');
-      if (asyncArgs && useTypedOutputArgResolver) {
-        // Resolve async argument aggregates while preserving poison as data
-        // (returned as PoisonError) so command apply can encode it into _target.
-        this.compiler.emit('await runtime.resolveOutputCommandArgs(');
-      } else if (asyncArgs) {
-        this.compiler.emit('await ');
-      }
-    }
-    // Declared typed outputs keep per-argument poison so command apply can
-    // encode failures at the proper target/path. Legacy handlers keep the
-    // previous aggregate resolution behavior.
-    this.compiler._compileAggregate(argList, frame, '[', ']', useTypedOutputArgResolver ? false : isAsync, true);
-    if (asyncArgs && useTypedOutputArgResolver) {
-      this.compiler.emit(')');
-    }
-    if (outputType === 'text') {
-      this.compiler.emit(', env.opts.autoescape)');
-    }
+    this.compiler.emit('args: ');
+    // Output commands are constructed with unresolved args; resolution/normalization
+    // happens once in runtime right before command.apply().
+    this.compiler._compileAggregate(argList, frame, '[', ']', false, true);
     this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
   }
 
@@ -303,6 +279,20 @@ class CompileBuffer {
     );
   }
 
+  emitAddIsError(frame, outputName, positionNode) {
+    this.registerOutputUsage(frame, outputName);
+    this.compiler.emit(
+      `${this.currentBuffer}.addIsError("${outputName}", ${this._emitPositionLiteral(positionNode)})`
+    );
+  }
+
+  emitAddGetError(frame, outputName, positionNode) {
+    this.registerOutputUsage(frame, outputName);
+    this.compiler.emit(
+      `${this.currentBuffer}.addGetError("${outputName}", ${this._emitPositionLiteral(positionNode)})`
+    );
+  }
+
   // === HANDLER ANALYSIS ===
 
   /**
@@ -359,10 +349,10 @@ class CompileBuffer {
       ? current.value
       : (current instanceof nodes.Literal && typeof current.value === 'string' ? current.value : null);
 
-    this.asyncAddToBuffer(node, frame, (resultVar, f) => {
+    this.asyncAddValueToBuffer(node, frame, (resultVar, f) => {
       this.compiler.emit(`${resultVar} = `);
       this._compileCommandConstruction(node, f);
-    }, node, handler, handler);
+    }, node, handler);
   }
 
   // === BUFFER EMISSION ===
@@ -409,7 +399,7 @@ class CompileBuffer {
       }
 
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
-      this.compiler.emit.line(`await ${this.currentBuffer}.addAsyncArgsCommand("${outputName}", async () => {`);
+      this.compiler.emit.line(`await ${this.currentBuffer}.addAsyncArgsCommand("${outputName}", (async () => {`);
       this.compiler.emit.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       this.compiler.emit.line(';');
@@ -417,7 +407,7 @@ class CompileBuffer {
         ? this._emitTemplateTextCommandExpression(returnId, positionNode)
         : returnId;
       this.compiler.emit.line(`return ${valueExpr};`);
-      this.compiler.emit.line(`}, runtime, context, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", cb);`);
+      this.compiler.emit.line(`})(), runtime, context, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", cb);`);
 
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('}');
@@ -439,6 +429,23 @@ class CompileBuffer {
   }
 
   /**
+   * Add a value to the buffer without producer slot-fill wrapping.
+   * Use when value construction does not require addAsyncArgsCommand producer semantics.
+   * The value is added directly to the current buffer (no extra async block).
+   */
+  asyncAddValueToBuffer(node, frame, renderFunction, positionNode = node, outputName = 'text', emitTextCommand = false) {
+    void node;
+    const returnId = this.compiler._tmpid();
+    this.compiler.emit.line(`let ${returnId};`);
+    renderFunction.call(this.compiler, returnId, frame);
+    this.compiler.emit.line(';');
+    const valueExpr = emitTextCommand
+      ? this._emitTemplateTextCommandExpression(returnId, positionNode)
+      : returnId;
+    this.emitAddCommand(frame, outputName, valueExpr);
+  }
+
+  /**
    * Begin async buffer addition (split pattern)
    */
   asyncAddToBufferBegin(node, frame, positionNode = node, handlerName = null, outputName = 'text') {
@@ -446,7 +453,7 @@ class CompileBuffer {
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame) => {`);
       const valueId = this.compiler._tmpid();
       this._bufferValueStack.push(valueId);
-      this.compiler.emit.line(`await ${this.currentBuffer}.addAsyncArgsCommand("${outputName}", async () => {`);
+      this.compiler.emit.line(`await ${this.currentBuffer}.addAsyncArgsCommand("${outputName}", (async () => {`);
       this.compiler.emit(`let ${valueId} = `);
       this.compiler.emit.asyncClosureDepth++;
       // Store handlerName for End to use
@@ -479,7 +486,7 @@ class CompileBuffer {
         ? this._emitTemplateTextCommandExpression(valueId, positionNode)
         : valueId;
       this.compiler.emit.line(`return ${valueExpr};`);
-      this.compiler.emit.line(`}, runtime, context, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", cb);`);
+      this.compiler.emit.line(`})(), runtime, context, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", cb);`);
 
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('}');

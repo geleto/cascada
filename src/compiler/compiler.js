@@ -474,11 +474,11 @@ class Compiler extends CompilerBase {
       const valueId = ids[i];
 
       if (hasAssignedValue) {
-        this.buffer.asyncAddToBuffer(node, frame, (resultVar) => {
+        this.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
           this.emit(
-            `${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: await runtime.createArray([${valueId}]), pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+            `${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
           );
-        }, node, name, name);
+        }, node, name);
       }
 
       if (name.charAt(0) !== '_' && hasAssignedValue) {
@@ -682,9 +682,6 @@ class Compiler extends CompilerBase {
 
       // 2. Link for explicit reversion (optional, if we want to support manual revert)
       this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-      const pauseLinePos = this.codebuf.length;
-      this.emit.line('');
-      this.emit.line('try {');
       let guardInitLinePos = null;
       let guardRepairLinePos = null;
       let outputGuardInitLinePos = null;
@@ -794,29 +791,6 @@ class Compiler extends CompilerBase {
         );
       }
 
-      const resolveGuardedOutputNames = () => {
-        if (!needsOutputSnapshot) {
-          return [];
-        }
-        if (handlerTargets && handlerTargets.length > 0) {
-          return handlerTargets.slice();
-        }
-        return frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
-      };
-
-      const guardedOutputNames = resolveGuardedOutputNames();
-      const pausedGuardHandlers = guardedOutputNames.filter((name) => {
-        const decl = this.async._getDeclaredOutput(frame, name);
-        return !(decl && decl.type === 'sequence');
-      });
-      if (pausedGuardHandlers.length > 0) {
-        this.emit.insertLine(
-          pauseLinePos,
-          `${this.buffer.currentBuffer}.pauseHandlers(${JSON.stringify(pausedGuardHandlers)});`
-        );
-      }
-
-
       // 4. Inject Logic BEFORE closing the block
       // We need to wait for all inner async operations to complete so the buffer is fully populated
       // We wait for 1 because the current block itself is an active closure
@@ -851,10 +825,6 @@ class Compiler extends CompilerBase {
         const rollbackErrorsVar = this._tmpid();
         this.emit.line(`  const ${rollbackErrorsVar} = await runtime.guard.restoreOutputs(${this.buffer.currentBuffer}, ${outputGuardStateVar});`);
         this.emit.line(`  if (${rollbackErrorsVar}.length > 0) { ${guardErrorsVar}.push(...${rollbackErrorsVar}); }`);
-      } else if (handlerTargetsAll || !hasAnySelectors) {
-        this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer});`);
-      } else if (handlerTargets) {
-        this.emit.line(`  runtime.clearBuffer(${this.buffer.currentBuffer}, ${JSON.stringify(handlerTargets)});`);
       }
 
       if (guardStateVar) {
@@ -886,12 +856,6 @@ class Compiler extends CompilerBase {
 
       if (guardStateVar) {
         this.emit.line(`  runtime.guard.complete(frame, ${guardStateVar}, false);`);
-      }
-      this.emit.line('}');
-
-      this.emit.line('} finally {');
-      if (pausedGuardHandlers.length > 0) {
-        this.emit.line(`  ${this.buffer.currentBuffer}.resumeHandlers(${JSON.stringify(pausedGuardHandlers)});`);
       }
       this.emit.line('}');
 
@@ -1334,6 +1298,7 @@ class Compiler extends CompilerBase {
     this.buffer.currentTextOutput = textOutput;
   }
 
+  // @todo - get rid of the asyncAddToBufferBegin after we have switch var to the new value implementation
   compileOutput(node, frame) {
     const children = node.children;
     children.forEach(child => {

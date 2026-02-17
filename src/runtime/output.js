@@ -10,6 +10,7 @@ const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
 const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
+const { RESOLVE_MARKER } = require('./resolve');
 
 class Output {
   constructor(frame, outputName, context, outputType = null, target = undefined, base = null) {
@@ -49,6 +50,7 @@ class Output {
       entry = new TextCommand({
         handler: this._outputName,
         args,
+        normalizeArgs: true,
         pos: { lineno: 0, colno: 0 }
       });
     } else if (this._outputType === 'value') {
@@ -159,14 +161,28 @@ class Output {
 
   _applyCommand(cmd) {
     if (!cmd) return;
+    const applyResolved = () => {
+      try {
+        this._beforeApplyCommand(cmd);
+        const result = cmd.apply(this);
+        if (result && typeof result.then === 'function') {
+          return Promise.resolve(result).catch((err) => {
+            this._recordError(err, cmd);
+          });
+        }
+      } catch (err) {
+        this._recordError(err, cmd);
+      }
+    };
+
     try {
-      this._beforeApplyCommand(cmd);
-      const result = cmd.apply(this);
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).catch((err) => {
+      const prep = resolveCommandArgumentsForApply(cmd, this);
+      if (prep && typeof prep.then === 'function') {
+        return Promise.resolve(prep).then(applyResolved).catch((err) => {
           this._recordError(err, cmd);
         });
       }
+      return applyResolved();
     } catch (err) {
       this._recordError(err, cmd);
     }
@@ -210,39 +226,23 @@ class Output {
     return this._ensureInspection().then(({ error }) => error || null);
   }
 
-  snapshot(pos = null) {
-    const commandPos = normalizeCommandPos(pos);
-    if (this._buffer && typeof this._buffer.addSnapshot === 'function') {
-      return this._buffer.addSnapshot(this._outputName, commandPos);
-    }
-    try {
-      return Promise.resolve(this._resolveSnapshotCommandResult());
-    } catch (err) {
-      return Promise.reject(err);
-    }
-  }
-
-  isError(pos = null) {
-    const commandPos = normalizeCommandPos(pos);
-    if (this._buffer && typeof this._buffer.addIsError === 'function') {
-      return this._buffer.addIsError(this._outputName, commandPos);
-    }
-    return this._isErrorNow();
-  }
-
-  getError(pos = null) {
-    const commandPos = normalizeCommandPos(pos);
-    if (this._buffer && typeof this._buffer.addGetError === 'function') {
-      return this._buffer.addGetError(this._outputName, commandPos);
-    }
-    return this._getErrorNow();
-  }
-
   _captureGuardState() {
-    return cloneSnapshotValue(this._target);
+    return {
+      target: cloneSnapshotValue(this._target),
+      errorsLength: Array.isArray(this._errors) ? this._errors.length : 0
+    };
   }
 
   _restoreGuardState(state) {
+    if (state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'target')) {
+      this._setTarget(state.target, { reason: 'guard-restore' });
+      if (Array.isArray(this._errors)) {
+        const nextLength = typeof state.errorsLength === 'number' ? state.errorsLength : this._errors.length;
+        this._errors.length = Math.max(0, Math.min(this._errors.length, nextLength));
+      }
+      this._invalidateInspectionCache();
+      return;
+    }
     this._setTarget(state, { reason: 'guard-restore' });
   }
 
@@ -295,15 +295,6 @@ function createOutputFacade(output, options) {
       if (prop === 'getCurrentResult') {
         return output.getCurrentResult.bind(output);
       }
-      if (prop === 'snapshot') {
-        return output.snapshot.bind(output);
-      }
-      if (prop === 'isError') {
-        return output.isError.bind(output);
-      }
-      if (prop === 'getError') {
-        return output.getError.bind(output);
-      }
       if (prop === '_applyCommand') {
         return output._applyCommand.bind(output);
       }
@@ -351,6 +342,9 @@ function createOutputFacade(output, options) {
         return value;
       }
       if (dynamicCommands) {
+        if (prop === 'snapshot' || prop === 'isError' || prop === 'getError') {
+          return undefined;
+        }
         // Proxy allows arbitrary output commands (e.g., output.set(...)) without
         // predefining methods on the class. It preserves the dynamic command API.
         return (...args) => output._enqueueCommand(prop, args);
@@ -376,10 +370,7 @@ class TextOutput extends Output {
   invoke(...args) {
     if (!this._buffer) return;
     if (args.length === 0) return;
-    const autoescape = this._context && this._context.env && this._context.env.opts
-      ? this._context.env.opts.autoescape
-      : false;
-    this._enqueueCommand(null, normalizeScriptTextArgs(args, autoescape));
+    this._enqueueCommand(null, args);
   }
 
   getCurrentResult() {
@@ -449,13 +440,24 @@ class DataOutput extends Output {
   }
 
   _captureGuardState() {
-    return cloneSnapshotValue(this._target);
+    return {
+      target: cloneSnapshotValue(this._target),
+      errorsLength: Array.isArray(this._errors) ? this._errors.length : 0
+    };
   }
 
   _restoreGuardState(state) {
-    this._setTarget(state, { reason: 'guard-restore' });
+    const nextTarget = state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'target')
+      ? state.target
+      : state;
+    this._setTarget(nextTarget, { reason: 'guard-restore' });
+    if (state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'target') && Array.isArray(this._errors)) {
+      const nextLength = typeof state.errorsLength === 'number' ? state.errorsLength : this._errors.length;
+      this._errors.length = Math.max(0, Math.min(this._errors.length, nextLength));
+      this._invalidateInspectionCache();
+    }
     if (this._base) {
-      this._base.data = state;
+      this._base.data = nextTarget;
     }
     this._snapshotShared = false;
   }
@@ -562,6 +564,20 @@ class SinkOutput extends Output {
 
   _applyCommand(cmd) {
     if (!cmd) return;
+    const applyResolved = () => {
+      const sink = this._ensureSinkResolved();
+      const apply = () => cmd.apply(this);
+      const result = (sink && typeof sink.then === 'function')
+        ? Promise.resolve(sink).then(apply)
+        : apply();
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).catch((err) => {
+          this._recordError(err, cmd);
+        });
+      }
+      return result;
+    };
+
     try {
       if (cmd.isSnapshotCommand) {
         const snapshotResult = cmd.apply(this);
@@ -573,16 +589,13 @@ class SinkOutput extends Output {
         return snapshotResult;
       }
 
-      const sink = this._ensureSinkResolved();
-      const apply = () => cmd.apply(this);
-      const result = (sink && typeof sink.then === 'function')
-        ? Promise.resolve(sink).then(apply)
-        : apply();
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).catch((err) => {
+      const prep = resolveCommandArgumentsForApply(cmd, this);
+      if (prep && typeof prep.then === 'function') {
+        return Promise.resolve(prep).then(applyResolved).catch((err) => {
           this._recordError(err, cmd);
         });
       }
+      return applyResolved();
     } catch (err) {
       this._recordError(err, cmd);
     }
@@ -621,6 +634,57 @@ class SinkOutput extends Output {
     return this._snapshotFromSink(this._sink);
   }
 
+  _captureGuardState() {
+    const sinkVal = this._ensureSinkResolved();
+    const capture = (sink) => {
+      const sinkState = (!sink || typeof sink.snapshot !== 'function')
+        ? undefined
+        : sink.snapshot();
+      return {
+        sinkState,
+        errorsLength: Array.isArray(this._errors) ? this._errors.length : 0
+      };
+    };
+    const normalizeCapture = (captured) => {
+      if (captured && typeof captured.then === 'function') {
+        return Promise.resolve(captured).then((resolved) => ({
+          sinkState: resolved,
+          errorsLength: Array.isArray(this._errors) ? this._errors.length : 0
+        }));
+      }
+      return captured;
+    };
+    if (sinkVal && typeof sinkVal.then === 'function') {
+      return Promise.resolve(sinkVal).then((sink) => normalizeCapture(capture(sink)));
+    }
+    return normalizeCapture(capture(sinkVal));
+  }
+
+  _restoreGuardState(state) {
+    const sinkVal = this._ensureSinkResolved();
+    const hasWrappedState = !!(state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'sinkState'));
+    const recoverState = hasWrappedState ? state.sinkState : state;
+    const errorsLength = hasWrappedState && typeof state.errorsLength === 'number' ? state.errorsLength : null;
+    const restore = (sink, recoveredState) => {
+      this._setTarget(undefined, { reason: 'guard-restore' });
+      if (errorsLength !== null && Array.isArray(this._errors)) {
+        this._errors.length = Math.max(0, Math.min(this._errors.length, errorsLength));
+        this._invalidateInspectionCache();
+      }
+      if (!sink || typeof sink.recover !== 'function') {
+        return undefined;
+      }
+      return sink.recover(recoveredState);
+    };
+
+    const sinkIsPromise = !!(sinkVal && typeof sinkVal.then === 'function');
+    const stateIsPromise = !!(recoverState && typeof recoverState.then === 'function');
+    if (sinkIsPromise || stateIsPromise) {
+      return Promise.all([Promise.resolve(sinkVal), Promise.resolve(recoverState)])
+        .then(([sink, recoveredState]) => restore(sink, recoveredState));
+    }
+    return restore(sinkVal, recoverState);
+  }
 }
 
 function createSinkOutput(frame, outputName, context, sink) {
@@ -876,4 +940,87 @@ async function inspectTargetForErrors(target) {
     hasError: deduped.length > 0,
     error: deduped.length > 0 ? new PoisonError(deduped) : null
   };
+}
+
+function resolveCommandArgumentsForApply(cmd, output) {
+  if (!cmd || cmd.resolved) {
+    return null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(cmd, 'arguments')) {
+    cmd.resolved = true;
+    return null;
+  }
+
+  const result = resolveCommandArgsValue(cmd.arguments, cmd, output);
+  const finalize = (resolvedArgs) => {
+    if (isTextCommandForOutput(cmd, output)) {
+      const autoescape = output && output._context && output._context.env && output._context.env.opts
+        ? output._context.env.opts.autoescape
+        : false;
+      cmd.arguments = normalizeScriptTextArgs(resolvedArgs, autoescape);
+    } else {
+      cmd.arguments = resolvedArgs;
+    }
+    cmd.resolved = true;
+    return cmd.arguments;
+  };
+
+  if (result && typeof result.then === 'function') {
+    return Promise.resolve(result).then(finalize);
+  }
+  return finalize(result);
+}
+
+function isTextCommandForOutput(cmd, output) {
+  return !!output && output._outputType === 'text' && cmd instanceof TextCommand && cmd.normalizeArgs === true;
+}
+
+function resolveCommandArgsValue(value, cmd, output) {
+  if (Array.isArray(value)) {
+    let hasAsync = false;
+    const mapped = value.map((item) => {
+      const resolved = resolveCommandArg(item, cmd, output);
+      if (resolved && typeof resolved.then === 'function') {
+        hasAsync = true;
+      }
+      return resolved;
+    });
+    if (!hasAsync) {
+      return mapped;
+    }
+    return Promise.all(mapped);
+  }
+  return resolveCommandArg(value, cmd, output);
+}
+
+function resolveCommandArg(value, cmd, output) {
+  if (isPoison(value)) {
+    return new PoisonError(value.errors);
+  }
+  if (isPoisonError(value)) {
+    return value;
+  }
+  if (value && typeof value.then === 'function') {
+    return Promise.resolve(value).then(
+      (resolved) => resolveCommandArg(resolved, cmd, output),
+      (err) => new PoisonError(contextualizeCommandErrors(output, cmd, isPoisonError(err) ? err.errors : [err]))
+    );
+  }
+  if (value && value[RESOLVE_MARKER]) {
+    return Promise.resolve(value[RESOLVE_MARKER]).then(
+      () => value,
+      (err) => new PoisonError(contextualizeCommandErrors(output, cmd, isPoisonError(err) ? err.errors : [err]))
+    );
+  }
+  return value;
+}
+
+function contextualizeCommandErrors(output, cmd, errors) {
+  if (!Array.isArray(errors) || errors.length === 0) {
+    return [];
+  }
+  const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
+  const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
+  const path = output && output._context && output._context.path ? output._context.path : null;
+  return errors.map((err) => handleError(err, lineno, colno, null, path));
 }

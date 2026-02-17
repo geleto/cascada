@@ -806,28 +806,8 @@ class CompilerBase extends Obj {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
     if (this.asyncMode) {
-      if (this.scriptMode) {
-        const sequencePath = this.sequential._extractStaticPath(node.name);
-        if (sequencePath && sequencePath.length >= 2) {
-          const outputDecl = this.async._getDeclaredOutput(frame, sequencePath[0]);
-          const methodName = sequencePath[sequencePath.length - 1];
-          if (outputDecl && methodName === 'snapshot' && sequencePath.length === 2) {
-            if (outputDecl.type === 'sink' && this.guardDepth > 0) {
-              this.fail('sink snapshot() is not allowed inside guard blocks', node.lineno, node.colno, node);
-            }
-            this.buffer.emitAddSnapshot(frame, sequencePath[0], node);
-            return;
-          }
-          if (outputDecl && outputDecl.type === 'sequence' && methodName !== 'snapshot') {
-            const subpath = sequencePath.slice(1, -1);
-            this._compileAggregate(node.args, frame, '[', ']', true, false, function (resolvedArgs) {
-              this.emit('return ');
-              this.buffer.emitAddSequenceCall(frame, sequencePath[0], methodName, subpath, resolvedArgs, node);
-              this.emit(';');
-            });
-            return;
-          }
-        }
+      if (this._compileSpecialOutputFunCall(node, frame)) {
+        return;
       }
 
       const sequenceLockKey = node.lockKey;//this.sequential._getSequenceKey(node.name, frame);
@@ -887,6 +867,68 @@ class CompilerBase extends Obj {
       this._compileAggregate(node.args, frame, '[', ']', false, false);
       this.emit('))');
     }
+  }
+
+  _compileSpecialOutputFunCall(node, frame) {
+    if (!this.scriptMode) {
+      return false;
+    }
+
+    const sequencePath = this.sequential._extractStaticPath(node.name);
+    if (!sequencePath || sequencePath.length < 2) {
+      return false;
+    }
+
+    const outputName = sequencePath[0];
+    const outputDecl = this.async._getDeclaredOutput(frame, outputName);
+    if (!outputDecl) {
+      return false;
+    }
+
+    const methodName = sequencePath[sequencePath.length - 1];
+    if (this._compileOutputObservationFunCall(node, frame, outputDecl, outputName, methodName, sequencePath)) {
+      return true;
+    }
+
+    return this._compileSequenceOutputFunCall(node, frame, outputDecl, outputName, methodName, sequencePath);
+  }
+
+  _compileOutputObservationFunCall(node, frame, outputDecl, outputName, methodName, sequencePath) {
+    if (sequencePath.length !== 2) {
+      return false;
+    }
+
+    if (methodName === 'snapshot' && outputDecl.type === 'sink' && this.guardDepth > 0) {
+      this.fail('sink snapshot() is not allowed inside guard blocks', node.lineno, node.colno, node);
+    }
+
+    if (methodName === 'snapshot') {
+      this.buffer.emitAddSnapshot(frame, outputName, node);
+      return true;
+    }
+    if (methodName === 'isError') {
+      this.buffer.emitAddIsError(frame, outputName, node);
+      return true;
+    }
+    if (methodName === 'getError') {
+      this.buffer.emitAddGetError(frame, outputName, node);
+      return true;
+    }
+    return false;
+  }
+
+  _compileSequenceOutputFunCall(node, frame, outputDecl, outputName, methodName, sequencePath) {
+    if (outputDecl.type !== 'sequence' || methodName === 'snapshot') {
+      return false;
+    }
+
+    const subpath = sequencePath.slice(1, -1);
+    this._compileAggregate(node.args, frame, '[', ']', false, false, function (resolvedArgs) {
+      this.emit('return ');
+      this.buffer.emitAddSequenceCall(frame, outputName, methodName, subpath, resolvedArgs, node);
+      this.emit(';');
+    });
+    return true;
   }
 
   compileFilterGet(node, frame) {
@@ -1120,11 +1162,6 @@ class CompilerBase extends Obj {
         // Don't wrap compiler-internal symbols - they're plain JS variables
         this.compile(node, frame);
         return;
-      }
-
-      if (this.emit.asyncClosureDepth === 0 && !forceWrap) {
-        // some expressions compile await (@todo - check if so) so they need be in async context
-        this.fail('All expressions must be wrapped in an async IIFE', node.lineno, node.colno, node);
       }
 
       this.sequential.processExpression(node, frame);

@@ -8,10 +8,12 @@ const {
   SnapshotCommand,
   IsErrorCommand,
   GetErrorCommand,
-  SinkRepairCommand
+  SinkRepairCommand,
+  SetTargetCommand
 } = require('./commands');
 const { checkFinishedBuffer } = require('./checks');
-const { handleError } = require('./errors');
+const { handleError, isPoison, isPoisonError } = require('./errors');
+const { RESOLVE_MARKER } = require('./resolve');
 
 class CommandBuffer {
   constructor(context, parent = null) {
@@ -29,9 +31,6 @@ class CommandBuffer {
     this._pendingReservedSlots = 0;
     // finish was requested, but may be deferred until pending slots are filled.
     this._finishRequested = false;
-    // Pause refcount used by guard-temporary execution gating.
-    this._pauseRefCount = 0;
-    this._pausedHandlers = Object.create(null);
   }
 
   _registerOutput(handlerName, output) {
@@ -65,74 +64,6 @@ class CommandBuffer {
     const current = this._visitingIterators.get(outputName);
     if (current === iterator) {
       this._visitingIterators.delete(outputName);
-    }
-  }
-
-  pause() {
-    this._adjustPause(1);
-  }
-
-  resume() {
-    this._adjustPause(-1);
-  }
-
-  isPaused() {
-    if (arguments.length > 0) {
-      const outputName = arguments[0];
-      if (this._pauseRefCount > 0) {
-        return true;
-      }
-      return !!(outputName && this._pausedHandlers && this._pausedHandlers[outputName] > 0);
-    }
-    return this._pauseRefCount > 0;
-  }
-
-  _adjustPause(delta) {
-    let current = this;
-    while (current) {
-      const before = current._pauseRefCount || 0;
-      current._pauseRefCount = Math.max(0, before + delta);
-      if (before > 0 && current._pauseRefCount === 0) {
-        current._notifyBufferResumed();
-      }
-      current = current.parent;
-    }
-  }
-
-  pauseHandlers(handlerNames) {
-    this._adjustHandlerPause(handlerNames, 1);
-  }
-
-  resumeHandlers(handlerNames) {
-    this._adjustHandlerPause(handlerNames, -1);
-  }
-
-  _adjustHandlerPause(handlerNames, delta) {
-    if (!Array.isArray(handlerNames) || handlerNames.length === 0) {
-      return;
-    }
-    let current = this;
-    while (current) {
-      let resumedAny = false;
-      for (const handlerName of handlerNames) {
-        if (!handlerName) {
-          continue;
-        }
-        const before = current._pausedHandlers[handlerName] || 0;
-        const after = Math.max(0, before + delta);
-        if (after === 0) {
-          delete current._pausedHandlers[handlerName];
-        } else {
-          current._pausedHandlers[handlerName] = after;
-        }
-        if (before > 0 && after === 0) {
-          resumedAny = true;
-        }
-      }
-      if (resumedAny) {
-        current._notifyBufferResumed();
-      }
-      current = current.parent;
     }
   }
 
@@ -268,10 +199,10 @@ class CommandBuffer {
     return applySnapshot();
   }
 
-  async addAsyncArgsCommand(outputName, producer, runtime, context, lineno, colno, errorContextString, cb = null) {
+  async addAsyncArgsCommand(outputName, valueOrPromise, runtime, context, lineno, colno, errorContextString, cb = null) {
     const slot = this._reserveSlot(outputName);
     try {
-      const value = await producer();
+      const value = await Promise.resolve(valueOrPromise);
       this._fillSlot(slot, value, outputName);
       return slot;
     } catch (e) {
@@ -362,47 +293,6 @@ class CommandBuffer {
     }
   }
 
-  _notifyBufferResumed() {
-    const seen = new Set();
-
-    for (const iterator of this._visitingIterators.values()) {
-      if (!iterator || seen.has(iterator)) {
-        continue;
-      }
-      seen.add(iterator);
-      iterator.onBufferResumed(this);
-    }
-
-    if (this._outputs) {
-      for (const output of this._outputs.values()) {
-        if (!output || !output._iterator) {
-          continue;
-        }
-        const iterator = output._iterator;
-        if (seen.has(iterator)) {
-          continue;
-        }
-        seen.add(iterator);
-        iterator.onBufferResumed(this);
-      }
-    }
-  }
-
-  patchLinksAfterClear(handlerNames = null) {
-    const names = handlerNames || Object.keys(this.arrays);
-    names.forEach((name) => {
-      if (this.arrays[name]) {
-        this.arrays[name].length = 0;
-      }
-    });
-
-    // Clear is used by guard recovery to discard current output and continue writing.
-    // Keep the buffer writable after reset.
-    this.finished = false;
-    this._finishRequested = false;
-    this._pendingReservedSlots = 0;
-  }
-
   getPosonedBufferErrors(allowedHandlers = null) {
     const allErrors = [];
     if (Array.isArray(allowedHandlers) && allowedHandlers.length === 0) {
@@ -415,17 +305,66 @@ class CommandBuffer {
       if (!arr) {
         return;
       }
+      const handlerErrors = [];
       arr.forEach((item) => {
+        if (item instanceof SetTargetCommand) {
+          handlerErrors.length = 0;
+          return;
+        }
         if (isCommandBuffer(item)) {
-          allErrors.push(...item.getPosonedBufferErrors(allowedHandlers));
+          handlerErrors.push(...item.getPosonedBufferErrors(allowedHandlers));
         } else if (item) {
           const err = item.getError();
           if (err) {
-            allErrors.push(...err.errors);
+            handlerErrors.push(...err.errors);
           }
         }
       });
+      allErrors.push(...handlerErrors);
     });
+
+    return allErrors;
+  }
+
+  async getPosonedBufferErrorsAsync(allowedHandlers = null) {
+    const allErrors = [];
+    if (Array.isArray(allowedHandlers) && allowedHandlers.length === 0) {
+      return allErrors;
+    }
+
+    const names = allowedHandlers || Object.keys(this.arrays);
+    for (const name of names) {
+      const arr = this.arrays[name];
+      if (!arr) {
+        continue;
+      }
+      const handlerErrors = [];
+      for (const item of arr) {
+        if (item instanceof SetTargetCommand) {
+          handlerErrors.length = 0;
+          continue;
+        }
+        if (isCommandBuffer(item)) {
+          const nested = await item.getPosonedBufferErrorsAsync(allowedHandlers);
+          handlerErrors.push(...nested);
+          continue;
+        }
+        if (!item) {
+          continue;
+        }
+        const err = item.getError();
+        if (err && Array.isArray(err.errors)) {
+          handlerErrors.push(...err.errors);
+        }
+        if (Array.isArray(item.arguments)) {
+          const argErrors = await collectErrorsFromCommandArgs(item.arguments);
+          if (argErrors.length > 0) {
+            handlerErrors.push(...argErrors);
+          }
+        }
+      }
+      allErrors.push(...handlerErrors);
+    }
 
     return allErrors;
   }
@@ -464,21 +403,6 @@ function isCommandBuffer(value) {
   return value instanceof CommandBuffer;
 }
 
-function clearBuffer(buffer, handlerNames = null) {
-  if (!buffer) {
-    return;
-  }
-
-  if (buffer instanceof CommandBuffer) {
-    buffer.patchLinksAfterClear(handlerNames || null);
-    return;
-  }
-
-  if (Array.isArray(buffer)) {
-    buffer.length = 0;
-  }
-}
-
 function getPosonedBufferErrors(buffer, allowedHandlers = null) {
   if (!buffer || !(buffer instanceof CommandBuffer)) {
     return [];
@@ -486,10 +410,112 @@ function getPosonedBufferErrors(buffer, allowedHandlers = null) {
   return buffer.getPosonedBufferErrors(allowedHandlers);
 }
 
+async function collectErrorsFromCommandArgs(args) {
+  const errors = [];
+  const seenObjects = new Set();
+  const PROBE_TIMEOUT_MS = 20;
+
+  const awaitWithTimeout = async (promise, timeoutMs) => {
+    let timer = null;
+    try {
+      const result = await Promise.race([
+        Promise.resolve(promise).then(
+          (value) => ({ timedOut: false, value }),
+          (error) => ({ timedOut: false, error })
+        ),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+        })
+      ]);
+      return result;
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  };
+
+  const visit = async (value) => {
+    if (value == null) {
+      return;
+    }
+
+    if (value && typeof value.then === 'function') {
+      const outcome = await awaitWithTimeout(value, PROBE_TIMEOUT_MS);
+      if (outcome.timedOut) {
+        Promise.resolve(value).catch(() => {});
+        return;
+      }
+      if (outcome.error) {
+        const err = outcome.error;
+        if (isPoisonError(err) && Array.isArray(err.errors)) {
+          errors.push(...err.errors);
+        } else {
+          errors.push(err);
+        }
+        return;
+      }
+      await visit(outcome.value);
+      return;
+    }
+
+    if (isPoison(value) && Array.isArray(value.errors)) {
+      errors.push(...value.errors);
+      return;
+    }
+
+    if (typeof value !== 'object') {
+      return;
+    }
+
+    if (seenObjects.has(value)) {
+      return;
+    }
+    seenObjects.add(value);
+
+    const marker = value && value[RESOLVE_MARKER];
+    if (marker && typeof marker.then === 'function') {
+      const outcome = await awaitWithTimeout(marker, PROBE_TIMEOUT_MS);
+      if (outcome.timedOut) {
+        Promise.resolve(marker).catch(() => {});
+      } else if (outcome.error) {
+        const err = outcome.error;
+        if (isPoisonError(err) && Array.isArray(err.errors)) {
+          errors.push(...err.errors);
+        } else {
+          errors.push(err);
+        }
+      }
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        await visit(entry);
+      }
+      return;
+    }
+
+    const keys = Object.keys(value);
+    for (const key of keys) {
+      await visit(value[key]);
+    }
+  };
+
+  await visit(args);
+  return errors;
+}
+
+async function getPosonedBufferErrorsAsync(buffer, allowedHandlers = null) {
+  if (!buffer || !(buffer instanceof CommandBuffer)) {
+    return [];
+  }
+  return buffer.getPosonedBufferErrorsAsync(allowedHandlers);
+}
+
 module.exports = {
   CommandBuffer,
   createCommandBuffer,
-  clearBuffer,
   getPosonedBufferErrors,
+  getPosonedBufferErrorsAsync,
   isCommandBuffer
 };

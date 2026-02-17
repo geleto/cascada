@@ -1,7 +1,6 @@
 'use strict';
 
 const { isPoison, isPoisonError, PoisonError, createPoison, handleError } = require('./errors');
-const { isOutputArgResolutionError } = require('./error-markers');
 const contextualizedOutputErrorCache = new WeakMap();
 
 /**
@@ -100,22 +99,6 @@ class OutputCommand extends Command {
     return createPoison(errors);
   }
 
-  contextualizePoisonErrors(output, errors) {
-    if (!Array.isArray(errors) || errors.length === 0) {
-      return [];
-    }
-    return errors.map((err) => {
-      if (!err) {
-        return err;
-      }
-      const shouldContextualize = isOutputArgResolutionError(err);
-      if (!shouldContextualize) {
-        return err;
-      }
-      return contextualizeOutputError(output, this.pos, err);
-    });
-  }
-
   getError() {
     const errors = this.extractPoisonFromArgs();
     return errors.length > 0 ? new PoisonError(errors) : null;
@@ -147,6 +130,7 @@ class TextCommand extends OutputCommand {
         subpath: null,
         pos: specOrValue.pos || null
       });
+      this.normalizeArgs = !!specOrValue.normalizeArgs;
       return;
     }
     super({
@@ -156,6 +140,7 @@ class TextCommand extends OutputCommand {
       subpath: null,
       pos: null
     });
+    this.normalizeArgs = false;
   }
 
   apply(output) {
@@ -168,7 +153,7 @@ class TextCommand extends OutputCommand {
     }
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      output._target.push(this.toPoisonValue(this.contextualizePoisonErrors(output, poisonErrors)));
+      output._target.push(this.toPoisonValue(poisonErrors));
       output._markStateChanged();
       return;
     }
@@ -234,7 +219,7 @@ class ValueCommand extends OutputCommand {
     if (!output) return;
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      output._setTarget(this.toPoisonValue(this.contextualizePoisonErrors(output, poisonErrors)));
+      output._setTarget(this.toPoisonValue(poisonErrors));
       return;
     }
     if (!Array.isArray(this.arguments) || this.arguments.length === 0) {
@@ -270,7 +255,7 @@ class DataCommand extends OutputCommand {
       setDataPoisonAtPath(
         output,
         this.arguments,
-        this.toPoisonValue(this.contextualizePoisonErrors(output, poisonErrors))
+        this.toPoisonValue(poisonErrors)
       );
       return;
     }
@@ -310,7 +295,7 @@ class SinkCommand extends OutputCommand {
     }
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      output._setTarget(this.toPoisonValue(this.contextualizePoisonErrors(output, poisonErrors)));
+      output._setTarget(this.toPoisonValue(poisonErrors));
       return;
     }
     const sink = output._sink;
@@ -374,7 +359,7 @@ class SequenceCallCommand extends OutputCommand {
     if (!output) return undefined;
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      const err = new PoisonError(this.contextualizePoisonErrors(output, poisonErrors));
+      const err = new PoisonError(poisonErrors);
       this.rejectResult(err);
       throw err;
     }
@@ -653,8 +638,45 @@ function setDataPoisonAtPath(output, args, poisonValue) {
   }
   const rawPath = Array.isArray(args) && args.length > 0 ? args[0] : null;
   const path = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
-  output._base.set(path, poisonValue);
+  const existingValue = readDataValueAtPath(output._base.data, path);
+  const existingErrors = extractPoisonErrors(existingValue);
+  const newErrors = extractPoisonErrors(poisonValue);
+  const mergedPoison = (existingErrors.length > 0 || newErrors.length > 0)
+    ? createPoison([...existingErrors, ...newErrors])
+    : poisonValue;
+  output._base.set(path, mergedPoison);
   output._setTarget(output._base.data);
+}
+
+function readDataValueAtPath(root, path) {
+  if (!Array.isArray(path) || path.length === 0 || (path.length === 1 && path[0] === null)) {
+    return root;
+  }
+  let current = root;
+  for (const segment of path) {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+    if (segment === '[]') {
+      if (!Array.isArray(current) || current.length === 0) {
+        return undefined;
+      }
+      current = current[current.length - 1];
+      continue;
+    }
+    current = current[segment];
+  }
+  return current;
+}
+
+function extractPoisonErrors(value) {
+  if (isPoison(value) && Array.isArray(value.errors)) {
+    return value.errors;
+  }
+  if (isPoisonError(value) && Array.isArray(value.errors)) {
+    return value.errors;
+  }
+  return [];
 }
 
 function contextualizeOutputError(output, pos, err) {

@@ -636,8 +636,7 @@ Scope:
 - add `IsErrorCommand` and `GetErrorCommand`
 - ensure facade methods also route through commands
 - note: snapshot's `_target`-inspection-backed error surfacing is already landed in Step 2; Step 3 focuses on command-path observation APIs and wiring for `isError/getError`
-- implementation note: typed output arg resolution is currently performed in `_compileCommandConstruction` (pre-`apply`) via `resolveOutputCommandArgs`, scoped conservatively (declared outputs, and for `data` only `set`) to preserve existing behavior.
-- implementation note: text argument normalization is also currently performed before command `apply` (`normalizeScriptTextArgs` in command construction path).
+- implementation note: this temporary compile-time arg-resolution/normalization path was removed in Step 4 (resolution now happens in iterator pre-`apply`).
 - implementation note: Step 3 cleanup iteration removed ad-hoc `Error` property mutation for contextualization markers; shared marker tracking now uses runtime-local helpers, and output inspection cache state is represented as a single cache object.
 
 Key regression target:
@@ -649,6 +648,14 @@ Gate:
 - `test:quick` green.
 
 ## Step 4 (Intermediate): Centralize Argument Resolution Before `apply` (Iterator-Level)
+
+Current status:
+
+- implemented: output-command construction now emits unresolved constructor args (`new XxxCommand(...)`).
+- implemented: iterator/dispatch now resolves + normalizes command args immediately before `apply()`, and writes resolved args back onto command instances.
+- implemented: compiler/runtime `resolveOutputCommandArgs` path removed from output-command construction flow and runtime exports.
+- implemented: marker-era arg-resolution helpers/properties removed from output command flow (`markOutputArgResolutionErrors`, marker-property context flags).
+- implemented: `addAsyncArgsCommand` switched to value/promise slot-fill contract (no runtime producer invocation).
 
 Scope:
 
