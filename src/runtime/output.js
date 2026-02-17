@@ -177,10 +177,21 @@ class Output {
   }
 
   _getResultOrThrow() {
-    if (this._errors.length > 0) {
-      throw new PoisonError(this._errors.slice());
+    const finalize = ({ hasError, error }) => {
+      if (hasError && error) {
+        throw error;
+      }
+      if (this._errors.length > 0) {
+        throw new PoisonError(this._errors.slice());
+      }
+      return this.getCurrentResult();
+    };
+
+    const inspection = this._ensureInspection();
+    if (inspection && typeof inspection.then === 'function') {
+      return Promise.resolve(inspection).then(finalize);
     }
-    return this.getCurrentResult();
+    return finalize(inspection);
   }
 
   _resolveSnapshotCommandResult() {
@@ -496,11 +507,19 @@ class SinkOutput extends Output {
     const sinkVal = this._ensureSinkResolved();
     if (sinkVal && typeof sinkVal.then === 'function') {
       return sinkVal.then((resolved) => {
+        const target = this._getTarget();
+        if (isPoison(target)) {
+          throw new PoisonError(target.errors.slice());
+        }
         if (this._errors.length > 0) {
           throw new PoisonError(this._errors.slice());
         }
         return this._snapshotFromSink(resolved);
       });
+    }
+    const target = this._getTarget();
+    if (isPoison(target)) {
+      throw new PoisonError(target.errors.slice());
     }
     return super._resolveSnapshotCommandResult();
   }

@@ -1,6 +1,6 @@
 'use strict';
 
-const { isPoison, isPoisonError, PoisonError, handleError } = require('./errors');
+const { isPoison, isPoisonError, PoisonError, createPoison, handleError } = require('./errors');
 
 /**
  * Command classes for the script-mode output pipeline.
@@ -9,7 +9,7 @@ const { isPoison, isPoisonError, PoisonError, handleError } = require('./errors'
  * The flattener calls command.apply(output) in source order; output is the
  * Output instance for the target handler.
  *
- * apply() mutates output in place and throws on error (including poison).
+ * apply() mutates output in place and may encode poison into output state.
  * getError() returns a PoisonError if the command carries poison, or null.
  */
 
@@ -74,22 +74,29 @@ class OutputCommand extends Command {
     this.mutatesOutput = true;
   }
 
-  getError() {
+  extractPoisonFromArgs() {
     const args = this.arguments;
-    if (!Array.isArray(args)) return null;
-    let errors = null;
+    if (!Array.isArray(args)) return [];
+    const errors = [];
     for (const arg of args) {
-      if (isPoison(arg)) {
-        if (!errors) errors = [];
+      if (isPoison(arg) && Array.isArray(arg.errors) && arg.errors.length > 0) {
         errors.push(...arg.errors);
       }
     }
-    return errors ? new PoisonError(errors) : null;
+    return errors;
+  }
+
+  toPoisonValue(errors) {
+    return createPoison(errors);
+  }
+
+  getError() {
+    const errors = this.extractPoisonFromArgs();
+    return errors.length > 0 ? new PoisonError(errors) : null;
   }
 
   apply(ctx) {
-    const err = this.getError();
-    if (err) throw err;
+    void ctx;
   }
 }
 
@@ -132,6 +139,12 @@ class TextCommand extends OutputCommand {
         return;
       }
       output._setTarget([]);
+    }
+    const poisonErrors = this.extractPoisonFromArgs();
+    if (poisonErrors.length > 0) {
+      output._target.push(this.toPoisonValue(poisonErrors));
+      output._markStateChanged();
+      return;
     }
     const args = Array.isArray(this.arguments) ? this.arguments : [];
     const pos = this.pos || { lineno: 0, colno: 0 };
@@ -193,8 +206,22 @@ class ValueCommand extends OutputCommand {
   apply(output) {
     super.apply(output);
     if (!output) return;
-    const nextValue = this.arguments.length > 0 ? this.arguments[this.arguments.length - 1] : undefined;
-    output._setTarget(nextValue);
+    if (!Array.isArray(this.arguments) || this.arguments.length === 0) {
+      output._setTarget(undefined);
+      return;
+    }
+    if (this.arguments.length > 1) {
+      output._setTarget(this.toPoisonValue([
+        contextualizeOutputError(output, this.pos, new Error('value output accepts exactly one argument'))
+      ]));
+      return;
+    }
+    const poisonErrors = this.extractPoisonFromArgs();
+    if (poisonErrors.length > 0) {
+      output._setTarget(this.toPoisonValue(poisonErrors));
+      return;
+    }
+    output._setTarget(this.arguments[0]);
   }
 }
 
@@ -212,9 +239,21 @@ class DataCommand extends OutputCommand {
   apply(output) {
     super.apply(output);
     if (!output || !output._base) return;
+    const poisonErrors = this.extractPoisonFromArgs();
+    if (poisonErrors.length > 0) {
+      setDataPoisonAtPath(output, this.arguments, this.toPoisonValue(poisonErrors));
+      return;
+    }
     const method = this.command ? output._base[this.command] : output._base;
     if (typeof method !== 'function') {
-      throw new Error(`has no method '${this.command}'`);
+      setDataPoisonAtPath(
+        output,
+        this.arguments,
+        this.toPoisonValue([
+          contextualizeOutputError(output, this.pos, new Error(`has no method '${this.command}'`))
+        ])
+      );
+      return;
     }
     method.apply(output._base, this.arguments);
     output._setTarget(output._base.data);
@@ -235,13 +274,51 @@ class SinkCommand extends OutputCommand {
   apply(output) {
     super.apply(output);
     if (!output) return;
+    const isRootRepair = this.command === 'repair' && (!this.subpath || this.subpath.length === 0);
+    if (!isRootRepair && isPoison(output._getTarget())) {
+      return;
+    }
+    const poisonErrors = this.extractPoisonFromArgs();
+    if (poisonErrors.length > 0) {
+      output._setTarget(this.toPoisonValue(poisonErrors));
+      return;
+    }
     const sink = output._sink;
     const target = resolveSubpath(sink, this.subpath);
     const method = this.command ? (target && target[this.command]) : target;
-    if (typeof method !== 'function') {
-      throw new Error(`Sink method '${this.command}' not found`);
+
+    if (isRootRepair) {
+      output._setTarget(undefined);
+      if (typeof method !== 'function') {
+        return;
+      }
+      const repairResult = method.apply(target, this.arguments);
+      if (repairResult && typeof repairResult.then === 'function') {
+        return Promise.resolve(repairResult).catch((err) => {
+          output._setTarget(this.toPoisonValue([contextualizeOutputError(output, this.pos, err)]));
+        });
+      }
+      return;
     }
-    method.apply(target, this.arguments);
+
+    if (typeof method !== 'function') {
+      output._setTarget(this.toPoisonValue([
+        contextualizeOutputError(output, this.pos, new Error(`Sink method '${this.command}' not found`))
+      ]));
+      return;
+    }
+
+    try {
+      const result = method.apply(target, this.arguments);
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).catch((err) => {
+          output._setTarget(this.toPoisonValue([contextualizeOutputError(output, this.pos, err)]));
+        });
+      }
+      return result;
+    } catch (err) {
+      output._setTarget(this.toPoisonValue([contextualizeOutputError(output, this.pos, err)]));
+    }
   }
 }
 
@@ -265,6 +342,12 @@ class SequenceCallCommand extends OutputCommand {
   apply(output) {
     super.apply(output);
     if (!output) return undefined;
+    const poisonErrors = this.extractPoisonFromArgs();
+    if (poisonErrors.length > 0) {
+      const err = new PoisonError(poisonErrors);
+      this.rejectResult(err);
+      throw err;
+    }
 
     const execute = (sink) => {
       const target = resolveSubpath(sink, this.subpath);
@@ -352,6 +435,7 @@ class ErrorCommand extends Command {
   }
 
   apply(ctx) {
+    void ctx;
     throw this.getError();
   }
 }
@@ -427,6 +511,22 @@ module.exports = {
   SnapshotCommand,
   SetTargetCommand
 };
+
+function setDataPoisonAtPath(output, args, poisonValue) {
+  if (!output || !output._base || typeof output._base.set !== 'function') {
+    return;
+  }
+  const path = Array.isArray(args) && args.length > 0 ? args[0] : null;
+  output._base.set(path, poisonValue);
+  output._setTarget(output._base.data);
+}
+
+function contextualizeOutputError(output, pos, err) {
+  const lineno = pos && typeof pos.lineno === 'number' ? pos.lineno : 0;
+  const colno = pos && typeof pos.colno === 'number' ? pos.colno : 0;
+  const path = output && output._context && output._context.path ? output._context.path : null;
+  return handleError(err, lineno, colno, null, path);
+}
 
 function resolveSubpath(target, subpath) {
   if (!Array.isArray(subpath) || subpath.length === 0) {

@@ -224,6 +224,7 @@ Sink poisoning policy (fixed):
 - `sink.repair()` is required at output-runtime layer:
   - default behavior: set `_target = undefined`
   - if underlying sink object has `repair()`, call it; it may repair internal state but does not own `_target` reset.
+  - if underlying sink object does not have `repair()`, reset still succeeds and does not poison.
 
 ### 7.6 `SequenceCallCommand` / `SequenceGetCommand`
 
@@ -621,6 +622,7 @@ Scope:
 - keep sequence behavior independent from sink
 - restrict `ErrorCommand` to legacy fallback paths
 - note: command plumbing for state invalidation (`_setTarget(...)` / `_markStateChanged()`) was already landed in Step 1; Step 2 focuses on poison semantics only
+- ensure snapshot read path observes `_target` poison (via inspection cache) so command-level poison encoding is surfaced immediately
 
 Gate:
 
@@ -633,6 +635,7 @@ Scope:
 - implement `output.snapshot()/isError()/getError()` through command path only
 - add `IsErrorCommand` and `GetErrorCommand`
 - ensure facade methods also route through commands
+- note: snapshot's `_target`-inspection-backed error surfacing is already landed in Step 2; Step 3 focuses on command-path observation APIs and wiring for `isError/getError`
 
 Key regression target:
 
