@@ -1,3 +1,5 @@
+Note, we're in the process of rewriting the output system - there is no @data, @text, @value anymore - we are in the process of refactoring this, instead we have data. text, sink, etc. typed outputs and use explicit return instead of composing the result from standard output buffers (@data, @text, etc...)
+
 # Output Architecture
 
 This document describes the current output runtime in `src/runtime/*` and compiler integration points in `src/compiler/*`.
