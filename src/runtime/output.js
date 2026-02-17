@@ -9,7 +9,7 @@ const {
 const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
-const { PoisonError, isPoison, isPoisonError, handleError } = require('./errors');
+const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
 
 class Output {
   constructor(frame, outputName, context, outputType = null, target = undefined, base = null) {
@@ -24,10 +24,11 @@ class Output {
     this._iterator = new BufferIterator(this);
     this._errors = [];
     this._stateVersion = 0;
-    this._inspectCacheVersion = -1;
-    this._inspectCacheHasError = false;
-    this._inspectCacheErrors = [];
-    this._inspectCachePoisonError = null;
+    this._inspectionCache = {
+      version: -1,
+      hasError: false,
+      poisonError: null
+    };
     this._completionResolved = false;
     this._completionPromise = new Promise((resolve) => {
       this._resolveCompletion = resolve;
@@ -87,10 +88,11 @@ class Output {
   }
 
   _invalidateInspectionCache() {
-    this._inspectCacheVersion = -1;
-    this._inspectCacheHasError = false;
-    this._inspectCacheErrors = [];
-    this._inspectCachePoisonError = null;
+    this._inspectionCache = {
+      version: -1,
+      hasError: false,
+      poisonError: null
+    };
   }
 
   _markStateChanged(meta = null) {
@@ -105,26 +107,28 @@ class Output {
   }
 
   async _ensureInspection() {
-    if (this._inspectCacheVersion === this._stateVersion) {
+    if (this._inspectionCache.version === this._stateVersion) {
       return {
-        hasError: this._inspectCacheHasError,
-        error: this._inspectCachePoisonError
+        hasError: this._inspectionCache.hasError,
+        error: this._inspectionCache.poisonError
       };
     }
 
     const inspection = await this._inspectTargetForErrors(this._getTarget());
-    const errors = inspection && inspection.error && Array.isArray(inspection.error.errors)
-      ? inspection.error.errors.slice()
-      : [];
+    const hasError = !!(inspection && inspection.hasError);
+    const poisonError = hasError && inspection && inspection.error && Array.isArray(inspection.error.errors)
+      ? new PoisonError(inspection.error.errors.slice())
+      : null;
 
-    this._inspectCacheVersion = this._stateVersion;
-    this._inspectCacheHasError = !!(inspection && inspection.hasError);
-    this._inspectCacheErrors = errors;
-    this._inspectCachePoisonError = errors.length > 0 ? new PoisonError(errors.slice()) : null;
+    this._inspectionCache = {
+      version: this._stateVersion,
+      hasError,
+      poisonError
+    };
 
     return {
-      hasError: this._inspectCacheHasError,
-      error: this._inspectCachePoisonError
+      hasError: this._inspectionCache.hasError,
+      error: this._inspectionCache.poisonError
     };
   }
 
@@ -198,6 +202,42 @@ class Output {
     return this._getResultOrThrow();
   }
 
+  _isErrorNow() {
+    return this._ensureInspection().then(({ hasError }) => !!hasError);
+  }
+
+  _getErrorNow() {
+    return this._ensureInspection().then(({ error }) => error || null);
+  }
+
+  snapshot(pos = null) {
+    const commandPos = normalizeCommandPos(pos);
+    if (this._buffer && typeof this._buffer.addSnapshot === 'function') {
+      return this._buffer.addSnapshot(this._outputName, commandPos);
+    }
+    try {
+      return Promise.resolve(this._resolveSnapshotCommandResult());
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
+
+  isError(pos = null) {
+    const commandPos = normalizeCommandPos(pos);
+    if (this._buffer && typeof this._buffer.addIsError === 'function') {
+      return this._buffer.addIsError(this._outputName, commandPos);
+    }
+    return this._isErrorNow();
+  }
+
+  getError(pos = null) {
+    const commandPos = normalizeCommandPos(pos);
+    if (this._buffer && typeof this._buffer.addGetError === 'function') {
+      return this._buffer.addGetError(this._outputName, commandPos);
+    }
+    return this._getErrorNow();
+  }
+
   _captureGuardState() {
     return cloneSnapshotValue(this._target);
   }
@@ -231,10 +271,7 @@ const OUTPUT_API_PROPS = new Set([
   '_iterator',
   '_errors',
   '_stateVersion',
-  '_inspectCacheVersion',
-  '_inspectCacheHasError',
-  '_inspectCacheErrors',
-  '_inspectCachePoisonError',
+  '_inspectionCache',
   '_completionResolved'
 ]);
 
@@ -257,6 +294,15 @@ function createOutputFacade(output, options) {
       }
       if (prop === 'getCurrentResult') {
         return output.getCurrentResult.bind(output);
+      }
+      if (prop === 'snapshot') {
+        return output.snapshot.bind(output);
+      }
+      if (prop === 'isError') {
+        return output.isError.bind(output);
+      }
+      if (prop === 'getError') {
+        return output.getError.bind(output);
       }
       if (prop === '_applyCommand') {
         return output._applyCommand.bind(output);
@@ -296,6 +342,13 @@ function createOutputFacade(output, options) {
       }
       if (typeof prop === 'symbol') {
         return proxyTarget[prop];
+      }
+      if (Object.prototype.hasOwnProperty.call(output, prop) || typeof output[prop] !== 'undefined') {
+        const value = output[prop];
+        if (typeof value === 'function') {
+          return value.bind(output);
+        }
+        return value;
       }
       if (dynamicCommands) {
         // Proxy allows arbitrary output commands (e.g., output.set(...)) without
@@ -444,6 +497,46 @@ class SinkOutput extends Output {
 
   _resolveSink() {
     return this._sink;
+  }
+
+  _repairNow() {
+    this._setTarget(undefined, { reason: 'sink-repair' });
+
+    const runRepair = (sink) => {
+      if (!sink || typeof sink.repair !== 'function') {
+        return undefined;
+      }
+      try {
+        const result = sink.repair();
+        if (result && typeof result.then === 'function') {
+          return Promise.resolve(result).catch((err) => {
+            this._setTarget(createPoison([err]), { reason: 'sink-repair-failed' });
+            throw err;
+          });
+        }
+        return result;
+      } catch (err) {
+        this._setTarget(createPoison([err]), { reason: 'sink-repair-failed' });
+        throw err;
+      }
+    };
+
+    const sink = this._ensureSinkResolved();
+    if (sink && typeof sink.then === 'function') {
+      return Promise.resolve(sink).then(runRepair, (err) => {
+        this._setTarget(createPoison([err]), { reason: 'sink-repair-resolve-failed' });
+        throw err;
+      });
+    }
+    return runRepair(sink);
+  }
+
+  repair(pos = null) {
+    const commandPos = normalizeCommandPos(pos);
+    if (this._buffer && typeof this._buffer.addSinkRepair === 'function') {
+      return this._buffer.addSinkRepair(this._outputName, commandPos);
+    }
+    return Promise.resolve(this._repairNow());
   }
 
   _ensureSinkResolved() {
@@ -701,6 +794,15 @@ function cloneSnapshotValue(value) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function normalizeCommandPos(pos) {
+  if (!pos || typeof pos !== 'object') {
+    return { lineno: 0, colno: 0 };
+  }
+  const lineno = typeof pos.lineno === 'number' ? pos.lineno : 0;
+  const colno = typeof pos.colno === 'number' ? pos.colno : 0;
+  return { lineno, colno };
 }
 
 async function inspectTargetForErrors(target) {

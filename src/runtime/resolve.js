@@ -40,6 +40,7 @@ const {
   collectErrors,
   PoisonError
 } = require('./errors');
+const { markOutputArgResolutionErrors: markOutputArgResolutionErrorsInPlace } = require('./error-markers');
 
 const RESOLVE_MARKER = Symbol.for('cascada.resolve');
 
@@ -153,6 +154,50 @@ async function resolveSingle(value) {
   }
 
   return resolvedValue;
+}
+
+// Resolve output-command arguments while preserving poison at the argument slot.
+// Unlike resolveAll/resolveDuo, this does not collapse the whole argument vector
+// into a single poison when one argument fails.
+async function resolveOutputCommandArgs(value) {
+  if (Array.isArray(value)) {
+    return Promise.all(value.map((item) => resolveOutputCommandArg(item)));
+  }
+  return resolveOutputCommandArg(value);
+}
+
+async function resolveOutputCommandArg(value) {
+  if (isPoison(value)) {
+    return new PoisonError(value.errors);
+  }
+
+  if (isPoisonError(value)) {
+    return value;
+  }
+
+  if (value && typeof value.then === 'function') {
+    try {
+      const resolved = await value;
+      return resolveOutputCommandArg(resolved);
+    } catch (err) {
+      return new PoisonError(markOutputArgResolutionErrors(isPoisonError(err) ? err.errors : [err]));
+    }
+  }
+
+  if (value && value[RESOLVE_MARKER]) {
+    try {
+      await value[RESOLVE_MARKER];
+      return value;
+    } catch (err) {
+      return new PoisonError(markOutputArgResolutionErrors(isPoisonError(err) ? err.errors : [err]));
+    }
+  }
+
+  return value;
+}
+
+function markOutputArgResolutionErrors(errors) {
+  return markOutputArgResolutionErrorsInPlace(errors);
 }
 
 function resolveSingleArr(value) {
@@ -335,6 +380,7 @@ module.exports = {
   resolveAll,
   resolveDuo,
   resolveSingle,
+  resolveOutputCommandArgs,
   resolveSingleArr,
   resolveObjectProperties,
   resolveArguments,

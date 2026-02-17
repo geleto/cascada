@@ -636,6 +636,9 @@ Scope:
 - add `IsErrorCommand` and `GetErrorCommand`
 - ensure facade methods also route through commands
 - note: snapshot's `_target`-inspection-backed error surfacing is already landed in Step 2; Step 3 focuses on command-path observation APIs and wiring for `isError/getError`
+- implementation note: typed output arg resolution is currently performed in `_compileCommandConstruction` (pre-`apply`) via `resolveOutputCommandArgs`, scoped conservatively (declared outputs, and for `data` only `set`) to preserve existing behavior.
+- implementation note: text argument normalization is also currently performed before command `apply` (`normalizeScriptTextArgs` in command construction path).
+- implementation note: Step 3 cleanup iteration removed ad-hoc `Error` property mutation for contextualization markers; shared marker tracking now uses runtime-local helpers, and output inspection cache state is represented as a single cache object.
 
 Key regression target:
 
@@ -645,7 +648,104 @@ Gate:
 
 - `test:quick` green.
 
-## Step 4: Guard Switch to Output APIs
+## Step 4 (Intermediate): Centralize Argument Resolution Before `apply` (Iterator-Level)
+
+Scope:
+
+- move command argument resolution/normalization out of `_compileCommandConstruction` and into a single pre-`apply` phase in iterator/dispatch flow.
+- command `apply()` implementations should consume already-resolved args and should not perform promise-resolution work.
+- when args are resolved, replace command args with the resolved representation so later phases do not re-resolve.
+- remove `runtime.resolveOutputCommandArgs` usage from compiler path.
+- after iterator-level resolution is complete and validated, remove `resolveOutputCommandArgs` from runtime exports (and delete helper if no longer needed).
+- clean up temporary marker-property approach introduced during Step 3:
+  - remove `__cascadaOutputArgResolution`
+  - remove `__cascadaNeedsOutputContext`
+  - remove `__cascadaOutputContextualized`
+- replace marker-property-based contextualization with cleaner structural rules (existing location/path metadata and explicit resolver-context plumbing).
+- fix any earlier-than-planned call sites that still depend on old detection paths.
+- remove output-command construction-time resolver flags/branches (`useTypedOutputArgResolver` and related logic).
+
+Design constraints:
+
+- keep source-order and "never miss any error" guarantees.
+- keep per-argument poison behavior for typed outputs.
+- avoid ad-hoc hidden properties on `Error` objects.
+- keep solution elegant; do not introduce hacks that obscure ownership of resolution/contextualization.
+- command-construction path should not rely on synchronous throws in normal flow; failures should be represented as rejected promises or poison values.
+
+Implementation instructions (explicit):
+
+1. Compiler emission contract for output commands
+- `_compileCommandConstruction` should emit constructor-only command creation:
+  - `new runtime.TextCommand(...)`
+  - `new runtime.DataCommand(...)`
+  - `new runtime.ValueCommand(...)`
+  - `new runtime.SinkCommand(...)`
+  - `new runtime.Sequence*Command(...)`
+- `args` payload must be emitted unresolved (promises/markers allowed).
+- remove compiler-time typed-output arg resolution (`resolveOutputCommandArgs`) and related branching from command construction.
+- keep output position metadata emission unchanged.
+- in async mode, output command construction should be plain `new XxxCommand(...)` value creation (constructor-only), with unresolved args.
+
+2. Iterator pre-apply resolution phase
+- add a single resolver hook in the command execution path (iterator/dispatch) that runs immediately before `command.apply(output)`.
+- resolver must:
+  - resolve command args according to command/output type policy,
+  - normalize text args (current `normalizeScriptTextArgs` behavior) at this phase if cleanly possible,
+  - preserve per-argument poison semantics,
+  - write resolved args back onto the command instance (no second resolution pass).
+- `apply()` should only consume normalized/resolved args and mutate `_target`.
+- pre-apply resolver becomes the single owner of command-arg resolution + normalization + poison extraction for output commands.
+
+3. Error-context policy for pre-apply resolver
+- context must be attached at error creation when possible.
+- if resolver adds context, use structural/context-object plumbing, not marker properties on `Error`.
+- remove transitional helpers once resolver owns this responsibility:
+  - `resolveOutputCommandArgs` runtime export,
+  - marker-property-era compatibility paths.
+- do not contextualize poison errors inside command `apply()` implementations (for example via `contextualizePoisonErrors`).
+- missing context in poison payloads should be treated as an upstream bug in creation/resolution paths, not patched during `apply()`.
+
+4. CommandBuffer async slot-fill contract update
+- replace thunk-style `await producer()` pattern in `addAsyncArgsCommand` with a value/promise slot-fill API that does not require invoking arbitrary producer callbacks at runtime.
+- keep slot reservation and deterministic ordering semantics unchanged.
+- expected normal contract for async output-command construction:
+  - returns command value, rejected promise, or poison value;
+  - does not rely on sync throws for normal error propagation.
+- keep a minimal defensive runtime boundary fallback (invariant violation safety), but it must not be part of normal control flow.
+
+5. Keep out of scope for this step
+- do not move non-command control-flow awaits into command arg resolver:
+  - example: `await runtime.contextOrFrameLookup(...)` for dynamic extends/parent selection.
+- do not alter async block scheduling/ordering semantics outside command execution path.
+
+6. Removals/Deletions expected by end of Step 4
+- `useTypedOutputArgResolver` in compiler output-command construction path.
+- public runtime export of `resolveOutputCommandArgs` (and internal helper if no longer used).
+- output-command-path `_compileAggregate(..., resolve=true)` usage for command arguments.
+- marker-era arg-resolution tagging utilities if resolver/context policy no longer needs them.
+- specifically remove `markOutputArgResolutionErrors` (and related marker plumbing) once pre-apply resolver owns context + error propagation before `apply()`.
+
+7. `normalizeScriptTextArgs` decision
+- target: move text-argument normalization from compile-time command construction into the iterator pre-apply resolver phase.
+- keep `normalizeScriptTextArgs` only as a shared utility if it remains the cleanest implementation.
+- remove compiler-side normalization call sites for output command construction once pre-apply normalization is validated.
+
+8. Validation checklist for Step 4
+- verify every output command type is created via plain constructor call with unresolved args.
+- verify command args are resolved exactly once before `apply()`.
+- verify no `apply()` implementation performs promise-resolution logic.
+- verify command-construction flow does not use normal-path sync throws (errors surface as rejected/poisoned values).
+- verify `test:quick` stays green, with targeted runs for:
+  - output command behavior,
+  - error-reporting path/context,
+  - snapshots/poison propagation.
+
+Gate:
+
+- `test:quick` green.
+
+## Step 5: Guard Switch to Output APIs
 
 Scope:
 
@@ -656,7 +756,7 @@ Gate:
 
 - guard regression matrix green.
 
-## Step 5: Compiler Wiring for `is error` / `#` on Outputs
+## Step 6: Compiler Wiring for `is error` / `#` on Outputs
 
 Scope:
 
@@ -667,7 +767,7 @@ Gate:
 
 - script + poison tests green.
 
-## Step 6: Remove `Output._errors` from Health Semantics
+## Step 7: Remove `Output._errors` from Health Semantics
 
 Scope:
 
@@ -678,7 +778,7 @@ Gate:
 
 - `test:quick` green.
 
-## Step 7: Conservative Supersede Infrastructure
+## Step 8: Conservative Supersede Infrastructure
 
 Scope:
 
@@ -689,7 +789,7 @@ Gate:
 
 - queue semantics tests + `test:quick` green.
 
-## Step 8: Cleanup + Docs
+## Step 9: Cleanup + Docs
 
 Scope:
 
@@ -699,6 +799,34 @@ Scope:
 Gate:
 
 - `test:quick` green.
+
+## Step 10: Consolidate Output Error Tests
+
+Scope:
+
+- merge step-by-step output error test files into a single suite:
+  - `tests/pasync/output-errors.js`
+- migrate tests from files created during this plan (so far):
+  - `tests/output-error-inspection.js`
+  - `tests/output-step2-command-poison.js`
+  - `tests/output-step3-observation-commands.js`
+- preserve coverage and intent while removing duplicated setup/helpers.
+- after migration, remove the superseded standalone files.
+
+Gate:
+
+- `test:quick` green.
+
+## Simplification Follow-Ups (To Address During Step 4/7)
+
+- Inspect cache shape:
+  - evaluate replacing multiple cache fields with a single cache object (for example `{ version, hasError, errors, poisonError }`) if it improves readability without regressions.
+- `_Now` methods (`_isErrorNow`, `_getErrorNow`, `_repairNow`):
+  - enforce they remain internal runtime helpers invoked only by command execution path (or immediate command-adjacent plumbing), never as a public bypass around command ordering.
+- `contextualizeOutputError`:
+  - prefer deterministic structural checks over mutation/caching markers on `Error` instances.
+- `normalizeScriptTextArgs`:
+  - keep only if it remains the cleanest normalization boundary after iterator-level pre-apply resolution is introduced.
 
 ## Acceptance Criteria
 

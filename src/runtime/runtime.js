@@ -155,6 +155,10 @@ module.exports = {
   SequenceCallCommand: commands.SequenceCallCommand,
   SequenceGetCommand: commands.SequenceGetCommand,
   ErrorCommand: commands.ErrorCommand,
+  SnapshotCommand: commands.SnapshotCommand,
+  IsErrorCommand: commands.IsErrorCommand,
+  GetErrorCommand: commands.GetErrorCommand,
+  SinkRepairCommand: commands.SinkRepairCommand,
   SetTargetCommand: commands.SetTargetCommand,
 
   AsyncState: require('./async-state').AsyncState,
@@ -174,6 +178,7 @@ module.exports = {
   resolveAll: resolve.resolveAll,
   resolveDuo: resolve.resolveDuo,
   resolveSingle: resolve.resolveSingle,
+  resolveOutputCommandArgs: resolve.resolveOutputCommandArgs,
   resolveSingleArr: resolve.resolveSingleArr,
   resolveObjectProperties: resolve.resolveObjectProperties,
   resolveArguments: resolve.resolveArguments,

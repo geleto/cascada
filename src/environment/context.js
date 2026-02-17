@@ -54,7 +54,7 @@ class Context extends Obj {
   }
 
   //if the variable is not found, returns a poison value
-  lookupScriptModeAsync(name) {
+  lookupScriptModeAsync(name, errorContext = null) {
     // This is one of the most called functions, so optimize for
     // the typical case where the name isn't in the globals
     if (name in this.env.globals && !(name in this.ctx)) {
@@ -63,7 +63,13 @@ class Context extends Obj {
       if (name in this.ctx) {
         return this.ctx[name];
       } else {
-        return createPoison(new Error(`Can not look up unknown variable/function: ${name}`));
+        return createPoison(
+          new Error(`Can not look up unknown variable/function: ${name}`),
+          errorContext?.lineno ?? 0,
+          errorContext?.colno ?? 0,
+          errorContext?.errorContextString ?? null,
+          errorContext?.path ?? this.path ?? null
+        );
       }
     }
   }

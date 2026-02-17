@@ -257,11 +257,11 @@ function contextOrFrameLookupScript(context, frame, name) {
  * Async context or frame lookup for scripts.
  * Returns poison if variable not found.
  */
-function contextOrFrameLookupScriptAsync(context, frame, name) {
+function contextOrFrameLookupScriptAsync(context, frame, name, errorContext = null) {
   let {value: val, frame: f} = frame.lookupAndLocate(name);
   // use the above to avoid variable set to undefined triggering an error
   // scripts, unlike temlates throw at non-existing variables
-  return f ? val : context.lookupScriptModeAsync(name);
+  return f ? val : context.lookupScriptModeAsync(name, errorContext);
 }
 
 module.exports = {

@@ -299,9 +299,17 @@ function suppressValueScript(val, autoescape) {
 
 function normalizeScriptTextArgs(args, autoescape) {
   if (!Array.isArray(args)) {
+    if (errors.isPoison(args) || errors.isPoisonError(args)) {
+      return [args];
+    }
     return [suppressValueScript(args, autoescape)];
   }
-  return args.map((arg) => suppressValueScript(arg, autoescape));
+  return args.map((arg) => {
+    if (errors.isPoison(arg) || errors.isPoisonError(arg)) {
+      return arg;
+    }
+    return suppressValueScript(arg, autoescape);
+  });
 }
 
 

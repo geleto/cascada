@@ -1,6 +1,8 @@
 'use strict';
 
 const { isPoison, isPoisonError, PoisonError, createPoison, handleError } = require('./errors');
+const { isOutputArgResolutionError } = require('./error-markers');
+const contextualizedOutputErrorCache = new WeakMap();
 
 /**
  * Command classes for the script-mode output pipeline.
@@ -76,10 +78,18 @@ class OutputCommand extends Command {
 
   extractPoisonFromArgs() {
     const args = this.arguments;
+    if (isPoisonError(args) && Array.isArray(args.errors) && args.errors.length > 0) {
+      return args.errors.slice();
+    }
+    if (isPoison(args) && Array.isArray(args.errors) && args.errors.length > 0) {
+      return args.errors.slice();
+    }
     if (!Array.isArray(args)) return [];
     const errors = [];
     for (const arg of args) {
-      if (isPoison(arg) && Array.isArray(arg.errors) && arg.errors.length > 0) {
+      if (isPoisonError(arg) && Array.isArray(arg.errors) && arg.errors.length > 0) {
+        errors.push(...arg.errors);
+      } else if (isPoison(arg) && Array.isArray(arg.errors) && arg.errors.length > 0) {
         errors.push(...arg.errors);
       }
     }
@@ -88,6 +98,22 @@ class OutputCommand extends Command {
 
   toPoisonValue(errors) {
     return createPoison(errors);
+  }
+
+  contextualizePoisonErrors(output, errors) {
+    if (!Array.isArray(errors) || errors.length === 0) {
+      return [];
+    }
+    return errors.map((err) => {
+      if (!err) {
+        return err;
+      }
+      const shouldContextualize = isOutputArgResolutionError(err);
+      if (!shouldContextualize) {
+        return err;
+      }
+      return contextualizeOutputError(output, this.pos, err);
+    });
   }
 
   getError() {
@@ -142,7 +168,7 @@ class TextCommand extends OutputCommand {
     }
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      output._target.push(this.toPoisonValue(poisonErrors));
+      output._target.push(this.toPoisonValue(this.contextualizePoisonErrors(output, poisonErrors)));
       output._markStateChanged();
       return;
     }
@@ -206,6 +232,11 @@ class ValueCommand extends OutputCommand {
   apply(output) {
     super.apply(output);
     if (!output) return;
+    const poisonErrors = this.extractPoisonFromArgs();
+    if (poisonErrors.length > 0) {
+      output._setTarget(this.toPoisonValue(this.contextualizePoisonErrors(output, poisonErrors)));
+      return;
+    }
     if (!Array.isArray(this.arguments) || this.arguments.length === 0) {
       output._setTarget(undefined);
       return;
@@ -214,11 +245,6 @@ class ValueCommand extends OutputCommand {
       output._setTarget(this.toPoisonValue([
         contextualizeOutputError(output, this.pos, new Error('value output accepts exactly one argument'))
       ]));
-      return;
-    }
-    const poisonErrors = this.extractPoisonFromArgs();
-    if (poisonErrors.length > 0) {
-      output._setTarget(this.toPoisonValue(poisonErrors));
       return;
     }
     output._setTarget(this.arguments[0]);
@@ -241,7 +267,11 @@ class DataCommand extends OutputCommand {
     if (!output || !output._base) return;
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      setDataPoisonAtPath(output, this.arguments, this.toPoisonValue(poisonErrors));
+      setDataPoisonAtPath(
+        output,
+        this.arguments,
+        this.toPoisonValue(this.contextualizePoisonErrors(output, poisonErrors))
+      );
       return;
     }
     const method = this.command ? output._base[this.command] : output._base;
@@ -280,7 +310,7 @@ class SinkCommand extends OutputCommand {
     }
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      output._setTarget(this.toPoisonValue(poisonErrors));
+      output._setTarget(this.toPoisonValue(this.contextualizePoisonErrors(output, poisonErrors)));
       return;
     }
     const sink = output._sink;
@@ -344,7 +374,7 @@ class SequenceCallCommand extends OutputCommand {
     if (!output) return undefined;
     const poisonErrors = this.extractPoisonFromArgs();
     if (poisonErrors.length > 0) {
-      const err = new PoisonError(poisonErrors);
+      const err = new PoisonError(this.contextualizePoisonErrors(output, poisonErrors));
       this.rejectResult(err);
       throw err;
     }
@@ -478,6 +508,108 @@ class SnapshotCommand extends Command {
   }
 }
 
+class IsErrorCommand extends Command {
+  constructor({ handler, pos = null }) {
+    super({ withDeferredResult: true });
+    this.handler = handler;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.isSnapshotCommand = true;
+  }
+
+  apply(output) {
+    const path = output && output._context ? output._context.path : null;
+    const contextualize = (err) => (isPoisonError(err)
+      ? err
+      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+
+    if (!output || typeof output._isErrorNow !== 'function') {
+      this.rejectResult(contextualize(new Error('IsErrorCommand requires an output handler with _isErrorNow()')));
+      return;
+    }
+
+    try {
+      const result = output._isErrorNow();
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(
+          (value) => this.resolveResult(!!value),
+          (err) => this.rejectResult(contextualize(err))
+        );
+      }
+      this.resolveResult(!!result);
+    } catch (err) {
+      this.rejectResult(contextualize(err));
+    }
+  }
+}
+
+class GetErrorCommand extends Command {
+  constructor({ handler, pos = null }) {
+    super({ withDeferredResult: true });
+    this.handler = handler;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.isSnapshotCommand = true;
+  }
+
+  apply(output) {
+    const path = output && output._context ? output._context.path : null;
+    const contextualize = (err) => (isPoisonError(err)
+      ? err
+      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+
+    if (!output || typeof output._getErrorNow !== 'function') {
+      this.rejectResult(contextualize(new Error('GetErrorCommand requires an output handler with _getErrorNow()')));
+      return;
+    }
+
+    try {
+      const result = output._getErrorNow();
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(
+          (value) => this.resolveResult(value || null),
+          (err) => this.rejectResult(contextualize(err))
+        );
+      }
+      this.resolveResult(result || null);
+    } catch (err) {
+      this.rejectResult(contextualize(err));
+    }
+  }
+}
+
+class SinkRepairCommand extends Command {
+  constructor({ handler, pos = null }) {
+    super({ withDeferredResult: true });
+    this.handler = handler;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.mutatesOutput = true;
+  }
+
+  apply(output) {
+    const path = output && output._context ? output._context.path : null;
+    const contextualize = (err) => (isPoisonError(err)
+      ? err
+      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+
+    if (!output || typeof output._repairNow !== 'function') {
+      this.rejectResult(contextualize(new Error('SinkRepairCommand requires a sink output handler with _repairNow()')));
+      return;
+    }
+
+    try {
+      const result = output._repairNow();
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(
+          (value) => this.resolveResult(value),
+          (err) => this.rejectResult(contextualize(err))
+        );
+      }
+      this.resolveResult(result);
+    } catch (err) {
+      this.rejectResult(contextualize(err));
+    }
+  }
+}
+
 class SetTargetCommand extends Command {
   constructor({ handler, target, pos = null }) {
     super();
@@ -509,6 +641,9 @@ module.exports = {
   SequenceGetCommand,
   ErrorCommand,
   SnapshotCommand,
+  IsErrorCommand,
+  GetErrorCommand,
+  SinkRepairCommand,
   SetTargetCommand
 };
 
@@ -516,7 +651,8 @@ function setDataPoisonAtPath(output, args, poisonValue) {
   if (!output || !output._base || typeof output._base.set !== 'function') {
     return;
   }
-  const path = Array.isArray(args) && args.length > 0 ? args[0] : null;
+  const rawPath = Array.isArray(args) && args.length > 0 ? args[0] : null;
+  const path = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
   output._base.set(path, poisonValue);
   output._setTarget(output._base.data);
 }
@@ -525,7 +661,22 @@ function contextualizeOutputError(output, pos, err) {
   const lineno = pos && typeof pos.lineno === 'number' ? pos.lineno : 0;
   const colno = pos && typeof pos.colno === 'number' ? pos.colno : 0;
   const path = output && output._context && output._context.path ? output._context.path : null;
-  return handleError(err, lineno, colno, null, path);
+  if (err && (typeof err === 'object' || typeof err === 'function')) {
+    const cacheKey = `${lineno}:${colno}:${path || ''}`;
+    const perError = contextualizedOutputErrorCache.get(err);
+    if (perError && perError.has(cacheKey)) {
+      return perError.get(cacheKey);
+    }
+    const wrapped = handleError(err, lineno, colno, null, path);
+    if (wrapped !== err) {
+      const nextPerError = perError || new Map();
+      nextPerError.set(cacheKey, wrapped);
+      contextualizedOutputErrorCache.set(err, nextPerError);
+    }
+    return wrapped;
+  }
+  const wrapped = handleError(err, lineno, colno, null, path);
+  return wrapped;
 }
 
 function resolveSubpath(target, subpath) {

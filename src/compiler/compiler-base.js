@@ -395,7 +395,10 @@ class CompilerBase extends Obj {
     }
     if (this.scriptMode) {
       if (this.asyncMode) {
-        this.emit('runtime.contextOrFrameLookupScriptAsync(' + 'context, frame, "' + name + '")');
+        this.emit('runtime.contextOrFrameLookupScriptAsync(' +
+          'context, frame, "' + name + '", ' +
+          `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
+          ')');
       } else {
         this.emit('runtime.contextOrFrameLookupScript(' + 'context, frame, "' + name + '")');
       }

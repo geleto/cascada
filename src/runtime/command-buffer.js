@@ -1,6 +1,15 @@
 'use strict';
 
-const { ErrorCommand, TextCommand, SequenceCallCommand, SequenceGetCommand, SnapshotCommand } = require('./commands');
+const {
+  ErrorCommand,
+  TextCommand,
+  SequenceCallCommand,
+  SequenceGetCommand,
+  SnapshotCommand,
+  IsErrorCommand,
+  GetErrorCommand,
+  SinkRepairCommand
+} = require('./commands');
 const { checkFinishedBuffer } = require('./checks');
 const { handleError } = require('./errors');
 
@@ -202,7 +211,34 @@ class CommandBuffer {
       handler: outputName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
+    return this._addObservationCommand(cmd, outputName);
+  }
 
+  addIsError(outputName, pos = null) {
+    const cmd = new IsErrorCommand({
+      handler: outputName,
+      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
+    });
+    return this._addObservationCommand(cmd, outputName);
+  }
+
+  addGetError(outputName, pos = null) {
+    const cmd = new GetErrorCommand({
+      handler: outputName,
+      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
+    });
+    return this._addObservationCommand(cmd, outputName);
+  }
+
+  addSinkRepair(outputName, pos = null) {
+    const cmd = new SinkRepairCommand({
+      handler: outputName,
+      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
+    });
+    return this._addObservationCommand(cmd, outputName);
+  }
+
+  _addObservationCommand(cmd, outputName) {
     if (!this.finished) {
       this.add(cmd, outputName);
       return cmd.promise;

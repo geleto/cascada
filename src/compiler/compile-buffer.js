@@ -133,6 +133,7 @@ class CompileBuffer {
     const outputDecl = this.compiler.async._getDeclaredOutput(frame, handler);
     const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
+    const useTypedOutputArgResolver = !!outputDecl && (outputType !== 'data' || command === 'set');
     const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
     const isAsync = node.isAsync;
 
@@ -208,11 +209,31 @@ class CompileBuffer {
     }
 
     if (outputType === 'text') {
-      this.compiler.emit('args: runtime.normalizeScriptTextArgs(' + (asyncArgs ? 'await ' : ''));
+      this.compiler.emit('args: runtime.normalizeScriptTextArgs(');
+      if (asyncArgs && useTypedOutputArgResolver) {
+        // Resolve async argument aggregates while preserving poison as data
+        // (returned as PoisonError) so command apply can encode it into _target.
+        this.compiler.emit('await runtime.resolveOutputCommandArgs(');
+      } else if (asyncArgs) {
+        this.compiler.emit('await ');
+      }
     } else {
-      this.compiler.emit('args: ' + (asyncArgs ? 'await ' : ''));
+      this.compiler.emit('args: ');
+      if (asyncArgs && useTypedOutputArgResolver) {
+        // Resolve async argument aggregates while preserving poison as data
+        // (returned as PoisonError) so command apply can encode it into _target.
+        this.compiler.emit('await runtime.resolveOutputCommandArgs(');
+      } else if (asyncArgs) {
+        this.compiler.emit('await ');
+      }
     }
-    this.compiler._compileAggregate(argList, frame, '[', ']', isAsync, true);
+    // Declared typed outputs keep per-argument poison so command apply can
+    // encode failures at the proper target/path. Legacy handlers keep the
+    // previous aggregate resolution behavior.
+    this.compiler._compileAggregate(argList, frame, '[', ']', useTypedOutputArgResolver ? false : isAsync, true);
+    if (asyncArgs && useTypedOutputArgResolver) {
+      this.compiler.emit(')');
+    }
     if (outputType === 'text') {
       this.compiler.emit(', env.opts.autoescape)');
     }
