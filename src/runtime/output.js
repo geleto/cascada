@@ -9,7 +9,7 @@ const {
 const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
-const { PoisonError, isPoisonError, handleError } = require('./errors');
+const { PoisonError, isPoison, isPoisonError, handleError } = require('./errors');
 
 class Output {
   constructor(frame, outputName, context, outputType = null, target = undefined, base = null) {
@@ -23,6 +23,11 @@ class Output {
 
     this._iterator = new BufferIterator(this);
     this._errors = [];
+    this._stateVersion = 0;
+    this._inspectCacheVersion = -1;
+    this._inspectCacheHasError = false;
+    this._inspectCacheErrors = [];
+    this._inspectCachePoisonError = null;
     this._completionResolved = false;
     this._completionPromise = new Promise((resolve) => {
       this._resolveCompletion = resolve;
@@ -69,6 +74,58 @@ class Output {
       throw new Error(`Unsupported output type '${this._outputType}' for command enqueueing`);
     }
     this._buffer.add(entry, this._outputName);
+  }
+
+  _getTarget() {
+    return this._target;
+  }
+
+  _setTarget(nextTarget, meta = null) {
+    this._target = nextTarget;
+    this._markStateChanged(meta);
+    return this._target;
+  }
+
+  _invalidateInspectionCache() {
+    this._inspectCacheVersion = -1;
+    this._inspectCacheHasError = false;
+    this._inspectCacheErrors = [];
+    this._inspectCachePoisonError = null;
+  }
+
+  _markStateChanged(meta = null) {
+    void meta;
+    this._stateVersion += 1;
+    this._invalidateInspectionCache();
+    return this._stateVersion;
+  }
+
+  async _inspectTargetForErrors(target) {
+    return inspectTargetForErrors(target);
+  }
+
+  async _ensureInspection() {
+    if (this._inspectCacheVersion === this._stateVersion) {
+      return {
+        hasError: this._inspectCacheHasError,
+        error: this._inspectCachePoisonError
+      };
+    }
+
+    const inspection = await this._inspectTargetForErrors(this._getTarget());
+    const errors = inspection && inspection.error && Array.isArray(inspection.error.errors)
+      ? inspection.error.errors.slice()
+      : [];
+
+    this._inspectCacheVersion = this._stateVersion;
+    this._inspectCacheHasError = !!(inspection && inspection.hasError);
+    this._inspectCacheErrors = errors;
+    this._inspectCachePoisonError = errors.length > 0 ? new PoisonError(errors.slice()) : null;
+
+    return {
+      hasError: this._inspectCacheHasError,
+      error: this._inspectCachePoisonError
+    };
   }
 
   getCurrentResult() {
@@ -135,7 +192,7 @@ class Output {
   }
 
   _restoreGuardState(state) {
-    this._target = state;
+    this._setTarget(state, { reason: 'guard-restore' });
   }
 
   finalSnapshot() {
@@ -162,6 +219,11 @@ const OUTPUT_API_PROPS = new Set([
   '_buffer',
   '_iterator',
   '_errors',
+  '_stateVersion',
+  '_inspectCacheVersion',
+  '_inspectCacheHasError',
+  '_inspectCacheErrors',
+  '_inspectCachePoisonError',
   '_completionResolved'
 ]);
 
@@ -199,6 +261,21 @@ function createOutputFacade(output, options) {
       }
       if (prop === '_restoreGuardState') {
         return output._restoreGuardState.bind(output);
+      }
+      if (prop === '_getTarget') {
+        return output._getTarget.bind(output);
+      }
+      if (prop === '_setTarget') {
+        return output._setTarget.bind(output);
+      }
+      if (prop === '_markStateChanged') {
+        return output._markStateChanged.bind(output);
+      }
+      if (prop === '_ensureInspection') {
+        return output._ensureInspection.bind(output);
+      }
+      if (prop === '_inspectTargetForErrors') {
+        return output._inspectTargetForErrors.bind(output);
       }
       if (OUTPUT_API_PROPS.has(prop)) {
         return output[prop];
@@ -243,12 +320,12 @@ class TextOutput extends Output {
 
   getCurrentResult() {
     if (!Array.isArray(this._target) || this._target.length === 0) {
-      this._target = [''];
+      this._setTarget([''], { reason: 'text-empty-snapshot' });
       return '';
     }
     const result = this._target.join('');
     // Compact accumulated fragments so future appends keep O(1)-ish growth.
-    this._target = [result];
+    this._setTarget([result], { reason: 'text-compact' });
     return result;
   }
 }
@@ -281,7 +358,7 @@ class DataOutput extends Output {
       null,
       new DataHandler(context && context.getVariables ? context.getVariables() : {}, env)
     );
-    this._target = this._base ? this._base.data : {};
+    this._setTarget(this._base ? this._base.data : {}, { reason: 'data-init' });
     this._snapshotShared = false;
   }
 
@@ -302,7 +379,7 @@ class DataOutput extends Output {
       return;
     }
     const cloned = cloneSnapshotValue(this._target);
-    this._target = cloned;
+    this._setTarget(cloned, { reason: 'copy-on-write' });
     this._base.data = cloned;
     this._snapshotShared = false;
   }
@@ -312,7 +389,7 @@ class DataOutput extends Output {
   }
 
   _restoreGuardState(state) {
-    this._target = state;
+    this._setTarget(state, { reason: 'guard-restore' });
     if (this._base) {
       this._base.data = state;
     }
@@ -575,6 +652,7 @@ module.exports = {
   DataOutput,
   TextOutput,
   ValueOutput,
+  inspectTargetForErrors,
   createOutput,
   SinkOutput,
   createSinkOutput,
@@ -604,4 +682,77 @@ function cloneSnapshotValue(value) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+async function inspectTargetForErrors(target) {
+  const seenObjects = new Set();
+  const errors = [];
+
+  const addError = (err) => {
+    if (!err) {
+      return;
+    }
+    errors.push(err);
+  };
+
+  const addErrors = (list) => {
+    if (!Array.isArray(list)) {
+      return;
+    }
+    for (const err of list) {
+      addError(err);
+    }
+  };
+
+  const visit = async (value) => {
+    if (isPoison(value)) {
+      addErrors(value.errors);
+      return;
+    }
+
+    if (value && typeof value.then === 'function') {
+      try {
+        const resolved = await value;
+        await visit(resolved);
+      } catch (err) {
+        if (isPoisonError(err)) {
+          addErrors(err.errors);
+        } else {
+          addError(err);
+        }
+      }
+      return;
+    }
+
+    if (!value || typeof value !== 'object') {
+      return;
+    }
+
+    if (seenObjects.has(value)) {
+      return;
+    }
+    seenObjects.add(value);
+
+    if (Array.isArray(value)) {
+      await Promise.all(value.map((entry) => visit(entry)));
+      return;
+    }
+
+    if (isPlainObject(value)) {
+      const values = Object.keys(value).map((key) => value[key]);
+      await Promise.all(values.map((entry) => visit(entry)));
+    }
+  };
+
+  await visit(target);
+
+  if (errors.length === 0) {
+    return { hasError: false, error: null };
+  }
+
+  const deduped = new PoisonError(errors).errors.slice();
+  return {
+    hasError: deduped.length > 0,
+    error: deduped.length > 0 ? new PoisonError(deduped) : null
+  };
 }

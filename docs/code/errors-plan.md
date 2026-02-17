@@ -581,6 +581,7 @@ At each step:
 Targeted-file example:
 
 - `npx mocha tests/output/error-observation-baseline.js --timeout 5000`
+- `npx mocha tests/output-error-inspection.js --timeout 5000`
 
 Final gate for this plan:
 
@@ -603,6 +604,7 @@ Scope:
 
 - add `inspectTargetForErrors`
 - add version/cache fields and invalidation helpers
+- route existing output mutations through `_setTarget(...)` / `_markStateChanged()` so cache invalidation is centralized and reliable
 - no compiler/guard behavior changes yet
 
 Gate:
@@ -618,6 +620,7 @@ Scope:
 - enforce sink poison/skip/repair behavior
 - keep sequence behavior independent from sink
 - restrict `ErrorCommand` to legacy fallback paths
+- note: command plumbing for state invalidation (`_setTarget(...)` / `_markStateChanged()`) was already landed in Step 1; Step 2 focuses on poison semantics only
 
 Gate:
 

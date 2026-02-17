@@ -5,11 +5,11 @@ const { isPoison, isPoisonError, PoisonError, handleError } = require('./errors'
 /**
  * Command classes for the script-mode output pipeline.
  *
- * Each command carries the data needed to mutate an Output object (ctx).
- * The flattener calls command.apply(outputCtx) in source order; ctx is the
+ * Each command carries the data needed to mutate an Output object.
+ * The flattener calls command.apply(output) in source order; output is the
  * Output instance for the target handler.
  *
- * apply() mutates ctx in place and throws on error (including poison).
+ * apply() mutates output in place and throws on error (including poison).
  * getError() returns a PoisonError if the command carries poison, or null.
  */
 
@@ -125,14 +125,13 @@ class TextCommand extends OutputCommand {
     });
   }
 
-  apply(dispatchCtx) {
-    super.apply(dispatchCtx);
-    if (!dispatchCtx || !Array.isArray(dispatchCtx._target)) {
-      if (dispatchCtx) {
-        dispatchCtx._target = [];
-      } else {
+  apply(output) {
+    super.apply(output);
+    if (!output || !Array.isArray(output._target)) {
+      if (!output) {
         return;
       }
+      output._setTarget([]);
     }
     const args = Array.isArray(this.arguments) ? this.arguments : [];
     const pos = this.pos || { lineno: 0, colno: 0 };
@@ -142,19 +141,20 @@ class TextCommand extends OutputCommand {
       }
       const type = typeof arg;
       if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
-        dispatchCtx._target.push(arg);
+        output._target.push(arg);
         continue;
       }
       if (type === 'object') {
         const hasCustomToString = arg.toString && arg.toString !== Object.prototype.toString;
         if (hasCustomToString) {
-          dispatchCtx._target.push(arg);
+          output._target.push(arg);
           continue;
         }
       }
       const argType = Array.isArray(arg) ? 'array' : type;
       throw new Error(`Invalid TextCommand argument type '${argType}' at ${pos.lineno}:${pos.colno}. TextCommand only accepts text-like scalar values.`);
     }
+    output._markStateChanged();
   }
 }
 
@@ -190,10 +190,11 @@ class ValueCommand extends OutputCommand {
     });
   }
 
-  apply(dispatchCtx) {
-    super.apply(dispatchCtx);
-    if (!dispatchCtx) return;
-    dispatchCtx._target = this.arguments.length > 0 ? this.arguments[this.arguments.length - 1] : undefined;
+  apply(output) {
+    super.apply(output);
+    if (!output) return;
+    const nextValue = this.arguments.length > 0 ? this.arguments[this.arguments.length - 1] : undefined;
+    output._setTarget(nextValue);
   }
 }
 
@@ -208,15 +209,15 @@ class DataCommand extends OutputCommand {
     });
   }
 
-  apply(dispatchCtx) {
-    super.apply(dispatchCtx);
-    if (!dispatchCtx || !dispatchCtx._base) return;
-    const method = this.command ? dispatchCtx._base[this.command] : dispatchCtx._base;
+  apply(output) {
+    super.apply(output);
+    if (!output || !output._base) return;
+    const method = this.command ? output._base[this.command] : output._base;
     if (typeof method !== 'function') {
       throw new Error(`has no method '${this.command}'`);
     }
-    method.apply(dispatchCtx._base, this.arguments);
-    dispatchCtx._target = dispatchCtx._base.data;
+    method.apply(output._base, this.arguments);
+    output._setTarget(output._base.data);
   }
 }
 
@@ -231,10 +232,10 @@ class SinkCommand extends OutputCommand {
     });
   }
 
-  apply(dispatchCtx) {
-    super.apply(dispatchCtx);
-    if (!dispatchCtx) return;
-    const sink = dispatchCtx._sink;
+  apply(output) {
+    super.apply(output);
+    if (!output) return;
+    const sink = output._sink;
     const target = resolveSubpath(sink, this.subpath);
     const method = this.command ? (target && target[this.command]) : target;
     if (typeof method !== 'function') {
@@ -261,9 +262,9 @@ class SequenceCallCommand extends OutputCommand {
     }
   }
 
-  apply(dispatchCtx) {
-    super.apply(dispatchCtx);
-    if (!dispatchCtx) return undefined;
+  apply(output) {
+    super.apply(output);
+    if (!output) return undefined;
 
     const execute = (sink) => {
       const target = resolveSubpath(sink, this.subpath);
@@ -293,7 +294,7 @@ class SequenceCallCommand extends OutputCommand {
       return result;
     };
 
-    const sink = dispatchCtx._ensureSinkResolved ? dispatchCtx._ensureSinkResolved() : dispatchCtx._sink;
+    const sink = output._ensureSinkResolved ? output._ensureSinkResolved() : output._sink;
     if (sink && typeof sink.then === 'function') {
       return Promise.resolve(sink).then(execute);
     }
@@ -319,8 +320,8 @@ class SequenceGetCommand extends OutputCommand {
     }
   }
 
-  apply(dispatchCtx) {
-    if (!dispatchCtx) return undefined;
+  apply(output) {
+    if (!output) return undefined;
 
     const execute = (sink) => {
       const target = resolveSubpath(sink, this.subpath);
@@ -329,7 +330,7 @@ class SequenceGetCommand extends OutputCommand {
       return value;
     };
 
-    const sink = dispatchCtx._ensureSinkResolved ? dispatchCtx._ensureSinkResolved() : dispatchCtx._sink;
+    const sink = output._ensureSinkResolved ? output._ensureSinkResolved() : output._sink;
     if (sink && typeof sink.then === 'function') {
       return Promise.resolve(sink).then(execute, (err) => {
         this.rejectResult(err);
@@ -363,19 +364,19 @@ class SnapshotCommand extends Command {
     this.isSnapshotCommand = true;
   }
 
-  apply(dispatchCtx) {
-    const path = dispatchCtx && dispatchCtx._context ? dispatchCtx._context.path : null;
+  apply(output) {
+    const path = output && output._context ? output._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!dispatchCtx || typeof dispatchCtx._resolveSnapshotCommandResult !== 'function') {
+    if (!output || typeof output._resolveSnapshotCommandResult !== 'function') {
       this.rejectResult(contextualize(new Error('SnapshotCommand requires an output handler with _resolveSnapshotCommandResult()')));
       return;
     }
 
     try {
-      const result = dispatchCtx._resolveSnapshotCommandResult();
+      const result = output._resolveSnapshotCommandResult();
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).then(
           (value) => {
@@ -401,15 +402,15 @@ class SetTargetCommand extends Command {
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  apply(dispatchCtx) {
-    if (!dispatchCtx) {
+  apply(output) {
+    if (!output) {
       return;
     }
-    if (typeof dispatchCtx._restoreGuardState === 'function') {
-      dispatchCtx._restoreGuardState(this.target);
+    if (typeof output._restoreGuardState === 'function') {
+      output._restoreGuardState(this.target);
       return;
     }
-    dispatchCtx._target = this.target;
+    output._setTarget(this.target);
   }
 }
 
