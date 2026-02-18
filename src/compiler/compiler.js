@@ -86,14 +86,23 @@ class Compiler extends CompilerBase {
     var resolveArgs = node.resolveArgs && node.isAsync;
     const positionNode = args || node; // Prefer args position if available
 
+    let timingPromiseId = null;
     let errorContextJson;
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
+      if (this.asyncMode) {
+        timingPromiseId = this._tmpid();
+        this.emit.line(`let ${timingPromiseId};`);
+      }
 
       frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text', 'text');
-      errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
-      this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
+      if (this.asyncMode) {
+        this.emit(`(${timingPromiseId} = runtime.resolveSingle(`);
+      } else {
+        errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
+        this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
+      }
       if (noExtensionCallback) {
         //the extension returns a value directly
         if (!resolveArgs) {
@@ -176,23 +185,39 @@ class Compiler extends CompilerBase {
 
     if (noExtensionCallback || node.isAsync) {
       this.emit(`)`);//close the extension call
-      if (node.isAsync) {
+      if (this.asyncMode) {
+        this.emit('))');
+        this.emit(';\n');
+        this.emit.line(`await ${timingPromiseId};`);
+      } else if (node.isAsync) {
         this.emit(`, ${autoescape} && env.opts.autoescape, ${errorContextJson});`);//end of suppressValue
       } else {
         this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
       }
-      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text', true);
+      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text', true, this.asyncMode);
     } else {
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
-      frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text', 'text');
-      const errorContextJson2 = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
-      if (node.isAsync) {
-        this.emit(`await runtime.suppressValueAsync(${res}, ${autoescape} && env.opts.autoescape, ${errorContextJson2});`);
-      } else {
-        this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
+      let callbackTimingPromiseId = null;
+      if (this.asyncMode) {
+        callbackTimingPromiseId = this._tmpid();
+        this.emit.line(`let ${callbackTimingPromiseId};`);
       }
-      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text', true);
+      frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text', 'text');
+      if (this.asyncMode) {
+        this.emit(`(${callbackTimingPromiseId} = runtime.resolveSingle(${res}))`);
+        this.emit(';\n');
+        this.emit.line(`await ${callbackTimingPromiseId};`);
+        frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text', true, true);
+      } else {
+        const errorContextJson2 = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
+        if (node.isAsync) {
+          this.emit(`await runtime.suppressValueAsync(${res}, ${autoescape} && env.opts.autoescape, ${errorContextJson2});`);
+        } else {
+          this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
+        }
+        frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text', true);
+      }
 
       this.emit.addScopeLevel();
     }

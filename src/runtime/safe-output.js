@@ -297,24 +297,6 @@ function suppressValueScript(val, autoescape) {
   return suppressValue(val, autoescape);
 }
 
-function normalizeScriptTextArgs(args, autoescape) {
-  if (!Array.isArray(args)) {
-    if (errors.isPoison(args) || errors.isPoisonError(args)) {
-      return [args];
-    }
-    return [suppressValueScript(args, autoescape)];
-  }
-  return args.map((arg) => {
-    if (errors.isPoison(arg) || errors.isPoisonError(arg)) {
-      return arg;
-    }
-    return suppressValueScript(arg, autoescape);
-  });
-}
-
-
-
-
 function suppressValueScriptAsync(val, autoescape, errorContext) {
   // Handle Promises
   if (val && typeof val.then === 'function') {
@@ -347,7 +329,6 @@ module.exports = {
   suppressValueAsync,
   _suppressValueAsyncComplex,
   suppressValueScript,
-  normalizeScriptTextArgs,
   suppressValueScriptAsync,
   SafeString,
   copySafeness,
