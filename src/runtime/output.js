@@ -22,7 +22,6 @@ class Output {
     this._base = base;
 
     this._iterator = new BufferIterator(this);
-    this._errors = [];
     this._stateVersion = 0;
     this._inspectionCache = {
       version: -1,
@@ -82,9 +81,9 @@ class Output {
     return this._target;
   }
 
-  _setTarget(nextTarget, meta = null) {
+  _setTarget(nextTarget) {
     this._target = nextTarget;
-    this._markStateChanged(meta);
+    this._markStateChanged();
     return this._target;
   }
 
@@ -96,8 +95,7 @@ class Output {
     };
   }
 
-  _markStateChanged(meta = null) {
-    void meta;
+  _markStateChanged() {
     this._stateVersion += 1;
     this._invalidateInspectionCache();
     return this._stateVersion;
@@ -139,19 +137,18 @@ class Output {
 
   _recordError(err, cmd = null) {
     if (!err) return;
-    const pos = cmd && cmd.pos ? cmd.pos : { lineno: 0, colno: 0 };
-    const path = this._context && this._context.path ? this._context.path : null;
+    const errors = isPoisonError(err) && Array.isArray(err.errors)
+      ? err.errors
+      : [err];
+    this._applyPoisonErrors(contextualizeCommandErrors(this, cmd, errors), cmd);
+  }
 
-    if (isPoisonError(err)) {
-      if (Array.isArray(err.errors) && err.errors.length > 0) {
-        // Preserve poison payload identity/messages as-is.
-        // This keeps deduplication semantics stable and avoids rewriting
-        // already-collected underlying errors.
-        this._errors.push(...err.errors);
-      }
+  _applyPoisonErrors(errors) {
+    if (!Array.isArray(errors) || errors.length === 0) {
       return;
     }
-    this._errors.push(handleError(err, pos.lineno, pos.colno, null, path));
+    const merged = mergePoisonErrors(extractPoisonErrors(this._getTarget()), errors);
+    this._setTarget(createPoison(merged));
   }
 
   _beforeApplyCommand(cmd) {
@@ -197,9 +194,8 @@ class Output {
 
   _getResultOrThrow() {
     const finalize = (inspection) => {
-      const mergedError = this._mergeCurrentErrors(inspection);
-      if (mergedError) {
-        throw mergedError;
+      if (inspection && inspection.error) {
+        throw inspection.error;
       }
       return this.getCurrentResult();
     };
@@ -216,46 +212,26 @@ class Output {
   }
 
   _isErrorNow() {
-    return this._getErrorNow().then((error) => !!error);
+    return this._ensureInspection().then((inspection) => !!(inspection && inspection.hasError));
   }
 
   _getErrorNow() {
-    return this._ensureInspection().then((inspection) => this._mergeCurrentErrors(inspection));
-  }
-
-  _mergeCurrentErrors(inspection) {
-    const merged = [];
-    if (inspection && inspection.error && Array.isArray(inspection.error.errors) && inspection.error.errors.length > 0) {
-      merged.push(...inspection.error.errors);
-    }
-    if (Array.isArray(this._errors) && this._errors.length > 0) {
-      merged.push(...this._errors);
-    }
-    if (merged.length === 0) {
-      return null;
-    }
-    const mergedError = new PoisonError(merged);
-    return mergedError.errors.length > 0 ? mergedError : null;
+    return this._ensureInspection().then((inspection) => (inspection ? inspection.error : null));
   }
 
   _captureGuardState() {
     return {
-      target: cloneSnapshotValue(this._target),
-      errorsLength: Array.isArray(this._errors) ? this._errors.length : 0
+      target: cloneSnapshotValue(this._target)
     };
   }
 
   _restoreGuardState(state) {
     if (state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'target')) {
-      this._setTarget(state.target, { reason: 'guard-restore' });
-      if (Array.isArray(this._errors)) {
-        const nextLength = typeof state.errorsLength === 'number' ? state.errorsLength : this._errors.length;
-        this._errors.length = Math.max(0, Math.min(this._errors.length, nextLength));
-      }
+      this._setTarget(state.target);
       this._invalidateInspectionCache();
       return;
     }
-    this._setTarget(state, { reason: 'guard-restore' });
+    this._setTarget(state);
   }
 
   finalSnapshot() {
@@ -281,7 +257,6 @@ const OUTPUT_API_PROPS = new Set([
   '_base',
   '_buffer',
   '_iterator',
-  '_errors',
   '_stateVersion',
   '_inspectionCache',
   '_completionResolved'
@@ -387,13 +362,24 @@ class TextOutput extends Output {
 
   getCurrentResult() {
     if (!Array.isArray(this._target) || this._target.length === 0) {
-      this._setTarget([''], { reason: 'text-empty-snapshot' });
+      this._setTarget(['']);
       return '';
     }
     const result = this._target.join('');
     // Compact accumulated fragments so future appends keep O(1)-ish growth.
-    this._setTarget([result], { reason: 'text-compact' });
+    this._setTarget([result]);
     return result;
+  }
+
+  _applyPoisonErrors(errors) {
+    if (!Array.isArray(errors) || errors.length === 0) {
+      return;
+    }
+    if (!Array.isArray(this._target)) {
+      this._setTarget([]);
+    }
+    this._target.push(createPoison(errors));
+    this._markStateChanged();
   }
 }
 
@@ -417,15 +403,15 @@ class ValueOutput extends Output {
 class DataOutput extends Output {
   constructor(frame, outputName, context, outputType) {
     const env = context && context.env ? context.env : null;
+    const base = new DataHandler(context && context.getVariables ? context.getVariables() : {}, env);
     super(
       frame,
       outputName,
       context,
       outputType,
-      null,
-      new DataHandler(context && context.getVariables ? context.getVariables() : {}, env)
+      base.data,
+      base
     );
-    this._setTarget(this._base ? this._base.data : {}, { reason: 'data-init' });
     this._snapshotShared = false;
   }
 
@@ -446,15 +432,14 @@ class DataOutput extends Output {
       return;
     }
     const cloned = cloneSnapshotValue(this._target);
-    this._setTarget(cloned, { reason: 'copy-on-write' });
+    this._setTarget(cloned);
     this._base.data = cloned;
     this._snapshotShared = false;
   }
 
   _captureGuardState() {
     return {
-      target: cloneSnapshotValue(this._target),
-      errorsLength: Array.isArray(this._errors) ? this._errors.length : 0
+      target: cloneSnapshotValue(this._target)
     };
   }
 
@@ -462,16 +447,31 @@ class DataOutput extends Output {
     const nextTarget = state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'target')
       ? state.target
       : state;
-    this._setTarget(nextTarget, { reason: 'guard-restore' });
-    if (state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'target') && Array.isArray(this._errors)) {
-      const nextLength = typeof state.errorsLength === 'number' ? state.errorsLength : this._errors.length;
-      this._errors.length = Math.max(0, Math.min(this._errors.length, nextLength));
-      this._invalidateInspectionCache();
-    }
+    this._setTarget(nextTarget);
     if (this._base) {
       this._base.data = nextTarget;
     }
     this._snapshotShared = false;
+  }
+
+  _applyPoisonErrors(errors, cmd = null) {
+    if (!Array.isArray(errors) || errors.length === 0) {
+      return;
+    }
+    const mergedRootErrors = mergePoisonErrors(extractPoisonErrors(this._getTarget()), errors);
+    const poison = createPoison(mergedRootErrors);
+    const rawPath = cmd && Array.isArray(cmd.arguments) && cmd.arguments.length > 0 ? cmd.arguments[0] : null;
+    const path = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
+    if (this._base && typeof this._base.set === 'function') {
+      try {
+        this._base.set(path, poison);
+        this._setTarget(this._base.data);
+        return;
+      } catch (err) {
+        void err;
+      }
+    }
+    this._setTarget(poison);
   }
 }
 
@@ -514,7 +514,7 @@ class SinkOutput extends Output {
   }
 
   _repairNow() {
-    this._setTarget(undefined, { reason: 'sink-repair' });
+    this._setTarget(undefined);
 
     const runRepair = (sink) => {
       if (!sink || typeof sink.repair !== 'function') {
@@ -524,13 +524,13 @@ class SinkOutput extends Output {
         const result = sink.repair();
         if (result && typeof result.then === 'function') {
           return Promise.resolve(result).catch((err) => {
-            this._setTarget(createPoison([err]), { reason: 'sink-repair-failed' });
+            this._setTarget(createPoison([err]));
             throw err;
           });
         }
         return result;
       } catch (err) {
-        this._setTarget(createPoison([err]), { reason: 'sink-repair-failed' });
+        this._setTarget(createPoison([err]));
         throw err;
       }
     };
@@ -538,7 +538,7 @@ class SinkOutput extends Output {
     const sink = this._ensureSinkResolved();
     if (sink && typeof sink.then === 'function') {
       return Promise.resolve(sink).then(runRepair, (err) => {
-        this._setTarget(createPoison([err]), { reason: 'sink-repair-resolve-failed' });
+        this._setTarget(createPoison([err]));
         throw err;
       });
     }
@@ -629,9 +629,6 @@ class SinkOutput extends Output {
         if (isPoison(target)) {
           throw new PoisonError(target.errors.slice());
         }
-        if (this._errors.length > 0) {
-          throw new PoisonError(this._errors.slice());
-        }
         return this._snapshotFromSink(resolved);
       });
     }
@@ -649,20 +646,14 @@ class SinkOutput extends Output {
   _captureGuardState() {
     const sinkVal = this._ensureSinkResolved();
     const capture = (sink) => {
-      const sinkState = (!sink || typeof sink.snapshot !== 'function')
-        ? undefined
-        : sink.snapshot();
-      return {
-        sinkState,
-        errorsLength: Array.isArray(this._errors) ? this._errors.length : 0
-      };
+      if (!sink || typeof sink.snapshot !== 'function') {
+        return undefined;
+      }
+      return sink.snapshot();
     };
     const normalizeCapture = (captured) => {
       if (captured && typeof captured.then === 'function') {
-        return Promise.resolve(captured).then((resolved) => ({
-          sinkState: resolved,
-          errorsLength: Array.isArray(this._errors) ? this._errors.length : 0
-        }));
+        return Promise.resolve(captured);
       }
       return captured;
     };
@@ -674,15 +665,8 @@ class SinkOutput extends Output {
 
   _restoreGuardState(state) {
     const sinkVal = this._ensureSinkResolved();
-    const hasWrappedState = !!(state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'sinkState'));
-    const recoverState = hasWrappedState ? state.sinkState : state;
-    const errorsLength = hasWrappedState && typeof state.errorsLength === 'number' ? state.errorsLength : null;
     const restore = (sink, recoveredState) => {
-      this._setTarget(undefined, { reason: 'guard-restore' });
-      if (errorsLength !== null && Array.isArray(this._errors)) {
-        this._errors.length = Math.max(0, Math.min(this._errors.length, errorsLength));
-        this._invalidateInspectionCache();
-      }
+      this._setTarget(undefined);
       if (!sink || typeof sink.recover !== 'function') {
         return undefined;
       }
@@ -690,12 +674,12 @@ class SinkOutput extends Output {
     };
 
     const sinkIsPromise = !!(sinkVal && typeof sinkVal.then === 'function');
-    const stateIsPromise = !!(recoverState && typeof recoverState.then === 'function');
+    const stateIsPromise = !!(state && typeof state.then === 'function');
     if (sinkIsPromise || stateIsPromise) {
-      return Promise.all([Promise.resolve(sinkVal), Promise.resolve(recoverState)])
+      return Promise.all([Promise.resolve(sinkVal), Promise.resolve(state)])
         .then(([sink, recoveredState]) => restore(sink, recoveredState));
     }
-    return restore(sinkVal, recoverState);
+    return restore(sinkVal, state);
   }
 }
 
@@ -870,6 +854,27 @@ function cloneSnapshotValue(value) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function extractPoisonErrors(value) {
+  if (isPoison(value) && Array.isArray(value.errors)) {
+    return value.errors;
+  }
+  if (isPoisonError(value) && Array.isArray(value.errors)) {
+    return value.errors;
+  }
+  return [];
+}
+
+function mergePoisonErrors(existingErrors, nextErrors) {
+  const merged = [];
+  if (Array.isArray(existingErrors) && existingErrors.length > 0) {
+    merged.push(...existingErrors);
+  }
+  if (Array.isArray(nextErrors) && nextErrors.length > 0) {
+    merged.push(...nextErrors);
+  }
+  return merged;
 }
 
 function normalizeCommandPos(pos) {

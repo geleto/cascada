@@ -36,7 +36,6 @@ This plan tracks the error refactor for typed outputs (`data`, `text`, `value`, 
 
 ## Partially Done / Still Transitional
 
-- `Output._errors` is still used and merged with inspection result in `_mergeCurrentErrors()`.
 - Guard output error collection is observation-based:
   - `guard.collectOutputErrors()` uses observation commands (`addGetError`) scoped to handlers used in the current guard block.
 - `TextCommand` still performs normalization inside `apply()` (acceptable now, but resolver boundary can still be simplified later).
@@ -131,6 +130,10 @@ Required changes:
 - `src/runtime/output.js`
 - possibly targeted adjustments in `src/runtime/commands.js` for consistent poison encoding on apply failures
 - guard state capture/restore helpers
+
+Status:
+
+- Completed.
 
 Acceptance:
 
