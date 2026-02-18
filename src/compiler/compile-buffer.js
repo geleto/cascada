@@ -407,7 +407,7 @@ class CompileBuffer {
         ? this._emitTemplateTextCommandExpression(returnId, positionNode)
         : returnId;
       this.compiler.emit.line(`return ${valueExpr};`);
-      this.compiler.emit.line(`})(), runtime, context, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", cb);`);
+      this.compiler.emit.line(`})(), cb);`);
 
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('}');
@@ -490,7 +490,7 @@ class CompileBuffer {
         ? this._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs)
         : valueId;
       this.compiler.emit.line(`return ${valueExpr};`);
-      this.compiler.emit.line(`})(), runtime, context, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", cb);`);
+      this.compiler.emit.line(`})(), cb);`);
 
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('}');
@@ -575,3 +575,4 @@ class CompileBuffer {
 }
 
 module.exports = CompileBuffer;
+

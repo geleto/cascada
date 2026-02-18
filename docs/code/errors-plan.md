@@ -29,6 +29,9 @@ This plan tracks the error refactor for typed outputs (`data`, `text`, `value`, 
   - commands are created with unresolved args and resolved once before `apply()`
 - Queue-fill error contextualization was removed from `addAsyncArgsCommand()`:
   - `TargetPoisonCommand` now contextualizes errors during `apply()` against output context/position.
+- `addAsyncArgsCommand()` contract was simplified:
+  - runtime/context/position plumbing was removed from queue-fill API.
+  - compiler callsites now pass only `(outputName, valueOrPromise, cb)`.
 - Compile-time output text normalization path was removed from construction flow and moved to command/runtime (`TextCommand.normalizeArgs` path).
 - `Context` now carries `scriptMode` and it propagates through `Template` context creation/fork.
 - `compileOutput` now has explicit split:
@@ -194,6 +197,10 @@ Acceptance:
 
 - Queue-fill path is simpler and easier to reason about.
 - No behavior regression in async ordering/error propagation.
+
+Status:
+
+- Completed.
 
 ## Step 6: Compiler Cleanup for Output Observation/Error Paths
 

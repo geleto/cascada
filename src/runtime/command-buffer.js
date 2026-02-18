@@ -12,7 +12,7 @@ const {
   SinkRepairCommand
 } = require('./commands');
 const { checkFinishedBuffer } = require('./checks');
-const { handleError } = require('./errors');
+const { handleError, RuntimeFatalError } = require('./errors');
 
 class CommandBuffer {
   constructor(context, parent = null) {
@@ -198,47 +198,34 @@ class CommandBuffer {
     return applySnapshot();
   }
 
-  async addAsyncArgsCommand(outputName, valueOrPromise, runtime, context, lineno, colno, errorContextString, cb = null) {
+  async addAsyncArgsCommand(outputName, valueOrPromise, onFatal = null) {
     const slot = this._reserveSlot(outputName);
     try {
       const value = await Promise.resolve(valueOrPromise);
       this._fillSlot(slot, value, outputName);
       return slot;
     } catch (e) {
-      if (runtime && e instanceof runtime.RuntimeFatalError) {
-        if (cb) {
-          cb(e);
+      if (e instanceof RuntimeFatalError) {
+        if (typeof onFatal === 'function') {
+          onFatal(e);
         }
         throw e;
       }
 
-      const errors = runtime && runtime.isPoisonError && runtime.isPoisonError(e) ? e.errors : [e];
+      const errors = e && e.errors && Array.isArray(e.errors) ? e.errors : [e];
 
       try {
         this._fillSlot(slot, new TargetPoisonCommand({
           handler: outputName,
           errors,
-          pos: { lineno, colno }
+          pos: { lineno: 0, colno: 0 }
         }), outputName);
       } catch (fillErr) {
-        if (runtime && runtime.RuntimeFatalError) {
-          const fatal = fillErr instanceof runtime.RuntimeFatalError
-            ? fillErr
-            : new runtime.RuntimeFatalError(
-              fillErr,
-              lineno,
-              colno,
-              errorContextString,
-              context ? context.path : null
-            );
-          if (typeof cb === 'function') {
-            cb(fatal);
+        if (fillErr instanceof RuntimeFatalError) {
+          if (typeof onFatal === 'function') {
+            onFatal(fillErr);
           }
-          throw fatal;
-        }
-
-        if (typeof cb === 'function') {
-          cb(fillErr);
+          throw fillErr;
         }
         throw fillErr;
       }
