@@ -14,14 +14,14 @@ describe('Phase 6: Loop Poison Integration', () => {
   describe('Test 6.1: Else execution with synchronous poison', () => {
     it('should execute else block when iterable is poisoned', async () => {
       const script = `
-        data data
+        var result = {}
         for item in getPoisoned()
-          data.bodyRan = true
+          result.bodyRan = true
         else
-          data.elseRan = true
+          result.elseRan = true
         endfor
-      
-        return data.snapshot()`;
+
+        return result`;
 
       env.addGlobal('getPoisoned', () => createPoison(new Error('Sync poison')));
 
@@ -38,14 +38,14 @@ describe('Phase 6: Loop Poison Integration', () => {
   describe('Test 6.2: Else execution with runtime error', () => {
     it('should execute else when generator throws', async () => {
       const script = `
-        data data
+        var result = {}
         for item in throwingGen()
-          data.bodyRan = true
+          result.bodyRan = true
         else
-          data.elseRan = true
+          result.elseRan = true
         endfor
-      
-        return data.snapshot()`;
+
+        return result`;
 
       env.addGlobal('throwingGen', async function* () {
         throw new Error('Generator error');
@@ -66,14 +66,14 @@ describe('Phase 6: Loop Poison Integration', () => {
   describe('Test 6.3: Else coordination - normal empty', () => {
     it('should execute else when loop is normally empty', async () => {
       const script = `
-        data data
+        var result = {}
         for item in []
-          data.bodyRan = true
+          result.bodyRan = true
         else
-          data.elseRan = true
+          result.elseRan = true
         endfor
-      
-        return data.snapshot()`;
+
+        return result`;
 
       const result = await env.renderScriptString(script);
 
@@ -83,14 +83,14 @@ describe('Phase 6: Loop Poison Integration', () => {
 
     it('should NOT execute else when loop has items', async () => {
       const script = `
-        data data
+        var result = {}
         for item in [1, 2]
-          data.bodyRan = true
+          result.bodyRan = true
         else
-          data.elseRan = true
+          result.elseRan = true
         endfor
-      
-        return data.snapshot()`;
+
+        return result`;
 
       const result = await env.renderScriptString(script);
 
@@ -102,16 +102,16 @@ describe('Phase 6: Loop Poison Integration', () => {
   describe('Test 6.4: Complex loop with writes and handlers - poison case', () => {
     it('should handle all features when iterable is poisoned', async () => {
       const script = `
-        data data
+        data result
         for item in getPoisonedData()
-          data.items.push(item)
+          result.items.push(item)
           text("Item: " + item)
         else
-          data.elseCalled = true
+          result.elseCalled = true
           text("No items")
         endfor
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       env.addGlobal('getPoisonedData', () => {
         return createPoison(new Error('Data fetch failed'));
@@ -131,14 +131,14 @@ describe('Phase 6: Loop Poison Integration', () => {
   describe('Test 6.5: Complex loop with writes and handlers - normal case', () => {
     it('should work normally with valid data', async () => {
       const script = `
-        data data
+        data result
         for item in [1, 2, 3]
-          data.items.push(item)
+          result.items.push(item)
         else
-          data.elseCalled = true
+          result.elseCalled = true
         endfor
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       const result = await env.renderScriptString(script);
 
@@ -153,17 +153,17 @@ describe('Phase 6: Loop Poison Integration', () => {
   describe('Test 6.6: Nested loops with errors', () => {
     it('should handle poison in outer loop', async () => {
       const script = `
-        data data
+        var result = {}
         for outer in getPoisonedArray()
-          data.outerBodyRan = true
+          result.outerBodyRan = true
           for inner in [1, 2, 3]
-            data.innerBodyRan = true
+            result.innerBodyRan = true
           endfor
         else
-          data.outerElse = true
+          result.outerElse = true
         endfor
-      
-        return data.snapshot()`;
+
+        return result`;
 
       env.addGlobal('getPoisonedArray', () => {
         return createPoison(new Error('Outer loop poisoned'));
@@ -180,15 +180,15 @@ describe('Phase 6: Loop Poison Integration', () => {
 
     it('should handle poison in inner loop', async () => {
       const script = `
-        data data
+        var result = {}
         for outer in [1, 2]
-          data.outerRan = true
+          result.outerRan = true
           for inner in poisonOnSecond(outer)
-            data.innerRan = true
+            result.innerRan = true
           endfor
         endfor
-      
-        return data.snapshot()`;
+
+        return result`;
 
       env.addGlobal('poisonOnSecond', function (n) {
         return n === 2 ? createPoison(new Error('Inner poisoned')) : [1, 2, 3];
@@ -207,14 +207,14 @@ describe('Phase 6: Loop Poison Integration', () => {
   describe('Test 6.7: Soft errors from generator', () => {
     it('should handle generator yielding poison', async () => {
       const script = `
-        data data
+        data result
         for item in softErrorGen()
-          data.items.push(item)
+          result.items.push(item)
         else
-          data.elseCalled = true
+          result.elseCalled = true
         endfor
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       env.addGlobal('softErrorGen', async function* () {
         yield 1;
@@ -236,14 +236,14 @@ describe('Phase 6: Loop Poison Integration', () => {
   describe('Test 6.8: Hard errors from generator', () => {
     it('should handle generator throwing error', async () => {
       const script = `
-        data data
+        data result
         for item in hardErrorGen()
-          data.processed.push(item)
+          result.processed.push(item)
         else
-          data.elseCalled = true
+          result.elseCalled = true
         endfor
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       env.addGlobal('hardErrorGen', async function* () {
         yield 1;
@@ -262,12 +262,12 @@ describe('Phase 6: Loop Poison Integration', () => {
   describe('Test 6.9: Error position tracking', () => {
     it('should include error from iterable evaluation', async () => {
       const script = `
-        data data
+        var result = {}
         for item in getPoisoned()
-          data.ran = true
+          result.ran = true
         endfor
-      
-        return data.snapshot()`;
+
+        return result`;
 
       env.addGlobal('getPoisoned', () => {
         return createPoison(new Error('Array evaluation failed'));
@@ -285,12 +285,12 @@ describe('Phase 6: Loop Poison Integration', () => {
 
     it('should include error from generator', async () => {
       const script = `
-        data data
+        var result = {}
         for item in errorGen()
-          data.ran = true
+          result.ran = true
         endfor
-      
-        return data.snapshot()`;
+
+        return result`;
 
       env.addGlobal('errorGen', async function* () {
         throw new Error('Generator failed');
@@ -333,16 +333,16 @@ describe('Phase 6: Loop Poison Integration', () => {
   describe('Test 6.11: Output commands with poison', () => {
     it('should handle @data and @text in else block when poisoned', async () => {
       const script = `
-        data data
+        data result
         for item in getPoisoned()
-          data.items.push(item)
+          result.items.push(item)
           text("Item\\n")
         else
-          data.noItems = true
+          result.noItems = true
           text("No items found\\n")
         endfor
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       env.addGlobal('getPoisoned', () => createPoison(new Error('Failed')));
 

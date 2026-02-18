@@ -512,11 +512,11 @@ describe('Sequential Expression Poisoning', function () {
 
     it('should verify basic locking inside output handler', async function () {
       const script = `
-      data data
+      var result = {}
       api.users!.fail()
-      data.u = api.users!.success() is error
-    
-      return data.snapshot()`;
+      result.u = api.users!.success() is error
+
+      return result`;
 
       const context = {
         api: {

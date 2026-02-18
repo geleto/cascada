@@ -399,7 +399,7 @@
 
     it('shoukld report correct path when accessing unknown variable in script', async () => {
       var scriptName = 'error-script-unknown-variable.scr';
-      loader.addTemplate(scriptName, 'data data\nvar x = nonExistentVar\ndata.x = x\nreturn data.snapshot()');
+      loader.addTemplate(scriptName, 'var result = {}\nvar x = nonExistentVar\nresult.x = x\nreturn result');
       try {
         await env.renderScript(scriptName, {});
         expect().fail('Expected an error to be thrown');
@@ -410,7 +410,7 @@
 
     it('shoukld report correct path when outputing unknown variable in script', async () => {
       var scriptName = 'error-script-output-unknown-variable.scr';
-      loader.addTemplate(scriptName, 'text text\ntext( nonExistentVar )\nreturn text.snapshot()');
+      loader.addTemplate(scriptName, 'text output\noutput( nonExistentVar )\nreturn output.snapshot()');
       try {
         await env.renderScript(scriptName, {});
         expect().fail('Expected an error to be thrown');
@@ -455,8 +455,8 @@
     it('should report correct path for error in macro called from another macro', async () => {
       var templateName = 'error-macro-calling-macro.njk';
       loader.addTemplate(templateName,
-        '{% macro inner() %}{{ nonExistentFunction() }}{% endmacro %}' +
-        '{% macro outer() %}{{ inner() }}{% endmacro %}' +
+        '{% macro inner() %}{{ nonExistentFunction() }}{% endmacro %} +' +
+        '{% macro outer() %}{{ inner() }}{% endmacro %} +' +
         '{{ outer() }}'
       );
       try {
@@ -529,7 +529,7 @@
     it('should report correct path for error in macro argument', async () => {
       var templateName = 'error-macro-argument.njk';
       loader.addTemplate(templateName,
-        '{% macro myMacro(x) %}{{ x }}{% endmacro %}' +
+        '{% macro myMacro(x) %}{{ x }}{% endmacro %} +' +
         '{{ myMacro(asyncFunc()) }}'
       );
       try {

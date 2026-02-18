@@ -326,12 +326,12 @@
         }
       };
       const script = `
-        data data
+        data result
         for name, id in myGenerator()
-          data.processed.push(name)
+          result.processed.push(name)
         endfor
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       try {
         await env.renderScriptString(script, context);
@@ -475,13 +475,13 @@
         }
       };
       const script = `
-        data data
+        data result
         for item in myGenerator()
-          data.items.push(item)
-          data.processedItems.push(processItem(item))
+          result.items.push(item)
+          result.processedItems.push(processItem(item))
         endfor
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       try {
         await env.renderScriptString(script, context);

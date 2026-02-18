@@ -33,16 +33,16 @@
         });
 
         const script = `
-          data data
+          data result
           var executed = false
           for item in getPoisonedArray()
             executed = true
-            data.items.push(item)
+            result.items.push(item)
           else
-            data.elseCalled = true
+            result.elseCalled = true
           endfor
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         try {
           await env.renderScriptString(script);
@@ -62,14 +62,14 @@
         });
 
         const script = `
-          data data
+          var result = {}
           var total = 0
           for item in getPoisonedArray()
             total = total + item
           endfor
-          data.total = total
-        
-          return data.snapshot()`;
+          result.total = total
+
+          return result`;
 
         try {
           await env.renderScriptString(script);
@@ -89,13 +89,13 @@
         });
 
         const script = `
-          data data
+          data result
           for item in getPoisonedArray()
-            data.results.push(item)
+            result.results.push(item)
             text("Item: " + item)
           endfor
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         try {
           await env.renderScriptString(script);
@@ -115,16 +115,16 @@
         });
 
         const script = `
-          data data
+          data result
           var count = 0
           for item in getPoisonedArray()
             count = count + 1
-            data.items.push(item)
+            result.items.push(item)
           else
-            data.fallback = true
+            result.fallback = true
           endfor
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         try {
           await env.renderScriptString(script);
@@ -143,15 +143,15 @@
         });
 
         const script = `
-          data data
+          var result = {}
           var total = 0
           for item in throwingFunc()
             total = total + item
           else
-            data.elseCalled = true
+            result.elseCalled = true
           endfor
-        
-          return data.snapshot()`;
+
+          return result`;
 
         try {
           await env.renderScriptString(script);
@@ -168,14 +168,14 @@
         env.addGlobal('getArray', () => [1, 2, 3]);
 
         const script = `
-          data data
+          var result = {}
           var total = 0
           for item in getArray()
             total = total + item
           endfor
-          data.total = total
-        
-          return data.snapshot()`;
+          result.total = total
+
+          return result`;
 
         const result = await env.renderScriptString(script);
         expect(result.total).to.be(6);
@@ -183,14 +183,14 @@
 
       it('should handle empty array else block', async () => {
         const script = `
-          data data
+          data result
           for item in []
-            data.items.push(item)
+            result.items.push(item)
           else
-            data.isEmpty = true
+            result.isEmpty = true
           endfor
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         const result = await env.renderScriptString(script);
         expect(result.isEmpty).to.be(true);

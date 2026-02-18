@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 let expect;
 let AsyncEnvironment;
@@ -21,10 +21,10 @@ describe('Cascada Script: Output commands', function () {
 
   it('scripts throw error when accessing properties of null/undefined (unlike templates)', async () => {
     const script = `
-        data data
+        data result
         var obj = none
-        data.value = obj.prop
-        return {data: data.snapshot() }`;
+        result.value = obj.prop
+        return result.snapshot()`;
 
     try {
       await env.renderScriptString(script);
@@ -53,18 +53,18 @@ describe('Cascada Script: Output commands', function () {
 
     const script = `
       // These two 'var' declarations are independent and will run in parallel.
-      data data
+      data result
       var userList = fetchData('users')
       var appConfig = fetchData('config')
 
       // The '@' commands are buffered. They run sequentially AFTER the parallel
       // operations above complete, using their now-resolved values.
-      data.result.users.set(userList)
-      data.result.config.merge(appConfig)
-      data.result.config.loaded.set(true)
-      data.result.log.push("Data fetch complete")
+      result.result.users.set(userList)
+      result.result.config.merge(appConfig)
+      result.result.config.loaded.set(true)
+      result.result.log.push("Data fetch complete")
 
-      return data.snapshot()`;
+      return result.snapshot()`;
 
     const result = await env.renderScriptString(script, context);
 
@@ -107,19 +107,19 @@ describe('Cascada Script: Output commands', function () {
       // The main script will also return only its data object.
 
       // Define a reusable component that returns a clean data object.
-      data data
+      data result
       macro buildUserReport(id)
-        data data
+        data reportData
         // These two fetches inside the macro also run in parallel.
         var userData = fetchUser(id)
         var tasksData = fetchTasks(id)
 
         // Assemble the macro's own return value. This happens after
         // its internal fetches are complete.
-        data.user.id = userData.id
-        data.user.name = userData.name
-        data.user.tasks = tasksData
-        return data.snapshot()
+        reportData.user.id = userData.id
+        reportData.user.name = userData.name
+        reportData.user.tasks = tasksData
+        return reportData.snapshot()
       endmacro
 
       // Call the macro for different users. These two calls are independent
@@ -129,11 +129,11 @@ describe('Cascada Script: Output commands', function () {
 
       // The final assembly step for the main script. This block waits for
       // both 'report1' and 'report2' to be fully resolved before running.
-      data.reports.user1 = report1.user
-      data.reports.user2 = report2.user
-      data.reports.summary = "Generated 2 reports"
+      result.reports.user1 = report1.user
+      result.reports.user2 = report2.user
+      result.reports.summary = "Generated 2 reports"
 
-      return data.snapshot()`;
+      return result.snapshot()`;
 
     const result = await env.renderScriptString(script, context);
 
@@ -159,24 +159,24 @@ describe('Cascada Script: Output commands', function () {
     it('should handle @data assignment, @data.push, @data.merge, and @data.deepMerge', async () => {
       const script = `
         // Set creates/replaces values
-        data data
-        data.user.name = "Alice"
-        data.user.role = "Admin"
-        data.user.role = "Super-Admin" // Overwrites previous set
+        data result
+        result.user.name = "Alice"
+        result.user.role = "Admin"
+        result.user.role = "Super-Admin" // Overwrites previous set
 
         // Push adds to an array, creating it if needed
-        data.user.tags.push("active")
-        data.user.tags.push("new")
+        result.user.tags.push("active")
+        result.user.tags.push("new")
 
         // Merge combines objects
-        data.settings.profile = { theme: "light" }
-        data.settings.profile.merge({ notifications: true })
+        result.settings.profile = { theme: "light" }
+        result.settings.profile.merge({ notifications: true })
 
         // Deep merge combines nested objects
-        data.settings.deep = { a: { b: 1 } }
-        data.settings.deep.deepMerge({ a: { c: 2 }, d: 3 })
+        result.settings.deep = { a: { b: 1 } }
+        result.settings.deep.deepMerge({ a: { c: 2 }, d: 3 })
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         user: { name: 'Alice', role: 'Super-Admin', tags: ['active', 'new'] },
@@ -190,13 +190,13 @@ describe('Cascada Script: Output commands', function () {
     it('should handle null path to work on the root of the data object', async () => {
       const script = `
         // Set the entire data object to a new value
-        data data
-        data = { name: 'George', age: 30 }
+        data result
+        result = { name: 'George', age: 30 }
 
         // This should replace the entire object, not add to it
-        data = { status: 'active', role: 'user' }
+        result = { status: 'active', role: 'user' }
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         status: 'active',
@@ -207,44 +207,43 @@ describe('Cascada Script: Output commands', function () {
     it('should correctly handle nested macro calls with different filters', async () => {
       const script = `
 
-        text text
+        text mainText
         macro dataProducer()
-            data data
-            data.value = "produced data"
-            text("ignored text in data macro")
-            return data.snapshot()
+            data result
+            text ignoredText
+            result.value = "produced data"
+            ignoredText("ignored text in data macro")
+            return result.snapshot()
         endmacro
 
         macro generic()
-            data data
-            text text
-            data.foo = "bar"
-            text("Generic text")
-            return {data: data.snapshot(), text: text.snapshot() }
+            data result
+            text genericText
+            result.foo = "bar"
+            genericText("Generic text")
+            return {data: result.snapshot(), text: genericText.snapshot() }
         endmacro
 
         macro textConsumer()
-            text text
-            text("Start consumer. ")
+            text consumerText
+            consumerText("Start consumer. ")
 
             // Case 1: Calling macro (returns unwrapped data object)
             var dataRes = dataProducer()
             if (dataRes.value)
-                 text("Data: " + dataRes.value + ". ")
+                 consumerText("Data: " + dataRes.value + ". ")
             endif
 
             // Case 2: Calling no-filter macro (returns full Result Object)
             var genRes = generic()
-            text("Inner text: " + genRes.text)
-            return text.snapshot()
+            consumerText("Inner text: " + genRes.text)
+            return consumerText.snapshot()
         endmacro
 
-        call textConsumer()
-          text text
-          return text.snapshot()
-        endcall
+        var consumerResult = textConsumer()
+        mainText(consumerResult)
 
-        return text.snapshot()`;
+        return mainText.snapshot()`;
 
       const result = await env.renderScriptString(script);
       expect(result).to.contain('Start consumer.');
@@ -254,218 +253,218 @@ describe('Cascada Script: Output commands', function () {
 
     it('should support explicit callbacks with parameters and return focus', async () => {
       const script = `
-        data data
+        data result
         macro recursive(list, initial)
-          data data
+          data resultData
           var acc = initial
           for item in list
             acc = caller(acc, item)
           endfor
-          data.value = acc
-          return data.snapshot()
+          resultData.value = acc
+          return resultData.snapshot()
         endmacro
 
-        var result = call recursive([1, 2, 3], 0) (sum, num)
-          data data
-          data = sum + num
-          return data.snapshot()
+        var callResult = call recursive([1, 2, 3], 0) (sum, num)
+          data callData
+          callData = sum + num
+          return callData.snapshot()
         endcall
-        data = result
+        result = callResult
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ value: 6 });
     });
 
     it('should support explicit callbacks with no arguments, only focusing', async () => {
       const script = `
-        data data
+        data result
         macro recursive(list)
-          data data
+          data resultData
           var acc = 0
           for item in list
             var res = caller()
             acc = acc + res.value
           endfor
-          data.value = acc
-          return data.snapshot()
+          resultData.value = acc
+          return resultData.snapshot()
         endmacro
 
-        var result = call recursive([1, 2, 3])
-          data data
-          data.value = 1
-          return data.snapshot()
+        var callResult = call recursive([1, 2, 3])
+          data callData
+          callData.value = 1
+          return callData.snapshot()
         endcall
-        data = result
+        result = callResult
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ value: 3 });
     });
 
     it('should support explicit callbacks with arguments but no focusing', async () => {
       const script = `
-        data data
+        data result
         macro recursive(list)
-          data data
+          data resultData
           var acc = 0
           for item in list
             var res = caller(item)
             acc = acc + res.val
           endfor
-          data.value = acc
-          return data.snapshot()
+          resultData.value = acc
+          return resultData.snapshot()
         endmacro
 
-        var result = call recursive([1, 2, 3]) (item)
-          data data
-          data.val = item * 2
-          return data.snapshot()
+        var callResult = call recursive([1, 2, 3]) (item)
+          data callData
+          callData.val = item * 2
+          return callData.snapshot()
         endcall
-        data = result
+        result = callResult
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ value: 12 });
     });
 
     it('should support explicit callbacks with no arguments and no focusing', async () => {
       const script = `
-        data data
+        data result
         macro recursive(list)
-          data data
+          data resultData
           var acc = 0
           for item in list
              var res = caller()
              acc = acc + res.val
           endfor
-          data.value = acc
-          return data.snapshot()
+          resultData.value = acc
+          return resultData.snapshot()
         endmacro
 
-        var result = call recursive([1, 2, 3])
-          data data
-          data.val = 1
-          return data.snapshot()
+        var callResult = call recursive([1, 2, 3])
+          data callData
+          callData.val = 1
+          return callData.snapshot()
         endcall
-        data = result
+        result = callResult
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ value: 3 });
     });
 
     it('should support explicit callbacks with empty arguments and focusing', async () => {
       const script = `
-        data data
+        data result
         macro runner()
-          data data
+          data resultData
           var res = caller()
-          data.value = res.val
-          return data.snapshot()
+          resultData.value = res.val
+          return resultData.snapshot()
         endmacro
 
-        var result = call runner() ()
-           data data
-           data.val = 42
-           return data.snapshot()
+        var callResult = call runner() ()
+           data callData
+           callData.val = 42
+           return callData.snapshot()
         endcall
-        data = result
+        result = callResult
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ value: 42 });
     });
 
     it('should access outer variables in call block', async () => {
       const script = `
-        data data
+        data result
         var outer = 10
         macro runner()
-          data data
+          data resultData
           var res = caller()
-          data.val = res.val
-          return data.snapshot()
+          resultData.val = res.val
+          return resultData.snapshot()
         endmacro
 
-        var result = call runner()
-          data data
-          data.val = outer
-          return data.snapshot()
+        var callResult = call runner()
+          data callData
+          callData.val = outer
+          return callData.snapshot()
         endcall
-        data = result
+        result = callResult
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ val: 10 });
     });
 
     it('should resolve variables from caller site (lexical scope)', async () => {
       const script = `
-        data data
+        data result
         var x = "outer"
         macro runner()
-          data data
-          var x = "inner"
+          data resultData
+          var innerX = "inner"
           var res = caller()
-          data.val = res.val
-          return data.snapshot()
+          resultData.val = res.val
+          return resultData.snapshot()
         endmacro
 
-        var result = call runner()
-          data data
-          data.val = x
-          return data.snapshot()
+        var callResult = call runner()
+          data callData
+          callData.val = x
+          return callData.snapshot()
         endcall
-        data = result
+        result = callResult
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ val: 'outer' });
     });
 
     it('should allow call arguments to shadow outer variables', async () => {
       const script = `
-        data data
+        data result
         var x = "outer"
         macro runner()
-          data data
+          data resultData
           var res = caller("arg")
-          data.val = res.val
-          return data.snapshot()
+          resultData.val = res.val
+          return resultData.snapshot()
         endmacro
 
-        var result = call runner() (x)
-          data data
-          data.val = x
-          return data.snapshot()
+        var callResult = call runner() (callX)
+          data callData
+          callData.val = callX
+          return callData.snapshot()
         endcall
-        data = result
+        result = callResult
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ val: 'arg' });
     });
 
     it('should fail to access variables defined purely inside the macro (isolation)', async () => {
       const script = `
-        data data
+        data result
         macro runner()
-          data data
+          data resultData
           var secret = "inner"
           var res = caller()
-          data.val = res.val
-          return data.snapshot()
+          resultData.val = res.val
+          return resultData.snapshot()
         endmacro
 
-        var result = call runner()
-           data data
-           data.val = secret
-           return data.snapshot()
+        var callResult = call runner()
+           data callData
+           callData.val = secret
+           return callData.snapshot()
         endcall
-        data = result
+        result = callResult
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       try {
         await env.renderScriptString(script);
         throw new Error('Should have thrown');
@@ -477,14 +476,14 @@ describe('Cascada Script: Output commands', function () {
     it('should handle null path with merge to combine with existing root data', async () => {
       const script = `
         // Start with some initial data
-        data data
-        data.user.name = "Alice"
-        data.user.role = "Admin"
+        data result
+        result.user.name = "Alice"
+        result.user.role = "Admin"
 
         // Merge new data into the root object
-        data.deepMerge({ user: { status: "active" }, config: { theme: "dark" } })
+        result.deepMerge({ user: { status: "active" }, config: { theme: "dark" } })
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         user: { name: 'Alice', role: 'Admin', status: 'active' },
@@ -495,12 +494,12 @@ describe('Cascada Script: Output commands', function () {
     it('should handle null path with deepMerge for nested object merging', async () => {
       const script = `
         // Start with nested data
-        data data
-        data.user.profile.name = "Bob"
-        data.user.profile.settings.theme = "light"
+        data result
+        result.user.profile.name = "Bob"
+        result.user.profile.settings.theme = "light"
 
         // Deep merge new data into the root object
-        data.deepMerge({
+        result.deepMerge({
           user: {
             profile: {
               settings: { notifications: true },
@@ -509,7 +508,7 @@ describe('Cascada Script: Output commands', function () {
           }
         })
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         user: {
@@ -524,39 +523,39 @@ describe('Cascada Script: Output commands', function () {
 
     it('should handle array manipulation with @data.pop, @data.shift, @data.unshift, and @data.reverse', async () => {
       const script = `
-        data data
-        data.items.push("a")
-        data.items.push("b")
-        data.items.push("c")
-        data.items.push("d")
+        data result
+        result.items.push("a")
+        result.items.push("b")
+        result.items.push("c")
+        result.items.push("d")
 
-        data.items.pop() // remove "d" -> [a, b, c]
-        data.items.shift() // remove "a" -> [b, c]
-        data.items.unshift("x") // add "x" -> [x, b, c]
-        data.items.reverse() // -> [c, b, x]
+        result.items.pop() // remove "d" -> [a, b, c]
+        result.items.shift() // remove "a" -> [b, c]
+        result.items.unshift("x") // add "x" -> [x, b, c]
+        result.items.reverse() // -> [c, b, x]
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ items: ['c', 'b', 'x'] });
     });
 
     it('should handle array index targeting including last-item `[]`', async () => {
       const script = `
-        data data
-        data.users.push({ name: 'Alice', tasks: ['task1', 'task2'] })
-        data.users.push({ name: 'Bob' })
+        data result
+        result.users.push({ name: 'Alice', tasks: ['task1', 'task2'] })
+        result.users.push({ name: 'Bob' })
 
         // Target specific index
-        data.users[0].role = "Admin"
+        result.users[0].role = "Admin"
 
         // Target last item pushed in script sequence
-        data.users.push({ name: 'Charlie' })
-        data.users[].role = "Guest" // Affects Charlie
+        result.users.push({ name: 'Charlie' })
+        result.users[].role = "Guest" // Affects Charlie
 
-        data.users[1].status = "active" // Affects Bob
-        data.users[0].tasks[] = "task3" // append task to Alice
+        result.users[1].status = "active" // Affects Bob
+        result.users[0].tasks[] = "task3" // append task to Alice
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         users: [
@@ -569,11 +568,11 @@ describe('Cascada Script: Output commands', function () {
 
     it('should handle @data.push with function call in array index', async () => {
       const script = `
-        data data
-        data.users = usersData
-        data.users[getUserIndex()].roles.push("editor")
+        data result
+        result.users = usersData
+        result.users[getUserIndex()].roles.push("editor")
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const context = {
         getUserIndex: () => 0,
         usersData: [
@@ -592,11 +591,11 @@ describe('Cascada Script: Output commands', function () {
 
     it('should handle @data.merge with dynamic path', async () => {
       const script = `
-        data data
-        data.company = companyData
-        data.company.departments[getDeptId()].merge({ budget: 50000 })
+        data result
+        result.company = companyData
+        result.company.departments[getDeptId()].merge({ budget: 50000 })
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const context = {
         getDeptId: () => 'engineering',
         companyData: {
@@ -619,11 +618,11 @@ describe('Cascada Script: Output commands', function () {
 
     it('should handle @data.assignment with nested dynamic paths', async () => {
       const script = `
-        data data
-        data.company = companyData
-        data.company.users[getUserId()].profile.settings[getSettingKey()] = "enabled"
+        data result
+        result.company = companyData
+        result.company.users[getUserId()].profile.settings[getSettingKey()] = "enabled"
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const context = {
         getUserId: () => 0,
         getSettingKey: () => 'notifications',
@@ -660,11 +659,11 @@ describe('Cascada Script: Output commands', function () {
 
     it('should handle @data.append with dynamic path', async () => {
       const script = `
-        data data
-        data.company = companyData
-        data.company.users[getUserId()].log.append(" - User logged in")
+        data result
+        result.company = companyData
+        result.company.users[getUserId()].log.append(" - User logged in")
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const context = {
         getUserId: () => 0,
         companyData: {
@@ -687,11 +686,11 @@ describe('Cascada Script: Output commands', function () {
 
     it('should handle @data.pop with dynamic array index', async () => {
       const script = `
-        data data
-        data.users = usersData
-        data.users[getUserIndex()].items.pop()
+        data result
+        result.users = usersData
+        result.users[getUserIndex()].items.pop()
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const context = {
         getUserIndex: () => 1,
         usersData: [
@@ -710,11 +709,11 @@ describe('Cascada Script: Output commands', function () {
 
     it('should handle @data.shift with dynamic array index', async () => {
       const script = `
-        data data
-        data.users = usersData
-        data.users[getUserIndex()].tasks.shift()
+        data result
+        result.users = usersData
+        result.users[getUserIndex()].tasks.shift()
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const context = {
         getUserIndex: () => 0,
         usersData: [
@@ -733,11 +732,11 @@ describe('Cascada Script: Output commands', function () {
 
     it('should handle @data.unshift with dynamic array index', async () => {
       const script = `
-        data data
-        data.users = usersData
-        data.users[getUserIndex()].tasks.unshift("urgent")
+        data result
+        result.users = usersData
+        result.users[getUserIndex()].tasks.unshift("urgent")
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const context = {
         getUserIndex: () => 1,
         usersData: [
@@ -756,11 +755,11 @@ describe('Cascada Script: Output commands', function () {
 
     it('should handle @data.reverse with dynamic array index', async () => {
       const script = `
-        data data
-        data.users = usersData
-        data.users[getUserIndex()].items.reverse()
+        data result
+        result.users = usersData
+        result.users[getUserIndex()].items.reverse()
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const context = {
         getUserIndex: () => 0,
         usersData: [
@@ -781,14 +780,14 @@ describe('Cascada Script: Output commands', function () {
   describe('@text command', function () {
     it('should append to global text stream and return in the text property', async () => {
       const script = `
-        text text
-        data data
-        text("Hello")
-        text(", ")
-        text("World!")
-        data.status = "ok"
+        text output
+        data result
+        output("Hello")
+        output(", ")
+        output("World!")
+        result.status = "ok"
 
-        return { text: text.snapshot(), data: data.snapshot() }`;
+        return { text: output.snapshot(), data: result.snapshot() }`;
       // No focus, so we get the full result object
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
@@ -799,25 +798,25 @@ describe('Cascada Script: Output commands', function () {
 
     it('should append to a path in the data object with @data.append', async () => {
       const script = `
-        data data
-        data.log = "Log started. "
-        data.log.append("Event 1. ")
-        data.log.append("Event 2.")
+        data result
+        result.log = "Log started. "
+        result.log.append("Event 1. ")
+        result.log.append("Event 2.")
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ log: 'Log started. Event 1. Event 2.' });
     });
 
     it('should focus the output to just the text stream with', async () => {
       const script = `
-        text text
-        data data
-        text("This is ")
-        text("the final text.")
-        data.status = "ignored"
+        text output
+        data result
+        output("This is ")
+        output("the final text.")
+        result.status = "ignored"
 
-        return text.snapshot()`;
+        return output.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.equal('This is the final text.');
     });
@@ -835,13 +834,13 @@ describe('Cascada Script: Output commands', function () {
         }
       });
       const script = `
-        data data
-        data.users.push({ id: 1, name: "Alice", status: "active" })
-        data.users.push({ id: 2, name: "Bob" })
-        data.users.upsert({ id: 1, status: "inactive" }) // Updates Alice
-        data.users.upsert({ id: 3, name: "Charlie" })    // Adds Charlie
+        data result
+        result.users.push({ id: 1, name: "Alice", status: "active" })
+        result.users.push({ id: 2, name: "Bob" })
+        result.users.upsert({ id: 1, status: "inactive" }) // Updates Alice
+        result.users.upsert({ id: 3, name: "Charlie" })    // Adds Charlie
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         users: [
@@ -965,17 +964,17 @@ describe('Cascada Script: Output commands', function () {
   describe('Scoping and Control', function () {
     it('should use a capture block to capture output without focusing', async () => {
       const script = `
-        data data
+        data result
         var captured = capture
-          data data
-          text text
-          data.user.name = "Captured User"
-          text("hello from capture")
-          return {data: data.snapshot(), text: text.snapshot() }
+          data captureData
+          text captureText
+          captureData.user.name = "Captured User"
+          captureText("hello from capture")
+          return {data: captureData.snapshot(), text: captureText.snapshot() }
         endcapture
-        data.result = captured
+        result.result = captured
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         result: {
@@ -995,10 +994,10 @@ describe('Cascada Script: Output commands', function () {
         makeTurtle: () => new Turtle()
       };
       const script = `
-        data data
+        data result
         sink turtle = makeTurtle()
         turtle.forward(100)
-        data.status = "ignored"
+        result.status = "ignored"
         return turtle.snapshot()
       `;
       const result = await env.renderScriptString(script, context);
@@ -1009,18 +1008,18 @@ describe('Cascada Script: Output commands', function () {
     it('should allow input focusing in capture blocks', async () => {
       const script = `
         // The capture block's output is focused to just the data object
-        data data
+        data result
         var userData = capture
-          data data
+          data captureData
           var user = { name: "Bob", role: "user" }
-          data.name = user.name
-          data.role = user.role
-          return data.snapshot()
+          captureData.name = user.name
+          captureData.role = user.role
+          return captureData.snapshot()
         endcapture
 
-        data.result.user = userData
+        result.result.user = userData
 
-        return data.snapshot()`;
+        return result.snapshot()`;
 
       const result = await env.renderScriptString(script, {});
 
@@ -1038,20 +1037,20 @@ describe('Cascada Script: Output commands', function () {
       const script = `
 
         // 1. Declare variable
-        data data
+        data result
         var capturedContent = "initial"
 
         // 2. Assign using capture (must work on existing variable)
         capturedContent = capture
-             data data
-             data.status = "updated"
-             data.value = 123
-             return data.snapshot()
+             data captureData
+             captureData.status = "updated"
+             captureData.value = 123
+             return captureData.snapshot()
         endcapture
 
-        data.result = capturedContent
+        result.result = capturedContent
 
-        return data.snapshot()`;
+        return result.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         result: {
@@ -1065,17 +1064,17 @@ describe('Cascada Script: Output commands', function () {
   it('should allow input focusing in capture blocks', async () => {
     const script = `
       // The set block's output is focused to just the data object
-      data data
+      data result
       var captured = capture
-        data data
-        text text
-        data.user.name = "Captured User"
-        text("hello from capture")
-        return {data: data.snapshot(), text: text.snapshot() }
+        data captureData
+        text captureText
+        captureData.user.name = "Captured User"
+        captureText("hello from capture")
+        return {data: captureData.snapshot(), text: captureText.snapshot() }
       endcapture
-      data.result = captured
+      result.result = captured
 
-      return data.snapshot()`;
+      return result.snapshot()`;
 
     const result = await env.renderScriptString(script, {});
 
@@ -1124,9 +1123,9 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle a simple path-like expression', async () => {
         const script = `
-          text text
-          text(user.name)
-          return { text: text.snapshot() }
+          text output
+          output(user.name)
+          return { text: output.snapshot() }
         `;
         const context = { user: { name: 'Alice' } };
         const result = await env.renderScriptString(script, context);
@@ -1135,9 +1134,9 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle a simple path-like expression with trailing whitespace', async () => {
         const script = `
-          text text
-          text(user.name)
-          return { text: text.snapshot() }
+          text output
+          output(user.name)
+          return { text: output.snapshot() }
         `;
         const context = { user: { name: 'Alice' } };
         const result = await env.renderScriptString(script, context);
@@ -1146,9 +1145,9 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle an expression with a binary operator', async () => {
         const script = `
-          text text
-          text("Hello, " + user.name)
-          return { text: text.snapshot() }
+          text output
+          output("Hello, " + user.name)
+          return { text: output.snapshot() }
         `;
         const context = { user: { name: 'Bob' } };
         const result = await env.renderScriptString(script, context);
@@ -1157,9 +1156,9 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle an expression starting with a string literal', async () => {
         const script = `
-          text text
-          text("Hello World")
-          return { text: text.snapshot() }
+          text output
+          output("Hello World")
+          return { text: output.snapshot() }
         `;
         const result = await env.renderScriptString(script, {});
         expect(result.text).to.equal('Hello World');
@@ -1167,9 +1166,9 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle an expression that is a function call', async () => {
         const script = `
-          text text
-          text(format(user.name))
-          return { text: text.snapshot() }
+          text output
+          output(format(user.name))
+          return { text: output.snapshot() }
         `;
         const context = {
           user: { name: 'charlie' },
@@ -1181,9 +1180,9 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle a path-like expression broken by a filter', async () => {
         const script = `
-          text text
-          text(user.name|title)
-          return { text: text.snapshot() }
+          text output
+          output(user.name|title)
+          return { text: output.snapshot() }
         `;
         const context = { user: { name: 'dave' } };
         const result = await env.renderScriptString(script, context);
@@ -1192,9 +1191,9 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle a path-like expression broken by a math operator', async () => {
         const script = `
-          text text
-          text(user.id + 1)
-          return { text: text.snapshot() }
+          text output
+          output(user.id + 1)
+          return { text: output.snapshot() }
         `;
         const context = { user: { id: 99 } };
         const result = await env.renderScriptString(script, context);
@@ -1203,9 +1202,9 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle a path-like expression broken by parenthesis', async () => {
         const script = `
-          text text
-          text((user.name))
-          return { text: text.snapshot() }
+          text output
+          output((user.name))
+          return { text: output.snapshot() }
         `;
         const context = { user: { name: 'Eve' } };
         const result = await env.renderScriptString(script, context);
@@ -1214,9 +1213,9 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle an expression with multiple path-like parts', async () => {
         const script = `
-          text text
-          text(user.name + " " + user.lastName)
-          return { text: text.snapshot() }
+          text output
+          output(user.name + " " + user.lastName)
+          return { text: output.snapshot() }
         `;
         const context = { user: { name: 'Frank', lastName: 'Castle' } };
         const result = await env.renderScriptString(script, context);
@@ -1227,9 +1226,9 @@ describe('Cascada Script: Output commands', function () {
         // Transpiles to `{{ user. firstName }}`, where `user.` is undefined.
         // Nunjucks treats `undefined` as an empty string in concatenation.
         const script = `
-          text text
-          text(user. firstName)
-          return { text: text.snapshot() }
+          text output
+          output(user. firstName)
+          return { text: output.snapshot() }
         `;
         const context = { user: { firstName: 'Grace' } };
         const result = await env.renderScriptString(script, context);
@@ -1238,9 +1237,9 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle an object as an expression', async () => {
         const script = `
-          text text
-          text(user)
-          return { text: text.snapshot() }
+          text output
+          output(user)
+          return { text: output.snapshot() }
         `;
         const context = { user: 'John' };
         const result = await env.renderScriptString(script, context);
@@ -1260,32 +1259,32 @@ describe('Cascada Script: Output commands', function () {
     describe('Statement-style commands (modifies data output)', () => {
       it('should handle @data assignment with a simple path and string value', async () => {
         const script = `
-                data data
-                data.user.name = "Alice"
+                data result
+                result.user.name = "Alice"
 
-                return data.snapshot()`;
+                return result.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { name: 'Alice' } });
       });
 
       it('should handle @data assignment with a path and a variable value', async () => {
         const script = `
-                data data
+                data result
                 var userId = 123
-                data.user.profile.id = userId
+                result.user.profile.id = userId
 
-                return data.snapshot()`;
+                return result.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { profile: { id: 123 } } });
       });
 
       it('should handle @data assignment with a complex expression in brackets', async () => {
         const script = `
-                data data
+                data result
                 var key = "complex"
-                data.items[key + "Id"] = "value"
+                result.items[key + "Id"] = "value"
 
-                return data.snapshot()`;
+                return result.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ items: { complexId: 'value' } });
       });
@@ -1293,23 +1292,23 @@ describe('Cascada Script: Output commands', function () {
       it('should handle statement-style @data.append to append to a data path', async () => {
         // Note: statement-style @data.append APPENDS, it doesn't set.
         const script = `
-                data data
-                data.log = "Log started. "
-                data.log.append("Event 1. ")
-                data.log.append("Event 2.")
+                data result
+                result.log = "Log started. "
+                result.log.append("Event 1. ")
+                result.log.append("Event 2.")
 
-                return data.snapshot()`;
+                return result.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ log: 'Log started. Event 1. Event 2.' });
       });
 
       it('should handle command with path but no value argument (@data.pop)', async () => {
         const script = `
-                data data
-                data.user.items = ["a", "b", "c"]
-                data.user.items.pop()
+                data result
+                result.user.items = ["a", "b", "c"]
+                result.user.items.pop()
 
-                return data.snapshot()`;
+                return result.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { items: ['a', 'b'] } });
       });
@@ -1319,21 +1318,21 @@ describe('Cascada Script: Output commands', function () {
         // A command like @data.reverse with no args is valid syntax but would
         // throw an error in the handler. Here we test a valid use case.
         const script = `
-                data data
-                data.user.items = [1, 2, 3]
-                data.user.items.reverse()
+                data result
+                result.user.items = [1, 2, 3]
+                result.user.items.reverse()
 
-                return data.snapshot()`;
+                return result.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { items: [3, 2, 1] } });
       });
 
       it('should ignore comments between command parts', async () => {
         const script = `
-                data data
-                data.user.name = "Heidi"
+                data result
+                result.user.name = "Heidi"
 
-                return data.snapshot()`;
+                return result.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result).to.eql({ user: { name: 'Heidi' } });
       });
@@ -1346,11 +1345,11 @@ describe('Cascada Script: Output commands', function () {
         };
 
         const script = `
-      data data
+      data result
       var obj = getData()
-      data.result = { id: obj.id, name: obj.name }
+      result.result = { id: obj.id, name: obj.name }
 
-      return data.snapshot()`;
+      return result.snapshot()`;
 
         const result = await env.renderScriptString(script, context);
         expect(result.result.id).to.equal(42);
@@ -1361,11 +1360,11 @@ describe('Cascada Script: Output commands', function () {
     describe('Dynamic path commands (function calls and expressions in paths)', () => {
       it('should handle @data assignment with function call in array index', async () => {
         const script = `
-          data data
-          data.company = companyData
-          data.company.users[getUserId()].name = "Alice"
+          data result
+          result.company = companyData
+          result.company.users[getUserId()].name = "Alice"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserId: () => 0,
           companyData: {
@@ -1388,11 +1387,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data assignment with function call returning string key', async () => {
         const script = `
-          data data
-          data.company = companyData
-          data.company.users[getUserKey()].status = "active"
+          data result
+          result.company = companyData
+          result.company.users[getUserKey()].status = "active"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserKey: () => 'admin',
           companyData: {
@@ -1415,12 +1414,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data assignment with expression in array index', async () => {
         const script = `
-          data data
-          data.items = itemsData
+          data result
+          result.items = itemsData
           var index = 1
-          data.items[index + 1].name = "Item C"
+          result.items[index + 1].name = "Item C"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           itemsData: [
             { name: 'Item A' },
@@ -1440,13 +1439,13 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data assignment with complex expression in object key', async () => {
         const script = `
-          data data
-          data.data = dataSource
+          data result
+          result.data = dataSource
           var prefix = "user"
           var suffix = "Profile"
-          data.data[prefix + suffix].name = "Dynamic User"
+          result.data[prefix + suffix].name = "Dynamic User"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           dataSource: {
             userProfile: { id: 1 },
@@ -1464,11 +1463,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.push with function call in array index', async () => {
         const script = `
-          data data
-          data.users = usersData
-          data.users[getUserIndex()].roles.push("editor")
+          data result
+          result.users = usersData
+          result.users[getUserIndex()].roles.push("editor")
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserIndex: () => 0,
           usersData: [
@@ -1487,11 +1486,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.merge with dynamic path', async () => {
         const script = `
-          data data
-          data.company = companyData
-          data.company.departments[getDeptId()].merge({ budget: 50000 })
+          data result
+          result.company = companyData
+          result.company.departments[getDeptId()].merge({ budget: 50000 })
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getDeptId: () => 'engineering',
           companyData: {
@@ -1514,12 +1513,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.deepMerge with nested dynamic paths', async () => {
         const script = `
-          data data
-          data.company = companyData
-          data.company.users[0].profile.settings.notifications = "enabled"
-          data.company.users[getUserId()].profile.settings.deepMerge({ theme: "dark" })
+          data result
+          result.company = companyData
+          result.company.users[0].profile.settings.notifications = "enabled"
+          result.company.users[getUserId()].profile.settings.deepMerge({ theme: "dark" })
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserId: () => 0,
           getSettingKey: () => 'notifications',
@@ -1556,11 +1555,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.append with dynamic path', async () => {
         const script = `
-          data data
-          data.company = companyData
-          data.company.users[getUserId()].log.append(" - User logged in")
+          data result
+          result.company = companyData
+          result.company.users[getUserId()].log.append(" - User logged in")
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserId: () => 0,
           companyData: {
@@ -1583,11 +1582,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.pop with dynamic array index', async () => {
         const script = `
-          data data
-          data.users = usersData
-          data.users[getUserIndex()].items.pop()
+          data result
+          result.users = usersData
+          result.users[getUserIndex()].items.pop()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserIndex: () => 1,
           usersData: [
@@ -1606,11 +1605,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.shift with dynamic array index', async () => {
         const script = `
-          data data
-          data.users = usersData
-          data.users[getUserIndex()].tasks.shift()
+          data result
+          result.users = usersData
+          result.users[getUserIndex()].tasks.shift()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserIndex: () => 0,
           usersData: [
@@ -1629,11 +1628,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.unshift with dynamic array index', async () => {
         const script = `
-          data data
-          data.users = usersData
-          data.users[getUserIndex()].tasks.unshift("urgent")
+          data result
+          result.users = usersData
+          result.users[getUserIndex()].tasks.unshift("urgent")
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserIndex: () => 1,
           usersData: [
@@ -1652,11 +1651,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.reverse with dynamic array index', async () => {
         const script = `
-          data data
-          data.users = usersData
-          data.users[getUserIndex()].items.reverse()
+          data result
+          result.users = usersData
+          result.users[getUserIndex()].items.reverse()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserIndex: () => 0,
           usersData: [
@@ -1675,13 +1674,13 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle multiple dynamic paths in sequence', async () => {
         const script = `
-          data data
-          data.company = companyData
-          data.company.users[getUserId()].name = "Updated User"
-          data.company.users[getUserId()].roles.push("manager")
-          data.company.departments[getDeptId()].head = getUserId()
+          data result
+          result.company = companyData
+          result.company.users[getUserId()].name = "Updated User"
+          result.company.users[getUserId()].roles.push("manager")
+          result.company.departments[getDeptId()].head = getUserId()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserId: () => 1,
           getDeptId: () => 'engineering',
@@ -1713,16 +1712,16 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle dynamic path with async function call', async () => {
         const script = `
-          data data
+          data result
           var userData = fetchUser(1)
           var salaryData = fetchSalary(1)
 
-          data.user.name = userData.name
-          data.user.salary = salaryData.base
-          data.user.salary += salaryData.bonus
-          data.user.salary *= 1.05
+          result.user.name = userData.name
+          result.user.salary = salaryData.base
+          result.user.salary += salaryData.bonus
+          result.user.salary *= 1.05
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           fetchUser: async (id) => ({ name: 'Alice' }),
           fetchSalary: async (id) => ({ base: 50000, bonus: 5000 })
@@ -1738,12 +1737,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle dynamic path with conditional expression', async () => {
         const script = `
-          data data
-          data.users = usersData
+          data result
+          result.users = usersData
           var isAdmin = true
-          data.users[0 if isAdmin else 1].role = "admin"
+          result.users[0 if isAdmin else 1].role = "admin"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           usersData: [
             { name: 'Alice' },
@@ -1761,12 +1760,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle dynamic path with mathematical expression', async () => {
         const script = `
-          data data
-          data.items = itemsData
+          data result
+          result.items = itemsData
           var baseIndex = 2
-          data.items[baseIndex * 2 - 1].priority = "high"
+          result.items[baseIndex * 2 - 1].priority = "high"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           itemsData: [
             { name: 'Item 1' },
@@ -1790,11 +1789,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle dynamic path with nested function calls', async () => {
         const script = `
-          data data
-          data.company = companyData
-          data.company.users[getNestedUserId()].profile.settings[getSettingKey()] = "enabled"
+          data result
+          result.company = companyData
+          result.company.users[getNestedUserId()].profile.settings[getSettingKey()] = "enabled"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getNestedUserId: () => 0,
           getSettingKey: () => 'notifications',
@@ -1831,11 +1830,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle dynamic path with array method call result', async () => {
         const script = `
-          data data
-          data.users = usersData
-          data.users[getUserIndex()].name = "Updated Name"
+          data result
+          result.users = usersData
+          result.users[getUserIndex()].name = "Updated Name"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getUserIndex: () => {
             return 1;
@@ -1862,12 +1861,12 @@ describe('Cascada Script: Output commands', function () {
     describe('Arithmetic Operations', function () {
       it('should handle @data.add with numbers', async () => {
         const script = `
-          data data
-          data.counter = 10
-          data.counter += 5
-          data.counter += 3
+          data result
+          result.counter = 10
+          result.counter += 5
+          result.counter += 3
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           counter: 18
@@ -1876,12 +1875,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.add with strings', async () => {
         const script = `
-          data data
-          data.message = "Hello"
-          data.message += " World"
-          data.message += "!"
+          data result
+          result.message = "Hello"
+          result.message += " World"
+          result.message += "!"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           message: 'Hello World!'
@@ -1890,11 +1889,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.add with undefined target', async () => {
         const script = `
-          data data
-          data.counter += 10
-          data.message += "Hello"
+          data result
+          result.counter += 10
+          result.message += "Hello"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -1907,12 +1906,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.subtract', async () => {
         const script = `
-          data data
-          data.counter = 20
-          data.counter -= 5
-          data.counter -= 3
+          data result
+          result.counter = 20
+          result.counter -= 5
+          result.counter -= 3
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           counter: 12
@@ -1921,10 +1920,10 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.subtract with undefined target', async () => {
         const script = `
-          data data
-          data.counter -= 10
+          data result
+          result.counter -= 10
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -1935,12 +1934,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.increment', async () => {
         const script = `
-          data data
-          data.counter = 5
-          data.counter++
-          data.counter++
+          data result
+          result.counter = 5
+          result.counter++
+          result.counter++
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           counter: 7
@@ -1949,10 +1948,10 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.increment with undefined target', async () => {
         const script = `
-          data data
-          data.counter++
+          data result
+          result.counter++
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -1963,12 +1962,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.decrement', async () => {
         const script = `
-          data data
-          data.counter = 10
-          data.counter--
-          data.counter--
+          data result
+          result.counter = 10
+          result.counter--
+          result.counter--
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           counter: 8
@@ -1977,10 +1976,10 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.decrement with undefined target', async () => {
         const script = `
-          data data
-          data.counter--
+          data result
+          result.counter--
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -1991,12 +1990,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.multiply', async () => {
         const script = `
-          data data
-          data.counter = 5
-          data.counter *= 3
-          data.counter *= 2
+          data result
+          result.counter = 5
+          result.counter *= 3
+          result.counter *= 2
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           counter: 30
@@ -2005,10 +2004,10 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.multiply with undefined target', async () => {
         const script = `
-          data data
-          data.counter *= 5
+          data result
+          result.counter *= 5
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2019,12 +2018,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.divide', async () => {
         const script = `
-          data data
-          data.counter = 100
-          data.counter /= 2
-          data.counter /= 5
+          data result
+          result.counter = 100
+          result.counter /= 2
+          result.counter /= 5
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           counter: 10
@@ -2033,10 +2032,10 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.divide with undefined target', async () => {
         const script = `
-          data data
-          data.counter /= 2
+          data result
+          result.counter /= 2
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2047,11 +2046,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should throw error on division by zero', async () => {
         const script = `
-          data data
-          data.counter = 10
-          data.counter /= 0
+          data result
+          result.counter = 10
+          result.counter /= 0
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2062,13 +2061,13 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle arithmetic operations with dynamic paths', async () => {
         const script = `
-          data data
-          data.company.people = peopleData
-          data.company.people[0].salary += 100
-          data.company.people[1].age++
-          data.company.people[2].bonus *= 1.5
+          data result
+          result.company.people = peopleData
+          result.company.people[0].salary += 100
+          result.company.people[1].age++
+          result.company.people[2].bonus *= 1.5
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           peopleData: [
             { name: 'Alice', salary: 50000 },
@@ -2090,13 +2089,13 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle arithmetic operations with array index []', async () => {
         const script = `
-          data data
-          data.company.people.push({ name: 'Alice', salary: 50000 })
-          data.company.people.push({ name: 'Bob', age: 30, salary: 100 })
-          data.company.people[].salary += 100
-          data.company.people[].age++
+          data result
+          result.company.people.push({ name: 'Alice', salary: 50000 })
+          result.company.people.push({ name: 'Bob', age: 30, salary: 100 })
+          result.company.people[].salary += 100
+          result.company.people[].age++
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           company: {
@@ -2111,23 +2110,23 @@ describe('Cascada Script: Output commands', function () {
       it('should handle root-level array index targeting with @data[]', async () => {
         const script = `
           // Initialize the root as an array
-          data data
-          data = []
+          data result
+          result = []
 
           // Push items to the root array
-          data.push({ name: 'Alice' })
-          data.push({ name: 'Bob' })
+          result.push({ name: 'Alice' })
+          result.push({ name: 'Bob' })
 
           // Target the last item pushed (Bob) and modify it
-          data[].status = "active"
+          result[].status = "active"
 
           // Push another item
-          data.push({ name: 'Charlie' })
+          result.push({ name: 'Charlie' })
 
           // Target the new last item (Charlie)
-          data[].role = "guest"
+          result[].role = "guest"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql([
           { name: 'Alice' },
@@ -2139,17 +2138,17 @@ describe('Cascada Script: Output commands', function () {
       it('should handle root-level array index targeting with @data[0]', async () => {
         const script = `
           // Initialize the root as an array
-          data data
-          data = []
+          data result
+          result = []
 
           // Push items to the root array
-          data.push({ name: 'Alice' })
-          data.push({ name: 'Bob' })
+          result.push({ name: 'Alice' })
+          result.push({ name: 'Bob' })
 
           // Target a specific index and modify it
-          data[0].status = "inactive"
+          result[0].status = "inactive"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql([
           { name: 'Alice', status: 'inactive' },
@@ -2159,11 +2158,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle root-level dynamic indexing with function call', async () => {
         const script = `
-          data data
-          data = [{ name: 'A' }, { name: 'B' }, { name: 'C' }]
-          data[getIndex()].flag = "reviewed"
+          data result
+          result = [{ name: 'A' }, { name: 'B' }, { name: 'C' }]
+          result[getIndex()].flag = "reviewed"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getIndex: () => 1
         };
@@ -2177,14 +2176,14 @@ describe('Cascada Script: Output commands', function () {
 
       it('should allow property writes after @data[]', async () => {
         const script = `
-          data data
-          data = []
-          data.push({ name: 'Alice' })
-          data.push({ name: 'Bob' })
-          data[].tags.push("new")         // affects Bob
-          data[].meta.role = "guest"      // affects Bob
+          data result
+          result = []
+          result.push({ name: 'Alice' })
+          result.push({ name: 'Bob' })
+          result[].tags.push("new")         // affects Bob
+          result[].meta.role = "guest"      // affects Bob
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql([
           { name: 'Alice' },
@@ -2194,13 +2193,13 @@ describe('Cascada Script: Output commands', function () {
 
       it('should allow complex property paths after @data[] with dynamic key', async () => {
         const script = `
-          data data
-          data = []
-          data.push({ name: 'Alice' })
-          data.push({ name: 'Bob' })
-          data[].profile[getKey()].score = 10
+          data result
+          result = []
+          result.push({ name: 'Alice' })
+          result.push({ name: 'Bob' })
+          result[].profile[getKey()].score = 10
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           getKey: () => 'year2025'
         };
@@ -2213,14 +2212,14 @@ describe('Cascada Script: Output commands', function () {
 
       it('should support arithmetic operations after @data[]', async () => {
         const script = `
-          data data
-          data = []
-          data.push({ name: 'A', count: 0 })
-          data[].count++
-          data.push({ name: 'B', count: 1 })
-          data[].count += 4
+          data result
+          result = []
+          result.push({ name: 'A', count: 0 })
+          result[].count++
+          result.push({ name: 'B', count: 1 })
+          result[].count += 4
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql([
           { name: 'A', count: 1 },
@@ -2230,11 +2229,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should throw when using @data[] on an empty root array', async () => {
         const script = `
-          data data
-          data = []
-          data[].value = 1
+          data result
+          result = []
+          result[].value = 1
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2245,11 +2244,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should throw when using @data[] and root is not an array', async () => {
         const script = `
-          data data
-          data = { a: 1 }
-          data[].x = 2
+          data result
+          result = { a: 1 }
+          result[].x = 2
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2262,38 +2261,38 @@ describe('Cascada Script: Output commands', function () {
     describe('Logical Operations', function () {
       it('should handle @data.and with truthy values', async () => {
         const script = `
-          data data
-          data.result = true
-          data.result &&= true
-          data.result &&= "hello"
+          data result
+          result.value = true
+          result.value &&= true
+          result.value &&= "hello"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
-          result: 'hello'
+          value: 'hello'
         });
       });
 
       it('should handle @data.and with falsy values', async () => {
         const script = `
-          data data
-          data.result = true
-          data.result &&= false
-          data.result &&= "hello"
+          data result
+          result.value = true
+          result.value &&= false
+          result.value &&= "hello"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
-          result: false
+          value: false
         });
       });
 
       it('should handle @data.and with undefined target', async () => {
         const script = `
-          data data
-          data.result &&= true
+          data result
+          result.value &&= true
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2304,38 +2303,38 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.or with truthy values', async () => {
         const script = `
-          data data
-          data.result = false
-          data.result ||= true
-          data.result ||= "hello"
+          data result
+          result.value = false
+          result.value ||= true
+          result.value ||= "hello"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
-          result: true
+          value: true
         });
       });
 
       it('should handle @data.or with falsy values', async () => {
         const script = `
-          data data
-          data.result = false
-          data.result ||= false
-          data.result ||= "hello"
+          data result
+          result.value = false
+          result.value ||= false
+          result.value ||= "hello"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
-          result: 'hello'
+          value: 'hello'
         });
       });
 
       it('should handle @data.or with undefined target', async () => {
         const script = `
-          data data
-          data.result ||= "hello"
+          data result
+          result.value ||= "hello"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2346,31 +2345,31 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle logical operations with complex values', async () => {
         const script = `
-          data data
+          data result
           var permissions = ['read', 'write']
           var user = { name: 'Alice', active: true }
-          data.user = user
-          data.permissions = permissions
-          data.result = true
-          data.result &&= user.active
-          data.result ||= permissions.length > 0
+          result.user = user
+          result.permissions = permissions
+          result.value = true
+          result.value &&= user.active
+          result.value ||= permissions.length > 0
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           user: { name: 'Alice', active: true },
           permissions: ['read', 'write'],
-          result: true
+          value: true
         });
       });
 
       it('should handle @data.bitAnd with numbers', async () => {
         const script = `
-          data data
-          data.flags = 15  // 1111 in binary
-          data.flags &= 10  // 1010 in binary
+          data result
+          result.flags = 15  // 1111 in binary
+          result.flags &= 10  // 1010 in binary
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           flags: 10  // 1010 in binary
@@ -2379,10 +2378,10 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.bitAnd with undefined target', async () => {
         const script = `
-          data data
-          data.flags &= 10
+          data result
+          result.flags &= 10
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2393,11 +2392,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.bitAnd with non-number target', async () => {
         const script = `
-          data data
-          data.flags = "hello"
-          data.flags &= 10
+          data result
+          result.flags = "hello"
+          result.flags &= 10
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2408,11 +2407,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.bitOr with numbers', async () => {
         const script = `
-          data data
-          data.flags = 5   // 0101 in binary
-          data.flags |= 10  // 1010 in binary
+          data result
+          result.flags = 5   // 0101 in binary
+          result.flags |= 10  // 1010 in binary
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           flags: 15  // 1111 in binary
@@ -2421,10 +2420,10 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.bitOr with undefined target', async () => {
         const script = `
-          data data
-          data.flags |= 10
+          data result
+          result.flags |= 10
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2435,11 +2434,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.bitOr with non-number target', async () => {
         const script = `
-          data data
-          data.flags = "hello"
-          data.flags |= 10
+          data result
+          result.flags = "hello"
+          result.flags |= 10
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2450,11 +2449,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.bitNot with numbers', async () => {
         const script = `
-          data data
-          data.flags = 15  // 1111 in binary
-          data.flags.bitNot()
+          data result
+          result.flags = 15  // 1111 in binary
+          result.flags.bitNot()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           flags: -16  // ~15 = -16
@@ -2463,10 +2462,10 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.bitNot with undefined target', async () => {
         const script = `
-          data data
-          data.flags.bitNot()
+          data result
+          result.flags.bitNot()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2477,11 +2476,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.bitNot with non-number target', async () => {
         const script = `
-          data data
-          data.flags = "hello"
-          data.flags.bitNot()
+          data result
+          result.flags = "hello"
+          result.flags.bitNot()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2492,36 +2491,36 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.not with truthy values', async () => {
         const script = `
-          data data
-          data.result = true
-          data.result.not()
+          data result
+          result.value = true
+          result.value.not()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
-          result: false
+          value: false
         });
       });
 
       it('should handle @data.not with falsy values', async () => {
         const script = `
-          data data
-          data.result = false
-          data.result.not()
+          data result
+          result.value = false
+          result.value.not()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
-          result: true
+          value: true
         });
       });
 
       it('should handle @data.not with undefined target', async () => {
         const script = `
-          data data
-          data.result.not()
+          data result
+          result.value.not()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2532,29 +2531,29 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.not with various value types', async () => {
         const script = `
-          data data
-          data.truthy = "hello"
-          data.falsy = ""
-          data.zero = 0
-          data.nonZero = 42
-          data.nullValue = null
+          data result
+          result.truthy = "hello"
+          result.falsy = ""
+          result.zero = 0
+          result.nonZero = 42
+          result.nullValue = null
 
           var truthyVal = "hello"
           var falsyVal = ""
           var zeroVal = 0
           var nonZeroVal = 42
 
-          data.notTruthy = truthyVal
-          data.notFalsy = falsyVal
-          data.notZero = zeroVal
-          data.notNonZero = nonZeroVal
+          result.notTruthy = truthyVal
+          result.notFalsy = falsyVal
+          result.notZero = zeroVal
+          result.notNonZero = nonZeroVal
 
-          data.notTruthy.not()
-          data.notFalsy.not()
-          data.notZero.not()
-          data.notNonZero.not()
+          result.notTruthy.not()
+          result.notFalsy.not()
+          result.notZero.not()
+          result.notNonZero.not()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           truthy: 'hello',
@@ -2571,13 +2570,13 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle bitwise operations with dynamic paths', async () => {
         const script = `
-          data data
-          data.company.people = peopleData
-          data.company.people[0].permissions &= 3
-          data.company.people[1].flags |= 8
-          data.company.people[2].mask.bitNot()
+          data result
+          result.company.people = peopleData
+          result.company.people[0].permissions &= 3
+          result.company.people[1].flags |= 8
+          result.company.people[2].mask.bitNot()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           peopleData: [
             { name: 'Alice', permissions: 15 },
@@ -2601,11 +2600,11 @@ describe('Cascada Script: Output commands', function () {
     describe('Delete Operation', function () {
       it('should handle @data.delete', async () => {
         const script = `
-          data data
-          data.user = { name: 'Alice', oldName: 'Bob' }
-          data.user.oldName.delete()
+          data result
+          result.user = { name: 'Alice', oldName: 'Bob' }
+          result.user.oldName.delete()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           user: { name: 'Alice' }
@@ -2614,10 +2613,10 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.delete with undefined target', async () => {
         const script = `
-          data data
-          data.user.name.delete()
+          data result
+          result.user.name.delete()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           user: {}
@@ -2626,12 +2625,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.delete with dynamic paths', async () => {
         const script = `
-          data data
-          data.company.people = peopleData
-          data.company.people[0].oldEmail.delete()
-          data.company.people[1].tempData.delete()
+          data result
+          result.company.people = peopleData
+          result.company.people[0].oldEmail.delete()
+          result.company.people[1].tempData.delete()
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           peopleData: [
             { name: 'Alice', email: 'alice@example.com', oldEmail: 'alice@old.com' },
@@ -2653,11 +2652,11 @@ describe('Cascada Script: Output commands', function () {
     describe('Array Concatenation', function () {
       it('should handle @data.concat with arrays', async () => {
         const script = `
-          data data
-          data.items = [1, 2, 3]
-          data.items.concat([4, 5, 6])
+          data result
+          result.items = [1, 2, 3]
+          result.items.concat([4, 5, 6])
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           items: [1, 2, 3, 4, 5, 6]
@@ -2666,12 +2665,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.concat with single values', async () => {
         const script = `
-          data data
-          data.items = [1, 2, 3]
-          data.items.concat(4)
-          data.items.concat("hello")
+          data result
+          result.items = [1, 2, 3]
+          result.items.concat(4)
+          result.items.concat("hello")
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           items: [1, 2, 3, 4, 'hello']
@@ -2680,10 +2679,10 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.concat with undefined target', async () => {
         const script = `
-          data data
-          data.items.concat([1, 2, 3])
+          data result
+          result.items.concat([1, 2, 3])
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           items: [1, 2, 3]
@@ -2692,11 +2691,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.concat with non-array target', async () => {
         const script = `
-          data data
-          data.items = "hello"
-          data.items.concat([1, 2, 3])
+          data result
+          result.items = "hello"
+          result.items.concat([1, 2, 3])
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2707,14 +2706,14 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.concat with mixed array and non-array values', async () => {
         const script = `
-          data data
-          data.items = [1, 2]
-          data.items.concat([3, 4])
-          data.items.concat(5)
-          data.items.concat([6, 7])
-          data.items.concat("eight")
+          data result
+          result.items = [1, 2]
+          result.items.concat([3, 4])
+          result.items.concat(5)
+          result.items.concat([6, 7])
+          result.items.concat("eight")
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           items: [1, 2, 3, 4, 5, 6, 7, 'eight']
@@ -2723,12 +2722,12 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.concat with dynamic paths', async () => {
         const script = `
-          data data
-          data.company.people = peopleData
-          data.company.people[0].tags.concat(["admin", "active"])
-          data.company.people[1].skills.concat(["JavaScript", "Python"])
+          data result
+          result.company.people = peopleData
+          result.company.people[0].tags.concat(["admin", "active"])
+          result.company.people[1].skills.concat(["JavaScript", "Python"])
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           peopleData: [
             { name: 'Alice', tags: ['user'] },
@@ -2748,11 +2747,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle @data.concat with objects in arrays', async () => {
         const script = `
-          data data
-          data.users = [{ name: 'Alice', id: 1 }]
-          data.users.concat([{ name: 'Bob', id: 2 }, { name: 'Charlie', id: 3 }])
+          data result
+          result.users = [{ name: 'Alice', id: 1 }]
+          result.users.concat([{ name: 'Bob', id: 2 }, { name: 'Charlie', id: 3 }])
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           users: [
@@ -2767,11 +2766,11 @@ describe('Cascada Script: Output commands', function () {
     describe('Error Handling', function () {
       it('should throw error when using arithmetic operations on non-numbers', async () => {
         const script = `
-          data data
-          data.value = "hello"
-          data.value -= 5
+          data result
+          result.value = "hello"
+          result.value -= 5
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2782,11 +2781,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should throw error when using increment on non-numbers', async () => {
         const script = `
-          data data
-          data.value = "hello"
-          data.value++
+          data result
+          result.value = "hello"
+          result.value++
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2797,11 +2796,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should throw error when using decrement on non-numbers', async () => {
         const script = `
-          data data
-          data.value = "hello"
-          data.value--
+          data result
+          result.value = "hello"
+          result.value--
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2812,11 +2811,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should throw error when using multiply on non-numbers', async () => {
         const script = `
-          data data
-          data.value = "hello"
-          data.value *= 2
+          data result
+          result.value = "hello"
+          result.value *= 2
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2827,11 +2826,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should throw error when using divide on non-numbers', async () => {
         const script = `
-          data data
-          data.value = "hello"
-          data.value /= 2
+          data result
+          result.value = "hello"
+          result.value /= 2
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2842,11 +2841,11 @@ describe('Cascada Script: Output commands', function () {
 
       it('should throw error when using add on non-number and non-string', async () => {
         const script = `
-          data data
-          data.value = { name: 'Alice' }
-          data.value += "hello"
+          data result
+          result.value = { name: 'Alice' }
+          result.value += "hello"
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         try {
           await env.renderScriptString(script);
           expect().fail('Should have thrown an error');
@@ -2859,19 +2858,19 @@ describe('Cascada Script: Output commands', function () {
     describe('Complex Scenarios', function () {
       it('should handle mixed arithmetic and logical operations', async () => {
         const script = `
-          data data
-          data.counter = 10
-          data.counter += 5
-          data.counter *= 2
-          data.counter -= 3
-          data.counter++
-          data.counter /= 2
+          data result
+          result.counter = 10
+          result.counter += 5
+          result.counter *= 2
+          result.counter -= 3
+          result.counter++
+          result.counter /= 2
 
-          data.flag = true
-          data.flag &&= finished
-          data.flag ||= finished
+          result.flag = true
+          result.flag &&= finished
+          result.flag ||= finished
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script, { finished: true });
         expect(result).to.eql({
           counter: 14,
@@ -2881,15 +2880,15 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle operations in loops', async () => {
         const script = `
-          data data
-          data.total = 0
-          data.count = 0
+          data result
+          result.total = 0
+          result.count = 0
           for i in range(5)
-            data.total += i
-            data.count++
+            result.total += i
+            result.count++
           endfor
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           total: 10, // 0+1+2+3+4
@@ -2899,26 +2898,26 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle operations in macros', async () => {
         const script = `
-          data data
+          data result
           macro processUser(name, salary)
-            data data
-            data.name = name
-            data.salary = salary
-            data.salary += 1000
-            data.bonus = salary * 0.1
-            return data.snapshot()
+            data userData
+            userData.name = name
+            userData.salary = salary
+            userData.salary += 1000
+            userData.bonus = salary * 0.1
+            return userData.snapshot()
           endmacro
 
           var user1 = processUser("Alice", 50000)
           var user2 = processUser("Bob", 60000)
 
-          data.users.push(user1)
-          data.users.push(user2)
-          data.totalSalary = 0
-          data.totalSalary += user1.salary
-          data.totalSalary += user2.salary
+          result.users.push(user1)
+          result.users.push(user2)
+          result.totalSalary = 0
+          result.totalSalary += user1.salary
+          result.totalSalary += user2.salary
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           users: [
@@ -2931,16 +2930,16 @@ describe('Cascada Script: Output commands', function () {
 
       it('should handle operations with async data', async () => {
         const script = `
-          data data
+          data result
           var userData = fetchUser(1)
           var salaryData = fetchSalary(1)
 
-          data.user.name = userData.name
-          data.user.salary = salaryData.base
-          data.user.salary += salaryData.bonus
-          data.user.salary *= 1.05
+          result.user.name = userData.name
+          result.user.salary = salaryData.base
+          result.user.salary += salaryData.bonus
+          result.user.salary *= 1.05
 
-          return data.snapshot()`;
+          return result.snapshot()`;
         const context = {
           fetchUser: async (id) => ({ name: 'Alice' }),
           fetchSalary: async (id) => ({ base: 50000, bonus: 5000 })
@@ -2960,11 +2959,11 @@ describe('Cascada Script: Output commands', function () {
     const script = `
       // This command should create the 'a', 'b', and 'c' objects,
       // and then the 'd' array before pushing the value.
-      data data
-      data.a.b.c.d.push(100)
-      data.a.b.anotherProp = "hello"
+      data result
+      result.a.b.c.d.push(100)
+      result.a.b.anotherProp = "hello"
 
-      return data.snapshot()`;
+      return result.snapshot()`;
     const result = await env.renderScriptString(script);
     expect(result).to.eql({
       a: {
@@ -2981,23 +2980,23 @@ describe('Cascada Script: Output commands', function () {
   it('should handle root-level array index targeting with @data[]', async () => {
     const script = `
       // Initialize the root as an array
-      data data
-      data = []
+      data result
+      result = []
 
       // Push items to the root array
-      data.push({ name: 'Alice' })
-      data.push({ name: 'Bob' })
+      result.push({ name: 'Alice' })
+      result.push({ name: 'Bob' })
 
       // Target the last item pushed (Bob) and modify it
-      data[].status = "active"
+      result[].status = "active"
 
       // Push another item
-      data.push({ name: 'Charlie' })
+      result.push({ name: 'Charlie' })
 
       // Target the new last item (Charlie)
-      data[].role = "guest"
+      result[].role = "guest"
 
-      return data.snapshot()`;
+      return result.snapshot()`;
     const result = await env.renderScriptString(script);
     expect(result).to.eql([
       { name: 'Alice' },
@@ -3026,27 +3025,28 @@ describe('Cascada Script: Output commands', function () {
 
     it('should filter output to text when using filter', async () => {
       const script = `
-        text text
-        data data
+        text mainText
+        data mainData
         macro wrapper()
-           text text
+           text wrapperText
            var content = caller()
-           text("DebugContent: " + content)
+           wrapperText("DebugContent: " + content)
            if content.text
-             text(" HasText: " + content.text)
+             wrapperText(" HasText: " + content.text)
            endif
-           return { text: text.snapshot() }
+           return { text: wrapperText.snapshot() }
         endmacro
 
-        call wrapper()
-          text text
-          data data
-          text("Inner")
-          data.key = "value"
-          return text.snapshot()
+        var wrapped = call wrapper()
+          text innerText
+          data result
+          innerText("Inner")
+          result.key = "value"
+          return innerText.snapshot()
         endcall
 
-        return { text: text.snapshot(), data: data.snapshot() }`;
+        mainText(wrapped.text)
+        return { text: mainText.snapshot(), data: mainData.snapshot() }`;
       const result = await env.renderScriptString(script);
       // filter means the call block output is text only.
       // And it is appended to the main script's text output.
@@ -3057,24 +3057,24 @@ describe('Cascada Script: Output commands', function () {
 
     it('should filter output to data when using filter', async () => {
       const script = `
-        text text
-        data data
+        text output
+        data result
         macro wrapper()
-           data data
+           data wrapperData
            var content = caller()
-           data.wrappee = content
-           return {data: data.snapshot() }
+           wrapperData.wrappee = content
+           return {data: wrapperData.snapshot() }
         endmacro
 
         call wrapper()
-          data data
-          text text
-          text("Inner")
-          data.key = "value"
-          return data.snapshot()
+          data callData
+          text callOutput
+          callOutput("Inner")
+          callData.key = "value"
+          return callData.snapshot()
         endcall
 
-        return {data: data.snapshot(), text: text.snapshot() }`;
+        return {data: result.snapshot(), text: output.snapshot() }`;
       const result = await env.renderScriptString(script);
       // Wrapper output focused to data.
       // Wrapper returns data object.
@@ -3089,401 +3089,28 @@ describe('Cascada Script: Output commands', function () {
 
     it('should return full object when no filter is specified', async () => {
       const script = `
-        text text
-        data data
+        text mainText
+        data mainData
         macro wrapper()
-           data data
+           data wrapperData
            var content = caller()
-           data.wrappee = content
-           return {data: data.snapshot() }
+           wrapperData.wrappee = content
+           return {data: wrapperData.snapshot() }
         endmacro
 
-        call wrapper()
-          text text
-          data data
-          text("Inner")
-          data.key = "value"
-          return { text: text.snapshot(), data: data.snapshot() }
+        var wrapped = call wrapper()
+          text innerText
+          data result
+          innerText("Inner")
+          result.key = "value"
+          return { text: innerText.snapshot(), data: result.snapshot() }
         endcall
 
-        return {data: data.snapshot(), text: text.snapshot() }`;
+        mainData = wrapped.data
+        return {data: mainData.snapshot(), text: mainText.snapshot() }`;
       const result = await env.renderScriptString(script);
       expect(result.data).to.not.be.undefined;
       expect(result.data.wrappee).to.not.be.undefined;
-    });
-
-    it('should handle call("macroName") consistently with direct calls (no [object Object] output)', async () => {
-      const script = `
-
-        text text
-        macro dataProducer()
-            data data
-            data.value = "produced data direct"
-            text(" (dataProducer exec) ")
-            return data.snapshot()
-        endmacro
-
-        macro generic()
-            data data
-            text text
-            data.foo = "bar"
-            text("Generic text")
-            return {data: data.snapshot(), text: text.snapshot() }
-        endmacro
-
-        macro testRunner()
-            text text
-            // Case 1: Call block invoking macro
-            text("Call-Data: ")
-            call dataProducer()
-              text text
-              return text.snapshot()
-            endcall
-
-            text(" Call-Generic: ")
-            call generic()
-              text text
-              return text.snapshot()
-            endcall
-            return text.snapshot()
-        endmacro
-
-        call testRunner()
-          text text
-          return text.snapshot()
-        endcall
-
-        return text.snapshot()`;
-
-      const result = await env.renderScriptString(script);
-
-      // Check text output
-      const textOut = (typeof result === 'string') ? result : (result.text || '');
-
-      // "Call-Data: " should be followed by empty string because dataProducer filter suppresses text
-      // and our fix ensures it doesn't print [object Object].
-      expect(textOut).to.contain('Call-Data: ');
-      expect(textOut).to.contain('Call-Generic: Generic text');
-      expect(textOut).to.not.contain('[object Object]');
-    });
-  });
-
-  describe('Output Suppression Coverage', function () {
-    it('should ignore plain objects in script text output', async () => {
-      const script = `
-        // Plain object should be swallowed, not printed as [object Object]
-        text text
-        text({ key: "value" })
-        text("End")
-
-        return text.snapshot()`;
-      const result = await env.renderScriptString(script);
-      expect(result).to.equal('End');
-    });
-
-    it('should handled mixed content with objects', async () => {
-      const script = `
-        text text
-        text("Start ")
-        text({ a: 1 })
-        text("Middle")
-        text({ b: 2 })
-        text(" End")
-
-        return text.snapshot()`;
-      const result = await env.renderScriptString(script);
-      expect(result).to.equal('Start Middle End');
-    });
-
-    it('should stringify arrays in script text output (legacy behavior)', async () => {
-      const script = `
-        // Arrays fall through to standard suppressValue, so they get joined
-        text text
-        text([1, 2, 3])
-
-        return text.snapshot()`;
-      const result = await env.renderScriptString(script);
-      expect(result).to.equal('1,2,3');
-    });
-
-    it('should stringify objects with custom toString', async () => {
-      const script = `
-        text text
-        text(customObj)
-
-        return text.snapshot()`;
-      const context = {
-        customObj: {
-          toString: function () { return 'Custom String'; }
-        }
-      };
-      const result = await env.renderScriptString(script, context);
-      expect(result).to.equal('Custom String');
-    });
-
-    it('should ignore async plain objects (Promises resolving to objects)', async () => {
-      const script = `
-        // asyncObj is a function returning a Promise that resolves to a plain object
-        text text
-        text(asyncObj())
-        text("AsyncEnd")
-
-        return text.snapshot()`;
-      const context = {
-        asyncObj: async () => {
-          return { key: 'async val' };
-        }
-      };
-      const result = await env.renderScriptString(script, context);
-      expect(result).to.equal('AsyncEnd');
-    });
-
-    it('should handle async arrays', async () => {
-      const script = `
-        text text
-        text(asyncArr())
-
-        return text.snapshot()`;
-      const context = {
-        asyncArr: async () => {
-          return [10, 20];
-        }
-      };
-      const result = await env.renderScriptString(script, context);
-      expect(result).to.equal('10,20');
-    });
-  });
-
-  describe('Async and Error Handling', function () {
-    it('should handle async path segments in @data', async () => {
-      const context = {
-        getIndex: async () => 0
-      };
-      const script = `
-            data data
-            data.items = [100]
-            data.items[getIndex()] = 200
-
-            return data.snapshot()`;
-      const result = await env.renderScriptString(script, context);
-      expect(result).to.eql({ items: [200] });
-    });
-
-    it('should handle async values in @data assignments', async () => {
-      const context = {
-        getValue: async () => 10
-      };
-      const script = `
-            data data
-            data.obj = { x: 1 }
-            data.obj.x = getValue()
-
-            return data.snapshot()`;
-      const result = await env.renderScriptString(script, context);
-      expect(result).to.eql({ obj: { x: 10 } });
-    });
-
-    it('should handle poison propagation from path segments', async () => {
-      const context = {
-        getErrorIndex: async () => { throw new Error('Index Poison'); }
-      };
-      const script = `
-            data data
-            data.list = [1]
-            data.list[getErrorIndex()] = 2
-
-            return data.snapshot()`;
-      try {
-        await env.renderScriptString(script, context);
-        throw new Error('Should have failed');
-      } catch (e) {
-        expect(e.message).to.contain('Index Poison');
-      }
-    });
-
-    it('should handle poison propagation from value resolution', async () => {
-      const context = {
-        getPoison: async () => { throw new Error('Value Poison'); }
-      };
-      const script = `
-            data data
-            data.val = getPoison()
-
-            return data.snapshot()`;
-      try {
-        await env.renderScriptString(script, context);
-        throw new Error('Should have failed');
-      } catch (e) {
-        expect(e.message).to.contain('Value Poison');
-      }
-    });
-  });
-
-  describe('@value Output Handler', function () {
-    it('should support @value(val) syntax', async () => {
-      const script = `
-          value value
-          value(10)
-
-          return { value: value.snapshot() }`;
-      const result = await env.renderScriptString(script);
-      expect(result.value).to.equal(10);
-    });
-
-    it('should support @value = val syntax', async () => {
-      const script = `
-          value value
-          value = 20
-
-          return { value: value.snapshot() }`;
-      const result = await env.renderScriptString(script);
-      expect(result.value).to.equal(20);
-    });
-
-    it('should return the last set value', async () => {
-      const script = `
-          value value
-          value(1)
-          value = 2
-          value(3)
-
-          return { value: value.snapshot() }`;
-      const result = await env.renderScriptString(script);
-      expect(result.value).to.equal(3);
-    });
-
-    it('should work with expressions', async () => {
-      const script = `
-          value value
-          var x = 5
-          value = x * 2
-
-          return { value: value.snapshot() }`;
-      const result = await env.renderScriptString(script);
-      expect(result.value).to.equal(10);
-    });
-
-    it('should work with macros returning value', async () => {
-      const script = `
-          value value
-          macro getValue()
-              value value
-              value = 42
-              return { value: value.snapshot() }
-          endmacro
-
-          var res = getValue()
-          value = res.value
-
-          return { value: value.snapshot() }`;
-      const result = await env.renderScriptString(script);
-      expect(result.value).to.equal(42);
-    });
-
-    it('should work with focus on macro', async () => {
-      const script = `
-          value value
-          macro computeSum(a, b)
-              value value
-              value = a + b
-              return value.snapshot()
-          endmacro
-
-          var result = computeSum(10, 20)
-          value = result
-
-          return { value: value.snapshot() }`;
-      const result = await env.renderScriptString(script);
-      expect(result.value).to.equal(30);
-    });
-
-    it('should support focus to return unwrapped value', async () => {
-      const script = `
-          value value
-          value = 42
-
-          return value.snapshot()`;
-      const result = await env.renderScriptString(script);
-      // With focus, the result is the raw value, not { value: 42 }
-      expect(result).to.equal(42);
-    });
-
-    it('should support focus with expressions', async () => {
-      const script = `
-          value value
-          var x = 10
-          var y = 20
-          value = x + y
-
-          return value.snapshot()`;
-      const result = await env.renderScriptString(script);
-      expect(result).to.equal(30);
-    });
-
-    it('should support focus with object values', async () => {
-      const script = `
-          value value
-          value = { name: "Alice", age: 30 }
-
-          return value.snapshot()`;
-      const result = await env.renderScriptString(script);
-      expect(result).to.eql({ name: 'Alice', age: 30 });
-    });
-
-    it('should support focus with array values', async () => {
-      const script = `
-          value value
-          value = [1, 2, 3, 4, 5]
-
-          return value.snapshot()`;
-      const result = await env.renderScriptString(script);
-      expect(result).to.eql([1, 2, 3, 4, 5]);
-    });
-
-    it('should support focus with string values', async () => {
-      const script = `
-          value value
-          value = "Hello, World!"
-
-          return value.snapshot()`;
-      const result = await env.renderScriptString(script);
-      expect(result).to.equal('Hello, World!');
-    });
-
-    it('should return last value when multiple @value commands with focus', async () => {
-      const script = `
-          value value
-          value(10)
-          value = 20
-          value(30)
-
-          return value.snapshot()`;
-      const result = await env.renderScriptString(script);
-      expect(result).to.equal(30);
-    });
-
-    it('should work with focus in macros returning computed values', async () => {
-      const script = `
-          data data
-          value value
-          macro factorial(n)
-              value value
-              var result = 1
-              var i = 1
-              while i <= n
-                  result = result * i
-                  i = i + 1
-              endwhile
-              value = result
-              return value.snapshot()
-          endmacro
-
-          var fact5 = factorial(5)
-          data.result = fact5
-
-          return {data: data.snapshot(), value: value.snapshot() }`;
-      const result = await env.renderScriptString(script);
-      expect(result.data.result).to.equal(120);
     });
   });
 });

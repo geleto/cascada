@@ -1073,13 +1073,13 @@
         };
 
         const script = `
-                data data
+                data result
                 var a = obj!.init('A', 5)
                 var b = obj!!.repair('B', 5)
                 var c = obj!.after('C', 5)
-                data = c
+                result = c
 
-                return {data: data.snapshot() }`;
+                return {data: result.snapshot() }`;
         const result = await env.renderScriptString(script, ctx);
         expect(logs).to.eql(['repaired B', 'after C']);
         expect(result.data).to.eql('after C');

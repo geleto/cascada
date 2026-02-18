@@ -896,4 +896,3 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
   });
 });
-

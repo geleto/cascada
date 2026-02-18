@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const expect = require('expect.js');
 const { AsyncEnvironment } = require('../src/environment/environment');
@@ -18,14 +18,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var count = 0
         while getPoisonedCondition()
           count = count + 1
         endwhile
-        data.count = count
-      
-        return data.snapshot()`;
+        result.count = count
+
+        return result`;
 
       try {
         await env.renderScriptString(script, context);
@@ -46,14 +46,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var total = 0
         while getPoisonedCondition()
           total = total + 1
         endwhile
-        data.total = total
-      
-        return data.snapshot()`;
+        result.total = total
+
+        return result`;
 
       try {
         await env.renderScriptString(script, context);
@@ -76,17 +76,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        value value
         var count = 0
         while throwingCondition()
           count = count + 1
         endwhile
-        value(count is error)
-      
-        return { value: value.snapshot() }`;
+        return count is error`;
 
       const result = await env.renderScriptString(script, context);
-      expect(result.value).to.be(true);
+      expect(result).to.be(true);
       expect(callCount).to.be(1); // Called once, then stopped
     });
 
@@ -101,14 +98,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var total = 0
         while throwingCondition()
           total = total + 1
         endwhile
-        data.total = total
-      
-        return data.snapshot()`;
+        result.total = total
+
+        return result`;
 
       try {
         await env.renderScriptString(script, context);
@@ -134,14 +131,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var total = 0
         while counter!.incrementAndCheck()
           total = total + 1
         endwhile
-        data.total = total
-      
-        return data.snapshot()`;
+        result.total = total
+
+        return result`;
 
       const result = await env.renderScriptString(script, context);
       expect(result.total).to.be(2); // Increments to 1, 2, stops at 3
@@ -153,17 +150,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        value value
         var count = 0
         while obj!.method()
           count = count + 1
         endwhile
-        value(count is error)
-      
-        return { value: value.snapshot() }`;
+        return count is error`;
 
       const result = await env.renderScriptString(script, context);
-      expect(result.value).to.be(true);
+      expect(result).to.be(true);
     });
   });
 
@@ -179,14 +173,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var count = 0
         while checkCondition()
           count = count + 1
         endwhile
-        data.count = count
-      
-        return data.snapshot()`;
+        result.count = count
+
+        return result`;
 
       const result = await env.renderScriptString(script, context);
       expect(result.count).to.be(1);
@@ -202,14 +196,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var total = 0
         while getCondition()
           total = total + 1
         endwhile
-        data.total = total
-      
-        return data.snapshot()`;
+        result.total = total
+
+        return result`;
 
       const result = await env.renderScriptString(script, context);
       expect(result.total).to.be(5);
@@ -229,14 +223,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var total = 0
         while checkCondition()
           total = total + 1
         endwhile
-        data.total = total
-      
-        return data.snapshot()`;
+        result.total = total
+
+        return result`;
 
       try {
         await env.renderScriptString(script, context);
@@ -261,13 +255,13 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        data result
         var items = []
         while checkCondition()
-          data.items.push(callCount)
+          result.items.push(callCount)
         endwhile
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       try {
         await env.renderScriptString(script, context);
@@ -286,14 +280,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var ran = false
         while alwaysFalse()
           ran = true
         endwhile
-        data.bodyRan = ran
-      
-        return data.snapshot()`;
+        result.bodyRan = ran
+
+        return result`;
 
       const result = await env.renderScriptString(script, context);
       expect(result.bodyRan).to.be(false);
@@ -310,14 +304,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var total = 0
         while asyncCondition()
           total = total + 1
         endwhile
-        data.total = total
-      
-        return data.snapshot()`;
+        result.total = total
+
+        return result`;
 
       const result = await env.renderScriptString(script, context);
       expect(result.total).to.be(3);
@@ -334,14 +328,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var total = 0
         while checkCondition()
           total = total + 1
         endwhile
-        data.total = total
-      
-        return data.snapshot()`;
+        result.total = total
+
+        return result`;
 
       const result = await env.renderScriptString(script, context);
       expect(result.total).to.be(3);
@@ -357,14 +351,14 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       };
 
       const script = `
-        data data
+        var result = {}
         var executed = false
         while alwaysFalse()
           executed = true
         endwhile
-        data.executed = executed
-      
-        return data.snapshot()`;
+        result.executed = executed
+
+        return result`;
 
       const result = await env.renderScriptString(script, context);
       expect(result.executed).to.be(false);

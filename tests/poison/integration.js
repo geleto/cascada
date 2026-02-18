@@ -642,14 +642,12 @@
     it('should poison if body variables when condition is poison', async () => {
       //Temp test for comparing
       const script = `
-        value value
         var i = 0
         if poisonCond()
           i = 1 //i + 1
         endif
-        value(i is error)
-      
-        return { value: value.snapshot() }`;
+
+        return { value: i is error }`;
 
       const result = await env.renderScriptString(script, {
         poisonCond: () => {

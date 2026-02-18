@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Integration Tests for RuntimePromise Issues
  *
  * These tests demonstrate the 5 places where RuntimePromise wrappers are needed.
@@ -103,11 +103,11 @@
         });
 
         const script = `
-        data data
+        var result = {}
         var fetched = fetchData()
-        data.result = fetched
+        result.result = fetched
 
-        return {data: data.snapshot() }`;
+        return {data: result }`;
 
         try {
           await env.renderScriptString(script, {}, { output: 'data' });
@@ -320,11 +320,11 @@
         };
 
         const script = `
-        data data
+        var result = {}
         var key = config.apiKey
-        data.key = key
+        result.key = key
 
-        return {data: data.snapshot() }`;
+        return {data: result }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -348,11 +348,11 @@
         };
 
         const script = `
-        data data
+        var result = {}
         var cfgValue = config.asyncValue
-        data.value = cfgValue
+        result.value = cfgValue
 
-        return {data: data.snapshot() }`;
+        return {data: result }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -372,12 +372,12 @@
         };
 
         const script = `
-        data data
+        data result
         if flags.enabled
-          data.message = "Enabled"
+          result.message = "Enabled"
         endif
 
-        return {data: data.snapshot() }`;
+        return {data: result.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -399,11 +399,11 @@
         };
 
         const script = `
-        data data
+        var result = {}
         var endpoint = api.endpoints.users
-        data.endpoint = endpoint
+        result.endpoint = endpoint
 
-        return {data: data.snapshot() }`;
+        return {data: result }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -537,11 +537,11 @@
         };
 
         const script = `
-        data data
+        var result = {}
         var tx = db!.transaction()
-        data.tx = tx
+        result.tx = tx
 
-        return {data: data.snapshot() }`;
+        return {data: result }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -565,11 +565,11 @@
         };
 
         const script = `
-        data data
+        var result = {}
         var state = service!.asyncState()
-        data.state = state
+        result.state = state
 
-        return {data: data.snapshot() }`;
+        return {data: result }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -591,11 +591,11 @@
         };
 
         const script = `
-        data data
+        var result = {}
         var cached = system.cache!.data()
-        data.cached = cached
+        result.cached = cached
 
-        return {data: data.snapshot() }`;
+        return {data: result }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -615,12 +615,12 @@
         };
 
         const script = `
-        data data
+        data result
         if auth!.token()
-          data.authorized = true
+          result.authorized = true
         endif
 
-        return {data: data.snapshot() }`;
+        return {data: result.snapshot() }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });
@@ -666,15 +666,15 @@
         });
 
         const script = `
-        text text
+        text output
         var result = capture
-          text text
-          text(asyncData())
-          return { text: text.snapshot() }
+          text captureText
+          captureText(asyncData())
+          return { text: captureText.snapshot() }
         endcapture
-        text(result)
+        output(result)
 
-        return { text: text.snapshot() }`;
+        return { text: output.snapshot() }`;
 
         try {
           await env.renderScriptString(script);
@@ -798,13 +798,13 @@
         };
 
         const script = `
-        data data
+        var result = {}
         var result1 = service!.firstOp()
         var result2 = service!.secondOp()
-        data.result1 = result1
-        data.result2 = result2
+        result.result1 = result1
+        result.result2 = result2
 
-        return {data: data.snapshot() }`;
+        return {data: result }`;
 
         try {
           await env.renderScriptString(script, context, { output: 'data' });

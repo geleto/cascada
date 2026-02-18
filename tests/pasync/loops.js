@@ -2980,15 +2980,11 @@
       });
 
       const script = `
-        value value
         var i = 0
         while checkCondition()
-          //i = i + 1
-          i = 1
+          i = i + 1
         endwhile
-        value(i)
-      
-        return { value: value.snapshot() }`;
+        return i`;
 
       try {
         await env.renderScriptString(script, {}, { output: 'data' });
@@ -3001,14 +2997,11 @@
 
     it('should poison loop variables when while condition is poison', async () => {
       const script = `
-        value value
         var i = 0
         while poisonCond()
-          i = 1 //i + 1
+          i = 1
         endwhile
-        value(i is error)
-      
-        return { value: value.snapshot() }`;
+        return { value: i is error }`;
 
       const result = await env.renderScriptString(script, {
         poisonCond: () => {
@@ -3020,13 +3013,13 @@
 
     it('should poison while output handler when while condition is poison', async () => {
       const script = `
-        data data
+        data result
         var i = 0
         while poisonCond()
-          data.push(i)
+          result.push(i)
         endwhile
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       try {
         await env.renderScriptString(script, {
@@ -3316,24 +3309,24 @@
       const script = `
 
 // Initialize arrays
-data data
-data.users = []
-data.summary.userNames = []
+data result
+result.users = []
+result.summary.userNames = []
 
 // For loop - parallel execution
 var userIds = [1, 2, 3, 4]
 for id in userIds
   var user = fetchUser(id)
-  data.users.push({ id: user.id, name: user.name, active: user.active })
+  result.users.push({ id: user.id, name: user.name, active: user.active })
 endfor
 
 // Summary - simplified to avoid complex filtering
-data.summary.totalUsers = userIds.length
+result.summary.totalUsers = userIds.length
 for user in userIds
-  data.summary.userNames.push("User " + user)
+  result.summary.userNames.push("User " + user)
 endfor
-      
-return data.snapshot()`;
+
+return result.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
 
@@ -3371,29 +3364,29 @@ return data.snapshot()`;
       const script = `
 
 // Use capture block to handle the while loop logic
-data data
+data output
 var result = capture
-  data data
+  data captured
   var counter = 0
   var iterations = 0
   while checkCondition(counter)
     var processed = processItem("item-" + counter)
-    data.whileResults.push(processed)
+    captured.whileResults.push(processed)
     iterations = iterations + 1
     counter = incrementCounter(counter)
   endwhile
 
-  data.summary.iterations = iterations
-  data.summary.finalCounter = counter
-  return data.snapshot()
+  captured.summary.iterations = iterations
+  captured.summary.finalCounter = counter
+  return captured.snapshot()
 endcapture
 
 // Assign the captured result to our data object
-data.whileResults = result.whileResults
-data.summary.iterations = result.summary.iterations
-data.summary.finalCounter = result.summary.finalCounter
-      
-return data.snapshot()`;
+output.whileResults = result.whileResults
+output.summary.iterations = result.summary.iterations
+output.summary.finalCounter = result.summary.finalCounter
+
+return output.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
 
@@ -3419,27 +3412,27 @@ return data.snapshot()`;
       const script = `
 
 // Use capture block to handle the each loop logic
-data data
+data output
 var result = capture
-  data data
+  data captured
   var items = ["a", "b", "c"]
   var totalItems = items.length
   each item in items
     var processed = processItem(item)
-    data.eachResults.push(processed)
+    captured.eachResults.push(processed)
   endeach
 
-  data.summary.totalItems = totalItems
-  data.summary.items = items | join(", ")
-  return data.snapshot()
+  captured.summary.totalItems = totalItems
+  captured.summary.items = items | join(", ")
+  return captured.snapshot()
 endcapture
 
 // Assign the captured result to our data object
-data.eachResults = result.eachResults
-data.summary.totalItems = result.summary.totalItems
-data.summary.items = result.summary.items
-      
-return data.snapshot()`;
+output.eachResults = result.eachResults
+output.summary.totalItems = result.summary.totalItems
+output.summary.items = result.summary.items
+
+return output.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
 
@@ -3468,13 +3461,13 @@ return data.snapshot()`;
         }
       };
 
-      const script = `      data data
+      const script = `      data output
       var result = 1
 			for text in candidates
 				result = processItem(text)
-				data.set(null, result)
+				output.set(null, result)
 			endfor
-      return data.snapshot()`;
+      return output.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.be('Processed: c');
@@ -3495,12 +3488,12 @@ return data.snapshot()`;
         }
       };
 
-      const script = `			data data
+      const script = `			data output
 			for text in candidates
 				var result = processItem(text)
-				data.set(null, result)
+				output.set(null, result)
 			endfor
-			return data.snapshot()`;
+			return output.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.be('Processed: c');
@@ -3521,14 +3514,14 @@ return data.snapshot()`;
         }
       };
 
-      const script = `			data data
+      const script = `			data output
 			for text in candidates
 				if text
 					var result = processItem(text)
-					data.set(null, result)
+					output.set(null, result)
 				endif
 			endfor
-			return data.snapshot()`;
+			return output.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.be('Processed: c');

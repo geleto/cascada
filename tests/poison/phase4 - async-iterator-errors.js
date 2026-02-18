@@ -30,13 +30,13 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      data data
+      data result
       for item in testGen()
         var processed = processItem(item)
-        data.items.push(processed)
+        result.items.push(processed)
       endfor
-    
-      return data.snapshot()`;
+
+      return result.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -72,13 +72,13 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      data data
+      data result
       for item in testGen()
         var processed = processValue(item)
-        data.items.push(processed)
+        result.items.push(processed)
       endfor
-    
-      return data.snapshot()`;
+
+      return result.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -112,13 +112,13 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      data data
+      data result
       for item in testGen()
-        var result = processItem(item)
-        data.results.push(result)
+        var processedItem = processItem(item)
+        result.results.push(processedItem)
       endfor
-    
-      return data.snapshot()`;
+
+      return result.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -143,14 +143,14 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      data data
+      data result
       for item in emptyGen()
-        data.items.push(item)
+        result.items.push(item)
       else
-        data.isEmpty = true
+        result.isEmpty = true
       endfor
-    
-      return data.snapshot()`;
+
+      return result.snapshot()`;
 
     const result = await env.renderScriptString(script, context);
     expect(result.isEmpty).to.be(true);
@@ -164,16 +164,16 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      data data
+      var result = {}
       var total = 0
       for item in getPoisonedArray()
         total = total + item
       else
-        data.elseBranch = true
+        result.elseBranch = true
       endfor
-      data.total = total
-    
-      return data.snapshot()`;
+      result.total = total
+
+      return result`;
 
     try {
       await env.renderScriptString(script, context);
@@ -199,12 +199,12 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      data data
+      data result
       for item in testGen()
-        data.items.push(item)
+        result.items.push(item)
       endfor
-    
-      return data.snapshot()`;
+
+      return result.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -235,12 +235,12 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      data data
+      data result
       for item in testGen()
-        data.items.push(item)
+        result.items.push(item)
       endfor
-    
-      return data.snapshot()`;
+
+      return result.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -270,16 +270,16 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     };
 
     const script = `
-      data data
+      data result
       for pageResult in fetchPages()
         if pageResult.data
           for item in pageResult.data
-            data.allItems.push(item)
+            result.allItems.push(item)
           endfor
         endif
       endfor
-    
-      return data.snapshot()`;
+
+      return result.snapshot()`;
 
     try {
       await env.renderScriptString(script, context);
@@ -317,12 +317,12 @@ describe('Phase 4: Async Iterator Error Handling', () => {
 
     it('Should propagate a soft error to body handler of "for"/"each" loops', async () => {
       let script = `
-        data data
+        data result
         for item in testGen()
-          data.items.push(item)
+          result.items.push(item)
         endfor
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       for (let i = 0; i < 2; i++) {
         const ctx = { ...context };
@@ -341,12 +341,12 @@ describe('Phase 4: Async Iterator Error Handling', () => {
 
     it('Should propagate a hard error to body handler of "for"/"each" loops', async () => {
       let script = `
-        data data
+        data result
         for item in testGen()
-          data.items.push(item)
+          result.items.push(item)
         endfor
-      
-        return data.snapshot()`;
+
+        return result.snapshot()`;
 
       for (let i = 0; i < 2; i++) {
         const ctx = { ...context, hardError: true };

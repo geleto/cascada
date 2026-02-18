@@ -22,14 +22,14 @@
     describe('Test 1.1: Body writes tracked', () => {
       it('should track writes in loop body', async () => {
         const script = `
-          data data
+          var result = {}
           var total = 0
           for i in [1, 2, 3]
             total = total + i
           endfor
-          data.total = total
-        
-          return data.snapshot()`;
+          result.total = total
+
+          return result`;
 
         const result = await env.renderScriptString(script);
         expect(result.total).to.be(6);
@@ -40,16 +40,16 @@
     describe('Test 1.2: Else writes tracked', () => {
       it('should track writes in else block (Phase 3)', async () => {
         const script = `
-          data data
+          var result = {}
           var total = 0
           for i in []
             total = total + i
           else
             total = 100
           endfor
-          data.total = total
-        
-          return data.snapshot()`;
+          result.total = total
+
+          return result`;
 
         const result = await env.renderScriptString(script);
         expect(result.total).to.be(100);
@@ -63,7 +63,7 @@
         // @todo - soft and hard iterator error
         // @todo - separate test with output poisoning
         const script = `
-          data data
+          var result = {}
           var sum = 0 // two writes in body, one write in else
           var body = 0 // one write in body
           var els = 0 // one write in else
@@ -81,13 +81,13 @@
             els2 = sum
             els2 = els2 + 1
           endfor
-          data.sum = sum
-          data.body = body
-          data.els = els
-          data.body2 = body2
-          data.els2 = els2
-        
-          return data.snapshot()`;
+          result.sum = sum
+          result.body = body
+          result.els = els
+          result.body2 = body2
+          result.els2 = els2
+
+          return result`;
 
         // test body
         const result = await env.renderScriptString(script, { items: [1, 2, 3] });
@@ -111,12 +111,12 @@
     describe('Test 1.3: Handler collection from body', () => {
       it('should collect handlers from loop body', async () => {
         const script = `
-          data data
+          data result
           for i in [1, 2, 3]
-            data.items.push(i)
+            result.items.push(i)
           endfor
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         const result = await env.renderScriptString(script);
         expect(result.items).to.eql([1, 2, 3]);
@@ -127,14 +127,14 @@
     describe('Test 1.4: Handler collection from else', () => {
       it('should collect handlers from else block', async () => {
         const script = `
-          data data
+          data result
           for i in []
-            data.items.push(i)
+            result.items.push(i)
           else
-            data.empty = true
+            result.empty = true
           endfor
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         const result = await env.renderScriptString(script);
         expect(result.empty).to.be(true);
@@ -145,14 +145,14 @@
     describe('Test 1.5: No regressions', () => {
       it('should handle nested loops', async () => {
         const script = `
-          data data
+          data result
           for i in [1, 2]
             for j in [10, 20]
-              data.results.push(i * j)
+              result.results.push(i * j)
             endfor
           endfor
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         const result = await env.renderScriptString(script);
         expect(result.results).to.eql([10, 20, 20, 40]);
@@ -172,14 +172,14 @@
           }
         };
         const script = `
-          data data
+          var result = {}
           var total = 0
           while state!.checkCondition()
             total = total + state.getValue()
           endwhile
-          data.total = total
-        
-          return data.snapshot()`;
+          result.total = total
+
+          return result`;
 
         const result = await env.renderScriptString(script, context);
         expect(result.total).to.be(3); // 0 + 1 + 2
@@ -188,14 +188,14 @@
       it('should handle object iteration', async () => {
         const context = { obj: { a: 1, b: 2, c: 3 } };
         const script = `
-          data data
+          var result = {}
           var sum = 0
           for key, val in obj
             sum = sum + val
           endfor
-          data.sum = sum
-        
-          return data.snapshot()`;
+          result.sum = sum
+
+          return result`;
 
         const result = await env.renderScriptString(script, context);
         expect(result.sum).to.be(6);
@@ -203,14 +203,14 @@
 
       it('should handle sequential loops with writes', async () => {
         const script = `
-          data data
+          var result = {}
           var items = []
           for i in [1, 2, 3]
             items = items.concat([i])
           endfor
-          data.items = items
-        
-          return data.snapshot()`;
+          result.items = items
+
+          return result`;
 
         const result = await env.renderScriptString(script);
         expect(result.items).to.eql([1, 2, 3]);
@@ -225,14 +225,14 @@
 
         const context = { gen };
         const script = `
-          data data
+          var result = {}
           var sum = 0
           for item in gen()
             sum = sum + item
           endfor
-          data.sum = sum
-        
-          return data.snapshot()`;
+          result.sum = sum
+
+          return result`;
 
         const result = await env.renderScriptString(script, context);
         expect(result.sum).to.be(6);
@@ -458,18 +458,18 @@
     describe('Test 1.7: Complex nested scenarios', () => {
       it('should handle deeply nested loops with writes', async () => {
         const script = `
-          data data
-          var result = 0
+          var result = {}
+          var total = 0
           for i in [1, 2]
             for j in [10, 20]
               for k in [100, 200]
-                result = result + (i * j * k)
+                total = total + (i * j * k)
               endfor
             endfor
           endfor
-          data.result = result
-        
-          return data.snapshot()`;
+          result.result = total
+
+          return result`;
 
         const output = await env.renderScriptString(script);
         // (1*10*100) + (1*10*200) + (1*20*100) + (1*20*200) + (2*10*100) + (2*10*200) + (2*20*100) + (2*20*200)
@@ -493,16 +493,16 @@
         };
 
         const script = `
-          data data
+          data result
           for outer in outerItems
-            data.results.push(outer)
+            result.results.push(outer)
             while state!.shouldContinue()
-              data.results.push(state.counter)
+              result.results.push(state.counter)
             endwhile
             state.reset()
           endfor
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.results).to.eql([1, 1, 2, 2, 1, 2]);
@@ -520,14 +520,14 @@
         };
 
         const script = `
-          data data
+          data result
           while state!.shouldContinue()
             for i in [10, 20]
-              data.results.push(state.counter * i)
+              result.results.push(state.counter * i)
             endfor
           endwhile
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         const output = await env.renderScriptString(script, context);
         expect(output.results).to.eql([10, 20, 20, 40]);
@@ -537,12 +537,12 @@
     describe('Test 1.8: Handler collection edge cases', () => {
       it('should collect multiple different handlers from loop body', async () => {
         const script = `
-          data data
+          data result
           for i in [1, 2]
-            data.numbers.push(i)
+            result.numbers.push(i)
           endfor
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         const result = await env.renderScriptString(script);
         expect(result.numbers).to.eql([1, 2]);
@@ -550,16 +550,16 @@
 
       it('should collect handlers from nested control structures in loop', async () => {
         const script = `
-          data data
+          data result
           for i in [1, 2, 3]
             if i % 2 == 0
-              data.even.push(i)
+              result.even.push(i)
             else
-              data.odd.push(i)
+              result.odd.push(i)
             endif
           endfor
-        
-          return data.snapshot()`;
+
+          return result.snapshot()`;
 
         const result = await env.renderScriptString(script);
         expect(result.even).to.eql([2]);

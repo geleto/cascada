@@ -41,12 +41,12 @@
 
     it('should poison handlers when if condition fails with @data output only, in script', async () => {
       const script = `
-        data data
+        data result
         if asyncReject()
-          data.value = "yes"
+          result.value = "yes"
         endif
 
-        return {data: data.snapshot() }`;
+        return {data: result.snapshot() }`;
 
       const context = {
         async asyncReject() {
@@ -65,12 +65,12 @@
 
     it('should poison handlers when while condition fails with @data output only, in script', async () => {
       const script = `
-        data data
+        data result
         while asyncReject()
-          data.push("yes")
+          result.push("yes")
         endwhile
 
-        return {data: data.snapshot() }`;
+        return {data: result.snapshot() }`;
 
       const context = {
         async asyncReject() {
@@ -363,13 +363,13 @@
 
     it('should poison @data handler when condition fails in script', async () => {
       const script = `
-      data data
+      data result
       if asyncReject()
-        data.user.name = "Alice"
-        data.user.age = 30
+        result.user.name = "Alice"
+        result.user.age = 30
       endif
 
-      return {data: data.snapshot() }`;
+      return {data: result.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context, { output: 'data' });
@@ -382,16 +382,16 @@
 
     it('should collect all @data errors from both if branches', async () => {
       const script = `
-      data data
+      data result
       if asyncReject()
-        data.branch = "true"
-        data.value = 1
+        result.branch = "true"
+        result.value = 1
       else
-        data.branch = "false"
-        data.value = 2
+        result.branch = "false"
+        result.value = 2
       endif
 
-      return {data: data.snapshot() }`;
+      return {data: result.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context, { output: 'data' });
@@ -405,15 +405,15 @@
 
     it('should poison multiple @data operations in same branch', async () => {
       const script = `
-      data data
+      data result
       if asyncReject()
-        data.users.push({ name: "Alice" })
-        data.users.push({ name: "Bob" })
-        data.count = 2
-        data.status = "active"
+        result.users.push({ name: "Alice" })
+        result.users.push({ name: "Bob" })
+        result.count = 2
+        result.status = "active"
       endif
 
-      return {data: data.snapshot() }`;
+      return {data: result.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context, { output: 'data' });
@@ -425,14 +425,14 @@
 
     it('should poison @data with nested paths', async () => {
       const script = `
-      data data
+      data result
       if asyncReject()
-        data.company.employees[0].name = "Alice"
-        data.company.employees[0].role = "Engineer"
-        data.company.name = "TechCorp"
+        result.company.employees[0].name = "Alice"
+        result.company.employees[0].role = "Engineer"
+        result.company.name = "TechCorp"
       endif
 
-      return {data: data.snapshot() }`;
+      return {data: result.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context, { output: 'data' });
@@ -444,15 +444,15 @@
 
     it('should handle mixed text and @data handlers in script', async () => {
       const script = `
-      text text
-      data data
+      text output
+      data result
       if asyncReject()
-        text("Starting process...")
-        data.status = "processing"
-        data.step = 1
+        output("Starting process...")
+        result.status = "processing"
+        result.step = 1
       endif
 
-      return { text: text.snapshot(), data: data.snapshot() }`;
+      return { text: output.snapshot(), data: result.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context);
@@ -465,14 +465,14 @@
 
     it('should work when @data operations succeed but other output fails', async () => {
       const script = `
-      data data
-      text text
+      data result
+      text output
       if true
-        data.working = "yes"
+        result.working = "yes"
       endif
-      text(asyncReject())
+      output(asyncReject())
 
-      return {data: data.snapshot(), text: text.snapshot() }`;
+      return {data: result.snapshot(), text: output.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context);
@@ -484,16 +484,16 @@
 
     it('should poison @data in nested conditionals', async () => {
       const script = `
-      data data
+      data result
       if true
-        data.outer = "start"
+        result.outer = "start"
         if asyncReject()
-          data.inner = "value"
+          result.inner = "value"
         endif
-        data.outer = "end"
+        result.outer = "end"
       endif
 
-      return {data: data.snapshot() }`;
+      return {data: result.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context, { output: 'data' });
@@ -505,14 +505,14 @@
 
     it('should poison @data in loop body when condition fails', async () => {
       const script = `
-      data data
+      data result
       for i in [1, 2, 3]
         if asyncReject()
-          data.items.push(i)
+          result.items.push(i)
         endif
       endfor
 
-      return {data: data.snapshot() }`;
+      return {data: result.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context, { output: 'data' });
@@ -854,16 +854,16 @@
 
     it('should handle deeply nested handler calls in scripts', async () => {
       const script = `
-      data data
+      data result
       if true
         if true
           if asyncReject()
-            data.deep = "value"
+            result.deep = "value"
           endif
         endif
       endif
 
-      return {data: data.snapshot() }`;
+      return {data: result.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context, { output: 'data' });
@@ -880,15 +880,15 @@
       };
 
       const script = `
-      data data
+      data result
       if asyncReject1()
-        data.first = 1
+        result.first = 1
       endif
       if asyncReject2()
-        data.second = 2
+        result.second = 2
       endif
 
-      return {data: data.snapshot() }`;
+      return {data: result.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context2, { output: 'data' });
@@ -909,12 +909,12 @@
       const context2 = { errorWithStack };
 
       const script = `
-      data data
+      data result
       if errorWithStack()
-        data.value = 1
+        result.value = 1
       endif
 
-      return {data: data.snapshot() }`;
+      return {data: result.snapshot() }`;
 
       try {
         await env.renderScriptString(script, context2, { output: 'data' });
