@@ -1065,14 +1065,13 @@ class Parser extends Obj {
         }
 
         if (rawSelector.startsWith('@')) {
-          const handlerName = rawSelector.slice(1);
-          handlerTargets.push(handlerName.length > 0 ? handlerName : '@');
+          this.fail(`guard: invalid selector "${rawSelector}"`, selectorTok.lineno, selectorTok.colno);
         } else if (rawSelector.endsWith('!')) {
           sequenceTargets.push(rawSelector);
         } else if (this.scriptMode && rawSelector === 'var') {
           // `guard var` protects all variables written inside the guard block.
           hasVarSelector = true;
-        } else if (this.scriptMode && RESERVED_DECLARATION_NAMES.has(rawSelector)) {
+        } else if (RESERVED_DECLARATION_NAMES.has(rawSelector)) {
           typeTargets.push(rawSelector);
         } else {
           variableTargets.push(rawSelector);
@@ -1090,11 +1089,6 @@ class Parser extends Obj {
 
     if (hasStarSelector && (handlerTargets.length > 1 || typeTargets.length > 0 || hasVarSelector || variableTargets.length > 0 || sequenceTargets.length > 1)) {
       this.fail('guard: "*" cannot be combined with other selectors', tag.lineno, tag.colno);
-    }
-
-    // Validate Handler Targets
-    if (handlerTargets.includes('@') && (handlerTargets.length > 1 || typeTargets.length > 0)) {
-      this.fail('guard: "@" cannot be combined with specific handler selectors', tag.lineno, tag.colno);
     }
 
     this.advanceAfterBlockEnd(tag.value);

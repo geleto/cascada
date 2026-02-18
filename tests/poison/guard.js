@@ -114,7 +114,7 @@
       const script = `
         text output
         data result
-        guard @output, @result
+        guard output, result
           output("INNER")
           result.guard.value = "DROP"
           output(explode())
@@ -136,11 +136,11 @@
       expect(result.data).to.eql({ status: 'ok' });
     });
 
-    it('should allow guard @ to revert all handlers', async () => {
+    it('should allow guard type selectors to revert all handlers', async () => {
       const script = `
         text output
         data result
-        guard @
+        guard text, data
           output("INNER")
           result.guard.value = "DROP"
           output(explode())
@@ -209,7 +209,7 @@
         var snap = ""
         output("BEFORE")
         snap = output.snapshot()
-        guard @output
+        guard output
           output("INNER")
           output(explode())
         endguard
@@ -276,10 +276,10 @@
       expect(res.data.val).to.be(undefined);
     });
 
-    it('should error when mixing @ with specific handlers', async () => {
+    it('should error on invalid selector format', async () => {
       const script = `
         text output
-        guard @, @output
+        guard @output
           output("X")
         endguard
 
@@ -289,14 +289,14 @@
         await env.renderScriptString(script, {});
         expect().fail('Expected guard selector error');
       } catch (err) {
-        expect(err.message).to.contain('"@" cannot be combined');
+        expect(err.message).to.contain('guard: invalid selector "@output"');
       }
     });
 
     it('should error on duplicate handler selectors', async () => {
       const script = `
         text output
-        guard @output, @output
+        guard output, output
           output("X")
         endguard
 
@@ -306,14 +306,14 @@
         await env.renderScriptString(script, {});
         expect().fail('Expected guard duplicate selector error');
       } catch (err) {
-        expect(err.message).to.contain('duplicate selector "@output"');
+        expect(err.message).to.contain('duplicate selector "output"');
       }
     });
 
     it('should restore guarded variables on error in template mode', async () => {
       const tpl = `
         {% set count = 1 %}
-        {% guard count, @ %}
+        {% guard count, text %}
           {% set count = count + 1 %}
           {{ error("boom") }}
         {% endguard %}
@@ -330,7 +330,7 @@
     it('should keep guarded variable changes on success in template mode', async () => {
       const tpl = `
         {% set count = 1 %}
-        {% guard count, @ %}
+        {% guard count, text %}
           {% set count = count + 1 %}
         {% endguard %}
         {{ count }}
@@ -357,9 +357,9 @@
 
     it('should error when guard variable is not modified', async () => {
       const tpl = `
-        {% set value = 1 %}
-        {% guard value %}
-          {{ value }}
+        {% set score = 1 %}
+        {% guard score %}
+          {{ score }}
         {% endguard %}
       `;
 
@@ -367,7 +367,7 @@
         await env.renderTemplateString(tpl);
         expect().fail('Expected guard variable modification error');
       } catch (err) {
-        expect(err.message).to.contain('guard variable "value" must be modified');
+        expect(err.message).to.contain('guard variable "score" must be modified');
       }
     });
 
@@ -674,7 +674,7 @@
       const script = `
       data result
       var state = "initial"
-      guard state, @result
+      guard state, result
         state = "changed"
         result.x = error("fail")
       recover err
@@ -705,8 +705,8 @@
     // --- Top Priority Missing Tests ---
 
     it('should leak unrelated poison when guarding specific handler', async () => {
-      // guard @result should ignore @output poison.
-      // E.g. guard @result cannot stop output poison properly, so it bubbles up.
+      // guard result should ignore output poison.
+      // E.g. guard result cannot stop output poison properly, so it bubbles up.
       // But side-effects (state="changed") should PERSIST because guard block technically "finished"
       // (it decided to ignore poison and continue).
       // Wait. If it ignores poison, it outputs to buffer.
@@ -715,12 +715,13 @@
 
       let trackedState = 'initial';
       const script = `
+        data result
         text output
         var state = "initial"
-        guard state, @result
+        guard state, result
           state = "changed"
           // This puts a PoisonedValue into the buffer (output handler default)
-          // Since guard @result ignores it, this poison remains in buffer.
+          // Since guard result ignores it, this poison remains in buffer.
           output(poison())
         endguard
 
@@ -753,7 +754,7 @@
         var outer = "ok"
         var inner = "ok"
         guard outer
-          guard inner, @
+          guard inner, text
             inner = "modified"
             // Inner error must go to buffer to trigger guard
             output(error("fail"))
@@ -804,7 +805,7 @@
       // Updated test strategy:
       const script2 = `
         data result
-        guard @result
+        guard result
           var local = 1
         endguard
         result.leak = local
@@ -821,10 +822,10 @@
     });
 
     it('should recover in template mode (reverting output)', async () => {
-      // guard @ implies guarding all outputs. "Start " should be reverted.
+      // guard text implies guarding text output. "Start " should be reverted.
       // Use {% set %} instead of {% var %} in template mode.
       // We must modify "state" inside guard to satisfy guard requirement.
-      const template = `{% set state = "ok" %}{% guard state, @ %}Start {% set state = "mod" %}{{ error("fail") }}{% recover %}Recovered{% set state = "recovered" %}{% endguard %} State: {{ state }}`;
+      const template = `{% set state = "ok" %}{% guard state, text %}Start {% set state = "mod" %}{{ error("fail") }}{% recover %}Recovered{% set state = "recovered" %}{% endguard %} State: {{ state }}`;
       const context = {
         error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
       };
@@ -838,7 +839,7 @@
       // But await inside RECOVER (async closure) should work.
       const script = `text output
 data result
-guard @
+guard text, data
   // await delay(10)
   output(error("fail"))
 recover
@@ -863,7 +864,7 @@ macro bomb()
   return { text: textInner.snapshot() }
 endmacro
 
-guard @
+guard text, data
   call bomb()
     return {}
   endcall
@@ -881,7 +882,7 @@ return {data: result.snapshot(), text: output.snapshot() }`;
     it('should handle error in recover block (bubbling)', async () => {
       const script = `
         text output
-        guard @
+        guard text
           output(error("fail1"))
         recover
           output(error("fail2"))
@@ -909,7 +910,7 @@ return {data: result.snapshot(), text: output.snapshot() }`;
         var i = 0
         var guarded_exec = 0
         while i < 10
-          guard @
+          guard
             if i == 5
               break
             endif
@@ -927,7 +928,7 @@ return {data: result.snapshot(), text: output.snapshot() }`;
       expect(res.data.guarded).to.equal(10);
     });
 
-    it('should catch @result poison with global guard', async () => {
+    it('should catch result poison with global guard', async () => {
       const script = `data result
 guard
   result.err = error("fail")
@@ -945,7 +946,7 @@ return {data: result.snapshot() }`;
     it('should handle multiple concurrent errors', async () => {
       const script = `text output
 data result
-guard @
+guard text, data
   output(error("fail1"))
   output(error("fail2"))
 recover
@@ -1148,7 +1149,7 @@ return { text: output.snapshot(), data: result.snapshot() }`;
       const script = `
         text output
         data result
-        guard lock!, @output
+        guard lock!, output
            // 1. Buffer poison
            output(error('buffer_fail'))
            // 2. Sequence poison

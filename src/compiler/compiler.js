@@ -728,7 +728,7 @@ class Compiler extends CompilerBase {
       this.fail('guard block only supported in async mode', node.lineno, node.colno);
     }
 
-    const guardTargets = this._getGuardTargets(node);
+    const guardTargets = this._getGuardTargets(node, frame);
     const variableTargets = guardTargets.variableTargets;
     const hasSequenceTargets = !!guardTargets.sequenceTargets;
     // We need guard state if we have variables OR if we have sequence targets (for error detection)
@@ -933,7 +933,10 @@ class Compiler extends CompilerBase {
           return false;
         }
         const outputDecl = this.async._getDeclaredOutput(frame, name);
-        return !!(outputDecl && guardedTypes.has(outputDecl.type));
+        if (outputDecl) {
+          return guardedTypes.has(outputDecl.type);
+        }
+        return guardedTypes.has(name);
       });
     }
 
@@ -946,23 +949,45 @@ class Compiler extends CompilerBase {
     return [];
   }
 
-  _getGuardTargets(guardNode) {
+  _getGuardTargets(guardNode, frame) {
     const handlerTargetsRaw = Array.isArray(guardNode && guardNode.handlerTargets) &&
       guardNode.handlerTargets.length > 0
       ? guardNode.handlerTargets
       : null;
-    const handlerSelector = !handlerTargetsRaw
+    let handlerSelector = !handlerTargetsRaw
       ? null
       : (handlerTargetsRaw.includes('@') ? '*' : handlerTargetsRaw);
     const typeTargets = Array.isArray(guardNode && guardNode.typeTargets) && guardNode.typeTargets.length > 0
       ? guardNode.typeTargets
       : null;
 
-    const variableTargets = guardNode && guardNode.variableTargets === '*'
+    const variableTargetsRaw = guardNode && guardNode.variableTargets === '*'
       ? '*'
       : (Array.isArray(guardNode && guardNode.variableTargets) && guardNode.variableTargets.length > 0
         ? guardNode.variableTargets
         : null);
+    let variableTargets = variableTargetsRaw;
+
+    if (Array.isArray(variableTargetsRaw) && variableTargetsRaw.length > 0) {
+      const resolvedVariables = [];
+      const resolvedHandlers = new Set(Array.isArray(handlerSelector) ? handlerSelector : []);
+
+      for (const name of variableTargetsRaw) {
+        const isDeclaredVar = this._isDeclared(frame, name);
+        const outputDecl = this.async._getDeclaredOutput(frame, name);
+
+        if (!isDeclaredVar && outputDecl) {
+          resolvedHandlers.add(name);
+        } else {
+          resolvedVariables.push(name);
+        }
+      }
+
+      if (handlerSelector !== '*') {
+        handlerSelector = resolvedHandlers.size > 0 ? Array.from(resolvedHandlers) : null;
+      }
+      variableTargets = resolvedVariables.length > 0 ? resolvedVariables : null;
+    }
     const sequenceTargets = Array.isArray(guardNode && guardNode.sequenceTargets) && guardNode.sequenceTargets.length > 0
       ? guardNode.sequenceTargets
       : null;

@@ -745,7 +745,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     it('should run sequence guard transactions (begin/commit and begin/rollback)', async () => {
       const successScript = `
         sequence db = makeDb()
-        guard @db
+        guard db
           var r = db.write("ok")
         endguard
         return db.snapshot()
@@ -765,7 +765,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const failureScript = `
         sequence db = makeDb()
         var flag = "ok"
-        guard @db, flag
+        guard db, flag
           var r = db.write("fail")
           flag = fail()
         endguard
@@ -791,7 +791,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     it('should pass begin token to commit/rollback hooks', async () => {
       const successScript = `
         sequence tx = makeTx()
-        guard @tx
+        guard tx
           var runResult = tx.run("ok")
         endguard
         return tx.snapshot()
@@ -825,7 +825,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const failureScript = `
         sequence tx = makeTx()
         var runState = "ok"
-        guard @tx, runState
+        guard tx, runState
           tx.run("ok")
           runState = fail()
         endguard
@@ -863,7 +863,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const script = `
         sequence db = makeDb()
         var flag = "ok"
-        guard @db, flag
+        guard db, flag
           db.write("x")
           flag = fail()
         endguard
@@ -890,7 +890,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const beginFailScript = `
         sequence tx = makeTx()
         var state = "ok"
-        guard @tx, state
+        guard tx, state
           state = "changed"
           tx.run("x")
         endguard
@@ -911,7 +911,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const commitFailScript = `
         sequence tx = makeTx()
         var state = "ok"
-        guard @tx, state
+        guard tx, state
           state = "changed"
           tx.run("x")
         endguard
@@ -936,7 +936,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const successScript = `
         sequence a = makeA()
         sequence b = makeB()
-        guard @a, @b
+        guard a, b
           a.run()
           b.run()
         endguard
@@ -970,7 +970,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         sequence a = makeA()
         sequence b = makeB()
         var gate = "ok"
-        guard @a, @b, gate
+        guard a, b, gate
           a.run()
           b.run()
           gate = fail()
@@ -1008,7 +1008,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         data payload
         sequence db = makeDb()
         var gate = "ok"
-        guard @payload, gate
+        guard payload, gate
           payload.value = db.getValue()
           gate = fail()
         endguard
@@ -2027,7 +2027,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     it('should reject sink snapshot() inside guard', async () => {
       const script = `
         sink logger = makeLogger()
-        guard @logger
+        guard logger
           var snap = logger.snapshot()
           logger.write("x")
         endguard
@@ -2052,8 +2052,8 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     it('should reject sink snapshot() inside nested guard with recover', async () => {
       const script = `
         sink logger = makeLogger()
-        guard @logger
-          guard @logger
+        guard logger
+          guard logger
             logger.write("x")
             var snap = logger.snapshot()
           recover

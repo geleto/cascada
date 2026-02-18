@@ -1724,23 +1724,22 @@ You can explicitly specify what the guard should protect.
 
 ```javascript
 // Protects the @data handler, the db! path, and the 'status' variable
-guard @data, db!, status
+guard data, db!, status
 ```
 
 ##### Selectors
 
 | Selector | Meaning |
 |----------|---------|
-| `@handler1, @handler2` | Protect a specific output handler (`@text`, `@data`, etc.). |
-| `data, text, value, sink, sequence` | **Script mode:** Protect handlers by output type (all used handlers declared with that type inside the guard). |
-| `@` | Protect all output handlers (`@text`, `@data`, etc.). Cannot be combined with other handler selectors. |
+| `handler1, handler2` | Protect specific output handlers by declared name (for example `output`, `result`, `logger`). |
+| `data, text, value, sink, sequence` | Protect handlers by output type (all used handlers declared with that type inside the guard). |
 | `path1!, path2!` | Protect specific sequential paths (e.g. `db!`, `cache.sub!`). |
 | `!` | Protect all sequential paths touched inside the guard. |
-| `var` | **Script mode:** Protect all variables written inside the guard (same variable scope as `guard *`, but without guarding handlers/sequences unless selected). |
+| `var` | Protect all variables written inside the guard (same variable scope as `guard *`, but without guarding handlers/sequences unless selected). |
 | `var1, var2` | Protect specific script variables. |
 | `*` | Protect everything (all handlers, all sequence paths, and every variable written inside the guard). Cannot be combined with any other selector. |
 
-> `@` cannot be mixed with other handler selectors (including type selectors like `data`/`text`), and `*` cannot be combined with any other selector.
+> `*` cannot be combined with any other selector.
 
 **Hierarchical Protection of Sequential Paths:**
 ```javascript
