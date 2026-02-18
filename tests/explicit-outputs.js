@@ -792,7 +792,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const successScript = `
         sequence tx = makeTx()
         guard @tx
-          var value = tx.run("ok")
+          var runResult = tx.run("ok")
         endguard
         return tx.snapshot()
       `;
@@ -824,10 +824,10 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
       const failureScript = `
         sequence tx = makeTx()
-        var value = "ok"
-        guard @tx, value
+        var runState = "ok"
+        guard @tx, runState
           tx.run("ok")
-          value = fail()
+          runState = fail()
         endguard
         return tx.snapshot()
       `;
@@ -1005,14 +1005,14 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     it('should avoid deadlock for sequence call expressions while guard buffer is paused', async function () {
       this.timeout(4000);
       const script = `
-        data data
+        data payload
         sequence db = makeDb()
         var gate = "ok"
-        guard @data, gate
-          data.value = db.getValue()
+        guard @payload, gate
+          payload.value = db.getValue()
           gate = fail()
         endguard
-        return { data: data.snapshot(), events: db.snapshot(), gate: gate }
+        return { data: payload.snapshot(), events: db.snapshot(), gate: gate }
       `;
 
       const run = render(script, {
@@ -1458,8 +1458,8 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       };
       const script = `
         data myData
-        var value = fetchValue()
-        myData.x = value
+        var fetchedValue = fetchValue()
+        myData.x = fetchedValue
         return myData.snapshot()
       `;
       const result = await render(script, context);
@@ -1486,8 +1486,8 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         fetchValue() { return delay(5, 99); }
       };
       const script = `
-        var value = fetchValue()
-        return { result: value }
+        var fetchedValue = fetchValue()
+        return { result: fetchedValue }
       `;
       const result = await render(script, context);
       expect(result).to.eql({ result: 99 });
@@ -1633,6 +1633,28 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         expect().fail('Should have thrown');
       } catch (err) {
         expect(err.message).to.contain('Cannot declare variable');
+      }
+    });
+
+    it('should reject reserved keywords as output names', async () => {
+      const scripts = [
+        'data data',
+        'value value = 1',
+        'text var',
+        'sink sequence = makeSink()'
+      ];
+
+      for (const script of scripts) {
+        try {
+          await render(script, {
+            makeSink() {
+              return { snapshot() { return null; } };
+            }
+          });
+          expect().fail(`Should have thrown for script: ${script}`);
+        } catch (err) {
+          expect(err.message).to.contain('is reserved');
+        }
       }
     });
 

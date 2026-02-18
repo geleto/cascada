@@ -1,4 +1,4 @@
-﻿const scriptTranspiler = require('../src/script/script-transpiler');
+const scriptTranspiler = require('../src/script/script-transpiler');
 const { TOKEN_TYPES } = require('../src/script/script-lexer');
 const expect = require('expect.js');
 
@@ -60,7 +60,7 @@ describe('Script Transpiler', () => {
         const tokens = [
           { type: TOKEN_TYPES.CODE, value: 'if condition' },
           { type: TOKEN_TYPES.COMMENT, value: '// This is a comment' },
-          { type: TOKEN_TYPES.CODE, value: '@text(value)' },
+          { type: TOKEN_TYPES.CODE, value: '@outText(value)' },
           { type: TOKEN_TYPES.COMMENT, value: '/* Another comment */' },
         ];
 
@@ -89,13 +89,13 @@ describe('Script Transpiler', () => {
         const tokens = [
           { type: TOKEN_TYPES.CODE, value: 'if condition' },
           { type: TOKEN_TYPES.COMMENT, value: '// This is a comment' },
-          { type: TOKEN_TYPES.CODE, value: '@text(value)' },
+          { type: TOKEN_TYPES.CODE, value: '@outText(value)' },
         ];
 
         const filtered = scriptTranspiler._filterOutComments(tokens);
         expect(filtered.length).to.equal(2);
         expect(filtered[0].value).to.equal('if condition');
-        expect(filtered[1].value).to.equal('@text(value)');
+        expect(filtered[1].value).to.equal('@outText(value)');
       });
     });
 
@@ -147,8 +147,8 @@ describe('Script Transpiler', () => {
 
         // Normal line that shouldn't continue
         expect(scriptTranspiler._willContinueToNextLine(
-          [{ incomplete: false, value: '@text(value)' }],
-          '@text(value)',
+          [{ incomplete: false, value: '@outText(value)' }],
+          '@outText(value)',
           '@text'
         )).to.equal(false);
       });
@@ -200,28 +200,28 @@ describe('Script Transpiler', () => {
         expect(scriptTranspiler._continuesFromPrevious('and condition', true)).to.equal(true);
 
         // Normal line that isn't a continuation
-        expect(scriptTranspiler._continuesFromPrevious('@text(value)', true)).to.equal(false);
+        expect(scriptTranspiler._continuesFromPrevious('@outText(value)', true)).to.equal(false);
       });
 
       it('should not identify reserved keywords as continuations', () => {
         expect(scriptTranspiler._continuesFromPrevious('if condition', true)).to.equal(false);
         expect(scriptTranspiler._continuesFromPrevious('for item in items', true)).to.equal(false);
-        expect(scriptTranspiler._continuesFromPrevious('@text(value)', true)).to.equal(false);
+        expect(scriptTranspiler._continuesFromPrevious('@outText(value)', true)).to.equal(false);
       });
     });
 
     describe('processLine', () => {
       it('should correctly process a text statement', () => {
         scriptTranspiler.outputScopes = [scriptTranspiler._createOutputScope()];
-        scriptTranspiler.declareOutput('text', 'text');
-        const line = 'text(value)';
+        scriptTranspiler.declareOutput('outText', 'text');
+        const line = 'outText(value)';
         const state = { inMultiLineComment: false, stringState: null };
 
         const result = scriptTranspiler._processLine(line, state, 0);
 
         expect(result.lineType).to.equal('TAG');
         expect(result.tagName).to.equal('output_command');
-        expect(result.codeContent).to.equal('text(value)');
+        expect(result.codeContent).to.equal('outText(value)');
         expect(result.continuesToNext).to.equal(false);
         expect(result.blockType).to.equal(null);
       });
@@ -430,15 +430,15 @@ describe('Script Transpiler', () => {
   // Basic conversion tests
   describe('Basic Conversions', () => {
     it('should convert text statements', () => {
-      const script = 'text text\ntext("Hello, World!")';
+      const script = 'text outText\noutText("Hello, World!")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello, World!") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello, World!") -%}');
     });
 
     it('should convert tag statements', () => {
-      const script = 'text text\nif condition\n  text("Indented")\nendif\nreturn { text: text.snapshot() }';
+      const script = 'text outText\nif condition\n  outText("Indented")\nendif\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- if condition -%}\n  {%- output_command text("Indented") -%}\n{%- endif -%}\n{%- return { text: text.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- if condition -%}\n  {%- output_command outText("Indented") -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should convert code statements to set tags', () => {
@@ -454,9 +454,9 @@ describe('Script Transpiler', () => {
     });
 
     it('should preserve indentation', () => {
-      const script = 'text text\nif condition\n  text("Indented")\nendif\nreturn { text: text.snapshot() }';
+      const script = 'text outText\nif condition\n  outText("Indented")\nendif\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- if condition -%}\n  {%- output_command text("Indented") -%}\n{%- endif -%}\n{%- return { text: text.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- if condition -%}\n  {%- output_command outText("Indented") -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should properly convert var declarations', () => {
@@ -478,42 +478,42 @@ describe('Script Transpiler', () => {
     });
 
     it('should convert while loops', () => {
-      const script = 'text text\nwhile condition\n  text("Looping")\nendwhile\nreturn { text: text.snapshot() }';
+      const script = 'text outText\nwhile condition\n  outText("Looping")\nendwhile\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- while condition -%}\n  {%- output_command text("Looping") -%}\n{%- endwhile -%}\n{%- return { text: text.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- while condition -%}\n  {%- output_command outText("Looping") -%}\n{%- endwhile -%}\n{%- return { text: outText.snapshot() } -%}');
     });
   });
 
   // Token type tests
   describe('Token Types', () => {
     it('should handle single-quoted strings', () => {
-      const script = 'text text\ntext(\'Hello, World!\')';
+      const script = 'text outText\noutText(\'Hello, World!\')';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text(\'Hello, World!\') -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText(\'Hello, World!\') -%}');
     });
 
     it('should handle double-quoted strings', () => {
-      const script = 'text text\ntext("Hello, World!")';
+      const script = 'text outText\noutText("Hello, World!")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello, World!") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello, World!") -%}');
     });
 
     it('should handle template literals', () => {
-      const script = 'text text\ntext(`Hello, World!`)';
+      const script = 'text outText\noutText(`Hello, World!`)';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text(`Hello, World!`) -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText(`Hello, World!`) -%}');
     });
 
     it('should handle single-line comments', () => {
-      const script = 'text text\ntext("Hello")// This is a comment';
+      const script = 'text outText\noutText("Hello")// This is a comment';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello") -%}{#- This is a comment -#}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello") -%}{#- This is a comment -#}');
     });
 
     it('should handle multi-line comments', () => {
-      const script = 'text text\ntext("Hello")/* This is a multi-line comment */';
+      const script = 'text outText\noutText("Hello")/* This is a multi-line comment */';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello") -%}{#- This is a multi-line comment -#}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello") -%}{#- This is a multi-line comment -#}');
     });
 
     it('should handle standalone comments', () => {
@@ -556,19 +556,19 @@ describe('Script Transpiler', () => {
     });
 
     it('should handle nested blocks', () => {
-      const script = 'text text\nif condition1\n  if condition2\n    text("Nested")\n  endif\nendif\nreturn { text: text.snapshot() }';
+      const script = 'text outText\nif condition1\n  if condition2\n    outText("Nested")\n  endif\nendif\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- if condition1 -%}\n  {%- if condition2 -%}\n    {%- output_command text("Nested") -%}\n  {%- endif -%}\n{%- endif -%}\n{%- return { text: text.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- if condition1 -%}\n  {%- if condition2 -%}\n    {%- output_command outText("Nested") -%}\n  {%- endif -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should validate middle tags', () => {
-      const script = 'text text\nif condition\n  text("True")\nelse\n  text("False")\nendif\nreturn { text: text.snapshot() }';
+      const script = 'text outText\nif condition\n  outText("True")\nelse\n  outText("False")\nendif\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.be.ok();
     });
 
     it('should detect invalid middle tags', () => {
-      const script = 'text text\nfor item in items\n  text(item)\nelif\n  text("Empty")\nendfor';
+      const script = 'text outText\nfor item in items\n  outText(item)\nelif\n  outText("Empty")\nendfor';
       try {
         scriptTranspiler.scriptToTemplate(script);
       } catch (error) {
@@ -577,7 +577,7 @@ describe('Script Transpiler', () => {
     });
 
     it('should detect middle tags outside blocks', () => {
-      const script = 'text text\ntext("Before")\nelse\ntext("After")';
+      const script = 'text outText\noutText("Before")\nelse\noutText("After")';
       try {
         scriptTranspiler.scriptToTemplate(script);
       } catch (error) {
@@ -586,25 +586,25 @@ describe('Script Transpiler', () => {
     });
 
     it('should validate complex nested block structures', () => {
-      const script = `text text
+      const script = `text outText
 if outerCondition
   for item in items
     if innerCondition
-      text("Inner if")
+      outText("Inner if")
     else
-      text("Inner else")
+      outText("Inner else")
     endif
   endfor
 else
-  text("Outer else")
+  outText("Outer else")
 endif
-return { text: text.snapshot() }`;
+return { text: outText.snapshot() }`;
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.be.ok();
     });
 
     it('should detect invalid resume outside try block', () => {
-      const script = 'text text\ntext("Before")\nresume\ntext("After")\nreturn { text: text.snapshot() }';
+      const script = 'text outText\noutText("Before")\nresume\noutText("After")\nreturn { text: outText.snapshot() }';
       try {
         scriptTranspiler.scriptToTemplate(script);
       } catch (error) {
@@ -614,31 +614,31 @@ return { text: text.snapshot() }`;
 
     it('should handle complex block structure with mixed tags', () => {
       const script = `// Main template
-text text
+text outText
 for product in products
   if product.inStock
     // Format price with currency
     var formattedPrice = formatCurrency(product.price)
 
-    text("<div class='product'>")
-    text("  <h2>" + product.name + "</h2>")
-    text("  <p>Price: " + formattedPrice + "</p>")
+    outText("<div class='product'>")
+    outText("  <h2>" + product.name + "</h2>")
+    outText("  <p>Price: " + formattedPrice + "</p>")
 
     // Check for discount
     if product.hasDiscount
-      text("  <p class='discount'>On sale!</p>")
+      outText("  <p class='discount'>On sale!</p>")
     endif
 
-    text("</div>")
+    outText("</div>")
   else
     // Out of stock message
-    text("<div class='product out-of-stock'>")
-    text("  <h2>" + product.name + "</h2>")
-    text("  <p>Currently unavailable</p>")
-    text("</div>")
+    outText("<div class='product out-of-stock'>")
+    outText("  <h2>" + product.name + "</h2>")
+    outText("  <p>Currently unavailable</p>")
+    outText("</div>")
   endif
 endfor
-return { text: text.snapshot() }`;
+return { text: outText.snapshot() }`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
 
@@ -646,7 +646,7 @@ return { text: text.snapshot() }`;
       expect(template).to.contain('{%- for product in products -%}');
       expect(template).to.contain('{%- if product.inStock -%}');
       expect(template).to.contain(`{%- ${DECL_TAG} formattedPrice = formatCurrency(product.price) -%}`);
-      expect(template).to.contain('{%- output_command text("<div class=\'product\'>") -%}');
+      expect(template).to.contain('{%- output_command outText("<div class=\'product\'>") -%}');
       expect(template).to.contain('{%- if product.hasDiscount -%}');
       expect(template).to.contain('{%- else -%}');
       expect(template).to.contain('{%- endif -%}');
@@ -663,9 +663,9 @@ return { text: text.snapshot() }`;
   // Multi-line expression tests
   describe('Multi-line Expressions', () => {
     it('should handle expressions spanning multiple lines', () => {
-      const script = 'text text\ntext("Hello, " +\n      "World!")\nreturn { text: text.snapshot() }';
+      const script = 'text outText\noutText("Hello, " +\n      "World!")\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello, " +\n      "World!") -%}\n{%- return { text: text.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello, " +\n      "World!") -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should detect continuation at end of line', () => {
@@ -742,27 +742,27 @@ endif`;
   // Output operation tests
   describe('Output Operations', () => {
     it('should convert data set with explicit output variable', () => {
-      const script = 'data data\ndata.user.name = "Alice"';
+      const script = 'data outData\noutData.user.name = "Alice"';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- data data -%}\n{%- output_command data.set(["user", "name"], "Alice") -%}');
+      expect(template).to.equal('{%- data outData -%}\n{%- output_command outData.set(["user", "name"], "Alice") -%}');
     });
 
     it('should convert data push with explicit output variable', () => {
-      const script = 'data data\ndata.user.roles.push("admin")';
+      const script = 'data outData\noutData.user.roles.push("admin")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- data data -%}\n{%- output_command data.push(["user", "roles"],"admin") -%}');
+      expect(template).to.equal('{%- data outData -%}\n{%- output_command outData.push(["user", "roles"],"admin") -%}');
     });
 
     it('should convert root-level data operations', () => {
-      const script = 'data data\ndata.merge({ version: "1.1" })';
+      const script = 'data outData\noutData.merge({ version: "1.1" })';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- data data -%}\n{%- output_command data.merge(null,{ version: "1.1" }) -%}');
+      expect(template).to.equal('{%- data outData -%}\n{%- output_command outData.merge(null,{ version: "1.1" }) -%}');
     });
 
     it('should convert text output calls', () => {
-      const script = 'text text\ntext("Hello, World!")';
+      const script = 'text outText\noutText("Hello, World!")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Hello, World!") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello, World!") -%}');
     });
 
     it('should convert sink output calls', () => {
@@ -783,24 +783,24 @@ endif`;
     });
 
     it('should preserve comments on output operations', () => {
-      const script = 'data data\ndata.user.name = "Alice" // Set user name';
+      const script = 'data outData\noutData.user.name = "Alice" // Set user name';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- data data -%}\n{%- output_command data.set(["user", "name"], "Alice" ) -%}{#- Set user name -#}');
+      expect(template).to.equal('{%- data outData -%}\n{%- output_command outData.set(["user", "name"], "Alice" ) -%}{#- Set user name -#}');
     });
 
     it('should handle indentation with output operations', () => {
-      const script = 'data data\n  data.user.name = "Alice"';
+      const script = 'data outData\n  outData.user.name = "Alice"';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- data data -%}\n  {%- output_command data.set(["user", "name"], "Alice") -%}');
+      expect(template).to.equal('{%- data outData -%}\n  {%- output_command outData.set(["user", "name"], "Alice") -%}');
     });
 
     it('should throw error for invalid path segments', () => {
-      const script = 'data data\ndata.user..name = "Alice"';
+      const script = 'data outData\noutData.user..name = "Alice"';
       expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('Invalid path: empty path component (consecutive dots)');
     });
 
     it('should throw error for invalid command identifier', () => {
-      const script = 'data data\ndata.user.name.123invalid("Alice")';
+      const script = 'data outData\noutData.user.name.123invalid("Alice")';
       expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException('is not a valid identifier');
     });
   });
@@ -820,33 +820,33 @@ endif`;
     });
 
     it('should handle special characters', () => {
-      const script = 'text text\ntext("@#$%^&*")';
+      const script = 'text outText\noutText("@#$%^&*")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("@#$%^&*") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("@#$%^&*") -%}');
     });
 
     it('should handle escape sequences in strings', () => {
-      const script = 'text text\ntext("Line 1\\nLine 2")';
+      const script = 'text outText\noutText("Line 1\\nLine 2")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Line 1\\nLine 2") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Line 1\\nLine 2") -%}');
     });
 
     it('should handle multi-line string literals', () => {
-      const script = 'text text\ntext("Line 1\\\nLine 2")\nreturn { text: text.snapshot() }';
+      const script = 'text outText\noutText("Line 1\\\nLine 2")\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("Line 1\\\nLine 2") -%}\n{%- return { text: text.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Line 1\\\nLine 2") -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should handle strings with embedded quotes', () => {
-      const script = 'text text\ntext("He said \\"Hello\\"")';
+      const script = 'text outText\noutText("He said \\"Hello\\"")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("He said \\"Hello\\"") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("He said \\"Hello\\"") -%}');
     });
 
     it('should handle strings with multiple line continuations', () => {
-      const script = 'text text\ntext("First line \\\nSecond line \\\nThird line")\nreturn { text: text.snapshot() }';
+      const script = 'text outText\noutText("First line \\\nSecond line \\\nThird line")\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text text -%}\n{%- output_command text("First line \\\nSecond line \\\nThird line") -%}\n{%- return { text: text.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("First line \\\nSecond line \\\nThird line") -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should handle empty blocks', () => {
@@ -895,14 +895,14 @@ endif`;
 
     it('should handle var declarations with block assignment', () => {
       const script = `var report = capture
-  data data
-  data.report.title = "Q3 Summary"
-  data.report.status = "complete"
-  return data.snapshot()
+  data outData
+  outData.report.title = "Q3 Summary"
+  outData.report.status = "complete"
+  return outData.snapshot()
 endcapture
 return {}`;
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- var report  -%}\n  {%- data data -%}\n  {%- output_command data.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command data.set(["report", "status"], "complete") -%}\n  {%- return data.snapshot() -%}\n{%- endvar -%}\n{%- return {} -%}');
+      expect(template).to.equal('{%- var report  -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- endvar -%}\n{%- return {} -%}');
     });
 
     it('should handle extern declarations', () => {
@@ -919,14 +919,14 @@ return {}`;
 
     it('should handle block assignments with capture', () => {
       const script = `var report = capture
-  data data
-  data.report.title = "Q3 Summary"
-  data.report.status = "complete"
-  return data.snapshot()
+  data outData
+  outData.report.title = "Q3 Summary"
+  outData.report.status = "complete"
+  return outData.snapshot()
 endcapture
 return {}`;
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- var report  -%}\n  {%- data data -%}\n  {%- output_command data.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command data.set(["report", "status"], "complete") -%}\n  {%- return data.snapshot() -%}\n{%- endvar -%}\n{%- return {} -%}');
+      expect(template).to.equal('{%- var report  -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- endvar -%}\n{%- return {} -%}');
     });
 
     it('should handle complex assignments with expressions', () => {
@@ -956,9 +956,9 @@ return {}`;
 
     it('should transpile value capture declarations to value/endvalue block tags', () => {
       const script = `value x = capture
-  text text
-  text("ok")
-  return text.snapshot()
+  text outText
+  outText("ok")
+  return outText.snapshot()
 endcapture
 return x.snapshot()`;
       const template = scriptTranspiler.scriptToTemplate(script);
@@ -1002,81 +1002,81 @@ endcall`;
     it('should convert a complete script with all features', () => {
       const script = `
         // A complete script example
-        data data
-        text text
+        data outData
+        text outText
         var user = { name: "Alice", role: "admin" }
         if user.role == "admin"
-          text("Hello, " + user.name)
+          outText("Hello, " + user.name)
           for item in user.items
-            text(item.name)
+            outText(item.name)
           endfor
         else
-          text("Access denied")
+          outText("Access denied")
         endif
 
-        return data.snapshot()`;
+        return outData.snapshot()`;
 
       const result = scriptTranspiler.scriptToTemplate(script, aliasOptions);
       expect(result).to.equal(`
         {#- A complete script example -#}
-        {%- data dat -%}
-        {%- text tex -%}
+        {%- data outData -%}
+        {%- text outText -%}
         {%- ${DECL_TAG} user = { name: "Alice", role: "admin" } -%}
         {%- if user.role == "admin" -%}
-          {%- output_command tex("Hello, " + user.name) -%}
+          {%- output_command outText("Hello, " + user.name) -%}
           {%- for item in user.items -%}
-            {%- output_command tex(item.name) -%}
+            {%- output_command outText(item.name) -%}
           {%- endfor -%}
         {%- else -%}
-          {%- output_command tex("Access denied") -%}
+          {%- output_command outText("Access denied") -%}
         {%- endif -%}
 
-        {%- return data.snapshot() -%}`);
+        {%- return outData.snapshot() -%}`);
     });
 
     it('should handle complex mathematical expressions', () => {
       const script = `// Calculate total
-      text text
+      text outText
       var total = price *
         (1 + taxRate) *
         (1 - discount)
-      text("Total: $" + total.toFixed(2))
-      return { text: text.snapshot() }`;
+      outText("Total: $" + total.toFixed(2))
+      return { text: outText.snapshot() }`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.contain(`{%- ${DECL_TAG} total = price *`);
       expect(template).to.contain('(1 + taxRate) *');
       expect(template).to.contain('(1 - discount) -%}');
-      expect(template).to.contain('{%- output_command text("Total: $" + total.toFixed(2)) -%}');
+      expect(template).to.contain('{%- output_command outText("Total: $" + total.toFixed(2)) -%}');
     });
 
     it('should handle complex block structure with mixed tags', () => {
       const script = `// Main template
-text text
+text outText
 for product in products
   if product.inStock
     // Format price with currency
     var formattedPrice = formatCurrency(product.price)
 
-    text("<div class='product'>")
-    text("  <h2>" + product.name + "</h2>")
-    text("  <p>Price: " + formattedPrice + "</p>")
+    outText("<div class='product'>")
+    outText("  <h2>" + product.name + "</h2>")
+    outText("  <p>Price: " + formattedPrice + "</p>")
 
     // Check for discount
     if product.hasDiscount
-      text("  <p class='discount'>On sale!</p>")
+      outText("  <p class='discount'>On sale!</p>")
     endif
 
-    text("</div>")
+    outText("</div>")
   else
     // Out of stock message
-    text("<div class='product out-of-stock'>")
-    text("  <h2>" + product.name + "</h2>")
-    text("  <p>Currently unavailable</p>")
-    text("</div>")
+    outText("<div class='product out-of-stock'>")
+    outText("  <h2>" + product.name + "</h2>")
+    outText("  <p>Currently unavailable</p>")
+    outText("</div>")
   endif
 endfor
-return { text: text.snapshot() }`;
+return { text: outText.snapshot() }`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
 
@@ -1084,7 +1084,7 @@ return { text: text.snapshot() }`;
       expect(template).to.contain('{%- for product in products -%}');
       expect(template).to.contain('{%- if product.inStock -%}');
       expect(template).to.contain(`{%- ${DECL_TAG} formattedPrice = formatCurrency(product.price) -%}`);
-      expect(template).to.contain('{%- output_command text("<div class=\'product\'>") -%}');
+      expect(template).to.contain('{%- output_command outText("<div class=\'product\'>") -%}');
       expect(template).to.contain('{%- if product.hasDiscount -%}');
       expect(template).to.contain('{%- else -%}');
       expect(template).to.contain('{%- endif -%}');
@@ -1099,30 +1099,30 @@ return { text: text.snapshot() }`;
 
     it('should handle while loops with while iteration', () => {
       const script = `// Async iterator example
-text text
+text outText
 var stream = createAsyncStream()
 while stream.hasNext()
   var chunk = stream.next()
-  text("Processing chunk " + loop.index + ": " + chunk)
+  outText("Processing chunk " + loop.index + ": " + chunk)
 
   // Skip empty chunks
   if !chunk
-    text('Empty chunk')
+    outText('Empty chunk')
   else
     // Process the chunk
     results.push(processChunk(chunk))
   endif
 endwhile
-return { text: text.snapshot() }`;
+return { text: outText.snapshot() }`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
 
       expect(template).to.contain(`{%- ${DECL_TAG} stream = createAsyncStream() -%}`);
       expect(template).to.contain('{%- while stream.hasNext() -%}');
       expect(template).to.contain(`{%- ${DECL_TAG} chunk = stream.next() -%}`);
-      expect(template).to.contain('{%- output_command text("Processing chunk " + loop.index + ": " + chunk) -%}');
+      expect(template).to.contain('{%- output_command outText("Processing chunk " + loop.index + ": " + chunk) -%}');
       expect(template).to.contain('{%- if !chunk -%}');
-      expect(template).to.contain('{%- output_command text(\'Empty chunk\') -%}');
+      expect(template).to.contain('{%- output_command outText(\'Empty chunk\') -%}');
       expect(template).to.contain('{%- else -%}');
       expect(template).to.contain('{%- do results.push(processChunk(chunk)) -%}');
       expect(template).to.contain('{%- endif -%}');
@@ -1131,28 +1131,28 @@ return { text: text.snapshot() }`;
 
     it('should handle template composition with dependencies', () => {
       const script = `// Template with dependencies
-text text
+text outText
 depends frameVar1, frameVar2, frameVar3
 
 extends "parentTemplate_" + dynamicPart + ".njk"
 
 // Define block with content
 block content
-  text("<h1>" + frameVar1 + "</h1>")
-  text("<h2>" + frameVar2 + "</h2>")
+  outText("<h1>" + frameVar1 + "</h1>")
+  outText("<h2>" + frameVar2 + "</h2>")
   frameVar3 = "Updated Value"
 
   // Include partial with dependencies
   include includedTemplateName + ".njk" depends = var1, var2
 endblock
-return { text: text.snapshot() }`;
+return { text: outText.snapshot() }`;
 
       const template = scriptTranspiler.scriptToTemplate(script);
 
       expect(template).to.contain('{%- depends frameVar1, frameVar2, frameVar3 -%}');
       expect(template).to.contain('{%- extends "parentTemplate_" + dynamicPart + ".njk" -%}');
       expect(template).to.contain('{%- block content -%}');
-      expect(template).to.contain('{%- output_command text("<h1>" + frameVar1 + "</h1>") -%}');
+      expect(template).to.contain('{%- output_command outText("<h1>" + frameVar1 + "</h1>") -%}');
       expect(template).to.contain('{%- set frameVar3 = "Updated Value" -%}');
       expect(template).to.contain('{%- include includedTemplateName + ".njk" depends = var1, var2 -%}');
       expect(template).to.contain('{%- endblock -%}');

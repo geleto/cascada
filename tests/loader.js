@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   'use strict';
 
   var expect,
@@ -1318,9 +1318,9 @@
         class ScriptClassLoader {
           load(name) {
             if (name === 'script-constructor-test.njk') {
-              return `              data data
-              data.set(null, value)
-              return data.snapshot()`;
+              return `              data outData
+              outData.set(null, value)
+              return outData.snapshot()`;
             }
           }
         }

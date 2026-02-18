@@ -75,6 +75,7 @@ const CONVERT_VAR_TO_VALUE = false;
 
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
+const { RESERVED_DECLARATION_NAMES } = require('../compiler/validation');
 
 class ScriptTranspiler {
   constructor() {
@@ -168,6 +169,9 @@ class ScriptTranspiler {
       ...Object.keys(this.SYNTAX.middleTags),
       ...Object.values(this.SYNTAX.blockPairs)
     ]);
+
+    // Reserved declaration names are not allowed for script vars or outputs.
+    this.RESERVED_DECLARATION_NAMES = RESERVED_DECLARATION_NAMES;
 
     // Track block stack for declaration/assignment blocks
     this.setBlockStack = []; // 'var', 'value', 'set', or internal 'setval'
@@ -812,6 +816,14 @@ class ScriptTranspiler {
     return true;
   }
 
+  _assertNonReservedDeclarationNames(names, lineIndex) {
+    for (const name of names) {
+      if (this.RESERVED_DECLARATION_NAMES.has(name)) {
+        throw new Error(`Identifier '${name}' is reserved and cannot be used as a variable or output name at line ${lineIndex + 1}`);
+      }
+    }
+  }
+
   /**
    * Identifies logical sections of the statement using path parsing logic
    * @param {string} codeContent - The code to parse
@@ -908,6 +920,10 @@ class ScriptTranspiler {
       if (!this._isValidIdentifierList(content)) {
         throw new Error(`Invalid variable name: "${content}" at line ${lineIndex + 1}`);
       }
+      if (!isAssignment) {
+        const declaredNames = content.split(',').map(name => name.trim()).filter(Boolean);
+        this._assertNonReservedDeclarationNames(declaredNames, lineIndex);
+      }
       if (isAssignment) {
         // This should not be possible if _isAssignment works correctly
         throw new Error(`Invalid assignment state: "${content}" at line ${lineIndex + 1}`);
@@ -939,6 +955,11 @@ class ScriptTranspiler {
         }
         // If it looks like assignment but failed path parsing/identifier check
         throw new Error(`Invalid variable name or path: "${targetsStr}" at line ${lineIndex + 1}`);
+      }
+
+      if (!isAssignment) {
+        const declaredNames = targetsStr.split(',').map(name => name.trim()).filter(Boolean);
+        this._assertNonReservedDeclarationNames(declaredNames, lineIndex);
       }
 
       // Check for capture block
@@ -1237,6 +1258,7 @@ class ScriptTranspiler {
     if (!this._isValidIdentifierList(externContent)) {
       throw new Error(`Invalid variable name in extern declaration: "${externContent}" at line ${lineIndex + 1}`);
     }
+    this._assertNonReservedDeclarationNames(externContent.split(',').map(name => name.trim()).filter(Boolean), lineIndex);
 
     parseResult.lineType = 'TAG';
     parseResult.tagName = 'extern';
@@ -1258,6 +1280,9 @@ class ScriptTranspiler {
       throw new Error(`Invalid output declaration at line ${lineIndex + 1}`);
     }
     const name = nameMatch[1];
+    if (this.RESERVED_DECLARATION_NAMES.has(name)) {
+      throw new Error(`Identifier '${name}' is reserved and cannot be used as a variable or output name at line ${lineIndex + 1}`);
+    }
     const initializer = remainder.substring(name.length).trim();
     return { outputType, name, initializer };
   }

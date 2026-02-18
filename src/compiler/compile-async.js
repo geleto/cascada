@@ -10,8 +10,7 @@ const asyncOperationNodes = new Set([
 
 const {
   ENABLE_READVARS_VALIDATION,
-  markReadVarPassThrough,
-  validateDeclarationScope
+  markReadVarPassThrough
 } = require('./validation');
 
 module.exports = class CompileAsync {
@@ -159,46 +158,6 @@ module.exports = class CompileAsync {
       }
       frame = frame.parent;
     }
-  }
-
-  _addDeclaredOutput(frame, name, outputType, initializer = null, node = null) {
-    validateDeclarationScope(frame, name, this.compiler, node);
-    frame.declaredOutputs = frame.declaredOutputs || new Map();
-
-    if (frame.declaredOutputs.has(name)) {
-      this.compiler.fail(`Output '${name}' already declared`, node && node.lineno, node && node.colno, node || undefined);
-    }
-
-    // Match variable declaration semantics: disallow shadowing parent declarations.
-    let parentFrame = frame && frame.parent;
-    while (parentFrame) {
-      if (parentFrame.declaredOutputs && parentFrame.declaredOutputs.has(name)) {
-        this.compiler.fail(
-          `Cannot declare output '${name}' because it shadows an output declared in a parent scope`,
-          node && node.lineno,
-          node && node.colno,
-          node || undefined
-        );
-      }
-      parentFrame = parentFrame.parent;
-    }
-
-    // Output declarations cannot conflict with variables in the same lexical frame chain.
-    // Note: we intentionally do NOT consider outputParent here; macro/call detached scopes
-    // can still access outer outputs via @name without having lexical name conflicts.
-    if (this.compiler._isDeclared(frame, name)) {
-      this.compiler.fail(
-        `Cannot declare output '${name}' because a variable with the same name is already declared`,
-        node && node.lineno,
-        node && node.colno,
-        node || undefined
-      );
-    }
-
-    frame.declaredOutputs.set(name, {
-      type: outputType,
-      initializer: initializer || null,
-    });
   }
 
   _getDeclaredOutput(frame, name) {

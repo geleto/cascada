@@ -1,4 +1,5 @@
 const {
+  RESERVED_DECLARATION_NAMES,
   validateResolveUp,
   validateGuardVariablesDeclared,
   validateGuardVariablesModified,
@@ -56,6 +57,59 @@ class Compiler extends CompilerBase {
       }
       frame.declaredVars.add(varName);
     }
+  }
+
+  isReservedDeclarationName(name) {
+    return RESERVED_DECLARATION_NAMES.has(name);
+  }
+
+  _addDeclaredOutput(frame, name, outputType, initializer = null, node = null) {
+    validateDeclarationScope(frame, name, this, node);
+    frame.declaredOutputs = frame.declaredOutputs || new Map();
+
+    if (this.isReservedDeclarationName(name)) {
+      this.fail(
+        `Identifier '${name}' is reserved and cannot be used as a variable or output name.`,
+        node && node.lineno,
+        node && node.colno,
+        node || undefined
+      );
+    }
+
+    if (frame.declaredOutputs.has(name)) {
+      this.fail(`Output '${name}' already declared`, node && node.lineno, node && node.colno, node || undefined);
+    }
+
+    // Match variable declaration semantics: disallow shadowing parent declarations.
+    let parentFrame = frame && frame.parent;
+    while (parentFrame) {
+      if (parentFrame.declaredOutputs && parentFrame.declaredOutputs.has(name)) {
+        this.fail(
+          `Cannot declare output '${name}' because it shadows an output declared in a parent scope`,
+          node && node.lineno,
+          node && node.colno,
+          node || undefined
+        );
+      }
+      parentFrame = parentFrame.parent;
+    }
+
+    // Output declarations cannot conflict with variables in the same lexical frame chain.
+    // Note: we intentionally do NOT consider outputParent here; macro/call detached scopes
+    // can still access outer outputs via @name without having lexical name conflicts.
+    if (this._isDeclared(frame, name)) {
+      this.fail(
+        `Cannot declare output '${name}' because a variable with the same name is already declared`,
+        node && node.lineno,
+        node && node.colno,
+        node || undefined
+      );
+    }
+
+    frame.declaredOutputs.set(name, {
+      type: outputType,
+      initializer: initializer || null,
+    });
   }
 
   //@todo - move to compile-base
@@ -440,7 +494,7 @@ class Compiler extends CompilerBase {
       validateSetTarget(this, validationNode, target, name, isDeclaredForValidation);
 
       if (isDeclaration) {
-        this.async._addDeclaredOutput(frame, name, 'value', null, node);
+        this._addDeclaredOutput(frame, name, 'value', null, node);
         this.emit(`runtime.declareOutput(frame, "${name}", "value", context, null);`);
       } else {
         if (!(declaredOutput && declaredOutput.type === 'value')) {
@@ -1657,7 +1711,7 @@ class Compiler extends CompilerBase {
       this.fail(`${outputType} outputs must have an initializer`, node.lineno, node.colno, node);
     }
 
-    this.async._addDeclaredOutput(frame, name, outputType, node.initializer, node);
+    this._addDeclaredOutput(frame, name, outputType, node.initializer, node);
 
     this.emit(`runtime.declareOutput(frame, "${name}", "${outputType}", context, `);
     if (outputType === 'sink' || outputType === 'sequence') {

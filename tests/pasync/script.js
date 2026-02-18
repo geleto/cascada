@@ -36,11 +36,11 @@ describe('Cascada Script: Variables', function () {
     it('should declare a variable with default value none', async function () {
       const script = `
         var report
-        var value = 1
+        var amount = 1
 		    var result = {}
 		    result.hasReportValue = report !== none
-        result.hasValue = value !== none
-        result.value = value
+        result.hasValue = amount !== none
+        result.value = amount
         result.reportValue = report
 
 		    return result`;
@@ -74,6 +74,23 @@ describe('Cascada Script: Variables', function () {
         expect().fail('Should have thrown an error');
       } catch (error) {
         expect(error.message).to.contain('has already been declared');
+      }
+    });
+
+    it('should reject reserved keywords as variable names', async function () {
+      const scripts = [
+        'var data = 1',
+        'var value = 2',
+        'var sink = 3'
+      ];
+
+      for (const script of scripts) {
+        try {
+          await env.renderScriptString(script, {});
+          expect().fail(`Should have thrown for script: ${script}`);
+        } catch (error) {
+          expect(error.message).to.contain('is reserved');
+        }
       }
     });
   });

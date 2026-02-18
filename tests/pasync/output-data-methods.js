@@ -22,50 +22,50 @@ describe('Cascada Script: @data String and Array Methods', function () {
   describe('Auto-initialization of sub-properties', function () {
     it('should auto-initialize an array for push on an undefined path', async () => {
       const script = `
-        data data
-        data.items.push(1)
+        data outData
+        outData.items.push(1)
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ items: [1] });
     });
 
     it('should auto-initialize an array for concat on an undefined path', async () => {
       const script = `
-        data data
-        data.items.concat([1, 2])
+        data outData
+        outData.items.concat([1, 2])
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ items: [1, 2] });
     });
 
     it('should auto-initialize an array for unshift on an undefined path', async () => {
       const script = `
-        data data
-        data.items.unshift(1)
+        data outData
+        outData.items.unshift(1)
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ items: [1] });
     });
 
     it('should auto-initialize an object for merge on an undefined path', async () => {
       const script = `
-        data data
-        data.config.merge({ setting: 'on' })
+        data outData
+        outData.config.merge({ setting: 'on' })
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ config: { setting: 'on' } });
     });
 
     it('should auto-initialize an object for deepMerge on an undefined path', async () => {
       const script = `
-        data data
-        data.config.deepMerge({ setting: 'on' })
+        data outData
+        outData.config.deepMerge({ setting: 'on' })
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({ config: { setting: 'on' } });
     });
@@ -74,22 +74,22 @@ describe('Cascada Script: @data String and Array Methods', function () {
   describe('Root @data Modification', function () {
     it('should allow pushing to the root object after it is set to an array', async () => {
       const script = `
-        data data
-        data = []
-        data.push(10)
-        data.push(20)
+        data outData
+        outData = []
+        outData.push(10)
+        outData.push(20)
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql([10, 20]);
     });
 
     it('should throw an error when pushing to the default root object', async () => {
       const script = `
-        data data
-        data.push(1)
+        data outData
+        outData.push(1)
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       try {
         await env.renderScriptString(script);
         expect().fail('Should have thrown an error');
@@ -100,11 +100,11 @@ describe('Cascada Script: @data String and Array Methods', function () {
 
     it('should throw a parser error for compound assignment on root @data', async () => {
       const script = `
-        data data
+        data outData
         data = 100
-        data += 50
+        outData += 50
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       try {
         await env.renderScriptString(script);
         expect().fail('Should have thrown a parser error');
@@ -115,10 +115,10 @@ describe('Cascada Script: @data String and Array Methods', function () {
 
     it('should throw a parser error when adding to the default root object', async () => {
       const script = `
-        data data
-        data += 1
+        data outData
+        outData += 1
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       try {
         await env.renderScriptString(script);
         expect().fail('Should have thrown an error');
@@ -130,26 +130,26 @@ describe('Cascada Script: @data String and Array Methods', function () {
 
   describe('String Methods', function () {
     describe('Case Conversion', function () {
-      it('should handle @data.toUpperCase', async () => {
+      it('should handle @outData.toUpperCase', async () => {
         const script = `
-          data data
-          data.text = "hello world"
-          data.text.toUpperCase()
+          data outData
+          outData.text = "hello world"
+          outData.text.toUpperCase()
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: 'HELLO WORLD'
         });
       });
 
-      it('should handle @data.toLowerCase', async () => {
+      it('should handle @outData.toLowerCase', async () => {
         const script = `
-          data data
-          data.text = "HELLO WORLD"
-          data.text.toLowerCase()
+          data outData
+          outData.text = "HELLO WORLD"
+          outData.text.toLowerCase()
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: 'hello world'
@@ -158,26 +158,26 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
 
     describe('String Extraction', function () {
-      it('should handle @data.slice', async () => {
+      it('should handle @outData.slice', async () => {
         const script = `
-          data data
-          data.text = "JavaScript"
-          data.text.slice(4)
+          data outData
+          outData.text = "JavaScript"
+          outData.text.slice(4)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: 'Script'
         });
       });
 
-      it('should handle @data.substring', async () => {
+      it('should handle @outData.substring', async () => {
         const script = `
-          data data
-          data.text = "JavaScript"
-          data.text.substring(0, 4)
+          data outData
+          outData.text = "JavaScript"
+          outData.text.substring(0, 4)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: 'Java'
@@ -186,39 +186,39 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
 
     describe('String Trimming', function () {
-      it('should handle @data.trim', async () => {
+      it('should handle @outData.trim', async () => {
         const script = `
-          data data
-          data.text = "  hello world  "
-          data.text.trim()
+          data outData
+          outData.text = "  hello world  "
+          outData.text.trim()
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: 'hello world'
         });
       });
 
-      it('should handle @data.trimStart', async () => {
+      it('should handle @outData.trimStart', async () => {
         const script = `
-          data data
-          data.text = "  hello world  "
-          data.text.trimStart()
+          data outData
+          outData.text = "  hello world  "
+          outData.text.trimStart()
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: 'hello world  '
         });
       });
 
-      it('should handle @data.trimEnd', async () => {
+      it('should handle @outData.trimEnd', async () => {
         const script = `
-          data data
-          data.text = "  hello world  "
-          data.text.trimEnd()
+          data outData
+          outData.text = "  hello world  "
+          outData.text.trimEnd()
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: '  hello world'
@@ -227,26 +227,26 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
 
     describe('String Replacement', function () {
-      it('should handle @data.replace', async () => {
+      it('should handle @outData.replace', async () => {
         const script = `
-          data data
-          data.text = "apple banana apple"
-          data.text.replace("apple", "orange")
+          data outData
+          outData.text = "apple banana apple"
+          outData.text.replace("apple", "orange")
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: 'orange banana apple'
         });
       });
 
-      it('should handle @data.replaceAll', async () => {
+      it('should handle @outData.replaceAll', async () => {
         const script = `
-          data data
-          data.text = "apple banana apple"
-          data.text.replaceAll("apple", "orange")
+          data outData
+          outData.text = "apple banana apple"
+          outData.text.replaceAll("apple", "orange")
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: 'orange banana orange'
@@ -255,13 +255,13 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
 
     describe('String Splitting', function () {
-      it('should handle @data.split', async () => {
+      it('should handle @outData.split', async () => {
         const script = `
-          data data
-          data.text = "one,two,three"
-          data.text.split(",")
+          data outData
+          outData.text = "one,two,three"
+          outData.text.split(",")
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: ['one', 'two', 'three']
@@ -270,13 +270,13 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
 
     describe('Character Access', function () {
-      it('should handle @data.charAt', async () => {
+      it('should handle @outData.charAt', async () => {
         const script = `
-          data data
-          data.text = "JavaScript"
-          data.text.charAt(4)
+          data outData
+          outData.text = "JavaScript"
+          outData.text.charAt(4)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: 'S'
@@ -285,13 +285,13 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
 
     describe('String Repetition', function () {
-      it('should handle @data.repeat', async () => {
+      it('should handle @outData.repeat', async () => {
         const script = `
-          data data
-          data.text = "ha"
-          data.text.repeat(3)
+          data outData
+          outData.text = "ha"
+          outData.text.repeat(3)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           text: 'hahaha'
@@ -302,13 +302,13 @@ describe('Cascada Script: @data String and Array Methods', function () {
 
   describe('Array Methods', function () {
     describe('Array Access', function () {
-      it('should handle @data.at', async () => {
+      it('should handle @outData.at', async () => {
         const script = `
-          data data
-          data.items = ["a", "b", "c", "d"]
-          data.items.at(-1)
+          data outData
+          outData.items = ["a", "b", "c", "d"]
+          outData.items.at(-1)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           items: 'd'
@@ -317,26 +317,26 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
 
     describe('Array Sorting', function () {
-      it('should handle @data.sort', async () => {
+      it('should handle @outData.sort', async () => {
         const script = `
-          data data
-          data.items = ["banana", "apple", "cherry"]
-          data.items.sort()
+          data outData
+          outData.items = ["banana", "apple", "cherry"]
+          outData.items.sort()
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           items: ['apple', 'banana', 'cherry']
         });
       });
 
-      it('should handle @data.sortWith with a custom function from context', async () => {
+      it('should handle @outData.sortWith with a custom function from context', async () => {
         const script = `
-          data data
-          data.items = [3, 1, 4, 1, 5, 9]
-          data.items.sortWith(descendingSort)
+          data outData
+          outData.items = [3, 1, 4, 1, 5, 9]
+          outData.items.sortWith(descendingSort)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const context = {
           descendingSort: (a, b) => b - a
         };
@@ -348,13 +348,13 @@ describe('Cascada Script: @data String and Array Methods', function () {
     });
 
     describe('Array Slicing', function () {
-      it('should handle @data.arraySlice', async () => {
+      it('should handle @outData.arraySlice', async () => {
         const script = `
-          data data
-          data.items = ["a", "b", "c", "d", "e"]
-          data.items.arraySlice(1, 4)
+          data outData
+          outData.items = ["a", "b", "c", "d", "e"]
+          outData.items.arraySlice(1, 4)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script);
         expect(result).to.eql({
           items: ['b', 'c', 'd']
@@ -366,11 +366,11 @@ describe('Cascada Script: @data String and Array Methods', function () {
   describe('Error Handling', function () {
     it('should throw error for string methods on non-strings', async () => {
       const script = `
-        data data
-        data.value = 123
-        data.value.toUpperCase()
+        data outData
+        outData.value = 123
+        outData.value.toUpperCase()
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       try {
         await env.renderScriptString(script);
         expect().fail('Should have thrown an error');
@@ -381,11 +381,11 @@ describe('Cascada Script: @data String and Array Methods', function () {
 
     it('should throw error for array methods on non-arrays', async () => {
       const script = `
-        data data
-        data.value = "hello"
-        data.value.sort()
+        data outData
+        outData.value = "hello"
+        outData.value.sort()
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       try {
         await env.renderScriptString(script);
         expect().fail('Should have thrown an error');
@@ -401,44 +401,44 @@ describe('Cascada Script: @data String and Array Methods', function () {
     describe('Min/Max', function () {
       it('should support min', async function () {
         const script = `
-          data data
-          data.val = 10
-          data.val.min(5)
+          data outData
+          outData.val = 10
+          outData.val.min(5)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result.val).to.be(5);
       });
 
       it('should support min with larger value', async function () {
         const script = `
-          data data
-          data.val = 3
-          data.val.min(5)
+          data outData
+          outData.val = 3
+          outData.val.min(5)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result.val).to.be(3);
       });
 
       it('should support max', async function () {
         const script = `
-          data data
-          data.val = 10
-          data.val.max(20)
+          data outData
+          outData.val = 10
+          outData.val.max(20)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result.val).to.be(20);
       });
 
       it('should support max with smaller value', async function () {
         const script = `
-          data data
-          data.val = 100
-          data.val.max(20)
+          data outData
+          outData.val = 100
+          outData.val.max(20)
         
-          return data.snapshot()`;
+          return outData.snapshot()`;
         const result = await env.renderScriptString(script, {});
         expect(result.val).to.be(100);
       });
@@ -448,13 +448,13 @@ describe('Cascada Script: @data String and Array Methods', function () {
   describe('Complex Scenarios', function () {
     it('should handle chained string and array methods', async () => {
       const script = `
-        data data
-        data.text = "apple,banana,cherry,date"
-        data.text.split(",")
-        data.text.sort()
-        data.text.at(0)
+        data outData
+        outData.text = "apple,banana,cherry,date"
+        outData.text.split(",")
+        outData.text.sort()
+        outData.text.at(0)
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         text: 'apple'
@@ -463,15 +463,15 @@ describe('Cascada Script: @data String and Array Methods', function () {
 
     it('should handle methods on nested array elements', async () => {
       const script = `
-        data data
+        data outData
         var users = [
           { name: "Alice", scores: [85, 90, 78] },
           { name: "Bob", scores: [92, 88, 95] }
         ]
-        data.users = users
-        data.users[0].scores.sort()
+        outData.users = users
+        outData.users[0].scores.sort()
       
-        return data.snapshot()`;
+        return outData.snapshot()`;
       const result = await env.renderScriptString(script);
       expect(result).to.eql({
         users: [

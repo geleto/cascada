@@ -609,11 +609,11 @@
       it('should recover from error in simple assignment', async () => {
         const script = `
           data result
-          var value = getValue()
-          if heal and value is error
-            value = "fallback"
+          var fetchedValue = getValue()
+          if heal and fetchedValue is error
+            fetchedValue = "fallback"
           endif
-          result.result = value
+          result.result = fetchedValue
 
           return result.snapshot()`;
 
@@ -703,11 +703,11 @@
       it('should recover from error in @data output with filter', async () => {
         const script = `
           data result
-          var text = getText()
-          if heal and text is error
-            text = "default text"
+          var fetchedText = getText()
+          if heal and fetchedText is error
+            fetchedText = "default text"
           endif
-          result.message = text | upper
+          result.message = fetchedText | upper
 
           return result.snapshot()`;
 

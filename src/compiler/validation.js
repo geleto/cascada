@@ -19,6 +19,8 @@ const ENABLE_SCOPE_VALIDATION = true;
 // This helps catch missing snapshots (critical) and unused snapshots (optimization).
 const ENABLE_READVARS_VALIDATION = true;
 
+const RESERVED_DECLARATION_NAMES = new Set(['var', 'data', 'text', 'value', 'sink', 'sequence']);
+
 /**
  * Track the depth of a frame at compile-time for balance validation.
  * @param {Frame} newFrame - The new frame being pushed
@@ -117,6 +119,9 @@ function validateSetTarget(compiler, node, target, name, isDeclared) {
     // Script mode: Enforce strict var/set/extern rules.
     switch (node.varType) {
       case 'declaration': // from 'var'
+        if (compiler.isReservedDeclarationName && compiler.isReservedDeclarationName(name)) {
+          compiler.fail(`Identifier '${name}' is reserved and cannot be used as a variable or output name.`, target.lineno, target.colno, node, target);
+        }
         if (isDeclared) {
           compiler.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
         }
@@ -127,6 +132,9 @@ function validateSetTarget(compiler, node, target, name, isDeclared) {
         }
         break;
       case 'extern': // from 'extern'
+        if (compiler.isReservedDeclarationName && compiler.isReservedDeclarationName(name)) {
+          compiler.fail(`Identifier '${name}' is reserved and cannot be used as a variable or output name.`, target.lineno, target.colno, node, target);
+        }
         if (isDeclared) {
           compiler.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
         }
@@ -302,6 +310,7 @@ function validateReadVarsConsistency(frame, compiler, node) {
 
 
 module.exports = {
+  RESERVED_DECLARATION_NAMES,
   ENABLE_RESOLVEUP_VALIDATION,
   ENABLE_FRAME_BALANCE_VALIDATION,
   ENABLE_SCOPE_VALIDATION,

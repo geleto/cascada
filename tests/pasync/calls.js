@@ -32,7 +32,7 @@
       const script = `
         var result = {}
         macro map(items)
-          data data
+          data outData
           var out = []
           for item in items
             out.push(caller(item))
@@ -55,7 +55,7 @@
       const script = `
         var result = {}
         macro map(items)
-          data data
+          data outData
           var out = []
           for item in items
             out.push(caller(item))
