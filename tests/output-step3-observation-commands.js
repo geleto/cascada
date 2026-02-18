@@ -51,4 +51,47 @@ describe('output observation commands step3', function () {
     expect(result.err).to.be(null);
     expect(result.snap).to.eql({ x: 'ok' });
   });
+
+  it('supports "is error" operator for declared outputs', async () => {
+    const env = new AsyncEnvironment();
+    const script = `
+      data out
+      out.x = bad
+      return { has: out is error }
+    `;
+
+    const result = await env.renderScriptString(script, {
+      bad: createPoison([new Error('output-fail')])
+    });
+
+    expect(result.has).to.be(true);
+  });
+
+  it('supports peek operator (#) for declared outputs', async () => {
+    const env = new AsyncEnvironment();
+    const script = `
+      data out
+      out.x = bad
+      return { msg: out#errors[0].message }
+    `;
+
+    const result = await env.renderScriptString(script, {
+      bad: createPoison([new Error('peek-output-fail')])
+    });
+
+    expect(result.msg).to.be('peek-output-fail');
+  });
+
+  it('supports declared output writes with dynamic path segments', async () => {
+    const env = new AsyncEnvironment();
+    const script = `
+      data out
+      var key = "k"
+      out[key] = 7
+      return out.snapshot()
+    `;
+
+    const result = await env.renderScriptString(script, {});
+    expect(result).to.eql({ k: 7 });
+  });
 });

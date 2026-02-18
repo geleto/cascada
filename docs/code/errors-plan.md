@@ -38,6 +38,7 @@ This plan tracks the error refactor for typed outputs (`data`, `text`, `value`, 
   - async mode: command-buffer path
   - non-async mode: direct string concatenation path (no command-buffer commands)
 - Buffer clearing/pause-driven output rollback was removed from active guard flow.
+- Output observation compile paths now route output `is error` and `#` through command-buffer observation commands (`addIsError` / `addGetError`) when the target is a declared output.
 
 ## Partially Done / Still Transitional
 
@@ -219,6 +220,10 @@ Required changes:
 Acceptance:
 
 - Observation/error compile output matches runtime model and tests.
+
+Status:
+
+- Completed.
 
 ## Step 7: Test Consolidation
 

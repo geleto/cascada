@@ -316,9 +316,8 @@ class CompileBuffer {
       // Case 2: OutputCommand handler.method() or handler()
       if (n instanceof nodes.OutputCommand) {
         const pathNode = n.call instanceof nodes.FunCall ? n.call.name : n.call;
-        const staticPath = this.compiler.sequential._extractStaticPath(pathNode);
-        if (staticPath && staticPath.length > 0) {
-          const handlerName = staticPath[0]; // First segment is always handler name
+        const handlerName = this.compiler.sequential._extractStaticPathRoot(pathNode);
+        if (handlerName) {
           handlers.add(handlerName);
         }
       }
@@ -341,13 +340,7 @@ class CompileBuffer {
   compileOutputCommand(node, frame) {
     // Preserve output routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.
     const pathNode = node.call instanceof nodes.FunCall ? node.call.name : node.call;
-    let current = pathNode;
-    while (current instanceof nodes.LookupVal) {
-      current = current.target;
-    }
-    const handler = current instanceof nodes.Symbol
-      ? current.value
-      : (current instanceof nodes.Literal && typeof current.value === 'string' ? current.value : null);
+    const handler = this.compiler.sequential._extractStaticPathRoot(pathNode);
 
     this.asyncAddValueToBuffer(node, frame, (resultVar, f) => {
       this.compiler.emit(`${resultVar} = `);

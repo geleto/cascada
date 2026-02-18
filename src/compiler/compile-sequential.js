@@ -656,6 +656,50 @@ module.exports = class CompileSequential {
     return null;
   }
 
+  _extractStaticPathRoot(node, expectedLength = null) {
+    if (!node) {
+      return null;
+    }
+
+    let current = node;
+    let length = 0;
+
+    while (current) {
+      if (current instanceof nodes.LookupVal) {
+        const valNode = current.val;
+        if (valNode instanceof nodes.Symbol) {
+          length++;
+        } else if (valNode instanceof nodes.Literal && typeof valNode.value === 'string') {
+          length++;
+        } else {
+          return null;
+        }
+        current = current.target;
+        continue;
+      }
+
+      if (current instanceof nodes.Symbol) {
+        length++;
+        if (expectedLength !== null && length !== expectedLength) {
+          return null;
+        }
+        return current.value;
+      }
+
+      if (current instanceof nodes.Literal && typeof current.value === 'string') {
+        length++;
+        if (expectedLength !== null && length !== expectedLength) {
+          return null;
+        }
+        return current.value;
+      }
+
+      return null;
+    }
+
+    return null;
+  }
+
   _hasSequentialRepair(node) {
     let current = node;
     while (current) {

@@ -540,6 +540,11 @@ class CompilerBase extends Obj {
     // Ensure failMsg is properly escaped for embedding in the generated string
 
     if (testName === 'error' && this.asyncMode) {
+      const outputName = this._getObservedOutputName(node.left, frame);
+      if (outputName) {
+        this.buffer.emitAddIsError(frame, outputName, node.left);
+        return;
+      }
       // Special case for 'is error' in async mode. We do not want to await the
       // value, as that would trigger the poison system. Instead, we pass the
       // raw value (which may be a promise) to the test function.
@@ -671,9 +676,44 @@ class CompilerBase extends Obj {
   }
 
   compilePeekError(node, frame) {
+    if (this.asyncMode) {
+      const outputName = this._getObservedOutputName(node.target, frame);
+      if (outputName) {
+        this.buffer.emitAddGetError(frame, outputName, node.target);
+        return;
+      }
+    }
     this.emit('runtime.peekError(');
     this.compile(node.target, frame);
     this.emit(')');
+  }
+
+  _getObservedOutputName(targetNode, frame) {
+    if (!this.scriptMode || !this.asyncMode || !targetNode) {
+      return null;
+    }
+
+    if (targetNode instanceof nodes.Symbol) {
+      const name = targetNode.value;
+      const outputDecl = this.async._getDeclaredOutput(frame, name);
+      if (outputDecl && !this._isDeclared(frame, name)) {
+        return name;
+      }
+      return null;
+    }
+
+    if (targetNode instanceof nodes.FunCall) {
+      const candidate = this.sequential._extractStaticPathRoot(targetNode.name, 2);
+      if (candidate) {
+        const outputDecl = this.async._getDeclaredOutput(frame, candidate);
+        if (outputDecl && !this._isDeclared(frame, candidate)) {
+          return candidate;
+        }
+      }
+      return null;
+    }
+
+    return null;
   }
 
   compileFloorDiv(node, frame) {
