@@ -169,6 +169,20 @@ module.exports = class CompileAsync {
       this.compiler.fail(`Output '${name}' already declared`, node && node.lineno, node && node.colno, node || undefined);
     }
 
+    // Match variable declaration semantics: disallow shadowing parent declarations.
+    let parentFrame = frame && frame.parent;
+    while (parentFrame) {
+      if (parentFrame.declaredOutputs && parentFrame.declaredOutputs.has(name)) {
+        this.compiler.fail(
+          `Cannot declare output '${name}' because it shadows an output declared in a parent scope`,
+          node && node.lineno,
+          node && node.colno,
+          node || undefined
+        );
+      }
+      parentFrame = parentFrame.parent;
+    }
+
     // Output declarations cannot conflict with variables in the same lexical frame chain.
     // Note: we intentionally do NOT consider outputParent here; macro/call detached scopes
     // can still access outer outputs via @name without having lexical name conflicts.

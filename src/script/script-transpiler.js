@@ -251,6 +251,16 @@ class ScriptTranspiler {
     if (scope.outputs.has(name)) {
       throw new Error(`Output '${name}' already declared in this scope`);
     }
+
+    // Keep script-transpiler validation aligned with compiler behavior:
+    // output declarations cannot shadow declarations from parent scopes.
+    for (let i = this.outputScopes.length - 2; i >= 0; i--) {
+      const parentScope = this.outputScopes[i];
+      if (parentScope.outputs.has(name)) {
+        throw new Error(`Output '${name}' cannot shadow an output declared in a parent scope`);
+      }
+    }
+
     scope.outputs.set(name, { type });
   }
 

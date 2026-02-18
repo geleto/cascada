@@ -1173,7 +1173,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql({ name: 'Alice' });
     });
 
-    it('should isolate macro outputs from outer scope', async () => {
+    it('should reject macro outputs that shadow parent scope outputs', async () => {
       const script = `
         data myData
         myData.outer = true
@@ -1185,8 +1185,12 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         var innerResult = inner()
         return { outer: myData.snapshot(), inner: innerResult }
       `;
-      const result = await render(script);
-      expect(result).to.eql({ outer: { outer: true }, inner: { inner: true } });
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('parent scope');
+      }
     });
 
     it('should support text output inside macros', async () => {
@@ -1371,7 +1375,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
   });
 
   describe('Scoping', function () {
-    it('should keep same-name nested outputs on the same handler stream', async () => {
+    it('should reject same-name nested outputs that shadow parent scope', async () => {
       const script = `
         data myData
         myData.x = 1
@@ -1381,8 +1385,29 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         endif
         return myData.snapshot()
       `;
-      const result = await render(script);
-      expect(result).to.eql({ x: 1, y: 2 });
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('parent scope');
+      }
+    });
+
+    it('should reject nested outputs that shadow parent outputs across types', async () => {
+      const script = `
+        data out
+        if true
+          text out
+          out("x")
+        endif
+        return out.snapshot()
+      `;
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('parent scope');
+      }
     });
 
     it('should allow inner scopes to use parent outputs', async () => {
