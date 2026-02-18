@@ -7,7 +7,6 @@
   let runtime;
   let createPoison;
   let isPoison;
-  let isPoisonError;
   let PoisonError;
   let collectErrors;
 
@@ -16,14 +15,12 @@
     runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
     isPoison = runtime.isPoison;
-    isPoisonError = runtime.isPoisonError;
     PoisonError = runtime.PoisonError;
     collectErrors = runtime.collectErrors;
   } else {
     expect = window.expect;
     createPoison = nunjucks.runtime.createPoison;
     isPoison = nunjucks.runtime.isPoison;
-    isPoisonError = nunjucks.runtime.isPoisonError;
     PoisonError = nunjucks.runtime.PoisonError;
     collectErrors = nunjucks.runtime.collectErrors;
   }
