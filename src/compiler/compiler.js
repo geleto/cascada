@@ -1578,8 +1578,10 @@ class Compiler extends CompilerBase {
       this.emit.line('    finalParent.rootRenderFunc(env, context.forkForPath(finalParent.path), frame, runtime, astate, cb, compositionMode);');
       this.emit.line('  } else {');
       if (this.scriptMode) {
-        // In script mode we expect a {%- return ... -%} in the template body to provide the result.
-        // this.emit.line('    cb(null, frame._outputs.output.snapshot());');
+        // In script mode, explicit return is preferred, but scripts without return
+        // must still complete instead of hanging.
+        this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+        this.emit.line('    cb(null, undefined);');
       } else {
         this.emit.line(`    const __rootSnapshot = ${this.buffer.getCurrentTextOutput()}.finalSnapshot();`);
         this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
