@@ -188,7 +188,6 @@ module.exports = {
   finalizeUnobservedSinks: output.finalizeUnobservedSinks,
   CommandBuffer: buffer.CommandBuffer,
   createCommandBuffer: buffer.createCommandBuffer,
-  getPosonedBufferErrors: buffer.getPosonedBufferErrors,
 
   guard,
 

@@ -9,12 +9,10 @@ const {
   SnapshotCommand,
   IsErrorCommand,
   GetErrorCommand,
-  SinkRepairCommand,
-  SetTargetCommand
+  SinkRepairCommand
 } = require('./commands');
 const { checkFinishedBuffer } = require('./checks');
-const { handleError, isPoison, isPoisonError } = require('./errors');
-const { RESOLVE_MARKER } = require('./resolve');
+const { handleError } = require('./errors');
 
 class CommandBuffer {
   constructor(context, parent = null) {
@@ -298,82 +296,6 @@ class CommandBuffer {
     }
   }
 
-  getPosonedBufferErrors(allowedHandlers = null) {
-    const allErrors = [];
-    if (Array.isArray(allowedHandlers) && allowedHandlers.length === 0) {
-      return allErrors;
-    }
-
-    const names = allowedHandlers || Object.keys(this.arrays);
-    names.forEach((name) => {
-      const arr = this.arrays[name];
-      if (!arr) {
-        return;
-      }
-      const handlerErrors = [];
-      arr.forEach((item) => {
-        if (item instanceof SetTargetCommand) {
-          handlerErrors.length = 0;
-          return;
-        }
-        if (isCommandBuffer(item)) {
-          handlerErrors.push(...item.getPosonedBufferErrors(allowedHandlers));
-        } else if (item) {
-          const err = item.getError();
-          if (err) {
-            handlerErrors.push(...err.errors);
-          }
-        }
-      });
-      allErrors.push(...handlerErrors);
-    });
-
-    return allErrors;
-  }
-
-  async getPosonedBufferErrorsAsync(allowedHandlers = null) {
-    const allErrors = [];
-    if (Array.isArray(allowedHandlers) && allowedHandlers.length === 0) {
-      return allErrors;
-    }
-
-    const names = allowedHandlers || Object.keys(this.arrays);
-    for (const name of names) {
-      const arr = this.arrays[name];
-      if (!arr) {
-        continue;
-      }
-      const handlerErrors = [];
-      for (const item of arr) {
-        if (item instanceof SetTargetCommand) {
-          handlerErrors.length = 0;
-          continue;
-        }
-        if (isCommandBuffer(item)) {
-          const nested = await item.getPosonedBufferErrorsAsync(allowedHandlers);
-          handlerErrors.push(...nested);
-          continue;
-        }
-        if (!item) {
-          continue;
-        }
-        const err = item.getError();
-        if (err && Array.isArray(err.errors)) {
-          handlerErrors.push(...err.errors);
-        }
-        if (Array.isArray(item.arguments)) {
-          const argErrors = await collectErrorsFromCommandArgs(item.arguments);
-          if (argErrors.length > 0) {
-            handlerErrors.push(...argErrors);
-          }
-        }
-      }
-      allErrors.push(...handlerErrors);
-    }
-
-    return allErrors;
-  }
-
   getOutput(outputName = 'text') {
     if (!(this._outputs instanceof Map)) {
       throw new Error('CommandBuffer outputs are unavailable');
@@ -408,119 +330,8 @@ function isCommandBuffer(value) {
   return value instanceof CommandBuffer;
 }
 
-function getPosonedBufferErrors(buffer, allowedHandlers = null) {
-  if (!buffer || !(buffer instanceof CommandBuffer)) {
-    return [];
-  }
-  return buffer.getPosonedBufferErrors(allowedHandlers);
-}
-
-async function collectErrorsFromCommandArgs(args) {
-  const errors = [];
-  const seenObjects = new Set();
-  const PROBE_TIMEOUT_MS = 20;
-
-  const awaitWithTimeout = async (promise, timeoutMs) => {
-    let timer = null;
-    try {
-      const result = await Promise.race([
-        Promise.resolve(promise).then(
-          (value) => ({ timedOut: false, value }),
-          (error) => ({ timedOut: false, error })
-        ),
-        new Promise((resolve) => {
-          timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
-        })
-      ]);
-      return result;
-    } finally {
-      if (timer) {
-        clearTimeout(timer);
-      }
-    }
-  };
-
-  const visit = async (value) => {
-    if (value == null) {
-      return;
-    }
-
-    if (value && typeof value.then === 'function') {
-      const outcome = await awaitWithTimeout(value, PROBE_TIMEOUT_MS);
-      if (outcome.timedOut) {
-        Promise.resolve(value).catch(() => {});
-        return;
-      }
-      if (outcome.error) {
-        const err = outcome.error;
-        if (isPoisonError(err) && Array.isArray(err.errors)) {
-          errors.push(...err.errors);
-        } else {
-          errors.push(err);
-        }
-        return;
-      }
-      await visit(outcome.value);
-      return;
-    }
-
-    if (isPoison(value) && Array.isArray(value.errors)) {
-      errors.push(...value.errors);
-      return;
-    }
-
-    if (typeof value !== 'object') {
-      return;
-    }
-
-    if (seenObjects.has(value)) {
-      return;
-    }
-    seenObjects.add(value);
-
-    const marker = value && value[RESOLVE_MARKER];
-    if (marker && typeof marker.then === 'function') {
-      const outcome = await awaitWithTimeout(marker, PROBE_TIMEOUT_MS);
-      if (outcome.timedOut) {
-        Promise.resolve(marker).catch(() => {});
-      } else if (outcome.error) {
-        const err = outcome.error;
-        if (isPoisonError(err) && Array.isArray(err.errors)) {
-          errors.push(...err.errors);
-        } else {
-          errors.push(err);
-        }
-      }
-    }
-
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        await visit(entry);
-      }
-      return;
-    }
-
-    const keys = Object.keys(value);
-    for (const key of keys) {
-      await visit(value[key]);
-    }
-  };
-
-  await visit(args);
-  return errors;
-}
-
-async function getPosonedBufferErrorsAsync(buffer, allowedHandlers = null) {
-  if (!buffer || !(buffer instanceof CommandBuffer)) {
-    return [];
-  }
-  return buffer.getPosonedBufferErrorsAsync(allowedHandlers);
-}
-
 module.exports = {
   CommandBuffer,
   createCommandBuffer,
-  getPosonedBufferErrors,
-  getPosonedBufferErrorsAsync,
   isCommandBuffer
 };

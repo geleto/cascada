@@ -37,9 +37,8 @@ This plan tracks the error refactor for typed outputs (`data`, `text`, `value`, 
 ## Partially Done / Still Transitional
 
 - `Output._errors` is still used and merged with inspection result in `_mergeCurrentErrors()`.
-- Guard output error collection still uses legacy buffer history walk:
-  - `guard.collectOutputErrors()` now uses observation commands (`addGetError`) scoped to handlers used in the current guard block.
-- `CommandBuffer.getPosonedBufferErrors*` still scans commands and unresolved args.
+- Guard output error collection is observation-based:
+  - `guard.collectOutputErrors()` uses observation commands (`addGetError`) scoped to handlers used in the current guard block.
 - `TextCommand` still performs normalization inside `apply()` (acceptable now, but resolver boundary can still be simplified later).
 - `addAsyncArgsCommand()` still awaits promise payloads and converts failures into `TargetPoisonCommand` at queue-fill time.
 - Some compiled async text paths still keep a temporary timing await (`runtime.resolveSingle(...)`) to preserve current write-count/locking behavior.
@@ -107,6 +106,10 @@ Required changes:
 - `src/runtime/command-buffer.js`
 - `src/runtime/guard.js`
 - any tests importing/using legacy helpers
+
+Status:
+
+- Completed.
 
 Acceptance:
 
