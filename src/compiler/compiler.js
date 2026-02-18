@@ -524,7 +524,8 @@ class Compiler extends CompilerBase {
       const targetName = node.targets[0].value;
       this.emit(ids[0] + ' = ');
       this.emit('runtime.setPath(');
-      this.emit(`runtime.getOutput(frame, "${targetName}").getCurrentResult(), `);
+      this.buffer.emitAddSnapshot(frame, targetName, node);
+      this.emit(', ');
       this._compileAggregate(node.path, frame, '[', ']', false, false);
       this.emit(', ');
       this._compileExpression(node.value, frame, true);
@@ -976,9 +977,13 @@ class Compiler extends CompilerBase {
         const isDeclaredVar = this._isDeclared(frame, name);
         const outputDecl = this.async._getDeclaredOutput(frame, name);
 
-        if (!isDeclaredVar && outputDecl) {
+        if (isDeclaredVar) {
+          resolvedVariables.push(name);
+        }
+        if (outputDecl) {
           resolvedHandlers.add(name);
-        } else {
+        }
+        if (!isDeclaredVar && !outputDecl) {
           resolvedVariables.push(name);
         }
       }

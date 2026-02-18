@@ -84,7 +84,7 @@ Parser also accepts bare `{% setval x %}` syntactically, but current compiler re
     - `Cannot assign to undeclared value output 'x'. Use 'value x' to declare it first.`
 - read-only call scopes (`frame.isolateWrites`) block outer-scope assignment, same as vars
 - `set_path` writes for value outputs use:
-  - `runtime.getOutput(frame, name).getCurrentResult()`
+  - `runtime.getOutput(frame, name)._getCurrentResult()`
 - non-declaration assignment requires one of:
   - `node.value`, `node.body`, or `node.path`
   - otherwise errors with `set value assignment requires a value or capture body.`

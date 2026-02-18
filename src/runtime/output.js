@@ -131,8 +131,8 @@ class Output {
     };
   }
 
-  getCurrentResult() {
-    throw new Error(`Output type '${this._outputType}' must implement getCurrentResult()`);
+  _getCurrentResult() {
+    throw new Error(`Output type '${this._outputType}' must implement _getCurrentResult()`);
   }
 
   _recordError(err, cmd = null) {
@@ -197,7 +197,7 @@ class Output {
       if (inspection && inspection.error) {
         throw inspection.error;
       }
-      return this.getCurrentResult();
+      return this._getCurrentResult();
     };
 
     const inspection = this._ensureInspection();
@@ -279,9 +279,6 @@ function createOutputFacade(output, options) {
         }
         return output._finalSnapshotCallable;
       }
-      if (prop === 'getCurrentResult') {
-        return output.getCurrentResult.bind(output);
-      }
       if (prop === '_applyCommand') {
         return output._applyCommand.bind(output);
       }
@@ -360,7 +357,7 @@ class TextOutput extends Output {
     this._enqueueCommand(null, args);
   }
 
-  getCurrentResult() {
+  _getCurrentResult() {
     if (!Array.isArray(this._target) || this._target.length === 0) {
       this._setTarget(['']);
       return '';
@@ -395,7 +392,7 @@ class ValueOutput extends Output {
     this._enqueueCommand(null, [value]);
   }
 
-  getCurrentResult() {
+  _getCurrentResult() {
     return this._target;
   }
 }
@@ -415,7 +412,7 @@ class DataOutput extends Output {
     this._snapshotShared = false;
   }
 
-  getCurrentResult() {
+  _getCurrentResult() {
     return this._target;
   }
 
@@ -639,7 +636,7 @@ class SinkOutput extends Output {
     return super._resolveSnapshotCommandResult();
   }
 
-  getCurrentResult() {
+  _getCurrentResult() {
     return this._snapshotFromSink(this._sink);
   }
 

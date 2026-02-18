@@ -71,7 +71,7 @@
  * block structure validation, ensuring robust and accurate conversion.
  */
 
-const CONVERT_VAR_TO_VALUE = false;
+const CONVERT_VAR_TO_VALUE = true;
 
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
@@ -1010,6 +1010,20 @@ class ScriptTranspiler {
     }
 
     const trimmed = (codeContent || '').trim();
+    if (trimmed.startsWith('guard ')) {
+      const selectors = trimmed.substring('guard '.length).split(',');
+      let changed = false;
+      const convertedSelectors = selectors.map((selector) => {
+        const selectorTrimmed = selector.trim();
+        if (selectorTrimmed === 'var') {
+          changed = true;
+          return 'value';
+        }
+        return selectorTrimmed;
+      });
+      return changed ? `guard ${convertedSelectors.join(', ')}` : codeContent;
+    }
+
     if (!trimmed.startsWith('var ')) {
       return codeContent;
     }

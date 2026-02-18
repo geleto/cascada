@@ -870,6 +870,11 @@ endif`;
       expect(callConverted).to.equal('var x = call(user)');
     });
 
+    it('should convert guard var selector to value when forced', () => {
+      const converted = scriptTranspiler._convertVarDeclarationToValue('guard var, output, lock!', true);
+      expect(converted).to.equal('guard value, output, lock!');
+    });
+
     it('should keep capture declaration on var parsing path', () => {
       const state = { inMultiLineComment: false, stringState: null };
       const result = scriptTranspiler._processLine('var x = capture', state, 0);
