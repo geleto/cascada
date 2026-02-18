@@ -1,199 +1,161 @@
-Note, we're in the process of rewriting the output system - there is no @data, @text, @value anymore - we are in the process of refactoring this, instead we have data. text, sink, etc. typed outputs and use explicit return instead of composing the result from standard output buffers (@data, @text, etc...)
+# Output Runtime Architecture (Current)
 
-# Output Architecture
-
-This document describes the current output runtime in `src/runtime/*` and compiler integration points in `src/compiler/*`.
+This document describes the current output model in `src/runtime/*` and its compiler integration in `src/compiler/*`.
 
 ## Scope
 
-- Output declaration and lookup
-- CommandBuffer write and finish lifecycle
-- Iterator-driven command execution
-- Snapshot semantics (`addSnapshot` vs `finalSnapshot`)
-- Output types (`text`, `data`, `value`, `sink`, `sequence`)
-- Command classes and deferred sequence results
-- Guard integration for outputs
-- `safe-output` snapshot/materialization behavior
+- Typed outputs and facades (`data`, `text`, `value`, `sink`, `sequence`)
+- CommandBuffer stream model
+- Iterator-driven apply flow
+- Observation commands (`snapshot`, `isError`, `getError`, `repair`)
+- Guard integration (result-based error collection)
+- Error model (`_target`-based health, no command-history walkers)
 
-## Core Flow
+## High-Level Flow
 
-1. Compiler emits `Command` objects into the current `CommandBuffer` (directly or via `addAsyncArgsCommand`).
-2. Every declared output has a `BufferIterator` bound to the active root `CommandBuffer`.
-3. `BufferIterator` traverses that output's handler stream depth-first (including nested child buffers) in source order.
-4. For each command, iterator calls `output._applyCommand(cmd)`, which mutates output state or records errors.
-5. Snapshot reads are either:
-   - point-in-stream via `CommandBuffer.addSnapshot(outputName, pos)`
-   - terminal via `output.finalSnapshot()`
-6. Completion resolves when iterator finishes the root buffer for that output.
+1. Compiler emits command objects into the current `CommandBuffer` per output handler stream.
+2. Each declared output owns a `BufferIterator` bound to the active buffer tree.
+3. Iterator applies commands in source order (`output._applyCommand(cmd)`).
+4. Command arguments are resolved once immediately before `cmd.apply(...)`.
+5. Output health is derived from current `_target` (cached by state version).
+6. Observation commands resolve at the exact stream point where they were enqueued.
 
-## Runtime Objects
+## CommandBuffer
 
-## `CommandBuffer` (`src/runtime/command-buffer.js`)
+File: `src/runtime/command-buffer.js`
 
-Important fields:
+Important state:
 
-- `arrays[outputName]`: per-output stream entries (commands or child `CommandBuffer`s)
-- temporary `null` slot placeholders preserve source order for async producers
-- `parent`: parent command buffer
-- `finished`, `_finishRequested`, `_pendingReservedSlots`
-- `_outputs`: shared `Map<outputName, Output>`
-- `_visitingIterators`: currently visiting iterators
-- `_pauseRefCount`, `_pausedHandlers`: guard pause state
+- `arrays[outputName]`: per-output stream entries (commands or child buffers)
+- `_outputs`: shared `Map<outputName, Output>` across parent/child buffers
+- `_pendingReservedSlots`: count of async-reserved slots not yet filled
+- `_finishRequested` + `finished`
+- `_visitingIterators`: active iterator per output name
 
 Important APIs:
 
 - `add(value, outputName)`
 - `addText(value, pos, outputName)`
-- `addAsyncArgsCommand(outputName, producer, runtime, context, lineno, colno, errorContextString, cb)`
-- `addBuffer(childBuffer, outputName)`
-- `addSequenceGet(...)`, `addSequenceCall(...)`
+- `addAsyncArgsCommand(outputName, valueOrPromise, onFatal = null)`
+- `addSequenceCall(...)`, `addSequenceGet(...)`
 - `addSnapshot(outputName, pos)`
+- `addIsError(outputName, pos)`
+- `addGetError(outputName, pos)`
+- `addSinkRepair(outputName, pos)`
 - `markFinishedAndPatchLinks()`
-- `pauseHandlers(handlerNames)`, `resumeHandlers(handlerNames)`
-- `patchLinksAfterClear(handlerNames)` (guard rollback/reset)
-- `getPosonedBufferErrors(allowedHandlers)` (recursive poison collection)
 
-Finish semantics:
+Notes:
 
-- `markFinishedAndPatchLinks()` marks finish requested.
-- Buffer becomes `finished=true` only when no reserved slots remain.
-- Iterators are notified on slot fill, finish, and resume.
-- `clearBuffer()` resets finished state (`finished=false`, `_finishRequested=false`, pending slots cleared) so writes can continue after guard recovery.
+- `addAsyncArgsCommand` reserves a slot synchronously, then fills it when `valueOrPromise` settles.
+- Non-fatal producer failures are encoded as `TargetPoisonCommand` in that slot.
+- `RuntimeFatalError` is rethrown and optionally reported through `onFatal`.
+- Legacy history walkers (`getPosonedBufferErrors*`) are removed.
+- Handler pause/clear rollback logic is not part of active guard flow anymore.
 
-## `BufferIterator` (`src/runtime/buffer-iterator.js`)
+## BufferIterator
 
-Per-output iterator, depth-first traversal:
+File: `src/runtime/buffer-iterator.js`
 
-- Processes entries in per-output order.
-- Enters child buffers and resumes parent when child is done.
-- Awaits async command application before continuing.
-- Stops on gaps, paused handlers, or unfinished buffers; resumes via notifications.
-- Calls `output._onIteratorFinished()` when its root traversal is complete.
-- Uses reentrancy guards (`_isAdvancing`, `_needsAdvance`) to coalesce repeated wake-ups.
+- Traverses one output stream depth-first across nested child buffers.
+- Applies commands in source order.
+- Waits at unfinished gaps and resumes when slots fill / buffers finish.
+- Marks output completion via `output._onIteratorFinished()`.
 
-## Output Types (`src/runtime/output.js`)
+## Output Base Model
 
-Base class: `Output`
+File: `src/runtime/output.js`
 
-- Tracks `_target`, `_errors`, `_completionPromise`, `_iterator`.
-- `_applyCommand` executes command and records errors.
-- `_resolveSnapshotCommandResult()` returns current result or throws `PoisonError`.
-- `finalSnapshot()` waits for completion (unless already complete), then resolves result.
+Core fields:
 
-Concrete outputs:
+- `_target`: current materialized state for this output
+- `_stateVersion`: incremented on each state mutation
+- `_inspectionCache = { version, hasError, poisonError }`
+- `_completionPromise` / `_completionResolved`
+
+Core behavior:
+
+- `_applyCommand(cmd)`:
+  - resolves command args once via `resolveCommandArgumentsForApply(cmd, output)`
+  - executes `cmd.apply(output)`
+  - converts apply/prep failures into poison on `_target`
+- `_ensureInspection()` inspects `_target` for poison and caches by `_stateVersion`
+- `_isErrorNow()` / `_getErrorNow()` read from `_target` inspection
+- `_resolveSnapshotCommandResult()` returns current result or throws `PoisonError`
+
+Important model decision:
+
+- Output health is `_target`-based.
+- No side-channel `_errors` list is used for health semantics.
+
+## Typed Outputs
+
+File: `src/runtime/output.js`
 
 - `TextOutput`
 - `DataOutput`
 - `ValueOutput`
 - `SinkOutput`
-- `SequenceOutput` (extends sink behavior + transaction hooks)
+- `SequenceOutput` (transaction-capable sink variant)
 
-Factory/lookup and scoping:
+`DataOutput` keeps copy-on-write snapshot safety for immutable prior snapshots.
 
-- `declareOutput(frame, name, type, context, initializer)`
-- `getOutput(frame, name)`
-- `findOutputBuffer(frame)`
-- Outputs are lexical: `getOutput` walks `frame.parent` chain only.
-- `findOutputBuffer` stops when it hits `frame.outputScope`.
-- `declareOutput` throws if no active `CommandBuffer` exists (no implicit buffer creation).
+## Observation Commands
 
-## Snapshot Semantics
+File: `src/runtime/commands.js`
 
-There are two distinct snapshot mechanisms:
+- `SnapshotCommand`
+- `IsErrorCommand`
+- `GetErrorCommand`
+- `SinkRepairCommand`
+- `TargetPoisonCommand` (queue-fill/apply-time poison encoding)
 
-1. `CommandBuffer.addSnapshot(outputName, pos)`
-- Enqueues a `SnapshotCommand` when buffer is not finished.
-- Promise resolves/rejects when that command executes (point-in-stream semantics).
-- If buffer is already finished, snapshot is applied immediately, or deferred until output completion if iterator is still finalizing.
+Observation semantics:
 
-2. `output.finalSnapshot()`
-- Terminal snapshot for the output stream.
-- Waits for iterator/root completion, then resolves/rejects from final output state.
-- Used for root return/final materialization paths.
+- If buffer is still active, observation commands are enqueued in stream order.
+- If buffer is finished, command buffer applies observation against registered output state (or waits for output completion when needed).
 
-Compiler note:
+## Compiler Integration
 
-- Script `x.snapshot()` is compiled to `currentBuffer.addSnapshot("x", pos)` for declared outputs.
-- Sink `snapshot()` inside guard is compile-time rejected.
+Files:
 
-## Data Snapshot Copy Safety
+- `src/compiler/compile-buffer.js`
+- `src/compiler/compiler-base.js`
+- `src/compiler/compiler.js`
 
-`DataOutput` uses lazy copy-on-write:
+Current behavior:
 
-- Snapshot marks current object graph as shared.
-- First subsequent mutating data command clones current target.
-- Earlier snapshot values stay stable.
-
-`cloneSnapshotValue` deep-clones arrays and plain objects.
-Non-plain objects are kept by reference.
-
-`ValueOutput` does not deep-clone target values and defaults to `null` for declaration-only outputs.
-
-## Output Facades and Commands
-
-`createOutput(...)` returns facades:
-
-- `text` and `value` outputs are callable facades (`output(...)`).
-- `data` output is a dynamic command facade (`output.set(...)`, `output.push(...)`, etc.).
-- Facades proxy runtime internals (`_target`, `_iterator`, `finalSnapshot`, etc.) to the underlying `Output`.
-- Facades intentionally hide `then` to avoid thenable behavior.
-
-Command classes live in `src/runtime/commands.js`:
-
-- `TextCommand`, `ValueCommand`, `DataCommand`, `SinkCommand`
-- `SequenceCallCommand`, `SequenceGetCommand`
-- `SnapshotCommand`, `SetTargetCommand`, `ErrorCommand`
-
-Sequence deferred results:
-
-- `CommandBuffer.addSequenceCall(...)` and `.addSequenceGet(...)` return command-local promises.
-- These resolve/reject when the iterator actually executes those commands.
-
-## Sink and Sequence Semantics
-
-`SinkOutput`:
-
-- Supports async sink initialization.
-- Applies sink commands against resolved sink.
-- `finalSnapshot` result resolution order:
-  1. `sink.snapshot()`
-  2. `sink.getReturnValue()`
-  3. `sink.finalize()`
-  4. sink object itself
-
-`SequenceOutput`:
-
-- Extends `SinkOutput`
-- Adds `beginTransaction`, `commitTransaction`, `rollbackTransaction`
-- Sequence call/get commands can return deferred results via promises
+- Output commands are constructed with unresolved args.
+- `resolveOutputCommandArgs` pre-resolution path is removed from command construction flow.
+- In async script/output mode:
+  - output `x.snapshot()`, `x.isError()`, `x.getError()` compile to observation commands
+  - `x is error` and `x#...` for declared outputs also route through observation commands
+- Non-async template path remains direct string output (no command-buffer command path for simple sync rendering).
 
 ## Guard Integration
 
-Guard output behavior:
+File: `src/runtime/guard.js`
 
-- Compiler pauses non-sequence guarded handlers with `pauseHandlers(...)`.
-- Guard runtime snapshots/restores output state (`initOutputSnapshots`, `restoreOutputs`).
-- On rollback, buffer segments are cleared and restored targets are set via `SetTargetCommand`.
-- Sequence outputs are transaction-based (not paused like non-sequence outputs).
-- Sequence transactions begin at guard entry and are settled in reverse order on commit/rollback.
+- Guard output errors are collected via observation (`buffer.addGetError(...)`) on relevant handlers.
+- Guard output revert uses output state snapshots + `SetTargetCommand` restoration.
+- Sequence outputs use begin/commit/rollback transaction hooks.
+- Guard completion remains result-based; no legacy buffer-history poison scan.
 
-Important restriction:
+## Removed / Obsolete Behavior
 
-- `sink.snapshot()` inside guard is disallowed at compile time:
-  - `"sink snapshot() is not allowed inside guard blocks"`
+- No active guard rollback via handler pause/resume + clear-buffer mutation.
+- No `patchLinksAfterClear` / `clearBuffer`-based recovery model.
+- No `getPosonedBufferErrors` / `getPosonedBufferErrorsAsync` traversal path.
+- No output health side-channel based on `_errors`.
 
-## `safe-output` Integration (`src/runtime/safe-output.js`)
+## Test Coverage
 
-Template suppression/materialization uses:
+Consolidated output-error suite:
 
-- `CommandBuffer` -> `buffer.addSnapshot("text", pos)`
-- value with `finalSnapshot()` -> call it
-- value with `snapshot()` -> call it
-- otherwise normal scalar suppression
+- `tests/pasync/output-errors.js`
 
-`safe-output` also normalizes call-block/filter envelopes (`{ text: [...] }`, `{ output: [...] }`) before suppression.
+It includes coverage from former split files:
 
-## Removed Legacy Behavior
-
-- No legacy `flattenBuffer` chain execution in active runtime.
-- Output execution is iterator-driven and incremental.
+- command poison encoding
+- output observation commands
+- target inspection cache behavior
+- async slot fill / fatal propagation
