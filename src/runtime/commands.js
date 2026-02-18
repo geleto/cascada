@@ -498,19 +498,20 @@ class TargetPoisonCommand extends Command {
     if (!output) {
       return;
     }
+    const contextualizedErrors = contextualizeErrorsForOutput(output, this.pos, this.errors);
     if (output._outputType === 'text') {
       if (!Array.isArray(output._target)) {
         output._setTarget([]);
       }
-      output._target.push(createPoison(this.errors));
+      output._target.push(createPoison(contextualizedErrors));
       output._markStateChanged();
       return;
     }
     if (typeof output._applyPoisonErrors === 'function') {
-      output._applyPoisonErrors(this.errors);
+      output._applyPoisonErrors(contextualizedErrors);
       return;
     }
-    output._setTarget(createPoison(this.errors));
+    output._setTarget(createPoison(contextualizedErrors));
   }
 }
 
@@ -737,6 +738,26 @@ function extractPoisonErrors(value) {
     return value.errors;
   }
   return [];
+}
+
+function contextualizeErrorsForOutput(output, pos, errors) {
+  if (!Array.isArray(errors) || errors.length === 0) {
+    return [];
+  }
+  const lineno = pos && typeof pos.lineno === 'number' ? pos.lineno : 0;
+  const colno = pos && typeof pos.colno === 'number' ? pos.colno : 0;
+  const path = output && output._context && output._context.path ? output._context.path : null;
+  const contextualized = [];
+  for (const err of errors) {
+    if (isPoisonError(err) && Array.isArray(err.errors) && err.errors.length > 0) {
+      for (const nested of err.errors) {
+        contextualized.push(handleError(nested, lineno, colno, null, path));
+      }
+      continue;
+    }
+    contextualized.push(handleError(err, lineno, colno, null, path));
+  }
+  return contextualized;
 }
 
 function contextualizeOutputError(output, pos, err) {

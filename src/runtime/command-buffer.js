@@ -213,14 +213,11 @@ class CommandBuffer {
       }
 
       const errors = runtime && runtime.isPoisonError && runtime.isPoisonError(e) ? e.errors : [e];
-      const processedErrors = runtime && runtime.handleError
-        ? errors.map(err => runtime.handleError(err, lineno, colno, errorContextString, context ? context.path : null))
-        : errors;
 
       try {
         this._fillSlot(slot, new TargetPoisonCommand({
           handler: outputName,
-          errors: processedErrors,
+          errors,
           pos: { lineno, colno }
         }), outputName);
       } catch (fillErr) {
