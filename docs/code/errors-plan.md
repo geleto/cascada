@@ -38,7 +38,7 @@ This plan tracks the error refactor for typed outputs (`data`, `text`, `value`, 
 
 - `Output._errors` is still used and merged with inspection result in `_mergeCurrentErrors()`.
 - Guard output error collection still uses legacy buffer history walk:
-  - `guard.collectOutputErrors()` -> `buffer.getPosonedBufferErrorsAsync(...)`
+  - `guard.collectOutputErrors()` now uses observation commands (`addGetError`) scoped to handlers used in the current guard block.
 - `CommandBuffer.getPosonedBufferErrors*` still scans commands and unresolved args.
 - `TextCommand` still performs normalization inside `apply()` (acceptable now, but resolver boundary can still be simplified later).
 - `addAsyncArgsCommand()` still awaits promise payloads and converts failures into `TargetPoisonCommand` at queue-fill time.
@@ -61,14 +61,14 @@ This plan tracks the error refactor for typed outputs (`data`, `text`, `value`, 
 
 ## Step Plan (Updated)
 
-## Step 1: Guard Output Errors via Output Observation (Next)
+## Step 1: Guard Output Errors via Output Observation
 
 Scope:
 
-- Replace `guard.collectOutputErrors()` implementation:
-  - stop calling `buffer.getPosonedBufferErrorsAsync(...)`
+- Replace `guard.collectOutputErrors()` primary implementation:
   - collect errors from actual output handlers (via `buffer._outputs`)
   - use observation commands (`addGetError`) on the active/current buffer for ordering
+- Ensure guard passes only relevant handlers for observation (handlers used in that guard block), avoiding observation waits on unrelated future/root-buffer streams.
 - Ensure collection respects `allowedHandlers` filtering.
 - Preserve sequence transaction handling (`begin/commit/rollback`) as-is.
 - Keep variable/sequence-lock error checks unchanged in this step.
@@ -79,9 +79,13 @@ Required changes:
 - likely small wiring in `src/runtime/command-buffer.js` for handler iteration helpers
 - tests under `tests/poison/guard.js` and related poison/guard integration suites
 
+Status:
+
+- Completed.
+
 Acceptance:
 
-- No use of `getPosonedBufferErrorsAsync` in guard output error path.
+- Guard output error collection is observation-first.
 - Guard still captures all output errors expected by current tests.
 - `npm run test:quick` green.
 
@@ -95,6 +99,8 @@ Scope:
   - exported wrapper helpers for those methods
   - unresolved-arg probing logic used only by those paths
 - Patch any remaining callsites to observation-command-based collection.
+- Prerequisite for safe removal:
+  - verify no remaining runtime path depends on command-history scans for guard output error detection.
 
 Required changes:
 

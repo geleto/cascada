@@ -674,16 +674,9 @@ class Compiler extends CompilerBase {
       this.fail('guard block only supported in async mode', node.lineno, node.colno);
     }
 
-    const variableTargets = node.variableTargets === '*' ? '*' :
-      (Array.isArray(node.variableTargets) && node.variableTargets.length > 0 ? node.variableTargets : null);
-    const hasSequenceTargets = node.sequenceTargets && node.sequenceTargets.length > 0;
-    let handlerTargets = Array.isArray(node.handlerTargets) && node.handlerTargets.length > 0 ? node.handlerTargets : null;
-    const handlerTargetsAll = handlerTargets && handlerTargets[0] === '@';
-    if (handlerTargetsAll && handlerTargets) {
-      handlerTargets = null;
-    }
-    const hasAnySelectors = !!variableTargets || hasSequenceTargets || handlerTargetsAll || !!handlerTargets;
-    const needsOutputSnapshot = handlerTargetsAll || !!handlerTargets || !hasAnySelectors;
+    const guardTargets = this._getGuardTargets(node);
+    const variableTargets = guardTargets.variableTargets;
+    const hasSequenceTargets = !!guardTargets.sequenceTargets;
     // We need guard state if we have variables OR if we have sequence targets (for error detection)
     // Note: We don't fully resolve sequence targets here yet, but if the user *requested* sequence targets,
     // we should prepare the state. If it turns out they are empty/unused, init() handles empty lists fine.
@@ -709,16 +702,9 @@ class Compiler extends CompilerBase {
       this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
       let guardInitLinePos = null;
       let guardRepairLinePos = null;
-      let outputGuardInitLinePos = null;
-      const outputGuardStateVar = needsOutputSnapshot ? this._tmpid() : null;
-      if (outputGuardStateVar) {
-        if (handlerTargets) {
-          this.emit.line(`const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(handlerTargets)});`);
-        } else {
-          outputGuardInitLinePos = this.codebuf.length;
-          this.emit.line('');
-        }
-      }
+      const outputGuardInitLinePos = this.codebuf.length;
+      let outputGuardStateVar = null;
+      this.emit.line('');
       if (guardStateVar) {
         if (variableTargets === '*') {
           guardInitLinePos = this.codebuf.length;
@@ -808,11 +794,15 @@ class Compiler extends CompilerBase {
         }
       }
 
-      if (outputGuardStateVar && outputGuardInitLinePos !== null) {
-        const usedOutputs = frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
+      const guardHandlers = this._getGuardedOutputNames(
+        frame.usedOutputs,
+        guardTargets
+      );
+      if (guardHandlers.length > 0) {
+        outputGuardStateVar = this._tmpid();
         this.emit.insertLine(
           outputGuardInitLinePos,
-          `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(usedOutputs)});`
+          `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(guardHandlers)});`
         );
       }
 
@@ -823,38 +813,10 @@ class Compiler extends CompilerBase {
 
       // 5. Check Buffer/Variables for Poison
       const guardErrorsVar = this._tmpid();
-
-      // Calculate allowed handlers for poison detection based on selectors
-      let allowedBufferHandlers = '[]';
-
-      // If no specific selectors are provided (neither variables nor handlers),
-      // it functions as a global guard (catch everything).
-      if (!hasAnySelectors || handlerTargetsAll) {
-        allowedBufferHandlers = 'null';
-      } else if (handlerTargets) {
-        allowedBufferHandlers = JSON.stringify(handlerTargets);
-      }
-
-      this.emit.line(`const ${guardErrorsVar} = await runtime.guard.getErrors(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${allowedBufferHandlers});`);
-      if (outputGuardStateVar) {
-        const guardCommitErrorsVar = this._tmpid();
-        this.emit.line(`let ${guardCommitErrorsVar} = [];`);
-        this.emit.line(`if (${guardErrorsVar}.length === 0) {`);
-        this.emit.line(`  ${guardCommitErrorsVar} = await runtime.guard.commitOutputTransactions(${outputGuardStateVar});`);
-        this.emit.line(`  if (${guardCommitErrorsVar}.length > 0) { ${guardErrorsVar}.push(...${guardCommitErrorsVar}); }`);
-        this.emit.line('}');
-      }
-
+      this.emit.line(
+        `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${JSON.stringify(guardHandlers)}, ${outputGuardStateVar || 'null'});`
+      );
       this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
-      if (outputGuardStateVar) {
-        const rollbackErrorsVar = this._tmpid();
-        this.emit.line(`  const ${rollbackErrorsVar} = await runtime.guard.restoreOutputs(${this.buffer.currentBuffer}, ${outputGuardStateVar});`);
-        this.emit.line(`  if (${rollbackErrorsVar}.length > 0) { ${guardErrorsVar}.push(...${rollbackErrorsVar}); }`);
-      }
-
-      if (guardStateVar) {
-        this.emit.line(`  runtime.guard.complete(frame, ${guardStateVar}, true);`);
-      }
 
       let recoveryWriteCounts;
       if (node.recoveryBody) {
@@ -878,10 +840,6 @@ class Compiler extends CompilerBase {
       if (recoveryWriteCounts) {
         this.emit.line(`frame.skipBranchWrites(${JSON.stringify(recoveryWriteCounts)});`);
       }
-
-      if (guardStateVar) {
-        this.emit.line(`  runtime.guard.complete(frame, ${guardStateVar}, false);`);
-      }
       this.emit.line('}');
 
       // 6. End Async Block
@@ -889,6 +847,64 @@ class Compiler extends CompilerBase {
     } finally {
       this.guardDepth = previousGuardDepth;
     }
+  }
+
+  _getGuardedOutputNames(usedOutputs, guardTargets) {
+    let used = [];
+    if (usedOutputs instanceof Set) {
+      used = Array.from(usedOutputs);
+    } else if (Array.isArray(usedOutputs)) {
+      used = usedOutputs;
+    }
+
+    if (!guardTargets) {
+      return [];
+    }
+
+    if (guardTargets.handlerSelector === '*') {
+      return used;
+    }
+
+    if (Array.isArray(guardTargets.handlerSelector) && guardTargets.handlerSelector.length > 0) {
+      const guardedSet = new Set(guardTargets.handlerSelector);
+      return used.filter((name) => guardedSet.has(name));
+    }
+
+    // No selectors at all means global guard.
+    if (!guardTargets.hasAnySelectors) {
+      return used;
+    }
+
+    // Variable/sequence-only guards do not guard output handlers.
+    return [];
+  }
+
+  _getGuardTargets(guardNode) {
+    const handlerTargetsRaw = Array.isArray(guardNode && guardNode.handlerTargets) &&
+      guardNode.handlerTargets.length > 0
+      ? guardNode.handlerTargets
+      : null;
+    const handlerSelector = !handlerTargetsRaw
+      ? null
+      : (handlerTargetsRaw.includes('@') ? '*' : handlerTargetsRaw);
+
+    const variableTargets = guardNode && guardNode.variableTargets === '*'
+      ? '*'
+      : (Array.isArray(guardNode && guardNode.variableTargets) && guardNode.variableTargets.length > 0
+        ? guardNode.variableTargets
+        : null);
+    const sequenceTargets = Array.isArray(guardNode && guardNode.sequenceTargets) && guardNode.sequenceTargets.length > 0
+      ? guardNode.sequenceTargets
+      : null;
+
+    const hasAnySelectors = !!handlerSelector || !!variableTargets || !!sequenceTargets;
+
+    return {
+      handlerSelector,
+      variableTargets,
+      sequenceTargets,
+      hasAnySelectors
+    };
   }
 
   //todo! - get rid of the callback

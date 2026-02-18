@@ -178,11 +178,62 @@ async function getErrors(frame, guardState, bufferArr, allowedHandlers) {
   return bufferErrors.concat(variableErrors, sequenceErrors);
 }
 
+async function finalizeGuard(frame, guardState, buffer, allowedHandlers, outputGuardState) {
+  const guardErrors = await getErrors(frame, guardState, buffer, allowedHandlers);
+
+  if (outputGuardState && guardErrors.length === 0) {
+    const commitErrors = await commitOutputTransactions(outputGuardState);
+    if (commitErrors.length > 0) {
+      guardErrors.push(...commitErrors);
+    }
+  }
+
+  if (guardErrors.length > 0) {
+    if (outputGuardState) {
+      const rollbackErrors = await restoreOutputs(buffer, outputGuardState);
+      if (rollbackErrors.length > 0) {
+        guardErrors.push(...rollbackErrors);
+      }
+    }
+    complete(frame, guardState, true);
+    return guardErrors;
+  }
+
+  complete(frame, guardState, false);
+  return guardErrors;
+}
+
 async function collectOutputErrors(buffer, allowedHandlers) {
-  if (!buffer || typeof buffer.getPosonedBufferErrorsAsync !== 'function') {
+  if (!buffer || typeof buffer.addGetError !== 'function') {
     return [];
   }
-  return buffer.getPosonedBufferErrorsAsync(allowedHandlers);
+
+  const names = resolveGuardOutputNames(buffer, allowedHandlers);
+  const allErrors = [];
+
+  for (const outputName of names) {
+    const outputError = await buffer.addGetError(outputName, { lineno: 0, colno: 0 });
+    if (!outputError) {
+      continue;
+    }
+    if (Array.isArray(outputError.errors) && outputError.errors.length > 0) {
+      allErrors.push(...outputError.errors);
+      continue;
+    }
+    allErrors.push(outputError);
+  }
+
+  return allErrors;
+}
+
+function resolveGuardOutputNames(buffer, allowedHandlers) {
+  if (Array.isArray(allowedHandlers)) {
+    if (allowedHandlers.length === 0) {
+      return [];
+    }
+    return Array.from(new Set(allowedHandlers));
+  }
+  return Object.keys(buffer.arrays || Object.create(null));
 }
 
 function complete(frame, guardState, shouldRevert) {
@@ -329,6 +380,7 @@ async function settleSequenceTransactions(outputGuardState, mode) {
 module.exports = {
   init,
   initOutputSnapshots,
+  finalizeGuard,
   getErrors,
   complete,
   repairSequenceLocks,
