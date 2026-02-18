@@ -71,7 +71,7 @@
  * block structure validation, ensuring robust and accurate conversion.
  */
 
-const CONVERT_VAR_TO_VALUE = true;
+const CONVERT_VAR_TO_VALUE = false;
 
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
