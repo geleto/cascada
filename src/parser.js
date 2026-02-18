@@ -4,6 +4,7 @@ var lexer = require('./lexer');
 var nodes = require('./nodes');
 var Obj = require('./object').Obj;
 var lib = require('./lib');
+const { RESERVED_DECLARATION_NAMES } = require('./compiler/validation');
 
 class Parser extends Obj {
   init(tokens, opts) {
@@ -1026,9 +1027,11 @@ class Parser extends Obj {
     }
 
     const handlerTargets = [];
+    const typeTargets = [];
     const variableTargets = [];
     const sequenceTargets = [];
     let hasStarSelector = false;
+    let hasVarSelector = false;
     const seenSelectors = new Set();
     let first = true;
 
@@ -1066,6 +1069,11 @@ class Parser extends Obj {
           handlerTargets.push(handlerName.length > 0 ? handlerName : '@');
         } else if (rawSelector.endsWith('!')) {
           sequenceTargets.push(rawSelector);
+        } else if (this.scriptMode && rawSelector === 'var') {
+          // `guard var` protects all variables written inside the guard block.
+          hasVarSelector = true;
+        } else if (this.scriptMode && RESERVED_DECLARATION_NAMES.has(rawSelector)) {
+          typeTargets.push(rawSelector);
         } else {
           variableTargets.push(rawSelector);
         }
@@ -1080,12 +1088,12 @@ class Parser extends Obj {
       first = false;
     }
 
-    if (hasStarSelector && (handlerTargets.length > 1 || variableTargets.length > 0 || sequenceTargets.length > 1)) {
+    if (hasStarSelector && (handlerTargets.length > 1 || typeTargets.length > 0 || hasVarSelector || variableTargets.length > 0 || sequenceTargets.length > 1)) {
       this.fail('guard: "*" cannot be combined with other selectors', tag.lineno, tag.colno);
     }
 
     // Validate Handler Targets
-    if (handlerTargets.includes('@') && handlerTargets.length > 1) {
+    if (handlerTargets.includes('@') && (handlerTargets.length > 1 || typeTargets.length > 0)) {
       this.fail('guard: "@" cannot be combined with specific handler selectors', tag.lineno, tag.colno);
     }
 
@@ -1115,7 +1123,7 @@ class Parser extends Obj {
     }
 
     let guardExpandsAllVariables = false;
-    if (handlerTargets.length === 0 && variableTargets.length === 0 && sequenceTargets.length === 0) {
+    if (handlerTargets.length === 0 && typeTargets.length === 0 && !hasVarSelector && variableTargets.length === 0 && sequenceTargets.length === 0) {
       handlerTargets.push('@');
       sequenceTargets.push('!');
     }
@@ -1128,7 +1136,8 @@ class Parser extends Obj {
       tag.colno,
       body,
       handlerTargets.length > 0 ? handlerTargets : null,
-      guardExpandsAllVariables ? '*' : (variableTargets.length > 0 ? variableTargets : null),
+      typeTargets.length > 0 ? typeTargets : null,
+      (guardExpandsAllVariables || hasVarSelector) ? '*' : (variableTargets.length > 0 ? variableTargets : null),
       sequenceTargets.length > 0 ? sequenceTargets : null,
       recoveryBody,
       errorVar

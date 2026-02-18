@@ -1732,13 +1732,15 @@ guard @data, db!, status
 | Selector | Meaning |
 |----------|---------|
 | `@handler1, @handler2` | Protect a specific output handler (`@text`, `@data`, etc.). |
+| `data, text, value, sink, sequence` | **Script mode:** Protect handlers by output type (all used handlers declared with that type inside the guard). |
 | `@` | Protect all output handlers (`@text`, `@data`, etc.). Cannot be combined with other handler selectors. |
 | `path1!, path2!` | Protect specific sequential paths (e.g. `db!`, `cache.sub!`). |
 | `!` | Protect all sequential paths touched inside the guard. |
+| `var` | **Script mode:** Protect all variables written inside the guard (same variable scope as `guard *`, but without guarding handlers/sequences unless selected). |
 | `var1, var2` | Protect specific script variables. |
 | `*` | Protect everything (all handlers, all sequence paths, and every variable written inside the guard). Cannot be combined with any other selector. |
 
-> `@` cannot be mixed with other handler selectors, and `*` cannot be combined with any other selector.
+> `@` cannot be mixed with other handler selectors (including type selectors like `data`/`text`), and `*` cannot be combined with any other selector.
 
 **Hierarchical Protection of Sequential Paths:**
 ```javascript
@@ -1754,19 +1756,22 @@ Guarding `api!` protects all child paths. To guard only a specific child:
 guard api.db!  // Only protects api.db! and its children
 ```
 
-##### Example: Protecting a Specific Variable
+##### Example: Protecting a Specific Variable or Type
 
 ```javascript
 var attempts = 0
 var lastLog = ""
+data result
 
-guard attempts, @, !
+guard attempts, data
   attempts = attempts + 1
+  result.try = attempts
   lastLog = "Trying..."  // not protected
 
   riskyOperation() // ❌ Fails
 recover err
   // 'attempts' is restored to 0
+  // '@data' writes are reverted (via `data` type selector)
   // 'lastLog' remains "Trying..."
 
   @text("Failed after " + attempts + " attempts.")

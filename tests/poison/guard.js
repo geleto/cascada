@@ -162,6 +162,47 @@
       expect(result.data).to.eql({ status: 'ok' });
     });
 
+    it('should allow bare datatype selector to guard matching handler in script mode', async () => {
+      const script = `
+        data result
+        text output
+        guard data
+          result.temp = "DROP"
+          result.fail = explode()
+        endguard
+
+        output("OUTER")
+        result.status = "ok"
+        return { text: output.snapshot(), data: result.snapshot() }`;
+
+      const result = await env.renderScriptString(script, {
+        explode: () => {
+          throw new Error('boom');
+        }
+      });
+
+      expect(result.text.trim()).to.equal('OUTER');
+      expect(result.data).to.eql({ status: 'ok' });
+    });
+
+    it('should allow var selector to guard all variables in script mode', async () => {
+      const script = `
+        var count = 1
+        guard var
+          count = count + 1
+          count = explode()
+        endguard
+        return { count: count }`;
+
+      const result = await env.renderScriptString(script, {
+        explode: () => {
+          throw new Error('boom');
+        }
+      });
+
+      expect(result.count).to.equal(1);
+    });
+
     it('should keep pre-guard snapshot while reverting guard output on failure', async () => {
       const script = `
         text output

@@ -850,7 +850,8 @@ class Compiler extends CompilerBase {
 
       const guardHandlers = this._getGuardedOutputNames(
         frame.usedOutputs,
-        guardTargets
+        guardTargets,
+        frame
       );
       if (guardHandlers.length > 0) {
         outputGuardStateVar = this._tmpid();
@@ -903,7 +904,7 @@ class Compiler extends CompilerBase {
     }
   }
 
-  _getGuardedOutputNames(usedOutputs, guardTargets) {
+  _getGuardedOutputNames(usedOutputs, guardTargets, frame) {
     let used = [];
     if (usedOutputs instanceof Set) {
       used = Array.from(usedOutputs);
@@ -919,9 +920,21 @@ class Compiler extends CompilerBase {
       return used;
     }
 
-    if (Array.isArray(guardTargets.handlerSelector) && guardTargets.handlerSelector.length > 0) {
-      const guardedSet = new Set(guardTargets.handlerSelector);
-      return used.filter((name) => guardedSet.has(name));
+    const hasNamedHandlers = Array.isArray(guardTargets.handlerSelector) && guardTargets.handlerSelector.length > 0;
+    const hasTypedHandlers = Array.isArray(guardTargets.typeTargets) && guardTargets.typeTargets.length > 0;
+    if (hasNamedHandlers || hasTypedHandlers) {
+      const guardedSet = new Set(hasNamedHandlers ? guardTargets.handlerSelector : []);
+      const guardedTypes = new Set(hasTypedHandlers ? guardTargets.typeTargets : []);
+      return used.filter((name) => {
+        if (guardedSet.has(name)) {
+          return true;
+        }
+        if (guardedTypes.size === 0 || !frame) {
+          return false;
+        }
+        const outputDecl = this.async._getDeclaredOutput(frame, name);
+        return !!(outputDecl && guardedTypes.has(outputDecl.type));
+      });
     }
 
     // No selectors at all means global guard.
@@ -941,6 +954,9 @@ class Compiler extends CompilerBase {
     const handlerSelector = !handlerTargetsRaw
       ? null
       : (handlerTargetsRaw.includes('@') ? '*' : handlerTargetsRaw);
+    const typeTargets = Array.isArray(guardNode && guardNode.typeTargets) && guardNode.typeTargets.length > 0
+      ? guardNode.typeTargets
+      : null;
 
     const variableTargets = guardNode && guardNode.variableTargets === '*'
       ? '*'
@@ -951,10 +967,11 @@ class Compiler extends CompilerBase {
       ? guardNode.sequenceTargets
       : null;
 
-    const hasAnySelectors = !!handlerSelector || !!variableTargets || !!sequenceTargets;
+    const hasAnySelectors = !!handlerSelector || !!typeTargets || !!variableTargets || !!sequenceTargets;
 
     return {
       handlerSelector,
+      typeTargets,
       variableTargets,
       sequenceTargets,
       hasAnySelectors
