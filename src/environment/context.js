@@ -5,7 +5,7 @@ const { Obj } = require('../object');
 const { createPoison } = require('../runtime/errors');
 
 class Context extends Obj {
-  init(ctx, blocks, env, path) {
+  init(ctx, blocks, env, path, scriptMode = false) {
     // Has to be tied to an environment so we can tap into its globals.
     if (!env) {
       // Lazy load Environment to avoid circular dependency
@@ -15,6 +15,7 @@ class Context extends Obj {
       this.env = env;
     }
     this.path = path || null;
+    this.scriptMode = !!scriptMode;
 
     // Make a duplicate of ctx
     this.ctx = lib.extend({}, ctx);
@@ -161,7 +162,7 @@ class Context extends Obj {
   forkForPath(newPath) {
     // Create a new, empty context object.
     // It will inherit the correct `env` from `this`.
-    const newContext = new Context({}, {}, this.env);
+    const newContext = new Context({}, {}, this.env, null, this.scriptMode);
 
     // Share critical state objects by REFERENCE. Do NOT copy them.
     newContext.ctx = this.ctx;           // Share the variable store.

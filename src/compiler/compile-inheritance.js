@@ -233,10 +233,11 @@ class CompileInheritance {
         //this.emit.line(`${blockFunc} = runtime.promisify(${blockFunc}.bind(context));`);
         this.emit.line(`let ${blockFunc} = await context.getAsyncBlock("${node.name.value}");`);
         this.emit.line(`${id} = ${blockFunc}(env, context, frame, runtime, astate, cb);`);
+        this.emit.line(`${id} = ${id}.addSnapshot("text", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
         if (needsParentCheck) {
           this.emit.line('}');
         }
-      }, node, null, 'text');
+      }, node, null, 'text', true);
     }
     else {
       let id = this.compiler._tmpid();
@@ -309,8 +310,8 @@ class CompileInheritance {
       // Call getSuper directly - it returns the output synchronously
       // The callback (cb) is passed through for error propagation
       this.emit.line(`let ${id} = context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, cb);`);
-      this.emit.line(`${id} = runtime.materializeTemplateTextValue(${id}, context);`);
-      this.emit.line(`${id} = (${id} && typeof ${id}.then === "function") ? ${id}.then(v => runtime.markSafe(v)) : runtime.markSafe(${id});`);
+      this.emit.line(`${id} = ${id}.addSnapshot("text", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+      this.emit.line(`${id} = runtime.markSafe(${id});`);
     }
     else {
       const cb = this.compiler._makeCallback(id);
@@ -351,7 +352,8 @@ class CompileInheritance {
       // that returns the incomplete output array immediately. The master `cb` from the
       // closure is passed for error propagation.
       this.emit.line(`${resultVar} = ${templateVar}._renderForComposition(context.getVariables(), frame, astate, cb);`);
-    }, node, null, 'text');
+      this.emit.line(`${resultVar} = ${resultVar}.addSnapshot("text", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+    }, node, null, 'text', true);
   }
 
   compileIncludeSync(node, frame) {

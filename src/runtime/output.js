@@ -6,7 +6,6 @@ const {
   DataCommand,
   SinkCommand
 } = require('./commands');
-const { normalizeScriptTextArgs } = require('./safe-output');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
 const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
@@ -197,12 +196,10 @@ class Output {
   }
 
   _getResultOrThrow() {
-    const finalize = ({ hasError, error }) => {
-      if (hasError && error) {
-        throw error;
-      }
-      if (this._errors.length > 0) {
-        throw new PoisonError(this._errors.slice());
+    const finalize = (inspection) => {
+      const mergedError = this._mergeCurrentErrors(inspection);
+      if (mergedError) {
+        throw mergedError;
       }
       return this.getCurrentResult();
     };
@@ -219,11 +216,26 @@ class Output {
   }
 
   _isErrorNow() {
-    return this._ensureInspection().then(({ hasError }) => !!hasError);
+    return this._getErrorNow().then((error) => !!error);
   }
 
   _getErrorNow() {
-    return this._ensureInspection().then(({ error }) => error || null);
+    return this._ensureInspection().then((inspection) => this._mergeCurrentErrors(inspection));
+  }
+
+  _mergeCurrentErrors(inspection) {
+    const merged = [];
+    if (inspection && inspection.error && Array.isArray(inspection.error.errors) && inspection.error.errors.length > 0) {
+      merged.push(...inspection.error.errors);
+    }
+    if (Array.isArray(this._errors) && this._errors.length > 0) {
+      merged.push(...this._errors);
+    }
+    if (merged.length === 0) {
+      return null;
+    }
+    const mergedError = new PoisonError(merged);
+    return mergedError.errors.length > 0 ? mergedError : null;
   }
 
   _captureGuardState() {
@@ -953,14 +965,7 @@ function resolveCommandArgumentsForApply(cmd, output) {
 
   const result = resolveCommandArgsValue(cmd.arguments, cmd, output);
   const finalize = (resolvedArgs) => {
-    if (isTextCommandForOutput(cmd, output)) {
-      const autoescape = output && output._context && output._context.env && output._context.env.opts
-        ? output._context.env.opts.autoescape
-        : false;
-      cmd.arguments = normalizeScriptTextArgs(resolvedArgs, autoescape);
-    } else {
-      cmd.arguments = resolvedArgs;
-    }
+    cmd.arguments = resolvedArgs;
     cmd.resolved = true;
     return cmd.arguments;
   };
@@ -969,10 +974,6 @@ function resolveCommandArgumentsForApply(cmd, output) {
     return Promise.resolve(result).then(finalize);
   }
   return finalize(result);
-}
-
-function isTextCommandForOutput(cmd, output) {
-  return !!output && output._outputType === 'text' && cmd instanceof TextCommand && cmd.normalizeArgs === true;
 }
 
 function resolveCommandArgsValue(value, cmd, output) {

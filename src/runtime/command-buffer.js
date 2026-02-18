@@ -2,6 +2,7 @@
 
 const {
   ErrorCommand,
+  TargetPoisonCommand,
   TextCommand,
   SequenceCallCommand,
   SequenceGetCommand,
@@ -219,7 +220,11 @@ class CommandBuffer {
         : errors;
 
       try {
-        this._fillSlot(slot, new ErrorCommand(processedErrors), outputName);
+        this._fillSlot(slot, new TargetPoisonCommand({
+          handler: outputName,
+          errors: processedErrors,
+          pos: { lineno, colno }
+        }), outputName);
       } catch (fillErr) {
         if (runtime && runtime.RuntimeFatalError) {
           const fatal = fillErr instanceof runtime.RuntimeFatalError

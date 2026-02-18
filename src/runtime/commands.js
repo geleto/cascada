@@ -2,6 +2,7 @@
 
 const { isPoison, isPoisonError, PoisonError, createPoison, handleError } = require('./errors');
 const contextualizedOutputErrorCache = new WeakMap();
+let safeOutputApi = null;
 
 /**
  * Command classes for the script-mode output pipeline.
@@ -158,27 +159,25 @@ class TextCommand extends OutputCommand {
       return;
     }
     const args = Array.isArray(this.arguments) ? this.arguments : [];
-    const pos = this.pos || { lineno: 0, colno: 0 };
-    for (const arg of args) {
-      if (arg === null || arg === undefined) {
-        continue;
-      }
-      const type = typeof arg;
-      if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
-        output._target.push(arg);
-        continue;
-      }
-      if (type === 'object') {
-        const hasCustomToString = arg.toString && arg.toString !== Object.prototype.toString;
-        if (hasCustomToString) {
-          output._target.push(arg);
-          continue;
-        }
-      }
-      const argType = Array.isArray(arg) ? 'array' : type;
-      throw new Error(`Invalid TextCommand argument type '${argType}' at ${pos.lineno}:${pos.colno}. TextCommand only accepts text-like scalar values.`);
+    if (!this.normalizeArgs) {
+      appendTextValues(output, args, this.pos);
+      return;
     }
-    output._markStateChanged();
+    const normalizedArgs = [];
+    let hasAsyncNormalization = false;
+    for (const arg of args) {
+      const normalized = normalizeTextCommandArg(arg, output, this.pos);
+      if (normalized && typeof normalized.then === 'function') {
+        hasAsyncNormalization = true;
+      }
+      normalizedArgs.push(normalized);
+    }
+    if (hasAsyncNormalization) {
+      return Promise.all(normalizedArgs).then((resolvedArgs) => {
+        appendTextValues(output, resolvedArgs, this.pos);
+      });
+    }
+    appendTextValues(output, normalizedArgs, this.pos);
   }
 }
 
@@ -250,7 +249,24 @@ class DataCommand extends OutputCommand {
   apply(output) {
     super.apply(output);
     if (!output || !output._base) return;
+    const rawPath = Array.isArray(this.arguments) && this.arguments.length > 0 ? this.arguments[0] : null;
+    const dataPath = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
     const poisonErrors = this.extractPoisonFromArgs();
+    // Preserve existing poison on a data path for non-set operations, but still
+    // merge any new poison that arrived through arguments.
+    if (this.command !== 'set') {
+      const existing = readDataValueAtPath(output._base.data, dataPath);
+      if (isPoison(existing) || isPoisonError(existing)) {
+        if (poisonErrors.length > 0) {
+          setDataPoisonAtPath(
+            output,
+            this.arguments,
+            this.toPoisonValue(poisonErrors)
+          );
+        }
+        return;
+      }
+    }
     if (poisonErrors.length > 0) {
       setDataPoisonAtPath(
         output,
@@ -270,8 +286,18 @@ class DataCommand extends OutputCommand {
       );
       return;
     }
-    method.apply(output._base, this.arguments);
-    output._setTarget(output._base.data);
+    try {
+      method.apply(output._base, this.arguments);
+      output._setTarget(output._base.data);
+    } catch (err) {
+      setDataPoisonAtPath(
+        output,
+        this.arguments,
+        this.toPoisonValue([
+          contextualizeOutputError(output, this.pos, err)
+        ])
+      );
+    }
   }
 }
 
@@ -455,6 +481,39 @@ class ErrorCommand extends Command {
   }
 }
 
+class TargetPoisonCommand extends Command {
+  constructor({ handler, errors = null, pos = null }) {
+    super();
+    this.handler = handler;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
+    this.mutatesOutput = true;
+  }
+
+  getError() {
+    return new PoisonError(this.errors);
+  }
+
+  apply(output) {
+    if (!output) {
+      return;
+    }
+    if (output._outputType === 'text') {
+      if (!Array.isArray(output._target)) {
+        output._setTarget([]);
+      }
+      output._target.push(createPoison(this.errors));
+      output._markStateChanged();
+      return;
+    }
+    if (typeof output._applyPoisonErrors === 'function') {
+      output._applyPoisonErrors(this.errors);
+      return;
+    }
+    output._setTarget(createPoison(this.errors));
+  }
+}
+
 class SnapshotCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });
@@ -625,6 +684,7 @@ module.exports = {
   SequenceCallCommand,
   SequenceGetCommand,
   ErrorCommand,
+  TargetPoisonCommand,
   SnapshotCommand,
   IsErrorCommand,
   GetErrorCommand,
@@ -713,4 +773,81 @@ function resolveSubpath(target, subpath) {
     current = current[segment];
   }
   return current;
+}
+
+function normalizeTextCommandArg(value, output, pos) {
+  const { materializeTemplateTextValue } = getSafeOutputApi();
+  const materialized = materializeTemplateTextValue(value, buildTextErrorContext(output, pos));
+  if (materialized && typeof materialized.then === 'function') {
+    return Promise.resolve(materialized).then((resolved) => normalizeMaterializedTextArg(resolved, output, pos));
+  }
+  return normalizeMaterializedTextArg(materialized, output, pos);
+}
+
+function normalizeMaterializedTextArg(value, output, pos) {
+  const { suppressValue, suppressValueScript } = getSafeOutputApi();
+  const throwOnUndefined = isThrowOnUndefinedEnabled(output);
+  if (throwOnUndefined && (value === null || value === undefined)) {
+    throw contextualizeOutputError(output, pos, new Error('attempted to output null or undefined value'));
+  }
+  const autoescape = isAutoescapeEnabled(output);
+  if (isScriptOutputMode(output)) {
+    return suppressValueScript(value, autoescape);
+  }
+  return suppressValue(value, autoescape);
+}
+
+function appendTextValues(output, values, pos) {
+  const args = Array.isArray(values) ? values : [values];
+  const commandPos = pos || { lineno: 0, colno: 0 };
+  for (const value of args) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+    const type = typeof value;
+    if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
+      output._target.push(value);
+      continue;
+    }
+    if (type === 'object') {
+      const hasCustomToString = value.toString && value.toString !== Object.prototype.toString;
+      if (hasCustomToString) {
+        output._target.push(value);
+        continue;
+      }
+    }
+    const argType = Array.isArray(value) ? 'array' : type;
+    throw new Error(`Invalid TextCommand argument type '${argType}' at ${commandPos.lineno}:${commandPos.colno}. TextCommand only accepts text-like scalar values.`);
+  }
+  output._markStateChanged();
+}
+
+function buildTextErrorContext(output, pos) {
+  return {
+    lineno: pos && typeof pos.lineno === 'number' ? pos.lineno : 0,
+    colno: pos && typeof pos.colno === 'number' ? pos.colno : 0,
+    errorContextString: null,
+    path: output && output._context ? output._context.path || null : null
+  };
+}
+
+function isAutoescapeEnabled(output) {
+  const opts = output && output._context && output._context.env ? output._context.env.opts : null;
+  return !!(opts && opts.autoescape);
+}
+
+function isThrowOnUndefinedEnabled(output) {
+  const opts = output && output._context && output._context.env ? output._context.env.opts : null;
+  return !!(opts && opts.throwOnUndefined);
+}
+
+function isScriptOutputMode(output) {
+  return !!(output && output._context && output._context.scriptMode);
+}
+
+function getSafeOutputApi() {
+  if (!safeOutputApi) {
+    safeOutputApi = require('./safe-output');
+  }
+  return safeOutputApi;
 }

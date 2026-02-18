@@ -106,10 +106,10 @@ class CompileBuffer {
     return this.compiler.asyncMode ? `${this.currentBuffer}.output` : this.currentBuffer;
   }
 
-  _emitTemplateTextCommandExpression(valueExpression, positionNode) {
+  _emitTemplateTextCommandExpression(valueExpression, positionNode, normalizeArgs = false) {
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    return `new runtime.TextCommand({ handler: "text", args: [${valueExpression}], pos: {lineno: ${lineno}, colno: ${colno}} })`;
+    return `new runtime.TextCommand({ handler: "text", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, pos: {lineno: ${lineno}, colno: ${colno}} })`;
   }
 
   _emitPositionLiteral(positionNode) {
@@ -478,12 +478,16 @@ class CompileBuffer {
   /**
    * End async buffer addition (split pattern)
    */
-  asyncAddToBufferEnd(node, frame, positionNode = node, handlerName = null, outputName = 'text', emitTextCommand = false) {
+  asyncAddToBufferEnd(node, frame, positionNode = node, handlerName = null, outputName = 'text', emitTextCommand = false, normalizeTextArgs = false) {
+    void handlerName;
+    void outputName;
     const valueId = this.compiler.asyncMode ? this._bufferValueStack.pop() : null;
     this.compiler.emit.line(';');
     if (this.compiler.asyncMode) {
+      // Enqueue the command with unresolved arguments.
+      // Argument resolution and error handling are performed at apply-time.
       const valueExpr = emitTextCommand
-        ? this._emitTemplateTextCommandExpression(valueId, positionNode)
+        ? this._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs)
         : valueId;
       this.compiler.emit.line(`return ${valueExpr};`);
       this.compiler.emit.line(`})(), runtime, context, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", cb);`);
@@ -495,9 +499,6 @@ class CompileBuffer {
       this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
       return frame.pop();
     }
-    /*if (this.compiler.asyncMode) {
-      this.emitAddCommand(frame, outputName, valueId, positionNode, emitTextCommand);
-    }*/
     return frame;
   }
 

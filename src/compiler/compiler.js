@@ -1300,77 +1300,58 @@ class Compiler extends CompilerBase {
 
   // @todo - get rid of the asyncAddToBufferBegin after we have switch var to the new value implementation
   compileOutput(node, frame) {
+    if (this.asyncMode) {
+      const children = node.children;
+      children.forEach(child => {
+        if (child instanceof nodes.TemplateData) {
+          if (child.value) {
+            this.buffer.addToBuffer(node, frame, function () {
+              this.compileLiteral(child, frame);
+            }, child, 'text', true);
+          }
+          return;
+        }
+        const timingPromiseId = this._tmpid();
+        this.emit.line(`let ${timingPromiseId};`);
+        frame = this.buffer.asyncAddToBufferBegin(node, frame, child, 'text', 'text');
+        // Keep command args unresolved for apply-time resolution/error handling.
+        // Temporary timing barrier: await expression completion in the same async
+        // block that enqueues the command so current write-count/lock lifecycle stays stable.
+        // It will be removed after switching from var to value implementation.
+        this.emit(`(${timingPromiseId} = runtime.resolveSingle(`);
+        this._compileExpression(child, frame, false);
+        this.emit('))');
+        this.emit(';\n');
+        this.emit.line(`await ${timingPromiseId};`);
+        frame = this.buffer.asyncAddToBufferEnd(node, frame, child, 'text', 'text', true, true);
+      });
+      return;
+    }
+
     const children = node.children;
     children.forEach(child => {
-      // TemplateData is a special case because it is never
-      // autoescaped, so simply output it for optimization
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
-          // Position node is the TemplateData node itself
           this.buffer.addToBuffer(node, frame, function () {
             this.compileLiteral(child, frame);
-          }, child, 'text', true); // Pass TemplateData as position
+          }, child, 'text', false);
         }
-      } else {
-        // Use the specific child expression node for position
-        frame = this.buffer.asyncAddToBufferBegin(node, frame, child, 'text', 'text');
-        const errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, child)) : '';
+        return;
+      }
 
-        // In script mode, we use a special suppressor that passes through Result Objects
-        // but still escapes standard strings if autoescape is on.
-        if (this.scriptMode) {
-          this.emit(`${node.isAsync ? 'await runtime.suppressValueScriptAsync(' : 'runtime.suppressValueScript('}`);
-        } else {
-          this.emit(`${node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue('}`);
-        }
-
+      this.buffer.addToBuffer(node, frame, function () {
+        this.emit('runtime.suppressValue(');
         if (this.throwOnUndefined) {
-          this.emit(`${node.isAsync ? 'await runtime.ensureDefinedAsync(' : 'runtime.ensureDefined('}`);
+          this.emit('runtime.ensureDefined(');
         }
         this._compileExpression(child, frame, false);
         if (this.throwOnUndefined) {
-          // Use child position for ensureDefined error
-          if (node.isAsync) {
-            this.emit(`,${child.lineno},${child.colno}, context, ${errorContextJson})`);
-          } else {
-            this.emit(`,${child.lineno},${child.colno}, context)`);
-          }
+          this.emit(`,${child.lineno},${child.colno}, context)`);
         }
-        // Use child position for suppressValue error
-        if (node.isAsync) {
-          this.emit(`, env.opts.autoescape, ${errorContextJson})`);
-        } else {
-          this.emit(', env.opts.autoescape)');
-        }
-        this.emit(';\n');
-
-        frame = this.buffer.asyncAddToBufferEnd(node, frame, child, 'text', 'text', true); // Pass Output node as op, child as pos
-      }
+        this.emit(', env.opts.autoescape)');
+      }, child, 'text', false);
     });
   }
-
-  // Retrieves the direct child AST nodes of a given node in their
-  // semantically significant order, as defined by the node's `fields` property
-  // which is also the order they are rendered
-  /*_getImmediateChildren(node) {
-    const children = [];
-    for (const fieldName of node.fields) { // For NodeList, fieldName will be 'children'
-      const fieldValue = node[fieldName];  // fieldValue will be the actual array of child nodes
-
-      if (fieldValue instanceof nodes.Node) {
-        children.push(fieldValue);
-      } else if (Array.isArray(fieldValue)) {
-        // If the field is an array, iterate through it and add any Node instances.
-        // This handles cases like NodeList.children or Compare.ops
-        for (const item of fieldValue) {
-          if (item instanceof nodes.Node) {
-            children.push(item);
-          }
-        }
-      }
-    }
-    return children;
-  }*/
 
   /**
    * Retrieves the direct child AST nodes of a given node by iterating over all properties

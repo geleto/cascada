@@ -92,7 +92,7 @@ class Template extends Obj {
       }
     }
 
-    const context = new Context(ctx || {}, this.blocks, this.env, this.path);
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
     let frame;
     if (parentFrame) {
       frame = parentFrame.push(true);
@@ -213,7 +213,7 @@ class Template extends Obj {
       : (this.asyncMode ? new AsyncFrame() : new Frame());
     frame.topLevel = true;
 
-    const context = new Context(ctx || {}, this.blocks, this.env, this.path);
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
     astate = astate || (this.asyncMode ? new AsyncState() : null);
 
     if (this.asyncMode) {
@@ -223,7 +223,7 @@ class Template extends Obj {
       // Immediately export the variables (they may be promises)
       const exported = context.getExported();
       const boundExported = {};
-      const macroContext = new Context({}, this.blocks, this.env, this.path);
+      const macroContext = new Context({}, this.blocks, this.env, this.path, this.scriptMode);
 
       for (const name in exported) {
         const item = exported[name];
@@ -244,7 +244,7 @@ class Template extends Obj {
         } else {
           const exported = context.getExported();
           const boundExported = {};
-          const macroContext = new Context({}, this.blocks, this.env, this.path);
+          const macroContext = new Context({}, this.blocks, this.env, this.path, this.scriptMode);
 
           for (const name in exported) {
             const item = exported[name];
@@ -382,7 +382,7 @@ class AsyncTemplate extends Template {
   _renderForComposition(ctx, parentFrame, astate, cb) {
     this.compile();
 
-    const context = new Context(ctx || {}, this.blocks, this.env, this.path);
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode);
     const frame = parentFrame ? parentFrame.push(true) : new AsyncFrame();
     frame.topLevel = true;
 

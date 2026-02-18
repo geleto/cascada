@@ -155,6 +155,7 @@ module.exports = {
   SequenceCallCommand: commands.SequenceCallCommand,
   SequenceGetCommand: commands.SequenceGetCommand,
   ErrorCommand: commands.ErrorCommand,
+  TargetPoisonCommand: commands.TargetPoisonCommand,
   SnapshotCommand: commands.SnapshotCommand,
   IsErrorCommand: commands.IsErrorCommand,
   GetErrorCommand: commands.GetErrorCommand,

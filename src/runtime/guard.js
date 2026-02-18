@@ -1,6 +1,5 @@
 
 const { isError } = require('./errors');
-const { getPosonedBufferErrorsAsync } = require('./command-buffer');
 const { SetTargetCommand } = require('./commands');
 const { getOutput } = require('./output');
 
@@ -174,9 +173,16 @@ async function collectGuardVariableErrors(frame, guardState) {
 }
 
 async function getErrors(frame, guardState, bufferArr, allowedHandlers) {
-  const bufferErrors = await getPosonedBufferErrorsAsync(bufferArr, allowedHandlers) || [];
+  const bufferErrors = await collectOutputErrors(bufferArr, allowedHandlers);
   const { variableErrors, sequenceErrors } = await collectGuardVariableErrors(frame, guardState);
   return bufferErrors.concat(variableErrors, sequenceErrors);
+}
+
+async function collectOutputErrors(buffer, allowedHandlers) {
+  if (!buffer || typeof buffer.getPosonedBufferErrorsAsync !== 'function') {
+    return [];
+  }
+  return buffer.getPosonedBufferErrorsAsync(allowedHandlers);
 }
 
 function complete(frame, guardState, shouldRevert) {
