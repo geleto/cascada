@@ -1,865 +1,246 @@
 # Output Error Model Refactor Plan
 
-This document defines the target error model for typed outputs (`data`, `text`, `value`, `sink`, `sequence`) and a migration plan that keeps the test suite green after every step.
+This plan tracks the error refactor for typed outputs (`data`, `text`, `value`, `sink`, `sequence`) and is synchronized with the current implementation.
+
+## Goals
+
+- Error state should come from current output state (`_target`) at observation time.
+- Repaired outputs should become healthy when poison is overwritten/recovered.
+- Output observation (`snapshot/isError/getError`) must execute in command order.
+- Remove legacy command-history error collection from guard and output health checks.
+- Keep behavior deterministic and test suite green after each step.
 
-## Goal
+## Current Implementation Status
 
-Replace legacy command-history poison collection with `_target`-state-based error inspection so recovered outputs are no longer sticky-poisoned.
+## Done
 
-Required output APIs:
+- Output state/version/cache plumbing exists:
+  - `_getTarget()`, `_setTarget()`, `_markStateChanged()`
+  - `_inspectionCache = { version, hasError, poisonError }`
+  - recursive `inspectTargetForErrors(target)` in `src/runtime/output.js`
+- Output observation commands exist and are wired:
+  - `SnapshotCommand`, `IsErrorCommand`, `GetErrorCommand`, `SinkRepairCommand`
+  - `CommandBuffer.addSnapshot/addIsError/addGetError/addSinkRepair`
+  - compiler emits these for output observation calls
+- Command poison semantics mostly moved into typed commands:
+  - `TextCommand`, `DataCommand`, `ValueCommand`, `SinkCommand` encode poison into output state instead of early throw-gating in base class
+- Pre-`apply` argument resolution is centralized:
+  - `resolveCommandArgumentsForApply()` in `Output._applyCommand()`
+  - commands are created with unresolved args and resolved once before `apply()`
+- Compile-time output text normalization path was removed from construction flow and moved to command/runtime (`TextCommand.normalizeArgs` path).
+- `Context` now carries `scriptMode` and it propagates through `Template` context creation/fork.
+- `compileOutput` now has explicit split:
+  - async mode: command-buffer path
+  - non-async mode: direct string concatenation path (no command-buffer commands)
+- Buffer clearing/pause-driven output rollback was removed from active guard flow.
 
-- `snapshot()`
-- `isError()`
-- `getError()`
+## Partially Done / Still Transitional
 
-Primary semantics:
+- `Output._errors` is still used and merged with inspection result in `_mergeCurrentErrors()`.
+- Guard output error collection still uses legacy buffer history walk:
+  - `guard.collectOutputErrors()` -> `buffer.getPosonedBufferErrorsAsync(...)`
+- `CommandBuffer.getPosonedBufferErrors*` still scans commands and unresolved args.
+- `TextCommand` still performs normalization inside `apply()` (acceptable now, but resolver boundary can still be simplified later).
+- `addAsyncArgsCommand()` still awaits promise payloads and converts failures into `TargetPoisonCommand` at queue-fill time.
+- Some compiled async text paths still keep a temporary timing await (`runtime.resolveSingle(...)`) to preserve current write-count/locking behavior.
 
-- Output health is derived from current `_target` state at observation time.
-- Repairing `_target` clears output error state when no poison remains.
-- `is error` and guard/recover checks for outputs must use output APIs, not command-buffer poison history.
-- `#` on outputs must use `getError()` semantics.
-- All output observations (`snapshot/isError/getError`) must execute through observation commands, including facade method calls.
+## Explicit Non-Goals (for now)
 
-## Current Problems
+- No broad scheduler rewrite.
+- No change to sequence transaction semantics unless required by guard migration.
+- No speculative command coalescing/merging until output health model is fully stabilized.
 
-1. Output poison is sticky in `Output._errors` even after later writes repair `_target`.
-2. Guard output error detection uses `CommandBuffer.getPosonedBufferErrors(...)`, which scans history, not current state.
-3. Generic `runtime.isError(value)` and `runtime.peekError(value)` do not recognize output facades.
-4. Repeated `snapshot()/isError()/getError()` can be expensive without caching.
+## Target End State
 
-## Target Model
+- Output health checks are based on `_target` only.
+- `snapshot/isError/getError` observe the stream through commands and do not depend on buffer history scanning.
+- Guard uses output observation commands/APIs for output errors (not command history walks).
+- `_errors` side channel is removed from output health semantics.
+- Command construction stays simple (`new XxxCommand(...)` with unresolved args).
+- Argument resolution and error contextualization happen once, immediately before or during apply flow, with no marker-property hacks.
 
-## 1. `_target` Is the State Source of Truth
+## Step Plan (Updated)
 
-- `_target` always represents the current snapshot state for that output.
-- `snapshot()` returns `_target` (output-specific finalization rules may map sink internals before assigning `_target`).
-- `isError()` and `getError()` are derived from `_target`.
-- `Output._errors` is removed as an authoritative health source.
+## Step 1: Guard Output Errors via Output Observation (Next)
 
-Accessor decision:
+Scope:
 
-- Introduce centralized target access hooks in `Output`:
-  - `_getTarget()`
-  - `_setTarget(nextTarget, meta?)`
-- `_setTarget` is the single place that:
-  - updates target value
-  - bumps state version/invalidation
-  - applies output-type hooks (for copy-on-write/snapshot semantics)
-- Concrete outputs may customize behavior behind these hooks, but command classes should not bypass them.
+- Replace `guard.collectOutputErrors()` implementation:
+  - stop calling `buffer.getPosonedBufferErrorsAsync(...)`
+  - collect errors from actual output handlers (via `buffer._outputs`)
+  - use observation commands (`addGetError`) on the active/current buffer for ordering
+- Ensure collection respects `allowedHandlers` filtering.
+- Preserve sequence transaction handling (`begin/commit/rollback`) as-is.
+- Keep variable/sequence-lock error checks unchanged in this step.
 
-Important constraints:
+Required changes:
 
-- This model assumes command semantics ensure poison is represented in `_target` when the output should be considered poisoned.
-- If a command fails but does not update `_target`, that failure is not persistent output poison (unless encoded into `_target` by output implementation).
+- `src/runtime/guard.js`
+- likely small wiring in `src/runtime/command-buffer.js` for handler iteration helpers
+- tests under `tests/poison/guard.js` and related poison/guard integration suites
 
-## 2. Why `resolveSingle` Alone Is Not Enough
+Acceptance:
 
-`resolveSingle` is useful for top-level resolution and `RESOLVE_MARKER` objects, but insufficient for whole-output health by itself:
+- No use of `getPosonedBufferErrorsAsync` in guard output error path.
+- Guard still captures all output errors expected by current tests.
+- `npm run test:quick` green.
 
-- It does not recursively scan arbitrary plain object/array graphs for nested poison unless marker-managed.
-- `DataOutput` often contains plain mutable objects from data handlers.
+## Step 2: Remove Legacy Buffer Error Walkers
 
-Conclusion:
+Scope:
 
-- Keep `resolveSingle` as a primitive for top-level settling.
-- Add `inspectTargetForErrors(target)` for recursive poison detection in `_target` graphs.
+- Remove:
+  - `CommandBuffer.getPosonedBufferErrors`
+  - `CommandBuffer.getPosonedBufferErrorsAsync`
+  - exported wrapper helpers for those methods
+  - unresolved-arg probing logic used only by those paths
+- Patch any remaining callsites to observation-command-based collection.
 
-## 3. Output Observation Contract
+Required changes:
 
-On base `Output` and exposed through facades:
+- `src/runtime/command-buffer.js`
+- `src/runtime/guard.js`
+- any tests importing/using legacy helpers
 
-- `snapshot()`:
-  - Point-in-stream via command scheduling, returns current output value.
-  - Throws `PoisonError` when `_target` currently contains poison.
-- `isError()`:
-  - Returns true if `_target` currently contains poison.
-  - No deep-copy.
-- `getError()`:
-  - Returns `PoisonError` for current `_target` poison state; otherwise `null`.
-  - `#` invalid-peek behavior (healthy target -> poison) remains a compiler/runtime callsite rule, not default `getError()` behavior.
+Acceptance:
 
-Execution rule:
+- No runtime path depends on command-history poison scanning for output health.
+- `npm run test:quick` green.
 
-- Even when facade exposes these methods, calls must enqueue and execute through observation commands.
-- No direct read path may bypass command ordering.
+## Step 3: Remove `_errors` from Output Health Semantics
 
-## 4. Observation Synchronization: Commands, Not `_tail`
+Scope:
 
-Do not add a separate `_tail`/`_lastResult` barrier field.
+- Stop merging `_errors` into observation result:
+  - `_getErrorNow()` should reflect current `_target` inspection state.
+- Replace `_recordError` side-channel behavior with state poisoning behavior:
+  - command application failures should poison `_target` (target-level, output-type-specific where needed), not append to `_errors`.
+- Update guard snapshot/restore state to stop relying on `_errors.length` bookkeeping.
 
-Use command ordering only:
+Required changes:
 
-- Keep observation operations queued (`SnapshotCommand`, new `IsErrorCommand`, new `GetErrorCommand`).
-- Iterator ordering ensures each observation runs after all prior commands for that handler segment.
-- Direct facade calls must enqueue observation commands through `CommandBuffer`.
+- `src/runtime/output.js`
+- possibly targeted adjustments in `src/runtime/commands.js` for consistent poison encoding on apply failures
+- guard state capture/restore helpers
 
-This avoids dual state and keeps source-order semantics deterministic.
+Acceptance:
 
-## 5. `inspectTargetForErrors(target)` Rules
+- Output can recover by overwriting poisoned target state without sticky side-channel errors.
+- Health probes match current target state at observation point.
+- `npm run test:quick` green.
 
-Shared helper (in `output.js` or helper module):
+## Step 4: Finalize Pre-Apply Resolution Boundary
 
-- Detect `PoisonedValue` via `isPoison` and collect `.errors`.
-- Resolve promise-like values while collecting all failures (never-miss-any-error behavior).
-- Recursively inspect arrays and plain objects.
-- Deduplicate errors with existing error helpers.
-- Track visited objects to avoid cycles.
-- Return `{ hasError, error }` where `error` is a single `PoisonError` containing all collected errors.
+Scope:
 
-Output-type policy:
-
-- `DataOutput`: recursive inspect of `_target`.
-- `TextOutput`: inspect `_target` fragment array.
-- `ValueOutput`: inspect scalar `_target` (recursive if object/array).
-- `SinkOutput`: fixed policy, sink health is `_target`-driven and sink failures poison `_target`.
-- `SequenceOutput`: no mandatory global poison behavior; state poison is optional and implementation-defined via `_target`.
-
-## 6. Caching and Versioning
-
-Introduce output-local cache keyed by monotonic version:
-
-- `_stateVersion`
-- `_inspectCacheVersion`
-- `_inspectCacheHasError`
-- `_inspectCacheErrors`
-- `_inspectCachePoisonError`
-
-Invalidation on any `_target`-affecting change:
-
-- command apply that writes/replaces `_target`
-- `SetTargetCommand`
-- guard restore/clear/revert affecting output state
-
-Cache abstraction requirement:
-
-- Cache lifecycle must be owned by `Output` base (not by command implementations).
-- Custom sink/sequence/data/value implementations interact through hooks only:
-  - `_setTarget(...)` for state mutation
-  - `_inspectTargetForErrors(...)` or override points for specialized inspection
-- This keeps cache correctness independent of concrete sink/sequence object internals.
-
-Read path:
-
-- `snapshot()/isError()/getError()` use shared `ensureInspection()`.
-- If cache version matches, reuse.
-- Else recompute from `_target` and refresh cache.
-
-Mutation safety:
-
-- cache copied/frozen errors array
-- `getError()` returns `PoisonError` built from copied errors (or cached instance built from immutable copy)
-
-Copy policy by output type:
-
-- `DataOutput`: snapshot copy-on-write for returned values, but error inspection should avoid deep cloning where possible.
-- `ValueOutput`: no deep snapshot copy by default; inspection reads value directly.
-- `TextOutput`: no deep clone for inspection.
-- `SinkOutput`/`SequenceOutput`: inspection must not assume object cloneability; inspect `_target` only.
-
-## 7. Command-Class Changes (Critical)
-
-This is the core of proper `_target` handling.
-
-### 7.1 `OutputCommand` Base (`src/runtime/commands.js`)
-
-Current behavior throws early via `getError()` before `apply` mutates output. That must change.
-
-New behavior:
-
-- `OutputCommand.apply(dispatchCtx)` must not throw just because arguments contain poison.
-- It must delegate to concrete command semantics that update `_target` consistently.
-- Add helper APIs:
-  - `extractPoisonFromArgs()` -> `Error[]`
-  - `toPoisonValue(errors)` -> `createPoison(errors)`
-
-Rationale: poisoning must be represented in `_target`, not in side-channel `_errors`.
-
-### 7.2 `DataCommand`
-
-When args/path contain poison:
-
-- Do not throw.
-- Write poison value into addressed path in `_target` (or equivalent data-handler operation).
-- This ensures later healthy overwrite repairs state.
-
-When healthy:
-
-- apply method normally, update `_target` with `DataHandler.data`.
-
-### 7.3 `TextCommand`
-
-When args contain poison:
-
-- append poison as value in text target representation (or an agreed poison placeholder strategy that preserves poison in `_target`).
-- do not throw during apply.
-
-When healthy:
-
-- append normally.
-
-### 7.4 `ValueCommand`
-
-Argument contract:
-
-- `ValueCommand` accepts exactly one argument in normal usage.
-- Compiler should enforce one argument where possible.
-- Runtime fallback:
-  - 0 args -> set `undefined` (or preserve current behavior if already relied on; lock with tests)
-  - >1 args -> encode poison in `_target` (invalid command usage) rather than silent last-arg wins
-
-When args contain poison:
-
-- set `_target` to poison value.
-
-When healthy:
-
-- set `_target` to the single argument value.
-
-### 7.5 `SinkCommand`
-
-Sink poisoning policy (fixed):
-
-- If any sink method fails, `_target` becomes `PoisonedValue`.
-- Once sink `_target` is poisoned, subsequent sink calls are skipped.
-- `sink.repair()` is required at output-runtime layer:
-  - default behavior: set `_target = undefined`
-  - if underlying sink object has `repair()`, call it; it may repair internal state but does not own `_target` reset.
-  - if underlying sink object does not have `repair()`, reset still succeeds and does not poison.
-
-### 7.6 `SequenceCallCommand` / `SequenceGetCommand`
-
-Sequence policy (fixed):
-
-- Method-level failures may be independent; one failed call does not automatically poison all subsequent sequence calls.
-- Whether sequence maintains poisoned state is implementation-defined via `_target`.
-- If implementation chooses stateful poison, it must encode/read it from `_target`; if not, keep `_target` clean and treat failures as call-level only.
-
-### 7.7 `ErrorCommand`
-
-Transition role (restricted):
-
-- Do not use `ErrorCommand` for `data` or `text` outputs in the new model.
-- Prefer encoding poison directly in concrete output commands.
-- Keep only as compatibility fallback for legacy plumbing and non-output contexts.
-- Long term: remove from output flow.
-
-Evaluation of use cases:
-
-- Keep only where producer-side async slot plumbing has no output-specific context to encode path/target poison directly.
-- If all producer paths can emit output-specific commands (preferred end-state), remove `ErrorCommand` entirely.
-- Decision checkpoint: after Step 3, if no remaining legitimate callers for output flow, delete `ErrorCommand` usage in output buffers.
-
-### 7.8 Observation Commands
-
-Add commands:
-
-- `IsErrorCommand`
-- `GetErrorCommand`
-
-They:
-
-- execute in stream order
-- call output observation helpers
-- resolve deferred result promises
-- do not mutate `_target`
-
-`SnapshotCommand` remains barrier/observation command.
-
-### 7.9 Per-Class Pseudocode Checklist (`src/runtime/commands.js`)
-
-This checklist is keyed to the current classes/methods and is intended to be implemented in small, test-safe commits.
-
-#### A. `Command` base
-
-Target methods:
-
-- `constructor(options)`
-- `resolveResult(value)`
-- `rejectResult(err)`
-- `getError()`
-- `apply(ctx)`
-
-Pseudocode:
-
-```javascript
-class Command {
-  // keep as-is for deferred result plumbing
-  // no poison-specific behavior here
-}
-```
+- Keep command construction unresolved and simple everywhere (`new XxxCommand(...)`).
+- Ensure all command args are resolved once before apply, then written back to command.
+- Eliminate remaining compile-time command error plumbing for output commands.
+- Keep text normalization strategy explicit:
+  - either leave in `TextCommand.apply()` by design, or move to resolver hook; document final boundary clearly.
 
 Notes:
 
-- no semantic change required, except optional `supersedes/mergeWith` hooks in later step.
+- Temporary timing await in async compile paths is currently intentional for write-count/lock stability.
+- Do not reintroduce marker properties on Error objects.
 
-#### B. `OutputCommand` base
+Required changes:
 
-Target methods:
+- `src/compiler/compiler.js`
+- `src/compiler/compile-buffer.js`
+- `src/runtime/output.js`
+- `src/runtime/commands.js`
 
-- `constructor(...)`
-- `getError()` (legacy)
-- `apply(dispatchCtx)`
-- new: `extractPoisonFromArgs()`
-- new: `toPoisonValue(errors)`
+Acceptance:
 
-Pseudocode:
+- Output command args are unresolved at construction, resolved once before apply.
+- No duplicate resolution phases.
+- `npm run test:quick` green.
 
-```javascript
-class OutputCommand extends Command {
-  extractPoisonFromArgs() {
-    // collect poison from this.arguments only
-    // return [] if none
-  }
-
-  toPoisonValue(errors) {
-    // return createPoison(errors)
-  }
-
-  getError() {
-    // transitional: keep for compatibility only
-    // do NOT use as apply gate
-    const errs = this.extractPoisonFromArgs();
-    return errs.length ? new PoisonError(errs) : null;
-  }
-
-  apply(dispatchCtx) {
-    // IMPORTANT: no early throw from arg poison.
-    // concrete commands decide how poison is encoded in _target.
-  }
-}
-```
-
-Required invariant:
-
-- `OutputCommand.apply()` must never throw solely because an argument is poison.
-
-#### C. `TextCommand.apply(dispatchCtx)`
-
-Current behavior:
-
-- calls `super.apply()` then validates/appends scalar args
-- poison arg currently triggers throw via base
-
-Pseudocode:
-
-```javascript
-apply(dispatchCtx) {
-  const target = dispatchCtx._getTarget();
-  ensure target is array;
-
-  const poisonErrors = this.extractPoisonFromArgs();
-  if (poisonErrors.length > 0) {
-    target.push(createPoison(poisonErrors));
-    dispatchCtx._setTarget(target);
-    return;
-  }
-
-  for each arg in arguments:
-    validate supported text-like types
-    append arg to target
-  dispatchCtx._setTarget(target);
-}
-```
-
-Decision point to lock in with tests:
-
-- if arguments contain both healthy scalars and poison, either:
-  - append only combined poison marker (recommended for determinism), or
-  - append scalars and poison in source order.
-- pick one policy and test it explicitly.
-
-#### D. `ValueCommand.apply(dispatchCtx)`
-
-Pseudocode:
-
-```javascript
-apply(dispatchCtx) {
-  if (!dispatchCtx) return;
-
-  if (arguments.length > 1) {
-    dispatchCtx._setTarget(createPoison([new Error('value output accepts exactly one argument')]));
-    return;
-  }
-
-  const poisonErrors = this.extractPoisonFromArgs();
-  if (poisonErrors.length > 0) {
-    dispatchCtx._setTarget(createPoison(poisonErrors));
-    return;
-  }
-
-  dispatchCtx._setTarget((arguments.length === 1) ? arguments[0] : undefined);
-}
-```
-
-#### E. `DataCommand.apply(dispatchCtx)`
-
-Current behavior:
-
-- calls base apply (currently throws on poison)
-- calls DataHandler method
-
-Pseudocode:
-
-```javascript
-apply(dispatchCtx) {
-  if (!dispatchCtx || !dispatchCtx._base) return;
-
-  const poisonErrors = this.extractPoisonFromArgs();
-  if (poisonErrors.length > 0) {
-    // encode poison into addressed path, no throw
-    // path is arguments[0] in data command ABI
-    const path = this.arguments[0];
-    const poison = createPoison(poisonErrors);
-    dispatchCtx._base.set(path, poison); // or equivalent helper
-    dispatchCtx._setTarget(dispatchCtx._base.data);
-    return;
-  }
-
-  const method = resolve data handler method by this.command;
-  if (method missing) {
-    // encode poison into addressed path instead of throwing
-    // (unknown method is represented as poison in target model)
-  }
-
-  method.apply(dispatchCtx._base, this.arguments);
-  dispatchCtx._setTarget(dispatchCtx._base.data);
-}
-```
-
-Implementation note:
-
-- if `DataHandler` does not expose a direct `set(path, value)` for all paths, add a small runtime helper to perform poison write reliably.
-
-#### F. `SinkCommand.apply(dispatchCtx)`
-
-Fixed behavior:
-
-- on first sink failure, set `_target` to poison
-- while poisoned, skip subsequent sink calls
-- support explicit sink repair via `SinkRepairCommand` that resets `_target` to `undefined` and invokes underlying `sink.repair()` when available
-
-Pseudocode:
-
-```javascript
-apply(dispatchCtx) {
-  if (isPoison(dispatchCtx._getTarget())) return; // skip while poisoned
-  // execute sink call
-  // on failure: dispatchCtx._setTarget(createPoison(...))
-}
-```
-
-Add explicit tests for this fixed sink policy.
-
-#### G. `SequenceCallCommand.apply(dispatchCtx)` and `SequenceGetCommand.apply(dispatchCtx)`
-
-Pseudocode (sequence policy is independent from sink):
-
-```javascript
-apply(dispatchCtx) {
-  // preserve deferred promise behavior
-  // failures do not globally poison sequence by default
-  // optional implementation may track state poison in _target
-}
-```
-
-Non-negotiable:
-
-- do not break existing deferred `this.promise` resolve/reject behavior.
-
-#### H. `ErrorCommand.apply(ctx)`
-
-Current behavior throws `PoisonError`. New flow should avoid this command for `data/text`.
-
-Transitional pseudocode (legacy/fallback only):
-
-```javascript
-apply(ctx) {
-  throw new PoisonError(this.errors);
-}
-```
-
-Long-term:
-
-- remove `ErrorCommand` from normal output path once producer-side commands encode poison directly.
-
-#### I. `SnapshotCommand.apply(dispatchCtx)`
-
-No structural change, but expectation changes:
-
-- it should now rely on output `snapshot` logic that reads `_target` + inspection cache.
-- it remains a strict observation barrier.
-
-#### J. New `IsErrorCommand` and `GetErrorCommand`
-
-Suggested shape:
-
-```javascript
-class IsErrorCommand extends Command {
-  constructor({ handler, pos }) { super({ withDeferredResult: true }); ... }
-  apply(dispatchCtx) {
-    const res = dispatchCtx._isErrorNow(); // internal helper, may be bool or promise
-    Promise.resolve(res).then(v => this.resolveResult(!!v), e => this.rejectResult(contextualize(e)));
-  }
-}
-
-class GetErrorCommand extends Command {
-  constructor({ handler, pos }) { super({ withDeferredResult: true }); ... }
-  apply(dispatchCtx) {
-    const res = dispatchCtx._getErrorNow(); // internal helper, PoisonError|null or promise
-    Promise.resolve(res).then(v => this.resolveResult(v), e => this.rejectResult(contextualize(e)));
-  }
-}
-```
-
-Compiler/CommandBuffer integration checklist:
-
-- add `CommandBuffer.addIsError(outputName, pos)`
-- add `CommandBuffer.addGetError(outputName, pos)`
-- add `CommandBuffer.addSinkRepair(outputName, pos)` for sink recovery command path
-- compiler routes output `is error` and output `#` through these observation commands.
-- facade methods `snapshot()/isError()/getError()` must route through the same command path.
-- sink `repair()` calls (including facade method) must route through command path.
-
-## 8. Guard and Compiler Semantics
-
-Guard:
-
-- `runtime.guard.getErrors(...)` collects output errors via `output.isError()` + `output.getError()`.
-- remove dependency on `getPosonedBufferErrors(...)` for output decisions.
-
-Compiler:
-
-- `is error` on output symbols/paths emits output-aware path (command/API based).
-- `#` on outputs emits output `getError()` path.
-
-## 9. Command Coalescing (`supersedes` / `mergeWith`)
-
-Introduce extension points:
-
-- `supersedes(prev)` for redundant replacement
-- `mergeWith(prev)` for future algebraic merge
-
-What `supersedes` means (detailed):
-
-- `next.supersedes(prev) === true` means:
-  - `prev` can be dropped from the queue without observable behavior change.
-  - any externally observable promise/result from `prev` must still resolve/reject correctly (either by aliasing to `next` or by disallowing supersede).
-- Typical examples:
-  - repeated unconsumed observation commands where only latest matters.
-  - idempotent overwrite commands where intermediate state is unobservable.
-- Non-examples:
-  - commands separated by observation barriers
-  - commands with side effects that must execute
-  - commands whose deferred promises are already exposed.
-
-Barriers:
-
-- child buffers
-- pause/resume boundaries
-- guard rollback boundaries
-- commands with externally observed deferred promises
-- observation commands
-
-Initial rollout:
-
-- no merges
-- conservative supersede only where promise semantics are unchanged
-
-Related term:
-
-- `mergeWith(prev)` differs from `supersedes(prev)`:
-  - `supersedes`: drop one command.
-  - `mergeWith`: produce a new combined command that preserves semantics.
-
-## Test Strategy
-
-At each step:
-
-1. add/adjust focused tests
-2. run targeted file(s)
-3. run `npm run test:quick`
-
-Targeted-file example:
-
-- `npx mocha tests/output/error-observation-baseline.js --timeout 5000`
-- `npx mocha tests/output-error-inspection.js --timeout 5000`
-
-Final gate for this plan:
-
-- `npm run test:quick`
-
-## Step-by-Step Implementation Plan
-
-## Step 0: Safety Net Tests (No Behavior Change)
-
-- Characterization tests for current snapshot/guard/`is error`/`#` behavior.
-- Add baseline file: `tests/output/error-observation-baseline.js`.
-
-Gate:
-
-- `test:quick` green.
-
-## Step 1: Add `_target` Inspection + Cache Internals
+## Step 5: Async Command Fill Simplification
 
 Scope:
 
-- add `inspectTargetForErrors`
-- add version/cache fields and invalidation helpers
-- route existing output mutations through `_setTarget(...)` / `_markStateChanged()` so cache invalidation is centralized and reliable
-- no compiler/guard behavior changes yet
+- Simplify `addAsyncArgsCommand` contract where possible:
+  - keep deterministic slot ordering
+  - avoid ad-hoc producer semantics in normal flow
+  - keep fatal error boundary behavior explicit and minimal
+- Ensure non-fatal failures become poison in target path, not hidden side channels.
 
-Gate:
+Required changes:
 
-- `test:quick` green.
+- `src/runtime/command-buffer.js`
+- compiler callsites emitting async add paths
 
-## Step 2: Refactor Command Classes for `_target` Poison Encoding
+Acceptance:
 
-Scope:
+- Queue-fill path is simpler and easier to reason about.
+- No behavior regression in async ordering/error propagation.
 
-- modify `OutputCommand` contract (no early throw-on-poison)
-- update `DataCommand`/`TextCommand`/`ValueCommand` poison behavior
-- enforce sink poison/skip/repair behavior
-- keep sequence behavior independent from sink
-- restrict `ErrorCommand` to legacy fallback paths
-- note: command plumbing for state invalidation (`_setTarget(...)` / `_markStateChanged()`) was already landed in Step 1; Step 2 focuses on poison semantics only
-- ensure snapshot read path observes `_target` poison (via inspection cache) so command-level poison encoding is surfaced immediately
-
-Gate:
-
-- `test:quick` green.
-
-## Step 3: Add Output Observation APIs + Commands
+## Step 6: Compiler Cleanup for Output Observation/Error Paths
 
 Scope:
 
-- implement `output.snapshot()/isError()/getError()` through command path only
-- add `IsErrorCommand` and `GetErrorCommand`
-- ensure facade methods also route through commands
-- note: snapshot's `_target`-inspection-backed error surfacing is already landed in Step 2; Step 3 focuses on command-path observation APIs and wiring for `isError/getError`
-- implementation note: this temporary compile-time arg-resolution/normalization path was removed in Step 4 (resolution now happens in iterator pre-`apply`).
-- implementation note: Step 3 cleanup iteration removed ad-hoc `Error` property mutation for contextualization markers; shared marker tracking now uses runtime-local helpers, and output inspection cache state is represented as a single cache object.
+- Confirm all output `is error` and `#` paths use output observation commands consistently.
+- Keep non-async template path free of command-buffer output-command code.
+- Remove stale comments/branches reflecting old behavior.
 
-Key regression target:
+Required changes:
 
-- `data.x = errorFunction()` then `data.x = "ok"` yields healthy output.
+- `src/compiler/compiler-base.js`
+- `src/compiler/compiler.js`
+- any affected compile helpers
 
-Gate:
+Acceptance:
 
-- `test:quick` green.
+- Observation/error compile output matches runtime model and tests.
 
-## Step 4 (Intermediate): Centralize Argument Resolution Before `apply` (Iterator-Level)
-
-Current status:
-
-- implemented: output-command construction now emits unresolved constructor args (`new XxxCommand(...)`).
-- implemented: iterator/dispatch now resolves + normalizes command args immediately before `apply()`, and writes resolved args back onto command instances.
-- implemented: compiler/runtime `resolveOutputCommandArgs` path removed from output-command construction flow and runtime exports.
-- implemented: marker-era arg-resolution helpers/properties removed from output command flow (`markOutputArgResolutionErrors`, marker-property context flags).
-- implemented: `addAsyncArgsCommand` switched to value/promise slot-fill contract (no runtime producer invocation).
+## Step 7: Test Consolidation
 
 Scope:
 
-- move command argument resolution/normalization out of `_compileCommandConstruction` and into a single pre-`apply` phase in iterator/dispatch flow.
-- command `apply()` implementations should consume already-resolved args and should not perform promise-resolution work.
-- when args are resolved, replace command args with the resolved representation so later phases do not re-resolve.
-- remove `runtime.resolveOutputCommandArgs` usage from compiler path.
-- after iterator-level resolution is complete and validated, remove `resolveOutputCommandArgs` from runtime exports (and delete helper if no longer needed).
-- clean up temporary marker-property approach introduced during Step 3:
-  - remove `__cascadaOutputArgResolution`
-  - remove `__cascadaNeedsOutputContext`
-  - remove `__cascadaOutputContextualized`
-- replace marker-property-based contextualization with cleaner structural rules (existing location/path metadata and explicit resolver-context plumbing).
-- fix any earlier-than-planned call sites that still depend on old detection paths.
-- remove output-command construction-time resolver flags/branches (`useTypedOutputArgResolver` and related logic).
-
-Design constraints:
-
-- keep source-order and "never miss any error" guarantees.
-- keep per-argument poison behavior for typed outputs.
-- avoid ad-hoc hidden properties on `Error` objects.
-- keep solution elegant; do not introduce hacks that obscure ownership of resolution/contextualization.
-- command-construction path should not rely on synchronous throws in normal flow; failures should be represented as rejected promises or poison values.
-
-Implementation instructions (explicit):
-
-1. Compiler emission contract for output commands
-- `_compileCommandConstruction` should emit constructor-only command creation:
-  - `new runtime.TextCommand(...)`
-  - `new runtime.DataCommand(...)`
-  - `new runtime.ValueCommand(...)`
-  - `new runtime.SinkCommand(...)`
-  - `new runtime.Sequence*Command(...)`
-- `args` payload must be emitted unresolved (promises/markers allowed).
-- remove compiler-time typed-output arg resolution (`resolveOutputCommandArgs`) and related branching from command construction.
-- keep output position metadata emission unchanged.
-- in async mode, output command construction should be plain `new XxxCommand(...)` value creation (constructor-only), with unresolved args.
-
-2. Iterator pre-apply resolution phase
-- add a single resolver hook in the command execution path (iterator/dispatch) that runs immediately before `command.apply(output)`.
-- resolver must:
-  - resolve command args according to command/output type policy,
-  - normalize text args (current `normalizeScriptTextArgs` behavior) at this phase if cleanly possible,
-  - preserve per-argument poison semantics,
-  - write resolved args back onto the command instance (no second resolution pass).
-- `apply()` should only consume normalized/resolved args and mutate `_target`.
-- pre-apply resolver becomes the single owner of command-arg resolution + normalization + poison extraction for output commands.
-
-3. Error-context policy for pre-apply resolver
-- context must be attached at error creation when possible.
-- if resolver adds context, use structural/context-object plumbing, not marker properties on `Error`.
-- remove transitional helpers once resolver owns this responsibility:
-  - `resolveOutputCommandArgs` runtime export,
-  - marker-property-era compatibility paths.
-- do not contextualize poison errors inside command `apply()` implementations (for example via `contextualizePoisonErrors`).
-- missing context in poison payloads should be treated as an upstream bug in creation/resolution paths, not patched during `apply()`.
-
-4. CommandBuffer async slot-fill contract update
-- replace thunk-style `await producer()` pattern in `addAsyncArgsCommand` with a value/promise slot-fill API that does not require invoking arbitrary producer callbacks at runtime.
-- keep slot reservation and deterministic ordering semantics unchanged.
-- expected normal contract for async output-command construction:
-  - returns command value, rejected promise, or poison value;
-  - does not rely on sync throws for normal error propagation.
-- keep a minimal defensive runtime boundary fallback (invariant violation safety), but it must not be part of normal control flow.
-
-5. Keep out of scope for this step
-- do not move non-command control-flow awaits into command arg resolver:
-  - example: `await runtime.contextOrFrameLookup(...)` for dynamic extends/parent selection.
-- do not alter async block scheduling/ordering semantics outside command execution path.
-
-6. Removals/Deletions expected by end of Step 4
-- `useTypedOutputArgResolver` in compiler output-command construction path.
-- public runtime export of `resolveOutputCommandArgs` (and internal helper if no longer used).
-- output-command-path `_compileAggregate(..., resolve=true)` usage for command arguments.
-- marker-era arg-resolution tagging utilities if resolver/context policy no longer needs them.
-- specifically remove `markOutputArgResolutionErrors` (and related marker plumbing) once pre-apply resolver owns context + error propagation before `apply()`.
-
-7. `normalizeScriptTextArgs` decision
-- target: move text-argument normalization from compile-time command construction into the iterator pre-apply resolver phase.
-- keep `normalizeScriptTextArgs` only as a shared utility if it remains the cleanest implementation.
-- remove compiler-side normalization call sites for output command construction once pre-apply normalization is validated.
-
-8. Validation checklist for Step 4
-- verify every output command type is created via plain constructor call with unresolved args.
-- verify command args are resolved exactly once before `apply()`.
-- verify no `apply()` implementation performs promise-resolution logic.
-- verify command-construction flow does not use normal-path sync throws (errors surface as rejected/poisoned values).
-- verify `test:quick` stays green, with targeted runs for:
-  - output command behavior,
-  - error-reporting path/context,
-  - snapshots/poison propagation.
-
-Gate:
-
-- `test:quick` green.
-
-## Step 5: Guard Switch to Output APIs
-
-Scope:
-
-- replace output history scan with output `isError/getError`
-- keep variable/sequence checks intact
-
-Gate:
-
-- guard regression matrix green.
-
-## Step 6: Compiler Wiring for `is error` / `#` on Outputs
-
-Scope:
-
-- output-aware emission for tests/peek
-- ensure `recover err` receives final `PoisonError` from output state
-
-Gate:
-
-- script + poison tests green.
-
-## Step 7: Remove `Output._errors` from Health Semantics
-
-Scope:
-
-- decommission `_errors` usage in snapshot/error checks
-- remove command-history output poison dependency
-
-Gate:
-
-- `test:quick` green.
-
-## Step 8: Conservative Supersede Infrastructure
-
-Scope:
-
-- add `supersedes` hook and safe eliminations for redundant observation commands
-- keep `mergeWith` scaffold off by default
-
-Gate:
-
-- queue semantics tests + `test:quick` green.
-
-## Step 9: Cleanup + Docs
-
-Scope:
-
-- mark/remove legacy `getPosonedBufferErrors` output path
-- update docs (`output.md`, `script.md`, this file)
-
-Gate:
-
-- `test:quick` green.
-
-## Step 10: Consolidate Output Error Tests
-
-Scope:
-
-- merge step-by-step output error test files into a single suite:
+- Merge staged output-error refactor test files into:
   - `tests/pasync/output-errors.js`
-- migrate tests from files created during this plan (so far):
+- Migrate and deduplicate coverage from:
   - `tests/output-error-inspection.js`
   - `tests/output-step2-command-poison.js`
   - `tests/output-step3-observation-commands.js`
-- preserve coverage and intent while removing duplicated setup/helpers.
-- after migration, remove the superseded standalone files.
+- Remove superseded split files.
 
-Gate:
+Acceptance:
 
-- `test:quick` green.
+- Single consolidated output-errors suite with equivalent coverage.
+- `npm run test:quick` green.
 
-## Simplification Follow-Ups (To Address During Step 4/7)
+## Step 8: Documentation Cleanup
 
-- Inspect cache shape:
-  - evaluate replacing multiple cache fields with a single cache object (for example `{ version, hasError, errors, poisonError }`) if it improves readability without regressions.
-- `_Now` methods (`_isErrorNow`, `_getErrorNow`, `_repairNow`):
-  - enforce they remain internal runtime helpers invoked only by command execution path (or immediate command-adjacent plumbing), never as a public bypass around command ordering.
-- `contextualizeOutputError`:
-  - prefer deterministic structural checks over mutation/caching markers on `Error` instances.
-- `normalizeScriptTextArgs`:
-  - keep only if it remains the cleanest normalization boundary after iterator-level pre-apply resolution is introduced.
+Scope:
 
-## Acceptance Criteria
+- Update docs that still describe removed behavior (pause/clear/legacy history collection):
+  - `docs/code/output.md`
+  - this plan file (final status flip)
+- Ensure docs match current command/observation flow.
 
-1. Repaired `_target` state is healthy.
-2. `recover` triggers only for final unrepaired guarded errors.
-3. `recover err` is deterministic and based on final output state.
-4. `is error` on outputs reflects current `_target`, not history.
-5. `#` on outputs reads final `PoisonError` from current state.
-6. Repeated probes amortized via version cache.
-7. No regressions in sequence/sink behavior according to chosen `_target` policy.
+Acceptance:
 
-## Risks and Mitigations
+- Docs are consistent with runtime/compiler behavior.
 
-Risk: incorrect poison encoding in command classes causes hidden regressions.
-Mitigation: command-level tests per type before guard/compiler integration.
+## Known Risks
 
-Risk: stale cache due to missed invalidation.
-Mitigation: central `markStateChanged()` and tests asserting version increments.
+- Guard migration may miss errors previously captured by history walking if observation point ordering is wrong.
+- Removing `_errors` too early can hide apply-time faults if not converted to target poison consistently.
+- Async command fill simplification can regress ordering if slot semantics are altered.
 
-Risk: sequence policy ambiguity.
-Mitigation: sink policy is fixed in this plan; sequence policy must be explicitly documented and tested in implementation PRs.
+Mitigation:
 
-## Change-Control Rule
+- keep steps small
+- add focused tests per step
+- run targeted suites plus `npm run test:quick` each step
 
-If implementation work reveals a cleaner or more efficient approach that materially contradicts this document:
+## Change Control
 
-1. stop at the decision point,
-2. document the contradiction and tradeoff briefly,
-3. consult with the user before proceeding with that divergence.
+If implementation reveals a cleaner approach that materially changes this plan:
+
+1. stop at decision point,
+2. document divergence and tradeoff,
+3. align before continuing.
