@@ -6,7 +6,8 @@ const { TemplateError } = require('../lib');
 const { Obj } = require('../object');
 const {
   ENABLE_READVARS_VALIDATION,
-  trackActualRead
+  trackActualRead,
+  validateSinkSnapshotInGuard
 } = require('./validation');
 
 // Moved from the main compiler as it's used by compileCompare (expression)
@@ -938,9 +939,7 @@ class CompilerBase extends Obj {
       return false;
     }
 
-    if (methodName === 'snapshot' && outputDecl.type === 'sink' && this.guardDepth > 0) {
-      this.fail('sink snapshot() is not allowed inside guard blocks', node.lineno, node.colno, node);
-    }
+    validateSinkSnapshotInGuard(this, { node, command: methodName, outputType: outputDecl.type });
 
     if (methodName === 'snapshot') {
       this.buffer.emitAddSnapshot(frame, outputName, node);

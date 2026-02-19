@@ -5,6 +5,8 @@ const {
   validateGuardVariablesModified,
   validateSetTarget,
   validateDeclarationScope,
+  validateReadOnlyOuterMutation,
+  validateOutputDeclarationNode,
   ENABLE_READVARS_VALIDATION
 } = require('./validation');
 
@@ -314,20 +316,14 @@ class Compiler extends CompilerBase {
       // Read-only parent scopes (e.g. call/caller bodies) may read from parent frames,
       // but must not mutate parent variables. Without this check, assignments can
       // silently become local shadows, which is surprising.
-      if (this.scriptMode &&
-        node.varType === 'assignment' &&
-        frame &&
-        frame.isolateWrites &&
-        isDeclared &&
-        !(frame.declaredVars && frame.declaredVars.has(name))) {
-        this.fail(
-          `Cannot assign to outer-scope variable '${name}' from a read-only scope. ` +
-          `Call blocks can read from parent scope but cannot mutate it.`,
-          target.lineno,
-          target.colno,
+      if (this.scriptMode && node.varType === 'assignment') {
+        validateReadOnlyOuterMutation(this, {
+          frame,
           node,
-          target
-        );
+          target,
+          name,
+          mutatingOuterRef: isDeclared && !(frame.declaredVars && frame.declaredVars.has(name))
+        });
       }
 
       validateSetTarget(this, node, target, name, isDeclared);
@@ -479,16 +475,13 @@ class Compiler extends CompilerBase {
 
       if (!isDeclaration) {
         const declaredInCurrentScope = !!(frame.declaredOutputs && frame.declaredOutputs.has(name));
-        if (frame && frame.isolateWrites && isDeclaredForValidation && !declaredInCurrentScope) {
-          this.fail(
-            `Cannot assign to outer-scope variable '${name}' from a read-only scope. ` +
-            `Call blocks can read from parent scope but cannot mutate it.`,
-            target.lineno,
-            target.colno,
-            node,
-            target
-          );
-        }
+        validateReadOnlyOuterMutation(this, {
+          frame,
+          node,
+          target,
+          name,
+          mutatingOuterRef: isDeclaredForValidation && !declaredInCurrentScope
+        });
       }
 
       validateSetTarget(this, validationNode, target, name, isDeclaredForValidation);
@@ -1739,26 +1732,18 @@ class Compiler extends CompilerBase {
   }
 
   compileOutputDeclaration(node, frame) {
-    if (!this.asyncMode) {
-      this.fail('Output declarations are only supported in async mode', node.lineno, node.colno, node);
-    }
-    if (!this.scriptMode) {
-      this.fail('Output declarations are only supported in script mode', node.lineno, node.colno, node);
-    }
-
     const outputType = node.outputType;
     const nameNode = node.name;
-    if (!(nameNode instanceof nodes.Symbol)) {
-      this.fail('Output declaration name must be a symbol', node.lineno, node.colno, node);
-    }
+    validateOutputDeclarationNode(this, {
+      node,
+      nameNode,
+      outputType,
+      hasInitializer: !!node.initializer,
+      asyncMode: this.asyncMode,
+      scriptMode: this.scriptMode,
+      isNameSymbol: nameNode instanceof nodes.Symbol
+    });
     const name = nameNode.value;
-
-    if ((outputType === 'data' || outputType === 'text') && node.initializer) {
-      this.fail(`${outputType} outputs cannot have initializers`, node.lineno, node.colno, node);
-    }
-    if ((outputType === 'sink' || outputType === 'sequence') && !node.initializer) {
-      this.fail(`${outputType} outputs must have an initializer`, node.lineno, node.colno, node);
-    }
 
     this._addDeclaredOutput(frame, name, outputType, node.initializer, node);
 

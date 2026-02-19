@@ -308,6 +308,86 @@ function validateReadVarsConsistency(frame, compiler, node) {
 }
 
 /**
+ * Validate that write attempts from read-only scopes do not target outer variables/outputs.
+ * @param {Compiler} compiler - The compiler instance
+ * @param {object} options
+ * @param {Frame} options.frame - Current frame
+ * @param {Node} options.node - Statement node
+ * @param {Node} options.target - Assignment target node (for precise position)
+ * @param {string} options.name - Variable/output name
+ * @param {boolean} options.mutatingOuterRef - True when assignment targets an outer-scope binding
+ */
+function validateReadOnlyOuterMutation(compiler, {
+  frame,
+  node,
+  target,
+  name,
+  mutatingOuterRef
+}) {
+  if (frame && frame.isolateWrites && mutatingOuterRef) {
+    compiler.fail(
+      `Cannot assign to outer-scope variable '${name}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`,
+      target && target.lineno,
+      target && target.colno,
+      node,
+      target
+    );
+  }
+}
+
+/**
+ * Validate output declaration statement constraints.
+ * @param {Compiler} compiler - The compiler instance
+ * @param {object} options
+ * @param {Node} options.node - Output declaration node
+ * @param {Node} options.nameNode - Name node
+ * @param {string} options.outputType - data|text|value|sink|sequence
+ * @param {boolean} options.hasInitializer - Whether initializer exists
+ * @param {boolean} options.asyncMode - Compiler async mode
+ * @param {boolean} options.scriptMode - Compiler script mode
+ * @param {boolean} options.isNameSymbol - Whether nameNode is a Symbol
+ */
+function validateOutputDeclarationNode(compiler, {
+  node,
+  nameNode,
+  outputType,
+  hasInitializer,
+  asyncMode,
+  scriptMode,
+  isNameSymbol
+}) {
+  if (!asyncMode) {
+    compiler.fail('Output declarations are only supported in async mode', node.lineno, node.colno, node);
+  }
+  if (!scriptMode) {
+    compiler.fail('Output declarations are only supported in script mode', node.lineno, node.colno, node);
+  }
+  if (!isNameSymbol) {
+    compiler.fail('Output declaration name must be a symbol', node.lineno, node.colno, node);
+  }
+  if ((outputType === 'data' || outputType === 'text') && hasInitializer) {
+    compiler.fail(`${outputType} outputs cannot have initializers`, node.lineno, node.colno, node);
+  }
+  if ((outputType === 'sink' || outputType === 'sequence') && !hasInitializer) {
+    compiler.fail(`${outputType} outputs must have an initializer`, node.lineno, node.colno, node);
+  }
+}
+
+/**
+ * Validate sink snapshot guard restrictions.
+ * @param {Compiler} compiler - The compiler instance
+ * @param {object} options
+ * @param {Node} options.node - Position node
+ * @param {string} options.command - snapshot|isError|getError
+ * @param {string|null} options.outputType - Output type
+ */
+function validateSinkSnapshotInGuard(compiler, { node, command, outputType }) {
+  if (command === 'snapshot' && outputType === 'sink' && compiler.guardDepth > 0) {
+    compiler.fail('sink snapshot() is not allowed inside guard blocks', node.lineno, node.colno, node);
+  }
+}
+
+/**
  * Validate that an output command is legal in the current frame/scope.
  * In read-only scopes (isolateWrites), only non-mutating output observations
  * are allowed for outer-scope outputs.
@@ -373,9 +453,7 @@ function validateOutputObservationCall(compiler, { node, command, handler, outpu
       node
     );
   }
-  if (command === 'snapshot' && outputType === 'sink' && compiler.guardDepth > 0) {
-    compiler.fail('sink snapshot() is not allowed inside guard blocks', node.lineno, node.colno, node);
-  }
+  validateSinkSnapshotInGuard(compiler, { node, command, outputType });
 }
 
 
@@ -397,6 +475,9 @@ module.exports = {
   trackActualRead,
   markReadVarPassThrough,
   validateReadVarsConsistency,
+  validateReadOnlyOuterMutation,
+  validateOutputDeclarationNode,
+  validateSinkSnapshotInGuard,
   validateOutputCommandScope,
   validateOutputObservationCall
 };
