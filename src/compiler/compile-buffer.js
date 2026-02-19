@@ -51,7 +51,13 @@ class CompileBuffer {
         ? this.bufferStack[this.bufferStack.length - 1]
         : null;
       const textId = textOutputId || `${bufferId}_textOutput`;
-      const isNewScope = !(this.compiler.scriptMode && frame && frame.parent);
+      // Script nested lexical scopes usually reuse parent buffer, but isolate-write
+      // scopes (call/caller bodies) must own a separate buffer root. Reusing parent
+      // there can finalize the parent too early when the macro body completes.
+      const isNewScope = !this.compiler.scriptMode ||
+        !frame ||
+        !frame.parent ||
+        frame.isolateWrites;/* Remove this when we get ridof theold var implementation */
 
       if (parentBufferId && !isNewScope) {
         this.compiler.emit.line(`let ${bufferId} = ${parentBufferId};`);
