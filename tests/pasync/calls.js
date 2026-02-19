@@ -147,6 +147,51 @@
         expect(e.message).to.contain('outer');
       }
     });
+
+    it('should allow observing outer value output inside call blocks', async () => {
+      const script = `
+        value outer = 10
+
+        macro runner()
+          return caller()
+        endmacro
+
+        var observed = call runner()
+          data result
+          result.snap = outer.snapshot()
+          result.isError = outer.isError()
+          result.error = outer.getError()
+          return result.snapshot()
+        endcall
+
+        return observed`;
+
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({ snap: 10, isError: false, error: null });
+    });
+
+    it('should reject outer value mutation commands inside call blocks', async () => {
+      const script = `
+        value outer = 10
+
+        macro runner()
+          return caller()
+        endmacro
+
+        var ignored = call runner()
+          outer(20)
+          return none
+        endcall
+
+        return ignored`;
+      try {
+        await env.renderScriptString(script);
+        throw new Error('Should have thrown');
+      } catch (e) {
+        expect(e.message).to.contain('Cannot assign to outer-scope variable');
+        expect(e.message).to.contain('outer');
+      }
+    });
   });
 
   describe('Async mode - calls and arguments', () => {

@@ -2254,6 +2254,30 @@
       finish(done);
     });
 
+    it('should allow observation-like method calls in template call blocks', function (done) {
+      render(
+        '{% macro runner() %}' +
+        '{{ caller() }}' +
+        '{% endmacro %}' +
+        '{% call runner() %}' +
+        '{{ outer.snapshot() }}|{{ outer.isError() }}|{{ outer.getError() }}' +
+        '{% endcall %}',
+        {
+          outer: {
+            snapshot: function () { return 'snap'; },
+            isError: function () { return false; },
+            getError: function () { return 'none'; }
+          }
+        },
+        {},
+        function (err, res) {
+          expect(res.trim()).to.eql('snap|false|none');
+        }
+      );
+
+      finish(done);
+    });
+
 
     if (!isSlim) {
       it('should import template objects', function (done) {

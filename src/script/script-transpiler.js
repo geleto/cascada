@@ -1053,10 +1053,6 @@ class ScriptTranspiler {
     return commandContent;
   }
 
-  _isSnapshotCall(afterTrimmed) {
-    return /^\.\s*snapshot\s*\(/.test(afterTrimmed);
-  }
-
   _parseDataCommandFromOutput(after, lineIndex) {
     const { lex } = require('./script-lexer');
     const tokens = lex(after);
@@ -1125,12 +1121,6 @@ class ScriptTranspiler {
 
     const opStart = afterTrimmed[0];
     if (opStart === '=') {
-      if (!outputInfo.writable) {
-        if (outputType === 'value') {
-          throw new Error(`Cannot assign to outer-scope variable '${outputName}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`);
-        }
-        throw new Error(`Output '${outputName}' is read-only in this scope at line ${lineIndex + 1}`);
-      }
       if (outputType === 'sequence') {
         throw new Error(`sequence output '${outputName}' does not support assignment at line ${lineIndex + 1}`);
       }
@@ -1177,17 +1167,6 @@ class ScriptTranspiler {
       return true;
     }
     if (!['.', '(', '['].includes(opStart)) return false;
-
-    if (this._isSnapshotCall(afterTrimmed)) {
-      return false;
-    }
-
-    if (!outputInfo.writable) {
-      if (outputType === 'value') {
-        throw new Error(`Cannot assign to outer-scope variable '${outputName}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`);
-      }
-      throw new Error(`Output '${outputName}' is read-only in this scope at line ${lineIndex + 1}`);
-    }
 
     if (outputType === 'data') {
       const parsed = this._parseDataCommandFromOutput(after, lineIndex);

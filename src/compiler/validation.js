@@ -307,6 +307,77 @@ function validateReadVarsConsistency(frame, compiler, node) {
   }
 }
 
+/**
+ * Validate that an output command is legal in the current frame/scope.
+ * In read-only scopes (isolateWrites), only non-mutating output observations
+ * are allowed for outer-scope outputs.
+ * @param {Compiler} compiler - The compiler instance
+ * @param {object} options
+ * @param {Frame} options.frame - Current frame
+ * @param {Node} options.node - OutputCommand node
+ * @param {string} options.handler - Output symbol name
+ * @param {string|null} options.outputType - Declared output type
+ * @param {boolean} options.hasOutputDecl - Whether handler resolves to declared output
+ * @param {boolean} options.declaredInCurrentScope - Whether output is declared on current frame
+ * @param {boolean} options.isCallNode - Whether command is a function call form
+ * @param {boolean} options.isObservationCall - Whether call is snapshot/isError/getError
+ */
+function validateOutputCommandScope(compiler, {
+  frame,
+  node,
+  handler,
+  outputType,
+  hasOutputDecl,
+  declaredInCurrentScope,
+  isCallNode,
+  isObservationCall
+}) {
+  if (!hasOutputDecl) {
+    return;
+  }
+  const isNonMutatingRead = !isCallNode && outputType === 'sequence';
+  const isMutatingCommand = !isObservationCall && !isNonMutatingRead;
+  if (frame && frame.isolateWrites && !declaredInCurrentScope && isMutatingCommand) {
+    if (outputType === 'value') {
+      compiler.fail(
+        `Cannot assign to outer-scope variable '${handler}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`,
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+    compiler.fail(
+      `Output '${handler}' is read-only in this scope.`,
+      node.lineno,
+      node.colno,
+      node
+    );
+  }
+}
+
+/**
+ * Validate observation call constraints for output symbols.
+ * @param {Compiler} compiler - The compiler instance
+ * @param {object} options
+ * @param {Node} options.node - OutputCommand node
+ * @param {string} options.command - snapshot|isError|getError
+ * @param {string} options.handler - Output symbol name
+ * @param {string|null} options.outputType - Declared output type
+ */
+function validateOutputObservationCall(compiler, { node, command, handler, outputType }) {
+  if (node.call && node.call.args && node.call.args.children && node.call.args.children.length > 0) {
+    compiler.fail(
+      `${command}() does not accept arguments on output '${handler}'.`,
+      node.lineno,
+      node.colno,
+      node
+    );
+  }
+  if (command === 'snapshot' && outputType === 'sink' && compiler.guardDepth > 0) {
+    compiler.fail('sink snapshot() is not allowed inside guard blocks', node.lineno, node.colno, node);
+  }
+}
+
 
 
 module.exports = {
@@ -325,5 +396,7 @@ module.exports = {
   ensureReadValidationState,
   trackActualRead,
   markReadVarPassThrough,
-  validateReadVarsConsistency
+  validateReadVarsConsistency,
+  validateOutputCommandScope,
+  validateOutputObservationCall
 };

@@ -6,6 +6,10 @@
  */
 
 const nodes = require('../nodes');
+const {
+  validateOutputCommandScope,
+  validateOutputObservationCall
+} = require('./validation');
 const OUTPUT_COMMAND_CLASS = {
   data: 'DataCommand',
   sink: 'SinkCommand',
@@ -150,6 +154,34 @@ class CompileBuffer {
     const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
     const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
+    const isObservationCall = isCallNode &&
+      !subpath &&
+      (command === 'snapshot' || command === 'isError' || command === 'getError');
+
+    validateOutputCommandScope(this.compiler, {
+      frame,
+      node,
+      handler,
+      outputType,
+      hasOutputDecl: !!outputDecl,
+      declaredInCurrentScope: !!(frame && frame.declaredOutputs && frame.declaredOutputs.has(handler)),
+      isCallNode,
+      isObservationCall
+    });
+
+    if (isObservationCall) {
+      validateOutputObservationCall(this.compiler, { node, command, handler, outputType });
+      if (command === 'snapshot') {
+        this.compiler.emit(`new runtime.SnapshotCommand({ handler: '${handler}', pos: ${this._emitPositionLiteral(node)} })`);
+        return;
+      }
+      if (command === 'isError') {
+        this.compiler.emit(`new runtime.IsErrorCommand({ handler: '${handler}', pos: ${this._emitPositionLiteral(node)} })`);
+        return;
+      }
+      this.compiler.emit(`new runtime.GetErrorCommand({ handler: '${handler}', pos: ${this._emitPositionLiteral(node)} })`);
+      return;
+    }
 
     if (outputType === 'sequence') {
       if (isCallNode) {
