@@ -311,6 +311,17 @@ describe('Cascada Script: Variables', function () {
       expect(fallback.selection).to.be('fallback');
     });
 
+    it('should timeout with branch-local var assigned into outer object path (minimal repro)', async function () {
+      const script = `
+        var result
+        if condition
+          var scopedValue = "primary"
+          result = scopedValue
+        endif
+        return result`;
+      await env.renderScriptString(script, {condition: true});
+    });
+
     it('should not leak vars declared inside if/else branches', async function () {
       const script = `
         var result = {}
@@ -550,3 +561,5 @@ describe('Cascada Script: Variables', function () {
   });
 
 });
+
+
