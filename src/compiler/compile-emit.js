@@ -56,7 +56,7 @@ module.exports = class CompileEmit {
     this.scopeClosers = _scopeClosers;
   }
 
-  funcBegin(node, name) {
+  beginEntryFunction(node, name, frame = null) {
     this.compiler.buffer.currentBuffer = 'output';
     this.compiler.buffer.currentTextOutput = 'output_textOutput';
     this.scopeClosers = '';
@@ -73,9 +73,10 @@ module.exports = class CompileEmit {
       this.line(`let colno = ${node.colno};`);
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
-    this.compiler.buffer.createScopeRootBuffer(
+    this.compiler.buffer.initManagedBuffer(
       this.compiler.buffer.currentBuffer,
-      this.compiler.buffer.currentTextOutput
+      this.compiler.buffer.currentTextOutput,
+      frame
     );
     this.line('try {');
   }
@@ -86,7 +87,7 @@ module.exports = class CompileEmit {
     this.line(`let ${outputVar} = runtime.declareOutput(frame, "text", "text", context, null);`);
   }
 
-  funcEnd(node, noReturn) { // Added node parameter
+  endEntryFunction(node, noReturn) { // Added node parameter
     if (!noReturn) {
       if (this.compiler.asyncMode) {
         // In async mode, blocks return output directly (not via callback)
@@ -135,7 +136,11 @@ module.exports = class CompileEmit {
     let bufferId = null;
     if (createScopeRootBuffer) {
       bufferId = this.compiler.buffer.pushBuffer();
-      this.compiler.buffer.createScopeRootBuffer(bufferId, `${bufferId}_textOutput`);
+      this.compiler.buffer.initManagedBuffer(
+        bufferId,
+        `${bufferId}_textOutput`,
+        nextFrame
+      );
     }
     return { frame: nextFrame, bufferId };
   }
@@ -270,7 +275,7 @@ module.exports = class CompileEmit {
     this.line(`astate.asyncBlock(async (astate, frame) =>{`);
 
     const id = this.compiler._tmpid();
-    // IMPORTANT: no createScopeRootBuffer() here.
+    // IMPORTANT: no managed-buffer initialization here.
     // For async blocks, CommandBuffer is owned/created by AsyncState.asyncBlock.
     this.line(`let ${id} = frame._outputBuffer;`);
     this.line(`if (!${id}) { throw new Error("asyncBlockRender requires async block output buffer"); }`);

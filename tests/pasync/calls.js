@@ -75,6 +75,24 @@
       expect(result).to.eql({ result: [2, 4, 6] });
     });
 
+
+    it('should read outer variable directly inside call block (minimal failing case)', async () => {
+      const script = `
+        var outer = 10
+
+        macro runner()
+          return caller()
+        endmacro
+
+        var result = call runner()
+          return outer
+        endcall
+
+        return result`;
+      const result = await env.renderScriptString(script);
+      expect(result).to.be(10);
+    });
+
     it('should allow reading parent variables in call blocks', async () => {
       const script = `
         data result

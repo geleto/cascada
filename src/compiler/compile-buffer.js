@@ -32,15 +32,31 @@ class CompileBuffer {
   // === BUFFER STACK MANAGEMENT ===
 
   /**
-   * Create a scope-root buffer and initialize output handlers.
-   * This is one of the sanctioned creation points for CommandBuffer and is
-   * used by root/managed non-async scope-root blocks.
-   * It only allocates/initializes runtime variables; it does not push stack state.
+   * Initialize buffer variables for a managed compilation region.
+   * Behavior is derived from frame ancestry:
+   * - New scope roots (frame with no parent) create a new CommandBuffer.
+   * - Nested script scopes (frame with parent) reuse parent buffer.
+   *
+   * @param {string} bufferId
+   * @param {string} textOutputId
+   * @param {Frame|null} frame
    */
-  createScopeRootBuffer(bufferId = this.currentBuffer, textOutputId = this.currentTextOutput) {
+  initManagedBuffer(bufferId = this.currentBuffer, textOutputId = this.currentTextOutput, frame = null) {
     if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, null);`);
-      this.compiler.emit.initOutputHandlers(bufferId, textOutputId || `${bufferId}_textOutput`);
+      const parentBufferId = this.bufferStack.length > 0
+        ? this.bufferStack[this.bufferStack.length - 1]
+        : null;
+      const textId = textOutputId || `${bufferId}_textOutput`;
+      const isNewScope = !(this.compiler.scriptMode && frame && frame.parent);
+
+      if (parentBufferId && !isNewScope) {
+        this.compiler.emit.line(`let ${bufferId} = ${parentBufferId};`);
+        this.compiler.emit.line(`frame._outputBuffer = ${bufferId};`);
+        this.compiler.emit.line(`let ${textId} = runtime.getOutput(frame, "text");`);
+      } else {
+        this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, null);`);
+        this.compiler.emit.initOutputHandlers(bufferId, textId);
+      }
     } else {
       this.compiler.emit.line(`let ${bufferId} = "";`);
     }

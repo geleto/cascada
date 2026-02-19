@@ -71,7 +71,7 @@
  * block structure validation, ensuring robust and accurate conversion.
  */
 
-const CONVERT_VAR_TO_VALUE = false;
+const CONVERT_VAR_TO_VALUE = true;
 
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
@@ -1126,6 +1126,9 @@ class ScriptTranspiler {
     const opStart = afterTrimmed[0];
     if (opStart === '=') {
       if (!outputInfo.writable) {
+        if (outputType === 'value') {
+          throw new Error(`Cannot assign to outer-scope variable '${outputName}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`);
+        }
         throw new Error(`Output '${outputName}' is read-only in this scope at line ${lineIndex + 1}`);
       }
       if (outputType === 'sequence') {
@@ -1180,6 +1183,9 @@ class ScriptTranspiler {
     }
 
     if (!outputInfo.writable) {
+      if (outputType === 'value') {
+        throw new Error(`Cannot assign to outer-scope variable '${outputName}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`);
+      }
       throw new Error(`Output '${outputName}' is read-only in this scope at line ${lineIndex + 1}`);
     }
 

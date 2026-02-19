@@ -1549,7 +1549,7 @@ class Compiler extends CompilerBase {
       // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
     }
 
-    this.emit.funcBegin(node, 'root');
+    this.emit.beginEntryFunction(node, 'root', frame);
     this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
     // Always declare parentTemplate (needed even for dynamic-only extends)
     this.emit.line('let parentTemplate = null;');
@@ -1612,7 +1612,7 @@ class Compiler extends CompilerBase {
     }
 
     // Pass the node to _emitFuncEnd for error position info (used in sync catch)
-    this.emit.funcEnd(node, true);
+    this.emit.endEntryFunction(node, true);
 
     this.inBlock = true;
 
@@ -1628,15 +1628,15 @@ class Compiler extends CompilerBase {
       }
       blockNames.push(name);
 
-      this.emit.funcBegin(block, `b_${name}`);
+      let tmpFrame = frame.new();//new Frame();
+      this.emit.beginEntryFunction(block, `b_${name}`, tmpFrame);
 
       if (this.asyncMode) {
         this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
       }
-      let tmpFrame = frame.new();//new Frame();
       this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       this.compile(block.body, tmpFrame);
-      this.emit.funcEnd(block);
+      this.emit.endEntryFunction(block);
     });
 
     this.emit.line('return {');
