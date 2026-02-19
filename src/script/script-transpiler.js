@@ -253,6 +253,9 @@ class ScriptTranspiler {
   declareOutput(name, type) {
     const scope = this.getCurrentOutputScope();
     if (scope.outputs.has(name)) {
+      if (type === 'value') {
+        throw new Error(`Identifier '${name}' has already been declared.`);
+      }
       throw new Error(`Output '${name}' already declared in this scope`);
     }
 
@@ -261,6 +264,9 @@ class ScriptTranspiler {
     for (let i = this.outputScopes.length - 2; i >= 0; i--) {
       const parentScope = this.outputScopes[i];
       if (parentScope.outputs.has(name)) {
+        if (type === 'value') {
+          throw new Error(`Identifier '${name}' has already been declared.`);
+        }
         throw new Error(`Output '${name}' cannot shadow an output declared in a parent scope`);
       }
     }
