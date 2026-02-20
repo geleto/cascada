@@ -1,5 +1,15 @@
 # Output Runtime Architecture (Current)
 
+## Architectural Primer: Why This Exists
+Cascada is concurrent by default, but it must still produce the same observable result as a correct sequential execution. That guarantee comes from the command-tree model:
+- each async region emits commands into an ordered stream segment,
+- nested async regions become child segments in that tree,
+- iterators apply commands in deterministic source order, waiting for reserved slots when needed.
+
+This is the mechanism behind temporal sequential equivalence. Work can start/finish out of order in wall-clock time, but output effects are committed in the program order defined by the command tree.
+
+Do not bypass these mechanisms to fix a local bug. Shortcuts such as writing to the wrong buffer, forcing direct state writes, skipping links, or finishing buffers early may unblock one test while breaking ordering, poisoning, snapshots, or set-block behavior elsewhere. If a fix does not preserve command insertion order + buffer hierarchy + finalize/link rules, it is not safe.
+
 This document tracks the output pipeline as implemented in:
 - runtime: `src/runtime/command-buffer.js`, `src/runtime/buffer-iterator.js`, `src/runtime/output.js`, `src/runtime/commands.js`, `src/runtime/guard.js`, `src/runtime/async-state.js`
 - compiler wiring: `src/compiler/compile-buffer.js`, `src/compiler/compile-emit.js`, `src/compiler/compiler.js`, `src/compiler/validation.js`

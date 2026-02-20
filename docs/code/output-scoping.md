@@ -1,5 +1,18 @@
 # Output Scoping And Buffer Access Plan
 
+## Architectural Primer: Ordering Before Local Fixes
+Cascada runs many operations concurrently, but output-visible effects must remain equivalent to a correct sequential run. That is enforced by the command-tree structure:
+- async regions emit ordered command segments,
+- nested regions attach as child segments,
+- execution applies commands deterministically in source order, waiting for unfinished slots.
+
+This is the core temporal sequential equivalence contract. Any fix that bypasses this contract can create regressions that look unrelated (timeouts, missing snapshots, duplicate text, wrong poison propagation).
+
+Because of that, do not “patch around” a single failure by circumventing buffer ownership, stream linking, or finalize timing. Fixes must preserve:
+1. correct command insertion point,
+2. correct parent/child buffer hierarchy,
+3. correct link/finalize lifecycle.
+
 ## Purpose
 Fix output scoping and async buffer access bugs introduced by `var -> value` conversion, without mixing concerns across compiler/runtime layers.
 
