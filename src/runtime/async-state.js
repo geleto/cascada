@@ -65,12 +65,11 @@ class AsyncState {
     }
 
     const childFrame = f.pushAsyncBlock(readVars, writeCounts, sequentialAsyncBlock, usedOutputs);
-    childFrame._ownsOutputBuffer = false;
     // Runtime async-block creation site for CommandBuffer.
     // This avoids compiler-side duplicate creation for async block execution.
+    let newBuffer = null;
     if (Array.isArray(usedOutputs) && usedOutputs.length > 0) {
-      childFrame._outputBuffer = runtime.createCommandBuffer(context, null);
-      childFrame._ownsOutputBuffer = true;
+      newBuffer = runtime.createCommandBuffer(context, null, childFrame);
     }
 
     const checkInfo = createCheckInfo(cb, runtime, lineno, colno, errorContextString, context);
@@ -80,12 +79,13 @@ class AsyncState {
       childFrame.checkInfo = checkInfo;
     }
 
-    const promise = func(childState, childFrame)
+    const activeBuffer = newBuffer;
+    const promise = func(childState, childFrame, activeBuffer)
       .finally(() => {
         // Finalize this block's buffer on both success and failure so parent
         // chaining can progress in error paths as well.
-        if (childFrame._ownsOutputBuffer && childFrame._outputBuffer) {
-          childFrame._outputBuffer.markFinishedAndPatchLinks();
+        if (newBuffer) {
+          newBuffer.markFinishedAndPatchLinks();
         }
         // Ensure per-block finalization always runs (decrementing counters, releasing locks, etc.)
         if (sequentialAsyncBlock) {

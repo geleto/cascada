@@ -522,6 +522,7 @@ class AsyncFrame extends Frame {
 
   pushAsyncBlock(reads, writeCounters, sequentialLoopBody = false, usedOutputs = null) {
     let asyncBlockFrame = new AsyncFrame(this, false);
+    // Async block frames never own inherited buffers by default.
 
     // Track runtime depth for balance validation
     if (ENABLE_FRAME_BALANCE_CHECK) {

@@ -61,10 +61,9 @@ class CompileBuffer {
 
       if (parentBufferId && !isNewScope) {
         this.compiler.emit.line(`let ${bufferId} = ${parentBufferId};`);
-        this.compiler.emit.line(`frame._outputBuffer = ${bufferId};`);
         this.compiler.emit.line(`let ${textId} = runtime.getOutput(frame, "text");`);
       } else {
-        this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, null);`);
+        this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, null, frame);`);
         this.compiler.emit.initOutputHandlers(bufferId, textId);
       }
     } else {
@@ -566,7 +565,7 @@ class CompileBuffer {
 
       // Create a new buffer reference for this nested block.
       const newBuffer = this.compiler._tmpid();
-      this.compiler.emit.line(`let ${newBuffer} = frame._outputBuffer || ${parentBuffer};`);
+      this.compiler.emit.line(`let ${newBuffer} = currentBuffer || ${parentBuffer};`);
 
       // Defer parent-child buffer linking until async block body is emitted.
       const addPos = this.compiler.codebuf.length;

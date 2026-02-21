@@ -49,14 +49,14 @@ describe('output.finalSnapshot', function () {
   let context;
   const createBuffer = (input, ctx, outputName) => {
     const targetName = outputName || 'text';
-    const cb = new CommandBuffer(ctx || null, null);
+    const cb = new CommandBuffer(ctx || null, null, { parent: null });
     const addItem = (buffer, item) => {
       if (item instanceof CommandBuffer) {
         buffer.add(item, targetName);
         return;
       }
       if (Array.isArray(item)) {
-        const nested = new CommandBuffer(ctx || null, null);
+        const nested = new CommandBuffer(ctx || null, null, { parent: null });
         item.forEach((child) => addItem(nested, child));
         nested.markFinishedAndPatchLinks();
         buffer.add(nested, targetName);
@@ -82,16 +82,16 @@ describe('output.finalSnapshot', function () {
   };
   const makeOutput = (buffer, ctx, outputName) => {
     const name = outputName || 'text';
-    const frame = { _outputBuffer: buffer, parent: null };
-    return createOutput(frame, name, ctx || null, name);
+    const frame = { parent: null };
+    return createOutput(frame, buffer, name, ctx || null, name);
   };
   const flatten = (buffer, ctx, outputName) => (
     makeOutput(buffer, ctx, outputName).finalSnapshot()
   );
   const flattenSink = (commands, ctx, outputName, sink) => {
-    const buffer = new CommandBuffer(ctx, null);
-    const frame = { _outputBuffer: buffer, parent: null };
-    const sinkOutput = createSinkOutput(frame, outputName, ctx || null, sink);
+    const buffer = new CommandBuffer(ctx, null, { parent: null });
+    const frame = { parent: null };
+    const sinkOutput = createSinkOutput(frame, buffer, outputName, ctx || null, sink);
 
     buffer._outputTypes = Object.create(null);
     buffer._outputTypes[outputName] = 'sink';
@@ -249,9 +249,9 @@ describe('output.finalSnapshot', function () {
 
   describe('Error Handling & Edge Cases', function () {
     it('should resolve snapshot at command position before later writes', async function () {
-      const buffer = new CommandBuffer(context, null);
-      const frame = { _outputBuffer: buffer, parent: null };
-      const textOut = createOutput(frame, 'text', context, 'text');
+      const buffer = new CommandBuffer(context, null, { parent: null });
+      const frame = { parent: null };
+      const textOut = createOutput(frame, buffer, 'text', context, 'text');
 
       textOut('A');
       const snap = buffer.addSnapshot('text', { lineno: 0, colno: 0 });
@@ -274,14 +274,14 @@ describe('output.finalSnapshot', function () {
     });
 
     it('materializeTemplateTextValue should snapshot a child CommandBuffer without waiting for parent finish', async function () {
-      const root = new CommandBuffer(context, null);
-      const child = new CommandBuffer(context, null);
-      const rootFrame = { _outputBuffer: root, parent: null };
-      const childFrame = { _outputBuffer: child, parent: null };
+      const root = new CommandBuffer(context, null, { parent: null });
+      const child = new CommandBuffer(context, null, { parent: null });
+      const rootFrame = { parent: null };
+      const childFrame = { parent: null };
 
       // Register text outputs so both buffers can execute text commands.
-      const rootOut = createOutput(rootFrame, 'text', context, 'text');
-      const childOut = createOutput(childFrame, 'text', context, 'text');
+      const rootOut = createOutput(rootFrame, root, 'text', context, 'text');
+      const childOut = createOutput(childFrame, child, 'text', context, 'text');
 
       child.add(new TextCommand({ handler: 'text', args: ['child'], pos: { lineno: 1, colno: 1 } }), 'text');
       child.markFinishedAndPatchLinks();
@@ -303,12 +303,12 @@ describe('output.finalSnapshot', function () {
     });
 
     it('suppressValueAsync should materialize Promise<CommandBuffer> without waiting for parent finish', async function () {
-      const root = new CommandBuffer(context, null);
-      const child = new CommandBuffer(context, null);
-      const rootFrame = { _outputBuffer: root, parent: null };
-      const childFrame = { _outputBuffer: child, parent: null };
-      createOutput(rootFrame, 'text', context, 'text');
-      createOutput(childFrame, 'text', context, 'text');
+      const root = new CommandBuffer(context, null, { parent: null });
+      const child = new CommandBuffer(context, null, { parent: null });
+      const rootFrame = { parent: null };
+      const childFrame = { parent: null };
+      createOutput(rootFrame, root, 'text', context, 'text');
+      createOutput(childFrame, child, 'text', context, 'text');
 
       child.add(new TextCommand({ handler: 'text', args: ['branch'], pos: { lineno: 2, colno: 1 } }), 'text');
       child.markFinishedAndPatchLinks();
@@ -326,16 +326,16 @@ describe('output.finalSnapshot', function () {
     });
 
     it('should snapshot one finished child branch even when sibling child is unfinished', async function () {
-      const root = new CommandBuffer(context, null);
-      const a = new CommandBuffer(context, null);
-      const b = new CommandBuffer(context, null);
-      const rootFrame = { _outputBuffer: root, parent: null };
-      const aFrame = { _outputBuffer: a, parent: null };
-      const bFrame = { _outputBuffer: b, parent: null };
+      const root = new CommandBuffer(context, null, { parent: null });
+      const a = new CommandBuffer(context, null, { parent: null });
+      const b = new CommandBuffer(context, null, { parent: null });
+      const rootFrame = { parent: null };
+      const aFrame = { parent: null };
+      const bFrame = { parent: null };
 
-      createOutput(rootFrame, 'text', context, 'text');
-      createOutput(aFrame, 'text', context, 'text');
-      createOutput(bFrame, 'text', context, 'text');
+      createOutput(rootFrame, root, 'text', context, 'text');
+      createOutput(aFrame, a, 'text', context, 'text');
+      createOutput(bFrame, b, 'text', context, 'text');
 
       a.add(new TextCommand({ handler: 'text', args: ['A'], pos: { lineno: 3, colno: 1 } }), 'text');
       a.markFinishedAndPatchLinks();
@@ -355,9 +355,9 @@ describe('output.finalSnapshot', function () {
     });
 
     it('suppressValueAsync should collect rejection errors with mixed array values including CommandBuffer', async function () {
-      const child = new CommandBuffer(context, null);
-      const childFrame = { _outputBuffer: child, parent: null };
-      createOutput(childFrame, 'text', context, 'text');
+      const child = new CommandBuffer(context, null, { parent: null });
+      const childFrame = { parent: null };
+      createOutput(childFrame, child, 'text', context, 'text');
       child.add(new TextCommand({ handler: 'text', args: ['X'], pos: { lineno: 4, colno: 1 } }), 'text');
       child.markFinishedAndPatchLinks();
 
@@ -374,9 +374,9 @@ describe('output.finalSnapshot', function () {
     });
 
     it('addSnapshot-driven failures should preserve path metadata', async function () {
-      const bad = new CommandBuffer(context, null);
-      const badFrame = { _outputBuffer: bad, parent: null };
-      createOutput(badFrame, 'text', context, 'text');
+      const bad = new CommandBuffer(context, null, { parent: null });
+      const badFrame = { parent: null };
+      createOutput(badFrame, bad, 'text', context, 'text');
       bad.add(new TextCommand({ handler: 'text', args: [{ bad: true }], pos: { lineno: 5, colno: 7 } }), 'text');
       bad.markFinishedAndPatchLinks();
 
@@ -391,9 +391,9 @@ describe('output.finalSnapshot', function () {
     });
 
     it('finalSnapshot should wait for owning output completion', async function () {
-      const buffer = new CommandBuffer(context, null);
-      const frame = { _outputBuffer: buffer, parent: null };
-      const out = createOutput(frame, 'text', context, 'text');
+      const buffer = new CommandBuffer(context, null, { parent: null });
+      const frame = { parent: null };
+      const out = createOutput(frame, buffer, 'text', context, 'text');
       out('late');
 
       const early = await Promise.race([
@@ -447,7 +447,7 @@ describe('output.finalSnapshot', function () {
     });
 
     it('should reject CommandBuffer values inside TextCommand arguments', async function () {
-      const nested = new CommandBuffer(context, null);
+      const nested = new CommandBuffer(context, null, { parent: null });
       nested.add(new TextCommand({ handler: 'text', args: ['x'], pos: { lineno: 0, colno: 0 } }), 'text');
       const buffer = createBuffer([
         new TextCommand({ handler: 'text', args: [nested], pos: { lineno: 1, colno: 1 } })
@@ -1005,3 +1005,4 @@ describe('output.finalSnapshot', function () {
     });
   });
 });
+

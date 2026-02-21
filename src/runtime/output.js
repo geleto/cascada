@@ -12,12 +12,12 @@ const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = requ
 const { RESOLVE_MARKER } = require('./resolve');
 
 class Output {
-  constructor(frame, outputName, context, outputType = null, target = undefined, base = null) {
-    this._frame = frame;
+  constructor(frame, buffer, outputName, context, outputType = null, target = undefined, base = null) {
+    //this._frame = frame;
     this._outputName = outputName;//@todo rename to name
     this._outputType = outputType || outputName;//@todo rename to type
     this._context = context;
-    this._buffer = frame ? frame._outputBuffer : null;
+    this._buffer = buffer;
     this._target = target;
     this._base = base;
 
@@ -251,7 +251,7 @@ class Output {
 const OUTPUT_API_PROPS = new Set([
   '_outputName',
   '_outputType',
-  '_frame',
+  //'_frame',
   '_context',
   '_target',
   '_base',
@@ -347,8 +347,8 @@ function createOutputFacade(output, options) {
 }
 
 class TextOutput extends Output {
-  constructor(frame, outputName, context, outputType) {
-    super(frame, outputName, context, outputType, [], null);
+  constructor(frame, buffer, outputName, context, outputType) {
+    super(frame, buffer, outputName, context, outputType, [], null);
   }
 
   invoke(...args) {
@@ -381,10 +381,10 @@ class TextOutput extends Output {
 }
 
 class ValueOutput extends Output {
-  constructor(frame, outputName, context, outputType) {
+  constructor(frame, buffer, outputName, context, outputType) {
     // Keep declaration-only value outputs aligned with `none` semantics.
     // This sets the default snapshot to null without enqueuing a write command.
-    super(frame, outputName, context, outputType, null, null);
+    super(frame, buffer, outputName, context, outputType, null, null);
   }
 
   invoke(value) {
@@ -398,11 +398,12 @@ class ValueOutput extends Output {
 }
 
 class DataOutput extends Output {
-  constructor(frame, outputName, context, outputType) {
+  constructor(frame, buffer, outputName, context, outputType) {
     const env = context && context.env ? context.env : null;
     const base = new DataHandler(context && context.getVariables ? context.getVariables() : {}, env);
     super(
       frame,
+      buffer,
       outputName,
       context,
       outputType,
@@ -472,25 +473,25 @@ class DataOutput extends Output {
   }
 }
 
-function createOutput(frame, outputName, context, outputType = null) {
+function createOutput(frame, buffer, outputName, context, outputType = null) {
   const type = outputType || outputName;
   if (type === 'text') {
     // Text output is callable; args are appended to the text buffer.
-    return createOutputFacade(new TextOutput(frame, outputName, context, type), {
+    return createOutputFacade(new TextOutput(frame, buffer, outputName, context, type), {
       callable: true,
       dynamicCommands: false
     });
   }
   if (type === 'value') {
     // Value output is callable; args replace the current value.
-    return createOutputFacade(new ValueOutput(frame, outputName, context, type), {
+    return createOutputFacade(new ValueOutput(frame, buffer, outputName, context, type), {
       callable: true,
       dynamicCommands: false
     });
   }
   if (type === 'data') {
     // Data output supports arbitrary commands (set, push, merge, etc.).
-    return createOutputFacade(new DataOutput(frame, outputName, context, type), {
+    return createOutputFacade(new DataOutput(frame, buffer, outputName, context, type), {
       callable: false,
       dynamicCommands: true
     });
@@ -499,8 +500,8 @@ function createOutput(frame, outputName, context, outputType = null) {
 }
 
 class SinkOutput extends Output {
-  constructor(frame, outputName, context, sink) {
-    super(frame, outputName, context, 'sink', undefined, null);
+  constructor(frame, buffer, outputName, context, sink) {
+    super(frame, buffer, outputName, context, 'sink', undefined, null);
     this._sink = sink;
     this._sinkReady = false;
     this._sinkReadyPromise = null;
@@ -680,13 +681,13 @@ class SinkOutput extends Output {
   }
 }
 
-function createSinkOutput(frame, outputName, context, sink) {
-  return new SinkOutput(frame, outputName, context, sink);
+function createSinkOutput(frame, buffer, outputName, context, sink) {
+  return new SinkOutput(frame, buffer, outputName, context, sink);
 }
 
 class SequenceOutput extends SinkOutput {
-  constructor(frame, outputName, context, sink) {
-    super(frame, outputName, context, sink);
+  constructor(frame, buffer, outputName, context, sink) {
+    super(frame, buffer, outputName, context, sink);
     this._outputType = 'sequence';
   }
 
@@ -743,8 +744,8 @@ class SequenceOutput extends SinkOutput {
   }
 }
 
-function createSequenceOutput(frame, outputName, context, sink) {
-  return new SequenceOutput(frame, outputName, context, sink);
+function createSequenceOutput(frame, buffer, outputName, context, sink) {
+  return new SequenceOutput(frame, buffer, outputName, context, sink);
 }
 
 function getOutput(frame, outputName) {
@@ -759,52 +760,38 @@ function getOutput(frame, outputName) {
   return undefined;
 }
 
-function findOutputBuffer(frame) {
-  let current = frame;
-  while (current) {
-    if (current._outputBuffer) {
-      return current._outputBuffer;
-    }
-    if (current.outputScope) {
-      break;
-    }
-    current = current.parent;
-  }
-  return null;
-}
-
-function declareOutput(frame, outputName, outputType, context, initializer = null) {
+function declareOutput(frame, buffer, outputName, outputType, context, initializer = null) {
   frame._outputs = frame._outputs || Object.create(null);
 
-  let buffer = findOutputBuffer(frame);
-  if (!buffer) {
+  const targetBuffer = buffer;
+  if (!targetBuffer) {
     // No implicit CommandBuffer creation here by design.
     // Buffer ownership/creation must come from root/managed scope-root/async block setup.
     throw new Error(`Output "${outputName}" declared without an active CommandBuffer`);
   }
 
-  buffer._outputTypes = buffer._outputTypes || Object.create(null);
-  buffer._outputTypes[outputName] = outputType;
+  targetBuffer._outputTypes = targetBuffer._outputTypes || Object.create(null);
+  targetBuffer._outputTypes[outputName] = outputType;
 
   const output = (outputType === 'sink')
-    ? createSinkOutput(frame, outputName, context, initializer)
+    ? createSinkOutput(frame, targetBuffer, outputName, context, initializer)
     : (outputType === 'sequence')
-      ? createSequenceOutput(frame, outputName, context, initializer)
-      : createOutput(frame, outputName, context, outputType);
+      ? createSequenceOutput(frame, targetBuffer, outputName, context, initializer)
+      : createOutput(frame, targetBuffer, outputName, context, outputType);
 
-  output._buffer = buffer;
+  output._buffer = targetBuffer;
   frame._outputs[outputName] = output;
 
-  if (buffer._registerOutput) {
-    buffer._registerOutput(outputName, output);
-  } else if (buffer._outputs instanceof Map) {
+  //if (buffer._registerOutput) {
+  targetBuffer._registerOutput(outputName, output);//@todo - this happens always?
+  /*} else if (buffer._outputs instanceof Map) {
     buffer._outputs.set(outputName, output);
     output._iterator.bindToCurrentBuffer();
-  }
+  }*/
 
   if (outputType === 'sink' || outputType === 'sequence') {
-    buffer._outputHandlers = buffer._outputHandlers || Object.create(null);
-    buffer._outputHandlers[outputName] = output;
+    targetBuffer._outputHandlers = targetBuffer._outputHandlers || Object.create(null);
+    targetBuffer._outputHandlers[outputName] = output;
   }
 
   return output;
@@ -829,7 +816,6 @@ module.exports = {
   createSequenceOutput,
   getOutput,
   declareOutput,
-  findOutputBuffer,
   finalizeUnobservedSinks
 };
 

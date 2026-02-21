@@ -488,7 +488,7 @@ class Compiler extends CompilerBase {
 
       if (isDeclaration) {
         this._addDeclaredOutput(frame, name, 'value', null, node);
-        this.emit(`runtime.declareOutput(frame, "${name}", "value", context, null);`);
+        this.emit(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "value", context, null);`);
       } else {
         if (!(declaredOutput && declaredOutput.type === 'value')) {
           this.fail(
@@ -1397,9 +1397,9 @@ class Compiler extends CompilerBase {
       // Use node.body as position node for the capture block evaluation
       this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
-        this.emit.line('let output = frame._outputBuffer;');
-        this.emit.line('if (!output) { throw new Error("Capture block requires async block output buffer"); }');
-        this.emit.line('let output_textOutput = runtime.declareOutput(frame, "text", "text", context, null);');
+        this.emit.line('let output = currentBuffer;');
+        //this.emit.line('if (!output) { throw new Error("Capture block requires async block output buffer"); }');
+        this.emit.line(`let output_textOutput = runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "text", "text", context, null);`);
         // Capture bodies should not be treated as root-scope returns.
         f._seesRootScope = false;
         // Capture returns run inside an async block; wait for sibling closures.
@@ -1696,7 +1696,7 @@ class Compiler extends CompilerBase {
         this.emit.line(';');
         this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
         this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
-        this.emit.line('  frame._outputBuffer.markFinishedAndPatchLinks();');
+        this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
         this.emit.line('  cb(null, resolved);');
         this.emit.line('}).catch(e => {');
         this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${errorContext}", context.path);`);
@@ -1714,7 +1714,7 @@ class Compiler extends CompilerBase {
         this.emit.line(';');
         this.emit.line(`  const resolved = await runtime.resolveSingle(${resultVar});`);
         this.emit.line('  if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }');
-        this.emit.line('  frame._outputBuffer.markFinishedAndPatchLinks();');
+        this.emit.line(`  ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
         this.emit.line('  return resolved;');
         this.emit.line('});');
       }
@@ -1747,7 +1747,7 @@ class Compiler extends CompilerBase {
 
     this._addDeclaredOutput(frame, name, outputType, node.initializer, node);
 
-    this.emit(`runtime.declareOutput(frame, "${name}", "${outputType}", context, `);
+    this.emit(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "${outputType}", context, `);
     if (outputType === 'sink' || outputType === 'sequence') {
       this.compile(node.initializer, frame);
     } else {

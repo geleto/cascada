@@ -15,7 +15,10 @@ const { checkFinishedBuffer } = require('./checks');
 const { handleError, RuntimeFatalError } = require('./errors');
 
 class CommandBuffer {
-  constructor(context, parent = null) {
+  constructor(context, parent = null, frame = null) {
+    if (!frame || typeof frame !== 'object') {
+      throw new Error('CommandBuffer requires an owning frame');
+    }
     this._context = context;
     this.parent = parent;
     this.finished = false;
@@ -306,8 +309,8 @@ function ensureOutputIterator(output) {
   return output._iterator;
 }
 
-function createCommandBuffer(context, parent = null) {
-  return new CommandBuffer(context, parent);
+function createCommandBuffer(context, parent = null, frame = null) {
+  return new CommandBuffer(context, parent, frame);
 }
 
 function isCommandBuffer(value) {

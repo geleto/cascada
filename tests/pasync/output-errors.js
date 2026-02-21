@@ -32,7 +32,7 @@ const { createCommandBuffer } = require('../../src/runtime/command-buffer');
 describe('output errors', function () {
   describe('output commands step2 poison encoding', function () {
     it('TextCommand encodes poison into target instead of throwing', () => {
-      const output = new TextOutput(null, 'text', null, 'text');
+      const output = new TextOutput(null, null, 'text', null, 'text');
       const poison = createPoison([new Error('text poison')]);
       const cmd = new TextCommand({ handler: 'text', args: ['ok', poison], pos: { lineno: 1, colno: 1 } });
 
@@ -44,7 +44,7 @@ describe('output errors', function () {
     });
 
     it('ValueCommand poisons target on invalid arity', () => {
-      const output = new ValueOutput(null, 'value', null, 'value');
+      const output = new ValueOutput(null, null, 'value', null, 'value');
       const cmd = new ValueCommand({ handler: 'value', args: [1, 2], pos: { lineno: 1, colno: 1 } });
 
       cmd.apply(output);
@@ -54,7 +54,7 @@ describe('output errors', function () {
     });
 
     it('DataCommand writes poison to addressed path and allows later repair overwrite', async () => {
-      const output = new DataOutput(null, 'data', null, 'data');
+      const output = new DataOutput(null, null, 'data', null, 'data');
       const poison = createPoison([new Error('data poison')]);
       const bad = new DataCommand({
         handler: 'data',
@@ -80,7 +80,7 @@ describe('output errors', function () {
     });
 
     it('DataCommand encodes missing-method failure into addressed path', () => {
-      const output = new DataOutput(null, 'data', null, 'data');
+      const output = new DataOutput(null, null, 'data', null, 'data');
       const cmd = new DataCommand({
         handler: 'data',
         command: 'doesNotExist',
@@ -110,7 +110,7 @@ describe('output errors', function () {
         }
       };
 
-      const output = new SinkOutput(null, 'logger', null, sink);
+      const output = new SinkOutput(null, null, 'logger', null, sink);
 
       await new SinkCommand({ handler: 'logger', command: 'write', args: ['ok'] }).apply(output);
       await new SinkCommand({ handler: 'logger', command: 'write', args: ['boom'] }).apply(output);
@@ -133,7 +133,7 @@ describe('output errors', function () {
           throw new Error('should not run');
         }
       };
-      const output = new SinkOutput(null, 'seq', null, sink);
+      const output = new SinkOutput(null, null, 'seq', null, sink);
       const poison = createPoison([new Error('arg poison')]);
       const cmd = new SequenceCallCommand({
         handler: 'seq',
@@ -187,7 +187,7 @@ describe('output errors', function () {
     });
 
     it('caches inspection by state version and invalidates on writes', async () => {
-      const output = new Output(null, 'x', null, 'value', 1, null);
+      const output = new Output(null, null, 'x', null, 'value', 1, null);
       let inspectCalls = 0;
       output._inspectTargetForErrors = async () => {
         inspectCalls += 1;
@@ -207,8 +207,8 @@ describe('output errors', function () {
   describe('output observation commands step3', function () {
     it('does not expose observation methods on output facades', async () => {
       const fakeBuffer = { _registerOutput() { } };
-      const frame = { _outputBuffer: fakeBuffer };
-      const out = createOutput(frame, 'out', null, 'data');
+      const frame = { parent: null };
+      const out = createOutput(frame, fakeBuffer, 'out', null, 'data');
 
       expect(out.snapshot).to.be(undefined);
       expect(out.isError).to.be(undefined);
@@ -224,10 +224,10 @@ describe('output errors', function () {
         },
         _registerOutput() { }
       };
-      const frame = { _outputBuffer: fakeBuffer };
+      const frame = { parent: null };
       const sink = { repair() { } };
 
-      const out = createSinkOutput(frame, 'logger', null, sink);
+      const out = createSinkOutput(frame, fakeBuffer, 'logger', null, sink);
       await out.repair();
 
       expect(calls).to.eql([['repair', 'logger']]);
@@ -297,7 +297,7 @@ describe('output errors', function () {
 
   describe('output commands step5 async slot fill', function () {
     it('encodes non-fatal async producer rejections as TargetPoisonCommand', async () => {
-      const buffer = createCommandBuffer({ path: 'test.njk' }, null);
+      const buffer = createCommandBuffer({ path: 'test.njk' }, null, { parent: null });
 
       const slot = await buffer.addAsyncArgsCommand('text', Promise.reject(new Error('slot-fail')));
 
@@ -308,7 +308,7 @@ describe('output errors', function () {
     });
 
     it('propagates RuntimeFatalError and invokes onFatal callback', async () => {
-      const buffer = createCommandBuffer({ path: 'test.njk' }, null);
+      const buffer = createCommandBuffer({ path: 'test.njk' }, null, { parent: null });
       const fatal = new RuntimeFatalError('fatal-slot-fail', 1, 1, 'slot', 'test.njk');
       let observedFatal = null;
 

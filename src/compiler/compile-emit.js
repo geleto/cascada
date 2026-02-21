@@ -82,9 +82,8 @@ module.exports = class CompileEmit {
   }
 
   initOutputHandlers(bufferVar, textOutputVar = null) {
-    this.line(`frame._outputBuffer = ${bufferVar};`);
     const outputVar = textOutputVar || `${bufferVar}_textOutput`;
-    this.line(`let ${outputVar} = runtime.declareOutput(frame, "text", "text", context, null);`);
+    this.line(`let ${outputVar} = runtime.declareOutput(frame, ${bufferVar}, "text", "text", context, null);`);
   }
 
   endEntryFunction(node, noReturn) { // Added node parameter
@@ -169,7 +168,7 @@ module.exports = class CompileEmit {
 
   asyncBlockBegin(node, frame, createScope, positionNode = node) {
     if (node.isAsync) {
-      this.line(`astate.asyncBlock(async (astate, frame) => {`);
+      this.line(`astate.asyncBlock(async (astate, frame, currentBuffer) => {`);
       this.asyncClosureDepth++;
     }
     if (createScope && !node.isAsync) {
@@ -216,7 +215,7 @@ module.exports = class CompileEmit {
   asyncBlockValue(node, frame, emitFunc, res, positionNode = node, createScope = false) {
     if (node.isAsync) {
 
-      this.line(`astate.asyncBlock(async (astate, frame) => {`);
+      this.line(`astate.asyncBlock(async (astate, frame, currentBuffer) => {`);
       this.asyncClosureDepth++;
       frame = frame.push(false, createScope);
 
@@ -272,14 +271,16 @@ module.exports = class CompileEmit {
     // asyncBlockRender always materializes text output; ensure async block
     // allocates an output buffer via usedOutputs.
     //this.compiler.buffer.registerOutputUsage(frame, 'text');
-    this.line(`astate.asyncBlock(async (astate, frame) =>{`);
+    this.line(`astate.asyncBlock(async (astate, frame, currentBuffer) =>{`);
 
     const id = this.compiler._tmpid();
     // IMPORTANT: no managed-buffer initialization here.
     // For async blocks, CommandBuffer is owned/created by AsyncState.asyncBlock.
-    this.line(`let ${id} = frame._outputBuffer;`);
-    this.line(`if (!${id}) { throw new Error("asyncBlockRender requires async block output buffer"); }`);
-    this.line(`let ${id}_textOutput = runtime.declareOutput(frame, "text", "text", context, null);`);
+    this.line(`let ${id} = currentBuffer;`);
+    //this.line(`if (!${id}) { throw new Error("asyncBlockRender requires async block output buffer"); }`);
+
+    //text only? Why not just use currentBuffer?
+    this.line(`let ${id}_textOutput = runtime.declareOutput(frame, ${id}, "text", "text", context, null);`);
     const prevBufferState = this.compiler.buffer.setBufferAlias(id, `${id}_textOutput`);
 
     const originalAsyncClosureDepth = this.asyncClosureDepth;
