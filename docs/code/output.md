@@ -23,20 +23,22 @@ This document tracks the output pipeline as implemented in:
 
 ## End-To-End Flow
 1. Compiler emits command objects into the current `CommandBuffer` stream keyed by handler name.
-2. Each declared output owns a `BufferIterator` bound to its effective root buffer.
-3. The iterator walks command slots (including nested child buffers) in stream order and calls `output._applyCommand(cmd)`.
-4. Command args are resolved once at apply-time (`resolveCommandArgumentsForApply`), not at compile-time enqueue.
-5. Output error state is derived from current `_target` via `_ensureInspection()` cache (`_stateVersion` keyed).
-6. Observation commands resolve at the stream point where they are enqueued; post-finish observations apply directly to registered outputs.
+2. Compiler passes the active buffer into async closures as `currentBuffer` (`astate.asyncBlock(async (astate, frame, currentBuffer) => { ... })`).
+3. Output declaration receives the explicit target buffer (`runtime.declareOutput(frame, currentBuffer, ...)`).
+4. Each declared output owns a `BufferIterator` bound to its effective root buffer.
+5. The iterator walks command slots (including nested child buffers) in stream order and calls `output._applyCommand(cmd)`.
+6. Command args are resolved once at apply-time (`resolveCommandArgumentsForApply`), not at compile-time enqueue.
+7. Output error state is derived from current `_target` via `_ensureInspection()` cache (`_stateVersion` keyed).
+8. Observation commands resolve at the stream point where they are enqueued; post-finish observations apply directly to registered outputs.
 
 ## Buffer Ownership And Creation
 - Root/managed scope-root creation sites:
-  - compiler emits `runtime.createCommandBuffer(context, null)` in managed root paths (`compile-emit`/`compile-buffer`).
+  - compiler emits `runtime.createCommandBuffer(context, null, frame)` in managed root paths (`compile-emit`/`compile-buffer`).
 - Async block creation site:
-  - `AsyncState.asyncBlock(...)` creates `childFrame._outputBuffer` only when `usedOutputs` is a non-empty array.
-  - this marks `childFrame._ownsOutputBuffer = true`; buffer is finalized in `finally` via `markFinishedAndPatchLinks()`.
+  - `AsyncState.asyncBlock(...)` creates a child buffer only when `usedOutputs` is a non-empty array.
+  - the created buffer is passed into the async closure as `currentBuffer` and finalized in `finally` via `markFinishedAndPatchLinks()`.
 - Non-owning child frames:
-  - nested lexical frames reuse parent effective buffer through `frame._outputBuffer` inheritance / lookup.
+  - nested lexical frames execute against inherited `currentBuffer` binding.
   - no implicit buffer creation in `declareOutput`; missing active buffer is a hard error.
 
 ## CommandBuffer
@@ -137,6 +139,7 @@ File: `src/compiler/compile-buffer.js`
 Files: `src/compiler/compile-emit.js`, `src/runtime/async-state.js`
 - compiler passes `usedOutputs` into `astate.asyncBlock(...)`.
 - runtime allocates child buffer only when `usedOutputs.length > 0`.
+- runtime passes active buffer into closure as `currentBuffer`.
 - child buffer finalization is guaranteed in async-block `finally`.
 
 ## Guard Integration
@@ -153,8 +156,8 @@ File: `src/runtime/guard.js`
 
 ## Scoping And Lookup
 - Output lookup is lexical (`getOutput(frame, name)` walks `frame.parent` chain).
-- Effective buffer lookup (`findOutputBuffer`) walks frame chain and stops at `outputScope` boundary.
-- `declareOutput(...)` requires an active buffer; it does not create one implicitly.
+- Buffer selection is explicit at compile time and passed to runtime calls (`declareOutput(frame, currentBuffer, ...)`).
+- `declareOutput(...)` requires an active explicit buffer; it does not create one implicitly.
 
 ## Obsolete / Removed Models
 - No legacy buffer-history poison scan path (`getPosonedBufferErrors*`).

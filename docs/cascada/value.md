@@ -1,16 +1,15 @@
 # value vs var parity gaps (CONVERT_VAR_TO_VALUE mode)
 
-Fresh regression snapshot for `CONVERT_VAR_TO_VALUE = true` in `src/script/script-transpiler.js`.
+Fresh regression snapshot for `CONVERT_VAR_TO_VALUE = true` in `src/script/script-transpiler.js`, after moving output buffer access to compiler/runtime `currentBuffer` wiring.
 
 Run details:
-- Date: February 19, 2026
+- Date: February 21, 2026
 - Command:
   - `npm run test:quick`
-  - `NODE_ENV=test NODE_PATH=./tests/test-node-pkgs npx mocha --check-leaks -R json 'tests/*.js' 'tests/pasync/**/*.js' 'tests/poison/**/*.js'`
 - Result:
-  - Total: 2413
-  - Passing: 2353
-  - Failing: 43
+  - Total: 2417
+  - Passing: 2365
+  - Failing: 35
   - Pending: 17
 
 Purpose:
@@ -19,36 +18,38 @@ Purpose:
 
 ## High-level summary
 
-Compared to the older 127-failure snapshot, several clusters are now resolved or reduced, but 43 regressions remain in core mutable-variable behavior.
+Compared to the previous 43-failure snapshot, the suite is now at 35 failing tests.
+
+What improved:
+- Script scope/capture timeout cluster reduced notably.
+- Branch/switch local-scope timeout scenarios improved under explicit `currentBuffer` propagation.
 
 Current major clusters:
-- Loop poison/while condition behavior and loop write semantics: 20 failures with loop/while-related titles.
-- Script variable scoping/capture behavior (many timeouts): 11 failures in `tests/pasync/script.js`.
-- Name conflict diagnostics drift to output-style messages: 4 failures.
-- Path-assignment strict/lazy error-shape mismatches: 3 failures.
-- Callback/output command ordering regression (`finished CommandBuffer`): 1 failure.
-- Callback argument behavior mismatch (`18` vs `12`): 1 failure.
-- Peek operator regression: 2 failures.
-- Remaining poison integration/recovery mismatches: 2 failures.
+- Loop poison/while condition behavior and loop write semantics: 17 failures.
+- Script/call/capture timeout behavior: 8 failures.
+- Name-conflict diagnostic drift: 2 failures.
+- Path-assignment strict/lazy mismatch: 3 failures.
+- Peek/recovery/integration error-shape regressions: 5 failures.
 
 Quick symptom counts:
 - `expected false to equal true`: 17
-- Timeout failures: 10
+- Timeout failures: 8
 
 ## File-level failure distribution
 
-- `tests/pasync/script.js`: 11
 - `tests/phase6-integration.js`: 6
 - `tests/phase5-while-generator.js`: 6
-- `tests/explicit-outputs.js`: 4
-- `tests/pasync/loops.js`: 4
+- `tests/pasync/calls.js`: 3
+- `tests/pasync/loops.js`: 3
 - `tests/pasync/path-assignment.js`: 3
-- `tests/poison/peek-operator.js`: 2
+- `tests/pasync/script.js`: 3
+- `tests/explicit-outputs.js`: 2
 - `tests/pasync/phase2-loop-poison-sync.js`: 2
 - `tests/pasync/script-output.js`: 2
-- `tests/poison/phase4 - async-iterator-errors.js`: 1
+- `tests/poison/peek-operator.js`: 2
 - `tests/poison/error-recovery.js`: 1
 - `tests/poison/integration.js`: 1
+- `tests/poison/phase4 - async-iterator-errors.js`: 1
 
 ## Detailed regression groups
 
@@ -59,114 +60,68 @@ Representative failing files:
 - `tests/phase6-integration.js`
 - `tests/pasync/loops.js`
 - `tests/pasync/phase2-loop-poison-sync.js`
-- `tests/poison/phase4 - async-iterator-errors.js`
 - `tests/poison/integration.js`
+- `tests/poison/phase4 - async-iterator-errors.js`
 
 Symptoms:
-- Many assertions expect poisoning/error handling to trigger but see non-poison result (`expected false to equal true`).
-- One mutable-parent-loop semantic mismatch:
-  - `tests/pasync/loops.js`: expected `1`, got `3`.
-- One loop timeout:
-  - `tests/pasync/loops.js`: `should keep script loops parallel with local vars inside if block`.
+- Poison/error conditions expected by tests are not surfaced (`expected false to equal true`).
+- Mutable parent loop write parity mismatch remains (`expected 1`, got `3` in loop script test).
 
 Interpretation:
-- Loop condition poisoning and body-write propagation are still not equivalent when declarations are converted from `var` to `value`.
-- This appears to affect both while-condition evaluation and for/loop body contamination behavior.
+- Remaining gaps are concentrated in poison-on-control-failure and loop write contamination semantics.
 
-### 2) Script variable scope/capture regressions
+### 2) Script/call/capture timeout regressions
 
-File:
-- `tests/pasync/script.js` (11 failures)
-
-Symptoms:
-- Multiple timeouts in:
-  - capture assignment tests
-  - branch-local scoping tests (`if/else`, `switch`)
-  - complex variable declaration test
-- Var-style declaration/shadow expectations now return output-style errors.
-
-Representative diagnostics:
-- `Output 'user' already declared in this scope` (expected var redeclaration wording)
-- `Output 'item' cannot shadow an output declared in a parent scope`
-
-Interpretation:
-- Converted declarations are still following output namespace/scoping/capture machinery in places where mutable var semantics are expected.
-
-### 3) Output/variable conflict diagnostic drift
-
-Files:
-- `tests/explicit-outputs.js`
+Representative failing files:
+- `tests/pasync/calls.js`
+- `tests/pasync/script-output.js`
 - `tests/pasync/script.js`
 
 Symptoms:
-- Expected:
-  - `Cannot declare output ... conflicts with variable`
-  - `Cannot declare variable ... conflicts with output`
-- Observed:
-  - `Output 'x' already declared in this scope`
+- Timeouts in call-block parent-variable access and output observation.
+- Timeouts in script capture assignment scenarios.
 
 Interpretation:
-- Conflict checks are happening too late or at the wrong layer, after names are already treated as output declarations.
+- Some command-stream/link timing paths are still unresolved for call/capture flows.
+
+### 3) Output/variable conflict diagnostic drift
+
+File:
+- `tests/explicit-outputs.js`
+
+Symptoms:
+- Expected conflict wording (`Cannot declare output/variable ... conflicts ...`) differs from current emitted errors.
+
+Interpretation:
+- Conflict detection still triggers at a layer that surfaces output/redeclaration messages instead of parity wording.
 
 ### 4) Path assignment (`set_path`) parity gaps
 
 File:
 - `tests/pasync/path-assignment.js`
 
-Failing scenarios:
-- strict missing-path/null-root error message expectations
-- lazy semantics case: expected overwrite behavior but receives surfaced `Sync Poison`
-
-Interpretation:
-- Value-converted declarations still do not perfectly match var-path assignment and lazy poison overwrite behavior.
-
-### 5) Callback/output command timing and result mismatches
-
-File:
-- `tests/pasync/script-output.js`
-
-Failures:
-- `Cannot add command to finished CommandBuffer` during explicit callback path.
-- Numeric mismatch in callback-with-args path (`{ value: 18 }` vs expected `{ value: 12 }`).
-
-Interpretation:
-- Async callback/focus execution order is not stable under current conversion and can enqueue writes after block completion.
-
-### 6) Caller/call result reuse anomalies
-
-File:
-- `tests/explicit-outputs.js`
-
 Symptoms:
-- Caller outputs duplicated/reused instead of per-call values:
-  - expected `[2, 4, 6]`, observed `[6, 6, 6]`
-  - expected per-call text/data pairs, observed repeated values.
+- Strict error messages for missing path/null root do not match expected shape.
+- Lazy overwrite scenario still surfaces `Sync Poison` unexpectedly.
 
 Interpretation:
-- Converted variable/value state is leaking or being snapshotted at the wrong stream point across caller invocations.
+- `set_path` behavior remains partially divergent from var baseline in strict/lazy edges.
 
-### 7) Poison recovery and peek operator regressions
+### 5) Recovery/peek/integration error-shape regressions
 
 Files:
 - `tests/poison/error-recovery.js`
 - `tests/poison/peek-operator.js`
 
 Symptoms:
-- Recovery case does not throw expected condition error text.
-- Peek assignment throws `Assignment Error`.
-- Sequencing-peek message shape mismatch:
-  - expected exact `Sequence Error`
-  - observed wrapped contextual error string.
+- Recovery message mismatch.
+- Peek assignment and sequence-peek message shape mismatch.
 
 Interpretation:
-- Error wrapping and assignment handling around value-converted symbols are still behaviorally different from var baseline.
+- Error wrapping/normalization for value-converted paths still differs from baseline.
 
 ## What changed vs the previous analysis
 
-- Failure count dropped from 127 to 43.
-- Large prior clusters (for example transpiler literal string expectations) are no longer present in the current failing set.
-- Remaining failures are now concentrated in runtime/semantic parity, especially:
-  - loop poisoning + mutable writes
-  - script scoping/capture
-  - output/variable conflict semantics
-  - callback/output command timing
+- Failure count improved from 43 to 35.
+- Script scope/capture timeout cluster improved substantially (`tests/pasync/script.js`: 11 -> 3).
+- Major remaining concentration is now loop poison semantics + call/capture timeout paths.

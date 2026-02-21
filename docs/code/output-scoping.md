@@ -23,7 +23,7 @@ This plan targets script-mode output-backed variables and output commands.
 Template text capture (`{% set %}...{% endset %}`) must remain behaviorally unchanged and is a hard regression gate.
 
 ## Current Problem Profile
-- Branch/switch scoped-variable tests can hang (timeouts).
+- Remaining script/call/capture timeout regressions still exist, but branch-local `if` minimal repro is fixed under the `currentBuffer` model.
 - Root cause class: producer/observer commands for the same logical output can land on different command streams/buffers.
 - Secondary issue class: same-name output declarations in sibling/nested scopes can collide in one async block stream.
 
@@ -31,7 +31,8 @@ Template text capture (`{% set %}...{% endset %}`) must remain behaviorally unch
 1. Frames and buffers
 - Not every frame owns a `CommandBuffer`.
 - Many nested lexical frames can execute in one async block and use one effective command stream.
-- `frame._outputBuffer` is inherited by child frames unless a new async-block buffer root is created.
+- The active stream is the compiler/runtime `currentBuffer` binding threaded through async closures.
+- Output declaration must target the same active `currentBuffer` used for command emission/observation in that region.
 
 2. Buffer creation sites
 - New `CommandBuffer` roots are allowed at:
@@ -97,6 +98,9 @@ Belongs here:
 - `needsBuffer` is derived/internal only (if used at all).
 - For aliasing, prefer readable suffix style (e.g. `someVar#2`) over `~`.
 - Alias is internal for execution; diagnostics should present source names (optionally include alias in debug detail).
+- Buffer binding naming:
+  - Canonical execution handle: `currentBuffer`.
+  - Runtime declaration API takes explicit buffer argument (`declareOutput(frame, currentBuffer, ...)`).
 
 ## Critical Constraints
 1. Guard collection rules
@@ -125,25 +129,45 @@ Goal: freeze minimal failing behavior before fixes.
 
 Tests (short timeout, 1-3s):
 1. Minimal timeout repro in `tests/pasync/script.js` (branch-local scoped value assigned into outer result path).
-2. Existing failing branch/switch scope tests in `tests/pasync/script.js`.
-3. Set-block sanity checks in `tests/pasync/setblock.js` (prevent regressions while fixing buffers).
+2. Keep branch/switch scope tests in `tests/pasync/script.js` enabled, except alias-dependent same-name declaration collision cases.
+3. Temporarily `.skip()` alias-dependent same-name branch/collision tests in `tests/pasync/script.js`; re-enable in Phase 4 (renaming/aliasing).
+4. Keep out-of-scope access/failure tests enabled in `tests/pasync/script.js` (must still fail deterministically).
+5. Set-block sanity checks in `tests/pasync/setblock.js` (prevent regressions while fixing buffers).
 
 Acceptance:
 - Repros fail consistently before fix.
+- Temporary skips are limited to alias-dependent tests only.
 - Non-target tests remain unchanged.
+
+## Phase 0.5: Mechanical Buffer Binding Cleanup (No Behavior Change)
+Goal: improve clarity before behavior fixes by removing stale frame-buffer assumptions.
+
+Work:
+1. Make `currentBuffer` the canonical active buffer handle in emitted async closures.
+2. Ensure `declareOutput` and output command emission use the same explicit buffer variable in each region.
+3. Remove/avoid fallback logic that infers active buffer from frame-chain lookup.
+4. Do not change buffer ownership/linking/snapshot behavior in this phase.
+
+Acceptance:
+1. Focused suites remain behaviorally identical:
+   - `tests/pasync/script.js`
+   - `tests/pasync/setblock.js`
+   - `tests/pasync/calls.js`
+2. No new timeouts or ordering regressions introduced by rename-only changes.
 
 ## Phase 1: Fix CommandBuffer Access From Child Frames (FIRST)
 Goal: ensure child lexical frames inside one async block always have valid effective buffer access and stream visibility.
 
 Work:
-1. Audit runtime/emit paths where async child frames get/lose `_outputBuffer`.
-2. Ensure nested lexical frames inherit effective buffer pointer from parent frame in same async block.
+1. Audit runtime/emit paths where async child frames get/lose effective command buffer reference.
+2. Ensure nested lexical frames and nested async closures use the inherited `currentBuffer` unless a new child buffer is intentionally created.
 3. Ensure detached async child buffer paths are linked only when intended, and linked early enough for observations.
 4. Do not alter renaming/declaration aliasing in this phase.
+5. Keep runtime lexical output lookup behavior (`frame._outputs` + parent chain) unchanged in this phase.
 
 Acceptance tests:
 1. Minimal timeout repro passes (no timeout).
-2. Branch/switch scope timeout tests pass.
+2. Branch/switch scope timeout tests pass (with alias-dependent tests still skipped).
 3. Set-block tests still pass (no duplication/no text capture regressions).
 4. Existing caller/call tests still pass.
 
