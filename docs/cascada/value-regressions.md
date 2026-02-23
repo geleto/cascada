@@ -8,8 +8,8 @@ Run details:
   - `npm run test:quick`
 - Result:
   - Total: 2418
-  - Passing: 2374
-  - Failing: 27
+  - Passing: 2376
+  - Failing: 25
   - Pending: 17
 
 Purpose:
@@ -18,7 +18,7 @@ Purpose:
 
 ## High-level summary
 
-Compared to the previous 35-failure snapshot, the suite is now at 27 failing tests.
+Compared to the previous 35-failure snapshot, the suite is now at 25 failing tests.
 
 What improved:
 - Timeout-heavy script/call/capture regressions are no longer in the failing list.
@@ -26,7 +26,6 @@ What improved:
 
 Current major clusters:
 - Loop poison/while condition behavior and loop write semantics: 17 failures.
-- Name-conflict diagnostic drift: 2 failures.
 - Path-assignment strict/lazy mismatch: 3 failures.
 - Peek/recovery/integration error-shape regressions: 5 failures.
 
@@ -40,7 +39,6 @@ Quick symptom counts:
 - `tests/phase5-while-generator.js`: 6
 - `tests/pasync/loops.js`: 3
 - `tests/pasync/path-assignment.js`: 3
-- `tests/explicit-outputs.js`: 2
 - `tests/pasync/phase2-loop-poison-sync.js`: 2
 - `tests/poison/peek-operator.js`: 2
 - `tests/poison/error-recovery.js`: 1
@@ -66,18 +64,7 @@ Symptoms:
 Interpretation:
 - Remaining gaps are concentrated in control-flow poison handling and loop write contamination semantics.
 
-### 2) Output/variable conflict diagnostic drift
-
-File:
-- `tests/explicit-outputs.js`
-
-Symptoms:
-- Expected conflict wording (`Cannot declare output/variable ...`) differs from current emitted errors.
-
-Interpretation:
-- Conflict detection still trips at a lower layer and surfaces redeclaration wording rather than parity wording.
-
-### 3) Path assignment (`set_path`) parity gaps
+### 2) Path assignment (`set_path`) parity gaps
 
 File:
 - `tests/pasync/path-assignment.js`
@@ -89,7 +76,7 @@ Symptoms:
 Interpretation:
 - `set_path` behavior remains partially divergent from var baseline in strict/lazy edge handling.
 
-### 4) Recovery/peek/integration error-shape regressions
+### 3) Recovery/peek/integration error-shape regressions
 
 Files:
 - `tests/poison/error-recovery.js`
@@ -104,8 +91,9 @@ Interpretation:
 
 ## What changed vs the previous analysis
 
-- Failure count improved from 35 to 27.
+- Failure count improved from 35 to 25.
 - Async custom-extension content duplication is no longer present in the failure list.
+- Output/variable conflict diagnostic drift is no longer present in the failure list.
 - Timeout cluster in script/call/capture paths remains out of the current failure list.
 - Remaining work is now more concentrated in:
   - loop poison semantics,

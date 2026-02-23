@@ -253,6 +253,13 @@ class ScriptTranspiler {
   declareOutput(name, type) {
     const scope = this.getCurrentOutputScope();
     if (scope.outputs.has(name)) {
+      const existingType = scope.outputs.get(name).type;
+      if (type === 'value' && existingType !== 'value') {
+        throw new Error(`Cannot declare variable '${name}' because an output with the same name is already declared.`);
+      }
+      if (type !== 'value' && existingType === 'value') {
+        throw new Error(`Cannot declare output '${name}' because a variable with the same name is already declared`);
+      }
       if (type === 'value') {
         throw new Error(`Identifier '${name}' has already been declared.`);
       }
@@ -264,6 +271,13 @@ class ScriptTranspiler {
     for (let i = this.outputScopes.length - 2; i >= 0; i--) {
       const parentScope = this.outputScopes[i];
       if (parentScope.outputs.has(name)) {
+        const parentType = parentScope.outputs.get(name).type;
+        if (type === 'value' && parentType !== 'value') {
+          throw new Error(`Cannot declare variable '${name}' because an output with the same name is already declared.`);
+        }
+        if (type !== 'value' && parentType === 'value') {
+          throw new Error(`Cannot declare output '${name}' because a variable with the same name is already declared`);
+        }
         if (type === 'value') {
           throw new Error(`Identifier '${name}' has already been declared.`);
         }
