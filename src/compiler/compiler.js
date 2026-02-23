@@ -1025,7 +1025,7 @@ class Compiler extends CompilerBase {
     const ifResult = this.buffer.asyncBufferNode(node, frame, false, false, node.cond, (blockFrame) => {
       let trueBranchWriteCounts, falseBranchWriteCounts;
       let trueBranchCodePos;
-      let poisonCheckPos, catchPoisonPos;
+      let catchPoisonPos;
 
       if (this.asyncMode) {
         const condResultId = this._tmpid();
@@ -1097,8 +1097,6 @@ class Compiler extends CompilerBase {
         if (hasVariables || hasHandlers) {
           // Variable poisoning
           if (hasVariables) {
-            this.emit.insertLine(poisonCheckPos,
-              `  frame.poisonBranchWrites(${condResultId}, ${JSON.stringify(combinedCounts)});`);
             this.emit.insertLine(catchPoisonPos,
               `    frame.poisonBranchWrites(contextualError, ${JSON.stringify(combinedCounts)});`);
           }
@@ -1106,8 +1104,6 @@ class Compiler extends CompilerBase {
           // Handler (buffer) poisoning
           if (hasHandlers) {
             for (const handler of allHandlers) {
-              this.emit.insertLine(poisonCheckPos,
-                `  ${this.buffer.currentBuffer}.addPoison(${condResultId}, "${handler}");`);
               this.emit.insertLine(catchPoisonPos,
                 `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
             }
