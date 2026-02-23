@@ -11,6 +11,7 @@
   var isPoisonError;
   var isPoison;
   var runtime;
+  var scriptTranspiler;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -23,6 +24,7 @@
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
     isPoison = runtime.isPoison;
+    scriptTranspiler = require('../../src/script/script-transpiler');
   } else {
     expect = window.expect;
     //unescape = window.he.unescape;
@@ -34,6 +36,7 @@
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
     isPoison = runtime.isPoison;
+    scriptTranspiler = { CONVERT_VAR_TO_VALUE: true };
   }
 
   describe('Async mode - loops', () => {
@@ -3447,7 +3450,7 @@ return output.snapshot()`;
       expect(result.summary).to.have.property('items', 'a, b, c');
     });
 
-    it('should handle loop in script format sequentially(mutable parent var)', async () => {
+    it('should adapt loop assignment concurrency to CONVERT_VAR_TO_VALUE while preserving final source-order output', async () => {
       let count = 0;
       let maxCount = 0;
       const context = {
@@ -3471,7 +3474,11 @@ return output.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.be('Processed: c');
-      expect(maxCount).to.be(1);
+      if (scriptTranspiler.CONVERT_VAR_TO_VALUE) {
+        expect(maxCount).to.be.greaterThan(1);
+      } else {
+        expect(maxCount).to.be(1);
+      }
     });
 
     it('should handle locally scoped variables in script loop body', async () => {
