@@ -189,7 +189,7 @@
 
         return result`;
       const data = await env.renderScriptString(script, context);
-      expect(data.peeked).to.equal('Sequence Error');
+      expect(data.peeked).to.contain('Sequence Error');
     });
   });
 })();

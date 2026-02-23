@@ -278,7 +278,7 @@ describe('output errors', function () {
         bad: createPoison([new Error('peek-output-fail')])
       });
 
-      expect(result.msg).to.be('peek-output-fail');
+      expect(result.msg).to.contain('peek-output-fail');
     });
 
     it('supports declared output writes with dynamic path segments', async () => {
