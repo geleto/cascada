@@ -475,6 +475,19 @@ class Compiler extends CompilerBase {
       this.fail('setval is only supported in script mode or template conversion mode', node.lineno, node.colno, node);
     }
     if (!this.asyncMode) {
+      // Template conversion mode rewrites `{% set %}` tags to `setval`.
+      // In sync template compilation we must preserve original set semantics,
+      // so route converted tags back through standard assignment compilation.
+      if (templateSetvalMode) {
+        const setNode = new nodes.Set(node.lineno, node.colno, node.targets, node.value, 'assignment');
+        if (node.body) {
+          setNode.body = node.body;
+        }
+        if (node.path) {
+          setNode.path = node.path;
+        }
+        return this.compileSet(setNode, frame);
+      }
       this.fail('setval is only supported in async mode', node.lineno, node.colno, node);
     }
     const ids = [];
