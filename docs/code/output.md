@@ -111,12 +111,15 @@ Mutating output commands:
 
 Non-mutating observation/read commands:
 - `SnapshotCommand`
+- `RawSnapshotCommand` (ordered raw target read; no nested poison inspection)
 - `IsErrorCommand`
 - `GetErrorCommand`
 - `SequenceGetCommand` (read operation)
 
 Notes:
-- command arg poison is normalized into `PoisonError`/poison targets with source position/path context.
+- command args are resolved at apply-time and rejection/poison paths are normalized to `PoisonedValue`.
+- because `PoisonedValue` is thenable, async arg resolution boxes/unboxes poison values to avoid promise assimilation.
+- `PoisonError` values are treated as regular values unless explicitly consumed by observation/error paths.
 - text normalization and safe output conversion are handled in command apply path.
 
 ## Compiler Integration
@@ -134,6 +137,8 @@ File: `src/compiler/compile-buffer.js`
 File: `src/compiler/compile-buffer.js`
 - `registerOutputUsage(frame, outputName)` records `usedOutputs` along lexical chain up to declaration frame.
 - `usedOutputs` metadata is passed to runtime async-block API (`getAsyncBlockArgs` in `compile-emit`).
+- `collectBranchHandlers(...)` also includes `Set`/`CallAssign` writes targeting declared outputs (not only `OutputCommand`),
+  so condition-poison paths can poison branch-local output writes correctly.
 
 ### Async-block wiring
 Files: `src/compiler/compile-emit.js`, `src/runtime/async-state.js`
