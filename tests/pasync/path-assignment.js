@@ -102,6 +102,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const script = `
            var obj = {}
            obj.a.b = 1
+           return obj
         `;
       try {
         await env.renderScriptString(script);
@@ -115,12 +116,13 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       const script = `
            var obj = null
            obj.prop = 1
+           return obj
         `;
       try {
         await env.renderScriptString(script);
         throw new Error('Should have failed');
       } catch (e) {
-        expect(e.message).to.contain('Cannot access property'); // setPath throws this for null root
+        expect(e.message).to.contain('Cannot access property');
       }
     });
   });

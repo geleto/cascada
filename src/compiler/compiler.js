@@ -536,7 +536,9 @@ class Compiler extends CompilerBase {
       const targetName = node.targets[0].value;
       this.emit(ids[0] + ' = ');
       this.emit('runtime.setPath(');
-      this.buffer.emitAddSnapshot(frame, targetName, node);
+      // Preserve command-tree ordering by reading the current value output
+      // through a raw snapshot command in the active buffer.
+      this.buffer.emitAddRawSnapshot(frame, targetName, node);
       this.emit(', ');
       this._compileAggregate(node.path, frame, '[', ']', false, false);
       this.emit(', ');

@@ -7,6 +7,7 @@ const {
   SequenceCallCommand,
   SequenceGetCommand,
   SnapshotCommand,
+  RawSnapshotCommand,
   IsErrorCommand,
   GetErrorCommand,
   SinkRepairCommand
@@ -150,6 +151,31 @@ class CommandBuffer {
       if (!output._buffer.finished) {
         throw new RuntimeFatalError(
           'Snapshot command on finished buffer is allowed only if the whole output is finished',
+          pos?.lineno ?? 0,
+          pos?.colno ?? 0,
+          null,
+          path
+        );
+      }
+      return this._runFinishedSnapshotCommand(cmd, outputName);
+    }
+    return this._addObservationCommand(cmd, outputName);
+  }
+
+  // addRawSnapshot enqueues an ordered raw read command.
+  // Unlike addSnapshot, this does not inspect nested poison state; it returns
+  // the current output target directly.
+  addRawSnapshot(outputName, pos = null) {
+    const cmd = new RawSnapshotCommand({
+      handler: outputName,
+      pos
+    });
+    if (this.finished) {
+      const output = this._outputs.get(outputName);
+      const path = (this._context && this._context.path) ? this._context.path : null;
+      if (!output._buffer.finished) {
+        throw new RuntimeFatalError(
+          'Raw snapshot command on finished buffer is allowed only if the whole output is finished',
           pos?.lineno ?? 0,
           pos?.colno ?? 0,
           null,

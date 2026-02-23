@@ -266,6 +266,14 @@ class CompileBuffer {
     );
   }
 
+  // Emit an ordered raw snapshot command (no nested poison inspection).
+  emitAddRawSnapshot(frame, outputName, positionNode) {
+    this.registerOutputUsage(frame, outputName);
+    this.compiler.emit(
+      `${this.currentBuffer}.addRawSnapshot("${outputName}", ${this._emitPositionLiteral(positionNode)})`
+    );
+  }
+
   emitAddIsError(frame, outputName, positionNode) {
     this.registerOutputUsage(frame, outputName);
     this.compiler.emit(

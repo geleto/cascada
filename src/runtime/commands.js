@@ -553,6 +553,36 @@ class SnapshotCommand extends Command {
   }
 }
 
+// RawSnapshotCommand returns the output's current target as-is, without
+// snapshot error inspection. This is required for overwrite semantics such as
+// value-output set_path where poisoned leaves may be replaced by the write.
+class RawSnapshotCommand extends Command {
+  constructor({ handler, pos = null }) {
+    super({ withDeferredResult: true });
+    this.handler = handler;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.isSnapshotCommand = true;
+  }
+
+  apply(output) {
+    const path = output && output._context ? output._context.path : null;
+    const contextualize = (err) => (isPoisonError(err)
+      ? err
+      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+
+    if (!output || typeof output._getTarget !== 'function') {
+      this.rejectResult(contextualize(new Error('RawSnapshotCommand requires an output handler with _getTarget()')));
+      return;
+    }
+
+    try {
+      this.resolveResult(output._getTarget());
+    } catch (err) {
+      this.rejectResult(contextualize(err));
+    }
+  }
+}
+
 class IsErrorCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });
@@ -687,6 +717,7 @@ module.exports = {
   ErrorCommand,
   TargetPoisonCommand,
   SnapshotCommand,
+  RawSnapshotCommand,
   IsErrorCommand,
   GetErrorCommand,
   SinkRepairCommand,
