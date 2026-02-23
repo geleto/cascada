@@ -368,8 +368,8 @@
       var mainTemplateName = 'error-import-async-main.njk';
       var libTemplateName = 'error-import-async-lib.njk';
 
-      loader.addTemplate(mainTemplateName, `{% import "${libTemplateName}" as lib with context %}{{ lib.value }}`);
-      loader.addTemplate(libTemplateName, '{% set value = errorAsyncFunc() %}');//poison starts at lib template
+      loader.addTemplate(mainTemplateName, `{% import "${libTemplateName}" as lib with context %}{{ lib.val }}`);
+      loader.addTemplate(libTemplateName, '{% set val = errorAsyncFunc() %}');//poison starts at lib template
 
       try {
         await env.renderTemplate(mainTemplateName, {

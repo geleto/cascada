@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   'use strict';
 
   var expect;
@@ -55,11 +55,11 @@
         };
 
         const template = `
-				{%- set value = 1 -%}
+				{%- set val = 1 -%}
 				{%- if slowCondition -%}
-				  {%- set value = 2 -%}
+				  {%- set val = 2 -%}
 				{%- endif -%}
-				{{ value }}`;
+				{{ val }}`;
         const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('2');
       });
@@ -77,15 +77,15 @@
         };
 
         const template = `
-				{%- set value = 1 -%}
+				{%- set val = 1 -%}
 				{%- if slowCondition -%}
-				  {%- set value = 2 -%}
+				  {%- set val = 2 -%}
 				{%- endif -%}
 				{%- if anotherSlowCondition -%}
-				  {%- set value = 3 -%}
+				  {%- set val = 3 -%}
 				{%- endif -%}
-				{{ value }}
-				{%- set value = 4 -%}`;
+				{{ val }}
+				{%- set val = 4 -%}`;
         const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('3');
       });
@@ -106,14 +106,14 @@
         };
 
         const template = `
-				{%- set value = 1 -%}
+				{%- set val = 1 -%}
 				{%- if slowCondition -%}
-				  {%- set value = 2 -%}
+				  {%- set val = 2 -%}
 				{%- endif -%}
 				{%- if anotherSlowCondition -%}
-				  {{ value }}
+				  {{ val }}
 				{%- endif -%}
-				{%- set value = 3 -%}`;
+				{%- set val = 3 -%}`;
         const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('2');
       });
@@ -147,13 +147,13 @@
         };
 
         const template = `
-				{%- set value = 1 -%}
+				{%- set val = 1 -%}
 				{%- if anotherSlowCondition -%}
-				  {{ value }}
+				  {{ val }}
 				{%- else -%}
-				  {%- set value = 100 -%}
+				  {%- set val = 100 -%}
 				{%- endif -%}
-				{%- set value = 3 -%}`;
+				{%- set val = 3 -%}`;
         const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('1');
       });
@@ -167,13 +167,13 @@
         };
 
         const template = `
-				{%- set value = 1 -%}
+				{%- set val = 1 -%}
 				{%- if slowTruth -%}
-				  {%- set value = 2 -%}
+				  {%- set val = 2 -%}
 				{%- else -%}
-				  {%- set value = 3 -%}
+				  {%- set val = 3 -%}
 				{%- endif -%}
-				{{ value }}
+				{{ val }}
 			  `;
 
         const result = await env.renderTemplateString(template, context);
@@ -240,17 +240,17 @@
 
       it('should skip all but the first truthy branch', async () => {
         const template = `
-				{%- set value = 1 -%}
+				{%- set val = 1 -%}
 				{%- if cond1 -%}
-				  {%- set value = 2 -%}
+				  {%- set val = 2 -%}
 				{%- else -%}
 				  {%- if cond2 -%}
-					{%- set value = 3 -%}
+					{%- set val = 3 -%}
 				  {%- else -%}
-					{%- set value = 4 -%}
+					{%- set val = 4 -%}
 				  {%- endif -%}
 				{%- endif -%}
-				{{ value }}
+				{{ val }}
 			  `;
 
         const contextA = {
@@ -290,28 +290,28 @@
         };
 
         const template = `
-				{%- set value = 'initial' -%}
+				{%- set val = 'initial' -%}
 				{%- switch whichCase -%}
 				  {%- case 'caseA' -%}
-					{%- set value = 'A' -%}
+					{%- set val = 'A' -%}
 					{%- if extraSlowVar == 'NOT_SLOW' -%}
-					  {%- set value = 'Y' -%}
+					  {%- set val = 'Y' -%}
 					{%- else -%}
-					  {%- set value = 'Z' -%}
-					  {{ value }}
-					  {%- set value = 'Q' -%}
+					  {%- set val = 'Z' -%}
+					  {{ val }}
+					  {%- set val = 'Q' -%}
 					{%- endif -%}
 				  {%- case 'caseB' -%}
-					{%- set value = 'B' -%}
+					{%- set val = 'B' -%}
 					{%- if extraSlowVar == 'SLOW' -%}
-					  {%- set value = 'X' -%}
+					  {%- set val = 'X' -%}
 					{%- endif -%}
 				  {%- case 'caseC' -%}
-					{%- set value = 'C' -%}
+					{%- set val = 'C' -%}
 				  {%- default -%}
-					{%- set value = 'D' -%}
+					{%- set val = 'D' -%}
 				{%- endswitch -%}
-				{{ value }}
+				{{ val }}
 			  `;
 
         let result = await env.renderTemplateString(template, context);
@@ -416,17 +416,17 @@
         };
 
         const template = `
-				{%- set value = 'start' -%}
+				{%- set val = 'start' -%}
 				{%- if cond1 -%}
-				  {%- set value = 'cond1' -%}
+				  {%- set val = 'cond1' -%}
 				{%- endif -%}
 				{%- if cond2 -%}
-				  {%- set value = 'cond2' -%}
+				  {%- set val = 'cond2' -%}
 				{%- endif -%}
 				{%- if cond3 -%}
-				  {%- set value = 'cond3' -%}
+				  {%- set val = 'cond3' -%}
 				{%- endif -%}
-				{{ value }}
+				{{ val }}
 			  `;
 
         const result = await env.renderTemplateString(template, context);
@@ -446,14 +446,14 @@
         };
 
         const template = `
-				{%- set value = 1 -%}
+				{%- set val = 1 -%}
 				{%- if slowCondition -%}
-				  {%- set value = 2 -%}
+				  {%- set val = 2 -%}
 				{%- endif -%}
 				{%- if anotherSlowCondition -%}
-				  {{ value }}
+				  {{ val }}
 				{%- endif -%}
-				{%- set value = 3 -%}
+				{%- set val = 3 -%}
 			  `;
 
         const result = await env.renderTemplateString(template, context);
@@ -1828,3 +1828,4 @@
     });
   });
 })();
+

@@ -116,11 +116,11 @@
 
       it('should recover from error in filter application', async () => {
         const template = `
-          {% set data = getData() %}
-          {% if heal and data is error %}
-            {% set data = "fallback" %}
+          {% set dta = getData() %}
+          {% if heal and dta is error %}
+            {% set dta = "fallback" %}
           {% endif %}
-          {{ data | upper }}
+          {{ dta | upper }}
         `;
 
         const context = {
@@ -344,11 +344,11 @@
 
       it('should recover from error in chained filters', async () => {
         const template = `
-          {% set text = getText() %}
-          {% if heal and text is error %}
-            {% set text = "hello world" %}
+          {% set txt = getText() %}
+          {% if heal and txt is error %}
+            {% set txt = "hello world" %}
           {% endif %}
-          {{ text | upper | replace("WORLD", "THERE") }}
+          {{ txt | upper | replace("WORLD", "THERE") }}
         `;
 
         const context = {
@@ -400,11 +400,11 @@
 
       it('should recover from error in object literal creation', async () => {
         const template = `
-          {% set value = getValue() %}
-          {% if heal and value is error %}
-            {% set value = 42 %}
+          {% set val = getValue() %}
+          {% if heal and val is error %}
+            {% set val = 42 %}
           {% endif %}
-          {% set obj = { key: value } %}
+          {% set obj = { key: val } %}
           {{ obj.key }}
         `;
 
@@ -513,11 +513,11 @@
 
       it('should verify explicit template logic recovery', async () => {
         const template = `
-          {% set value = getValue() %}
-          {% if heal and value is error %}
-            {% set value = "fallback" %}
+          {% set val = getValue() %}
+          {% if heal and val is error %}
+            {% set val = "fallback" %}
           {% endif %}
-          {{ value }}
+          {{ val }}
         `;
 
         const context = {
@@ -1519,3 +1519,4 @@ return result`;
     });
   });
 }());
+

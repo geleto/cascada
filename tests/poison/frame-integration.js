@@ -34,8 +34,8 @@
       };
 
       const template = `
-      {% set data = fetchData() %}
-      Result: {{ data }}
+      {% set dta = fetchData() %}
+      Result: {{ dta }}
     `;
 
       try {
@@ -285,4 +285,3 @@
   });
 
 })();
-

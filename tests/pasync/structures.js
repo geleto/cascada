@@ -385,14 +385,14 @@
           async getRole() { await delay(2); return 'Admin'; }
         };
         const template = `
-            {%- set data = {
+            {%- set dta = {
               users: [
                 { id: 1, profile: { name: getName(), role: "User" } },
                 { id: 2, profile: { name: "Bob", role: getRole() } }
               ]
             } -%}
-            User1: {{ data.users[0].profile.name }} ({{ data.users[0].id }})
-            User2 Role: {{ data.users[1].profile.role }}
+            User1: {{ dta.users[0].profile.name }} ({{ dta.users[0].id }})
+            User2 Role: {{ dta.users[1].profile.role }}
         `;
         const result = await env.renderTemplateString(template, context);
         expect(normalizeWhitespace(result)).to.equal('User1: Alice (1) User2 Role: Admin');

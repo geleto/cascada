@@ -33,8 +33,8 @@
           {{ x * 2 }}
         {% endmacro %}
 
-        {% set value = getValue() %}
-        {{ double(value) }}
+        {% set val = getValue() %}
+        {{ double(val) }}
       `;
 
       const context = {
