@@ -14,6 +14,7 @@ const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
 const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
 const { RESOLVE_MARKER } = require('./resolve');
+const ASYNC_POISON_BOX_KEY = Symbol.for('cascada.asyncArgPoisonBox');
 
 class Output {
   constructor(frame, buffer, outputName, context, outputType = null, target = undefined, base = null) {
@@ -984,31 +985,62 @@ function resolveCommandArgsValue(value, cmd, output) {
       return resolved;
     });
     if (!hasAsync) {
-      return mapped;
+      return mapped.map(unwrapAsyncPoisonBox);
     }
-    return Promise.all(mapped);
+    return Promise.all(mapped).then((resolvedItems) => resolvedItems.map(unwrapAsyncPoisonBox));
   }
-  return resolveCommandArg(value, cmd, output);
+  const resolvedValue = resolveCommandArg(value, cmd, output);
+  if (resolvedValue && typeof resolvedValue.then === 'function') {
+    return Promise.resolve(resolvedValue).then(unwrapAsyncPoisonBox);
+  }
+  return unwrapAsyncPoisonBox(resolvedValue);
 }
 
 function resolveCommandArg(value, cmd, output) {
   if (isPoison(value)) {
-    return new PoisonError(value.errors);
+    return value;
   }
   if (isPoisonError(value)) {
     return value;
   }
   if (value && typeof value.then === 'function') {
     return Promise.resolve(value).then(
-      (resolved) => resolveCommandArg(resolved, cmd, output),
-      (err) => new PoisonError(contextualizeCommandErrors(output, cmd, isPoisonError(err) ? err.errors : [err]))
+      (resolved) => {
+        const next = resolveCommandArg(resolved, cmd, output);
+        if (next && typeof next.then === 'function') {
+          return Promise.resolve(next).then(
+            (resolvedNext) => (isPoison(resolvedNext) ? wrapAsyncPoisonValue(resolvedNext) : resolvedNext),
+            (err) => wrapAsyncPoisonValue(createPoison(contextualizeCommandErrors(output, cmd, isPoisonError(err) ? err.errors : [err])))
+          );
+        }
+        return isPoison(next) ? wrapAsyncPoisonValue(next) : next;
+      },
+      (err) => wrapAsyncPoisonValue(createPoison(contextualizeCommandErrors(output, cmd, isPoisonError(err) ? err.errors : [err])))
     );
   }
   if (value && value[RESOLVE_MARKER]) {
     return Promise.resolve(value[RESOLVE_MARKER]).then(
       () => value,
-      (err) => new PoisonError(contextualizeCommandErrors(output, cmd, isPoisonError(err) ? err.errors : [err]))
+      (err) => wrapAsyncPoisonValue(createPoison(contextualizeCommandErrors(output, cmd, isPoisonError(err) ? err.errors : [err])))
     );
+  }
+  return value;
+}
+
+/**
+ * PoisonedValue, when returned by an async function is converted to a regular promise
+ * Box it so we can convert it back to PoisonedValue when the promise is resolved
+*/
+function wrapAsyncPoisonValue(poisonedValue) {
+  return {
+    [ASYNC_POISON_BOX_KEY]: true,
+    value: poisonedValue
+  };
+}
+
+function unwrapAsyncPoisonBox(value) {
+  if (value && value[ASYNC_POISON_BOX_KEY] === true) {
+    return value.value;
   }
   return value;
 }

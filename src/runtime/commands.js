@@ -78,18 +78,13 @@ class OutputCommand extends Command {
 
   extractPoisonFromArgs() {
     const args = this.arguments;
-    if (isPoisonError(args) && Array.isArray(args.errors) && args.errors.length > 0) {
-      return args.errors.slice();
-    }
     if (isPoison(args) && Array.isArray(args.errors) && args.errors.length > 0) {
       return args.errors.slice();
     }
     if (!Array.isArray(args)) return [];
     const errors = [];
     for (const arg of args) {
-      if (isPoisonError(arg) && Array.isArray(arg.errors) && arg.errors.length > 0) {
-        errors.push(...arg.errors);
-      } else if (isPoison(arg) && Array.isArray(arg.errors) && arg.errors.length > 0) {
+      if (isPoison(arg) && Array.isArray(arg.errors) && arg.errors.length > 0) {
         errors.push(...arg.errors);
       }
     }

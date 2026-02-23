@@ -5,10 +5,6 @@ const POISON_KEY = typeof Symbol !== 'undefined'
   ? Symbol.for('cascada.poison')
   : '__cascadaPoisonError';
 
-// Symbol for PoisonError detection (more reliable than instanceof after transpilation)
-const POISON_ERROR_KEY = typeof Symbol !== 'undefined'
-  ? Symbol.for('cascada.poisonError')
-  : '__cascadaPoisonErrorMarker';
 
 /**
  * PoisonedValue: An inspectable error container that can be detected synchronously
@@ -76,7 +72,6 @@ class PoisonError extends Error {
       super(errors.message);
       this.errors = errors.errors;
       this.errorContext = errorContext;
-      this[POISON_ERROR_KEY] = true;
       this.stack = errors.stack;
       return;
     }
@@ -92,7 +87,6 @@ class PoisonError extends Error {
 
     this.name = 'PoisonError';
     this.errors = deduped;
-    this[POISON_ERROR_KEY] = true;
 
     // Determine the appropriate stack trace
     const stacks = deduped.map(e => e.stack).filter(Boolean);
@@ -400,10 +394,9 @@ function isPoison(value) {
 
 /**
  * Check if an error is a PoisonError.
- * More reliable than instanceof after transpilation.
  */
 function isPoisonError(error) {
-  return error != null/*and undefined*/ && error[POISON_ERROR_KEY] === true;
+  return error instanceof PoisonError;
 }
 
 /**

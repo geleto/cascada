@@ -2,7 +2,9 @@
 
 var ArrayProto = Array.prototype;
 var ObjProto = Object.prototype;
-var RuntimeError = require('./runtime/errors').RuntimeError;
+var runtimeErrors = require('./runtime/errors');
+var RuntimeError = runtimeErrors.RuntimeError;
+var PoisonError = runtimeErrors.PoisonError;
 var escapeMap = {
   '&': '&amp;',
   '"': '&quot;',
@@ -27,13 +29,8 @@ function lookupEscape(ch) {
 }
 
 function _prettifyError(path, withInternals, err) {
-  // Symbol for PoisonError detection
-  const POISON_ERROR_KEY = typeof Symbol !== 'undefined'
-    ? Symbol.for('cascada.poisonError')
-    : '__cascadaPoisonErrorMarker';
-
   // Check if this is a PoisonError (contains multiple errors)
-  const isPoisonError = err != null && err[POISON_ERROR_KEY] === true;
+  const isPoisonError = err instanceof PoisonError;
 
   if (isPoisonError) {
     // For PoisonError, update path on all contained errors
