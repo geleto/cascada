@@ -627,7 +627,7 @@ class Compiler extends CompilerBase {
 
             // Collect handlers from this branch
             if (this.asyncMode) {
-              branchHandlers.push(this.buffer.collectBranchHandlers(c.body));
+              branchHandlers.push(this.buffer.collectBranchHandlers(c.body, blockFrame));
             }
           }, c.body); // Pass body as code position
           this.emit.line('break;');
@@ -654,7 +654,7 @@ class Compiler extends CompilerBase {
 
           // Collect handlers from default
           if (this.asyncMode) {
-            branchHandlers.push(this.buffer.collectBranchHandlers(node.default));
+            branchHandlers.push(this.buffer.collectBranchHandlers(node.default, blockFrame));
           }
         }, node.default); // Pass default as code position
       } else if (this.asyncMode) {
@@ -1065,9 +1065,9 @@ class Compiler extends CompilerBase {
         // Collect output handlers from both branches (for async mode poison handling)
         let trueBranchHandlers, falseBranchHandlers, allHandlers;
         if (this.asyncMode) {
-          trueBranchHandlers = this.buffer.collectBranchHandlers(node.body);
+          trueBranchHandlers = this.buffer.collectBranchHandlers(node.body, blockFrame);
           falseBranchHandlers = node.else_ ?
-            this.buffer.collectBranchHandlers(node.else_) :
+            this.buffer.collectBranchHandlers(node.else_, blockFrame) :
             new Set();
 
           // Combine handlers - both branches might write to same handlers

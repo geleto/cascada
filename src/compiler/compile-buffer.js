@@ -297,7 +297,7 @@ class CompileBuffer {
    * @param {Node} node - AST node to analyze
    * @returns {Set<string>} Set of handler names ('text', 'data', etc.)
    */
-  collectBranchHandlers(node) {
+  collectBranchHandlers(node, frame = null) {
     const handlers = new Set();
 
     const traverse = (n) => {
@@ -314,6 +314,21 @@ class CompileBuffer {
         const handlerName = this.compiler.sequential._extractStaticPathRoot(pathNode);
         if (handlerName) {
           handlers.add(handlerName);
+        }
+      }
+
+      // Case 3: Script assignments to declared value outputs (set/setval path).
+      // These compile from Set/CallAssign nodes, not OutputCommand nodes.
+      if (frame && (n instanceof nodes.Set || n instanceof nodes.CallAssign)) {
+        const targets = Array.isArray(n.targets) ? n.targets : [];
+        for (const target of targets) {
+          if (!(target instanceof nodes.Symbol)) {
+            continue;
+          }
+          const outputDecl = this.compiler.async._getDeclaredOutput(frame, target.value);
+          if (outputDecl) {
+            handlers.add(target.value);
+          }
         }
       }
 
