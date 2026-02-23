@@ -8,6 +8,19 @@ const { AsyncState } = globalRuntime;
 const { Obj } = require('../object');
 const { callbackAsap } = require('./utils');
 const { Context } = require('./context');
+const { CONVERT_TEMPLATE_VAR_TO_VALUE } = require('../feature-flags');
+
+function convertTemplateSetTagsToSetval(source) {
+  if (!source || typeof source !== 'string') {
+    return source;
+  }
+
+  // Replace opening tag names only.
+  // {% set ... %} -> {% setval ... %}
+  const withSetval = source.replace(/({%\s*-?\s*)set(?!val\b)\b/g, '$1setval');
+  // {% endset %} -> {% endsetval %}
+  return withSetval.replace(/({%\s*-?\s*)endset\b/g, '$1endsetval');
+}
 
 // Lazy-loaded environment classes to avoid circular dependencies
 let Environment, AsyncEnvironment;
@@ -324,11 +337,16 @@ class Template extends Obj {
   }
 
   _compileSource() {
-    return compiler.compile(this.tmplStr,
+    const convertTemplateVarToValue = !!(CONVERT_TEMPLATE_VAR_TO_VALUE && !this.scriptMode);
+    const source = convertTemplateVarToValue
+      ? convertTemplateSetTagsToSetval(this.tmplStr)
+      : this.tmplStr;
+
+    return compiler.compile(source,
       this.env.asyncFilters,
       this.env.extensionsList,
       this.path,
-      Object.assign({scriptMode: this.scriptMode, asyncMode: this.asyncMode}, this.env.opts)
+      Object.assign({ scriptMode: this.scriptMode, asyncMode: this.asyncMode }, this.env.opts)
     );
   }
 
@@ -395,5 +413,6 @@ class AsyncTemplate extends Template {
 
 module.exports = {
   Template,
-  AsyncTemplate
+  AsyncTemplate,
+  CONVERT_TEMPLATE_VAR_TO_VALUE
 };

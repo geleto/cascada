@@ -21,6 +21,7 @@ const CompileInheritance = require('./compile-inheritance');
 const CompileLoop = require('./compile-loop');
 const CompileBuffer = require('./compile-buffer');
 const CompilerBase = require('./compiler-base');
+const { CONVERT_TEMPLATE_VAR_TO_VALUE } = require('../feature-flags');
 
 class Compiler extends CompilerBase {
   init(templateName, options) {
@@ -307,7 +308,7 @@ class Compiler extends CompilerBase {
   }
 
   compileSet(node, frame) {
-    if (this.scriptMode && (node.varType === 'setval' || node.isSetvalDeclaration)) {
+    if (node.varType === 'setval' || (this.scriptMode && node.isSetvalDeclaration)) {
       return this.compileSetval(node, frame);
     }
 
@@ -469,8 +470,9 @@ class Compiler extends CompilerBase {
   }
 
   compileSetval(node, frame) {
-    if (!this.scriptMode) {
-      this.fail('setval is only supported in script mode', node.lineno, node.colno, node);
+    const templateSetvalMode = !this.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE;
+    if (!this.scriptMode && !templateSetvalMode) {
+      this.fail('setval is only supported in script mode or template conversion mode', node.lineno, node.colno, node);
     }
     if (!this.asyncMode) {
       this.fail('setval is only supported in async mode', node.lineno, node.colno, node);
@@ -488,11 +490,13 @@ class Compiler extends CompilerBase {
       let id;
 
       const declaredOutput = this.async._getDeclaredOutput(frame, name);
-      const isDeclaredForValidation = isDeclaration
+      const shouldDeclareInTemplateMode = templateSetvalMode && !(declaredOutput && declaredOutput.type === 'value');
+      const shouldDeclare = isDeclaration || shouldDeclareInTemplateMode;
+      const isDeclaredForValidation = shouldDeclare
         ? !!(frame.declaredOutputs && frame.declaredOutputs.has(name))
         : !!(declaredOutput && declaredOutput.type === 'value');
 
-      if (!isDeclaration) {
+      if (this.scriptMode && !isDeclaration) {
         const declaredInCurrentScope = !!(frame.declaredOutputs && frame.declaredOutputs.has(name));
         validateReadOnlyOuterMutation(this, {
           frame,
@@ -505,7 +509,7 @@ class Compiler extends CompilerBase {
 
       validateSetTarget(this, validationNode, target, name, isDeclaredForValidation);
 
-      if (isDeclaration) {
+      if (shouldDeclare) {
         this._addDeclaredOutput(frame, name, 'value', null, node);
         this.emit(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "value", context, null);`);
       } else {
@@ -578,6 +582,12 @@ class Compiler extends CompilerBase {
       if (name.charAt(0) !== '_' && hasAssignedValue) {
         this.emit.line('if(frame.topLevel) {');
         this.emit.line(`  context.addExport("${name}", ${valueId});`);
+        this.emit.line('}');
+      }
+
+      if (!this.scriptMode && hasAssignedValue) {
+        this.emit.line('if(frame.topLevel) {');
+        this.emit.line(`  context.setVariable("${name}", ${valueId});`);
         this.emit.line('}');
       }
     });

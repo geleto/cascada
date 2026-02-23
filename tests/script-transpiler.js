@@ -1,4 +1,5 @@
 const scriptTranspiler = require('../src/script/script-transpiler');
+const { CONVERT_SCRIPT_VAR_TO_VALUE } = require('../src/feature-flags');
 const { TOKEN_TYPES } = require('../src/script/script-lexer');
 const expect = require('expect.js');
 
@@ -6,7 +7,7 @@ const aliasOptions = {
   useCoreOutputAliases: true
 };
 
-const DECL_TAG = scriptTranspiler.CONVERT_VAR_TO_VALUE ? 'value' : 'var';
+const DECL_TAG = CONVERT_SCRIPT_VAR_TO_VALUE ? 'value' : 'var';
 
 describe('Script Transpiler', () => {
   // Helper function tests

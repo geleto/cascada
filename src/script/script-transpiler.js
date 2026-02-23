@@ -71,7 +71,7 @@
  * block structure validation, ensuring robust and accurate conversion.
  */
 
-const CONVERT_VAR_TO_VALUE = true;
+const { CONVERT_SCRIPT_VAR_TO_VALUE } = require('../feature-flags');
 
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
@@ -1025,7 +1025,7 @@ class ScriptTranspiler {
   }
 
   _convertVarDeclarationToValue(codeContent, forceConvert = false) {
-    if (!(forceConvert || CONVERT_VAR_TO_VALUE)) {
+    if (!(forceConvert || CONVERT_SCRIPT_VAR_TO_VALUE)) {
       return codeContent;
     }
 
@@ -1766,5 +1766,4 @@ class ScriptTranspiler {
 }
 
 const transpiler = new ScriptTranspiler();
-transpiler.CONVERT_VAR_TO_VALUE = CONVERT_VAR_TO_VALUE;
 module.exports = transpiler;
