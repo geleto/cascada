@@ -89,18 +89,25 @@ class CompileLoop {
       const loopBodyFuncId = this.compiler._tmpid();
       this.compiler.emit(`let ${loopBodyFuncId} = `);
 
+      const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body, blockFrame) : null;
+
       //compile the loop body function
       const hasConcurrentLimit = Boolean(node.concurrentLimit);
-      const bodyFrame = this._compileLoopBody(node, blockFrame, arr, loopVars, sequentialLoopBody, hasConcurrentLimit, whileConditionNode);
+      const bodyFrame = this._compileLoopBody(
+        node,
+        blockFrame,
+        arr,
+        loopVars,
+        sequentialLoopBody,
+        hasConcurrentLimit,
+        whileConditionNode
+      );
       const bodyWriteCounts = bodyFrame.writeCounts;
       if (bodyWriteCounts) {
         // @todo - in the future will require writes+reads to be sequential,
         // update _compileLoopBody too as it handles sequential differently
         sequentialLoopBody = true;
       }
-
-      // Collect body handlers for poison handling
-      const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
 
       // Compile else block and collect metadata
       let elseFuncId = 'null';
@@ -115,7 +122,7 @@ class CompileLoop {
 
         // Collect metadata from else compilation
         elseWriteCounts = this.compiler.async.countsTo1(elseFrame.writeCounts);
-        elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_) : null;
+        elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_, blockFrame) : null;
       }
 
       // Set up loop frame with combined write counts for mutual exclusion
@@ -297,7 +304,7 @@ class CompileLoop {
           if (totalWrites && Object.keys(totalWrites).length > 0) {
             this.compiler.emit.insertLine(catchPoisonPos, `  frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
           }
-          const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
+          const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body, bodyFrame) : null;
           if (bodyHandlers && bodyHandlers.size > 0) {
             for (const handler of bodyHandlers) {
               this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
@@ -438,7 +445,7 @@ class CompileLoop {
 
           // Collect metadata from body compilation
           _bodyWriteCounts = managedFrame.writeCounts;
-          bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
+          bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body, frame) : null;
 
           this.compiler.emit.line('next(' + i + ',' + buf + ');');
         });
@@ -447,7 +454,7 @@ class CompileLoop {
 
         // Collect metadata from body compilation
         _bodyWriteCounts = frame.writeCounts;
-        bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
+        bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body, frame) : null;
 
         this.compiler.emit.line('next(' + i + ');');
       }
@@ -478,7 +485,7 @@ class CompileLoop {
 
       // Collect metadata from else compilation
       _elseWriteCounts2 = frame.writeCounts; // eslint-disable-line no-unused-vars
-      elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_) : null; // eslint-disable-line no-unused-vars
+      elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_, frame) : null; // eslint-disable-line no-unused-vars
 
       this.compiler.emit.line('}');
     }
