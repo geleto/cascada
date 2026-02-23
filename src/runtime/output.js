@@ -4,7 +4,11 @@ const {
   TextCommand,
   ValueCommand,
   DataCommand,
-  SinkCommand
+  SinkCommand,
+  SnapshotCommand,
+  RawSnapshotCommand,
+  IsErrorCommand,
+  GetErrorCommand
 } = require('./commands');
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
@@ -589,7 +593,12 @@ class SinkOutput extends Output {
     };
 
     try {
-      if (cmd.isSnapshotCommand) {
+      if (
+        cmd instanceof SnapshotCommand ||
+        cmd instanceof RawSnapshotCommand ||
+        cmd instanceof IsErrorCommand ||
+        cmd instanceof GetErrorCommand
+      ) {
         const snapshotResult = cmd.apply(this);
         if (snapshotResult && typeof snapshotResult.then === 'function') {
           return Promise.resolve(snapshotResult).catch((err) => {
