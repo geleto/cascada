@@ -1,15 +1,15 @@
 # value vs var parity gaps (CONVERT_VAR_TO_VALUE mode)
 
-Fresh regression snapshot for `CONVERT_VAR_TO_VALUE = true` in `src/script/script-transpiler.js`, after moving output buffer access to compiler/runtime `currentBuffer` wiring.
+Fresh regression snapshot for `CONVERT_VAR_TO_VALUE = true` in `src/script/script-transpiler.js`, after the buffer-parent/linking and compiler buffer-state simplification work.
 
 Run details:
-- Date: February 21, 2026
+- Date: February 23, 2026
 - Command:
   - `npm run test:quick`
 - Result:
-  - Total: 2417
-  - Passing: 2365
-  - Failing: 35
+  - Total: 2418
+  - Passing: 2372
+  - Failing: 29
   - Pending: 17
 
 Purpose:
@@ -18,34 +18,32 @@ Purpose:
 
 ## High-level summary
 
-Compared to the previous 43-failure snapshot, the suite is now at 35 failing tests.
+Compared to the previous 35-failure snapshot, the suite is now at 29 failing tests.
 
 What improved:
-- Script scope/capture timeout cluster reduced notably.
-- Branch/switch local-scope timeout scenarios improved under explicit `currentBuffer` propagation.
+- Timeout-heavy script/call/capture regressions are no longer in the failing list.
+- CommandBuffer parent-link consistency changes reduced cross-scope command-placement failures.
 
 Current major clusters:
 - Loop poison/while condition behavior and loop write semantics: 17 failures.
-- Script/call/capture timeout behavior: 8 failures.
 - Name-conflict diagnostic drift: 2 failures.
+- Custom extension content-block duplication: 2 failures.
 - Path-assignment strict/lazy mismatch: 3 failures.
 - Peek/recovery/integration error-shape regressions: 5 failures.
 
 Quick symptom counts:
 - `expected false to equal true`: 17
-- Timeout failures: 8
+- Timeout failures: 0
 
 ## File-level failure distribution
 
 - `tests/phase6-integration.js`: 6
 - `tests/phase5-while-generator.js`: 6
-- `tests/pasync/calls.js`: 3
 - `tests/pasync/loops.js`: 3
 - `tests/pasync/path-assignment.js`: 3
-- `tests/pasync/script.js`: 3
 - `tests/explicit-outputs.js`: 2
+- `tests/pasync/custom.js`: 2
 - `tests/pasync/phase2-loop-poison-sync.js`: 2
-- `tests/pasync/script-output.js`: 2
 - `tests/poison/peek-operator.js`: 2
 - `tests/poison/error-recovery.js`: 1
 - `tests/poison/integration.js`: 1
@@ -68,32 +66,29 @@ Symptoms:
 - Mutable parent loop write parity mismatch remains (`expected 1`, got `3` in loop script test).
 
 Interpretation:
-- Remaining gaps are concentrated in poison-on-control-failure and loop write contamination semantics.
+- Remaining gaps are concentrated in control-flow poison handling and loop write contamination semantics.
 
-### 2) Script/call/capture timeout regressions
-
-Representative failing files:
-- `tests/pasync/calls.js`
-- `tests/pasync/script-output.js`
-- `tests/pasync/script.js`
-
-Symptoms:
-- Timeouts in call-block parent-variable access and output observation.
-- Timeouts in script capture assignment scenarios.
-
-Interpretation:
-- Some command-stream/link timing paths are still unresolved for call/capture flows.
-
-### 3) Output/variable conflict diagnostic drift
+### 2) Output/variable conflict diagnostic drift
 
 File:
 - `tests/explicit-outputs.js`
 
 Symptoms:
-- Expected conflict wording (`Cannot declare output/variable ... conflicts ...`) differs from current emitted errors.
+- Expected conflict wording (`Cannot declare output/variable ...`) differs from current emitted errors.
 
 Interpretation:
-- Conflict detection still triggers at a layer that surfaces output/redeclaration messages instead of parity wording.
+- Conflict detection still trips at a lower layer and surfaces redeclaration wording rather than parity wording.
+
+### 3) Async custom extension content duplication
+
+File:
+- `tests/pasync/custom.js`
+
+Symptoms:
+- Extension content-block tests emit duplicated body content after the expected wrapped output.
+
+Interpretation:
+- Content-block buffering/observation assembly for extension paths is still diverging from expected single-emit behavior.
 
 ### 4) Path assignment (`set_path`) parity gaps
 
@@ -105,7 +100,7 @@ Symptoms:
 - Lazy overwrite scenario still surfaces `Sync Poison` unexpectedly.
 
 Interpretation:
-- `set_path` behavior remains partially divergent from var baseline in strict/lazy edges.
+- `set_path` behavior remains partially divergent from var baseline in strict/lazy edge handling.
 
 ### 5) Recovery/peek/integration error-shape regressions
 
@@ -118,10 +113,13 @@ Symptoms:
 - Peek assignment and sequence-peek message shape mismatch.
 
 Interpretation:
-- Error wrapping/normalization for value-converted paths still differs from baseline.
+- Error wrapping/normalization for value-converted paths still differs from baseline expectations.
 
 ## What changed vs the previous analysis
 
-- Failure count improved from 43 to 35.
-- Script scope/capture timeout cluster improved substantially (`tests/pasync/script.js`: 11 -> 3).
-- Major remaining concentration is now loop poison semantics + call/capture timeout paths.
+- Failure count improved from 35 to 29.
+- Timeout cluster in script/call/capture paths dropped out of the current failure list.
+- Remaining work is now more concentrated in:
+  - loop poison semantics,
+  - error-shape parity,
+  - custom-extension content assembly.

@@ -241,6 +241,19 @@ describe('Cascada Script: Variables', function () {
         name: 'Alice'
       });
     });
+
+    it('should read outer scope variable in minimal capture block', async function () {
+      const script = `
+        var base = "outer"
+        var result = capture
+          var out = base
+          return out
+        endcapture
+        return result`;
+
+      const result = await env.renderScriptString(script, {});
+      expect(result).to.be('outer');
+    });
   });
 
   describe('Variable Scoping and Shadowing', function () {
@@ -561,5 +574,4 @@ describe('Cascada Script: Variables', function () {
   });
 
 });
-
 

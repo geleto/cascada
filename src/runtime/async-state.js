@@ -51,25 +51,18 @@ class AsyncState {
     return this.parent;
   }
 
-  asyncBlock(func, runtime, f, readVars, writeCounts, usedOutputs, cb, lineno, colno, context, errorContextString = null, isExpression = false, sequentialAsyncBlock = false) {
-    // Backward-compat: older call sites don't pass usedOutputs.
-    if (typeof usedOutputs === 'function') {
-      sequentialAsyncBlock = isExpression;
-      isExpression = errorContextString;
-      errorContextString = context;
-      context = colno;
-      colno = lineno;
-      lineno = cb;
-      cb = usedOutputs;
-      usedOutputs = null;
-    }
-
+  asyncBlock(func, runtime, f, readVars, writeCounts, usedOutputs, parentBuffer, createOutputBuffer, cb, lineno, colno, context, errorContextString = null, isExpression = false, sequentialAsyncBlock = false) {
     const childFrame = f.pushAsyncBlock(readVars, writeCounts, sequentialAsyncBlock, usedOutputs);
     // Runtime async-block creation site for CommandBuffer.
     // This avoids compiler-side duplicate creation for async block execution.
     let newBuffer = null;
-    if (Array.isArray(usedOutputs) && usedOutputs.length > 0) {
+    if (createOutputBuffer && Array.isArray(usedOutputs) && usedOutputs.length > 0) {
       newBuffer = runtime.createCommandBuffer(context, null, childFrame);
+      if (parentBuffer && typeof parentBuffer.addBuffer === 'function') {
+        for (const outputName of usedOutputs) {
+          parentBuffer.addBuffer(newBuffer, outputName);
+        }
+      }
     }
 
     const checkInfo = createCheckInfo(cb, runtime, lineno, colno, errorContextString, context);
@@ -79,8 +72,8 @@ class AsyncState {
       childFrame.checkInfo = checkInfo;
     }
 
-    const activeBuffer = newBuffer;
-    const promise = func(childState, childFrame, activeBuffer)
+    const activeBuffer = newBuffer || parentBuffer || null;
+    const promise = func(childState, childFrame, activeBuffer, parentBuffer || null)
       .finally(() => {
         // Finalize this block's buffer on both success and failure so parent
         // chaining can progress in error paths as well.

@@ -142,8 +142,65 @@ class Compiler extends CompilerBase {
     var resolveArgs = node.resolveArgs && node.isAsync;
     const positionNode = args || node; // Prefer args position if available
 
+    const emitCallArgs = (callFrame) => {
+      if ((args && args.children.length) || contentArgs.length) {
+        this.emit(',');
+      }
+
+      if (args) {
+        if (!(args instanceof nodes.NodeList)) {
+          this.fail('compileCallExtension: arguments must be a NodeList, use `parser.parseSignature`', node.lineno, node.colno, node);
+        }
+
+        args.children.forEach((arg, i) => {
+          // Tag arguments are passed normally to the call. Note
+          // that keyword arguments are turned into a single js
+          // object as the last argument, if they exist.
+          this._compileExpression(arg, callFrame, false);
+
+          if (i !== args.children.length - 1 || contentArgs.length) {
+            this.emit(',');
+          }
+        });
+      }
+
+      if (contentArgs.length) {
+        contentArgs.forEach((arg, i) => {
+          if (i > 0) {
+            this.emit(',');
+          }
+
+          if (arg) {
+            if (node.isAsync && !resolveArgs) {
+              //when args are not resolved, the contentArgs are promises
+              this.emit.asyncBlockRender(node, callFrame, function (f) {
+                this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+                this.compile(arg, f);
+              }, null, arg); // Use content arg node for position
+            }
+            else {
+              //when not resolve args, the contentArgs are callback functions
+              this.emit.line('function(cb) {');
+              this.emit.line('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
+
+              this.emit.withScopedSyntax(() => {
+                this.emit.asyncBlockRender(node, callFrame, function (f) {
+                  this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+                  this.compile(arg, f);
+                }, 'cb', arg); // Use content arg node for position
+                this.emit.line(';');
+              });
+
+              this.emit.line('}');//end callback
+            }
+          } else {
+            this.emit('null');
+          }
+        });
+      }
+    };
+
     let timingPromiseId = null;
-    let errorContextJson;
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
@@ -152,106 +209,60 @@ class Compiler extends CompilerBase {
         this.emit.line(`let ${timingPromiseId};`);
       }
 
-      frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text', 'text');
-      if (this.asyncMode) {
-        this.emit(`(${timingPromiseId} = runtime.resolveSingle(`);
-      } else {
-        errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
-        this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
-      }
-      if (noExtensionCallback) {
-        //the extension returns a value directly
-        if (!resolveArgs) {
-          //send the arguments as they are - promises or values
-          this.emit(`${ext}["${node.prop}"](context`);
+      frame = this.buffer.asyncAddToBufferScoped(
+        node,
+        frame,
+        positionNode,
+        'text',
+        'text',
+        true,
+        this.asyncMode,
+        (innerFrame) => {
+          let errorContextJson;
+          if (this.asyncMode) {
+            this.emit(`(${timingPromiseId} = runtime.resolveSingle(`);
+          } else {
+            errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
+            this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
+          }
+          if (noExtensionCallback) {
+            //the extension returns a value directly
+            if (!resolveArgs) {
+              //send the arguments as they are - promises or values
+              this.emit(`${ext}["${node.prop}"](context`);
+            }
+            else {
+              //resolve the arguments before calling the function
+              this.emit(`runtime.resolveArguments(${ext}["${node.prop}"].bind(${ext}), 1)(context`);
+            }
+          } else {
+            //isAsync, the callback should be promisified
+            if (!resolveArgs) {
+              this.emit(`runtime.promisify(${ext}["${node.prop}"].bind(${ext}))(context`);
+            }
+            else {
+              this.emit(`runtime.resolveArguments(runtime.promisify(${ext}["${node.prop}"].bind(${ext})), 1)(context`);
+            }
+          }
+
+          emitCallArgs(innerFrame);
+          this.emit(`)`);//close the extension call
+          if (this.asyncMode) {
+            this.emit('))');
+            this.emit(';\n');
+            this.emit.line(`await ${timingPromiseId};`);
+          } else if (node.isAsync) {
+            this.emit(`, ${autoescape} && env.opts.autoescape, ${errorContextJson});`);//end of suppressValue
+          } else {
+            this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
+          }
         }
-        else {
-          //resolve the arguments before calling the function
-          this.emit(`runtime.resolveArguments(${ext}["${node.prop}"].bind(${ext}), 1)(context`);
-        }
-      } else {
-        //isAsync, the callback should be promisified
-        if (!resolveArgs) {
-          this.emit(`runtime.promisify(${ext}["${node.prop}"].bind(${ext}))(context`);
-        }
-        else {
-          this.emit(`runtime.resolveArguments(runtime.promisify(${ext}["${node.prop}"].bind(${ext})), 1)(context`);
-        }
-      }
+      );
     } else {
       //use the original nunjucks callback mechanism
       this.emit(`env.getExtension("${node.extName}")["${node.prop}"](context`);
-    }
+      emitCallArgs(frame);
 
-    if ((args && args.children.length) || contentArgs.length) {
-      this.emit(',');
-    }
-
-    if (args) {
-      if (!(args instanceof nodes.NodeList)) {
-        this.fail('compileCallExtension: arguments must be a NodeList, use `parser.parseSignature`', node.lineno, node.colno, node);
-      }
-
-      args.children.forEach((arg, i) => {
-        // Tag arguments are passed normally to the call. Note
-        // that keyword arguments are turned into a single js
-        // object as the last argument, if they exist.
-        this._compileExpression(arg, frame, false);
-
-        if (i !== args.children.length - 1 || contentArgs.length) {
-          this.emit(',');
-        }
-      });
-    }
-
-    if (contentArgs.length) {
-      contentArgs.forEach((arg, i) => {
-        if (i > 0) {
-          this.emit(',');
-        }
-
-        if (arg) {
-          if (node.isAsync && !resolveArgs) {
-            //when args are not resolved, the contentArgs are promises
-            this.emit.asyncBlockRender(node, frame, function (f) {
-              this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-              this.compile(arg, f);
-            }, null, arg); // Use content arg node for position
-          }
-          else {
-            //when not resolve args, the contentArgs are callback functions
-            this.emit.line('function(cb) {');
-            this.emit.line('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
-
-            this.emit.withScopedSyntax(() => {
-              this.emit.asyncBlockRender(node, frame, function (f) {
-                this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-                this.compile(arg, f);
-              }, 'cb', arg); // Use content arg node for position
-              this.emit.line(';');
-            });
-
-            this.emit.line('}');//end callback
-          }
-        } else {
-          this.emit('null');
-        }
-      });
-    }
-
-    if (noExtensionCallback || node.isAsync) {
-      this.emit(`)`);//close the extension call
-      if (this.asyncMode) {
-        this.emit('))');
-        this.emit(';\n');
-        this.emit.line(`await ${timingPromiseId};`);
-      } else if (node.isAsync) {
-        this.emit(`, ${autoescape} && env.opts.autoescape, ${errorContextJson});`);//end of suppressValue
-      } else {
-        this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
-      }
-      frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text', true, this.asyncMode);
-    } else {
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
       let callbackTimingPromiseId = null;
@@ -259,21 +270,29 @@ class Compiler extends CompilerBase {
         callbackTimingPromiseId = this._tmpid();
         this.emit.line(`let ${callbackTimingPromiseId};`);
       }
-      frame = this.buffer.asyncAddToBufferBegin(node, frame, positionNode, 'text', 'text');
-      if (this.asyncMode) {
-        this.emit(`(${callbackTimingPromiseId} = runtime.resolveSingle(${res}))`);
-        this.emit(';\n');
-        this.emit.line(`await ${callbackTimingPromiseId};`);
-        frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text', true, true);
-      } else {
-        const errorContextJson2 = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
-        if (node.isAsync) {
-          this.emit(`await runtime.suppressValueAsync(${res}, ${autoescape} && env.opts.autoescape, ${errorContextJson2});`);
-        } else {
-          this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
+      frame = this.buffer.asyncAddToBufferScoped(
+        node,
+        frame,
+        positionNode,
+        'text',
+        'text',
+        true,
+        this.asyncMode,
+        () => {
+          if (this.asyncMode) {
+            this.emit(`(${callbackTimingPromiseId} = runtime.resolveSingle(${res}))`);
+            this.emit(';\n');
+            this.emit.line(`await ${callbackTimingPromiseId};`);
+          } else {
+            const errorContextJson2 = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
+            if (node.isAsync) {
+              this.emit(`await runtime.suppressValueAsync(${res}, ${autoescape} && env.opts.autoescape, ${errorContextJson2});`);
+            } else {
+              this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
+            }
+          }
         }
-        frame = this.buffer.asyncAddToBufferEnd(node, frame, positionNode, 'text', 'text', true);
-      }
+      );
 
       this.emit.addScopeLevel();
     }
@@ -564,157 +583,153 @@ class Compiler extends CompilerBase {
 
   //We evaluate the conditions in series, not in parallel to avoid unnecessary computation
   compileSwitch(node, frame) {
-    // Use node.expr as the primary position node for the overall switch block
-    frame = this.buffer.asyncBufferNodeBegin(node, frame, false, node.expr);
+    const switchResult = this.buffer.asyncBufferNode(node, frame, false, false, node.expr, (blockFrame) => {
+      const branchPositions = [];
+      const branchWriteCounts = [];
+      const branchHandlers = []; // Track handlers per branch
+      let catchPoisonPos;
+      const caseCreatesScope = this.scriptMode || this.asyncMode;
 
-    const branchPositions = [];
-    const branchWriteCounts = [];
-    const branchHandlers = []; // Track handlers per branch
-    let catchPoisonPos;
-    const caseCreatesScope = this.scriptMode || this.asyncMode;
-
-    if (this.asyncMode) {
-      // Add try-catch wrapper for error handling
-      this.emit('try {');
-      this.emit('const switchResult = ');
-      this._compileAwaitedExpression(node.expr, frame, false);
-      this.emit(';');
-      this.emit('');
-      // Note: awaited result cannot be a resolved PoisonedValue, so no check needed
-
-      // Emit switch statement
-      this.emit('switch (switchResult) {');
-    } else {
-      // Sync mode - no error handling needed
-      this.emit('switch (');
-      this._compileAwaitedExpression(node.expr, frame, false);
-      this.emit(') {');
-    }
-
-    // Compile cases
-    node.cases.forEach((c, i) => {
-      this.emit('case ');
-      this._compileAwaitedExpression(c.cond, frame, false);
-      this.emit(': ');
-
-      branchPositions.push(this.codebuf.length);
-      this.emit('');
-
-      if (c.body.children.length) {
-        // Use case body 'c.body' as position node for this block
-        this.emit.asyncBlock(c, frame, caseCreatesScope, (f) => {
-          this.compile(c.body, f);
-          branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
-
-          // Collect handlers from this branch
-          if (this.asyncMode) {
-            branchHandlers.push(this.buffer.collectBranchHandlers(c.body));
-          }
-        }, c.body);; // Pass body as code position
-        this.emit.line('break;');
-      } else {
-        // Empty case body (fall-through)
-        branchWriteCounts.push({});
-        if (this.asyncMode) {
-          branchHandlers.push(new Set());
-        }
-      }
-    });
-
-    // Compile default case, if present
-    if (node.default) {
-      this.emit('default: ');
-
-      branchPositions.push(this.codebuf.length);
-      this.emit('');
-
-      // Use default body 'node.default' as position node for this block
-      this.emit.asyncBlock(node, frame, caseCreatesScope, (f) => {
-        this.compile(node.default, f);
-        branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
-
-        // Collect handlers from default
-        if (this.asyncMode) {
-          branchHandlers.push(this.buffer.collectBranchHandlers(node.default));
-        }
-      }, node.default); // Pass default as code position
-    } else {
-      // No default case - add empty handler placeholder for collection
-      // (branchPositions and branchWriteCounts intentionally not modified)
       if (this.asyncMode) {
-        branchHandlers.push(new Set());
+        // Add try-catch wrapper for error handling
+        this.emit('try {');
+        this.emit('const switchResult = ');
+        this._compileAwaitedExpression(node.expr, blockFrame, false);
+        this.emit(';');
+        this.emit('');
+        // Note: awaited result cannot be a resolved PoisonedValue, so no check needed
+
+        // Emit switch statement
+        this.emit('switch (switchResult) {');
+      } else {
+        // Sync mode - no error handling needed
+        this.emit('switch (');
+        this._compileAwaitedExpression(node.expr, blockFrame, false);
+        this.emit(') {');
       }
-    }
 
-    this.emit('}'); // Close switch
+      // Compile cases
+      node.cases.forEach((c, i) => {
+        this.emit('case ');
+        this._compileAwaitedExpression(c.cond, blockFrame, false);
+        this.emit(': ');
 
-    if (this.asyncMode) {
-      // Add catch block to poison variables and handlers when switch expression fails
-      const errorCtx = this._createErrorContext(node, node.expr);
-      this.emit('} catch (e) {');
-      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorCtx.lineno}, ${errorCtx.colno}, "${errorCtx.errorContextString}", context.path);`);
-      catchPoisonPos = this.codebuf.length;
-      this.emit('');
-      this.emit('}'); // No re-throw - execution continues with poisoned vars
-    }
+        branchPositions.push(this.codebuf.length);
+        this.emit('');
 
-    // Combine writes from all branches
-    const totalWrites = this.async._combineWriteCounts(branchWriteCounts);
+        if (c.body.children.length) {
+          // Use case body 'c.body' as position node for this block
+          this.emit.asyncBlock(c, blockFrame, caseCreatesScope, (f) => {
+            this.compile(c.body, f);
+            branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
 
-    // Helper to exclude current branch writes from combined writes
-    const excludeCurrentWrites = (combined, current) => {
-      const filtered = { ...combined };
-      if (current) {
-        Object.keys(current).forEach((key) => {
-          if (filtered[key]) {
-            filtered[key] -= current[key];
-            if (filtered[key] <= 0) {
-              delete filtered[key];
+            // Collect handlers from this branch
+            if (this.asyncMode) {
+              branchHandlers.push(this.buffer.collectBranchHandlers(c.body));
             }
+          }, c.body); // Pass body as code position
+          this.emit.line('break;');
+        } else {
+          // Empty case body (fall-through)
+          branchWriteCounts.push({});
+          if (this.asyncMode) {
+            branchHandlers.push(new Set());
           }
-        });
-      }
-      return filtered;
-    };
-
-    // Insert skip statements for each case, including default
-    branchPositions.forEach((pos, i) => {
-      const writesToSkip = excludeCurrentWrites(totalWrites, branchWriteCounts[i]);
-      if (Object.keys(writesToSkip).length > 0) {
-        this.emit.insertLine(pos, `frame.skipBranchWrites(${JSON.stringify(writesToSkip)});`);
-      }
-    });
-
-    // Fill in the poison handling code now that we have write counts and handlers
-    if (this.asyncMode) {
-      // Combine handlers from all branches
-      const allHandlers = new Set();
-      branchHandlers.forEach(handlers => {
-        handlers.forEach(h => allHandlers.add(h));
+        }
       });
 
-      const hasVariables = Object.keys(totalWrites).length > 0;
-      const hasHandlers = allHandlers.size > 0;
+      // Compile default case, if present
+      if (node.default) {
+        this.emit('default: ');
 
-      if (hasVariables || hasHandlers) {
-        // Variable poisoning in catch block
-        if (hasVariables) {
-          this.emit.insertLine(catchPoisonPos,
-            `    frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
+        branchPositions.push(this.codebuf.length);
+        this.emit('');
+
+        // Use default body 'node.default' as position node for this block
+        this.emit.asyncBlock(node, blockFrame, caseCreatesScope, (f) => {
+          this.compile(node.default, f);
+          branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
+
+          // Collect handlers from default
+          if (this.asyncMode) {
+            branchHandlers.push(this.buffer.collectBranchHandlers(node.default));
+          }
+        }, node.default); // Pass default as code position
+      } else if (this.asyncMode) {
+        // No default case - add empty handler placeholder for collection
+        // (branchPositions and branchWriteCounts intentionally not modified)
+        branchHandlers.push(new Set());
+      }
+
+      this.emit('}'); // Close switch
+
+      if (this.asyncMode) {
+        // Add catch block to poison variables and handlers when switch expression fails
+        const errorCtx = this._createErrorContext(node, node.expr);
+        this.emit('} catch (e) {');
+        this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorCtx.lineno}, ${errorCtx.colno}, "${errorCtx.errorContextString}", context.path);`);
+        catchPoisonPos = this.codebuf.length;
+        this.emit('');
+        this.emit('}'); // No re-throw - execution continues with poisoned vars
+      }
+
+      // Combine writes from all branches
+      const totalWrites = this.async._combineWriteCounts(branchWriteCounts);
+
+      // Helper to exclude current branch writes from combined writes
+      const excludeCurrentWrites = (combined, current) => {
+        const filtered = { ...combined };
+        if (current) {
+          Object.keys(current).forEach((key) => {
+            if (filtered[key]) {
+              filtered[key] -= current[key];
+              if (filtered[key] <= 0) {
+                delete filtered[key];
+              }
+            }
+          });
         }
+        return filtered;
+      };
 
-        // Handler (buffer) poisoning in catch block
-        if (hasHandlers) {
-          for (const handler of allHandlers) {
+      // Insert skip statements for each case, including default
+      branchPositions.forEach((pos, i) => {
+        const writesToSkip = excludeCurrentWrites(totalWrites, branchWriteCounts[i]);
+        if (Object.keys(writesToSkip).length > 0) {
+          this.emit.insertLine(pos, `frame.skipBranchWrites(${JSON.stringify(writesToSkip)});`);
+        }
+      });
+
+      // Fill in the poison handling code now that we have write counts and handlers
+      if (this.asyncMode) {
+        // Combine handlers from all branches
+        const allHandlers = new Set();
+        branchHandlers.forEach(handlers => {
+          handlers.forEach(h => allHandlers.add(h));
+        });
+
+        const hasVariables = Object.keys(totalWrites).length > 0;
+        const hasHandlers = allHandlers.size > 0;
+
+        if (hasVariables || hasHandlers) {
+          // Variable poisoning in catch block
+          if (hasVariables) {
             this.emit.insertLine(catchPoisonPos,
-              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+              `    frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
+          }
+
+          // Handler (buffer) poisoning in catch block
+          if (hasHandlers) {
+            for (const handler of allHandlers) {
+              this.emit.insertLine(catchPoisonPos,
+                `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+            }
           }
         }
       }
-    }
+    });
 
-    // Use node.expr (passed earlier) for the end block
-    frame = this.buffer.asyncBufferNodeEnd(node, frame, false, false, node.expr);
+    frame = switchResult.frame;
   }
 
   compileGuard(node, frame) {
@@ -736,166 +751,163 @@ class Compiler extends CompilerBase {
     // Guard blocks are always async boundaries
     node.isAsync = true;
 
-    // 1. Start Async Block with Nested Buffer
-    // This creates a nested buffer (this.buffer) and pushes a new async block
-    frame = this.buffer.asyncBufferNodeBegin(node, frame, true);
-    // Guard blocks should keep output writes scoped to the guard buffer.
-    frame.outputScope = true;
-    const previousGuardDepth = this.guardDepth;
-    this.guardDepth = previousGuardDepth + 1;
+    const guardResult = this.buffer.asyncBufferNode(node, frame, true, false, node, (blockFrame) => {
+      // Guard blocks should keep output writes scoped to the guard buffer.
+      blockFrame.outputScope = true;
+      const previousGuardDepth = this.guardDepth;
+      this.guardDepth = previousGuardDepth + 1;
 
-    try {
-
-      // 2. Link for explicit reversion (optional, if we want to support manual revert)
-      this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-      let guardInitLinePos = null;
-      let guardRepairLinePos = null;
-      const outputGuardInitLinePos = this.codebuf.length;
-      let outputGuardStateVar = null;
-      this.emit.line('');
-      if (guardStateVar) {
-        if (variableTargets === '*') {
-          guardInitLinePos = this.codebuf.length;
-          this.emit.line(``);
-        } else {
-          this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)});`);
-        }
-      }
-      // Sequence lock repair must run before guard body starts scheduling work.
-      guardRepairLinePos = this.codebuf.length;
-      this.emit.line('');
-
-      // 3. Compile Body
-      this.compile(node.body, frame);
-
-      // Resolve and Validate Sequence Targets
-      // We do this by checking frame.writeCounts which contains all variables and sequence locks modified in the block
-      const resolvedSequenceTargets = new Set();
-      const modifiedLocks = new Set();
-
-      if (frame.writeCounts) {
-        for (const key of Object.keys(frame.writeCounts)) {
-          if (key.startsWith('!')) {
-            modifiedLocks.add(key);
+      try {
+        // 2. Link for explicit reversion (optional, if we want to support manual revert)
+        this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+        let guardInitLinePos = null;
+        let guardRepairLinePos = null;
+        const outputGuardInitLinePos = this.codebuf.length;
+        let outputGuardStateVar = null;
+        this.emit.line('');
+        if (guardStateVar) {
+          if (variableTargets === '*') {
+            guardInitLinePos = this.codebuf.length;
+            this.emit.line(``);
+          } else {
+            this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)});`);
           }
         }
-      }
+        // Sequence lock repair must run before guard body starts scheduling work.
+        guardRepairLinePos = this.codebuf.length;
+        this.emit.line('');
 
-      if (node.sequenceTargets && node.sequenceTargets.length > 0) {
-        for (const target of node.sequenceTargets) {
-          let matchFound = false;
+        // 3. Compile Body
+        this.compile(node.body, blockFrame);
 
-          if (target === '!') {
-            // Global guard: all modified sequence locks
-            for (const lock of modifiedLocks) {
-              resolvedSequenceTargets.add(lock);
-              matchFound = true;
+        // Resolve and Validate Sequence Targets
+        // We do this by checking frame.writeCounts which contains all variables and sequence locks modified in the block
+        const resolvedSequenceTargets = new Set();
+        const modifiedLocks = new Set();
+
+        if (blockFrame.writeCounts) {
+          for (const key of Object.keys(blockFrame.writeCounts)) {
+            if (key.startsWith('!')) {
+              modifiedLocks.add(key);
             }
-          } else {
-            // Specific target: lock! -> !lock
-            // target ends with '!' as per parser
-            const baseKey = '!' + target.slice(0, -1);
+          }
+        }
 
-            for (const lock of modifiedLocks) {
-              // Check for exact match or child match (e.g. !lock matching !lock or !lock!sub)
-              // Also include read-lock keys (suffix '~') for the same base.
-              if (lock === baseKey || lock.startsWith(baseKey + '!') || lock.startsWith(baseKey + '~')) {
+        if (node.sequenceTargets && node.sequenceTargets.length > 0) {
+          for (const target of node.sequenceTargets) {
+            let matchFound = false;
+
+            if (target === '!') {
+              // Global guard: all modified sequence locks
+              for (const lock of modifiedLocks) {
                 resolvedSequenceTargets.add(lock);
                 matchFound = true;
               }
-            }
+            } else {
+              // Specific target: lock! -> !lock
+              // target ends with '!' as per parser
+              const baseKey = '!' + target.slice(0, -1);
 
-            if (!matchFound) {
-              this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
+              for (const lock of modifiedLocks) {
+                // Check for exact match or child match (e.g. !lock matching !lock or !lock!sub)
+                // Also include read-lock keys (suffix '~') for the same base.
+                if (lock === baseKey || lock.startsWith(baseKey + '!') || lock.startsWith(baseKey + '~')) {
+                  resolvedSequenceTargets.add(lock);
+                  matchFound = true;
+                }
+              }
+
+              if (!matchFound) {
+                this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
+              }
             }
+          }
+
+          if (resolvedSequenceTargets.size > 0) {
+            // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
+            // Note: guardStateVar is guaranteed to exist because variableTargets OR resolvedSequenceTargets > 0 triggers init
+            this.emit.insertLine(
+              guardRepairLinePos,
+              `runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
+            );
           }
         }
 
-        if (resolvedSequenceTargets.size > 0) {
-          // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
-          // Note: guardStateVar is guaranteed to exist because variableTargets OR resolvedSequenceTargets > 0 triggers init
+
+        let finalVariableTargets = variableTargets;
+        if (variableTargets === '*') {
+          const writtenVars = blockFrame.writeCounts
+            ? Object.keys(blockFrame.writeCounts).filter((key) => !key.startsWith('!'))
+            : [];
+          finalVariableTargets = writtenVars;
+          if (guardStateVar && guardInitLinePos !== null) {
+            this.emit.insertLine(guardInitLinePos,
+              `const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(writtenVars)});`);
+          }
+        }
+
+        validateGuardVariablesModified(finalVariableTargets, blockFrame, this, node);
+
+        if (finalVariableTargets && finalVariableTargets.length > 0) {
+          for (const varName of finalVariableTargets) {
+            this.async.updateFrameWrites(blockFrame, varName);
+          }
+        }
+
+        const guardHandlers = this._getGuardedOutputNames(
+          blockFrame.usedOutputs,
+          guardTargets,
+          blockFrame
+        );
+        if (guardHandlers.length > 0) {
+          outputGuardStateVar = this._tmpid();
           this.emit.insertLine(
-            guardRepairLinePos,
-            `runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
+            outputGuardInitLinePos,
+            `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(guardHandlers)});`
           );
         }
-      }
 
+        // 4. Inject Logic BEFORE closing the block
+        // We need to wait for all inner async operations to complete so the buffer is fully populated
+        // We wait for 1 because the current block itself is an active closure
+        this.emit.line('await astate.waitAllClosures(1);');
 
-      let finalVariableTargets = variableTargets;
-      if (variableTargets === '*') {
-        const writtenVars = frame.writeCounts
-          ? Object.keys(frame.writeCounts).filter((key) => !key.startsWith('!'))
-          : [];
-        finalVariableTargets = writtenVars;
-        if (guardStateVar && guardInitLinePos !== null) {
-          this.emit.insertLine(guardInitLinePos,
-            `const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(writtenVars)});`);
-        }
-      }
-
-      validateGuardVariablesModified(finalVariableTargets, frame, this, node);
-
-      if (finalVariableTargets && finalVariableTargets.length > 0) {
-        for (const varName of finalVariableTargets) {
-          this.async.updateFrameWrites(frame, varName);
-        }
-      }
-
-      const guardHandlers = this._getGuardedOutputNames(
-        frame.usedOutputs,
-        guardTargets,
-        frame
-      );
-      if (guardHandlers.length > 0) {
-        outputGuardStateVar = this._tmpid();
-        this.emit.insertLine(
-          outputGuardInitLinePos,
-          `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(guardHandlers)});`
+        // 5. Check Buffer/Variables for Poison
+        const guardErrorsVar = this._tmpid();
+        this.emit.line(
+          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${JSON.stringify(guardHandlers)}, ${outputGuardStateVar || 'null'});`
         );
+        this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
+
+        let recoveryWriteCounts;
+        if (node.recoveryBody) {
+          this.emit.asyncBlock(node, blockFrame, true, (f) => {
+            if (node.errorVar) {
+              // Declare the error variable in the compiled scope
+              this._addDeclaredVar(f, node.errorVar);
+              this.async.updateFrameWrites(f, node.errorVar);
+              // Directly set the variable in the frame.
+              // Note: using 'true' for resolveUp is irrelevant here as it's a new variable in new scope (if logic holds),
+              // but we set it in 'f' specifically.
+              this.emit.line(`frame.set('${node.errorVar}', new runtime.PoisonError(${guardErrorsVar}));`);
+            }
+            this.compile(node.recoveryBody, f);
+            recoveryWriteCounts = this.async.countsTo1(f.writeCounts);
+          });
+        }
+
+        this.emit.line('} else {');
+
+        if (recoveryWriteCounts) {
+          this.emit.line(`frame.skipBranchWrites(${JSON.stringify(recoveryWriteCounts)});`);
+        }
+        this.emit.line('}');
+      } finally {
+        this.guardDepth = previousGuardDepth;
       }
+    });
 
-      // 4. Inject Logic BEFORE closing the block
-      // We need to wait for all inner async operations to complete so the buffer is fully populated
-      // We wait for 1 because the current block itself is an active closure
-      this.emit.line('await astate.waitAllClosures(1);');
-
-      // 5. Check Buffer/Variables for Poison
-      const guardErrorsVar = this._tmpid();
-      this.emit.line(
-        `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${JSON.stringify(guardHandlers)}, ${outputGuardStateVar || 'null'});`
-      );
-      this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
-
-      let recoveryWriteCounts;
-      if (node.recoveryBody) {
-        this.emit.asyncBlock(node, frame, true, (f) => {
-          if (node.errorVar) {
-            // Declare the error variable in the compiled scope
-            this._addDeclaredVar(f, node.errorVar);
-            this.async.updateFrameWrites(f, node.errorVar);
-            // Directly set the variable in the frame.
-            // Note: using 'true' for resolveUp is irrelevant here as it's a new variable in new scope (if logic holds),
-            // but we set it in 'f' specifically.
-            this.emit.line(`frame.set('${node.errorVar}', new runtime.PoisonError(${guardErrorsVar}));`);
-          }
-          this.compile(node.recoveryBody, f);
-          recoveryWriteCounts = this.async.countsTo1(f.writeCounts);
-        });
-      }
-
-      this.emit.line('} else {');
-
-      if (recoveryWriteCounts) {
-        this.emit.line(`frame.skipBranchWrites(${JSON.stringify(recoveryWriteCounts)});`);
-      }
-      this.emit.line('}');
-
-      // 6. End Async Block
-      frame = this.buffer.asyncBufferNodeEnd(node, frame, true, false, node);
-    } finally {
-      this.guardDepth = previousGuardDepth;
-    }
+    frame = guardResult.frame;
   }
 
   _getGuardedOutputNames(usedOutputs, guardTargets, frame) {
@@ -1008,131 +1020,110 @@ class Compiler extends CompilerBase {
     }
 
     const branchCreatesScope = this.scriptMode || this.asyncMode;
+    const ifResult = this.buffer.asyncBufferNode(node, frame, false, false, node.cond, (blockFrame) => {
+      let trueBranchWriteCounts, falseBranchWriteCounts;
+      let trueBranchCodePos;
+      let poisonCheckPos, catchPoisonPos;
 
-    // Use node.cond as the position node for the overarching If block
-    frame = this.buffer.asyncBufferNodeBegin(node, frame, false, node.cond);
-
-    let trueBranchWriteCounts, falseBranchWriteCounts;
-    let trueBranchCodePos;
-    let poisonCheckPos, catchPoisonPos;
-
-    if (this.asyncMode) {
-      const condResultId = this._tmpid();
-      // Async mode: Add try-catch wrapper for poison condition handling
-      this.emit('try {');
-      this.emit(`const ${condResultId} = `);
-      this._compileAwaitedExpression(node.cond, frame, false);
-      this.emit(';');
-      this.emit('');
-
-      this.emit(`if (${condResultId}) {`);
-
-      trueBranchCodePos = this.codebuf.length;
-      this.emit('');
-      // Use node.body as the position node for the true branch block
-      this.emit.asyncBlock(node, frame, branchCreatesScope, (f) => {
-        this.compile(node.body, f);
-        trueBranchWriteCounts = this.async.countsTo1(f.writeCounts);
-      }, node.body); // Pass body as code position
-
-      this.emit('} else {');
-
-      if (trueBranchWriteCounts) {
-        //skip the true branch writes in the false branch
-        this.emit('frame.skipBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
-      }
-
-      if (node.else_) {
-        // Use node.else_ as the position node for the false branch block
-        this.emit.asyncBlock(node, frame, branchCreatesScope, (f) => {
-          this.compile(node.else_, f);
-          falseBranchWriteCounts = this.async.countsTo1(f.writeCounts);
-        }, node.else_); // Pass else as code position
-      }
-      this.emit('}');
-
-      // Collect output handlers from both branches (for async mode poison handling)
-      let trueBranchHandlers, falseBranchHandlers, allHandlers;
       if (this.asyncMode) {
-        trueBranchHandlers = this.buffer.collectBranchHandlers(node.body);
-        falseBranchHandlers = node.else_ ?
-          this.buffer.collectBranchHandlers(node.else_) :
-          new Set();
+        const condResultId = this._tmpid();
+        // Async mode: Add try-catch wrapper for poison condition handling
+        this.emit('try {');
+        this.emit(`const ${condResultId} = `);
+        this._compileAwaitedExpression(node.cond, blockFrame, false);
+        this.emit(';');
+        this.emit('');
 
-        // Combine handlers - both branches might write to same handlers
-        allHandlers = new Set([...trueBranchHandlers, ...falseBranchHandlers]);
-      }
+        this.emit(`if (${condResultId}) {`);
 
-      if (falseBranchWriteCounts) {
-        //skip the false branch writes in the true branch code
-        this.emit.insertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
-      }
+        trueBranchCodePos = this.codebuf.length;
+        this.emit('');
+        // Use node.body as the position node for the true branch block
+        this.emit.asyncBlock(node, blockFrame, branchCreatesScope, (f) => {
+          this.compile(node.body, f);
+          trueBranchWriteCounts = this.async.countsTo1(f.writeCounts);
+        }, node.body); // Pass body as code position
 
-      // Add catch block to poison variables when condition fails
-      const errorContext = this._createErrorContext(node, node.cond);
-      this.emit('} catch (e) {');
-      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContext.lineno}, ${errorContext.colno}, "${errorContext.errorContextString}", context.path);`);
-      catchPoisonPos = this.codebuf.length;
-      this.emit('');
-      this.emit('}');  // No re-throw - execution continues with poisoned vars
+        this.emit('} else {');
 
-      // Fill in the poison handling code now that we have write counts and handlers
-      const combinedCounts = this.async._combineWriteCounts([trueBranchWriteCounts, falseBranchWriteCounts]);
-
-      // Poison both variables and handlers when condition fails
-      const hasVariables = Object.keys(combinedCounts).length > 0;
-      const hasHandlers = allHandlers.size > 0;
-
-      if (hasVariables || hasHandlers) {
-        // Variable poisoning
-        if (hasVariables) {
-          this.emit.insertLine(poisonCheckPos,
-            `  frame.poisonBranchWrites(${condResultId}, ${JSON.stringify(combinedCounts)});`);
-          this.emit.insertLine(catchPoisonPos,
-            `    frame.poisonBranchWrites(contextualError, ${JSON.stringify(combinedCounts)});`);
+        if (trueBranchWriteCounts) {
+          //skip the true branch writes in the false branch
+          this.emit('frame.skipBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
         }
 
-        // Handler (buffer) poisoning
-        if (hasHandlers) {
-          for (const handler of allHandlers) {
+        if (node.else_) {
+          // Use node.else_ as the position node for the false branch block
+          this.emit.asyncBlock(node, blockFrame, branchCreatesScope, (f) => {
+            this.compile(node.else_, f);
+            falseBranchWriteCounts = this.async.countsTo1(f.writeCounts);
+          }, node.else_); // Pass else as code position
+        }
+        this.emit('}');
+
+        // Collect output handlers from both branches (for async mode poison handling)
+        let trueBranchHandlers, falseBranchHandlers, allHandlers;
+        if (this.asyncMode) {
+          trueBranchHandlers = this.buffer.collectBranchHandlers(node.body);
+          falseBranchHandlers = node.else_ ?
+            this.buffer.collectBranchHandlers(node.else_) :
+            new Set();
+
+          // Combine handlers - both branches might write to same handlers
+          allHandlers = new Set([...trueBranchHandlers, ...falseBranchHandlers]);
+        }
+
+        if (falseBranchWriteCounts) {
+          //skip the false branch writes in the true branch code
+          this.emit.insertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
+        }
+
+        // Add catch block to poison variables when condition fails
+        const errorContext = this._createErrorContext(node, node.cond);
+        this.emit('} catch (e) {');
+        this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContext.lineno}, ${errorContext.colno}, "${errorContext.errorContextString}", context.path);`);
+        catchPoisonPos = this.codebuf.length;
+        this.emit('');
+        this.emit('}');  // No re-throw - execution continues with poisoned vars
+
+        // Fill in the poison handling code now that we have write counts and handlers
+        const combinedCounts = this.async._combineWriteCounts([trueBranchWriteCounts, falseBranchWriteCounts]);
+
+        // Poison both variables and handlers when condition fails
+        const hasVariables = Object.keys(combinedCounts).length > 0;
+        const hasHandlers = allHandlers.size > 0;
+
+        if (hasVariables || hasHandlers) {
+          // Variable poisoning
+          if (hasVariables) {
             this.emit.insertLine(poisonCheckPos,
-              `  ${this.buffer.currentBuffer}.addPoison(${condResultId}, "${handler}");`);
+              `  frame.poisonBranchWrites(${condResultId}, ${JSON.stringify(combinedCounts)});`);
             this.emit.insertLine(catchPoisonPos,
-              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+              `    frame.poisonBranchWrites(contextualError, ${JSON.stringify(combinedCounts)});`);
+          }
+
+          // Handler (buffer) poisoning
+          if (hasHandlers) {
+            for (const handler of allHandlers) {
+              this.emit.insertLine(poisonCheckPos,
+                `  ${this.buffer.currentBuffer}.addPoison(${condResultId}, "${handler}");`);
+              this.emit.insertLine(catchPoisonPos,
+                `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+            }
           }
         }
-      }
-    } else {
-      // Sync mode
-      this.emit('if(');
-      this._compileAwaitedExpression(node.cond, frame, false);
-      this.emit('){');
+      } else {
+        // Sync mode
+        this.emit('if(');
+        this._compileAwaitedExpression(node.cond, blockFrame, false);
+        this.emit('){');
 
-      this.emit.withScopedSyntax(() => {
-        let trueFrame = frame;
-        if (branchCreatesScope) {
-          trueFrame = frame.push();
-          this.emit.line('frame = frame.push();');
-        }
-        this.compile(node.body, trueFrame);
-        if (branchCreatesScope) {
-          this.emit.line('frame = frame.pop();');
-        }
-        if (async) {
-          this.emit('cb()');
-        }
-      });
-
-      this.emit('} else {');
-
-      if (node.else_) {
         this.emit.withScopedSyntax(() => {
-          let falseFrame = frame;
+          let trueFrame = blockFrame;
           if (branchCreatesScope) {
-            falseFrame = frame.push();
+            trueFrame = blockFrame.push();
             this.emit.line('frame = frame.push();');
           }
-          this.compile(node.else_, falseFrame);
+          this.compile(node.body, trueFrame);
           if (branchCreatesScope) {
             this.emit.line('frame = frame.pop();');
           }
@@ -1140,16 +1131,32 @@ class Compiler extends CompilerBase {
             this.emit('cb()');
           }
         });
-      } else {
-        if (async) {//not asyncMode
+
+        this.emit('} else {');
+
+        if (node.else_) {
+          this.emit.withScopedSyntax(() => {
+            let falseFrame = blockFrame;
+            if (branchCreatesScope) {
+              falseFrame = blockFrame.push();
+              this.emit.line('frame = frame.push();');
+            }
+            this.compile(node.else_, falseFrame);
+            if (branchCreatesScope) {
+              this.emit.line('frame = frame.pop();');
+            }
+            if (async) {
+              this.emit('cb()');
+            }
+          });
+        } else if (async) { // not asyncMode
           this.emit('cb()');
         }
+        this.emit('}');
       }
-      this.emit('}');
-    }
+    });
 
-    // Use node.cond (passed earlier) for the end block
-    frame = this.buffer.asyncBufferNodeEnd(node, frame, false, false, node.cond);
+    frame = ifResult.frame;
   }
 
   compileIfAsync(node, frame) {
@@ -1282,40 +1289,38 @@ class Compiler extends CompilerBase {
     if (node.isAsync) {
       this._addDeclaredVar(currFrame, 'caller');
     }
-    const { bufferId } = this.emit.beginManagedBlock(currFrame, false, true);
-
-    this.emit.withScopedSyntax(() => {
-      this.compile(node.body, currFrame);
-    });
-
-    this.emit.line('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
-
     let returnStatement;
     const snapshotVar = this._tmpid();
-    if (node.isAsync) {
-      const errorCheck = `if (${err}) throw ${err};`;
-      if (this.scriptMode) {
-        returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return undefined;});`;
+    this.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
+      this.emit.withScopedSyntax(() => {
+        this.compile(node.body, managedFrame);
+      });
+
+      this.emit.line('frame = ' + ((keepFrame) ? 'frame.pop();' : 'callerFrame;'));
+
+      if (node.isAsync) {
+        const errorCheck = `if (${err}) throw ${err};`;
+        if (this.scriptMode) {
+          returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return undefined;});`;
+        } else {
+          // Snapshot must be enqueued before this managed buffer is finished.
+          this.emit.line(`const ${snapshotVar} = ${bufferId}.addSnapshot("text", {lineno: ${node.lineno}, colno: ${node.colno}});`);
+
+          const needsSafeString = !this.scriptMode;
+          const safeStringCall = needsSafeString
+            ? `runtime.markSafe(${snapshotVar})`
+            : snapshotVar;
+
+          returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;
+        }
       } else {
-        // Snapshot must be enqueued before this managed buffer is finished.
-        this.emit.line(`const ${snapshotVar} = ${bufferId}.addSnapshot("text", {lineno: ${node.lineno}, colno: ${node.colno}});`);
-
+        // Sync case
         const needsSafeString = !this.scriptMode;
-        const safeStringCall = needsSafeString
-          ? `runtime.markSafe(${snapshotVar})`
-          : snapshotVar;
-
-        returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;
+        returnStatement = needsSafeString
+          ? `new runtime.SafeString(${bufferId})`
+          : bufferId;
       }
-    } else {
-      // Sync case
-      const needsSafeString = !this.scriptMode;
-      returnStatement = needsSafeString
-        ? `new runtime.SafeString(${bufferId})`
-        : bufferId;
-    }
-
-    this.emit.endManagedBlock(currFrame, false, true);
+    });
 
     this.emit.line('return ' + returnStatement);
 
@@ -1448,17 +1453,26 @@ class Compiler extends CompilerBase {
         }
         const timingPromiseId = this._tmpid();
         this.emit.line(`let ${timingPromiseId};`);
-        frame = this.buffer.asyncAddToBufferBegin(node, frame, child, 'text', 'text');
-        // Keep command args unresolved for apply-time resolution/error handling.
-        // Temporary timing barrier: await expression completion in the same async
-        // block that enqueues the command so current write-count/lock lifecycle stays stable.
-        // It will be removed after switching from var to value implementation.
-        this.emit(`(${timingPromiseId} = runtime.resolveSingle(`);
-        this._compileExpression(child, frame, false);
-        this.emit('))');
-        this.emit(';\n');
-        this.emit.line(`await ${timingPromiseId};`);
-        frame = this.buffer.asyncAddToBufferEnd(node, frame, child, 'text', 'text', true, true);
+        frame = this.buffer.asyncAddToBufferScoped(
+          node,
+          frame,
+          child,
+          'text',
+          'text',
+          true,
+          true,
+          (innerFrame) => {
+            // Keep command args unresolved for apply-time resolution/error handling.
+            // Temporary timing barrier: await expression completion in the same async
+            // block that enqueues the command so current write-count/lock lifecycle stays stable.
+            // It will be removed after switching from var to value implementation.
+            this.emit(`(${timingPromiseId} = runtime.resolveSingle(`);
+            this._compileExpression(child, innerFrame, false);
+            this.emit('))');
+            this.emit(';\n');
+            this.emit.line(`await ${timingPromiseId};`);
+          }
+        );
       });
       return;
     }

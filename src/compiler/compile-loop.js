@@ -46,131 +46,131 @@ class CompileLoop {
   }
 
   _compileFor(node, frame, sequentialLoopBody = false, iteratorCompiler = null, whileConditionNode = null) {
-    // Use node.arr as the position for the outer async block (evaluating the array)
-    frame = this.compiler.buffer.asyncBufferNodeBegin(node, frame, true, node.arr);
+    const forResult = this.compiler.buffer.asyncBufferNode(node, frame, true, false, node.arr, (blockFrame) => {
+      // Evaluate the array expression
+      const arr = this.compiler._tmpid();
 
-    // Evaluate the array expression
-    const arr = this.compiler._tmpid();
+      if (iteratorCompiler) {
+        // Gets the `{ "var": 1 }` style counts from compileWhile.
+        iteratorCompiler(node.arr, blockFrame, arr);
+      } else {
+        this.compiler.emit(`let ${arr} = `);
+        this.compiler._compileExpression(node.arr, blockFrame, false);
+        this.compiler.emit.line(';');
+      }
 
-    if (iteratorCompiler) {
-      // Gets the `{ "var": 1 }` style counts from compileWhile.
-      iteratorCompiler(node.arr, frame, arr);
-    } else {
-      this.compiler.emit(`let ${arr} = `);
-      this.compiler._compileExpression(node.arr, frame, false);
-      this.compiler.emit.line(';');
-    }
+      // Compile concurrentLimit expression if present
+      const limitVar = node.concurrentLimit ? this.compiler._tmpid() : null;
+      if (node.concurrentLimit) {
+        this.compiler.emit(`let ${limitVar} = `);
+        this.compiler._compileExpression(node.concurrentLimit, blockFrame, false);
+        this.compiler.emit.line(';');
+      }
 
-    // Compile concurrentLimit expression if present
-    const limitVar = node.concurrentLimit ? this.compiler._tmpid() : null;
-    if (node.concurrentLimit) {
-      this.compiler.emit(`let ${limitVar} = `);
-      this.compiler._compileExpression(node.concurrentLimit, frame, false);
-      this.compiler.emit.line(';');
-    }
-
-    // Determine loop variable names
-    const loopVars = [];
-    if (node.name instanceof nodes.Array) {
-      node.name.children.forEach((child) => {
-        loopVars.push(child.value);
-        frame.set(child.value, child.value);
+      // Determine loop variable names
+      const loopVars = [];
+      if (node.name instanceof nodes.Array) {
+        node.name.children.forEach((child) => {
+          loopVars.push(child.value);
+          blockFrame.set(child.value, child.value);
+          if (node.isAsync) {
+            this.compiler._addDeclaredVar(blockFrame, child.value);
+          }
+        });
+      } else {
+        loopVars.push(node.name.value);
+        blockFrame.set(node.name.value, node.name.value);
         if (node.isAsync) {
-          this.compiler._addDeclaredVar(frame, child.value);
+          this.compiler._addDeclaredVar(blockFrame, node.name.value);
         }
-      });
-    } else {
-      loopVars.push(node.name.value);
-      frame.set(node.name.value, node.name.value);
+      }
+
+      // Compile the loop body function and collect metadata
+      const loopBodyFuncId = this.compiler._tmpid();
+      this.compiler.emit(`let ${loopBodyFuncId} = `);
+
+      //compile the loop body function
+      const hasConcurrentLimit = Boolean(node.concurrentLimit);
+      const bodyFrame = this._compileLoopBody(node, blockFrame, arr, loopVars, sequentialLoopBody, hasConcurrentLimit, whileConditionNode);
+      const bodyWriteCounts = bodyFrame.writeCounts;
+      if (bodyWriteCounts) {
+        // @todo - in the future will require writes+reads to be sequential,
+        // update _compileLoopBody too as it handles sequential differently
+        sequentialLoopBody = true;
+      }
+
+      // Collect body handlers for poison handling
+      const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
+
+      // Compile else block and collect metadata
+      let elseFuncId = 'null';
+      let elseWriteCounts = null;
+      let elseHandlers = null;
+
+      if (node.else_) {
+        elseFuncId = this.compiler._tmpid();
+        this.compiler.emit(`let ${elseFuncId} = `);
+
+        const elseFrame = this._compileLoopElse(node, blockFrame, sequentialLoopBody);
+
+        // Collect metadata from else compilation
+        elseWriteCounts = this.compiler.async.countsTo1(elseFrame.writeCounts);
+        elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_) : null;
+      }
+
+      // Set up loop frame with combined write counts for mutual exclusion
+      // This ensures the loop frame expects writes from either body OR else, not both
       if (node.isAsync) {
-        this.compiler._addDeclaredVar(frame, node.name.value);
+        const combinedWriteCounts = this.compiler.async._combineWriteCounts([
+          bodyWriteCounts ? this.compiler.async.countsTo1(bodyWriteCounts) : null,
+          elseWriteCounts
+        ].filter(Boolean));
+
+        if (combinedWriteCounts && Object.keys(combinedWriteCounts).length > 0) {
+          blockFrame.writeCounts = combinedWriteCounts;
+        }
       }
-    }
 
-    // Compile the loop body function and collect metadata
-    const loopBodyFuncId = this.compiler._tmpid();
-    this.compiler.emit(`let ${loopBodyFuncId} = `);
-
-    //compile the loop body function
-    const hasConcurrentLimit = Boolean(node.concurrentLimit);
-    const bodyFrame = this._compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, hasConcurrentLimit, whileConditionNode);
-    const bodyWriteCounts = bodyFrame.writeCounts;
-    if (bodyWriteCounts) {
-      // @todo - in the future will require writes+reads to be sequential,
-      // update _compileLoopBody too as it handles sequential differently
-      sequentialLoopBody = true;
-    }
-
-    // Collect body handlers for poison handling
-    const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
-
-    // Compile else block and collect metadata
-    let elseFuncId = 'null';
-    let elseWriteCounts = null;
-    let elseHandlers = null;
-
-    if (node.else_) {
-      elseFuncId = this.compiler._tmpid();
-      this.compiler.emit(`let ${elseFuncId} = `);
-
-      const elseFrame = this._compileLoopElse(node, frame, sequentialLoopBody);
-
-      // Collect metadata from else compilation
-      elseWriteCounts = this.compiler.async.countsTo1(elseFrame.writeCounts);
-      elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_) : null;
-    }
-
-    // Set up loop frame with combined write counts for mutual exclusion
-    // This ensures the loop frame expects writes from either body OR else, not both
-    if (node.isAsync) {
-      const combinedWriteCounts = this.compiler.async._combineWriteCounts([
-        bodyWriteCounts ? this.compiler.async.countsTo1(bodyWriteCounts) : null,
-        elseWriteCounts
-      ].filter(Boolean));
-
-      if (combinedWriteCounts && Object.keys(combinedWriteCounts).length > 0) {
-        frame.writeCounts = combinedWriteCounts;
+      // Build asyncOptions code string if in async mode
+      let asyncOptionsCode = 'null';
+      if (node.isAsync) {
+        asyncOptionsCode = `{
+          sequential: ${sequentialLoopBody},
+          bodyWriteCounts: ${JSON.stringify(this.compiler.async.countsTo1(bodyWriteCounts) || {})},
+          bodyHandlers: ${JSON.stringify(bodyHandlers ? Array.from(bodyHandlers) : [])},
+          elseWriteCounts: ${JSON.stringify(elseWriteCounts || {})},
+          elseHandlers: ${JSON.stringify(elseHandlers ? Array.from(elseHandlers) : [])},
+          concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
+          errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this.compiler._generateErrorContext(node)}", path: context.path }
+        }`;
       }
-    }
 
-    // Build asyncOptions code string if in async mode
-    let asyncOptionsCode = 'null';
-    if (node.isAsync) {
-      asyncOptionsCode = `{
-        sequential: ${sequentialLoopBody},
-        bodyWriteCounts: ${JSON.stringify(this.compiler.async.countsTo1(bodyWriteCounts) || {})},
-        bodyHandlers: ${JSON.stringify(bodyHandlers ? Array.from(bodyHandlers) : [])},
-        elseWriteCounts: ${JSON.stringify(elseWriteCounts || {})},
-        elseHandlers: ${JSON.stringify(elseHandlers ? Array.from(elseHandlers) : [])},
-        concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
-        errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this.compiler._generateErrorContext(node)}", path: context.path }
-      }`;
-    }
+      // Call the runtime iterate loop function
+      // For sync loops: not awaited (fire-and-forget Promise). iterate() executes synchronously
+      // internally (no awaits hit) and executes else block before returning.
+      this.compiler.emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${node.isAsync ? this.compiler.buffer.currentBuffer : 'null'}, [`);
+      loopVars.forEach((varName, index) => {
+        if (index > 0) {
+          this.compiler.emit(', ');
+        }
+        this.compiler.emit(`"${varName}"`);
+      });
+      this.compiler.emit(`], ${asyncOptionsCode});`);
 
-    // Call the runtime iterate loop function
-    // For sync loops: not awaited (fire-and-forget Promise). iterate() executes synchronously
-    // internally (no awaits hit) and executes else block before returning.
-    this.compiler.emit(`${node.isAsync ? 'await ' : ''}runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, frame, ${node.isAsync ? this.compiler.buffer.currentBuffer : 'null'}, [`);
-    loopVars.forEach((varName, index) => {
-      if (index > 0) {
-        this.compiler.emit(', ');
-      }
-      this.compiler.emit(`"${varName}"`);
+      // End buffer block for the node (using node.arr position)
+      /*if (iteratorCompiler || frame.writeCounts) {
+        // condition and loop body counts are a single unit of work and
+        // are isolated to not affect the outer frame write counts
+        // All writes will be released by finalizeLoopWrites
+        // Cap the outer frame's writeCounts to 1 per variable
+        // The loop as a whole counts as 1 write to the parent, regardless of iterations
+        // The capping happens per loop frame before popping, and the parent naturally accumulates these capped counts.
+        frame.writeCounts = this.compiler.async.countsTo1(frame.writeCounts);
+      }*/
+      // else - all write counts are from the loop body and are 1 anyway (counts are counted inside (>1) and outside (=1))
     });
-    this.compiler.emit(`], ${asyncOptionsCode});`);
 
-    // End buffer block for the node (using node.arr position)
-    /*if (iteratorCompiler || frame.writeCounts) {
-      // condition and loop body counts are a single unit of work and
-      // are isolated to not affect the outer frame write counts
-      // All writes will be released by finalizeLoopWrites
-      // Cap the outer frame's writeCounts to 1 per variable
-      // The loop as a whole counts as 1 write to the parent, regardless of iterations
-      // The capping happens per loop frame before popping, and the parent naturally accumulates these capped counts.
-      frame.writeCounts = this.compiler.async.countsTo1(frame.writeCounts);
-    }*/
-    // else - all write counts are from the loop body and are 1 anyway (counts are counted inside (>1) and outside (=1))
-    frame = this.compiler.buffer.asyncBufferNodeEnd(node, frame, true, false, node.arr);
+    frame = forResult.frame;
   }
 
   _compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, forceAwaitLoopBody = false, whileConditionNode = null) {
@@ -200,124 +200,125 @@ class CompileLoop {
       // we return the IIFE promise so that awaiting the loop body will wait for all closures
       this.compiler.emit('return ');
     }
-    frame = this.compiler.buffer.asyncBufferNodeBegin(node, frame, bodyCreatesScope, node.body);
+    const bodyResult = this.compiler.buffer.asyncBufferNode(node, frame, bodyCreatesScope, false, node.body, (bodyFrame) => {
+      //const makeSequentialPos = this.compiler.codebuf.length;// we will know later if it's sequential or not
+      this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
 
-    //const makeSequentialPos = this.compiler.codebuf.length;// we will know later if it's sequential or not
-    this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+      // Handle array unpacking within the loop body
+      if (loopVars.length > 1) {
+        // Runtime unpacks arguments (array destructuring or object key/value)
+        loopVars.forEach((varName) => {
+          this.compiler.emit.line(`frame.set("${varName}", ${varName});`);
+          if (node.isAsync) {
+            bodyFrame.set(varName, varName);
+            this.compiler._addDeclaredVar(bodyFrame, varName);
+          }
+        });
+      } else if (node.name instanceof nodes.Array) {
+        // Single variable destructuring: for [a] in arr
+        // Runtime passes the item as-is (e.g. array), we destructure locally
+        // Note: loopVars.length is 1 here
+        node.name.children.forEach((child, index) => {
+          const varName = child.value;
+          const tid = this.compiler._tmpid();
+          this.compiler.emit.line(`let ${tid} = Array.isArray(${varName}) ? ${varName}[${index}] : undefined;`);
+          this.compiler.emit.line(`frame.set("${varName}", ${tid});`);
+          if (node.isAsync) {
+            bodyFrame.set(varName, tid);
+            this.compiler._addDeclaredVar(bodyFrame, varName);
+          }
+        });
 
-    // Handle array unpacking within the loop body
-    if (loopVars.length > 1) {
-      // Runtime unpacks arguments (array destructuring or object key/value)
-      loopVars.forEach((varName) => {
+      } else {
+        // Single variable loop (Symbol)
+        const varName = node.name.value;
         this.compiler.emit.line(`frame.set("${varName}", ${varName});`);
         if (node.isAsync) {
-          frame.set(varName, varName);
-          this.compiler._addDeclaredVar(frame, varName);
+          bodyFrame.set(varName, varName);
+          this.compiler._addDeclaredVar(bodyFrame, varName);
         }
-      });
-    } else if (node.name instanceof nodes.Array) {
-      // Single variable destructuring: for [a] in arr
-      // Runtime passes the item as-is (e.g. array), we destructure locally
-      // Note: loopVars.length is 1 here
-      node.name.children.forEach((child, index) => {
-        const varName = child.value;
-        const tid = this.compiler._tmpid();
-        this.compiler.emit.line(`let ${tid} = Array.isArray(${varName}) ? ${varName}[${index}] : undefined;`);
-        this.compiler.emit.line(`frame.set("${varName}", ${tid});`);
+      }
+
+      // Compile Loop Condition (if while loop)
+      // We do this after destructuring but before body, in the same async block
+      let preBodyWriteCounts = null;
+      let skipBranchWritesPos = -1;
+      let catchPoisonPos = null;
+      let whileCondId;
+
+      if (whileConditionNode) {
+        whileCondId = this.compiler._tmpid();
+
         if (node.isAsync) {
-          frame.set(varName, tid);
-          this.compiler._addDeclaredVar(frame, varName);
+          this.compiler.emit(`let ${whileCondId};`);
+          this.compiler.emit('try {');
+          this.compiler.emit(`${whileCondId} = `);
+          this.compiler._compileAwaitedExpression(whileConditionNode, bodyFrame, false);
+          this.compiler.emit.line(';');
+          const whileErrorContext = this.compiler._createErrorContext(node, whileConditionNode);
+          this.compiler.emit('} catch (e) {');
+          this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${whileErrorContext.lineno}, ${whileErrorContext.colno}, "${whileErrorContext.errorContextString}", context.path);`);
+          catchPoisonPos = this.compiler.codebuf.length;
+          this.compiler.emit.line(''); // Placeholder for poison injection
+
+          // We set whileCond to false so the loop logic (if !whileCond) below triggers termination
+          // But first we ensure 'return runtime.STOP_WHILE' is reached to stop iteration cleanly
+          this.compiler.emit(`  ${whileCondId} = false;`);
+          this.compiler.emit('}');
+        } else {
+          this.compiler.emit(`const ${whileCondId} = `);
+          this.compiler._compileAwaitedExpression(whileConditionNode, bodyFrame, false);
+          this.compiler.emit.line(';');
         }
+
+        this.compiler.emit(`if (!${whileCondId}) {`);
+        skipBranchWritesPos = this.compiler.codebuf.length;
+        this.compiler.emit.line(''); // Placeholder for skipBranchWrites
+        this.compiler.emit.line('  return runtime.STOP_WHILE;');
+        this.compiler.emit.line('}');
+
+        // Snapshot writes including condition and destructuring
+        preBodyWriteCounts = bodyFrame.writeCounts ? { ...bodyFrame.writeCounts } : {};
+      }
+
+      // Compile the loop body with the updated frame
+      this.compiler.emit.withScopedSyntax(() => {
+        this.compiler.compile(node.body, bodyFrame);
       });
 
-    } else {
-      // Single variable loop (Symbol)
-      const varName = node.name.value;
-      this.compiler.emit.line(`frame.set("${varName}", ${varName});`);
-      if (node.isAsync) {
-        frame.set(varName, varName);
-        this.compiler._addDeclaredVar(frame, varName);
-      }
-    }
-
-    // Compile Loop Condition (if while loop)
-    // We do this after destructuring but before body, in the same async block
-    let preBodyWriteCounts = null;
-    let skipBranchWritesPos = -1;
-    let catchPoisonPos = null;
-    let whileCondId;
-
-    if (whileConditionNode) {
-      whileCondId = this.compiler._tmpid();
-
-      if (node.isAsync) {
-        this.compiler.emit(`let ${whileCondId};`);
-        this.compiler.emit('try {');
-        this.compiler.emit(`${whileCondId} = `);
-        this.compiler._compileAwaitedExpression(whileConditionNode, frame, false);
-        this.compiler.emit.line(';');
-        const whileErrorContext = this.compiler._createErrorContext(node, whileConditionNode);
-        this.compiler.emit('} catch (e) {');
-        this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${whileErrorContext.lineno}, ${whileErrorContext.colno}, "${whileErrorContext.errorContextString}", context.path);`);
-        catchPoisonPos = this.compiler.codebuf.length;
-        this.compiler.emit.line(''); // Placeholder for poison injection
-
-        // We set whileCond to false so the loop logic (if !whileCond) below triggers termination
-        // But first we ensure 'return runtime.STOP_WHILE' is reached to stop iteration cleanly
-        this.compiler.emit(`  ${whileCondId} = false;`);
-        this.compiler.emit('}');
-      } else {
-        this.compiler.emit(`const ${whileCondId} = `);
-        this.compiler._compileAwaitedExpression(whileConditionNode, frame, false);
-        this.compiler.emit.line(';');
-      }
-
-      this.compiler.emit(`if (!${whileCondId}) {`);
-      skipBranchWritesPos = this.compiler.codebuf.length;
-      this.compiler.emit.line(''); // Placeholder for skipBranchWrites
-      this.compiler.emit.line('  return runtime.STOP_WHILE;');
-      this.compiler.emit.line('}');
-
-      // Snapshot writes including condition and destructuring
-      preBodyWriteCounts = frame.writeCounts ? { ...frame.writeCounts } : {};
-    }
-
-    // Compile the loop body with the updated frame
-    this.compiler.emit.withScopedSyntax(() => {
-      this.compiler.compile(node.body, frame);
-    });
-
-    if (whileConditionNode) {
-      const bodyOnlyWrites = this._diffWriteCounts(frame.writeCounts, preBodyWriteCounts);
-      if (Object.keys(bodyOnlyWrites).length > 0) {
-        this.compiler.emit.insertLine(skipBranchWritesPos, `  frame.skipBranchWrites(${JSON.stringify(bodyOnlyWrites)});`);
-      }
-
-      if (catchPoisonPos !== null) {
-        const totalWrites = this.compiler.async.countsTo1(frame.writeCounts);
-        if (totalWrites && Object.keys(totalWrites).length > 0) {
-          this.compiler.emit.insertLine(catchPoisonPos, `  frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
+      if (whileConditionNode) {
+        const bodyOnlyWrites = this._diffWriteCounts(bodyFrame.writeCounts, preBodyWriteCounts);
+        if (Object.keys(bodyOnlyWrites).length > 0) {
+          this.compiler.emit.insertLine(skipBranchWritesPos, `  frame.skipBranchWrites(${JSON.stringify(bodyOnlyWrites)});`);
         }
-        const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
-        if (bodyHandlers && bodyHandlers.size > 0) {
-          for (const handler of bodyHandlers) {
-            this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+
+        if (catchPoisonPos !== null) {
+          const totalWrites = this.compiler.async.countsTo1(bodyFrame.writeCounts);
+          if (totalWrites && Object.keys(totalWrites).length > 0) {
+            this.compiler.emit.insertLine(catchPoisonPos, `  frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
+          }
+          const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
+          if (bodyHandlers && bodyHandlers.size > 0) {
+            for (const handler of bodyHandlers) {
+              this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
+            }
           }
         }
       }
-    }
 
-    // Collect metadata from body compilation
-    if (frame.writeCounts || sequentialLoopBody) {
-      //@todo - in the future will require writes+reads to be sequential
-      //only writes - will save the last write to the loop frame
-    }
+      // Collect metadata from body compilation
+      if (bodyFrame.writeCounts || sequentialLoopBody) {
+        //@todo - in the future will require writes+reads to be sequential
+        //only writes - will save the last write to the loop frame
+      }
 
-    // End buffer block for the loop body (using node.body position)
-    let bodyFrame = frame;
-    const shouldAwaitLoopBody = Boolean(frame.writeCounts) || sequentialLoopBody || forceAwaitLoopBody;
-    // Pass sequential as the 'sequentialLoopBody' argument to asyncBlockBufferNodeEnd
-    frame = this.compiler.buffer.asyncBufferNodeEnd(node, frame, bodyCreatesScope, shouldAwaitLoopBody, node.body);
+      const shouldAwaitLoopBody = Boolean(bodyFrame.writeCounts) || sequentialLoopBody || forceAwaitLoopBody;
+      return {
+        result: bodyFrame,
+        sequential: shouldAwaitLoopBody
+      };
+    });
+    const bodyFrame = bodyResult.result;
 
     // Close the loop body function
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
@@ -341,12 +342,18 @@ class CompileLoop {
     }
 
     // Use node.else_ as position for the else block buffer
-    frame = this.compiler.buffer.asyncBufferNodeBegin(node, frame, elseCreatesScope, node.else_);
-    this.compiler.compile(node.else_, frame);
-
-    const elseFrame = frame;
-
-    frame = this.compiler.buffer.asyncBufferNodeEnd(node, frame, elseCreatesScope, sequential && awaitSequentialElse, node.else_);
+    const elseResult = this.compiler.buffer.asyncBufferNode(
+      node,
+      frame,
+      elseCreatesScope,
+      sequential && awaitSequentialElse,
+      node.else_,
+      (elseFrame) => {
+        this.compiler.compile(node.else_, elseFrame);
+        return elseFrame;
+      }
+    );
+    const elseFrame = elseResult.result;
 
     // Sync: use closure scope to access buffer. Async: bind context for proper this binding.
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
@@ -425,22 +432,24 @@ class CompileLoop {
     let bodyHandlers = null; // eslint-disable-line no-unused-vars
 
     this.compiler.emit.withScopedSyntax(() => {
-      let buf;
       if (parallel) {
-        const managed = this.compiler.emit.beginManagedBlock(frame, false, true);
-        buf = managed.bufferId;
-      }
+        this.compiler.emit.managedBlock(frame, false, true, (managedFrame, buf) => {
+          this.compiler.compile(node.body, managedFrame);
 
-      this.compiler.compile(node.body, frame);
+          // Collect metadata from body compilation
+          _bodyWriteCounts = managedFrame.writeCounts;
+          bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
 
-      // Collect metadata from body compilation
-      _bodyWriteCounts = frame.writeCounts;
-      bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
+          this.compiler.emit.line('next(' + i + ',' + buf + ');');
+        });
+      } else {
+        this.compiler.compile(node.body, frame);
 
-      this.compiler.emit.line('next(' + i + (buf ? ',' + buf : '') + ');');
+        // Collect metadata from body compilation
+        _bodyWriteCounts = frame.writeCounts;
+        bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body) : null;
 
-      if (parallel) {
-        this.compiler.emit.endManagedBlock(frame, false, true);
+        this.compiler.emit.line('next(' + i + ');');
       }
     });
 

@@ -289,7 +289,7 @@ class CompileInheritance {
       this.emit.line('}');
 
       this.emit.line('context.finishAsyncBlocks()');
-      frame = this.emit.asyncBlockEnd(node, frame, false, false, node.template);
+      frame = this.emit.asyncBlockEnd(node, frame, false, false, node.template, null, false);
     } else {
       // SYNC MODE
       this.emit.line(`parentTemplate = ${parentTemplateId};`);

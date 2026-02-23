@@ -23,96 +23,30 @@ class CompileBuffer {
     this.compiler = compiler;
     this.currentBuffer = null;
     this.currentTextOutput = null;
-    this.bufferStack = [];
-    this.textOutputStack = [];
     // Temp value ids for split buffer writes (asyncAddToBufferBegin/End), supports nesting.
     // @otodo - evaluate these buffers, we shall be able to store
     // the values in the frame, the only probblem is when node.isAsync
     // is false in asyncMode, then new frame is not created?
-    this._bufferValueStack = [];
-    this._bufferAddStack = [];
   }
 
   // === BUFFER STACK MANAGEMENT ===
 
   /**
-   * Initialize buffer variables for a managed compilation region.
-   * Behavior is derived from frame ancestry:
-   * - New scope roots (frame with no parent) create a new CommandBuffer.
-   * - Nested script scopes (frame with parent) reuse parent buffer.
+   * Initialize a managed scope-root buffer.
    *
    * @param {string} bufferId
+   * @param {string|null} parentBufferId
    * @param {string} textOutputId
-   * @param {Frame|null} frame
    */
-  initManagedBuffer(bufferId = this.currentBuffer, textOutputId = this.currentTextOutput, frame = null) {
+  initManagedBuffer(bufferId, parentBufferId, textOutputId) {
     if (this.compiler.asyncMode) {
-      const parentBufferId = this.bufferStack.length > 0
-        ? this.bufferStack[this.bufferStack.length - 1]
-        : null;
       const textId = textOutputId || `${bufferId}_textOutput`;
-      // Script nested lexical scopes usually reuse parent buffer, but isolate-write
-      // scopes (call/caller bodies) must own a separate buffer root. Reusing parent
-      // there can finalize the parent too early when the macro body completes.
-      const isNewScope = !this.compiler.scriptMode ||
-        !frame ||
-        !frame.parent ||
-        frame.isolateWrites;/* Remove this when we get ridof theold var implementation */
-
-      if (parentBufferId && !isNewScope) {
-        this.compiler.emit.line(`let ${bufferId} = ${parentBufferId};`);
-        this.compiler.emit.line(`let ${textId} = runtime.getOutput(frame, "text");`);
-      } else {
-        this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, null, frame);`);
-        this.compiler.emit.initOutputHandlers(bufferId, textId);
-      }
+      const parentArg = parentBufferId || 'null';
+      this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, ${parentArg}, frame);`);
+      this.compiler.emit.initOutputHandlers(bufferId, textId);
     } else {
       this.compiler.emit.line(`let ${bufferId} = "";`);
     }
-  }
-
-  /**
-   * Push a new buffer identifier onto the stack.
-   * Does not allocate/initialize the underlying buffer.
-   * Pair with popBuffer() to keep compiler-side buffer tracking balanced.
-   * Returns the new buffer identifier.
-   */
-  pushBuffer() {
-    const id = this.compiler._tmpid();
-    this.bufferStack.push(this.currentBuffer);
-    this.textOutputStack.push(this.currentTextOutput);
-    this.currentBuffer = id;
-    this.currentTextOutput = `${id}_textOutput`;
-    if (!this.compiler.asyncMode) {
-      this.currentTextOutput = null;
-    }
-    return id;
-  }
-
-  /**
-   * Restore the previous buffer from the stack.
-   */
-  popBuffer() {
-    this.currentBuffer = this.bufferStack.pop();
-    this.currentTextOutput = this.textOutputStack.pop();
-  }
-
-  setBufferAlias(bufferId, textOutputId = null) {
-    const prev = {
-      currentBuffer: this.currentBuffer,
-      currentTextOutput: this.currentTextOutput
-    };
-    this.currentBuffer = bufferId;
-    this.currentTextOutput = textOutputId;
-    return prev;
-  }
-
-  restoreBufferAlias(prev) {
-    if (!prev) {
-      return;
-    }
-    this.currentBuffer = prev.currentBuffer;
-    this.currentTextOutput = prev.currentTextOutput;
   }
 
   /**
@@ -459,7 +393,7 @@ class CompileBuffer {
       this.compiler.emit.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
       const { readArgs, writeArgs, outputArgs } = this.compiler.emit.getAsyncBlockArgs(frame, positionNode);
-      this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${this.currentBuffer}, false, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
 
       frame = frame.pop();
 
@@ -494,129 +428,117 @@ class CompileBuffer {
   /**
    * Begin async buffer addition (split pattern)
    */
-  asyncAddToBufferBegin(node, frame, positionNode = node, handlerName = null, outputName = 'text') {
-    if (this.compiler.asyncMode) {
-      this.compiler.emit.line(`astate.asyncBlock(async (astate, frame) => {`);
-      const valueId = this.compiler._tmpid();
-      this._bufferValueStack.push(valueId);
-      this.compiler.emit.line(`await ${this.currentBuffer}.addAsyncArgsCommand("${outputName}", (async () => {`);
-      this.compiler.emit(`let ${valueId} = `);
-      this.compiler.emit.asyncClosureDepth++;
-      // Store handlerName for End to use
-      //this._pendingHandler = handlerName;
-      const innerFrame = frame.push(false, false);
-      if (outputName) {
-        this.registerOutputUsage(innerFrame, outputName);
-      }
-      return innerFrame;
-    }
-    /*if (this.compiler.asyncMode) {
-      if (outputName) { this.registerOutputUsage(frame, outputName); }
-      const valueId = this.compiler._tmpid();
-      this._bufferValueStack.push(valueId);
-      this.compiler.emit(`let ${valueId} = `);
-    } */else {
-      this.compiler.emit(`${this.currentBuffer} += `);
-    }
-    return frame;
-  }
-
-  /**
-   * End async buffer addition (split pattern)
-   */
-  asyncAddToBufferEnd(node, frame, positionNode = node, handlerName = null, outputName = 'text', emitTextCommand = false, normalizeTextArgs = false) {
+  asyncAddToBufferScoped(
+    node,
+    frame,
+    positionNode = node,
+    handlerName = null,
+    outputName = 'text',
+    emitTextCommand = false,
+    normalizeTextArgs = false,
+    emitFunc = null
+  ) {
     void handlerName;
     void outputName;
-    const valueId = this.compiler.asyncMode ? this._bufferValueStack.pop() : null;
+    if (!this.compiler.asyncMode) {
+      this.compiler.emit(`${this.currentBuffer} += `);
+      if (typeof emitFunc === 'function') {
+        emitFunc(frame, null);
+      }
+      this.compiler.emit.line(';');
+      return frame;
+    }
+
+    this.compiler.emit.line(`astate.asyncBlock(async (astate, frame) => {`);
+    const valueId = this.compiler._tmpid();
+    this.compiler.emit.line(`await ${this.currentBuffer}.addAsyncArgsCommand("${outputName}", (async () => {`);
+    this.compiler.emit(`let ${valueId} = `);
+    this.compiler.emit.asyncClosureDepth++;
+
+    const innerFrame = frame.push(false, false);
+    if (outputName) {
+      this.registerOutputUsage(innerFrame, outputName);
+    }
+
+    if (typeof emitFunc === 'function') {
+      emitFunc(innerFrame, valueId);
+    }
+
     this.compiler.emit.line(';');
-    if (this.compiler.asyncMode) {
-      // Enqueue the command with unresolved arguments.
-      // Argument resolution and error handling are performed at apply-time.
-      const valueExpr = emitTextCommand
-        ? this._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs)
-        : valueId;
-      this.compiler.emit.line(`return ${valueExpr};`);
-      this.compiler.emit.line(`})(), cb);`);
 
-      this.compiler.emit.asyncClosureDepth--;
-      this.compiler.emit.line('}');
-      const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs, outputArgs } = this.compiler.emit.getAsyncBlockArgs(frame, positionNode);
-      this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
-      return frame.pop();
-    }
-    return frame;
+    const valueExpr = emitTextCommand
+      ? this._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs)
+      : valueId;
+    this.compiler.emit.line(`return ${valueExpr};`);
+    this.compiler.emit.line(`})(), cb);`);
+
+    this.compiler.emit.asyncClosureDepth--;
+    this.compiler.emit.line('}');
+    const errorContext = this.compiler._generateErrorContext(node, positionNode);
+    const { readArgs, writeArgs, outputArgs } = this.compiler.emit.getAsyncBlockArgs(innerFrame, positionNode);
+    this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${this.currentBuffer}, false, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+    return innerFrame.pop();
   }
 
-  // === NESTED BUFFER MANAGEMENT ===
-
   /**
-   * Create nested buffer for async block to avoid race conditions
+   * Compile a node inside an async buffer boundary.
+   * Uses local save/restore of current buffer aliases instead of begin/end caller pairing.
+   *
+   * emitFunc may return:
+   * - any value -> exposed as result
+   * - { result, sequential } -> custom result + dynamic sequential flag for asyncBlockEnd
    */
-  asyncBufferNodeBegin(node, frame, createScope = false, positionNode = node) {
+  asyncBufferNode(node, frame, createScope = false, sequential = false, positionNode = node, emitFunc = null) {
     if (node.isAsync) {
-      // Start the async closure
-      frame = this.compiler.emit.asyncBlockBegin(node, frame, createScope, positionNode);
-
-      // Push the current buffer onto the stack
-      this.bufferStack.push(this.currentBuffer);
-      this.textOutputStack.push(this.currentTextOutput);
-      const parentBuffer = this.currentBuffer;
-
-      // Create a new buffer reference for this nested block.
-      const newBuffer = this.compiler._tmpid();
-      this.compiler.emit.line(`let ${newBuffer} = currentBuffer || ${parentBuffer};`);
-
-      // Defer parent-child buffer linking until async block body is emitted.
-      const addPos = this.compiler.codebuf.length;
-      this.compiler.emit.line('');
-      this._bufferAddStack.push({ pos: addPos, parentBuffer, newBuffer });
-
-      // Update the buffer reference
-      this.currentBuffer = newBuffer;
+      const parentBufferArg = this.currentBuffer;
+      let nextFrame = this.compiler.emit.asyncBlockBegin(node, frame, createScope, positionNode);
+      const nestedBufferId = this.compiler._tmpid();
+      this.compiler.emit.line(`let ${nestedBufferId} = currentBuffer;`);
+      const prevBuffer = this.currentBuffer;
+      const prevTextOutput = this.currentTextOutput;
+      this.currentBuffer = nestedBufferId;
       this.currentTextOutput = null;
-      return frame;
-    } else if (createScope) {
-      frame = frame.push();
-      this.compiler.emit.line('frame = frame.push();');
-      return frame;
-    }
-    return frame;
-  }
 
-  /**
-   * Restore parent buffer after async block
-   */
-  asyncBufferNodeEnd(node, frame, createScope = false, sequential = false, positionNode = node) {
-    if (node.isAsync) {
-      const addInfo = this._bufferAddStack.pop();
-      if (addInfo) {
-        const usedOutputs = frame.usedOutputs ? Array.from(frame.usedOutputs) : [];
-        usedOutputs.forEach((outputName) => {
-          // Do not bubble outputs declared in this async block's lexical scope.
-          if (frame.declaredOutputs && frame.declaredOutputs.has(outputName)) {
-            return;
-          }
-          this.compiler.emit.insertLine(
-            addInfo.pos,
-            `if (${addInfo.newBuffer} !== ${addInfo.parentBuffer}) { ${addInfo.parentBuffer}.addBuffer(${addInfo.newBuffer}, "${outputName}"); }`
-          );
-        });
+      let callbackValue;
+      try {
+        if (typeof emitFunc === 'function') {
+          callbackValue = emitFunc(nextFrame, nestedBufferId, prevBuffer);
+        }
+      } finally {
+        const dynamicSequential = callbackValue && typeof callbackValue === 'object' &&
+          Object.prototype.hasOwnProperty.call(callbackValue, 'sequential')
+          ? callbackValue.sequential
+          : sequential;
+        nextFrame = this.compiler.emit.asyncBlockEnd(
+          node,
+          nextFrame,
+          createScope,
+          dynamicSequential,
+          positionNode,
+          parentBufferArg,
+          true
+        );
+        this.currentBuffer = prevBuffer;
+        this.currentTextOutput = prevTextOutput;
       }
 
-      // End the async closure
-      frame = this.compiler.emit.asyncBlockEnd(node, frame, createScope, sequential, positionNode);
-
-      // Restore the previous buffer from the stack
-      this.currentBuffer = this.bufferStack.pop();
-      this.currentTextOutput = this.textOutputStack.pop();
-      return frame;
-    } else if (createScope) {
-      frame = frame.pop();
-      this.compiler.emit.line('frame = frame.pop();');
-      return frame;
+      const result = callbackValue && typeof callbackValue === 'object' &&
+        Object.prototype.hasOwnProperty.call(callbackValue, 'result')
+        ? callbackValue.result
+        : callbackValue;
+      return { frame: nextFrame, result };
     }
-    return frame;
+
+    if (createScope) {
+      let nextFrame = frame.push();
+      this.compiler.emit.line('frame = frame.push();');
+      const result = typeof emitFunc === 'function' ? emitFunc(nextFrame, this.currentBuffer, this.currentBuffer) : undefined;
+      this.compiler.emit.line('frame = frame.pop();');
+      return { frame: nextFrame.pop(), result };
+    }
+
+    const result = typeof emitFunc === 'function' ? emitFunc(frame, this.currentBuffer, this.currentBuffer) : undefined;
+    return { frame, result };
   }
 }
 

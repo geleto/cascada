@@ -142,8 +142,22 @@ class CommandBuffer {
   addSnapshot(outputName, pos = null) {
     const cmd = new SnapshotCommand({
       handler: outputName,
-      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
+      pos
     });
+    if (this.finished) {
+      const output = this._outputs.get(outputName);
+      const path = (this._context && this._context.path) ? this._context.path : null;
+      if (!output._buffer.finished) {
+        throw new RuntimeFatalError(
+          'Snapshot command on finished buffer is allowed only if the whole output is finished',
+          pos?.lineno ?? 0,
+          pos?.colno ?? 0,
+          null,
+          path
+        );
+      }
+      return this._runFinishedSnapshotCommand(cmd, outputName);
+    }
     return this._addObservationCommand(cmd, outputName);
   }
 
@@ -168,21 +182,47 @@ class CommandBuffer {
       handler: outputName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
-    return this._addObservationCommand(cmd, outputName);
+    this.add(cmd, outputName);
+    return cmd.promise;
   }
 
   _addObservationCommand(cmd, outputName) {
+    //const output = this._outputs.get(outputName);
+    //const hasLocalType = !!(this._outputTypes && Object.prototype.hasOwnProperty.call(this._outputTypes, outputName));
+    //const hasLocalStream = !!(this.arrays && this.arrays[outputName]);
+
     if (!this.finished) {
       this.add(cmd, outputName);
       return cmd.promise;
     }
 
-    const output = (this._outputs instanceof Map) ? this._outputs.get(outputName) : null;
-    const path = (this._context && this._context.path) ? this._context.path : null;
-    if (!output) {
-      cmd.rejectResult(handleError(new Error(`CommandBuffer output '${outputName}' is unavailable`), cmd.pos.lineno, cmd.pos.colno, null, path));
+    /*if (!this.finished) {
+      // Foreign output observations (e.g. call/capture frames reading outer outputs)
+      // must be enqueued on the owning output stream to preserve command-tree ordering.
+      if (output && !hasLocalType && !hasLocalStream) {
+        const targetBuffer = output._buffer;
+        if (targetBuffer && targetBuffer !== this && !targetBuffer.finished) {
+          targetBuffer.add(cmd, outputName);
+          return cmd.promise;
+        }
+      }
+      this.add(cmd, outputName);
       return cmd.promise;
-    }
+    }*/
+
+    const path = (this._context && this._context.path) ? this._context.path : null;
+    throw new RuntimeFatalError(
+      `Observation command '${cmd && cmd.constructor ? cmd.constructor.name : 'unknown'}' is not allowed on a finished CommandBuffer`,
+      cmd && cmd.pos ? cmd.pos.lineno : 0,
+      cmd && cmd.pos ? cmd.pos.colno : 0,
+      null,
+      path
+    );
+  }
+
+  _runFinishedSnapshotCommand(cmd, outputName) {
+    const output = this._outputs.get(outputName);
+    const path = (this._context && this._context.path) ? this._context.path : null;
 
     const applySnapshot = () => {
       try {
@@ -194,6 +234,7 @@ class CommandBuffer {
       return cmd.promise;
     };
 
+    // Snapshot-on-finished-buffer is allowed only after the entire output stream is complete.
     if (!output._completionResolved && output._completionPromise) {
       return Promise.resolve(output._completionPromise).then(applySnapshot);
     }

@@ -1016,6 +1016,9 @@
         frame,
         null, // readVars
         null, // writeCounts
+        null, // usedOutputs
+        null, // parentBuffer
+        false, // createOutputBuffer
         cb,
         1, 1, // lineno, colno
         { path: 'test.njk' } // context
