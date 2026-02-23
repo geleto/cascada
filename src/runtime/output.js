@@ -979,6 +979,10 @@ function resolveCommandArgsValue(value, cmd, output) {
     let hasAsync = false;
     const mapped = value.map((item) => {
       const resolved = resolveCommandArg(item, cmd, output);
+      if (isPoison(resolved)) {
+        // PoisonedValue is thenable; box it to avoid Promise assimilation in Promise.all.
+        return wrapAsyncPoisonValue(resolved);
+      }
       if (resolved && typeof resolved.then === 'function') {
         hasAsync = true;
       }
@@ -990,6 +994,9 @@ function resolveCommandArgsValue(value, cmd, output) {
     return Promise.all(mapped).then((resolvedItems) => resolvedItems.map(unwrapAsyncPoisonBox));
   }
   const resolvedValue = resolveCommandArg(value, cmd, output);
+  if (isPoison(resolvedValue)) {
+    return resolvedValue;
+  }
   if (resolvedValue && typeof resolvedValue.then === 'function') {
     return Promise.resolve(resolvedValue).then(unwrapAsyncPoisonBox);
   }
