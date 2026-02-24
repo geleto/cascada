@@ -990,7 +990,6 @@
         const cont = { logs: [], seq: { id: 's1', async runOp(id, ms) { await delay(ms); cont.logs.push(id); } } };
         const template = `
           {% for seq in [seq] %}
-            {% set seq = seq %}
             {% do seq!.runOp('l1', 8) %}
             {% do seq!.runOp('l2', 4) %}
           {% endfor %}
