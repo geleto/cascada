@@ -13,6 +13,7 @@
   var finish;
   var isSlim;
   var Compiler;
+  var CONVERT_TEMPLATE_VAR_TO_VALUE = false;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -20,6 +21,7 @@
     Template = require('../src/environment/environment').Template;
     Environment = require('../src/environment/environment').Environment;
     Compiler = require('../src/compiler/compiler').Compiler;
+    CONVERT_TEMPLATE_VAR_TO_VALUE = require('../src/feature-flags').CONVERT_TEMPLATE_VAR_TO_VALUE;
     fs = require('fs');
   } else {
     expect = window.expect;
@@ -819,11 +821,12 @@
         var loader = new Loader('tests/templates');
         var env = new Environment(loader);
         var tmpl = new Template(tmplStr, env, 'parse-error.njk');
+        var expectedColumn = CONVERT_TEMPLATE_VAR_TO_VALUE ? 29 : 26;
 
         tmpl.render({}, function (err, res) {
           expect(res).to.be(undefined);
           expect(err.toString()).to.be([
-            'Template/Script render error: (parse-error.njk) [Line 1, Column 26]',
+            'Template/Script render error: (parse-error.njk) [Line 1, Column ' + expectedColumn + ']',
             '  unexpected token: ,',
           ].join('\n'));
           done();
