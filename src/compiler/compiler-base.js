@@ -856,7 +856,8 @@ class CompilerBase extends Obj {
         const readLockKey = this.sequential._getReadLockKey(sequenceLockKey);
         let index = sequenceLockKey.indexOf('!', 1);
         const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
-        if (this._isDeclared(frame, keyRoot)) {
+        const keyRootOutput = this.async._getDeclaredOutput(frame, keyRoot);
+        if (this._isDeclared(frame, keyRoot) || keyRootOutput) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }
         this.async.updateFrameWrites(frame, sequenceLockKey);
