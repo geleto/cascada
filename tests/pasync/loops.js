@@ -12,6 +12,7 @@
   var isPoison;
   var runtime;
   var CONVERT_SCRIPT_VAR_TO_VALUE;
+  var CONVERT_TEMPLATE_VAR_TO_VALUE;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -25,6 +26,7 @@
     isPoisonError = runtime.isPoisonError;
     isPoison = runtime.isPoison;
     CONVERT_SCRIPT_VAR_TO_VALUE = require('../../src/feature-flags').CONVERT_SCRIPT_VAR_TO_VALUE;
+    CONVERT_TEMPLATE_VAR_TO_VALUE = require('../../src/feature-flags').CONVERT_TEMPLATE_VAR_TO_VALUE;
   } else {
     expect = window.expect;
     //unescape = window.he.unescape;
@@ -37,6 +39,7 @@
     isPoisonError = runtime.isPoisonError;
     isPoison = runtime.isPoison;
     CONVERT_SCRIPT_VAR_TO_VALUE = true;
+    CONVERT_TEMPLATE_VAR_TO_VALUE = true;
   }
 
   describe('Async mode - loops', () => {
@@ -380,8 +383,8 @@
           const template = '{% set outer = "" %}{% for id in items of 2 %}{% set outer = processItem(id) %}{% endfor %}';
           await env.renderTemplateString(template, context);
 
-          // Sequential mode: max concurrent should be 1
-          expect(context.maxConcurrent).to.be(1);
+          const expectedConcurrency = CONVERT_TEMPLATE_VAR_TO_VALUE ? 2 : 1;
+          expect(context.maxConcurrent).to.be(expectedConcurrency);
         });
 
         it('should collect all errors when loop body throws errors', async () => {
@@ -634,7 +637,8 @@
           const template = '{% set outer = "" %}{% for id in makeAsyncItems() of 3 %}{% set outer = processItem(id) %}{% endfor %}';
           await env.renderTemplateString(template, context);
 
-          expect(context.maxConcurrent).to.be(1);
+          const expectedConcurrency = CONVERT_TEMPLATE_VAR_TO_VALUE ? 3 : 1;
+          expect(context.maxConcurrent).to.be(expectedConcurrency);
         });
 
         it('should ignore concurrentLimit when async iterator loop uses sequential operations', async () => {
