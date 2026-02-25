@@ -2,6 +2,7 @@
 
 const lib = require('../lib');
 const { createPoison, isPoison, isPoisonError, PoisonError, handleError } = require('./errors');
+const { ValueCommand } = require('./commands');
 
 const STOP_WHILE = Symbol('STOP_WHILE');
 
@@ -104,22 +105,42 @@ function fromIterator(arr) {
 }
 
 function setLoopBindings(frame, index, len, last) {
-  // Set the loop variables that depend only on index directly
-  frame.set('loop.index', index + 1);
-  frame.set('loop.index0', index);
-  frame.set('loop.first', index === 0);
-  frame.set('loop.length', len);
-  frame.set('loop.last', last);
+  const loopMeta = createLoopBindings(index, len, last);
+  frame.set('loop.index', loopMeta.index);
+  frame.set('loop.index0', loopMeta.index0);
+  frame.set('loop.revindex', loopMeta.revindex);
+  frame.set('loop.revindex0', loopMeta.revindex0);
+  frame.set('loop.first', loopMeta.first);
+  frame.set('loop.last', loopMeta.last);
+  frame.set('loop.length', loopMeta.length);
+}
+
+function createLoopBindings(index, len, last) {
+  const loopMeta = {
+    index: index + 1,
+    index0: index,
+    first: index === 0,
+    length: len,
+    last
+  };
 
   if (len && typeof len.then === 'function') {
-    // Set the remaining loop variables that depend on len as promises
-    frame.set('loop.revindex', len.then(l => l - index));
-    frame.set('loop.revindex0', len.then(l => l - index - 1));
+    loopMeta.revindex = len.then(l => l - index);
+    loopMeta.revindex0 = len.then(l => l - index - 1);
   } else {
-    // Set the remaining loop variables that depend on len directly
-    frame.set('loop.revindex', len - index);
-    frame.set('loop.revindex0', len - index - 1);
+    loopMeta.revindex = len - index;
+    loopMeta.revindex0 = len - index - 1;
   }
+
+  return loopMeta;
+}
+
+function setLoopValueBindings(handler, index, len, last, pos) {
+  return new ValueCommand({
+    handler,
+    args: [createLoopBindings(index, len, last)],
+    pos
+  });
 }
 
 async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext) {
@@ -887,6 +908,8 @@ module.exports = {
   asyncAll,
   fromIterator,
   setLoopBindings,
+  createLoopBindings,
+  setLoopValueBindings,
   iterateAsyncSequential,
   iterateAsyncParallel,
   poisonLoopEffects,

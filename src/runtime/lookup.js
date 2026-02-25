@@ -243,6 +243,23 @@ function contextOrFrameLookup(context, frame, name) {
 }
 
 /**
+ * Value-output lookup for template symbol aliases.
+ * Does NOT read frame variables; it resolves through declared outputs only.
+ */
+function contextOrValueLookup(_context, frame, name, currentBuffer) {
+  if (!currentBuffer || typeof currentBuffer.addSnapshot !== 'function') {
+    throw new Error(`Value output '${name}' requires an active currentBuffer for snapshot reads`);
+  }
+
+  const outputs = currentBuffer._outputs;
+  if (!(outputs instanceof Map) || !outputs.has(name)) {
+    throw new Error(`Value output '${name}' is not declared in the current scope`);
+  }
+
+  return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+}
+
+/**
  * Context or frame lookup for scripts.
  * Throws error if variable not found.
  */
@@ -270,6 +287,7 @@ module.exports = {
   memberLookupAsync,
   memberLookupScriptAsync,
   contextOrFrameLookup,
+  contextOrValueLookup,
   contextOrFrameLookupScript,
   contextOrFrameLookupScriptAsync,
 };

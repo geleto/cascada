@@ -51,7 +51,7 @@ class Compiler extends CompilerBase {
       // Variables and outputs share the same lexical scoping rules.
       // Use _getDeclaredOutput (lexical-only) for collision checks.
       const outputDecl = this.async._getDeclaredOutput(frame, varName);
-      if (outputDecl) {
+      if (outputDecl && outputDecl.type !== 'value') {
         this.fail(`Cannot declare variable '${varName}' because an output with the same name is already declared.`);
       }
 

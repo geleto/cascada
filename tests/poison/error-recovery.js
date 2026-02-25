@@ -541,11 +541,11 @@
         };
         const script = `
           data result
-          for value in asyncItems()
-            if value is error
-              value = "healed-async-for"
+          for entry in asyncItems()
+            if entry is error
+              entry = "healed-async-for"
             endif
-            result.values.push(value)
+            result.values.push(entry)
           endfor
 
           return result.snapshot()`;

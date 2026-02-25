@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   'use strict';
 
   var expect;
@@ -80,7 +80,7 @@
             catalog: { a: 1, b: 2 }
           };
 
-          const template = '{% for key, value in catalog of 4 %}' +
+          const template = '{% for key, val in catalog of 4 %}' +
             '{{ key }}-{{ loop.index }}/{{ loop.length }}/{{ "T" if loop.last else "F" }},' +
             '{% endfor %}';
 
@@ -661,7 +661,7 @@
             }
           };
 
-          const template = '{% for value in makeAsyncItems() of 5 %}{{ logger!.record(value) }}{% endfor %}';
+          const template = '{% for item in makeAsyncItems() of 5 %}{{ logger!.record(item) }}{% endfor %}';
           await env.renderTemplateString(template, context);
 
           expect(context.maxConcurrent).to.be(1);
@@ -735,7 +735,7 @@
             }
           };
 
-          const template = '{% for value in makeAsyncItems() %}' +
+          const template = '{% for item in makeAsyncItems() %}' +
             '{{ readMeta(loop.length) }}-{{ markFlag(loop.last) }},' +
             '{% endfor %}';
           const result = await env.renderTemplateString(template, context);
@@ -3470,8 +3470,8 @@ return output.snapshot()`;
 
       const script = `      data output
       var result = 1
-			for text in candidates
-				result = processItem(text)
+			for candidate in candidates
+				result = processItem(candidate)
 				output.set(null, result)
 			endfor
       return output.snapshot()`;
@@ -3500,8 +3500,8 @@ return output.snapshot()`;
       };
 
       const script = `			data output
-			for text in candidates
-				var result = processItem(text)
+			for candidate in candidates
+				var result = processItem(candidate)
 				output.set(null, result)
 			endfor
 			return output.snapshot()`;
@@ -3526,9 +3526,9 @@ return output.snapshot()`;
       };
 
       const script = `			data output
-			for text in candidates
-				if text
-					var result = processItem(text)
+			for candidate in candidates
+				if candidate
+					var result = processItem(candidate)
 					output.set(null, result)
 				endif
 			endfor
@@ -3549,8 +3549,8 @@ return output.snapshot()`;
       };
 
       const template = `
-        {%- for text in candidates -%}
-          {%- set loopScoped = renderItem(text) -%}
+        {%- for candidate in candidates -%}
+          {%- set loopScoped = renderItem(candidate) -%}
           {{- loopScoped -}}
         {%- endfor -%}
         {%- if loopScoped is defined -%}
@@ -3567,3 +3567,4 @@ return output.snapshot()`;
   }); // End Cascada Script Loops
 
 })();
+

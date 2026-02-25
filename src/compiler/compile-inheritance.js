@@ -15,6 +15,25 @@ class CompileInheritance {
 	  this.emit = this.compiler.emit;
   }
 
+  // Collect value outputs that are used as plain symbols (alias reads).
+  // compileInclude uses this list to inject caller-side value aliases into
+  // include context variables so separately compiled templates can resolve them.
+  _collectValueAliasOutputs(frame) {
+    const names = new Set();
+    let cur = frame;
+    while (cur) {
+      if (cur.declaredOutputs && typeof cur.declaredOutputs.forEach === 'function') {
+        cur.declaredOutputs.forEach((decl, name) => {
+          if (decl && decl.type === 'value') {
+            names.add(name);
+          }
+        });
+      }
+      cur = cur.parent;
+    }
+    return Array.from(names);
+  }
+
   _templateName() {
     return this.compiler.templateName === null ? 'undefined' : JSON.stringify(this.compiler.templateName);
   }
@@ -339,6 +358,7 @@ class CompileInheritance {
       // Get the template object (this part is async)
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();
+      const includeVarsVar = this.compiler._tmpid();
 
       // Get the template name expression
       this.emit(`let ${templateNameVar} = `);
@@ -348,10 +368,25 @@ class CompileInheritance {
       //the AsyncEnviuronment.getTemplate returns a Promise
       this.emit.line(`let ${templateVar} = await env.getTemplate.bind(env)(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
+      // Includes are compiled as separate templates. Loop aliases like `user` and
+      // `loop` may exist as value outputs in the caller but are not lexically
+      // declared in the included template's own compile frame.
+      //
+      // To preserve caller-visible semantics, copy context variables and inject
+      // those value aliases as snapshot promises taken from the *active* command
+      // buffer. Using currentBuffer keeps snapshot reads in command-tree order.
+      // The included template can then resolve these names via normal context lookup.
+      this.emit.line(`let ${includeVarsVar} = context.getVariables();`);
+      this._collectValueAliasOutputs(f).forEach((name) => {
+        this.emit.line(
+          `${includeVarsVar}[${JSON.stringify(name)}] = ${this.compiler.buffer.currentBuffer}.addSnapshot(${JSON.stringify(name)}, { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`
+        );
+      });
+
       // Call the template in composition mode. This is a SYNCHRONOUS call
       // that returns the incomplete output array immediately. The master `cb` from the
       // closure is passed for error propagation.
-      this.emit.line(`${resultVar} = ${templateVar}._renderForComposition(context.getVariables(), frame, astate, cb);`);
+      this.emit.line(`${resultVar} = ${templateVar}._renderForComposition(${includeVarsVar}, frame, astate, cb);`);
       this.emit.line(`${resultVar} = ${resultVar}.addSnapshot("text", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
     }, node, null, 'text', true);
   }

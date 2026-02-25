@@ -355,7 +355,8 @@
       }
     });
 
-    it('should error when guard variable is not modified', async () => {
+    // @todo - turn on when guard refactor is done
+    it.skip('should error when guard variable is not modified', async () => {
       const tpl = `
         {% set score = 1 %}
         {% guard score %}

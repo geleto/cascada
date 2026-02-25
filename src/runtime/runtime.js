@@ -197,6 +197,7 @@ module.exports = {
   memberLookupScript: lookup.memberLookupScript,
   memberLookupScriptAsync: lookup.memberLookupScriptAsync,
   contextOrFrameLookup: lookup.contextOrFrameLookup,
+  contextOrValueLookup: lookup.contextOrValueLookup,
   contextOrFrameLookupScript: lookup.contextOrFrameLookupScript,
   contextOrFrameLookupScriptAsync: lookup.contextOrFrameLookupScriptAsync,
 
@@ -217,6 +218,8 @@ module.exports = {
   iterateAsyncParallel: loop.iterateAsyncParallel,
   whileConditionIterator: loop.whileConditionIterator,
   setLoopBindings: loop.setLoopBindings,
+  createLoopBindings: loop.createLoopBindings,
+  setLoopValueBindings: loop.setLoopValueBindings,
 
   sequentialContextLookup: sequential.sequentialContextLookup,
   sequentialMemberLookupScriptAsync: sequential.sequentialMemberLookupScriptAsync,

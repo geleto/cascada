@@ -1,6 +1,7 @@
 'use strict';
 
 const nodes = require('../nodes');
+const { LOOP_VARS_USE_VALUE } = require('../feature-flags');
 
 class CompileLoop {
   constructor(compiler) {
@@ -46,6 +47,7 @@ class CompileLoop {
   }
 
   _compileFor(node, frame, sequentialLoopBody = false, iteratorCompiler = null, whileConditionNode = null) {
+    const useLoopValues = node.isAsync && LOOP_VARS_USE_VALUE;
     const forResult = this.compiler.buffer.asyncBufferNode(node, frame, true, false, node.arr, (blockFrame) => {
       // Evaluate the array expression
       const arr = this.compiler._tmpid();
@@ -69,19 +71,37 @@ class CompileLoop {
 
       // Determine loop variable names
       const loopVars = [];
+      const registerLoopVarBinding = (name) => {
+        if (node.isAsync && useLoopValues) {
+          this._declareLoopValueOutput(blockFrame, name, node);
+          //if (!this.compiler.scriptMode) {
+          // Keep compile-time frame symbol mapping for template boundaries
+          // (include/block/setblock) that resolve via frame/context lookup.
+          blockFrame.set(name, name);
+          //}
+          return;
+        }
+        blockFrame.set(name, name);
+        if (node.isAsync) {
+          this.compiler._addDeclaredVar(blockFrame, name);
+        }
+      };
+
       if (node.name instanceof nodes.Array) {
         node.name.children.forEach((child) => {
-          loopVars.push(child.value);
-          blockFrame.set(child.value, child.value);
-          if (node.isAsync) {
-            this.compiler._addDeclaredVar(blockFrame, child.value);
-          }
+          const name = child.value;
+          loopVars.push(name);
+          registerLoopVarBinding(name);
         });
       } else {
-        loopVars.push(node.name.value);
-        blockFrame.set(node.name.value, node.name.value);
-        if (node.isAsync) {
-          this.compiler._addDeclaredVar(blockFrame, node.name.value);
+        const name = node.name.value;
+        loopVars.push(name);
+        registerLoopVarBinding(name);
+      }
+      if (useLoopValues) {
+        this._declareLoopValueOutput(blockFrame, 'loop', node);
+        if (!this.compiler.scriptMode) {
+          blockFrame.set('loop', 'loop');
         }
       }
 
@@ -100,7 +120,8 @@ class CompileLoop {
         loopVars,
         sequentialLoopBody,
         hasConcurrentLimit,
-        whileConditionNode
+        whileConditionNode,
+        useLoopValues
       );
       const bodyWriteCounts = bodyFrame.writeCounts;
       if (bodyWriteCounts) {
@@ -180,7 +201,7 @@ class CompileLoop {
     frame = forResult.frame;
   }
 
-  _compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, forceAwaitLoopBody = false, whileConditionNode = null) {
+  _compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, forceAwaitLoopBody = false, whileConditionNode = null, useLoopValues = false) {
     const bodyCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
     if (node.isAsync) {
       this.compiler.emit('(async function(');//@todo - think this over, does it need async block?
@@ -209,17 +230,13 @@ class CompileLoop {
     }
     const bodyResult = this.compiler.buffer.asyncBufferNode(node, frame, bodyCreatesScope, false, node.body, (bodyFrame) => {
       //const makeSequentialPos = this.compiler.codebuf.length;// we will know later if it's sequential or not
-      this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+      this._emitLoopBindings(node, loopVars, loopIndex, loopLength, isLast, bodyFrame, useLoopValues);
 
       // Handle array unpacking within the loop body
       if (loopVars.length > 1) {
         // Runtime unpacks arguments (array destructuring or object key/value)
         loopVars.forEach((varName) => {
-          this.compiler.emit.line(`frame.set("${varName}", ${varName});`);
-          if (node.isAsync) {
-            bodyFrame.set(varName, varName);
-            this.compiler._addDeclaredVar(bodyFrame, varName);
-          }
+          this._emitLoopVarIterationBinding(node, varName, varName, bodyFrame, useLoopValues);
         });
       } else if (node.name instanceof nodes.Array) {
         // Single variable destructuring: for [a] in arr
@@ -229,21 +246,13 @@ class CompileLoop {
           const varName = child.value;
           const tid = this.compiler._tmpid();
           this.compiler.emit.line(`let ${tid} = Array.isArray(${varName}) ? ${varName}[${index}] : undefined;`);
-          this.compiler.emit.line(`frame.set("${varName}", ${tid});`);
-          if (node.isAsync) {
-            bodyFrame.set(varName, tid);
-            this.compiler._addDeclaredVar(bodyFrame, varName);
-          }
+          this._emitLoopVarIterationBinding(node, varName, tid, bodyFrame, useLoopValues);
         });
 
       } else {
         // Single variable loop (Symbol)
         const varName = node.name.value;
-        this.compiler.emit.line(`frame.set("${varName}", ${varName});`);
-        if (node.isAsync) {
-          bodyFrame.set(varName, varName);
-          this.compiler._addDeclaredVar(bodyFrame, varName);
-        }
+        this._emitLoopVarIterationBinding(node, varName, varName, bodyFrame, useLoopValues);
       }
 
       // Compile Loop Condition (if while loop)
@@ -365,6 +374,79 @@ class CompileLoop {
     // Sync: use closure scope to access buffer. Async: bind context for proper this binding.
     this.compiler.emit.line(node.isAsync ? '}).bind(context);' : '};');
     return elseFrame;
+  }
+
+  _declareLoopValueOutput(frame, name, _node) {
+    if (this.compiler.scriptMode && this.compiler.isReservedDeclarationName(name)) {
+      this.compiler.fail(
+        `Identifier '${name}' is reserved and cannot be used as a variable or output name.`,
+        _node && _node.lineno,
+        _node && _node.colno,
+        _node || undefined
+      );
+    }
+    frame.declaredOutputs = frame.declaredOutputs || new Map();
+    frame.declaredOutputs.set(name, {
+      type: 'value',
+      initializer: null
+    });
+  }
+
+  _emitLoopValueDeclarations(loopVars) {
+    const buffer = this.compiler.buffer.currentBuffer;
+    const declared = new Set(['loop', ...loopVars]);
+    declared.forEach((name) => {
+      this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${name}", "value", context, null);`);
+    });
+  }
+
+  _emitLoopValueAssignment(node, outputName, valueExpr, frame) {
+    this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
+      this.compiler.emit(
+        `${resultVar} = new runtime.ValueCommand({ handler: '${outputName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+      );
+    }, node, outputName);
+  }
+
+  _emitLoopBindings(node, loopVars, loopIndex, loopLength, isLast, frame, useLoopValues) {
+    if (useLoopValues) {
+      this._emitLoopValueDeclarations(loopVars);
+      this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame);
+      if (!this.compiler.scriptMode) {
+        frame.set('loop', 'loop');
+        this.compiler._addDeclaredVar(frame, 'loop');
+        // Template block/include boundaries still read loop metadata from frame.
+        this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+      }
+      return;
+    }
+    this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
+  }
+
+  _emitLoopVarIterationBinding(node, varName, valueExpr, frame, useLoopValues) {
+    if (useLoopValues) {
+      this._emitLoopValueAssignment(node, varName, valueExpr, frame);
+      if (!this.compiler.scriptMode) {
+        frame.set(varName, valueExpr);
+        this.compiler._addDeclaredVar(frame, varName);
+        this.compiler.emit.line(`frame.set("${varName}", ${valueExpr});`);
+      }
+      return;
+    }
+
+    this.compiler.emit.line(`frame.set("${varName}", ${valueExpr});`);
+    if (node.isAsync) {
+      frame.set(varName, valueExpr);
+      this.compiler._addDeclaredVar(frame, varName);
+    }
+  }
+
+  _emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame) {
+    this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
+      this.compiler.emit(
+        `${resultVar} = runtime.setLoopValueBindings('loop', ${loopIndex}, ${loopLength}, ${isLast}, {lineno: ${node.lineno}, colno: ${node.colno}})`
+      );
+    }, node, 'loop');
   }
 
   _compileAsyncLoopBindings(node, arr, i, len) {
