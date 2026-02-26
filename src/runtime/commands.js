@@ -462,6 +462,152 @@ class SequenceGetCommand extends OutputCommand {
   }
 }
 
+class SequentialPathReadCommand extends Command {
+  constructor({ handler, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
+    super({ withDeferredResult });
+    this.handler = handler;
+    this.pathKey = pathKey || handler;
+    this.operation = operation;
+    this.repair = !!repair;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.mutatesOutput = false;
+    this.isObservable = true;
+  }
+
+  apply(output) {
+
+    const existingPoison = output._getSequentialPathPoisonErrors();
+    if (!this.repair && Array.isArray(existingPoison) && existingPoison.length > 0) {
+      this.rejectResult(new PoisonError(existingPoison.slice()));
+      return;
+    }
+
+    const run = () => {
+      let result;
+      try {
+        result = this.operation();
+      } catch (err) {
+        const errs = isPoisonError(err) ? err.errors : [err];
+        const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
+        this.rejectResult(new PoisonError(contextualized));
+        return;
+      }
+
+      const resolveResultValue = (value) => {
+        if (isPoison(value)) {
+          const errs = Array.isArray(value.errors) ? value.errors : [value];
+          const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
+          this.rejectResult(new PoisonError(contextualized));
+          return;
+        }
+        if (this.repair) {
+          output._clearSequentialPathPoison();
+        }
+        this.resolveResult(value);
+      };
+
+      const rejectResultError = (err) => {
+        const errs = isPoisonError(err) ? err.errors : [err];
+        const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
+        this.rejectResult(new PoisonError(contextualized));
+      };
+
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(resolveResultValue, rejectResultError);
+      }
+
+      resolveResultValue(result);
+      return result;
+    };
+
+    return run();
+  }
+}
+
+class RepairReadCommand extends SequentialPathReadCommand {
+  constructor(spec = {}) {
+    super({
+      ...spec,
+      repair: true
+    });
+  }
+}
+
+class SequentialPathWriteCommand extends Command {
+  constructor({ handler, pathKey, operation, repair = false, pos = null, withDeferredResult = true }) {
+    super({ withDeferredResult });
+    this.handler = handler;
+    this.pathKey = pathKey || handler;
+    this.operation = operation;
+    this.repair = !!repair;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.mutatesOutput = true;
+    this.isObservable = false;
+  }
+
+  apply(output) {
+
+    const existingPoison = output._getSequentialPathPoisonErrors();
+    if (!this.repair && Array.isArray(existingPoison) && existingPoison.length > 0) {
+      this.rejectResult(new PoisonError(existingPoison.slice()));
+      return;
+    }
+
+    const run = () => {
+      let result;
+      try {
+        result = this.operation();
+      } catch (err) {
+        const errs = isPoisonError(err) ? err.errors : [err];
+        const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
+        output._applySequentialPathPoisonErrors(contextualized);
+        this.rejectResult(new PoisonError(contextualized));
+        return;
+      }
+
+      const resolveResultValue = (value) => {
+        if (isPoison(value)) {
+          const errs = Array.isArray(value.errors) ? value.errors : [value];
+          const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
+          output._applySequentialPathPoisonErrors(contextualized);
+          this.rejectResult(new PoisonError(contextualized));
+          return;
+        }
+        if (this.repair) {
+          output._clearSequentialPathPoison();
+        }
+        output._setSequentialPathLastResult(value);
+        this.resolveResult(value);
+      };
+
+      const rejectResultError = (err) => {
+        const errs = isPoisonError(err) ? err.errors : [err];
+        const contextualized = contextualizeErrorsForOutput(output, this.pos, errs);
+        output._applySequentialPathPoisonErrors(contextualized);
+        this.rejectResult(new PoisonError(contextualized));
+      };
+
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(resolveResultValue, rejectResultError);
+      }
+
+      resolveResultValue(result);
+      return result;
+    };
+
+    return run();
+  }
+}
+
+class RepairWriteCommand extends SequentialPathWriteCommand {
+  constructor(spec = {}) {
+    super({
+      ...spec,
+      repair: true
+    });
+  }
+}
+
 class ErrorCommand extends Command {
   constructor(errors) {
     super();
@@ -652,6 +798,41 @@ class GetErrorCommand extends Command {
   }
 }
 
+class CaptureGuardStateCommand extends Command {
+  constructor({ handler, pos = null }) {
+    super({ withDeferredResult: true });
+    this.handler = handler;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.isObservable = true;
+    this.isSnapshotCommand = true;
+  }
+
+  apply(output) {
+    const path = output && output._context ? output._context.path : null;
+    const contextualize = (err) => (isPoisonError(err)
+      ? err
+      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+
+    if (!output || typeof output._captureGuardState !== 'function') {
+      this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires an output handler with _captureGuardState()')));
+      return;
+    }
+
+    try {
+      const result = output._captureGuardState();
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(
+          (value) => this.resolveResult(value),
+          (err) => this.rejectResult(contextualize(err))
+        );
+      }
+      this.resolveResult(result);
+    } catch (err) {
+      this.rejectResult(contextualize(err));
+    }
+  }
+}
+
 class SinkRepairCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });
@@ -686,23 +867,38 @@ class SinkRepairCommand extends Command {
   }
 }
 
-class SetTargetCommand extends Command {
+class RestoreGuardStateCommand extends Command {
   constructor({ handler, target, pos = null }) {
-    super();
+    super({ withDeferredResult: true });
     this.handler = handler;
     this.target = target;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
   apply(output) {
+    const path = output && output._context ? output._context.path : null;
+    const contextualize = (err) => (isPoisonError(err)
+      ? err
+      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+
     if (!output) {
+      this.resolveResult(undefined);
       return;
     }
-    if (typeof output._restoreGuardState === 'function') {
-      output._restoreGuardState(this.target);
-      return;
+
+    try {
+      const result = output._restoreGuardState(this.target);
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(
+          (value) => this.resolveResult(value),
+          (err) => this.rejectResult(contextualize(err))
+        );
+      }
+      this.resolveResult(result);
+      return result;
+    } catch (err) {
+      this.rejectResult(contextualize(err));
     }
-    output._setTarget(this.target);
   }
 }
 
@@ -715,14 +911,19 @@ module.exports = {
   SinkCommand,
   SequenceCallCommand,
   SequenceGetCommand,
+  SequentialPathReadCommand,
+  RepairReadCommand,
+  SequentialPathWriteCommand,
+  RepairWriteCommand,
   ErrorCommand,
   TargetPoisonCommand,
   SnapshotCommand,
   RawSnapshotCommand,
   IsErrorCommand,
   GetErrorCommand,
+  CaptureGuardStateCommand,
   SinkRepairCommand,
-  SetTargetCommand
+  RestoreGuardStateCommand
 };
 
 function setDataPoisonAtPath(output, args, poisonValue) {

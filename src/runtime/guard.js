@@ -1,18 +1,18 @@
 
 const { isError } = require('./errors');
-const { SetTargetCommand } = require('./commands');
 const { getOutput } = require('./output');
 
 const DEBUG_GUARD = typeof process !== 'undefined' &&
   process.env &&
   process.env.GUARD_DEBUG;
 
-function init(frame, varNames) {
+function init(frame, varNames, cb = null) {
   const guardState = {
     names: varNames === '*' ? '*' : (varNames ? varNames.slice() : []),
     snapshot: {},
     sequenceErrors: [],
-    detectionPromises: []
+    detectionPromises: [],
+    fatalCb: cb
   };
 
   if (varNames && varNames !== '*' && varNames.length > 0) {
@@ -32,11 +32,14 @@ function init(frame, varNames) {
   return guardState;
 }
 
-function initOutputSnapshots(frame, handlerNames = null) {
+function initOutputSnapshots(frame, handlerNames = null, buffer = null, cb = null) {
   const state = {
     snapshots: Object.create(null),
     sequenceTransactions: [],
-    sequenceErrors: []
+    sequentialPathHandlers: [],
+    sequenceErrors: [],
+    setupPromises: [],
+    fatalCb: cb
   };
 
   const targets = handlerNames ?? [];
@@ -65,10 +68,15 @@ function initOutputSnapshots(frame, handlerNames = null) {
       state.sequenceTransactions.push(tx);
       continue;
     }
-    if (typeof output._captureGuardState !== 'function') {
+    if (output._outputType === 'sequential_path') {
+      state.sequentialPathHandlers.push(handlerName);
       continue;
     }
-    state.snapshots[handlerName] = output._captureGuardState();
+    const capturePromise = buffer.addCaptureGuardState(handlerName, { lineno: 0, colno: 0 })
+      .then((capturedState) => {
+        state.snapshots[handlerName] = capturedState;
+      });
+    state.setupPromises.push(capturePromise);
   }
 
   return state;
@@ -79,15 +87,40 @@ async function restoreOutputs(buffer, outputGuardState) {
     return [];
   }
 
+  const errors = [];
+
   const snapshotNames = Object.keys(outputGuardState.snapshots || {});
-  for (const handlerName of snapshotNames) {
-    buffer.add(new SetTargetCommand({
-      handler: handlerName,
-      target: outputGuardState.snapshots[handlerName],
-      pos: { lineno: 0, colno: 0 }
-    }), handlerName);
+  if (snapshotNames.length > 0) {
+    const restorePromises = snapshotNames.map((handlerName) =>
+      buffer.addRestoreGuardState(
+        handlerName,
+        outputGuardState.snapshots[handlerName],
+        { lineno: 0, colno: 0 }
+      ).catch((err) => reportAndThrow(outputGuardState.fatalCb, err))
+    );
+    await Promise.all(restorePromises);
   }
-  return settleSequenceTransactions(outputGuardState, 'rollback');
+
+  const sequentialPathHandlers = Array.isArray(outputGuardState.sequentialPathHandlers)
+    ? outputGuardState.sequentialPathHandlers
+    : [];
+  if (sequentialPathHandlers.length > 0) {
+    const repairPromises = sequentialPathHandlers.map((handlerName) =>
+      buffer.addSequentialPathWrite(
+        handlerName,
+        () => true,
+        { lineno: 0, colno: 0 },
+        true
+      ).catch((err) => reportAndThrow(outputGuardState.fatalCb, err))
+    );
+    await Promise.all(repairPromises);
+  }
+
+  const txErrors = await settleSequenceTransactions(outputGuardState, 'rollback');
+  if (txErrors.length > 0) {
+    errors.push(...txErrors);
+  }
+  return errors;
 }
 
 async function commitOutputTransactions(outputGuardState) {
@@ -204,9 +237,6 @@ async function finalizeGuard(frame, guardState, buffer, allowedHandlers, outputG
 }
 
 async function collectOutputErrors(buffer, allowedHandlers) {
-  if (!buffer || typeof buffer.addGetError !== 'function') {
-    return [];
-  }
 
   const names = resolveGuardOutputNames(buffer, allowedHandlers);
   const allErrors = [];
@@ -342,10 +372,60 @@ function repairSequenceLocks(frame, guardState, lockNames) {
   }
 }
 
+function repairSequenceOutputs(frame, buffer, guardState, lockNames) {
+  if (!lockNames || lockNames.length === 0) {
+    return;
+  }
+
+  if (!guardState.detectionPromises) {
+    guardState.detectionPromises = [];
+  }
+  if (!guardState.sequenceErrors) {
+    guardState.sequenceErrors = [];
+  }
+
+  for (const lockName of lockNames) {
+    const detectPromise = buffer.addGetError(lockName, { lineno: 0, colno: 0 })
+      .then((outputError) => {
+        if (!outputError) {
+          return true;
+        }
+        if (Array.isArray(outputError.errors) && outputError.errors.length > 0) {
+          guardState.sequenceErrors.push(...outputError.errors);
+        } else {
+          guardState.sequenceErrors.push(outputError);
+        }
+        return true;
+      })
+      .catch((err) => reportAndThrow(guardState.fatalCb, err));
+
+    const repairPromise = buffer.addSequentialPathWrite(
+      lockName,
+      // Repair is unconditional: clear poison and publish a healthy lock state.
+      () => true,
+      { lineno: 0, colno: 0 },
+      true
+    ).catch((err) => reportAndThrow(guardState.fatalCb, err));
+
+    guardState.detectionPromises.push(Promise.all([detectPromise, repairPromise]).then(() => true));
+  }
+}
+
 async function settleSequenceTransactions(outputGuardState, mode) {
   const errors = [];
   if (!outputGuardState || !Array.isArray(outputGuardState.sequenceTransactions)) {
     return errors;
+  }
+
+  if (Array.isArray(outputGuardState.setupPromises) && outputGuardState.setupPromises.length > 0) {
+    const settledSetup = await Promise.allSettled(outputGuardState.setupPromises);
+    const failedSetup = settledSetup.find((result) => result && result.status === 'rejected');
+    if (failedSetup) {
+      const setupErr = failedSetup.reason instanceof Error
+        ? failedSetup.reason
+        : new Error(String(failedSetup.reason));
+      reportAndThrow(outputGuardState.fatalCb, setupErr);
+    }
   }
 
   if (Array.isArray(outputGuardState.sequenceErrors) && outputGuardState.sequenceErrors.length > 0) {
@@ -355,12 +435,12 @@ async function settleSequenceTransactions(outputGuardState, mode) {
 
   for (let i = outputGuardState.sequenceTransactions.length - 1; i >= 0; i--) {
     const tx = outputGuardState.sequenceTransactions[i];
-    if (!tx || !tx.output) {
-      continue;
-    }
     try {
       if (tx.beginPromise) {
         await tx.beginPromise;
+      }
+      if (!tx || !tx.output) {
+        continue;
       }
       if (!tx.active) {
         continue;
@@ -384,6 +464,15 @@ module.exports = {
   getErrors,
   complete,
   repairSequenceLocks,
+  repairSequenceOutputs,
   restoreOutputs,
   commitOutputTransactions
 };
+
+function reportAndThrow(cb, err) {
+  const normalized = err instanceof Error ? err : new Error(String(err));
+  if (typeof cb === 'function') {
+    cb(normalized);
+  }
+  throw normalized;
+}

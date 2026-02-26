@@ -6,11 +6,17 @@ const {
   TextCommand,
   SequenceCallCommand,
   SequenceGetCommand,
+  SequentialPathReadCommand,
+  RepairReadCommand,
+  SequentialPathWriteCommand,
+  RepairWriteCommand,
   SnapshotCommand,
   RawSnapshotCommand,
   IsErrorCommand,
   GetErrorCommand,
-  SinkRepairCommand
+  CaptureGuardStateCommand,
+  SinkRepairCommand,
+  RestoreGuardStateCommand
 } = require('./commands');
 const { checkFinishedBuffer } = require('./checks');
 const { handleError, RuntimeFatalError } = require('./errors');
@@ -140,6 +146,30 @@ class CommandBuffer {
     return this._addCommand(cmd, outputName);
   }
 
+  addSequentialPathRead(outputName, operation, pos = null, repair = false) {
+    const CommandClass = repair ? RepairReadCommand : SequentialPathReadCommand;
+    const cmd = new CommandClass({
+      handler: outputName,
+      pathKey: outputName,
+      operation,
+      pos: pos || { lineno: 0, colno: 0 },
+      withDeferredResult: true
+    });
+    return this._addCommand(cmd, outputName);
+  }
+
+  addSequentialPathWrite(outputName, operation, pos = null, repair = false) {
+    const CommandClass = repair ? RepairWriteCommand : SequentialPathWriteCommand;
+    const cmd = new CommandClass({
+      handler: outputName,
+      pathKey: outputName,
+      operation,
+      pos: pos || { lineno: 0, colno: 0 },
+      withDeferredResult: true
+    });
+    return this._addCommand(cmd, outputName);
+  }
+
   addSnapshot(outputName, pos = null) {
     const cmd = new SnapshotCommand({
       handler: outputName,
@@ -203,9 +233,26 @@ class CommandBuffer {
     return this._addCommand(cmd, outputName);
   }
 
+  addCaptureGuardState(outputName, pos = null) {
+    const cmd = new CaptureGuardStateCommand({
+      handler: outputName,
+      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
+    });
+    return this._addCommand(cmd, outputName);
+  }
+
   addSinkRepair(outputName, pos = null) {
     const cmd = new SinkRepairCommand({
       handler: outputName,
+      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
+    });
+    return this._addCommand(cmd, outputName);
+  }
+
+  addRestoreGuardState(outputName, target, pos = null) {
+    const cmd = new RestoreGuardStateCommand({
+      handler: outputName,
+      target,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
     return this._addCommand(cmd, outputName);

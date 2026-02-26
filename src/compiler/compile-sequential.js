@@ -1,5 +1,6 @@
 const nodes = require('../nodes');
 const { AsyncFrame } = require('../runtime/runtime');
+const { SEQUNTIAL_PATHS_USE_VALUE } = require('../feature-flags');
 
 const SequenceOperationType = {
   PATH: 1,
@@ -47,6 +48,14 @@ module.exports = class CompileSequential {
         }
       }
     }
+    if (frame.declaredOutputs) {
+      f.declaredOutputs = new Map();
+      for (const [name, info] of frame.declaredOutputs.entries()) {
+        if (name.startsWith('!')) {
+          f.declaredOutputs.set(name, info);
+        }
+      }
+    }
     this._collectSequenceKeysAndOperations(node, f);
     this._assignAsyncWrappersAndReleases(node, f);
   }
@@ -86,7 +95,7 @@ module.exports = class CompileSequential {
 
       // 1) Prefer an exact static path lock for this node (most specific wins).
       const pathKey = this._extractStaticPathKey(node);
-      if (pathKey && pathKey !== funCallLockKey && this.compiler._isDeclared(frame, pathKey)) {
+      if (pathKey && pathKey !== funCallLockKey && this._isSequenceLockDeclared(frame, pathKey)) {
         // this is a path that is static
         // is declared as a sequence lock
         // and is not the lock key being originated by an immediate FunCall parent (funCallLockKey)
@@ -105,7 +114,7 @@ module.exports = class CompileSequential {
           }
           if (root && root.typename === 'Symbol') {
             const baseKey = '!' + root.value;
-            if (baseKey !== funCallLockKey && this.compiler._isDeclared(frame, baseKey)) {
+            if (baseKey !== funCallLockKey && this._isSequenceLockDeclared(frame, baseKey)) {
               node.sequenceOperations.set(baseKey, SequenceOperationType.PATH);
               node.lockKey = baseKey;
             }
@@ -598,11 +607,28 @@ module.exports = class CompileSequential {
    * @param {Set<string>} locks - Set of lock names to declare
    */
   preDeclareSequenceLocks(rootFrame, locks) {
+    if (SEQUNTIAL_PATHS_USE_VALUE) {
+      for (const lockName of locks) {
+        this.compiler._addDeclaredOutput(rootFrame, lockName, 'sequential_path');
+      }
+      return;
+    }
     for (const lockName of locks) {
       this.compiler._addDeclaredVar(rootFrame, lockName);
       const readLockName = this._getReadLockKey(lockName);
       this.compiler._addDeclaredVar(rootFrame, readLockName);
     }
+  }
+
+  _isSequenceLockDeclared(frame, lockKey) {
+    if (!lockKey) {
+      return false;
+    }
+    if (SEQUNTIAL_PATHS_USE_VALUE) {
+      const decl = this.compiler.async._getDeclaredOutput(frame, lockKey);
+      return !!(decl && decl.type === 'sequential_path');
+    }
+    return this.compiler._isDeclared(frame, lockKey);
   }
 
   /**

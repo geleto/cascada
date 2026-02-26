@@ -139,6 +139,7 @@ module.exports = {
   DataOutput: output.DataOutput,
   TextOutput: output.TextOutput,
   ValueOutput: output.ValueOutput,
+  SequentialPathOutput: output.SequentialPathOutput,
   createOutput: output.createOutput,
   SinkOutput: output.SinkOutput,
   createSinkOutput: output.createSinkOutput,
@@ -153,13 +154,17 @@ module.exports = {
   SinkCommand: commands.SinkCommand,
   SequenceCallCommand: commands.SequenceCallCommand,
   SequenceGetCommand: commands.SequenceGetCommand,
+  SequentialPathReadCommand: commands.SequentialPathReadCommand,
+  RepairReadCommand: commands.RepairReadCommand,
+  SequentialPathWriteCommand: commands.SequentialPathWriteCommand,
+  RepairWriteCommand: commands.RepairWriteCommand,
   ErrorCommand: commands.ErrorCommand,
   TargetPoisonCommand: commands.TargetPoisonCommand,
   SnapshotCommand: commands.SnapshotCommand,
   IsErrorCommand: commands.IsErrorCommand,
   GetErrorCommand: commands.GetErrorCommand,
   SinkRepairCommand: commands.SinkRepairCommand,
-  SetTargetCommand: commands.SetTargetCommand,
+  RestoreGuardStateCommand: commands.RestoreGuardStateCommand,
 
   AsyncState: require('./async-state').AsyncState,
 
@@ -208,6 +213,7 @@ module.exports = {
   callWrap: call.callWrap,
   callWrapAsync: call.callWrapAsync,
   sequentialCallWrap: sequential.sequentialCallWrap,
+  sequentialCallWrapValue: sequential.sequentialCallWrapValue,
   handleError: errors.handleError,
 
   iterate: loop.iterate,
@@ -222,8 +228,13 @@ module.exports = {
   setLoopValueBindings: loop.setLoopValueBindings,
 
   sequentialContextLookup: sequential.sequentialContextLookup,
+  sequentialContextLookupValue: sequential.sequentialContextLookupValue,
+  sequentialContextLookupScript: sequential.sequentialContextLookupScript,
+  sequentialContextLookupScriptValue: sequential.sequentialContextLookupScriptValue,
   sequentialMemberLookupScriptAsync: sequential.sequentialMemberLookupScriptAsync,
+  sequentialMemberLookupScriptAsyncValue: sequential.sequentialMemberLookupScriptAsyncValue,
   sequentialMemberLookupAsync: sequential.sequentialMemberLookupAsync,
+  sequentialMemberLookupAsyncValue: sequential.sequentialMemberLookupAsyncValue,
   setPath: require('./set-path').setPath,
   STOP_WHILE: loop.STOP_WHILE,
   whileIterator: loop.whileIterator

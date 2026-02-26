@@ -21,7 +21,7 @@ const CompileInheritance = require('./compile-inheritance');
 const CompileLoop = require('./compile-loop');
 const CompileBuffer = require('./compile-buffer');
 const CompilerBase = require('./compiler-base');
-const { CONVERT_TEMPLATE_VAR_TO_VALUE } = require('../feature-flags');
+const { CONVERT_TEMPLATE_VAR_TO_VALUE, SEQUNTIAL_PATHS_USE_VALUE } = require('../feature-flags');
 
 class Compiler extends CompilerBase {
   init(templateName, options) {
@@ -51,7 +51,9 @@ class Compiler extends CompilerBase {
       // Variables and outputs share the same lexical scoping rules.
       // Use _getDeclaredOutput (lexical-only) for collision checks.
       const outputDecl = this.async._getDeclaredOutput(frame, varName);
-      if (outputDecl && outputDecl.type !== 'value') {
+      const allowSequenceLockAlias = varName && varName.startsWith('!') &&
+        outputDecl && outputDecl.type === 'sequential_path';
+      if (outputDecl && outputDecl.type !== 'value' && !allowSequenceLockAlias) {
         this.fail(`Cannot declare variable '${varName}' because an output with the same name is already declared.`);
       }
 
@@ -795,7 +797,7 @@ class Compiler extends CompilerBase {
             guardInitLinePos = this.codebuf.length;
             this.emit.line(``);
           } else {
-            this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)});`);
+            this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)}, cb);`);
           }
         }
         // Sequence lock repair must run before guard body starts scheduling work.
@@ -813,10 +815,25 @@ class Compiler extends CompilerBase {
         if (blockFrame.writeCounts) {
           for (const key of Object.keys(blockFrame.writeCounts)) {
             if (key.startsWith('!')) {
-              modifiedLocks.add(key);
+              if (SEQUNTIAL_PATHS_USE_VALUE && key.endsWith('~')) {
+                modifiedLocks.add(key.slice(0, -1));
+              } else {
+                modifiedLocks.add(key);
+              }
             }
           }
         }
+        if (SEQUNTIAL_PATHS_USE_VALUE && blockFrame.usedOutputs) {
+          for (const outputName of blockFrame.usedOutputs) {
+            if (outputName.startsWith('!')) {
+              modifiedLocks.add(outputName);
+            }
+          }
+        }
+
+        const shouldGuardAllSequencesImplicitly = SEQUNTIAL_PATHS_USE_VALUE &&
+          variableTargets === '*' &&
+          (!node.sequenceTargets || node.sequenceTargets.length === 0);
 
         if (node.sequenceTargets && node.sequenceTargets.length > 0) {
           for (const target of node.sequenceTargets) {
@@ -836,7 +853,8 @@ class Compiler extends CompilerBase {
               for (const lock of modifiedLocks) {
                 // Check for exact match or child match (e.g. !lock matching !lock or !lock!sub)
                 // Also include read-lock keys (suffix '~') for the same base.
-                if (lock === baseKey || lock.startsWith(baseKey + '!') || lock.startsWith(baseKey + '~')) {
+                const includeReadLocks = !SEQUNTIAL_PATHS_USE_VALUE;
+                if (lock === baseKey || lock.startsWith(baseKey + '!') || (includeReadLocks && lock.startsWith(baseKey + '~'))) {
                   resolvedSequenceTargets.add(lock);
                   matchFound = true;
                 }
@@ -847,8 +865,19 @@ class Compiler extends CompilerBase {
               }
             }
           }
+        } else if (shouldGuardAllSequencesImplicitly) {
+          for (const lock of modifiedLocks) {
+            resolvedSequenceTargets.add(lock);
+          }
+        }
 
-          if (resolvedSequenceTargets.size > 0) {
+        if (resolvedSequenceTargets.size > 0) {
+          if (SEQUNTIAL_PATHS_USE_VALUE) {
+            this.emit.insertLine(
+              guardRepairLinePos,
+              `runtime.guard.repairSequenceOutputs(frame, ${this.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
+            );
+          } else {
             // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
             // Note: guardStateVar is guaranteed to exist because variableTargets OR resolvedSequenceTargets > 0 triggers init
             this.emit.insertLine(
@@ -867,7 +896,7 @@ class Compiler extends CompilerBase {
           finalVariableTargets = writtenVars;
           if (guardStateVar && guardInitLinePos !== null) {
             this.emit.insertLine(guardInitLinePos,
-              `const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(writtenVars)});`);
+              `const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(writtenVars)}, cb);`);
           }
         }
 
@@ -879,16 +908,30 @@ class Compiler extends CompilerBase {
           }
         }
 
-        const guardHandlers = this._getGuardedOutputNames(
+        let guardHandlers = this._getGuardedOutputNames(
           blockFrame.usedOutputs,
           guardTargets,
           blockFrame
         );
+        if (SEQUNTIAL_PATHS_USE_VALUE && resolvedSequenceTargets.size > 0) {
+          const merged = new Set(guardHandlers);
+          for (const lockName of resolvedSequenceTargets) {
+            merged.add(lockName);
+          }
+          guardHandlers = Array.from(merged);
+        }
+        if (SEQUNTIAL_PATHS_USE_VALUE && blockFrame.declaredOutputs) {
+          const merged = new Set(guardHandlers);
+          for (const name of blockFrame.declaredOutputs.keys()) {
+            merged.add(name);
+          }
+          guardHandlers = Array.from(merged);
+        }
         if (guardHandlers.length > 0) {
           outputGuardStateVar = this._tmpid();
           this.emit.insertLine(
             outputGuardInitLinePos,
-            `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(guardHandlers)});`
+            `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(guardHandlers)}, ${this.buffer.currentBuffer}, cb);`
           );
         }
 
@@ -1579,6 +1622,14 @@ class Compiler extends CompilerBase {
 
     this.emit.beginEntryFunction(node, 'root', frame);
     this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+    if (SEQUNTIAL_PATHS_USE_VALUE && frame.declaredOutputs) {
+      for (const [name, decl] of frame.declaredOutputs.entries()) {
+        if (!decl || decl.type !== 'sequential_path') {
+          continue;
+        }
+        this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
+      }
+    }
     // Always declare parentTemplate (needed even for dynamic-only extends)
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);

@@ -1,8 +1,10 @@
 'use strict';
 
 const { createPoison, isPoison, collectErrors } = require('./errors');
-const { memberLookupAsync, memberLookupScriptAsync, contextOrFrameLookup } = require('./lookup');
+const { memberLookupAsync, memberLookupScriptAsync, contextOrFrameLookup, contextOrFrameLookupScriptAsync } = require('./lookup');
 const { callWrapAsync } = require('./call');
+const { ensureSequentialPathOutput } = require('./checks');
+const { SEQUNTIAL_PATHS_USE_VALUE } = require('../feature-flags');
 
 
 /**
@@ -208,7 +210,10 @@ function withSequenceLock(frame, lockKey, operation, errorContext = null, repair
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} Resolves to the return value of the function call. The lock variable is updated to 'true' (or poison) internally.
  */
-function sequentialCallWrap(func, funcName, context, args, frame, writeKey, readKey, errorContext, repair = false) {
+function sequentialCallWrap(func, funcName, context, args, frame, writeKey, readKey, errorContext, repair = false, currentBuffer = null) {
+  if (SEQUNTIAL_PATHS_USE_VALUE) {
+    return sequentialCallWrapValue(func, funcName, context, args, frame, writeKey, errorContext, repair, currentBuffer);
+  }
   return withSequenceLocks(
     frame,
     readKey,
@@ -218,6 +223,12 @@ function sequentialCallWrap(func, funcName, context, args, frame, writeKey, read
     errorContext,
     repair,
     'write'
+  );
+}
+
+function sequentialCallWrapValue(func, funcName, context, args, frame, pathKey, errorContext, repair = false, currentBuffer = null) {
+  return withSequentialPathOutput(frame, currentBuffer, pathKey, errorContext, repair, true, () =>
+    callWrapAsync(func, funcName, context, args, errorContext)
   );
 }
 
@@ -231,7 +242,10 @@ function sequentialCallWrap(func, funcName, context, args, frame, writeKey, read
  * @param {string} readKey - The read lock variable name
  * @returns {Promise} Resolves to the resolved value of the lookup (e.g. the variable value). Lock side-effects are handled internally.
  */
-function sequentialContextLookup(context, frame, name, writeKey, readKey, repair = false) {
+function sequentialContextLookup(context, frame, name, writeKey, readKey, repair = false, currentBuffer = null) {
+  if (SEQUNTIAL_PATHS_USE_VALUE) {
+    return sequentialContextLookupValue(context, frame, name, writeKey, repair, currentBuffer);
+  }
   return withSequenceLocks(
     frame,
     writeKey,
@@ -241,6 +255,34 @@ function sequentialContextLookup(context, frame, name, writeKey, readKey, repair
     null,
     repair,
     'read'
+  );
+}
+
+function sequentialContextLookupValue(context, frame, name, pathKey, repair = false, currentBuffer = null) {
+  return withSequentialPathOutput(frame, currentBuffer, pathKey, null, repair, false, () =>
+    contextOrFrameLookup(context, frame, name)
+  );
+}
+
+function sequentialContextLookupScript(context, frame, name, writeKey, readKey, repair = false, currentBuffer = null) {
+  if (SEQUNTIAL_PATHS_USE_VALUE) {
+    return sequentialContextLookupScriptValue(context, frame, name, writeKey, repair, currentBuffer);
+  }
+  return withSequenceLocks(
+    frame,
+    writeKey,
+    writeKey,
+    readKey,
+    () => contextOrFrameLookupScriptAsync(context, frame, name),
+    null,
+    repair,
+    'read'
+  );
+}
+
+function sequentialContextLookupScriptValue(context, frame, name, pathKey, repair = false, currentBuffer = null) {
+  return withSequentialPathOutput(frame, currentBuffer, pathKey, null, repair, false, () =>
+    contextOrFrameLookupScriptAsync(context, frame, name)
   );
 }
 
@@ -255,7 +297,10 @@ function sequentialContextLookup(context, frame, name, writeKey, readKey, repair
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} Resolves to the value of the member property. Lock side-effects are handled internally.
  */
-function sequentialMemberLookupAsync(frame, target, key, writeKey, readKey, errorContext, repair = false) {
+function sequentialMemberLookupAsync(frame, target, key, writeKey, readKey, errorContext, repair = false, currentBuffer = null) {
+  if (SEQUNTIAL_PATHS_USE_VALUE) {
+    return sequentialMemberLookupAsyncValue(frame, target, key, writeKey, errorContext, repair, currentBuffer);
+  }
   return withSequenceLocks(
     frame,
     writeKey,
@@ -265,6 +310,13 @@ function sequentialMemberLookupAsync(frame, target, key, writeKey, readKey, erro
     errorContext,
     repair,
     'read'
+  );
+}
+
+function sequentialMemberLookupAsyncValue(frame, target, key, pathKey, errorContext, repair = false, currentBuffer = null) {
+  // target/key are intentionally evaluated by compiled expression before lock command enqueue.
+  return withSequentialPathOutput(frame, currentBuffer, pathKey, errorContext, repair, false, () =>
+    memberLookupAsync(target, key, errorContext)
   );
 }
 
@@ -281,7 +333,10 @@ function sequentialMemberLookupAsync(frame, target, key, writeKey, readKey, erro
  * @param {Object} errorContext - Error context with lineno, colno, errorContextString, path
  * @returns {Promise} Resolves to the value of the member property. Lock side-effects are handled internally.
  */
-function sequentialMemberLookupScriptAsync(frame, target, key, writeKey, readKey, errorContext, repair = false) {
+function sequentialMemberLookupScriptAsync(frame, target, key, writeKey, readKey, errorContext, repair = false, currentBuffer = null) {
+  if (SEQUNTIAL_PATHS_USE_VALUE) {
+    return sequentialMemberLookupScriptAsyncValue(frame, target, key, writeKey, errorContext, repair, currentBuffer);
+  }
   return withSequenceLocks(
     frame,
     writeKey,
@@ -294,11 +349,32 @@ function sequentialMemberLookupScriptAsync(frame, target, key, writeKey, readKey
   );
 }
 
+function sequentialMemberLookupScriptAsyncValue(frame, target, key, pathKey, errorContext, repair = false, currentBuffer = null) {
+  // target/key are intentionally evaluated by compiled expression before lock command enqueue.
+  return withSequentialPathOutput(frame, currentBuffer, pathKey, errorContext, repair, false, () =>
+    memberLookupScriptAsync(target, key, errorContext)
+  );
+}
+
 module.exports = {
   withSequenceLock,
   withSequenceLocks,
   sequentialCallWrap,
+  sequentialCallWrapValue,
   sequentialContextLookup,
+  sequentialContextLookupValue,
+  sequentialContextLookupScript,
+  sequentialContextLookupScriptValue,
   sequentialMemberLookupAsync,
-  sequentialMemberLookupScriptAsync
+  sequentialMemberLookupAsyncValue,
+  sequentialMemberLookupScriptAsync,
+  sequentialMemberLookupScriptAsyncValue
 };
+
+function withSequentialPathOutput(frame, currentBuffer, pathKey, errorContext, repair, isWrite, operation) {
+  ensureSequentialPathOutput(frame, pathKey);
+  const pos = {lineno: errorContext?.lineno ?? 0, colno: errorContext?.colno ?? 0};
+  return isWrite
+    ? currentBuffer.addSequentialPathWrite(pathKey, operation, pos, repair)
+    : currentBuffer.addSequentialPathRead(pathKey, operation, pos, repair);
+}

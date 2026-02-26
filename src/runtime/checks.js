@@ -15,6 +15,9 @@ const ENABLE_CHECKINFO = true;
 // Can be set to false in production if needed for performance.
 const ENABLE_FRAME_BALANCE_CHECK = true;
 
+// Enable sequential path predeclaration/type verification.
+const VERIFY_SEQUENTIAL_PATH_OUTPUTS = true;
+
 /**
  * Check if async block finished with pending writes.
  * Called when leaving an async block to validate all write counters reached zero.
@@ -185,14 +188,33 @@ function checkFinishedBuffer(buffer) {
   }
 }
 
+function ensureSequentialPathOutput(frame, pathKey) {
+  if (!VERIFY_SEQUENTIAL_PATH_OUTPUTS) {
+    return;
+  }
+
+  const { getOutput } = require('./output');
+  const output = getOutput(frame, pathKey);
+
+  if (!output) {
+    throw new Error(`Sequential path '${pathKey}' was not predeclared as output (expected compile-time declaration)`);
+  }
+
+  if (output._outputType !== 'sequential_path') {
+    throw new Error(`Sequential path '${pathKey}' is declared with incompatible output type '${output._outputType || 'unknown'}'`);
+  }
+}
+
 module.exports = {
   ENABLE_WRITECOUNTER_CHECK,
   ENABLE_CHECKINFO,
   ENABLE_FRAME_BALANCE_CHECK,
+  VERIFY_SEQUENTIAL_PATH_OUTPUTS,
   checkPendingWrites,
   checkWriteCounterExists,
   checkWriteCounterNegative,
   createCheckInfo,
   checkFrameBalance,
-  checkFinishedBuffer
+  checkFinishedBuffer,
+  ensureSequentialPathOutput
 };

@@ -6,6 +6,7 @@
   let createPoison;
   let isPoison;
   let isPoisonError;
+  let SEQUNTIAL_PATHS_USE_VALUE;
   //let PoisonError;
   //let collectErrors;
   let AsyncFrame;
@@ -19,6 +20,7 @@
     //PoisonError = runtime.PoisonError;
     //collectErrors = runtime.collectErrors;
     AsyncFrame = runtime.AsyncFrame;
+    ({ SEQUNTIAL_PATHS_USE_VALUE } = require('../../src/feature-flags'));
   } else {
     expect = window.expect;
     createPoison = nunjucks.runtime.createPoison;
@@ -27,9 +29,26 @@
     //PoisonError = nunjucks.runtime.PoisonError;
     //collectErrors = nunjucks.runtime.collectErrors;
     AsyncFrame = nunjucks.runtime.AsyncFrame;
+    SEQUNTIAL_PATHS_USE_VALUE = false;
   }
 
-  async function expectLockPoison(lock) {
+  function setupSequentialRuntimeForTests(root) {
+    if (!SEQUNTIAL_PATHS_USE_VALUE) {
+      return null;
+    }
+    const context = { path: 'test', env: {} };
+    const currentBuffer = runtime.createCommandBuffer(context, null, root);
+    runtime.declareOutput(root, currentBuffer, '!lockKey', 'sequential_path', context, null);
+    return currentBuffer;
+  }
+
+  async function expectLockPoison(lock, root) {
+    if (SEQUNTIAL_PATHS_USE_VALUE) {
+      const output = runtime.getOutput(root, '!lockKey');
+      const errs = output._getSequentialPathPoisonErrors();
+      expect(Array.isArray(errs) && errs.length > 0).to.be(true);
+      return;
+    }
     if (lock && typeof lock.then === 'function') {
       try {
         await lock;
@@ -42,7 +61,13 @@
     }
   }
 
-  async function expectLockTrue(lock) {
+  async function expectLockTrue(lock, root) {
+    if (SEQUNTIAL_PATHS_USE_VALUE) {
+      const output = runtime.getOutput(root, '!lockKey');
+      const errs = output._getSequentialPathPoisonErrors();
+      expect(!errs || errs.length === 0).to.be(true);
+      return;
+    }
     if (lock && typeof lock.then === 'function') {
       const resolved = await lock;
       expect(resolved).to.equal(true);
@@ -150,13 +175,14 @@
     });
 
     describe('sequentialMemberLookupAsync - Pure Async', () => {
-      let frame, root;
+      let frame, root, currentBuffer;
 
       beforeEach(() => {
         root = new AsyncFrame();
         root.set('!lockKey', undefined, true);
         root.set('!lockKey~', undefined, true);
         frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
+        currentBuffer = setupSequentialRuntimeForTests(root);
       });
 
       it('should throw PoisonError for poisoned lock', async () => {
@@ -165,6 +191,10 @@
         root.set('!lockKey', lockPoison, true);
         root.set('!lockKey~', undefined, true);
         frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
+        currentBuffer = setupSequentialRuntimeForTests(root);
+        if (SEQUNTIAL_PATHS_USE_VALUE) {
+          runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
+        }
 
         try {
           await runtime.sequentialMemberLookupAsync(
@@ -172,7 +202,10 @@
             { prop: 'value' },
             'prop',
             '!lockKey',
-            '!lockKey~'
+            '!lockKey~',
+            null,
+            false,
+            currentBuffer
           );
           expect().fail('Should have thrown');
         } catch (err) {
@@ -189,14 +222,21 @@
             poison,
             'prop',
             '!lockKey',
-            '!lockKey~'
+            '!lockKey~',
+            null,
+            false,
+            currentBuffer
           );
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
           const readLock = root.lookup('!lockKey~');
-          await expectLockPoison(readLock);
+          if (SEQUNTIAL_PATHS_USE_VALUE) {
+            await expectLockTrue(readLock, root);
+          } else {
+            await expectLockPoison(readLock, root);
+          }
         }
       });
 
@@ -210,14 +250,21 @@
             promise,
             'prop',
             '!lockKey',
-            '!lockKey~'
+            '!lockKey~',
+            null,
+            false,
+            currentBuffer
           );
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
           const readLock = root.lookup('!lockKey~');
-          await expectLockPoison(readLock);
+          if (SEQUNTIAL_PATHS_USE_VALUE) {
+            await expectLockTrue(readLock, root);
+          } else {
+            await expectLockPoison(readLock, root);
+          }
         }
       });
 
@@ -230,14 +277,21 @@
             promise,
             'prop',
             '!lockKey',
-            '!lockKey~'
+            '!lockKey~',
+            null,
+            false,
+            currentBuffer
           );
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
           const readLock = root.lookup('!lockKey~');
-          await expectLockPoison(readLock);
+          if (SEQUNTIAL_PATHS_USE_VALUE) {
+            await expectLockTrue(readLock, root);
+          } else {
+            await expectLockPoison(readLock, root);
+          }
         }
       });
 
@@ -248,18 +302,21 @@
           obj,
           'name',
           '!lockKey',
-          '!lockKey~'
+          '!lockKey~',
+          null,
+          false,
+          currentBuffer
         );
 
         expect(result).to.equal('test');
 
         const readLock = root.lookup('!lockKey~');
-        await expectLockTrue(readLock);
+        await expectLockTrue(readLock, root);
       });
     });
 
     describe('sequentialContextLookup - Pure Async', () => {
-      let frame, root, context;
+      let frame, root, context, currentBuffer;
 
       beforeEach(() => {
         root = new AsyncFrame();
@@ -267,6 +324,7 @@
         root.set('!lockKey~', undefined, true);
         root.set('myVar', 'test value', true);
         frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
+        currentBuffer = setupSequentialRuntimeForTests(root);
 
         context = {
           lookup: (name) => undefined
@@ -280,6 +338,10 @@
         root.set('!lockKey~', undefined, true);
         root.set('myVar', 'test value', true);
         frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
+        currentBuffer = setupSequentialRuntimeForTests(root);
+        if (SEQUNTIAL_PATHS_USE_VALUE) {
+          runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
+        }
 
         try {
           await runtime.sequentialContextLookup(
@@ -287,7 +349,9 @@
             frame,
             'myVar',
             '!lockKey',
-            '!lockKey~'
+            '!lockKey~',
+            false,
+            currentBuffer
           );
           expect().fail('Should have thrown');
         } catch (err) {
@@ -302,6 +366,7 @@
         root.set('!lockKey~', undefined, true);
         root.set('myVar', poison, true);
         frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
+        currentBuffer = setupSequentialRuntimeForTests(root);
 
         try {
           await runtime.sequentialContextLookup(
@@ -309,14 +374,20 @@
             frame,
             'myVar',
             '!lockKey',
-            '!lockKey~'
+            '!lockKey~',
+            false,
+            currentBuffer
           );
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
 
           const readLock = root.lookup('!lockKey~');
-          await expectLockPoison(readLock);
+          if (SEQUNTIAL_PATHS_USE_VALUE) {
+            await expectLockTrue(readLock, root);
+          } else {
+            await expectLockPoison(readLock, root);
+          }
         }
       });
 
@@ -326,13 +397,15 @@
           frame,
           'myVar',
           '!lockKey',
-          '!lockKey~'
+          '!lockKey~',
+          false,
+          currentBuffer
         );
 
         expect(result).to.equal('test value');
 
         const readLock = root.lookup('!lockKey~');
-        await expectLockTrue(readLock);
+        await expectLockTrue(readLock, root);
       });
     });
 
