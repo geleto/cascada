@@ -959,6 +959,147 @@ describe('Cascada Script: Output commands', function () {
       expect(result.util.errors).to.eql(['Connection failed']);
       expect(result.util.warnings).to.eql(['Deprecated feature used']);
     });
+
+    it('should start sequence gets without waiting for previous get to finish', async () => {
+      const script = `
+        sequence db = makeDb()
+        var slow = db.slowRead
+        var fast = db.fastRead
+        var mark = db.mark("after-reads")
+        return { slow: slow, fast: fast, mark: mark, events: db.snapshot() }
+      `;
+
+      const result = await env.renderScriptString(script, {
+        makeDb: () => {
+          const db = {
+            events: [],
+            mark(label) {
+              this.events.push('mark:' + label);
+              return label;
+            },
+            snapshot() {
+              return this.events.slice();
+            }
+          };
+
+          Object.defineProperty(db, 'slowRead', {
+            enumerable: true,
+            configurable: true,
+            get() {
+              this.events.push('start:slow');
+              return new Promise((resolve) => {
+                setTimeout(() => {
+                  this.events.push('finish:slow');
+                  resolve('slow');
+                }, 30);
+              });
+            }
+          });
+
+          Object.defineProperty(db, 'fastRead', {
+            enumerable: true,
+            configurable: true,
+            get() {
+              this.events.push('start:fast');
+              return new Promise((resolve) => {
+                setTimeout(() => {
+                  this.events.push('finish:fast');
+                  resolve('fast');
+                }, 5);
+              });
+            }
+          });
+
+          return db;
+        }
+      });
+
+      expect(result.slow).to.be('slow');
+      expect(result.fast).to.be('fast');
+      expect(result.mark).to.be('after-reads');
+
+      const startSlow = result.events.indexOf('start:slow');
+      const startFast = result.events.indexOf('start:fast');
+      const finishSlow = result.events.indexOf('finish:slow');
+      const finishFast = result.events.indexOf('finish:fast');
+      const markAfterReads = result.events.indexOf('mark:after-reads');
+
+      expect(startSlow).to.be.greaterThan(-1);
+      expect(startFast).to.be.greaterThan(-1);
+      expect(finishSlow).to.be.greaterThan(-1);
+      expect(finishFast).to.be.greaterThan(-1);
+      expect(markAfterReads).to.be.greaterThan(-1);
+
+      // The second observable get should be started before the first one settles.
+      expect(startFast).to.be.lessThan(finishSlow);
+      // Mutable sequence call runs only after pending observables settle.
+      expect(markAfterReads).to.be.greaterThan(finishSlow);
+      expect(markAfterReads).to.be.greaterThan(finishFast);
+    });
+
+    it('should wait for all pending sequence gets before running a mutable sequence call', async () => {
+      const script = `
+        sequence db = makeDb()
+        var a = db.readA
+        var b = db.readB
+        var c = db.readC
+        db.write("done")
+        return { a: a, b: b, c: c, events: db.snapshot() }
+      `;
+
+      const result = await env.renderScriptString(script, {
+        makeDb: () => {
+          const db = {
+            events: [],
+            write(label) {
+              this.events.push('write:' + label);
+              return label;
+            },
+            snapshot() {
+              return this.events.slice();
+            }
+          };
+
+          const addRead = (name, ms) => {
+            Object.defineProperty(db, name, {
+              enumerable: true,
+              configurable: true,
+              get() {
+                this.events.push('start:' + name);
+                return new Promise((resolve) => {
+                  setTimeout(() => {
+                    this.events.push('finish:' + name);
+                    resolve(name);
+                  }, ms);
+                });
+              }
+            });
+          };
+
+          addRead('readA', 20);
+          addRead('readB', 10);
+          addRead('readC', 5);
+          return db;
+        }
+      });
+
+      expect(result.a).to.be('readA');
+      expect(result.b).to.be('readB');
+      expect(result.c).to.be('readC');
+
+      const writeDone = result.events.indexOf('write:done');
+      const finishA = result.events.indexOf('finish:readA');
+      const finishB = result.events.indexOf('finish:readB');
+      const finishC = result.events.indexOf('finish:readC');
+
+      expect(writeDone).to.be.greaterThan(-1);
+      expect(finishA).to.be.greaterThan(-1);
+      expect(finishB).to.be.greaterThan(-1);
+      expect(finishC).to.be.greaterThan(-1);
+      expect(writeDone).to.be.greaterThan(finishA);
+      expect(writeDone).to.be.greaterThan(finishB);
+      expect(writeDone).to.be.greaterThan(finishC);
+    });
   });
 
   describe('Scoping and Control', function () {

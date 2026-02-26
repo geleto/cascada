@@ -27,6 +27,7 @@ class Command {
     this.resolve = null;
     this.reject = null;
     this.mutatesOutput = false;
+    this.isObservable = false;
     this.isSnapshotCommand = false;
 
     if (opts.withDeferredResult) {
@@ -431,6 +432,7 @@ class SequenceGetCommand extends OutputCommand {
       pos
     });
     this.mutatesOutput = false;
+    this.isObservable = true;
     if (withDeferredResult) {
       this.promise = new Promise((resolve, reject) => {
         this.resolve = resolve;
@@ -515,6 +517,7 @@ class SnapshotCommand extends Command {
     super({ withDeferredResult: true });
     this.handler = handler;
     this.pos = pos || { lineno: 0, colno: 0 };
+    this.isObservable = true;
     this.isSnapshotCommand = true;
   }
 
@@ -556,6 +559,7 @@ class RawSnapshotCommand extends Command {
     super({ withDeferredResult: true });
     this.handler = handler;
     this.pos = pos || { lineno: 0, colno: 0 };
+    this.isObservable = true;
     this.isSnapshotCommand = true;
   }
 
@@ -583,6 +587,7 @@ class IsErrorCommand extends Command {
     super({ withDeferredResult: true });
     this.handler = handler;
     this.pos = pos || { lineno: 0, colno: 0 };
+    this.isObservable = true;
     this.isSnapshotCommand = true;
   }
 
@@ -617,6 +622,7 @@ class GetErrorCommand extends Command {
     super({ withDeferredResult: true });
     this.handler = handler;
     this.pos = pos || { lineno: 0, colno: 0 };
+    this.isObservable = true;
     this.isSnapshotCommand = true;
   }
 

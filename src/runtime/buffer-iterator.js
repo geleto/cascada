@@ -7,6 +7,7 @@ class BufferIterator {
     this.output = output;
     this.stack = [];
     this._enteredBuffer = null;
+    this._pendingObservables = new Set();
     this.finished = false;
     this._isAdvancing = false;
     this._needsAdvance = false;
@@ -31,6 +32,7 @@ class BufferIterator {
 
     this.stack = [];
     this._enteredBuffer = null;
+    this._pendingObservables.clear();
     this.finished = false;
 
     if (!rootBuffer) {
@@ -115,7 +117,38 @@ class BufferIterator {
     if (!cmd || !this.output) {
       return;
     }
-    return this.output._applyCommand(cmd);
+    if (cmd.isObservable) {
+      this._applyObservable(cmd);
+      return;
+    }
+    return this._applyMutable(cmd);
+  }
+
+  _applyObservable(cmd) {
+    if (!cmd || !this.output) {
+      return;
+    }
+    const promise = this.output._applyCommand(cmd);
+    if (!promise || typeof promise.then !== 'function') {
+      return;
+    }
+    this._pendingObservables.add(promise);
+    promise.finally(() => {
+      this._pendingObservables.delete(promise);
+    });
+  }
+
+  _applyMutable(cmd) {
+    if (!cmd || !this.output) {
+      return;
+    }
+    if (this._pendingObservables.size === 0) {
+      return this.output._applyCommand(cmd);
+    }
+
+    return Promise
+      .allSettled(Array.from(this._pendingObservables))
+      .then(() => this.output._applyCommand(cmd));
   }
 
   _enterChild(childBuffer) {
