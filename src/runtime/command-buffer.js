@@ -84,16 +84,18 @@ class CommandBuffer {
     const textPos = pos && typeof pos === 'object'
       ? pos
       : { lineno: 0, colno: 0 };
-    return this.add(new TextCommand({
+    const cmd = new TextCommand({
       handler: 'text',
       args: [value],
       pos: textPos
-    }), outputName);
+    });
+    return this._addCommand(cmd, outputName);
   }
 
   addPoison(errors, outputName) {
     const errs = Array.isArray(errors) ? errors : [errors];
-    return this.add(new ErrorCommand(errs), outputName);
+    const cmd = new ErrorCommand(errs);
+    return this._addCommand(cmd, outputName);
   }
 
   add(value, outputName) {
@@ -123,8 +125,7 @@ class CommandBuffer {
       pos: pos || { lineno: 0, colno: 0 },
       withDeferredResult: true
     });
-    this.add(cmd, outputName);
-    return cmd.promise;
+    return this._addCommand(cmd, outputName);
   }
 
   addSequenceCall(outputName, command, subpath = null, args = null, pos = null) {
@@ -136,8 +137,7 @@ class CommandBuffer {
       pos: pos || { lineno: 0, colno: 0 },
       withDeferredResult: true
     });
-    this.add(cmd, outputName);
-    return cmd.promise;
+    return this._addCommand(cmd, outputName);
   }
 
   addSnapshot(outputName, pos = null) {
@@ -159,7 +159,7 @@ class CommandBuffer {
       }
       return this._runFinishedSnapshotCommand(cmd, outputName);
     }
-    return this._addObservationCommand(cmd, outputName);
+    return this._addCommand(cmd, outputName);
   }
 
   // addRawSnapshot enqueues an ordered raw read command.
@@ -184,7 +184,7 @@ class CommandBuffer {
       }
       return this._runFinishedSnapshotCommand(cmd, outputName);
     }
-    return this._addObservationCommand(cmd, outputName);
+    return this._addCommand(cmd, outputName);
   }
 
   addIsError(outputName, pos = null) {
@@ -192,7 +192,7 @@ class CommandBuffer {
       handler: outputName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
-    return this._addObservationCommand(cmd, outputName);
+    return this._addCommand(cmd, outputName);
   }
 
   addGetError(outputName, pos = null) {
@@ -200,7 +200,7 @@ class CommandBuffer {
       handler: outputName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
-    return this._addObservationCommand(cmd, outputName);
+    return this._addCommand(cmd, outputName);
   }
 
   addSinkRepair(outputName, pos = null) {
@@ -208,37 +208,19 @@ class CommandBuffer {
       handler: outputName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });
-    this.add(cmd, outputName);
-    return cmd.promise;
+    return this._addCommand(cmd, outputName);
   }
 
-  _addObservationCommand(cmd, outputName) {
-    //const output = this._outputs.get(outputName);
-    //const hasLocalType = !!(this._outputTypes && Object.prototype.hasOwnProperty.call(this._outputTypes, outputName));
-    //const hasLocalStream = !!(this.arrays && this.arrays[outputName]);
+  _addCommand(cmd, outputName) {
 
     if (!this.finished) {
       this.add(cmd, outputName);
       return cmd.promise;
     }
 
-    /*if (!this.finished) {
-      // Foreign output observations (e.g. call/capture frames reading outer outputs)
-      // must be enqueued on the owning output stream to preserve command-tree ordering.
-      if (output && !hasLocalType && !hasLocalStream) {
-        const targetBuffer = output._buffer;
-        if (targetBuffer && targetBuffer !== this && !targetBuffer.finished) {
-          targetBuffer.add(cmd, outputName);
-          return cmd.promise;
-        }
-      }
-      this.add(cmd, outputName);
-      return cmd.promise;
-    }*/
-
     const path = (this._context && this._context.path) ? this._context.path : null;
     throw new RuntimeFatalError(
-      `Observation command '${cmd && cmd.constructor ? cmd.constructor.name : 'unknown'}' is not allowed on a finished CommandBuffer`,
+      `Adding command '${cmd && cmd.constructor ? cmd.constructor.name : 'unknown'}' is not allowed on a finished CommandBuffer`,
       cmd && cmd.pos ? cmd.pos.lineno : 0,
       cmd && cmd.pos ? cmd.pos.colno : 0,
       null,
