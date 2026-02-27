@@ -3,6 +3,7 @@
 const lib = require('../lib');
 const { Obj } = require('../object');
 const { createPoison } = require('../runtime/errors');
+const { VALUE_IMPORT_BINDINGS } = require('../feature-flags');
 
 class Context extends Obj {
   init(ctx, blocks, env, path, scriptMode = false) {
@@ -21,7 +22,11 @@ class Context extends Obj {
     this.ctx = lib.extend({}, ctx);
 
     this.blocks = {};
-    this.exported = [];
+    if (VALUE_IMPORT_BINDINGS) {
+      this.exportResolveFunctions = Object.create(null);
+    } else {
+      this.exportedNames = Object.create(null);
+    }
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -147,13 +152,46 @@ class Context extends Obj {
     }
   }
 
-  addExport(name) {
-    this.exported.push(name);
+  addExport(name, initialValue) {
+    if (!VALUE_IMPORT_BINDINGS) {
+      this.exportedNames[name] = true;
+      return;
+    }
+    if (this.exportResolveFunctions[name] !== undefined) {
+      return;
+    }
+
+    // Deferred exports are intended for async value-output paths.
+    // Legacy/sync call sites pass an initial value and publish immediately.
+    if (arguments.length > 1) {
+      this.ctx[name] = initialValue;
+      this.exportResolveFunctions[name] = null;
+    } else {
+      let resolve;
+      const promise = new Promise((res) => {
+        resolve = res;
+      });
+      this.exportResolveFunctions[name] = resolve;
+      this.ctx[name] = promise;
+    }
+  }
+
+  resolveExports(frame, runtime) {
+    const names = Object.keys(this.exportResolveFunctions);
+    for (const name of names) {
+      const resolve = this.exportResolveFunctions[name];
+      if (typeof resolve !== 'function') {
+        continue;
+      }
+      const output = runtime.getOutput(frame, name);
+      resolve(output.finalSnapshot());
+    }
   }
 
   getExported() {
     var exported = {};
-    this.exported.forEach((name) => {
+    const exportNames = Object.keys(VALUE_IMPORT_BINDINGS ? this.exportResolveFunctions : this.exportedNames);
+    exportNames.forEach((name) => {
       exported[name] = this.ctx[name];
     });
     return exported;
@@ -167,7 +205,11 @@ class Context extends Obj {
     // Share critical state objects by REFERENCE. Do NOT copy them.
     newContext.ctx = this.ctx;           // Share the variable store.
     newContext.blocks = this.blocks;       // Share the block definitions for extends/super.
-    newContext.exported = this.exported;   // Share the list of exported variables for import.
+    if (VALUE_IMPORT_BINDINGS) {
+      newContext.exportResolveFunctions = this.exportResolveFunctions;
+    } else {
+      newContext.exportedNames = this.exportedNames; // Share the exported name registry for import.
+    }
 
     // Share async state properties by REFERENCE.
     newContext.asyncBlocksPromise = this.asyncBlocksPromise;

@@ -21,7 +21,7 @@ const CompileInheritance = require('./compile-inheritance');
 const CompileLoop = require('./compile-loop');
 const CompileBuffer = require('./compile-buffer');
 const CompilerBase = require('./compiler-base');
-const { CONVERT_TEMPLATE_VAR_TO_VALUE, SEQUNTIAL_PATHS_USE_VALUE } = require('../feature-flags');
+const { CONVERT_TEMPLATE_VAR_TO_VALUE, SEQUNTIAL_PATHS_USE_VALUE, VALUE_IMPORT_BINDINGS } = require('../feature-flags');
 
 class Compiler extends CompilerBase {
   init(templateName, options) {
@@ -442,7 +442,7 @@ class Compiler extends CompilerBase {
       this.emit.line(`frame.set("${name}", ${valueId}, ${resolveUp});`);
 
       // This block is specific to template mode's behavior.
-      if (!this.scriptMode) {
+      if (!this.scriptMode && !(this.asyncMode && VALUE_IMPORT_BINDINGS)) {
         this.emit.line('if(frame.topLevel) {');
         this.emit.line(`  context.setVariable("${name}", ${valueId});`);
         this.emit.line('}');
@@ -451,7 +451,11 @@ class Compiler extends CompilerBase {
       // This export logic is common to both modes.
       if (name.charAt(0) !== '_') {
         this.emit.line('if(frame.topLevel) {');
-        this.emit.line(`  context.addExport("${name}", ${valueId});`);
+        if (this.asyncMode && VALUE_IMPORT_BINDINGS) {
+          this.emit.line(`  context.addExport("${name}");`);
+        } else {
+          this.emit.line(`  context.addExport("${name}", ${valueId});`);
+        }
         this.emit.line('}');
       }
     });
@@ -596,11 +600,15 @@ class Compiler extends CompilerBase {
 
       if (name.charAt(0) !== '_' && hasAssignedValue) {
         this.emit.line('if(frame.topLevel) {');
-        this.emit.line(`  context.addExport("${name}", ${valueId});`);
+        if (this.asyncMode && VALUE_IMPORT_BINDINGS) {
+          this.emit.line(`  context.addExport("${name}");`);
+        } else {
+          this.emit.line(`  context.addExport("${name}", ${valueId});`);
+        }
         this.emit.line('}');
       }
 
-      if (!this.scriptMode && hasAssignedValue) {
+      if (!this.scriptMode && hasAssignedValue && !(this.asyncMode && VALUE_IMPORT_BINDINGS)) {
         this.emit.line('if(frame.topLevel) {');
         this.emit.line(`  context.setVariable("${name}", ${valueId});`);
         this.emit.line('}');
@@ -1416,9 +1424,13 @@ class Compiler extends CompilerBase {
       this.emit.line(`frame.set("${name}", ${funcId});`);
     } else {
       if (node.name.value.charAt(0) !== '_') {
-        this.emit.line(`context.addExport("${name}");`);
+        this.emit.line(`context.addExport("${name}", ${funcId});`);
+        if (!(this.asyncMode && VALUE_IMPORT_BINDINGS)) {
+          this.emit.line(`context.setVariable("${name}", ${funcId});`);
+        }
+      } else {
+        this.emit.line(`context.setVariable("${name}", ${funcId});`);
       }
-      this.emit.line(`context.setVariable("${name}", ${funcId});`);
     }
   }
 
@@ -1633,6 +1645,9 @@ class Compiler extends CompilerBase {
     // Always declare parentTemplate (needed even for dynamic-only extends)
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
+    if (this.asyncMode && VALUE_IMPORT_BINDINGS) {
+      this.emit.line('context.resolveExports(frame, runtime);');
+    }
     if (this.asyncMode) {
       this.emit.line('if (!compositionMode) {');
       this.emit.line('astate.waitAllClosures().then(async () => {');

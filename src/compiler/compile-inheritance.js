@@ -1,6 +1,7 @@
 'use strict';
 
 const nodes = require('../nodes');
+const { VALUE_IMPORT_BINDINGS } = require('../feature-flags');
 
 /**
  * CompileInheritance - Handles template inheritance operations
@@ -74,6 +75,7 @@ class CompileInheritance {
   compileImport(node, frame) {
     const target = node.target.value;
     const id = this._compileGetTemplateOrScript(node, frame, false, false, true);
+    const useValueImportBindings = this.compiler.asyncMode && VALUE_IMPORT_BINDINGS;
 
     if (node.isAsync) {
       const res = this.compiler._tmpid();
@@ -93,6 +95,18 @@ class CompileInheritance {
       this.emit.addScopeLevel();
     }
 
+    if (useValueImportBindings) {
+      this.compiler._addDeclaredOutput(frame, target, 'value', null, node);
+      this.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${target}", "value", context, null);`);
+      this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
+        this.emit(
+          `${resultVar} = new runtime.ValueCommand({ handler: '${target}', args: [${id}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+        );
+      }, node, target);
+      this.emit.line(`if(frame.topLevel) { context.addExport("${target}"); }`);
+      return;
+    }
+
     frame.set(target, id);
     if (node.isAsync) {
       this.compiler._addDeclaredVar(frame, target);
@@ -108,6 +122,7 @@ class CompileInheritance {
   compileFromImport(node, frame) {
     // Pass node.template for position in _compileGetTemplateOrScript
     const importedId = this._compileGetTemplateOrScript(node, frame, false, false, true);
+    const useValueImportBindings = this.compiler.asyncMode && VALUE_IMPORT_BINDINGS;
 
     if (node.isAsync) {
       // Get the exported object from the template
@@ -149,13 +164,24 @@ class CompileInheritance {
         this.emit.line(`  }`);
         this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err; } })();`);
 
-        frame.set(alias, id);
-        this.compiler._addDeclaredVar(frame, alias);
-
-        if (frame.parent) {
-          this.emit.line(`frame.set("${alias}", ${id});`);
+        if (useValueImportBindings) {
+          this.compiler._addDeclaredOutput(frame, alias, 'value', null, node);
+          this.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${alias}", "value", context, null);`);
+          this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
+            this.emit(
+              `${resultVar} = new runtime.ValueCommand({ handler: '${alias}', args: [${id}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+            );
+          }, node, alias);
+          this.emit.line(`if(frame.topLevel) { context.addExport("${alias}"); }`);
         } else {
-          this.emit.line(`context.setVariable("${alias}", ${id});`);
+          frame.set(alias, id);
+          this.compiler._addDeclaredVar(frame, alias);
+
+          if (frame.parent) {
+            this.emit.line(`frame.set("${alias}", ${id});`);
+          } else {
+            this.emit.line(`context.setVariable("${alias}", ${id});`);
+          }
         }
       });
     } else {

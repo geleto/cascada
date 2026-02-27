@@ -150,6 +150,8 @@ Details:
 - For each exported name, keep `{ promise, resolve, reject }` (or equivalent deferred object).
 - Put deferred promises into `ctx` immediately.
 - `from import` should also publish per-name promises immediately.
+- Keep `setVariable` as generic assignment API; do not use it as export finalizer.
+- Use dedicated export API for finalization (`resolveExport` or equivalent).
 
 2. Disable legacy alias code
 - Under `VALUE_IMPORT_BINDINGS=true`, import alias codegen must emit no `frame.set/context.setVariable` for aliases.
