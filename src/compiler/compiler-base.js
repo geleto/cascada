@@ -330,10 +330,12 @@ class CompilerBase extends Obj {
         this.buffer.emitAddSnapshot(frame, name, node);
         return;
       }
-      // Reading an output symbol (e.g. myData.snapshot()) should not allocate
-      // async-block output buffers for this handler. Only writes/commands do that.
-      this.emit(`runtime.getOutput(frame, "${name}")`);
-      return;
+      this.fail(
+        `Output '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
+        node.lineno,
+        node.colno,
+        node
+      );
     }
     let v = frame.lookup(name);
     // @todo - omit this for function calls?

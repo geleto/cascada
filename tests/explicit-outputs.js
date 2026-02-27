@@ -229,6 +229,29 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be(150);
     });
 
+    it('should reject bare symbol reads for non-value outputs', async () => {
+      const script = `
+        data myData
+        text textOut
+        sink logger = makeLogger()
+        var a = myData
+        var b = textOut
+        var c = logger
+        return { a: a, b: b, c: c }
+      `;
+      try {
+        await render(script, {
+          makeLogger: () => ({
+            snapshot() { return []; }
+          })
+        });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('cannot be used as a bare symbol');
+        expect(err.message).to.contain('snapshot()');
+      }
+    });
+
     it('should support implicit value snapshots inside for loops', async () => {
       const script = `
         value current = 0
