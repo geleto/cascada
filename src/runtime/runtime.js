@@ -205,6 +205,8 @@ module.exports = {
   contextOrValueLookup: lookup.contextOrValueLookup,
   contextOrFrameLookupScript: lookup.contextOrFrameLookupScript,
   contextOrFrameLookupScriptAsync: lookup.contextOrFrameLookupScriptAsync,
+  contextOrValueLookupScript: lookup.contextOrValueLookupScript,
+  contextOrValueLookupScriptAsync: lookup.contextOrValueLookupScriptAsync,
 
   isArray: lib.isArray,
   keys: lib.keys,

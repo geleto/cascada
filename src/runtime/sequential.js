@@ -1,7 +1,7 @@
 'use strict';
 
 const { createPoison, isPoison, collectErrors } = require('./errors');
-const { memberLookupAsync, memberLookupScriptAsync, contextOrFrameLookup, contextOrFrameLookupScriptAsync } = require('./lookup');
+const { memberLookupAsync, memberLookupScriptAsync, contextOrFrameLookup, contextOrValueLookupScriptAsync } = require('./lookup');
 const { callWrapAsync } = require('./call');
 const { ensureSequentialPathOutput } = require('./checks');
 const { SEQUNTIAL_PATHS_USE_VALUE } = require('../feature-flags');
@@ -273,7 +273,7 @@ function sequentialContextLookupScript(context, frame, name, writeKey, readKey, 
     writeKey,
     writeKey,
     readKey,
-    () => contextOrFrameLookupScriptAsync(context, frame, name),
+    () => contextOrValueLookupScriptAsync(context, frame, name, currentBuffer),
     null,
     repair,
     'read'
@@ -282,7 +282,7 @@ function sequentialContextLookupScript(context, frame, name, writeKey, readKey, 
 
 function sequentialContextLookupScriptValue(context, frame, name, pathKey, repair = false, currentBuffer = null) {
   return withSequentialPathOutput(frame, currentBuffer, pathKey, null, repair, false, () =>
-    contextOrFrameLookupScriptAsync(context, frame, name)
+    contextOrValueLookupScriptAsync(context, frame, name, currentBuffer)
   );
 }
 

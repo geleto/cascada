@@ -258,24 +258,47 @@ function contextOrValueLookup(_context, frame, name, currentBuffer) {
 }
 
 /**
- * Context or frame lookup for scripts.
- * Throws error if variable not found.
+ * Context/frame/output lookup for scripts.
+ * Order:
+ * 1) declared frame variable
+ * 2) declared output snapshot in current buffer
+ * 3) script-mode context lookup (throws if missing)
  */
-function contextOrFrameLookupScript(context, frame, name) {
+function contextOrValueLookupScript(context, frame, name, currentBuffer) {
   let {value: val, frame: f} = frame.lookupAndLocate(name);
-  // use the above to avoid variable set to undefined triggering an error
-  // scripts, unlike temlates throw at non-existing variables
-  return f ? val : context.lookupScriptMode(name);
+  if (f) {
+    return val;
+  }
+  const output = getOutput(frame, name);
+  if (output) {
+    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  }
+  return context.lookupScriptMode(name);
 }
 
 /**
- * Async context or frame lookup for scripts.
- * Returns poison if variable not found.
+ * Async context/frame/output lookup for scripts.
+ * Returns poison for missing names via context.lookupScriptModeAsync.
  */
+function contextOrValueLookupScriptAsync(context, frame, name, currentBuffer, errorContext = null) {
+  let {value: val, frame: f} = frame.lookupAndLocate(name);
+  if (f) {
+    return val;
+  }
+  const output = getOutput(frame, name);
+  if (output) {
+    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  }
+  return context.lookupScriptModeAsync(name, errorContext);
+}
+
+function contextOrFrameLookupScript(context, frame, name) {
+  let {value: val, frame: f} = frame.lookupAndLocate(name);
+  return f ? val : context.lookupScriptMode(name);
+}
+
 function contextOrFrameLookupScriptAsync(context, frame, name, errorContext = null) {
   let {value: val, frame: f} = frame.lookupAndLocate(name);
-  // use the above to avoid variable set to undefined triggering an error
-  // scripts, unlike temlates throw at non-existing variables
   return f ? val : context.lookupScriptModeAsync(name, errorContext);
 }
 
@@ -288,4 +311,6 @@ module.exports = {
   contextOrValueLookup,
   contextOrFrameLookupScript,
   contextOrFrameLookupScriptAsync,
+  contextOrValueLookupScript,
+  contextOrValueLookupScriptAsync,
 };

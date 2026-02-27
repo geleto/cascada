@@ -408,12 +408,13 @@ class CompilerBase extends Obj {
     }
     if (this.scriptMode) {
       if (this.asyncMode) {
-        this.emit('runtime.contextOrFrameLookupScriptAsync(' +
+        this.emit('runtime.contextOrValueLookupScriptAsync(' +
           'context, frame, "' + name + '", ' +
+          `${this.buffer.currentBuffer}, ` +
           `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
           ')');
       } else {
-        this.emit('runtime.contextOrFrameLookupScript(' + 'context, frame, "' + name + '")');
+        this.emit('runtime.contextOrValueLookupScript(' + `context, frame, "${name}", ${this.buffer.currentBuffer})`);
       }
     } else {
       this.emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
