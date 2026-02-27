@@ -12,6 +12,7 @@ The implementation should stay simple:
 1. Do not use legacy `frame.set/context.setVariable` for import aliases.
 2. Keep command-tree ordering guarantees (always enqueue on compiler `currentBuffer`).
 3. Resolve final values through snapshot/finalSnapshot semantics.
+4. Publish exported `ctx` shape immediately (stable keys), while values resolve later.
 
 ## Required Context
 
@@ -27,6 +28,12 @@ Legacy export timing is already useful and should be reused:
 
 Do not reinvent this part unless strictly required.
 
+Macro readiness detail:
+
+- Top-level macro bindings are created synchronously during root execution and assigned to context immediately.
+- In async `getExported()`, macro exports are then bound and returned immediately.
+- Therefore macro exports can be published as final callable values in the initial export object (or as immediately-resolved deferreds for uniformity).
+
 ### Why value imports are different
 
 Value outputs are command-buffer based. Writes are ordered by command insertion; reads are point-in-stream snapshots. This is the model we want for imported aliases too.
@@ -38,6 +45,7 @@ Value outputs are command-buffer based. Writes are ordered by command insertion;
 - Do not add fallback direct state mutation APIs for this feature.
 - Keep legacy path unchanged when `VALUE_IMPORT_BINDINGS=false`.
 - Keep runtime generic; do not add import-only runtime write/read helpers.
+- With all migration flags enabled, normal value-var handling inside template/script must keep working; only import-alias publication timing changes.
 
 ## Scope
 
@@ -104,6 +112,22 @@ No special import resolver is needed.
 
 Guideline: create the final snapshot promise as early as possible (right after compiled root body scheduling), while preserving command-tree ordering and finalize rules.
 
+### 6. Export publication model (new)
+
+Use a deferred publication model for exported names:
+
+1. Pre-create exported shape immediately.
+2. Store a deferred promise per exported name in `ctx` from the start.
+3. Resolve deferreds from final snapshot stage (or earlier for macro bindings).
+
+This decouples "name availability" from "value readiness".
+
+Contract:
+
+- Exported object keys are available immediately.
+- Deferred is resolved exactly once.
+- No per-name direct mutation path after publish.
+
 ## What To Remove / Avoid
 
 - Any direct helper like `readOutputValue` / `setOutputValue`.
@@ -122,7 +146,9 @@ Details:
 
 1. Export names/promise object immediately
 - Reuse legacy `context.addExport(...)` and `getExported()` mechanics.
-- Ensure value path returns exported object early with stable keys and promise values/placeholders.
+- Ensure value path returns exported object early with stable keys and promise placeholders.
+- For each exported name, keep `{ promise, resolve, reject }` (or equivalent deferred object).
+- Put deferred promises into `ctx` immediately.
 - `from import` should also publish per-name promises immediately.
 
 2. Disable legacy alias code
@@ -132,10 +158,23 @@ Details:
 3. Macro exports early
 - Reuse existing macro export model: publish callable macro bindings as soon as export object is created.
 - Do not force full macro resolution; only ensure availability timing matches/improves legacy behavior.
+- Macro deferreds may resolve early when callable binding is ready.
+- Top-level macros do not need to wait for final snapshots; they are typically ready before that stage.
 
 4. Final snapshots
 - Resolve through snapshot/finalSnapshot boundaries.
 - Create final snapshot promise early, but do not bypass command insertion order, buffer hierarchy, or finalize/link rules.
+- At final stage, resolve deferreds by passing snapshot promises directly (`resolve(snapshotPromise)`).
+- Rely on promise assimilation for success/failure propagation.
+- Use `reject(...)` only for setup/fatal paths where snapshot promises cannot be produced.
+
+## Error and Poison Behavior
+
+For deferred export publication:
+
+- Prefer resolving deferreds with snapshot promises directly.
+- If snapshot resolves to poison/rejection, consumer sees failure naturally.
+- Do not add special poison branching in publication layer unless a fatal setup error prevents snapshot creation.
 
 ## Expected Failure Modes (and correct fixes)
 
@@ -162,6 +201,9 @@ Runtime tests (flag on):
 - alias used across caller/macro.
 - include/import/extends parity cases.
 - async imported members/functions and poison/error propagation cases.
+- exported shape available immediately even before values settle.
+- deferred export promises settle after final snapshot stage.
+- macro exports callable before final snapshot completion when ready.
 
 When the flag is OFF:
 
