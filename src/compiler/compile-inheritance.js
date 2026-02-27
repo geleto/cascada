@@ -16,10 +16,10 @@ class CompileInheritance {
 	  this.emit = this.compiler.emit;
   }
 
-  // Collect value outputs that are used as plain symbols (alias reads).
-  // compileInclude uses this list to inject caller-side value aliases into
-  // include context variables so separately compiled templates can resolve them.
-  _collectValueAliasOutputs(frame) {
+  _emitValueAliasSnapshots(frame, targetVarsVar, positionNode) {
+    const lineno = positionNode && positionNode.lineno != null ? positionNode.lineno : 0;
+    const colno = positionNode && positionNode.colno != null ? positionNode.colno : 0;
+
     const names = new Set();
     let cur = frame;
     while (cur) {
@@ -32,7 +32,12 @@ class CompileInheritance {
       }
       cur = cur.parent;
     }
-    return Array.from(names);
+
+    names.forEach((name) => {
+      this.emit.line(
+        `${targetVarsVar}[${JSON.stringify(name)}] = ${this.compiler.buffer.currentBuffer}.addSnapshot(${JSON.stringify(name)}, { lineno: ${lineno}, colno: ${colno} });`
+      );
+    });
   }
 
   _templateName() {
@@ -403,11 +408,7 @@ class CompileInheritance {
       // buffer. Using currentBuffer keeps snapshot reads in command-tree order.
       // The included template can then resolve these names via normal context lookup.
       this.emit.line(`let ${includeVarsVar} = context.getVariables();`);
-      this._collectValueAliasOutputs(f).forEach((name) => {
-        this.emit.line(
-          `${includeVarsVar}[${JSON.stringify(name)}] = ${this.compiler.buffer.currentBuffer}.addSnapshot(${JSON.stringify(name)}, { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`
-        );
-      });
+      this._emitValueAliasSnapshots(f, includeVarsVar, node);
 
       // Call the template in composition mode. This is a SYNCHRONOUS call
       // that returns the incomplete output array immediately. The master `cb` from the
