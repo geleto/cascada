@@ -412,12 +412,6 @@ class CompileLoop {
     if (useLoopValues) {
       this._emitLoopValueDeclarations(loopVars);
       this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame);
-      if (!this.compiler.scriptMode) {
-        frame.set('loop', 'loop');
-        this.compiler._addDeclaredVar(frame, 'loop');
-        // Template block/include boundaries still read loop metadata from frame.
-        this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
-      }
       return;
     }
     this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
@@ -427,6 +421,7 @@ class CompileLoop {
     if (useLoopValues) {
       this._emitLoopValueAssignment(node, varName, valueExpr, frame);
       if (!this.compiler.scriptMode) {
+        // Template out-of-line paths (e.g. block/include) still resolve loop vars through frame lookup.
         frame.set(varName, valueExpr);
         this.compiler._addDeclaredVar(frame, varName);
         this.compiler.emit.line(`frame.set("${varName}", ${valueExpr});`);
