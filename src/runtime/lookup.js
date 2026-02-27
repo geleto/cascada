@@ -12,6 +12,7 @@ const {
 const {
   resolveDuo
 } = require('./resolve');
+const { getOutput } = require('./output');
 
 /**
  * Sync member lookup for templates.
@@ -244,19 +245,16 @@ function contextOrFrameLookup(context, frame, name) {
 
 /**
  * Value-output lookup for template symbol aliases.
- * Does NOT read frame variables; it resolves through declared outputs only.
+ * Does NOT read frame variables.
+ * - If value output exists in active buffer hierarchy, return ordered snapshot.
+ * - Otherwise, fall back to context lookup (globals/context vars).
  */
 function contextOrValueLookup(_context, frame, name, currentBuffer) {
-  if (!currentBuffer || typeof currentBuffer.addSnapshot !== 'function') {
-    throw new Error(`Value output '${name}' requires an active currentBuffer for snapshot reads`);
+  const output = getOutput(frame, name);
+  if (output) {
+    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
   }
-
-  const outputs = currentBuffer._outputs;
-  if (!(outputs instanceof Map) || !outputs.has(name)) {
-    throw new Error(`Value output '${name}' is not declared in the current scope`);
-  }
-
-  return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  return _context.lookup(name);
 }
 
 /**

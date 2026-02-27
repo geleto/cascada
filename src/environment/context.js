@@ -128,7 +128,7 @@ class Context extends Obj {
     }
   }
 
-  getSuper(env, name, block, frame, runtime, astate, cb) {
+  getSuper(env, name, block, frame, runtime, astate, cb, parentBuffer = null) {
     var idx = lib.indexOf(this.blocks[name] || [], block);
     var blk = this.blocks[name][idx + 1];
     var context = this;
@@ -144,7 +144,7 @@ class Context extends Obj {
 
     if (astate) {
       // Async mode - block returns output directly, cb is error-only
-      return blk(env, context, frame, runtime, astate, cb);
+      return blk(env, context, frame, runtime, astate, cb, parentBuffer);
     }
     else {
       // Sync mode - block uses callback for result

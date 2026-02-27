@@ -64,7 +64,7 @@ module.exports = class CompileEmit {
       if (name === 'root') {
         this.line(`function ${name}(env, context, frame, runtime, astate, cb, compositionMode = false) {`);
       } else {
-        this.line(`function ${name}(env, context, frame, runtime, astate, cb) {`);
+        this.line(`function ${name}(env, context, frame, runtime, astate, cb, parentBuffer = null) {`);
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);
@@ -75,7 +75,7 @@ module.exports = class CompileEmit {
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     this.compiler.buffer.initManagedBuffer(
       this.compiler.buffer.currentBuffer,
-      null,
+      (this.compiler.asyncMode && name !== 'root') ? 'parentBuffer' : null,
       this.compiler.buffer.currentTextOutput
     );
     this.line('try {');
