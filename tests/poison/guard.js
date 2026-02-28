@@ -859,23 +859,20 @@ return { text: output.snapshot(), data: result.snapshot() }`;
       expect(res.data.res).to.equal('recovered');
     });
 
-    it('should recover from macro error', async () => {
+    it('should recover from macro error when poison reaches guarded data', async () => {
       const script = `data result
-text output
-macro bomb()
-  text textInner
-  textInner(error("boom"))
-  return { text: textInner.snapshot() }
-endmacro
+        text output
+        macro bomb()
+          return error("boom")
+        endmacro
 
-guard text, data
-  call bomb()
-    return {}
-  endcall
-recover
-  result.res = "safe"
-endguard
-return {data: result.snapshot(), text: output.snapshot() }`;
+        guard text, data
+          result.res = bomb()
+        recover
+          result.res = "safe"
+        endguard
+        return {data: result.snapshot(), text: output.snapshot() }
+      `;
       const context = {
         error: (msg) => { return new cascada.runtime.PoisonedValue([new Error(msg)]); }
       };

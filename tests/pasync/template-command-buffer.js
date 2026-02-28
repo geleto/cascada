@@ -5,6 +5,7 @@
   var AsyncEnvironment;
   var AsyncTemplate;
   var StringLoader;
+  var DEFAULT_TEMPLATE_TEXT_OUTPUT;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -12,6 +13,7 @@
     AsyncEnvironment = envModule.AsyncEnvironment;
     AsyncTemplate = envModule.AsyncTemplate;
     StringLoader = require('../util').StringLoader;
+    DEFAULT_TEMPLATE_TEXT_OUTPUT = require('../../src/compiler/compile-buffer').DEFAULT_TEMPLATE_TEXT_OUTPUT;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
@@ -24,7 +26,7 @@
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{{ value }}', env);
       const source = tmpl._compileSource();
-      expect(source).to.contain('handler: "text"');
+      expect(source).to.contain(`handler: "${DEFAULT_TEMPLATE_TEXT_OUTPUT}"`);
       expect(source).to.contain('new runtime.TextCommand');
     });
 

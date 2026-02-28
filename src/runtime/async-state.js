@@ -56,9 +56,9 @@ class AsyncState {
     // Runtime async-block creation site for CommandBuffer.
     // This avoids compiler-side duplicate creation for async block execution.
     let newBuffer = null;
-    if (createOutputBuffer && Array.isArray(usedOutputs) && usedOutputs.length > 0) {
+    if (createOutputBuffer) {
       newBuffer = runtime.createCommandBuffer(context, null, childFrame);
-      if (parentBuffer && typeof parentBuffer.addBuffer === 'function') {
+      if (parentBuffer && Array.isArray(usedOutputs)) {
         for (const outputName of usedOutputs) {
           parentBuffer.addBuffer(newBuffer, outputName);
         }

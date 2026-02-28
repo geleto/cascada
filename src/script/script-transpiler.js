@@ -1439,6 +1439,10 @@ class ScriptTranspiler {
       parseResult.blockType = this._getBlockType(firstWord, code);
       parseResult.tagName = firstWord;
 
+      if (firstWord === 'call' && parseResult.blockType === this.BLOCK_TYPE.START) {
+        throw new Error(`Bare call blocks are not supported at line ${lineIndex + 1}; assign the call result (e.g. var x = call ... endcall).`);
+      }
+
       if (firstWord === 'endcall') {
         // Close the innermost call-like block.
         // Only rewrite endcall -> endcall_assign when it closes a call_assign block.

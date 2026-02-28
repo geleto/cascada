@@ -3207,13 +3207,14 @@ describe('Cascada Script: Output commands', function () {
            return {data: wrapperData.snapshot() }
         endmacro
 
-        call wrapper()
+        var wrapped = call wrapper()
           data callData
           text callOutput
           callOutput("Inner")
           callData.key = "value"
           return callData.snapshot()
         endcall
+        result.wrappee = wrapped
 
         return {data: result.snapshot(), text: output.snapshot() }`;
       const result = await env.renderScriptString(script);
@@ -3222,7 +3223,7 @@ describe('Cascada Script: Output commands', function () {
       // Caller returns object (since script mode).
       // wrapper logic sets @data.wrappee = content.
       // So wrapper output has data.
-      // Main script receives filtered data.
+      // Main script consumes and verifies the returned call value explicitly.
       expect(result.data).to.not.be.undefined;
       expect(result.data.wrappee).to.not.be.undefined;
       // Depending on caller() behavior in script mode (returns object), wrappee might be object.

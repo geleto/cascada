@@ -17,12 +17,14 @@ const OUTPUT_COMMAND_CLASS = {
   text: 'TextCommand',
   value: 'ValueCommand'
 };
+const DEFAULT_TEMPLATE_TEXT_OUTPUT = '__text__';
 
 class CompileBuffer {
   constructor(compiler) {
     this.compiler = compiler;
     this.currentBuffer = null;
-    this.currentTextOutput = null;
+    this.currentTextOutputVer = null;
+    this.currentTextOutputName = DEFAULT_TEMPLATE_TEXT_OUTPUT;
     // Temp value ids for split buffer writes (asyncAddToBufferBegin/End), supports nesting.
     // @otodo - evaluate these buffers, we shall be able to store
     // the values in the frame, the only probblem is when node.isAsync
@@ -40,10 +42,12 @@ class CompileBuffer {
    */
   initManagedBuffer(bufferId, parentBufferId, textOutputId) {
     if (this.compiler.asyncMode) {
-      const textId = textOutputId || `${bufferId}_textOutput`;
+      const textId = textOutputId || `${bufferId}_textOutputVar`;
       const parentArg = parentBufferId || 'null';
       this.compiler.emit.line(`let ${bufferId} = runtime.createCommandBuffer(context, ${parentArg}, frame);`);
-      this.compiler.emit.initOutputHandlers(bufferId, textId);
+      if (!this.compiler.scriptMode) {
+        this.compiler.emit.line(`let ${textId} = runtime.declareOutput(frame, ${bufferId}, "${this.currentTextOutputName}", "text", context, null);`);
+      }
     } else {
       this.compiler.emit.line(`let ${bufferId} = "";`);
     }
@@ -56,10 +60,6 @@ class CompileBuffer {
     return this.currentBuffer;
   }
 
-  getCurrentTextOutput() {
-    return this.currentTextOutput;
-  }
-
   _getBufferAccess() {
     // In async mode, buffers are CommandBuffer instances (use .output).
     return this.compiler.asyncMode ? `${this.currentBuffer}.output` : this.currentBuffer;
@@ -68,7 +68,7 @@ class CompileBuffer {
   _emitTemplateTextCommandExpression(valueExpression, positionNode, normalizeArgs = false) {
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    return `new runtime.TextCommand({ handler: "text", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, pos: {lineno: ${lineno}, colno: ${colno}} })`;
+    return `new runtime.TextCommand({ handler: "${this.currentTextOutputName}", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, pos: {lineno: ${lineno}, colno: ${colno}} })`;
   }
 
   _emitPositionLiteral(positionNode) {
@@ -204,7 +204,7 @@ class CompileBuffer {
   }
 
   registerOutputUsage(frame, outputName) {
-    if (!this.compiler.asyncMode || !outputName) {
+    if (!this.compiler.asyncMode) {
       return;
     }
 
@@ -229,7 +229,7 @@ class CompileBuffer {
   }
 
   emitAddCommand(frame, outputName, valueExpr, positionNode = null, emitTextCommand = false) {
-    if (this.compiler.asyncMode && outputName) {
+    if (this.compiler.asyncMode) {
       this.registerOutputUsage(frame, outputName);
     }
     if (emitTextCommand) {
@@ -238,11 +238,7 @@ class CompileBuffer {
       );
       return;
     }
-    if (outputName) {
-      this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${outputName}");`);
-    } else {
-      this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr});`);
-    }
+    this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${outputName}");`);
   }
 
   emitAddSequenceGet(frame, outputName, commandName, subpath, positionNode) {
@@ -295,7 +291,7 @@ class CompileBuffer {
    * Used to determine which handlers need poison markers when branch is skipped.
    *
    * @param {Node} node - AST node to analyze
-   * @returns {Set<string>} Set of handler names ('text', 'data', etc.)
+   * @returns {Set<string>} Set of handler names (template text handler, data, etc.)
    */
   collectBranchHandlers(node, frame = null) {
     const handlers = new Set();
@@ -303,9 +299,9 @@ class CompileBuffer {
     const traverse = (n) => {
       if (!n) return;
 
-      // Case 1: Regular output {{ ... }} uses implicit 'text' handler
+      // Case 1: Regular output {{ ... }} uses the active template text handler.
       if (n instanceof nodes.Output) {
-        handlers.add('text');
+        handlers.add(this.currentTextOutputName);
       }
 
       // Case 2: OutputCommand handler.method() or handler()
@@ -363,7 +359,7 @@ class CompileBuffer {
   /**
    * Add value to buffer (sync mode)
    */
-  addToBuffer(node, frame, renderFunction, positionNode = node, outputName = 'text', emitTextCommand = false) {
+  addToBuffer(node, frame, renderFunction, positionNode = node, outputName, emitTextCommand = false) {
     if (this.compiler.asyncMode) {
       if (emitTextCommand) {
         const valueId = this.compiler._tmpid();
@@ -392,14 +388,12 @@ class CompileBuffer {
   /**
    * Add value to buffer (async mode with error handling)
    */
-  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null, outputName = 'text', emitTextCommand = false) {
+  asyncAddToBuffer(node, frame, renderFunction, positionNode = node, handlerName = null, outputName, emitTextCommand = false) {
     const returnId = this.compiler._tmpid();
     if (this.compiler.asyncMode) {
       this.compiler.emit.asyncClosureDepth++;
       frame = frame.push(false, false);
-      if (outputName) {
-        this.registerOutputUsage(frame, outputName);
-      }
+      this.registerOutputUsage(frame, outputName);
 
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
       this.compiler.emit.line(`await ${this.currentBuffer}.addAsyncArgsCommand("${outputName}", (async () => {`);
@@ -436,7 +430,7 @@ class CompileBuffer {
    * Use when value construction does not require addAsyncArgsCommand producer semantics.
    * The value is added directly to the current buffer (no extra async block).
    */
-  asyncAddValueToBuffer(node, frame, renderFunction, positionNode = node, outputName = 'text', emitTextCommand = false) {
+  asyncAddValueToBuffer(node, frame, renderFunction, positionNode = node, outputName, emitTextCommand = false) {
     void node;
     const returnId = this.compiler._tmpid();
     this.compiler.emit.line(`let ${returnId};`);
@@ -456,13 +450,12 @@ class CompileBuffer {
     frame,
     positionNode = node,
     handlerName = null,
-    outputName = 'text',
+    outputName,
     emitTextCommand = false,
     normalizeTextArgs = false,
     emitFunc = null
   ) {
     void handlerName;
-    void outputName;
     if (!this.compiler.asyncMode) {
       this.compiler.emit(`${this.currentBuffer} += `);
       if (typeof emitFunc === 'function') {
@@ -479,9 +472,7 @@ class CompileBuffer {
     this.compiler.emit.asyncClosureDepth++;
 
     const innerFrame = frame.push(false, false);
-    if (outputName) {
-      this.registerOutputUsage(innerFrame, outputName);
-    }
+    this.registerOutputUsage(innerFrame, outputName);
 
     if (typeof emitFunc === 'function') {
       emitFunc(innerFrame, valueId);
@@ -518,9 +509,10 @@ class CompileBuffer {
       const nestedBufferId = this.compiler._tmpid();
       this.compiler.emit.line(`let ${nestedBufferId} = currentBuffer;`);
       const prevBuffer = this.currentBuffer;
-      const prevTextOutput = this.currentTextOutput;
+      const prevTextOutput = this.currentTextOutputVer;
+      const prevTextOutputName = this.currentTextOutputName;
       this.currentBuffer = nestedBufferId;
-      this.currentTextOutput = null;
+      this.currentTextOutputVer = null;
 
       let callbackValue;
       try {
@@ -542,7 +534,8 @@ class CompileBuffer {
           true
         );
         this.currentBuffer = prevBuffer;
-        this.currentTextOutput = prevTextOutput;
+        this.currentTextOutputVer = prevTextOutput;
+        this.currentTextOutputName = prevTextOutputName;
       }
 
       const result = callbackValue && typeof callbackValue === 'object' &&
@@ -566,4 +559,5 @@ class CompileBuffer {
 }
 
 module.exports = CompileBuffer;
+module.exports.DEFAULT_TEMPLATE_TEXT_OUTPUT = DEFAULT_TEMPLATE_TEXT_OUTPUT;
 

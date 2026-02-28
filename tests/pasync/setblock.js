@@ -237,7 +237,7 @@
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Alice: read write Bob: read');
       });
 
-      it.only('should handle nested set block capture with role-based inner async loop (single outer iteration)', async () => {
+      it('should handle nested set block capture with role-based inner async loop (single outer iteration)', async () => {
         const context = {
           async getUsers() {
             await delay(5);
@@ -253,8 +253,10 @@
           {% for user in getUsers() %}
             {% set permissions %}
               {% for perm in getPermissions(user.role) %}
+                {{ perm }}
               {% endfor %}
             {% endset %}
+            {{ user.name }}: {{ permissions }}
           {% endfor %}
         `;
 

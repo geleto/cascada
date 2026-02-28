@@ -283,11 +283,11 @@ class CompileInheritance {
         //this.emit.line(`${blockFunc} = runtime.promisify(${blockFunc}.bind(context));`);
         this.emit.line(`let ${blockFunc} = await context.getAsyncBlock("${node.name.value}");`);
         this.emit.line(`${id} = ${blockFunc}(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer});`);
-        this.emit.line(`${id} = ${id}.addSnapshot("text", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+        this.emit.line(`${id} = ${id}.addSnapshot("${this.compiler.buffer.currentTextOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
         if (needsParentCheck) {
           this.emit.line('}');
         }
-      }, node, null, 'text', true);
+      }, node, null, this.compiler.buffer.currentTextOutputName, true);
     }
     else {
       let id = this.compiler._tmpid();
@@ -304,7 +304,7 @@ class CompileInheritance {
         //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
         this.compiler.buffer.addToBuffer(node, frame, function () {
           this.emit(id);
-        }, node, 'text', true);
+        }, node, this.compiler.buffer.currentTextOutputName, true);
       } else {
         this.emit.line(`${this.compiler.buffer.currentBuffer} += ${id};`);
       }
@@ -360,7 +360,7 @@ class CompileInheritance {
       // Call getSuper directly - it returns the output synchronously
       // The callback (cb) is passed through for error propagation
       this.emit.line(`let ${id} = context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer});`);
-      this.emit.line(`${id} = ${id}.addSnapshot("text", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+      this.emit.line(`${id} = ${id}.addSnapshot("${this.compiler.buffer.currentTextOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
       this.emit.line(`${id} = runtime.markSafe(${id});`);
     }
     else {
@@ -414,8 +414,8 @@ class CompileInheritance {
       // that returns the incomplete output array immediately. The master `cb` from the
       // closure is passed for error propagation.
       this.emit.line(`${resultVar} = ${templateVar}._renderForComposition(${includeVarsVar}, frame, astate, cb);`);
-      this.emit.line(`${resultVar} = ${resultVar}.addSnapshot("text", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
-    }, node, null, 'text', true);
+      this.emit.line(`${resultVar} = ${resultVar}.addSnapshot("${this.compiler.buffer.currentTextOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+    }, node, null, this.compiler.buffer.currentTextOutputName, true);
   }
 
   compileIncludeSync(node, frame) {
@@ -445,7 +445,7 @@ class CompileInheritance {
       //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
       this.compiler.buffer.addToBuffer(node, frame, function () {
         this.emit('result');
-      }, node, 'text', true);
+      }, node, this.compiler.buffer.currentTextOutputName, true);
     } else {
       this.emit.line(`${this.compiler.buffer.currentBuffer} += result;`);
     }

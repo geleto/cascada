@@ -5,6 +5,7 @@ const {
   ensureReadValidationState,
   validateReadVarsConsistency
 } = require('./validation');
+const { DEFAULT_TEMPLATE_TEXT_OUTPUT } = require('./compile-buffer');
 
 module.exports = class CompileEmit {
   constructor(compiler) {
@@ -58,7 +59,8 @@ module.exports = class CompileEmit {
 
   beginEntryFunction(node, name, frame = null) {
     this.compiler.buffer.currentBuffer = 'output';
-    this.compiler.buffer.currentTextOutput = 'output_textOutput';
+    this.compiler.buffer.currentTextOutputVer = 'output_textOutputVar';
+    this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode ? null : DEFAULT_TEMPLATE_TEXT_OUTPUT;
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
@@ -76,14 +78,9 @@ module.exports = class CompileEmit {
     this.compiler.buffer.initManagedBuffer(
       this.compiler.buffer.currentBuffer,
       (this.compiler.asyncMode && name !== 'root') ? 'parentBuffer' : null,
-      this.compiler.buffer.currentTextOutput
+      this.compiler.buffer.currentTextOutputVer
     );
     this.line('try {');
-  }
-
-  initOutputHandlers(bufferVar, textOutputVar = null) {
-    const outputVar = textOutputVar || `${bufferVar}_textOutput`;
-    this.line(`let ${outputVar} = runtime.declareOutput(frame, ${bufferVar}, "text", "text", context, null);`);
   }
 
   endEntryFunction(node, noReturn) { // Added node parameter
@@ -114,7 +111,8 @@ module.exports = class CompileEmit {
     this.line('}');
     this.line('}');
     this.compiler.buffer.currentBuffer = null;
-    this.compiler.buffer.currentTextOutput = null;
+    this.compiler.buffer.currentTextOutputVer = null;
+    this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode ? null : DEFAULT_TEMPLATE_TEXT_OUTPUT;
   }
 
   //todo: use only simple async block if you know that:
@@ -126,7 +124,7 @@ module.exports = class CompileEmit {
   // Managed block for non-astate paths (scope/frame + optional scope-root buffer).
   // If createScopeRootBuffer=true, this is a sanctioned scope-root buffer creation
   // site. The callback body is compiled between initialization and finalization.
-  managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null) {
+  managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined) {
     let nextFrame = frame;
     if (createScope) {
       this.line('frame = frame.push();');
@@ -139,16 +137,18 @@ module.exports = class CompileEmit {
     let prevBuffer = null;
     let prevTextOutput = null;
     if (createScopeRootBuffer) {
-      parentBufferId = this.compiler.buffer.currentBuffer || null;
+      parentBufferId = parentBufferOverride !== undefined
+        ? parentBufferOverride
+        : (this.compiler.buffer.currentBuffer || null);
       bufferId = this.compiler._tmpid();
       prevBuffer = this.compiler.buffer.currentBuffer;
-      prevTextOutput = this.compiler.buffer.currentTextOutput;
+      prevTextOutput = this.compiler.buffer.currentTextOutputVer;
       this.compiler.buffer.currentBuffer = bufferId;
-      this.compiler.buffer.currentTextOutput = `${bufferId}_textOutput`;
+      this.compiler.buffer.currentTextOutputVer = `${bufferId}_textOutputVar`;
       this.compiler.buffer.initManagedBuffer(
         bufferId,
         parentBufferId,
-        `${bufferId}_textOutput`
+        `${bufferId}_textOutputVar`
       );
       linkInsertPos = this.compiler.codebuf.length;
       this.line('');
@@ -166,7 +166,7 @@ module.exports = class CompileEmit {
         ? nextFrame.declaredOutputs
         : null;
       const foreignUsed = used.filter((name) => {
-        if (name === 'text') {
+        if (name === this.compiler.buffer.currentTextOutputName) {
           return false;
         }
         return !(declared && declared.has(name));
@@ -186,7 +186,7 @@ module.exports = class CompileEmit {
         this.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
       }
       this.compiler.buffer.currentBuffer = prevBuffer;
-      this.compiler.buffer.currentTextOutput = prevTextOutput;
+      this.compiler.buffer.currentTextOutputVer = prevTextOutput;
     }
     if (createScope) {
       this.line('frame = frame.pop();');
@@ -249,7 +249,7 @@ module.exports = class CompileEmit {
     return frame;
   }
 
-  asyncBlockValue(node, frame, emitFunc, res, positionNode = node, createScope = false) {
+  asyncBlockValue(node, frame, emitFunc, res, positionNode = node, createScope = false, createOutputBuffer = false) {
     if (node.isAsync) {
 
       this.line(`astate.asyncBlock(async (astate, frame, currentBuffer) => {`);
@@ -282,11 +282,9 @@ module.exports = class CompileEmit {
       this.line('}');
       const errorContext = this.compiler._generateErrorContext(node, positionNode);
       const { readArgs, writeArgs, outputArgs } = this.getAsyncBlockArgs(frame, positionNode);
-      const createOutputBufferArg = (!this.compiler.scriptMode && node && node.typename === 'Capture') ? 'true' : 'false';
-      const parentBufferArg = createOutputBufferArg === 'true'
-        ? 'null'
-        : (this.compiler.buffer.currentBuffer || 'null');
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${parentBufferArg}, ${createOutputBufferArg}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", true)`);
+      const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
+      const parentBufferArg = this.compiler.buffer.currentBuffer || 'null';
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${parentBufferArg}, ${createOutputBufferArg}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", true, false)`);
 
       this.asyncClosureDepth--;
       frame = frame.pop();
@@ -321,11 +319,14 @@ module.exports = class CompileEmit {
     //this.line(`if (!${id}) { throw new Error("asyncBlockRender requires async block output buffer"); }`);
 
     //text only? Why not just use currentBuffer?
-    this.line(`let ${id}_textOutput = runtime.declareOutput(frame, ${id}, "text", "text", context, null);`);
+    const textOutputName = this.compiler.buffer.currentTextOutputName;
+    this.line(`let ${id}_textOutputVar = runtime.declareOutput(frame, ${id}, "${textOutputName}", "text", context, null);`);
     const prevBuffer = this.compiler.buffer.currentBuffer;
-    const prevTextOutput = this.compiler.buffer.currentTextOutput;
+    const prevTextOutput = this.compiler.buffer.currentTextOutputVer;
+    const prevTextOutputName = this.compiler.buffer.currentTextOutputName;
     this.compiler.buffer.currentBuffer = id;
-    this.compiler.buffer.currentTextOutput = `${id}_textOutput`;
+    this.compiler.buffer.currentTextOutputVer = `${id}_textOutputVar`;
+    this.compiler.buffer.currentTextOutputName = textOutputName;
 
     const originalAsyncClosureDepth = this.asyncClosureDepth;
     this.asyncClosureDepth = 0;
@@ -343,11 +344,12 @@ module.exports = class CompileEmit {
 
     this.asyncClosureDepth = originalAsyncClosureDepth;
     this.compiler.buffer.currentBuffer = prevBuffer;
-    this.compiler.buffer.currentTextOutput = prevTextOutput;
+    this.compiler.buffer.currentTextOutputVer = prevTextOutput;
+    this.compiler.buffer.currentTextOutputName = prevTextOutputName;
 
     if (!this.compiler.scriptMode) {
       this.line('await astate.waitAllClosures(1);');
-      this.line(`${id} = await ${id}.addSnapshot("text", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
+      this.line(`${id} = await ${id}.addSnapshot("${textOutputName}", {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}});`);
     }
     /*this.line(`let ${id}_flat = runtime.flattenBuffer(${id});`);
     this.line(`if (${id}_flat && typeof ${id}_flat.then === 'function') { ${id}_flat = await ${id}_flat; }`);

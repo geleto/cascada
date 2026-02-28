@@ -178,12 +178,12 @@
           return caller()
         endmacro
 
-        var ignored = call runner()
+        var callResult = call runner()
           outer(20)
           return none
         endcall
 
-        return ignored`;
+        return callResult`;
       try {
         await env.renderScriptString(script);
         throw new Error('Should have thrown');

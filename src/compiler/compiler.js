@@ -203,6 +203,36 @@ class Compiler extends CompilerBase {
       }
     };
 
+    const emitExtensionInvocation = (callFrame, extId) => {
+      if (noExtensionCallback) {
+        // the extension returns a value directly
+        if (!resolveArgs) {
+          // send the arguments as they are - promises or values
+          this.emit(`${extId}["${node.prop}"](context`);
+        } else {
+          // resolve the arguments before calling the function
+          this.emit(`runtime.resolveArguments(${extId}["${node.prop}"].bind(${extId}), 1)(context`);
+        }
+      } else {
+        // isAsync, the callback should be promisified
+        if (!resolveArgs) {
+          this.emit(`runtime.promisify(${extId}["${node.prop}"].bind(${extId}))(context`);
+        } else {
+          this.emit(`runtime.resolveArguments(runtime.promisify(${extId}["${node.prop}"].bind(${extId})), 1)(context`);
+        }
+      }
+      emitCallArgs(callFrame);
+      this.emit(`)`);
+    };
+
+    if (this.scriptMode) {
+      const ext = this._tmpid();
+      this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
+      emitExtensionInvocation(frame, ext);
+      this.emit.line(';');
+      return;
+    }
+
     let timingPromiseId = null;
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
@@ -212,12 +242,13 @@ class Compiler extends CompilerBase {
         this.emit.line(`let ${timingPromiseId};`);
       }
 
+      const callTextHandler = this.buffer.currentTextOutputName;
       frame = this.buffer.asyncAddToBufferScoped(
         node,
         frame,
         positionNode,
-        'text',
-        'text',
+        callTextHandler,
+        callTextHandler,
         true,
         this.asyncMode,
         (innerFrame) => {
@@ -228,28 +259,7 @@ class Compiler extends CompilerBase {
             errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
             this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
           }
-          if (noExtensionCallback) {
-            //the extension returns a value directly
-            if (!resolveArgs) {
-              //send the arguments as they are - promises or values
-              this.emit(`${ext}["${node.prop}"](context`);
-            }
-            else {
-              //resolve the arguments before calling the function
-              this.emit(`runtime.resolveArguments(${ext}["${node.prop}"].bind(${ext}), 1)(context`);
-            }
-          } else {
-            //isAsync, the callback should be promisified
-            if (!resolveArgs) {
-              this.emit(`runtime.promisify(${ext}["${node.prop}"].bind(${ext}))(context`);
-            }
-            else {
-              this.emit(`runtime.resolveArguments(runtime.promisify(${ext}["${node.prop}"].bind(${ext})), 1)(context`);
-            }
-          }
-
-          emitCallArgs(innerFrame);
-          this.emit(`)`);//close the extension call
+          emitExtensionInvocation(innerFrame, ext);
           if (this.asyncMode) {
             this.emit('))');
             this.emit(';\n');
@@ -273,12 +283,13 @@ class Compiler extends CompilerBase {
         callbackTimingPromiseId = this._tmpid();
         this.emit.line(`let ${callbackTimingPromiseId};`);
       }
+      const callbackTextHandler = this.buffer.currentTextOutputName;
       frame = this.buffer.asyncAddToBufferScoped(
         node,
         frame,
         positionNode,
-        'text',
-        'text',
+        callbackTextHandler,
+        callbackTextHandler,
         true,
         this.asyncMode,
         () => {
@@ -833,7 +844,7 @@ class Compiler extends CompilerBase {
         }
         if (SEQUNTIAL_PATHS_USE_VALUE && blockFrame.usedOutputs) {
           for (const outputName of blockFrame.usedOutputs) {
-            if (outputName.startsWith('!')) {
+            if (outputName && outputName.startsWith('!')) {
               modifiedLocks.add(outputName);
             }
           }
@@ -1006,6 +1017,11 @@ class Compiler extends CompilerBase {
     const hasTypedHandlers = Array.isArray(guardTargets.typeTargets) && guardTargets.typeTargets.length > 0;
     if (hasNamedHandlers || hasTypedHandlers) {
       const guardedSet = new Set(hasNamedHandlers ? guardTargets.handlerSelector : []);
+      // Template implicit text output uses an internal handler name (__text__...).
+      // Preserve selector ergonomics: guarding `text` targets the active text handler.
+      if (!this.scriptMode && guardedSet.has('text')) {
+        guardedSet.add(this.buffer.currentTextOutputName);
+      }
       const guardedTypes = new Set(hasTypedHandlers ? guardTargets.typeTargets : []);
       return used.filter((name) => {
         if (guardedSet.has(name)) {
@@ -1017,6 +1033,9 @@ class Compiler extends CompilerBase {
         const outputDecl = this.async._getDeclaredOutput(frame, name);
         if (outputDecl) {
           return guardedTypes.has(outputDecl.type);
+        }
+        if (!this.scriptMode && name === this.buffer.currentTextOutputName && guardedTypes.has('text')) {
+          return true;
         }
         return guardedTypes.has(name);
       });
@@ -1063,6 +1082,10 @@ class Compiler extends CompilerBase {
         }
         if (outputDecl) {
           resolvedHandlers.add(name);
+        }
+        if (!this.scriptMode && !isDeclaredVar && !outputDecl && name === 'text') {
+          resolvedHandlers.add(this.buffer.currentTextOutputName);
+          continue;
         }
         if (!isDeclaredVar && !outputDecl) {
           resolvedVariables.push(name);
@@ -1376,7 +1399,7 @@ class Compiler extends CompilerBase {
           returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return undefined;});`;
         } else {
           // Snapshot must be enqueued before this managed buffer is finished.
-          this.emit.line(`const ${snapshotVar} = ${bufferId}.addSnapshot("text", {lineno: ${node.lineno}, colno: ${node.colno}});`);
+          this.emit.line(`const ${snapshotVar} = ${bufferId}.addSnapshot("${this.buffer.currentTextOutputName}", {lineno: ${node.lineno}, colno: ${node.colno}});`);
 
           const needsSafeString = !this.scriptMode;
           const safeStringCall = needsSafeString
@@ -1392,7 +1415,7 @@ class Compiler extends CompilerBase {
           ? `new runtime.SafeString(${bufferId})`
           : bufferId;
       }
-    });
+    }, keepFrame ? this.buffer.currentBuffer : null);
 
     this.emit.line('return ' + returnStatement);
 
@@ -1470,17 +1493,25 @@ class Compiler extends CompilerBase {
     // we need to temporarily override the current buffer id as 'output'
     // so the set block writes to the capture output instead of the buffer
     const buffer = this.buffer.currentBuffer;
-    const textOutput = this.buffer.currentTextOutput;
+    const textOutput = this.buffer.currentTextOutputVer;
+    const textOutputName = this.buffer.currentTextOutputName;
+    const captureTextOutputName = !this.scriptMode
+      ? `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT}${this._tmpid()}`
+      : null;
     this.buffer.currentBuffer = 'output';
-    this.buffer.currentTextOutput = 'output_textOutput';
+    this.buffer.currentTextOutputVer = 'output_textOutputVar';
+    if (!this.scriptMode) {
+      this.buffer.currentTextOutputName = captureTextOutputName;
+    }
     if (node.isAsync) {
       const res = this._tmpid();
       // Use node.body as position node for the capture block evaluation
+      const prevCaptureParentBuffer = this.buffer.currentBuffer;
+      this.buffer.currentBuffer = 'currentBuffer';
       this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
         this.emit.line('let output = currentBuffer;');
         //this.emit.line('if (!output) { throw new Error("Capture block requires async block output buffer"); }');
-        this.emit.line(`let output_textOutput = runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "text", "text", context, null);`);
         // Capture bodies should not be treated as root-scope returns.
         f._seesRootScope = false;
         // Capture returns run inside an async block; wait for sibling closures.
@@ -1492,12 +1523,14 @@ class Compiler extends CompilerBase {
           this.emit.line('return undefined;');
           this.emit.line('}).call(this, frame);');
         } else {
+          this.emit.line(`let output_textOutputVar = runtime.declareOutput(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
           this.compile(n.body, f);//write to output
           this.emit.line('await astate.waitAllClosures(1)');
-          this.emit.line(`let ${res} = await ${this.buffer.currentBuffer}.addSnapshot("text", {lineno: ${node.body.lineno}, colno: ${node.body.colno}});`);
+          this.emit.line(`let ${res} = await currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${node.body.lineno}, colno: ${node.body.colno}});`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
-      }, res, node.body, true);
+      }, res, node.body, true, !this.scriptMode);
+      this.buffer.currentBuffer = prevCaptureParentBuffer;
     }
     else {
       this.emit.line('(function() {');
@@ -1511,11 +1544,21 @@ class Compiler extends CompilerBase {
 
     // and of course, revert back to the old buffer id
     this.buffer.currentBuffer = buffer;
-    this.buffer.currentTextOutput = textOutput;
+    this.buffer.currentTextOutputVer = textOutput;
+    this.buffer.currentTextOutputName = textOutputName;
   }
 
   // @todo - get rid of the asyncAddToBufferBegin after we have switch var to the new value implementation
   compileOutput(node, frame) {
+    if (this.scriptMode) {
+      this.fail(
+        'Script mode does not support template output nodes. Use declared outputs and output_command instead.',
+        node && node.lineno,
+        node && node.colno,
+        node || undefined
+      );
+    }
+    const textHandler = this.buffer.currentTextOutputName;
     if (this.asyncMode) {
       const children = node.children;
       children.forEach(child => {
@@ -1523,7 +1566,7 @@ class Compiler extends CompilerBase {
           if (child.value) {
             this.buffer.addToBuffer(node, frame, function () {
               this.compileLiteral(child, frame);
-            }, child, 'text', true);
+            }, child, textHandler, true);
           }
           return;
         }
@@ -1533,8 +1576,8 @@ class Compiler extends CompilerBase {
           node,
           frame,
           child,
-          'text',
-          'text',
+          textHandler,
+          textHandler,
           true,
           true,
           (innerFrame) => {
@@ -1559,7 +1602,7 @@ class Compiler extends CompilerBase {
         if (child.value) {
           this.buffer.addToBuffer(node, frame, function () {
             this.compileLiteral(child, frame);
-          }, child, 'text', false);
+          }, child, textHandler, false);
         }
         return;
       }
@@ -1574,7 +1617,7 @@ class Compiler extends CompilerBase {
           this.emit(`,${child.lineno},${child.colno}, context)`);
         }
         this.emit(', env.opts.autoescape)');
-      }, child, 'text', false);
+      }, child, textHandler, false);
     });
   }
 
@@ -1677,9 +1720,8 @@ class Compiler extends CompilerBase {
         this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
         this.emit.line('    cb(null, undefined);');
       } else {
-        this.emit.line(`    const __rootSnapshot = ${this.buffer.getCurrentTextOutput()}.finalSnapshot();`);
         this.emit.line(`    ${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-        this.emit.line('    cb(null, await __rootSnapshot);');
+        this.emit.line(`    cb(null, await ${this.buffer.currentTextOutputVer}.finalSnapshot());`);
       }
       this.emit.line('  }');
       this.emit.line('}).catch(e => {');

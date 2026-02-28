@@ -532,7 +532,7 @@ class CompileLoop {
         //non-async node but in async mode -> emit a buffered TextCommand through CompileBuffer
         this.compiler.buffer.addToBuffer(node, frame, function () {
           this.emit(output);
-        }, node, 'text', true);
+        }, node, this.compiler.buffer.currentTextOutputName, true);
       } else {
         this.compiler.emit.line(`${this.compiler.buffer.currentBuffer} += ${output};`);
       }
