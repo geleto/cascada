@@ -74,11 +74,6 @@ class CompileLoop {
       const registerLoopVarBinding = (name) => {
         if (node.isAsync && useLoopValues) {
           this._declareLoopValueOutput(blockFrame, name, node);
-          //if (!this.compiler.scriptMode) {
-          // Keep compile-time frame symbol mapping for template boundaries
-          // (include/block/setblock) that resolve via frame/context lookup.
-          blockFrame.set(name, name);
-          //}
           return;
         }
         blockFrame.set(name, name);
@@ -100,9 +95,6 @@ class CompileLoop {
       }
       if (useLoopValues) {
         this._declareLoopValueOutput(blockFrame, 'loop', node);
-        if (!this.compiler.scriptMode) {
-          blockFrame.set('loop', 'loop');
-        }
       }
 
       // Compile the loop body function and collect metadata
@@ -420,12 +412,6 @@ class CompileLoop {
   _emitLoopVarIterationBinding(node, varName, valueExpr, frame, useLoopValues) {
     if (useLoopValues) {
       this._emitLoopValueAssignment(node, varName, valueExpr, frame);
-      if (!this.compiler.scriptMode) {
-        // Template out-of-line paths (e.g. block/include) still resolve loop vars through frame lookup.
-        frame.set(varName, valueExpr);
-        this.compiler._addDeclaredVar(frame, varName);
-        this.compiler.emit.line(`frame.set("${varName}", ${valueExpr});`);
-      }
       return;
     }
 

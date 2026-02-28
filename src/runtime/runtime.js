@@ -203,6 +203,7 @@ module.exports = {
   memberLookupScriptAsync: lookup.memberLookupScriptAsync,
   contextOrFrameLookup: lookup.contextOrFrameLookup,
   contextOrValueLookup: lookup.contextOrValueLookup,
+  contextOrFrameOrValueLookup: lookup.contextOrFrameOrValueLookup,
   contextOrFrameLookupScript: lookup.contextOrFrameLookupScript,
   contextOrFrameLookupScriptAsync: lookup.contextOrFrameLookupScriptAsync,
   contextOrValueLookupScript: lookup.contextOrValueLookupScript,

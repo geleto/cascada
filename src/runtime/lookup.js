@@ -257,6 +257,23 @@ function contextOrValueLookup(_context, frame, name, currentBuffer) {
   return _context.lookup(name);
 }
 
+function contextOrFrameOrValueLookup(context, frame, name, currentBuffer) {
+  const val = frame.lookup(name);
+  if (val !== undefined) {
+    return val;
+  }
+  const contextVal = context.lookup(name);
+  if (contextVal !== undefined) {
+    return contextVal;
+  }
+  const output = getOutput(frame, name);
+  if (output) {
+    ensureReadOutputLink(currentBuffer, output, name);
+    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  }
+  return undefined;
+}
+
 /**
  * Context/frame/output lookup for scripts.
  * Order:
@@ -292,6 +309,22 @@ function contextOrValueLookupScriptAsync(context, frame, name, currentBuffer, er
   return context.lookupScriptModeAsync(name, errorContext);
 }
 
+function ensureReadOutputLink(currentBuffer, output, outputName) {
+  if (!currentBuffer || !output || output._buffer === currentBuffer) {
+    return;
+  }
+  const parent = currentBuffer.parent;
+  if (!parent || typeof parent.addBuffer !== 'function') {
+    return;
+  }
+  currentBuffer._readOutputLinks = currentBuffer._readOutputLinks || Object.create(null);
+  if (currentBuffer._readOutputLinks[outputName]) {
+    return;
+  }
+  parent.addBuffer(currentBuffer, outputName);
+  currentBuffer._readOutputLinks[outputName] = true;
+}
+
 function contextOrFrameLookupScript(context, frame, name) {
   let {value: val, frame: f} = frame.lookupAndLocate(name);
   return f ? val : context.lookupScriptMode(name);
@@ -309,6 +342,7 @@ module.exports = {
   memberLookupScriptAsync,
   contextOrFrameLookup,
   contextOrValueLookup,
+  contextOrFrameOrValueLookup,
   contextOrFrameLookupScript,
   contextOrFrameLookupScriptAsync,
   contextOrValueLookupScript,

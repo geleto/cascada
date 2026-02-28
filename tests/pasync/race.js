@@ -238,6 +238,45 @@
         expect(result.trim()).to.equal('20');
       });
 
+      it('should keep nested if reads concurrent for shared value symbols', async () => {
+        const tracker = { current: 0, max: 0 };
+        const context = {
+          gate: Promise.resolve(true),
+          left: Promise.resolve(true),
+          right: Promise.resolve(true),
+          async getShared() {
+            await delay(1);
+            return 'S';
+          },
+          async touch(value) {
+            tracker.current++;
+            tracker.max = Math.max(tracker.max, tracker.current);
+            try {
+              await delay(20);
+            } finally {
+              tracker.current--;
+            }
+            return value;
+          }
+        };
+
+        const template = `
+          {%- set shared = getShared() -%}
+          {%- if gate -%}
+            {%- if left -%}
+              {{ touch(shared) }}
+            {%- endif -%}
+            {%- if right -%}
+              {{ touch(shared) }}
+            {%- endif -%}
+          {%- endif -%}
+        `;
+
+        const result = await env.renderTemplateString(template, context);
+        expect(result.replace(/\s+/g, '')).to.equal('SS');
+        expect(tracker.max).to.be(2);
+      });
+
       it('should skip all but the first truthy branch', async () => {
         const template = `
 				{%- set val = 1 -%}

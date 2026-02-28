@@ -9,7 +9,7 @@ const {
   trackActualRead,
   validateSinkSnapshotInGuard
 } = require('./validation');
-const { SEQUNTIAL_PATHS_USE_VALUE } = require('../feature-flags');
+const { SEQUNTIAL_PATHS_USE_VALUE, CONVERT_TEMPLATE_VAR_TO_VALUE } = require('../feature-flags');
 
 // Moved from the main compiler as it's used by compileCompare (expression)
 const compareOps = {
@@ -417,7 +417,11 @@ class CompilerBase extends Obj {
         this.emit('runtime.contextOrValueLookupScript(' + `context, frame, "${name}", ${this.buffer.currentBuffer})`);
       }
     } else {
-      this.emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
+      if (this.asyncMode && CONVERT_TEMPLATE_VAR_TO_VALUE && this.inBlock && !this._isDeclared(frame, name)) {
+        this.emit('runtime.contextOrFrameOrValueLookup(' + `context, frame, "${name}", ${this.buffer.currentBuffer})`);
+      } else {
+        this.emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
+      }
     }
   }
 

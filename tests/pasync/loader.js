@@ -808,6 +808,26 @@
         const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Conditional Content');
       });
+
+      it('should resolve if-local symbols inside blocks', async () => {
+        const context = {
+          enabled: true,
+          async getScopedValue() {
+            await delay(2);
+            return 'if-local';
+          }
+        };
+
+        const template = `
+          {% if enabled %}
+            {% set scoped = getScopedValue() %}
+            {% block content %}{{ scoped }}{% endblock %}
+          {% endif %}
+        `;
+
+        const result = await env.renderTemplateString(template, context);
+        expect(result.trim()).to.equal('if-local');
+      });
     });
 
     describe('Import multiple items', () => {

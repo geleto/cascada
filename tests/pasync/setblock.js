@@ -237,6 +237,31 @@
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Alice: read write Bob: read');
       });
 
+      it.only('should handle nested set block capture with role-based inner async loop (single outer iteration)', async () => {
+        const context = {
+          async getUsers() {
+            await delay(5);
+            return [{ name: 'Alice', role: 'admin' }];
+          },
+          async getPermissions(role) {
+            await delay(3);
+            return role === 'admin' ? ['read', 'write'] : ['read'];
+          }
+        };
+
+        const template = `
+          {% for user in getUsers() %}
+            {% set permissions %}
+              {% for perm in getPermissions(user.role) %}
+              {% endfor %}
+            {% endset %}
+          {% endfor %}
+        `;
+
+        const result = await env.renderTemplateString(template, context);
+        expect(result.trim().replace(/\s+/g, ' ')).to.equal('Alice: read write');
+      });
+
       // Set block with async expressions
       it('should handle set block with async expressions', async () => {
         const context = {
