@@ -24,6 +24,8 @@ Use two pieces together:
 1. `waitApplied` runtime wait.
 2. Internal `__waited__<tmpid>` output per relevant loop iteration async block.
 
+Both are strictly per-iteration mechanisms, not whole-loop completion mechanisms.
+
 ### 1. `waitApplied`
 
 `waitApplied` waits until commands in a given iteration async-block buffer segment are fully applied (including async apply), across outputs touched by that segment.
@@ -57,25 +59,18 @@ Minimal inclusion set:
 1. Any expression-root result not inside aggregate-child compilation and not inside control-flow/iterator compilation.
 2. Any aggregate root (object/array aggregate expression as a unit).
 3. Completion of any nested concurrency-limited inner loop (as a single promise wait in parent).
-4. Capture/call/macro-call returned values as aggregate-capable roots (use `ResolveCommand`).
+4. Capture/call/macro-call returned values as aggregate-capable roots (use `WaitResolveCommand`).
 5. Include/import/extends/super/block-invocation boundary completion when executed inside a limited-loop iteration (single waited command per boundary completion unit).
 
-## Wait Command Types
+## Wait Command Type
 
-`__waited__` stores two different command kinds:
-
-1. Promise wait command (`WaitPromiseCommand`):
-- for non-aggregate expression results (single promise-capable result)
-
-2. Aggregate resolve command (`ResolveCommand` / resolve-all style):
-- for aggregate roots that require deep/member resolution semantics similar to `resolveAll`
-- this command resolves the aggregate as a unit before marking waited completion
+`__waited__` uses one unified command: `WaitResolveCommand`.
 
 Selection rule:
 
-1. Aggregate expression root -> `ResolveCommand`.
-2. Non-aggregate expression root -> `WaitPromiseCommand`.
-3. Aggregate children are never waited individually.
+1. Any included root/completion unit emits `WaitResolveCommand`.
+2. `WaitResolveCommand` internally uses resolve-single or aggregate-root resolution as needed.
+3. Aggregate children are never emitted individually.
 
 Control-flow expressions are excluded:
 
@@ -125,6 +120,8 @@ For each concurrency-limited loop iteration:
 3. Runtime calls `waitApplied` for that iteration buffer (all outputs in that segment).
 4. Only then iteration is treated as complete for sequencing/limit accounting.
 
+This completion is per iteration only; overall loop completion is the composition of all iteration completions.
+
 ## waitApplied Runtime Model (Current Constraints)
 
 Constraints for this phase:
@@ -146,6 +143,8 @@ Model:
    - on root-finish path for current root `buffer`.
 4. Safety basis:
    - mutable apply is awaited before iterator advances/leaves, so leave/finalize transitions are valid decrement points.
+5. Tracking scope:
+   - this phase uses a simple per-buffer counter model for iteration buffers; no additional command-tree-wide tracker is required.
 
 Promise behavior:
 
@@ -167,13 +166,14 @@ Notes:
 
 1. This does not require per-output `finished` in this phase.
 2. If per-output `finished` is introduced later, this model can be tightened without changing the compiler plan.
-3. Calling `waitApplied` at iteration end is required but not sufficient by itself; iterator presence for outputs touched by that iteration buffer must be active/bound before completion is checked.
+3. Calling `iterationBuffer.waitApplied(...)` at iteration end is required but not sufficient by itself; iterator presence for outputs touched by that iteration buffer must be active/bound before completion is checked.
+4. `iterationBuffer.waitApplied(...)` must ensure relevant iterators are bound (or trigger binding) before completion checks.
 
 Nested concurrency-limited loops:
 
 1. Parent loop and nested limited loop should have separate waited outputs.
 2. Parent iteration should wait nested-loop completion as one unit.
-3. Add a nested-loop completion promise and emit one `WaitPromiseCommand` for it in parent `__waited__`.
+3. Add a nested-loop completion promise and emit one `WaitResolveCommand` for it in parent `__waited__`.
 4. Inner operations remain accounted inside nested loop's own waited output.
 5. Nested completion promise resolves only after nested loop has finished its own `waitApplied(childIterationBuffer)` gating.
 
@@ -182,7 +182,7 @@ Nested concurrency-limited loops:
 Current phase:
 
 1. Keep `waitAllClosures` for transition safety.
-2. Add `waitApplied(iterationBuffer)` for limited-loop completion correctness without timing barrier.
+2. Add `iterationBuffer.waitApplied(...)` for limited-loop completion correctness without timing barrier.
 
 Future (after value migration is complete):
 
@@ -190,6 +190,10 @@ Future (after value migration is complete):
 2. Keep concurrency-limited loop correctness grounded in `waitApplied` + explicit waited commands.
 
 ## Step-by-Step Implementation Plan
+
+Rollout toggle:
+
+1. Use one rollout toggle `USE_WAIT_APPLIED_FOR_LIMITED_LOOPS` to switch between timing-barrier path and wait-applied path (not multiple overlapping toggles).
 
 ## Step 1: Runtime primitive
 
@@ -199,7 +203,7 @@ Future (after value migration is complete):
 ## Step 2: Internal waited output
 
 1. Add compiler support for `currentWaitedOutputName`.
-2. Create `__waited__<tmpid>` only for concurrency-limited loop async blocks.
+2. Create `__waited__<tmpid>` only for concurrency-limited iteration async blocks.
 3. Use local save/restore of waited name inside compiler functions (same style as `currentBuffer` handling), with explicit forced-null contexts.
 4. Guarantee restore of previous waited name after each forced-null scope, including early returns/errors in helper flows.
 
@@ -212,8 +216,8 @@ Future (after value migration is complete):
    - side effect: emits waited command into `currentWaitedOutputName`
 3. Use this helper at top-level expression-root sites in loop body, so assignment/output codegen shape is preserved (no forced local `resultId` rewrite everywhere).
 4. Command choice in helper for this step:
-   - expression-root result -> `WaitPromiseCommand`
-5. This step does not add aggregate-root (`ResolveCommand`) instrumentation yet.
+   - expression-root result -> `WaitResolveCommand`
+5. This step does not add aggregate-root `_compileAggregate` instrumentation yet.
 6. Apply forced-null context for:
    - sub-expression compilation
    - iterator/control expression compilation
@@ -226,20 +230,21 @@ Future (after value migration is complete):
 ## Step 4: Boundary + Nested-Loop Wait Emission
 
 1. Add aggregate-root wait emission in `_compileAggregate` paths:
-   - aggregate root in allowed limited-loop iteration context -> `ResolveCommand`
+   - aggregate root in allowed limited-loop iteration context -> `WaitResolveCommand`
    - do not emit for aggregate children/internal aggregate calls/control contexts
 2. Add forced-null context specifically for aggregate child-expression compilation and restore immediately after each region.
 3. Add focused tests for aggregate-root vs aggregate-child behavior.
 4. Nested concurrency-limited inner loop:
    - obtain `nestedCompletionPromise`
-   - emit one `WaitPromiseCommand(nestedCompletionPromise)` into parent waited output.
+   - emit one `WaitResolveCommand(nestedCompletionPromise)` into parent waited output.
 5. Include/import/extends/super/block-invocation completion:
-   - obtain boundary completion promise
-   - emit one `WaitPromiseCommand(boundaryCompletionPromise)` into waited output.
+   - obtain boundary completion unit
+   - emit one `WaitResolveCommand(boundaryCompletionUnit)` into waited output.
+   - for `import` that produces multiple returned bindings/promises, first normalize to one aggregate completion unit (resolve-all style), then emit a single `WaitResolveCommand` for that unit.
 6. Add focused tests for boundary/nested cases.
 ## Step 5: Hook block completion
 
-1. In async block finalization for limited loops, call `waitApplied(iterationBuffer)` (all outputs in that iteration segment).
+1. In async block finalization for limited loops, call `iterationBuffer.waitApplied(...)` (all outputs in that iteration segment).
 2. Keep existing closure waits for now.
 3. Wire nested limited-loop completion into parent `__waited__` via a single wait command.
 
@@ -264,11 +269,11 @@ Required suites:
    - include currently failing limited-loop tests
    - include any other limited-loop tests currently spread across other files
 3. Add required new tests for all special cases covered by this plan:
-   - expression-root vs aggregate-root command selection (`WaitPromiseCommand` vs `ResolveCommand`)
+   - expression-root vs aggregate-root handling under unified `WaitResolveCommand`
    - excluded scopes (control-flow/iterator/condition/aggregate-child/sub-expression)
    - nested limited-loop completion wiring (child completion promise into parent waited output)
    - boundary completion units in limited-loop iterations (`include/import/extends/super/block-invocation`)
-   - capture/call/macro-call return handling via `ResolveCommand`
+   - capture/call/macro-call return handling via `WaitResolveCommand`
 4. Keep tests deterministic and assert final semantics (iteration completion/order/limit), not race timing internals unless explicitly testing concurrency behavior.
 
 ## Step 9: Cleanup phase (later)
@@ -278,13 +283,19 @@ After full value migration:
 1. Audit remaining `waitAllClosures` dependencies.
 2. Remove only where semantics are fully represented by waited outputs + `waitApplied`.
 
+Deferred optimization (not planned now):
+
+1. Tail-iteration skip of `waitApplied` when scheduler can prove it is unnecessary.
+2. Keep always-on `waitApplied` in this phase for correctness.
+
 ## Error/Poison Semantics
 
-Waited commands use normal output error flow:
+`WaitResolveCommand` is timing-only synchronization and is not part of functional error propagation:
 
-1. `WaitPromiseCommand` rejections propagate through existing poison/error handling.
-2. `ResolveCommand` failures use existing aggregate resolve/poison behavior.
-3. No separate waited-error side channel is introduced.
+1. It awaits/settles its input unit for scheduling purposes.
+2. It must not poison output state.
+3. It must not throw/reject into template/script execution flow.
+4. If diagnostics are needed, they are optional side-channel logging only (non-fatal).
 
 ## Clarifications
 
