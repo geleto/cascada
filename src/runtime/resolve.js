@@ -48,6 +48,25 @@ const RESOLVE_MARKER = Symbol.for('cascada.resolve');
 // 2. If any fail, returns Poison (containing all collected errors).
 // 3. If all succeed, unwraps values and ensures nested Lazy Objects are also resolved.
 async function resolveAll(args) {
+  if (!Array.isArray(args)) {
+    throw new TypeError('resolveAll expects an array of values');
+  }
+
+  if (args.length === 0) {
+    return [];
+  }
+
+  // Fast path: single argument can use resolveSingle directly.
+  if (args.length === 1) {
+    const resolved = await resolveSingle(args[0]);
+    return [resolved];
+  }
+
+  // Fast path: duo is a hot path from compiler aggregate emission.
+  if (args.length === 2) {
+    return resolveDuo(args[0], args[1]);
+  }
+
   // Collect all errors first (awaits all promises)
   const errors = await collectErrors(args);
 
@@ -58,34 +77,38 @@ async function resolveAll(args) {
   // No errors - proceed with normal resolution (unwrapping)
   const resolvedArgs = [];
   for (let i = 0; i < args.length; i++) {
-    let arg = args[i];
-
-    if (arg && typeof arg.then === 'function') {
-      try {
-        arg = await arg;
-      } catch (err) {
-        if (isPoisonError(err)) {
-          return createPoison(err.errors);
-        }
-        throw err;
-      }
-    }
-
-    if (arg && arg[RESOLVE_MARKER]) {
-      try {
-        await arg[RESOLVE_MARKER];
-      } catch (err) {
-        if (isPoisonError(err)) {
-          return createPoison(err.errors);
-        }
-        throw err;
-      }
-    }
-
-    resolvedArgs.push(arg);
+    resolvedArgs.push(await resolveValueAndMarker(args[i]));
   }
 
   return resolvedArgs;
+}
+
+async function resolveValueAndMarker(value) {
+  let resolved = value;
+
+  if (resolved && typeof resolved.then === 'function') {
+    try {
+      resolved = await resolved;
+    } catch (err) {
+      if (isPoisonError(err)) {
+        return createPoison(err.errors);
+      }
+      throw err;
+    }
+  }
+
+  if (resolved && resolved[RESOLVE_MARKER]) {
+    try {
+      await resolved[RESOLVE_MARKER];
+    } catch (err) {
+      if (isPoisonError(err)) {
+        return createPoison(err.errors);
+      }
+      throw err;
+    }
+  }
+
+  return resolved;
 }
 
 async function resolveObjectProperties(obj) {
@@ -104,10 +127,28 @@ async function resolveObjectProperties(obj) {
 }
 
 async function resolveDuo(...args) {
-  return resolveAll(args);
+  if (args.length !== 2) {
+    throw new TypeError(`resolveDuo expects exactly 2 arguments, got ${args.length}`);
+  }
+  const left = args[0];
+  const right = args[1];
+
+  const errors = await collectErrors([left, right]);
+  if (errors.length > 0) {
+    return createPoison(errors);
+  }
+
+  const resolvedLeft = await resolveValueAndMarker(left);
+  const resolvedRight = await resolveValueAndMarker(right);
+  return [resolvedLeft, resolvedRight];
 }
 
-async function resolveSingle(value) {
+async function resolveSingle(...args) {
+  if (args.length !== 1) {
+    throw new TypeError(`resolveSingle expects exactly 1 argument, got ${args.length}`);
+  }
+  const value = args[0];
+
   // Synchronous shortcuts
   if (isPoison(value)) {
     return value; // Propagate poison synchronously
