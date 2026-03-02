@@ -259,6 +259,17 @@ class CompileBuffer {
     this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${outputName}");`);
   }
 
+  emitOwnWaitedConcurrencyResolve(frame, valueExpr, positionNode = null) {
+    const waitedOutputName = this.currentWaitedOutputName;
+    if (!this.compiler.asyncMode || !waitedOutputName) {
+      return;
+    }
+    this.registerOutputUsage(frame, waitedOutputName);
+    this.compiler.emit.line(
+      `${this.currentBuffer}.add(new runtime.WaitResolveCommand({ handler: "${waitedOutputName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedOutputName}");`
+    );
+  }
+
   emitAddSequenceGet(frame, outputName, commandName, subpath, positionNode) {
     this.registerOutputUsage(frame, outputName);
     this.compiler.emit(
@@ -471,7 +482,8 @@ class CompileBuffer {
     outputName,
     emitTextCommand = false,
     normalizeTextArgs = false,
-    emitFunc = null
+    emitFunc = null,
+    afterValueReady = null
   ) {
     void handlerName;
     if (!this.compiler.asyncMode) {
@@ -497,6 +509,9 @@ class CompileBuffer {
     }
 
     this.compiler.emit.line(';');
+    if (typeof afterValueReady === 'function') {
+      afterValueReady(innerFrame, valueId);
+    }
 
     const valueExpr = emitTextCommand
       ? this._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs)

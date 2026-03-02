@@ -391,14 +391,18 @@ class Compiler extends CompilerBase {
         this.emit(ids[0] + ' = ');
 
         if (this.asyncMode) {
+          const setPathValueId = this._tmpid();
+          this.emit(`let ${setPathValueId} = `);
+          this._compileExpression(node.value, frame, true);
+          this.emit.line(';');
+          this.buffer.emitOwnWaitedConcurrencyResolve(frame, setPathValueId, node.value || node);
+
           this.emit('runtime.setPath(');
           this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
           // Compile path array WITHOUT resolving items (so promises are passed to setPath)
           this._compileAggregate(node.path, frame, '[', ']', false, false);
           this.emit(', ');
-          // Compile value expression WITH force-wrapping to ensure it's handled in async context if needed
-          // The result will be a Promise, which setPath handles.
-          this._compileExpression(node.value, frame, true);
+          this.emit(setPathValueId);
           this.emit(')');
         } else {
           // Sync mode
@@ -414,6 +418,7 @@ class Compiler extends CompilerBase {
         this.emit(ids.join(' = ') + ' = ');
         this._compileExpression(node.value, frame, true, node.value);
         this.emit.line(';');
+        this.buffer.emitOwnWaitedConcurrencyResolve(frame, ids[0], node.value);
       } else { // e.g., set x = capture ...
         this.emit(ids.join(' = ') + ' = ');
         this.emit.asyncBlockValue(node, frame, (n, f) => {
@@ -568,6 +573,12 @@ class Compiler extends CompilerBase {
         this.fail('set_path only supports a single target.', node.lineno, node.colno, node);
       }
       const targetName = node.targets[0].value;
+      const setvalPathValueId = this._tmpid();
+      this.emit(`let ${setvalPathValueId} = `);
+      this._compileExpression(node.value, frame, true);
+      this.emit.line(';');
+      this.buffer.emitOwnWaitedConcurrencyResolve(frame, setvalPathValueId, node.value || node);
+
       this.emit(ids[0] + ' = ');
       this.emit('runtime.setPath(');
       // Preserve command-tree ordering by reading the current value output
@@ -576,7 +587,7 @@ class Compiler extends CompilerBase {
       this.emit(', ');
       this._compileAggregate(node.path, frame, '[', ']', false, false);
       this.emit(', ');
-      this._compileExpression(node.value, frame, true);
+      this.emit(setvalPathValueId);
       this.emit(')');
       this.emit.line(';');
       hasAssignedValue = true;
@@ -584,6 +595,7 @@ class Compiler extends CompilerBase {
       this.emit(ids.join(' = ') + ' = ');
       this._compileExpression(node.value, frame, true, node.value);
       this.emit.line(';');
+      this.buffer.emitOwnWaitedConcurrencyResolve(frame, ids[0], node.value);
       hasAssignedValue = true;
     } else if (node.body) {
       this.emit(ids.join(' = ') + ' = ');
@@ -1570,8 +1582,6 @@ class Compiler extends CompilerBase {
           }
           return;
         }
-        const timingPromiseId = this._tmpid();
-        this.emit.line(`let ${timingPromiseId};`);
         frame = this.buffer.asyncAddToBufferScoped(
           node,
           frame,
@@ -1580,16 +1590,13 @@ class Compiler extends CompilerBase {
           textHandler,
           true,
           true,
-          (innerFrame) => {
+          (innerFrame, valueId) => {
             // Keep command args unresolved for apply-time resolution/error handling.
-            // Temporary timing barrier: await expression completion in the same async
-            // block that enqueues the command so current write-count/lock lifecycle stays stable.
-            // It will be removed after switching from var to value implementation.
-            this.emit(`(${timingPromiseId} = runtime.resolveSingle(`);
             this._compileExpression(child, innerFrame, false);
-            this.emit('))');
-            this.emit(';\n');
-            this.emit.line(`await ${timingPromiseId};`);
+          },
+          (innerFrame, valueId) => {
+            // Step 3: expression-root waited emission for limited-loop own waited output.
+            this.buffer.emitOwnWaitedConcurrencyResolve(innerFrame, valueId, child);
           }
         );
       });
@@ -1805,6 +1812,7 @@ class Compiler extends CompilerBase {
           // We compile them directly here.
           this._compileExpression(child, f, false);
           this.emit.line(';');
+          this.buffer.emitOwnWaitedConcurrencyResolve(f, resultVar, child);
           // We only push actual promises to the wait list
           this.emit.line(`if (${resultVar} && typeof ${resultVar}.then === 'function') ${promisesVar}.push(${resultVar});`);
         });

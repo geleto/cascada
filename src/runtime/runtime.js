@@ -150,6 +150,7 @@ module.exports = {
   OutputCommand: commands.OutputCommand,
   TextCommand: commands.TextCommand,
   ValueCommand: commands.ValueCommand,
+  WaitResolveCommand: commands.WaitResolveCommand,
   DataCommand: commands.DataCommand,
   SinkCommand: commands.SinkCommand,
   SequenceCallCommand: commands.SequenceCallCommand,

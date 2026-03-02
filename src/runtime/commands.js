@@ -231,6 +231,37 @@ class ValueCommand extends OutputCommand {
   }
 }
 
+class WaitResolveCommand extends OutputCommand {
+  constructor({ handler, args = null, arguments: legacyArgs = null, pos = null }) {
+    super({
+      handler,
+      command: null,
+      args: args || legacyArgs || [],
+      subpath: null,
+      pos
+    });
+  }
+
+  async apply(output) {
+    super.apply(output);
+    const value = Array.isArray(this.arguments) && this.arguments.length > 0
+      ? this.arguments[0]
+      : undefined;
+    try {
+      const { resolveSingle } = require('./resolve');
+      const resolved = await resolveSingle(value);
+      if (output) {
+        output._setTarget(resolved);
+      }
+      return resolved;
+    } catch (err) {
+      // Timing-only command: do not alter functional error flow.
+      void err;
+      return undefined;
+    }
+  }
+}
+
 class DataCommand extends OutputCommand {
   constructor({ handler, command, args = null, arguments: legacyArgs = null, pos = null }) {
     super({
@@ -907,6 +938,7 @@ module.exports = {
   OutputCommand,
   TextCommand,
   ValueCommand,
+  WaitResolveCommand,
   DataCommand,
   SinkCommand,
   SequenceCallCommand,

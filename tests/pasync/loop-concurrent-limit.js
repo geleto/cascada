@@ -1628,6 +1628,20 @@
       const source = tmpl._compileSource();
       expect(source).to.not.contain('__waited__');
     });
+
+    it('emits WaitResolveCommand for limited-loop top-level output expressions', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ x + 1 }}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(source).to.contain('new runtime.WaitResolveCommand');
+    });
+
+    it('does not emit WaitResolveCommand for unbounded loop output expressions', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs %}{{ x + 1 }}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(source).to.not.contain('new runtime.WaitResolveCommand');
+    });
   });
 
   describe('CommandBuffer.waitApplied', function () {
