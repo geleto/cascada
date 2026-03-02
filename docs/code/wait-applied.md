@@ -7,7 +7,7 @@ This design is needed only for:
 1. Concurrency-limited loop iterations (`of N`).
 
 Regular unbounded loops do not need this mechanism.
-Sequential loops do not use `waitApplied` in this phase.
+Sequential loops do not use `waitApplied` for this mechanism.
 
 ## Problem We Are Solving
 
@@ -45,7 +45,7 @@ Compiler inserts wait commands into this output for operations that must count a
 
 ## What Gets Added To `__waited__`
 
-Add exactly one waited command per top-level expression result that matters for loop body completion.
+Add exactly one waited command per included completion unit that matters for loop-iteration completion.
 
 Rules:
 
@@ -122,9 +122,9 @@ For each concurrency-limited loop iteration:
 
 This completion is per iteration only; overall loop completion is the composition of all iteration completions.
 
-## waitApplied Runtime Model (Current Constraints)
+## waitApplied Runtime Model Constraints
 
-Constraints for this phase:
+Constraints:
 
 1. Observables are ignored for wait-applied completion.
 2. Counting is scoped to a single concurrency-limited iteration buffer (not global system-wide).
@@ -144,7 +144,7 @@ Model:
 4. Safety basis:
    - mutable apply is awaited before iterator advances/leaves, so leave/finalize transitions are valid decrement points.
 5. Tracking scope:
-   - this phase uses a simple per-buffer counter model for iteration buffers; no additional command-tree-wide tracker is required.
+   - this model uses a simple per-buffer counter model for iteration buffers; no additional command-tree-wide tracker is required.
 
 Promise behavior:
 
@@ -164,8 +164,8 @@ Completion condition for `waitApplied(buffer)`:
 
 Notes:
 
-1. This does not require per-output `finished` in this phase.
-2. If per-output `finished` is introduced later, this model can be tightened without changing the compiler plan.
+1. This model does not require per-output `finished`.
+2. If per-output `finished` is available, this model can be tightened without changing the compiler plan.
 3. Calling `iterationBuffer.waitApplied(...)` at iteration end is required but not sufficient by itself; iterator presence for outputs touched by that iteration buffer must be active/bound before completion is checked.
 4. `iterationBuffer.waitApplied(...)` must ensure relevant iterators are bound (or trigger binding) before completion checks.
 
@@ -179,21 +179,22 @@ Nested concurrency-limited loops:
 
 ## Relationship With `waitAllClosures`
 
-Current phase:
-
-1. Keep `waitAllClosures` for transition safety.
+1. Keep `waitAllClosures` during the transition.
 2. Add `iterationBuffer.waitApplied(...)` for limited-loop completion correctness without timing barrier.
+3. Remove `waitAllClosures` when loop completion is fully represented by `waitApplied` + waited commands.
 
-Future (after value migration is complete):
+## Regression Triage Baseline
 
-1. Eliminate `waitAllClosures` after switching from var to value (output based) implementation
-2. Keep concurrency-limited loop correctness grounded in `waitApplied` + explicit waited commands.
+1. Iteration `waitApplied` hookup is expected to fix concurrency-limit oversubscription/sequentiality regressions:
+   - bounded loop pool oversubscription
+   - `of 1` not behaving sequentially
+   - nested-limit isolation collapse
+2. Non-limit regressions introduced by Step 2/3 wiring must be fixed first:
+   - finished-buffer timing regressions (`Cannot add command to finished CommandBuffer`)
+   - lazy deep-resolve behavior regressions
+3. After stabilization, remaining failures should be concentrated in limited-concurrency buckets targeted by Step 5.
 
 ## Step-by-Step Implementation Plan
-
-Rollout toggle:
-
-1. Use one rollout toggle `USE_WAIT_APPLIED_FOR_LIMITED_LOOPS` to switch between timing-barrier path and wait-applied path (not multiple overlapping toggles).
 
 ## Step 1: Runtime primitive
 
@@ -215,6 +216,7 @@ Rollout toggle:
    - output: same value/expression semantics for the caller
    - side effect: emits waited command into `currentWaitedOutputName`
 3. Use this helper at top-level expression-root sites in loop body, so assignment/output codegen shape is preserved (no forced local `resultId` rewrite everywhere).
+   - canonical sites for this step: `compileOutput`, `compileSet`, `compileSetval`, `compileDo` (root expression only)
 4. Command choice in helper for this step:
    - expression-root result -> `WaitResolveCommand`
 5. This step does not add aggregate-root `_compileAggregate` instrumentation yet.
@@ -225,69 +227,72 @@ Rollout toggle:
 7. After each forced-null region, restore previous waited name immediately.
 8. Remove `compileOutput` timing barrier in this step (required to validate that expression-root waited commands are effective).
 9. Add focused tests for this step only (expression roots + forced-null exclusions), and confirm expected limited-loop regressions start resolving.
-10. Full-suite regressions are acceptable at this step; boundary/nested wiring is completed in Step 4 before full-suite gating.
+10. Full-suite regressions are acceptable at this step; boundary/nested wiring is completed in Step 5 before full-suite gating.
 
-## Step 4: Boundary + Nested-Loop Wait Emission
+## Step 4: Stabilize Step 2/3 Regressions (Non-waitApplied)
+
+1. Fix finished-buffer timing regressions introduced by Step 2/3 wiring (for example, macro/caller path adding commands after buffer finish).
+2. Fix lazy deep-resolve behavior regressions introduced by wait-command/resolve refactors.
+3. Keep `waitApplied` hookup out of this step; goal is to isolate and restore non-limit semantics first.
+4. Exit criteria:
+   - `tests/pasync/race.js` macro+caller regression is fixed.
+   - `tests/pasync/structures.js` lazy deep-resolve regression is fixed.
+   - remaining failures are concentrated in limited-concurrency buckets expected for next step.
+
+## Step 5: Hook iteration completion
+
+1. In async block finalization for limited loops, call `iterationBuffer.waitApplied(...)` (all outputs in that iteration segment).
+2. Keep existing closure waits.
+3. Wire nested limited-loop completion into parent `__waited__` via a single wait command.
+
+## Step 6: Boundary + aggregate expansion
 
 1. Add aggregate-root wait emission in `_compileAggregate` paths:
    - aggregate root in allowed limited-loop iteration context -> `WaitResolveCommand`
    - do not emit for aggregate children/internal aggregate calls/control contexts
 2. Add forced-null context specifically for aggregate child-expression compilation and restore immediately after each region.
-3. Add focused tests for aggregate-root vs aggregate-child behavior.
-4. Nested concurrency-limited inner loop:
-   - obtain `nestedCompletionPromise`
-   - emit one `WaitResolveCommand(nestedCompletionPromise)` into parent waited output.
-5. Include/import/extends/super/block-invocation completion:
+3. Include/import/extends/super/block-invocation completion:
    - obtain boundary completion unit
    - emit one `WaitResolveCommand(boundaryCompletionUnit)` into waited output.
    - for `import` that produces multiple returned bindings/promises, first normalize to one aggregate completion unit (resolve-all style), then emit a single `WaitResolveCommand` for that unit.
-6. Add focused tests for boundary/nested cases.
-## Step 5: Hook block completion
+4. Add focused tests for:
+   - aggregate-root vs aggregate-child emission behavior
+   - boundary completion units
 
-1. In async block finalization for limited loops, call `iterationBuffer.waitApplied(...)` (all outputs in that iteration segment).
-2. Keep existing closure waits for now.
-3. Wire nested limited-loop completion into parent `__waited__` via a single wait command.
+## Step 7: Finalize timing-barrier removal
 
-## Step 6: Finalize timing-barrier removal
-
-1. Keep timing barrier removed as default path (or flip/remove temporary rollout flag if used).
+1. Remove remaining timing-barrier leftovers in non-loop paths (if any).
 2. Keep args unresolved and resolved at apply-time as designed.
 
-## Step 7: Verify
+## Step 8: Verify
 
 Required suites:
 
 1. `tests/pasync/loop-concurrent-limit.js`
-2. `tests/pasync/loops.js`
-3. `tests/pasync/race.js`
-4. `npm run test:quick`
+2. `tests/pasync/race.js`
+3. `npm run test:quick`
 
-## Step 8: Test Suite Restructure + New Special-Case Coverage
+## Step 9: Test Suite Restructure + New Special-Case Coverage
 
-1. Create a dedicated limited-loop test file in `tests/pasync`: `loop-concurrent-limit.js`.
-2. Move existing concurrency-limited loop tests into that file:
-   - include currently failing limited-loop tests
-   - include any other limited-loop tests currently spread across other files
-   - runtime `CommandBuffer.waitApplied` tests are now in `tests/pasync/loop-concurrent-limit.js` (moved from `tests/pasync/snapshots.js`)
+1. Use `tests/pasync/loop-concurrent-limit.js` as the dedicated file for limited-concurrency loop coverage.
+2. Move limited-concurrency tests from other files into `tests/pasync/loop-concurrent-limit.js` where applicable.
 3. Add required new tests for all special cases covered by this plan:
    - expression-root vs aggregate-root handling under unified `WaitResolveCommand`
    - excluded scopes (control-flow/iterator/condition/aggregate-child/sub-expression)
-   - nested limited-loop completion wiring (child completion promise into parent waited output)
-   - boundary completion units in limited-loop iterations (`include/import/extends/super/block-invocation`)
+   - nested limited-loop completion wiring (in Step 5 hook path)
+   - boundary completion units in limited-loop iterations (`include/import/extends/super/block-invocation`) (Step 6)
    - capture/call/macro-call return handling via `WaitResolveCommand`
 4. Keep tests deterministic and assert final semantics (iteration completion/order/limit), not race timing internals unless explicitly testing concurrency behavior.
 
-## Step 9: Cleanup phase (later)
-
-After full value migration:
+## Step 10: Cleanup
 
 1. Audit remaining `waitAllClosures` dependencies.
 2. Remove only where semantics are fully represented by waited outputs + `waitApplied`.
 
-Deferred optimization (not planned now):
+Optional optimization:
 
 1. Tail-iteration skip of `waitApplied` when scheduler can prove it is unnecessary.
-2. Keep always-on `waitApplied` in this phase for correctness.
+2. Keep always-on `waitApplied` where proof is unavailable.
 
 ## Error/Poison Semantics
 
