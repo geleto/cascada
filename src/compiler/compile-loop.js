@@ -193,7 +193,7 @@ class CompileLoop {
     frame = forResult.frame;
   }
 
-  _compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, forceAwaitLoopBody = false, whileConditionNode = null, useLoopValues = false) {
+  _compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, useLoopValues = false) {
     const bodyCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
     if (node.isAsync) {
       this.compiler.emit('(async function(');//@todo - think this over, does it need async block?
@@ -320,10 +320,11 @@ class CompileLoop {
         //only writes - will save the last write to the loop frame
       }
 
-      const shouldAwaitLoopBody = Boolean(bodyFrame.writeCounts) || sequentialLoopBody || forceAwaitLoopBody;
+      const shouldAwaitLoopBody = Boolean(bodyFrame.writeCounts) || sequentialLoopBody || hasConcurrencyLimit;
       return {
         result: bodyFrame,
-        sequential: shouldAwaitLoopBody
+        sequential: shouldAwaitLoopBody,
+        hasConcurrencyLimit
       };
     });
     const bodyFrame = bodyResult.result;

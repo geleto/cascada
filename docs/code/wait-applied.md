@@ -264,10 +264,11 @@ Required suites:
 
 ## Step 8: Test Suite Restructure + New Special-Case Coverage
 
-1. Create a dedicated limited-loop test file in `tests/pasync`: `loop-concurrency-limit.js`.
+1. Create a dedicated limited-loop test file in `tests/pasync`: `loop-concurrent-limit.js`.
 2. Move existing concurrency-limited loop tests into that file:
    - include currently failing limited-loop tests
    - include any other limited-loop tests currently spread across other files
+   - runtime `CommandBuffer.waitApplied` tests are now in `tests/pasync/loop-concurrent-limit.js` (moved from `tests/pasync/snapshots.js`)
 3. Add required new tests for all special cases covered by this plan:
    - expression-root vs aggregate-root handling under unified `WaitResolveCommand`
    - excluded scopes (control-flow/iterator/condition/aggregate-child/sub-expression)

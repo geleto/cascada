@@ -22,7 +22,7 @@ const { checkFinishedBuffer } = require('./checks');
 const { handleError, RuntimeFatalError } = require('./errors');
 
 class CommandBuffer {
-  constructor(context, parent = null, frame = null) {
+  constructor(context, parent = null, frame = null, enableWaitApplied = false) {
     if (!frame || typeof frame !== 'object') {
       throw new Error('CommandBuffer requires an owning frame');
     }
@@ -40,6 +40,15 @@ class CommandBuffer {
     this._pendingReservedSlots = 0;
     // finish was requested, but may be deferred until pending slots are filled.
     this._finishRequested = false;
+    // waitApplied tracking is only needed for limited-loop iteration buffers.
+    this._enableWaitApplied = enableWaitApplied;
+    if (this._enableWaitApplied) {
+      // Number of active iterator presences currently traversing this buffer.
+      this._activeWaitAppliedCount = 0;
+      // Deferred waitApplied promise state.
+      this._waitAppliedPromise = null;
+      this._waitAppliedResolve = null;
+    }
   }
 
   _registerOutput(handlerName, output) {
@@ -64,6 +73,9 @@ class CommandBuffer {
       return;
     }
     this._visitingIterators.set(outputName, iterator);
+    if (this._enableWaitApplied) {
+      this._activeWaitAppliedCount++;
+    }
   }
 
   onLeaveBuffer(iterator, outputName) {
@@ -74,6 +86,22 @@ class CommandBuffer {
     if (current === iterator) {
       this._visitingIterators.delete(outputName);
     }
+    if (this._enableWaitApplied && this._activeWaitAppliedCount > 0) {
+      this._activeWaitAppliedCount--;
+    }
+    this._resolveWaitAppliedIfReady();
+  }
+
+  waitApplied() {
+    if (this._isWaitAppliedReady()) {
+      return Promise.resolve();
+    }
+    if (!this._waitAppliedPromise) {
+      this._waitAppliedPromise = new Promise((resolve) => {
+        this._waitAppliedResolve = resolve;
+      });
+    }
+    return this._waitAppliedPromise;
   }
 
   _reserveSlot(outputName) {
@@ -365,6 +393,7 @@ class CommandBuffer {
     }
     this.finished = true;
     this._notifyBufferFinished();
+    this._resolveWaitAppliedIfReady();
   }
 
   _notifyBufferFinished() {
@@ -389,6 +418,23 @@ class CommandBuffer {
     }
     return output;
   }
+
+  _isWaitAppliedReady() {
+    if (!this._enableWaitApplied) {
+      return this.finished;
+    }
+    return this.finished && this._activeWaitAppliedCount === 0;
+  }
+
+  _resolveWaitAppliedIfReady() {
+    if (!this._waitAppliedResolve || !this._isWaitAppliedReady()) {
+      return;
+    }
+    const resolve = this._waitAppliedResolve;
+    this._waitAppliedResolve = null;
+    this._waitAppliedPromise = null;
+    resolve();
+  }
 }
 
 function ensureOutputIterator(output) {
@@ -405,8 +451,8 @@ function ensureOutputIterator(output) {
   return output._iterator;
 }
 
-function createCommandBuffer(context, parent = null, frame = null) {
-  return new CommandBuffer(context, parent, frame);
+function createCommandBuffer(context, parent = null, frame = null, enableWaitApplied = false) {
+  return new CommandBuffer(context, parent, frame, enableWaitApplied);
 }
 
 function isCommandBuffer(value) {

@@ -51,13 +51,13 @@ class AsyncState {
     return this.parent;
   }
 
-  asyncBlock(func, runtime, f, readVars, writeCounts, usedOutputs, parentBuffer, createOutputBuffer, cb, lineno, colno, context, errorContextString = null, isExpression = false, sequentialAsyncBlock = false) {
+  asyncBlock(func, runtime, f, readVars, writeCounts, usedOutputs, parentBuffer, createOutputBuffer, cb, lineno, colno, context, errorContextString = null, isExpression = false, sequentialAsyncBlock = false, hasConcurrencyLimit = false) {
     const childFrame = f.pushAsyncBlock(readVars, writeCounts, sequentialAsyncBlock, usedOutputs);
     // Runtime async-block creation site for CommandBuffer.
     // This avoids compiler-side duplicate creation for async block execution.
     let newBuffer = null;
     if (createOutputBuffer) {
-      newBuffer = runtime.createCommandBuffer(context, null, childFrame);
+      newBuffer = runtime.createCommandBuffer(context, null, childFrame, hasConcurrencyLimit);
       if (parentBuffer && Array.isArray(usedOutputs)) {
         for (const outputName of usedOutputs) {
           parentBuffer.addBuffer(newBuffer, outputName);

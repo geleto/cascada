@@ -198,7 +198,7 @@ module.exports = class CompileEmit {
   asyncBlock(node, frame, createScope, emitFunc, positionNode = node) {
     const aframe = this.asyncBlockBegin(node, frame, createScope, positionNode);
     emitFunc(aframe);
-    this.asyncBlockEnd(node, aframe, createScope, false, positionNode, null, false); // Pass sequentialLoopBody=false by default
+    this.asyncBlockEnd(node, aframe, createScope, false, positionNode, null, false, false); // Pass sequentialLoopBody=false by default
   }
 
   asyncBlockBegin(node, frame, createScope, positionNode = node) {
@@ -221,7 +221,7 @@ module.exports = class CompileEmit {
     return frame;
   }
 
-  asyncBlockEnd(node, frame, createScope, sequentialLoopBody = false, positionNode = node, parentBufferArg, createOutputBuffer) {
+  asyncBlockEnd(node, frame, createScope, sequentialLoopBody = false, positionNode = node, parentBufferArg, createOutputBuffer, hasConcurrencyLimit = false) {
     if (node.isAsync) {
       if (sequentialLoopBody) {
         // Wait for child async blocks spawned within this iteration
@@ -234,7 +234,7 @@ module.exports = class CompileEmit {
       const { readArgs, writeArgs, outputArgs } = this.getAsyncBlockArgs(frame, positionNode);
       const resolvedParentBufferArg = parentBufferArg || this.compiler.buffer.currentBuffer || 'null';
       const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${resolvedParentBufferArg}, ${createOutputBufferArg}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", false, ${sequentialLoopBody})`);
+      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${resolvedParentBufferArg}, ${createOutputBufferArg}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", false, ${sequentialLoopBody}, ${hasConcurrencyLimit})`);
       this.line(';');
     }
     if (createScope && !node.isAsync) {

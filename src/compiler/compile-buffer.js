@@ -520,10 +520,7 @@ class CompileBuffer {
           callbackValue = emitFunc(nextFrame, nestedBufferId, prevBuffer);
         }
       } finally {
-        const dynamicSequential = callbackValue && typeof callbackValue === 'object' &&
-          Object.prototype.hasOwnProperty.call(callbackValue, 'sequential')
-          ? callbackValue.sequential
-          : sequential;
+        const dynamicSequential = callbackValue?.sequential ?? sequential;
         nextFrame = this.compiler.emit.asyncBlockEnd(
           node,
           nextFrame,
@@ -531,7 +528,8 @@ class CompileBuffer {
           dynamicSequential,
           positionNode,
           parentBufferArg,
-          true
+          true,
+          callbackValue?.hasConcurrencyLimit
         );
         this.currentBuffer = prevBuffer;
         this.currentTextOutputVer = prevTextOutput;

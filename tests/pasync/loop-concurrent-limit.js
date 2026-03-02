@@ -6,6 +6,10 @@
   let delay;
   let createPoison;
   let isPoisonError;
+  let TextCommand;
+  let DataCommand;
+  let CommandBuffer;
+  let createOutput;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -14,12 +18,20 @@
     const runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
+    TextCommand = runtime.TextCommand;
+    DataCommand = runtime.DataCommand;
+    CommandBuffer = runtime.CommandBuffer;
+    createOutput = runtime.createOutput;
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     delay = window.util.delay;
     createPoison = nunjucks.createPoison;
     isPoisonError = nunjucks.isPoisonError;
+    TextCommand = nunjucks.runtime.TextCommand;
+    DataCommand = nunjucks.runtime.DataCommand;
+    CommandBuffer = nunjucks.runtime.CommandBuffer;
+    createOutput = nunjucks.runtime.createOutput;
   }
 
   function normalizeOutput(str) {
@@ -1594,6 +1606,91 @@
         expect(context.state.completed).to.be(context.size);
         expect(context.state.maxOutstanding).to.be.lessThan(limit + 1);
       });
+    });
+  });
+
+  describe('CommandBuffer.waitApplied', function () {
+    function createDeferred() {
+      let resolve;
+      let reject;
+      const promise = new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    it('waits for delayed mutable apply in text output', async function () {
+      const ctx = { path: 'wait-applied.njk' };
+      const buffer = new CommandBuffer(ctx, null, { parent: null }, true);
+      const frame = { parent: null };
+
+      createOutput(frame, buffer, 'text', ctx, 'text');
+
+      const deferred = createDeferred();
+      buffer.add(new TextCommand({
+        handler: 'text',
+        args: [deferred.promise],
+        pos: { lineno: 1, colno: 1 }
+      }), 'text');
+
+      buffer.markFinishedAndPatchLinks();
+
+      let settled = false;
+      const waitPromise = buffer.waitApplied().then(() => {
+        settled = true;
+      });
+
+      await Promise.resolve();
+      expect(settled).to.be(false);
+
+      deferred.resolve('done');
+      await waitPromise;
+      expect(settled).to.be(true);
+
+      const snapshot = await buffer.getOutput('text').finalSnapshot();
+      expect(snapshot).to.be('done');
+    });
+
+    it('waits until all output lanes in the buffer are applied', async function () {
+      const ctx = { path: 'wait-applied-multi.njk' };
+      const buffer = new CommandBuffer(ctx, null, { parent: null }, true);
+      const frame = { parent: null };
+
+      createOutput(frame, buffer, 'text', ctx, 'text');
+      createOutput(frame, buffer, 'data', ctx, 'data');
+
+      const deferred = createDeferred();
+      buffer.add(new DataCommand({
+        handler: 'data',
+        command: 'set',
+        args: [['value'], 1],
+        pos: { lineno: 1, colno: 1 }
+      }), 'data');
+      buffer.add(new TextCommand({
+        handler: 'text',
+        args: [deferred.promise],
+        pos: { lineno: 1, colno: 1 }
+      }), 'text');
+
+      buffer.markFinishedAndPatchLinks();
+
+      let settled = false;
+      const waitPromise = buffer.waitApplied().then(() => {
+        settled = true;
+      });
+
+      await Promise.resolve();
+      expect(settled).to.be(false);
+
+      deferred.resolve('x');
+      await waitPromise;
+      expect(settled).to.be(true);
+
+      const textSnapshot = await buffer.getOutput('text').finalSnapshot();
+      const dataSnapshot = await buffer.getOutput('data').finalSnapshot();
+      expect(textSnapshot).to.be('x');
+      expect(dataSnapshot).to.eql({ value: 1 });
     });
   });
 }());
