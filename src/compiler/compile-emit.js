@@ -61,6 +61,7 @@ module.exports = class CompileEmit {
     this.compiler.buffer.currentBuffer = 'output';
     this.compiler.buffer.currentTextOutputVer = 'output_textOutputVar';
     this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode ? null : DEFAULT_TEMPLATE_TEXT_OUTPUT;
+    this.compiler.buffer.currentWaitedOutputName = null;
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
@@ -113,6 +114,7 @@ module.exports = class CompileEmit {
     this.compiler.buffer.currentBuffer = null;
     this.compiler.buffer.currentTextOutputVer = null;
     this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode ? null : DEFAULT_TEMPLATE_TEXT_OUTPUT;
+    this.compiler.buffer.currentWaitedOutputName = null;
   }
 
   //todo: use only simple async block if you know that:

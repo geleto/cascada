@@ -25,6 +25,7 @@ class CompileBuffer {
     this.currentBuffer = null;
     this.currentTextOutputVer = null;
     this.currentTextOutputName = DEFAULT_TEMPLATE_TEXT_OUTPUT;
+    this.currentWaitedOutputName = null;
     // Temp value ids for split buffer writes (asyncAddToBufferBegin/End), supports nesting.
     // @otodo - evaluate these buffers, we shall be able to store
     // the values in the frame, the only probblem is when node.isAsync
@@ -58,6 +59,23 @@ class CompileBuffer {
    */
   getCurrentBuffer() {
     return this.currentBuffer;
+  }
+
+  // Scope current waited output binding for the emitted code region.
+  // Pass null to explicitly compile without an own waited output.
+  withOwnWaitedOutput(waitedOutputName, emitFunc) {
+    const prevWaitedOutputName = this.currentWaitedOutputName;
+    this.currentWaitedOutputName = waitedOutputName;
+    try {
+      return emitFunc();
+    } finally {
+      this.currentWaitedOutputName = prevWaitedOutputName;
+    }
+  }
+
+  // Compile a region with no own waited output binding.
+  skipOwnWaitedOutput(emitFunc) {
+    return this.withOwnWaitedOutput(null, emitFunc);
   }
 
   _getBufferAccess() {

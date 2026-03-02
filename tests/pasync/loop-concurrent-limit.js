@@ -3,6 +3,7 @@
 
   let expect;
   let AsyncEnvironment;
+  let AsyncTemplate;
   let delay;
   let createPoison;
   let isPoisonError;
@@ -13,7 +14,9 @@
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
-    AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
+    const envModule = require('../../src/environment/environment');
+    AsyncEnvironment = envModule.AsyncEnvironment;
+    AsyncTemplate = envModule.AsyncTemplate;
     delay = require('../util').delay;
     const runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
@@ -25,6 +28,7 @@
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
+    AsyncTemplate = nunjucks.AsyncTemplate;
     delay = window.util.delay;
     createPoison = nunjucks.createPoison;
     isPoisonError = nunjucks.isPoisonError;
@@ -1606,6 +1610,23 @@
         expect(context.state.completed).to.be(context.size);
         expect(context.state.maxOutstanding).to.be.lessThan(limit + 1);
       });
+    });
+  });
+
+  describe('Compiler waited-output scaffolding', function () {
+    it('declares internal __waited__ output for limited loop iterations', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ x }}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(source).to.contain('__waited__');
+      expect(source).to.contain('runtime.declareOutput(frame,');
+    });
+
+    it('does not declare internal __waited__ output for unbounded loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs %}{{ x }}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(source).to.not.contain('__waited__');
     });
   });
 
