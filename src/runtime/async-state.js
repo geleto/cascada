@@ -73,31 +73,47 @@ class AsyncState {
     }
 
     const activeBuffer = newBuffer || parentBuffer || null;
-    const promise = func(childState, childFrame, activeBuffer, parentBuffer || null)
-      .finally(() => {
-        // Finalize this block's buffer on both success and failure so parent
-        // chaining can progress in error paths as well.
-        if (newBuffer) {
-          newBuffer.markFinishedAndPatchLinks();
+    const cleanup = () => {
+      let waitAppliedPromise = null;
+      // Finalize this block's buffer on both success and failure so parent
+      // chaining can progress in error paths as well.
+      if (newBuffer) {
+        newBuffer.markFinishedAndPatchLinks();
+        // Limited-loop iterations must not complete until all mutable applies in
+        // this iteration buffer segment are drained.
+        if (hasConcurrencyLimit) {
+          waitAppliedPromise = newBuffer.waitApplied();
         }
-        // Ensure per-block finalization always runs (decrementing counters, releasing locks, etc.)
-        if (sequentialAsyncBlock) {
-          // This is the best place to do it rather than when the counter reaches 0
-          // because by this time some promises may have already been resolved
-          // and we will write the final values to the parent frame rather than the promises
-          childFrame._commitSequentialWrites();
-        }
-        childState._leaveAsyncBlock();
-      });
-
-    // Report fatal errors (side-effect only - doesn't suppress rejection)
-    promise.catch(err => {
-      if (err instanceof runtime.RuntimeFatalError) {
-        cb(err);
       }
-    });
+      // Ensure per-block finalization always runs (decrementing counters, releasing locks, etc.)
+      if (sequentialAsyncBlock) {
+        // This is the best place to do it rather than when the counter reaches 0
+        // because by this time some promises may have already been resolved
+        // and we will write the final values to the parent frame rather than the promises
+        childFrame._commitSequentialWrites();
+      }
+      childState._leaveAsyncBlock();
+      return waitAppliedPromise;
+    };
 
-    return promise;
+    const result = func(childState, childFrame, activeBuffer, parentBuffer || null);
+
+    if (!result || typeof result.then !== 'function') {
+      const cleanupResult = cleanup();
+      if (cleanupResult && typeof cleanupResult.then === 'function') {
+        return cleanupResult.then(() => result);
+      }
+      return result;
+    }
+
+    return result
+      .catch((err) => {
+        if (err instanceof runtime.RuntimeFatalError) {
+          cb(err);
+        }
+        throw err;
+      })
+      .finally(cleanup);
   }
 
   _incrementClosures() {
