@@ -1197,6 +1197,8 @@ class CompilerBase extends Obj {
 
   // @todo - audit compileExpression and wrapping
   // @todo - _compileExpression should take care of it's own async block wrapping
+  // @todo - !!!  make the CommandBuffer tree synchronously before any expression evaluation
+  //         each node will know its current command buffer
   _compileExpression(node, frame, forceWrap, positionNode) {
     // I'm not really sure if this type check is worth it or not.
     this.assertType(

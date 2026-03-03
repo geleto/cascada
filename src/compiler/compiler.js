@@ -1562,7 +1562,11 @@ class Compiler extends CompilerBase {
           }
           return;
         }
-        const forceWrapRootExpression = this._expressionMutatesOutput(child) && !this.buffer.currentWaitedOutputName;
+        // This is temporary, it is not exactly about mutating output, but about
+        // Adding any command to the buffer
+        // In the future, when we make the CommandBuffer tree synchronously before any expression evaluation,
+        // This will not be needed anymore
+        const forceWrapRootExpression = this._expressionAddsCommands(child) && !this.buffer.currentWaitedOutputName;
         frame = this.buffer.asyncAddToBufferScoped(
           node,
           frame,
@@ -1637,8 +1641,10 @@ class Compiler extends CompilerBase {
     return children;
   }
 
-  //temp implementation, will use mutatedOutputs instead
-  _expressionMutatesOutput(node) {
+  // temp implementation, will use mutatedOutputs instead
+  // Will create the CommandBuffer tree before any expression evaluation
+  // (but each node will know its current command buffer)
+  _expressionAddsCommands(node) {
     if (!node) {
       return false;
     }
