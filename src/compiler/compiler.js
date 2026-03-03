@@ -233,14 +233,9 @@ class Compiler extends CompilerBase {
       return;
     }
 
-    let timingPromiseId = null;
     if (noExtensionCallback || node.isAsync) {
       const ext = this._tmpid();
       this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
-      if (this.asyncMode) {
-        timingPromiseId = this._tmpid();
-        this.emit.line(`let ${timingPromiseId};`);
-      }
 
       const callTextHandler = this.buffer.currentTextOutputName;
       frame = this.buffer.asyncAddToBufferScoped(
@@ -252,24 +247,20 @@ class Compiler extends CompilerBase {
         true,
         this.asyncMode,
         (innerFrame) => {
-          let errorContextJson;
           if (this.asyncMode) {
-            this.emit(`(${timingPromiseId} = runtime.resolveSingle(`);
+            this.emit('runtime.resolveSingle(');
           } else {
-            errorContextJson = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
-            this.emit(node.isAsync ? 'await runtime.suppressValueAsync(' : 'runtime.suppressValue(');
+            this.emit('runtime.suppressValue(');
           }
           emitExtensionInvocation(innerFrame, ext);
           if (this.asyncMode) {
-            this.emit('))');
-            this.emit(';\n');
-            this.emit.line(`await ${timingPromiseId};`);
-          } else if (node.isAsync) {
-            this.emit(`, ${autoescape} && env.opts.autoescape, ${errorContextJson});`);//end of suppressValue
+            this.emit(')');
           } else {
             this.emit(`, ${autoescape} && env.opts.autoescape);`);//end of suppressValue
           }
-        }
+        },
+        null,
+        false
       );
     } else {
       //use the original nunjucks callback mechanism
@@ -278,11 +269,6 @@ class Compiler extends CompilerBase {
 
       const res = this._tmpid();
       this.emit.line(', ' + this._makeCallback(res));
-      let callbackTimingPromiseId = null;
-      if (this.asyncMode) {
-        callbackTimingPromiseId = this._tmpid();
-        this.emit.line(`let ${callbackTimingPromiseId};`);
-      }
       const callbackTextHandler = this.buffer.currentTextOutputName;
       frame = this.buffer.asyncAddToBufferScoped(
         node,
@@ -294,18 +280,12 @@ class Compiler extends CompilerBase {
         this.asyncMode,
         () => {
           if (this.asyncMode) {
-            this.emit(`(${callbackTimingPromiseId} = runtime.resolveSingle(${res}))`);
-            this.emit(';\n');
-            this.emit.line(`await ${callbackTimingPromiseId};`);
+            this.emit(`runtime.resolveSingle(${res})`);
           } else {
-            const errorContextJson2 = node.isAsync ? JSON.stringify(this._createErrorContext(node, positionNode)) : '';
-            if (node.isAsync) {
-              this.emit(`await runtime.suppressValueAsync(${res}, ${autoescape} && env.opts.autoescape, ${errorContextJson2});`);
-            } else {
-              this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
-            }
+            this.emit(`runtime.suppressValue(${res}, ${autoescape} && env.opts.autoescape);`);
           }
-        }
+        },
+        null
       );
 
       this.emit.addScopeLevel();
@@ -1408,7 +1388,7 @@ class Compiler extends CompilerBase {
       if (node.isAsync) {
         const errorCheck = `if (${err}) throw ${err};`;
         if (this.scriptMode) {
-          returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return undefined;});`;
+          returnStatement = `astate.waitAllClosures().then(() => {${bufferId}.markFinishedAndPatchLinks();${errorCheck}return undefined;})`;
         } else {
           // Snapshot must be enqueued before this managed buffer is finished.
           this.emit.line(`const ${snapshotVar} = ${bufferId}.addSnapshot("${this.buffer.currentTextOutputName}", {lineno: ${node.lineno}, colno: ${node.colno}});`);
@@ -1418,7 +1398,7 @@ class Compiler extends CompilerBase {
             ? `runtime.markSafe(${snapshotVar})`
             : snapshotVar;
 
-          returnStatement = `astate.waitAllClosures().then(() => {${errorCheck}return ${safeStringCall};});`;
+          returnStatement = `astate.waitAllClosures().then(() => {${bufferId}.markFinishedAndPatchLinks();${errorCheck}return ${safeStringCall};})`;
         }
       } else {
         // Sync case
@@ -1429,7 +1409,7 @@ class Compiler extends CompilerBase {
       }
     }, keepFrame ? this.buffer.currentBuffer : null);
 
-    this.emit.line('return ' + returnStatement);
+    this.emit.line(`return ${returnStatement};`);
 
     // Close the macro-body IIFE.
     this.emit.line('}).call(this, frame);');
@@ -1582,6 +1562,7 @@ class Compiler extends CompilerBase {
           }
           return;
         }
+        const forceWrapRootExpression = this._expressionMutatesOutput(child) && !this.buffer.currentWaitedOutputName;
         frame = this.buffer.asyncAddToBufferScoped(
           node,
           frame,
@@ -1592,7 +1573,7 @@ class Compiler extends CompilerBase {
           true,
           (innerFrame, valueId) => {
             // Keep command args unresolved for apply-time resolution/error handling.
-            this._compileExpression(child, innerFrame, false);
+            this._compileExpression(child, innerFrame, forceWrapRootExpression, child);
           },
           (innerFrame, valueId) => {
             // Step 3: expression-root waited emission for limited-loop own waited output.
@@ -1655,6 +1636,56 @@ class Compiler extends CompilerBase {
 
     return children;
   }
+
+  //temp implementation, will use mutatedOutputs instead
+  _expressionMutatesOutput(node) {
+    if (!node) {
+      return false;
+    }
+
+    let mutatesOutput = false;
+    const visit = (current) => {
+      if (!current || mutatesOutput) {
+        return;
+      }
+
+      if (current instanceof nodes.FunCall) {
+        const callee = current.name;
+        if (callee instanceof nodes.Symbol && callee.value === 'caller') {
+          mutatesOutput = true;
+          return;
+        }
+        const root = this.sequential._extractStaticPathRoot(callee);
+        if (root === 'caller') {
+          mutatesOutput = true;
+          return;
+        }
+      }
+
+      if (current.typename === 'Caller') {
+        mutatesOutput = true;
+        return;
+      }
+
+      // Mutation-only detection: sequence PATH reads (1) are observational and must
+      // not force wrapping; LOCK/CONTENDED entries indicate side-effecting calls.
+      if (current.sequenceOperations && current.sequenceOperations.size > 0) {
+        for (const value of current.sequenceOperations.values()) {
+          if (value !== 1) {
+            mutatesOutput = true;
+            return;
+          }
+        }
+      }
+
+      const children = this._getImmediateChildren(current);
+      children.forEach(visit);
+    };
+
+    visit(node);
+    return mutatesOutput;
+  }
+
 
   compileRoot(node, frame) {
 
@@ -1779,7 +1810,14 @@ class Compiler extends CompilerBase {
       }
       this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
       this.compile(block.body, tmpFrame);
-      this.emit.endEntryFunction(block);
+      if (this.asyncMode) {
+        // Block functions in async mode return final text snapshots directly.
+        this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
+        this.emit.line(`return ${this.buffer.currentTextOutputVer}.finalSnapshot();`);
+        this.emit.endEntryFunction(block, true);
+      } else {
+        this.emit.endEntryFunction(block);
+      }
     });
 
     this.emit.line('return {');

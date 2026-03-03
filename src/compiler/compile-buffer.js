@@ -142,6 +142,7 @@ class CompileBuffer {
 
     if (outputType === 'sequence') {
       if (isCallNode) {
+        this.registerOutputMutation(frame, handler);
         if (!command) {
           this.compiler.fail('Invalid sequence command syntax: expected sequenceOutput.method(...)', node.lineno, node.colno, node);
         }
@@ -175,6 +176,7 @@ class CompileBuffer {
         node
       );
     }
+    this.registerOutputMutation(frame, handler);
 
     this.compiler.emit(`new runtime.${commandClass}({ handler: '${handler}', `);
     if (command) {
@@ -222,10 +224,6 @@ class CompileBuffer {
   }
 
   registerOutputUsage(frame, outputName) {
-    if (!this.compiler.asyncMode) {
-      return;
-    }
-
     let df = frame;
     while (df) {
       if (df.declaredOutputs && df.declaredOutputs.has(outputName)) {
@@ -246,10 +244,29 @@ class CompileBuffer {
     }
   }
 
-  emitAddCommand(frame, outputName, valueExpr, positionNode = null, emitTextCommand = false) {
-    if (this.compiler.asyncMode) {
-      this.registerOutputUsage(frame, outputName);
+  registerOutputMutation(frame, outputName) {
+    let df = frame;
+    while (df) {
+      if (df.declaredOutputs && df.declaredOutputs.has(outputName)) {
+        break;
+      }
+      // Outputs follow lexical scoping only (same as variables).
+      df = df.parent;
     }
+
+    let current = frame;
+    while (current) {
+      current.mutatedOutputs = current.mutatedOutputs || new Set();
+      current.mutatedOutputs.add(outputName);
+      if (current === df) {
+        break;
+      }
+      current = current.parent;
+    }
+  }
+
+  emitAddCommand(frame, outputName, valueExpr, positionNode = null, emitTextCommand = false) {
+    this.registerOutputUsage(frame, outputName);
     if (emitTextCommand) {
       this.compiler.emit.line(
         `${this.currentBuffer}.addText(${valueExpr}, ${this._emitPositionLiteral(positionNode)}, "${outputName}")`
@@ -279,6 +296,7 @@ class CompileBuffer {
 
   emitAddSequenceCall(frame, outputName, commandName, subpath, argsExpr, positionNode) {
     this.registerOutputUsage(frame, outputName);
+    this.registerOutputMutation(frame, outputName);
     this.compiler.emit(
       `${this.currentBuffer}.addSequenceCall("${outputName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${argsExpr}, ${this._emitPositionLiteral(positionNode)})`
     );
@@ -423,9 +441,11 @@ class CompileBuffer {
       this.compiler.emit.asyncClosureDepth++;
       frame = frame.push(false, false);
       this.registerOutputUsage(frame, outputName);
+      // Observation commands are emitted through dedicated helpers like:
+      this.registerOutputMutation(frame, outputName);
 
       this.compiler.emit.line(`astate.asyncBlock(async (astate, frame)=>{`);
-      this.compiler.emit.line(`await ${this.currentBuffer}.addAsyncArgsCommand("${outputName}", (async () => {`);
+      this.compiler.emit.line(`${this.currentBuffer}.add((() => {`);
       this.compiler.emit.line(`let ${returnId};`);
       renderFunction.call(this.compiler, returnId, frame);
       this.compiler.emit.line(';');
@@ -433,7 +453,7 @@ class CompileBuffer {
         ? this._emitTemplateTextCommandExpression(returnId, positionNode)
         : returnId;
       this.compiler.emit.line(`return ${valueExpr};`);
-      this.compiler.emit.line(`})(), cb);`);
+      this.compiler.emit.line(`})(), "${outputName}");`);
 
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('}');
@@ -497,12 +517,13 @@ class CompileBuffer {
 
     this.compiler.emit.line(`astate.asyncBlock(async (astate, frame) => {`);
     const valueId = this.compiler._tmpid();
-    this.compiler.emit.line(`await ${this.currentBuffer}.addAsyncArgsCommand("${outputName}", (async () => {`);
+    this.compiler.emit.line(`${this.currentBuffer}.add((() => {`);
     this.compiler.emit(`let ${valueId} = `);
     this.compiler.emit.asyncClosureDepth++;
 
     const innerFrame = frame.push(false, false);
     this.registerOutputUsage(innerFrame, outputName);
+    this.registerOutputMutation(innerFrame, outputName);
 
     if (typeof emitFunc === 'function') {
       emitFunc(innerFrame, valueId);
@@ -517,7 +538,7 @@ class CompileBuffer {
       ? this._emitTemplateTextCommandExpression(valueId, positionNode, normalizeTextArgs)
       : valueId;
     this.compiler.emit.line(`return ${valueExpr};`);
-    this.compiler.emit.line(`})(), cb);`);
+    this.compiler.emit.line(`})(), "${outputName}");`);
 
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit.line('}');

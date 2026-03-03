@@ -378,6 +378,9 @@ class CompilerBase extends Obj {
 
         if (SEQUNTIAL_PATHS_USE_VALUE) {
           this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
+          if (node.sequentialRepair) {
+            this.buffer.registerOutputMutation(frame, nodeStaticPathKey);
+          }
           if (this.scriptMode) {
             this.emit(`runtime.sequentialContextLookupScriptValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
           } else {
@@ -806,6 +809,9 @@ class CompilerBase extends Obj {
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
         if (SEQUNTIAL_PATHS_USE_VALUE) {
           this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
+          if (node.sequentialRepair) {
+            this.buffer.registerOutputMutation(frame, nodeStaticPathKey);
+          }
           if (this.scriptMode) {
             this.emit('runtime.sequentialMemberLookupScriptAsyncValue(frame, (');
           } else {
@@ -886,6 +892,7 @@ class CompilerBase extends Obj {
         }
         if (SEQUNTIAL_PATHS_USE_VALUE) {
           this.buffer.registerOutputUsage(frame, sequenceLockKey);
+          this.buffer.registerOutputMutation(frame, sequenceLockKey);
         } else {
           const readLockKey = this.sequential._getReadLockKey(sequenceLockKey);
           this.async.updateFrameWrites(frame, sequenceLockKey);

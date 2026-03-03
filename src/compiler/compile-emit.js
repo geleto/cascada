@@ -125,7 +125,7 @@ module.exports = class CompileEmit {
   //to make sure there are no race conditions for the buffer position
   // Managed block for non-astate paths (scope/frame + optional scope-root buffer).
   // If createScopeRootBuffer=true, this is a sanctioned scope-root buffer creation
-  // site. The callback body is compiled between initialization and finalization.
+  // site. The callback body is compiled between initialization and caller-managed finalization.
   managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined) {
     let nextFrame = frame;
     if (createScope) {
@@ -182,11 +182,6 @@ module.exports = class CompileEmit {
     }
 
     if (createScopeRootBuffer) {
-      if (this.compiler.asyncMode) {
-        // Managed scope-root buffers are lifecycle-owned by this block and must
-        // be finalized before detaching from the compiler buffer stack.
-        this.line(`${this.compiler.buffer.currentBuffer}.markFinishedAndPatchLinks();`);
-      }
       this.compiler.buffer.currentBuffer = prevBuffer;
       this.compiler.buffer.currentTextOutputVer = prevTextOutput;
     }
@@ -301,6 +296,9 @@ module.exports = class CompileEmit {
       const { bufferId: id } = this.managedBlock(frame, false, true, (blockFrame) => {
         innerBodyFunction.call(this.compiler, blockFrame);
       });
+      if (this.compiler.asyncMode) {
+        this.line(`${id}.markFinishedAndPatchLinks();`);
+      }
       if (callbackName) {
         this.line(`${callbackName}(null, ${id});`);
       }

@@ -17,7 +17,7 @@ class BufferIterator {
     this._reset(this.output._buffer);
   }
 
-  onSlotFilled(buffer) {
+  onCommandOrBufferAdded(buffer) {
     this._requestAdvance();
   }
 

@@ -540,6 +540,9 @@ class CompileLoop {
           bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body, frame) : null;
 
           this.compiler.emit.line('next(' + i + ',' + buf + ');');
+          if (this.compiler.asyncMode) {
+            this.compiler.emit.line(`${buf}.markFinishedAndPatchLinks();`);
+          }
         });
       } else {
         this.compiler.compile(node.body, frame);

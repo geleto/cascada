@@ -267,25 +267,23 @@ class CompileInheritance {
         if (needsParentCheck) {
           if (this.compiler.hasDynamicExtends) {
             this.compiler.async.updateFrameReads(f, '__parentTemplate');
-            this.emit.line('let parent = await runtime.contextOrFrameLookup(context, frame, "__parentTemplate");');
+            this.emit.line('const parentPromise = runtime.contextOrFrameLookup(context, frame, "__parentTemplate").then((parent) => {');
             if (this.compiler.hasStaticExtends) {
               // Check both: dynamic can override static
-              this.emit.line('if (!parent) parent = parentTemplate;');
+              this.emit.line('  if (!parent) parent = parentTemplate;');
             }
+            this.emit.line('  return parent;');
+            this.emit.line('});');
           } else {
             // Only static extends (but in a context where dynamic might exist)
-            this.emit.line('let parent = parentTemplate;');
+            this.emit.line('const parentPromise = Promise.resolve(parentTemplate);');
           }
-          this.emit.line('if (!parent) {');
-        }
-        const blockFunc = this.compiler._tmpid();
-        //this.emit.line(`let ${blockFunc} = await context.getAsyncBlock("${node.name.value}");`);
-        //this.emit.line(`${blockFunc} = runtime.promisify(${blockFunc}.bind(context));`);
-        this.emit.line(`let ${blockFunc} = await context.getAsyncBlock("${node.name.value}");`);
-        this.emit.line(`${id} = ${blockFunc}(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer});`);
-        this.emit.line(`${id} = ${id}.addSnapshot("${this.compiler.buffer.currentTextOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
-        if (needsParentCheck) {
-          this.emit.line('}');
+          this.emit.line(`${id} = parentPromise.then((parent) => {`);
+          this.emit.line('  if (parent) return "";');
+          this.emit.line(`  return context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer}));`);
+          this.emit.line('});');
+        } else {
+          this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer}));`);
         }
       }, node, null, this.compiler.buffer.currentTextOutputName, true);
     }
@@ -357,10 +355,9 @@ class CompileInheritance {
     if (node.isAsync) {
       //this.emit.line(`let ${id} = runtime.promisify(context.getSuper.bind(context))(env, "${name}", b_${name}, frame, runtime, astate);`);
 
-      // Call getSuper directly - it returns the output synchronously
+      // Call getSuper directly - async blocks now return text snapshot promises
       // The callback (cb) is passed through for error propagation
       this.emit.line(`let ${id} = context.getSuper(env, "${name}", b_${name}, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer});`);
-      this.emit.line(`${id} = ${id}.addSnapshot("${this.compiler.buffer.currentTextOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
       this.emit.line(`${id} = runtime.markSafe(${id});`);
     }
     else {
@@ -396,8 +393,8 @@ class CompileInheritance {
       this.compiler._compileExpression(node.template, f, false);
       this.emit.line(';');
 
-      //the AsyncEnviuronment.getTemplate returns a Promise
-      this.emit.line(`let ${templateVar} = await env.getTemplate.bind(env)(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
+      // Keep producer synchronous: carry async template lookup/render in promise chain.
+      this.emit.line(`let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
       // Includes are compiled as separate templates. Loop aliases like `user` and
       // `loop` may exist as value outputs in the caller but are not lexically
@@ -407,14 +404,15 @@ class CompileInheritance {
       // those value aliases as snapshot promises taken from the *active* command
       // buffer. Using currentBuffer keeps snapshot reads in command-tree order.
       // The included template can then resolve these names via normal context lookup.
-      this.emit.line(`let ${includeVarsVar} = context.getVariables();`);
+      // Use a per-include variable object to avoid cross-iteration alias overwrites.
+      this.emit.line(`let ${includeVarsVar} = Object.assign({}, context.getVariables());`);
       this._emitValueAliasSnapshots(f, includeVarsVar, node);
 
-      // Call the template in composition mode. This is a SYNCHRONOUS call
-      // that returns the incomplete output array immediately. The master `cb` from the
-      // closure is passed for error propagation.
-      this.emit.line(`${resultVar} = ${templateVar}._renderForComposition(${includeVarsVar}, frame, astate, cb);`);
-      this.emit.line(`${resultVar} = ${resultVar}.addSnapshot("${this.compiler.buffer.currentTextOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+      // Resolve template promise, then compose and snapshot.
+      this.emit.line(`${resultVar} = runtime.resolveSingle(${templateVar}).then(function(resolvedTemplate){`);
+      this.emit.line(`  const composed = resolvedTemplate._renderForComposition(${includeVarsVar}, frame, astate, cb);`);
+      this.emit.line(`  return composed.addSnapshot("${this.compiler.buffer.currentTextOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+      this.emit.line('});');
     }, node, null, this.compiler.buffer.currentTextOutputName, true);
   }
 

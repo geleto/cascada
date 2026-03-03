@@ -163,6 +163,9 @@ class AsyncFrame extends Frame {
       //holds the names of outputs used in this frame or its children
       this.usedOutputs = undefined;
 
+      //holds the names of outputs mutated in this frame or its children
+      this.mutatedOutputs = undefined;
+
     } else {
       //when an async block is entered, it creates a promise for all variables that it or it's children modify
       //the value of the variable in the parent(an asyncVar if it's async block, regular var with frame.set otherwise) is changed to the promise

@@ -2,7 +2,6 @@
 
 const {
   ErrorCommand,
-  TargetPoisonCommand,
   TextCommand,
   SequenceCallCommand,
   SequenceGetCommand,
@@ -36,9 +35,7 @@ class CommandBuffer {
     this._outputs = parent ? parent._outputs : new Map();
     // Iterators currently visiting this buffer keyed by output name.
     this._visitingIterators = new Map();
-    // Pending reserved slots that are not filled yet.
-    this._pendingReservedSlots = 0;
-    // finish was requested, but may be deferred until pending slots are filled.
+    // finish was requested and will complete once finish preconditions are met.
     this._finishRequested = false;
     // waitApplied tracking is only needed for limited-loop iteration buffers.
     this._enableWaitApplied = enableWaitApplied;
@@ -104,16 +101,6 @@ class CommandBuffer {
     return this._waitAppliedPromise;
   }
 
-  _reserveSlot(outputName) {
-    if (!this.arrays[outputName]) {
-      this.arrays[outputName] = [];
-    }
-    const slot = this.arrays[outputName].length;
-    this.arrays[outputName][slot] = null;
-    this._pendingReservedSlots++;
-    return slot;
-  }
-
   addText(value, pos = null, outputName = 'text') {
     const textPos = pos && typeof pos === 'object'
       ? pos
@@ -134,16 +121,18 @@ class CommandBuffer {
 
   add(value, outputName) {
     checkFinishedBuffer(this);
-
-    const slot = this._reserveSlot(outputName);
+    if (!this.arrays[outputName]) {
+      this.arrays[outputName] = [];
+    }
     const target = this.arrays[outputName];
-    this._setSlotValue(target, slot, value);
+    target.push(value);
+    const slot = target.length - 1;
 
     if (isCommandBuffer(value)) {
       value.parent = this;
     }
 
-    this._notifySlotFilled(outputName);
+    this._notifyCommandOrBufferAdded(outputName);
     return slot;
   }
 
@@ -325,70 +314,15 @@ class CommandBuffer {
     return applySnapshot();
   }
 
-  async addAsyncArgsCommand(outputName, valueOrPromise, onFatal = null) {
-    const slot = this._reserveSlot(outputName);
-    try {
-      const value = await Promise.resolve(valueOrPromise);
-      this._fillSlot(slot, value, outputName);
-      return slot;
-    } catch (e) {
-      if (e instanceof RuntimeFatalError) {
-        if (typeof onFatal === 'function') {
-          onFatal(e);
-        }
-        throw e;
-      }
-
-      const errors = e && e.errors && Array.isArray(e.errors) ? e.errors : [e];
-
-      try {
-        this._fillSlot(slot, new TargetPoisonCommand({
-          handler: outputName,
-          errors,
-          pos: { lineno: 0, colno: 0 }
-        }), outputName);
-      } catch (fillErr) {
-        if (fillErr instanceof RuntimeFatalError) {
-          if (typeof onFatal === 'function') {
-            onFatal(fillErr);
-          }
-          throw fillErr;
-        }
-        throw fillErr;
-      }
-
-      return slot;
-    }
-  }
-
-  _fillSlot(slot, value, outputName) {
-    const target = this.arrays[outputName];
-    this._setSlotValue(target, slot, value);
-
-    if (isCommandBuffer(value)) {
-      value.parent = this;
-    }
-
-    this._notifySlotFilled(outputName);
-  }
-
-  _notifySlotFilled(outputName) {
+  _notifyCommandOrBufferAdded(outputName) {
     const iterator = this._visitingIterators.get(outputName);
     if (iterator) {
-      iterator.onSlotFilled(this);
+      iterator.onCommandOrBufferAdded(this);
     }
-  }
-
-  _setSlotValue(target, slot, value) {
-    if (target[slot] == null) {
-      this._pendingReservedSlots = Math.max(0, this._pendingReservedSlots - 1);
-    }
-    target[slot] = value;
-    this._tryCompleteFinish();
   }
 
   _tryCompleteFinish() {
-    if (!this._finishRequested || this.finished || this._pendingReservedSlots > 0) {
+    if (!this._finishRequested || this.finished) {
       return;
     }
     this.finished = true;

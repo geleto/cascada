@@ -1006,7 +1006,15 @@ async function inspectTargetForErrors(target) {
     }
 
     if (isPlainObject(value)) {
-      const values = Object.keys(value).map((key) => value[key]);
+      const values = [];
+      for (const key of Object.keys(value)) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        // Error inspection must not trigger accessor side effects on external objects.
+        if (descriptor && (typeof descriptor.get === 'function' || typeof descriptor.set === 'function')) {
+          continue;
+        }
+        values.push(value[key]);
+      }
       await Promise.all(values.map((entry) => visit(entry)));
     }
   };
