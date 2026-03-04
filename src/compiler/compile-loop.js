@@ -368,7 +368,7 @@ class CompileLoop {
         return {
           result: bodyFrame,
           sequential: shouldAwaitLoopBody,
-          hasConcurrencyLimit
+          hasConcurrencyLimit: shouldAwaitLoopBody
         };
       };
 
