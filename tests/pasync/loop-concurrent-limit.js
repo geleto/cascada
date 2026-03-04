@@ -48,7 +48,7 @@
     return str.replace(/\s+/g, '');
   }
 
-  describe('Async mode - concurrentLimit step 5 validation', () => {
+  describe('Async mode - concurrentLimit validation', () => {
     let env;
 
     beforeEach(() => {
@@ -318,6 +318,45 @@
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
         }
+      });
+
+      it('keeps outer of 1 blocked until nested limited loop work completes', async () => {
+        const context = {
+          outer: [1, 2],
+          inner: [1, 2, 3],
+          outerActive: 0,
+          outerMax: 0,
+          async enterOuter(id) {
+            void id;
+            context.outerActive++;
+            context.outerMax = Math.max(context.outerMax, context.outerActive);
+            return '';
+          },
+          async leaveOuter(id) {
+            void id;
+            context.outerActive--;
+            return '';
+          },
+          async innerWork(o, i) {
+            void o;
+            void i;
+            await delay(8);
+            return '';
+          }
+        };
+
+        const template = `
+        {%- for o in outer of 1 -%}
+          {{ enterOuter(o) }}
+          {%- for i in inner of 2 -%}
+            {{ innerWork(o, i) }}
+          {%- endfor -%}
+          {{ leaveOuter(o) }}
+        {%- endfor -%}
+        `;
+
+        await env.renderTemplateString(template, context);
+        expect(context.outerMax).to.be(1);
       });
     });
 
@@ -1976,11 +2015,60 @@
       expect(countWaitResolveCommands(source)).to.be(0);
     });
 
+    it('does not emit boundary WaitResolveCommand for from-import in unbounded loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs %}{% from "m.njk" import foo %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(0);
+    });
+
     it('does not emit boundary WaitResolveCommand for block invocation in unbounded loops', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs %}{% block b %}B{{ x }}{% endblock %}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(countWaitResolveCommands(source)).to.be(0);
+    });
+
+    it('emits WaitResolveCommand for set expression roots in limited loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% set y = foo(x) %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
+    });
+
+    it('emits WaitResolveCommand for do expression roots in limited loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% do foo(x) %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
+    });
+
+    it('does not emit WaitResolveCommand for iterator source expressions alone', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in makeItems() of 2 %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(0);
+    });
+
+    it('does not emit WaitResolveCommand for concurrentLimit expressions alone', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of limitExpr() %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(0);
+    });
+
+    it('does not emit WaitResolveCommand for condition expressions alone in limited loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% if cond(x) %}{% endif %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(0);
+    });
+
+    it('emits WaitResolveCommand for super boundary usage inside limited-loop block body', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% extends "base.njk" %}{% block b %}{% for x in xs of 2 %}{{ super() }}{% endfor %}{% endblock %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
     });
   });
 
