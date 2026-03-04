@@ -217,6 +217,10 @@ function cps(ast, asyncFilters) {
 
 function rewriteImplicitLoopSymbol(ast) {
   let loopSym = 0;
+  // These fields are evaluated outside the per-iteration body binding:
+  // - arr / concurrentLimit belong to scheduler/control-flow evaluation
+  // - else_ runs when no iteration body executes
+  // They must keep the parent active loop symbol.
   const LOOP_NON_BODY_FIELDS = ['arr', 'concurrentLimit', 'else_'];
   function nextLoopSymbol() {
     return '__loop__' + (loopSym++);
@@ -258,7 +262,8 @@ function rewriteImplicitLoopSymbol(ast) {
       return false;
     }
 
-    // Capture bodies live outside node.fields.
+    // Capture/call bodies are not part of node.fields and must be visited
+    // explicitly so include-compat aliasing is enabled when needed.
     if ((node instanceof nodes.Set || node instanceof nodes.CallAssign) &&
       node.body &&
       containsIncludeForCurrentLoop(node.body, false)) {
@@ -285,7 +290,11 @@ function rewriteImplicitLoopSymbol(ast) {
 
     if (node instanceof nodes.For || node instanceof nodes.AsyncEach || node instanceof nodes.AsyncAll) {
       const loopSymbol = nextLoopSymbol();
+      // Persist per-loop runtime symbol on node so compiler/runtime can bind
+      // metadata output without relying on lexical name "loop".
       node.loopRuntimeName = loopSymbol;
+      // Includes read from context variables, so some loop bodies need a
+      // compatibility alias for plain "loop" in addition to loopRuntimeName.
       node.needsLoopAlias = containsIncludeForCurrentLoop(node.body, true);
       const loopIsShadowedByTarget = targetDeclaresLoop(node.name);
 
@@ -316,6 +325,7 @@ function rewriteImplicitLoopSymbol(ast) {
       activeLoopSymbol &&
       node.value === 'loop' &&
       !node.isCompilerInternal) {
+      // Rewrite user-facing loop metadata symbol to the per-loop runtime symbol.
       node.value = activeLoopSymbol;
       return;
     }

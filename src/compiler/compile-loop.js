@@ -247,10 +247,13 @@ class CompileLoop {
         loopVars.forEach((name) => {
           this._declareLoopValueOutput(bodyFrame, name, node);
         });
-        // Only declare plain `loop` alias for include-compat.
+        // Include receives context variables by name, so it expects plain `loop`.
+        // Provide an alias only when transformer detected include usage and only
+        // if user loop target did not already declare/shadow `loop`.
         if (node.needsLoopAlias && !loopVars.includes('loop')) {
           this._declareLoopValueOutput(bodyFrame, 'loop', node, node.loopRuntimeName);
         }
+        // Internal metadata binding for rewritten loop symbol (e.g. __loop__3).
         this._declareLoopValueOutput(bodyFrame, node.loopRuntimeName, node, undefined, true);
       }
       if (limitedWaitedOutputName) {
@@ -436,6 +439,7 @@ class CompileLoop {
       internal
     };
     if (runtimeName && runtimeName !== name) {
+      // Lexical name can differ from runtime output key (notably loop aliasing).
       decl.runtimeName = runtimeName;
     }
     frame.declaredOutputs.set(name, decl);

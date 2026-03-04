@@ -26,6 +26,8 @@ class CompileInheritance {
       if (cur.declaredOutputs && typeof cur.declaredOutputs.forEach === 'function') {
         cur.declaredOutputs.forEach((decl, name) => {
           if (decl && decl.type === 'value' && !decl.internal) {
+            // Use lexical declaration names here (not runtimeName) because include
+            // consumes variables by user-facing names from context.getVariables().
             names.add(name);
           }
         });
