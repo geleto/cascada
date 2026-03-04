@@ -16,7 +16,7 @@ class CompileInheritance {
 	  this.emit = this.compiler.emit;
   }
 
-  _emitValueAliasSnapshots(frame, targetVarsVar, positionNode) {
+  _emitDeclaredValueSnapshots(frame, targetVarsVar, positionNode) {
     const lineno = positionNode && positionNode.lineno != null ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno != null ? positionNode.colno : 0;
 
@@ -25,7 +25,7 @@ class CompileInheritance {
     while (cur) {
       if (cur.declaredOutputs && typeof cur.declaredOutputs.forEach === 'function') {
         cur.declaredOutputs.forEach((decl, name) => {
-          if (decl && decl.type === 'value') {
+          if (decl && decl.type === 'value' && !decl.internal) {
             names.add(name);
           }
         });
@@ -34,9 +34,8 @@ class CompileInheritance {
     }
 
     names.forEach((name) => {
-      this.emit.line(
-        `${targetVarsVar}[${JSON.stringify(name)}] = ${this.compiler.buffer.currentBuffer}.addSnapshot(${JSON.stringify(name)}, { lineno: ${lineno}, colno: ${colno} });`
-      );
+      const snapshotExpr = this.compiler.buffer.emitAddSnapshot(frame, name, { lineno, colno }, true);
+      this.emit.line(`${targetVarsVar}[${JSON.stringify(name)}] = ${snapshotExpr};`);
     });
   }
 
@@ -396,17 +395,12 @@ class CompileInheritance {
       // Keep producer synchronous: carry async template lookup/render in promise chain.
       this.emit.line(`let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
-      // Includes are compiled as separate templates. Loop aliases like `user` and
-      // `loop` may exist as value outputs in the caller but are not lexically
-      // declared in the included template's own compile frame.
-      //
-      // To preserve caller-visible semantics, copy context variables and inject
-      // those value aliases as snapshot promises taken from the *active* command
-      // buffer. Using currentBuffer keeps snapshot reads in command-tree order.
-      // The included template can then resolve these names via normal context lookup.
-      // Use a per-include variable object to avoid cross-iteration alias overwrites.
+      // Includes run in a separate template/frame. To preserve caller-visible
+      // value-output reads, copy context vars and inject currently-declared
+      // value outputs as snapshot promises from the active command buffer.
+      // This keeps ordering semantics and leaves include logic declaration-driven.
       this.emit.line(`let ${includeVarsVar} = Object.assign({}, context.getVariables());`);
-      this._emitValueAliasSnapshots(f, includeVarsVar, node);
+      this._emitDeclaredValueSnapshots(f, includeVarsVar, node);
 
       // Resolve template promise, then compose and snapshot.
       this.emit.line(`${resultVar} = runtime.resolveSingle(${templateVar}).then(function(resolvedTemplate){`);

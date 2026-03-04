@@ -95,6 +95,11 @@ class CompileBuffer {
     return `{lineno: ${lineno}, colno: ${colno}}`;
   }
 
+  _resolveOutputRuntimeName(frame, outputName) {
+    const outputDecl = this.compiler.async._getDeclaredOutput(frame, outputName);
+    return outputDecl?.runtimeName ?? outputName;
+  }
+
   _compileCommandConstruction(node, frame) {
     const isCallNode = node.call instanceof nodes.FunCall;
     const staticPath = this.compiler.sequential._extractStaticPath(isCallNode ? node.call.name : node.call);
@@ -224,6 +229,7 @@ class CompileBuffer {
   }
 
   registerOutputUsage(frame, outputName) {
+    const runtimeOutputName = this._resolveOutputRuntimeName(frame, outputName);
     let df = frame;
     while (df) {
       if (df.declaredOutputs && df.declaredOutputs.has(outputName)) {
@@ -236,7 +242,7 @@ class CompileBuffer {
     let current = frame;
     while (current) {
       current.usedOutputs = current.usedOutputs || new Set();
-      current.usedOutputs.add(outputName);
+      current.usedOutputs.add(runtimeOutputName);
       if (current === df) {
         break;
       }
@@ -245,6 +251,7 @@ class CompileBuffer {
   }
 
   registerOutputMutation(frame, outputName) {
+    const runtimeOutputName = this._resolveOutputRuntimeName(frame, outputName);
     let df = frame;
     while (df) {
       if (df.declaredOutputs && df.declaredOutputs.has(outputName)) {
@@ -257,7 +264,7 @@ class CompileBuffer {
     let current = frame;
     while (current) {
       current.mutatedOutputs = current.mutatedOutputs || new Set();
-      current.mutatedOutputs.add(outputName);
+      current.mutatedOutputs.add(runtimeOutputName);
       if (current === df) {
         break;
       }
@@ -267,13 +274,14 @@ class CompileBuffer {
 
   emitAddCommand(frame, outputName, valueExpr, positionNode = null, emitTextCommand = false) {
     this.registerOutputUsage(frame, outputName);
+    const runtimeOutputName = this._resolveOutputRuntimeName(frame, outputName);
     if (emitTextCommand) {
       this.compiler.emit.line(
-        `${this.currentBuffer}.addText(${valueExpr}, ${this._emitPositionLiteral(positionNode)}, "${outputName}")`
+        `${this.currentBuffer}.addText(${valueExpr}, ${this._emitPositionLiteral(positionNode)}, "${runtimeOutputName}")`
       );
       return;
     }
-    this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${outputName}");`);
+    this.compiler.emit.line(`${this.currentBuffer}.add(${valueExpr}, "${runtimeOutputName}");`);
   }
 
   emitOwnWaitedConcurrencyResolve(frame, valueExpr, positionNode = null) {
@@ -282,52 +290,61 @@ class CompileBuffer {
       return;
     }
     this.registerOutputUsage(frame, waitedOutputName);
+    const runtimeOutputName = this._resolveOutputRuntimeName(frame, waitedOutputName);
     this.compiler.emit.line(
-      `${this.currentBuffer}.add(new runtime.WaitResolveCommand({ handler: "${waitedOutputName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedOutputName}");`
+      `${this.currentBuffer}.add(new runtime.WaitResolveCommand({ handler: "${runtimeOutputName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${runtimeOutputName}");`
     );
   }
 
   emitAddSequenceGet(frame, outputName, commandName, subpath, positionNode) {
     this.registerOutputUsage(frame, outputName);
+    const runtimeOutputName = this._resolveOutputRuntimeName(frame, outputName);
     this.compiler.emit(
-      `${this.currentBuffer}.addSequenceGet("${outputName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${this._emitPositionLiteral(positionNode)})`
+      `${this.currentBuffer}.addSequenceGet("${runtimeOutputName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
   emitAddSequenceCall(frame, outputName, commandName, subpath, argsExpr, positionNode) {
     this.registerOutputUsage(frame, outputName);
     this.registerOutputMutation(frame, outputName);
+    const runtimeOutputName = this._resolveOutputRuntimeName(frame, outputName);
     this.compiler.emit(
-      `${this.currentBuffer}.addSequenceCall("${outputName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${argsExpr}, ${this._emitPositionLiteral(positionNode)})`
+      `${this.currentBuffer}.addSequenceCall("${runtimeOutputName}", "${commandName}", ${JSON.stringify(subpath || [])}, ${argsExpr}, ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
-  emitAddSnapshot(frame, outputName, positionNode) {
+  emitAddSnapshot(frame, outputName, positionNode, asExpression = false) {
     this.registerOutputUsage(frame, outputName);
-    this.compiler.emit(
-      `${this.currentBuffer}.addSnapshot("${outputName}", ${this._emitPositionLiteral(positionNode)})`
-    );
+    const runtimeOutputName = this._resolveOutputRuntimeName(frame, outputName);
+    const snapshotExpr = `${this.currentBuffer}.addSnapshot("${runtimeOutputName}", ${this._emitPositionLiteral(positionNode)})`;
+    if (asExpression) {
+      return snapshotExpr;
+    }
+    this.compiler.emit(snapshotExpr);
   }
 
   // Emit an ordered raw snapshot command (no nested poison inspection).
   emitAddRawSnapshot(frame, outputName, positionNode) {
     this.registerOutputUsage(frame, outputName);
+    const runtimeOutputName = this._resolveOutputRuntimeName(frame, outputName);
     this.compiler.emit(
-      `${this.currentBuffer}.addRawSnapshot("${outputName}", ${this._emitPositionLiteral(positionNode)})`
+      `${this.currentBuffer}.addRawSnapshot("${runtimeOutputName}", ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
   emitAddIsError(frame, outputName, positionNode) {
     this.registerOutputUsage(frame, outputName);
+    const runtimeOutputName = this._resolveOutputRuntimeName(frame, outputName);
     this.compiler.emit(
-      `${this.currentBuffer}.addIsError("${outputName}", ${this._emitPositionLiteral(positionNode)})`
+      `${this.currentBuffer}.addIsError("${runtimeOutputName}", ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
   emitAddGetError(frame, outputName, positionNode) {
     this.registerOutputUsage(frame, outputName);
+    const runtimeOutputName = this._resolveOutputRuntimeName(frame, outputName);
     this.compiler.emit(
-      `${this.currentBuffer}.addGetError("${outputName}", ${this._emitPositionLiteral(positionNode)})`
+      `${this.currentBuffer}.addGetError("${runtimeOutputName}", ${this._emitPositionLiteral(positionNode)})`
     );
   }
 
@@ -488,7 +505,7 @@ class CompileBuffer {
     const valueExpr = emitTextCommand
       ? this._emitTemplateTextCommandExpression(returnId, positionNode)
       : returnId;
-    this.emitAddCommand(frame, outputName, valueExpr);
+    this.emitAddCommand(frame, outputName, valueExpr, positionNode, emitTextCommand);
   }
 
   /**

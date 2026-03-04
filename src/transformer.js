@@ -2,6 +2,7 @@
 
 var nodes = require('./nodes');
 var lib = require('./lib');
+var { LOOP_VARS_USE_VALUE } = require('./feature-flags');
 
 var sym = 0;
 function gensym() {
@@ -214,12 +215,134 @@ function cps(ast, asyncFilters) {
   return convertStatements(liftSuper(liftFilters(ast, asyncFilters)));
 }
 
+function rewriteImplicitLoopSymbol(ast) {
+  let loopSym = 0;
+  const LOOP_NON_BODY_FIELDS = ['arr', 'concurrentLimit', 'else_'];
+  function nextLoopSymbol() {
+    return '__loop__' + (loopSym++);
+  }
+  function targetDeclaresLoop(targetNode) {
+    if (!targetNode) {
+      return false;
+    }
+    if (targetNode instanceof nodes.Symbol) {
+      return targetNode.value === 'loop';
+    }
+    if (targetNode instanceof nodes.Array) {
+      return targetNode.children.some((child) => targetDeclaresLoop(child));
+    }
+    return false;
+  }
+
+  function containsIncludeForCurrentLoop(node, atTopLoopBody) {
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        if (containsIncludeForCurrentLoop(node[i], false)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (!(node instanceof nodes.Node)) {
+      return false;
+    }
+
+    if (node instanceof nodes.Include) {
+      return true;
+    }
+
+    // Do not let nested loops force aliasing for the parent loop.
+    if (!atTopLoopBody &&
+      (node instanceof nodes.For || node instanceof nodes.AsyncEach || node instanceof nodes.AsyncAll || node instanceof nodes.While)) {
+      return false;
+    }
+
+    // Capture bodies live outside node.fields.
+    if ((node instanceof nodes.Set || node instanceof nodes.CallAssign) &&
+      node.body &&
+      containsIncludeForCurrentLoop(node.body, false)) {
+      return true;
+    }
+
+    for (let i = 0; i < node.fields.length; i++) {
+      if (containsIncludeForCurrentLoop(node[node.fields[i]], false)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function rewrite(node, activeLoopSymbol) {
+    if (Array.isArray(node)) {
+      node.forEach((child) => rewrite(child, activeLoopSymbol));
+      return;
+    }
+
+    if (!(node instanceof nodes.Node)) {
+      return;
+    }
+
+    if (node instanceof nodes.For || node instanceof nodes.AsyncEach || node instanceof nodes.AsyncAll) {
+      const loopSymbol = nextLoopSymbol();
+      node.loopRuntimeName = loopSymbol;
+      node.needsLoopAlias = containsIncludeForCurrentLoop(node.body, true);
+      const loopIsShadowedByTarget = targetDeclaresLoop(node.name);
+
+      // Non-body zones execute outside iteration binding and keep parent loop scope.
+      // Do not rewrite declaration targets (`name`): they are bindings, not reads.
+      LOOP_NON_BODY_FIELDS.forEach((field) => {
+        rewrite(node[field], activeLoopSymbol);
+      });
+
+      // Only iteration body executes with this loop binding.
+      // If target declares `loop`, it shadows loop metadata in this scope.
+      rewrite(node.body, loopIsShadowedByTarget ? null : loopSymbol);
+      return;
+    }
+
+    if (node instanceof nodes.While) {
+      const loopSymbol = nextLoopSymbol();
+      node.loopRuntimeName = loopSymbol;
+      node.needsLoopAlias = containsIncludeForCurrentLoop(node.body, true);
+
+      // Async while compiles condition inside iteration body.
+      rewrite(node.cond, loopSymbol);
+      rewrite(node.body, loopSymbol);
+      return;
+    }
+
+    if (node instanceof nodes.Symbol &&
+      activeLoopSymbol &&
+      node.value === 'loop' &&
+      !node.isCompilerInternal) {
+      node.value = activeLoopSymbol;
+      return;
+    }
+
+    // Set/CallAssign capture bodies are on `.body` but not included in `fields`.
+    if ((node instanceof nodes.Set || node instanceof nodes.CallAssign) && node.body) {
+      rewrite(node.body, activeLoopSymbol);
+    }
+
+    node.fields.forEach((field) => {
+      rewrite(node[field], activeLoopSymbol);
+    });
+  }
+
+  rewrite(ast, null);
+  return ast;
+}
+
 function transform(ast, asyncFilters, name, opts) {
   if (opts.asyncMode) {
     ast = addDynamicExtendsSetup(ast, opts);
   }
-
-  return cps(ast, asyncFilters || []);
+  ast = cps(ast, asyncFilters || []);
+  if (opts.asyncMode && LOOP_VARS_USE_VALUE) {
+    return rewriteImplicitLoopSymbol(ast);
+  }
+  return ast;
 }
 
 function addDynamicExtendsSetup(ast, opts) {

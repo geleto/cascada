@@ -6,6 +6,7 @@
   var AsyncEnvironment;
   //var Environment;
   var delay;
+  var StringLoader;
   var parser;
   var createPoison;
   var isPoisonError;
@@ -20,6 +21,7 @@
     //Environment = require('../../src/environment/environment').Environment;
     //unescape = require('he').unescape;
     delay = require('../util').delay;
+    StringLoader = require('../util').StringLoader;
     parser = require('../../src/parser');
     runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
@@ -33,6 +35,7 @@
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     //Environment = nunjucks.Environment;
     delay = window.util.delay;
+    StringLoader = window.util.StringLoader;
     parser = nunjucks.parser;
     runtime = nunjucks.runtime;
     createPoison = runtime.createPoison;
@@ -551,6 +554,59 @@
             expect(entry.max).to.be(1);
           });
         });
+
+        it('should shadow child loop metadata and restore parent loop metadata', async () => {
+          const context = {
+            outerItems: [10, 20],
+            innerItems: ['a', 'b']
+          };
+
+          const template = '{% for outer in outerItems %}' +
+            'O{{ loop.index }}-' +
+            '{% for inner in innerItems %}' +
+            'I{{ loop.index }}' +
+            '{% endfor %}' +
+            '-A{{ loop.index }}|' +
+            '{% endfor %}';
+
+          const result = await env.renderTemplateString(template, context);
+          expect(result).to.equal('O1-I1I2-A1|O2-I1I2-A2|');
+        });
+
+        it('should preserve loop-target shadowing inside include when loop target is named loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('shadow-child.njk', 'C{{ loop }}');
+          loader.addTemplate('shadow-parent.njk',
+            '{% for outer in [1] %}O{{ loop.index }}:' +
+            '{% for loop in [10,20] %}{% include "shadow-child.njk" %}-V{{ loop }}-{% endfor %}' +
+            ':A{{ loop.index }}{% endfor %}');
+
+          const result = await localEnv.renderTemplate('shadow-parent.njk', {});
+          expect(result).to.equal('O1:C10-V10-C20-V20-:A1');
+        });
+
+        it('should preserve while-loop metadata alias inside include', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('while-child.njk', 'W{{ loop.index }}');
+          loader.addTemplate('while-parent.njk',
+            '{% while state.shouldContinue() %}{% include "while-child.njk" %}|{% endwhile %}');
+
+          const context = {
+            state: {
+              i: 0,
+              async shouldContinue() {
+                this.i += 1;
+                await delay(1);
+                return this.i <= 2;
+              }
+            }
+          };
+
+          const result = await localEnv.renderTemplate('while-parent.njk', context);
+          expect(result).to.equal('W1|W2|');
+        });
       });
 
       describe('Limited concurrency behavior (async iterators)', () => {
@@ -741,6 +797,330 @@
           const result = await env.renderTemplateString(template, context);
 
           expect(result).to.equal('3-F,3-F,3-T,');
+        });
+      });
+
+      describe('Loop shadowing include coverage', () => {
+        it('asyncEach include should read parent loop metadata', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('ae-child.njk', 'I{{ loop.index }}-{{ loop.index0 }}-{{ "T" if loop.first else "F" }}|');
+          loader.addTemplate('ae-parent.njk', '{% asyncEach item in [10,20,30] %}{% include "ae-child.njk" %}{% endeach %}');
+          const result = await localEnv.renderTemplate('ae-parent.njk', {});
+          expect(result).to.equal('I1-0-T|I2-1-F|I3-2-F|');
+        });
+
+        it('asyncAll include should read parent loop metadata', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('aa-child.njk', 'I{{ loop.index }}-{{ loop.index0 }}-{{ "T" if loop.first else "F" }}|');
+          loader.addTemplate('aa-parent.njk', '{% asyncAll item in [10,20,30] %}{% include "aa-child.njk" %}{% endall %}');
+          const result = await localEnv.renderTemplate('aa-parent.njk', {});
+          expect(result).to.equal('I1-0-T|I2-1-F|I3-2-F|');
+        });
+
+        it('for destructured target shadowing with include should expose value loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('for-ds-child.njk', 'V{{ loop }}|');
+          loader.addTemplate('for-ds-parent.njk',
+            '{% for loop, tag in [[10, "a"], [20, "b"]] %}{% include "for-ds-child.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('for-ds-parent.njk', {});
+          expect(result).to.equal('V10|V20|');
+        });
+
+        it('asyncEach destructured target shadowing with include should expose value loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('ae-ds-child.njk', 'V{{ loop }}|');
+          loader.addTemplate('ae-ds-parent.njk',
+            '{% asyncEach loop, tag in [[10, "a"], [20, "b"]] %}{% include "ae-ds-child.njk" %}{% endeach %}');
+          const result = await localEnv.renderTemplate('ae-ds-parent.njk', {});
+          expect(result).to.equal('V10|V20|');
+        });
+
+        it('asyncAll destructured target shadowing with include should expose value loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('aa-ds-child.njk', 'V{{ loop }}|');
+          loader.addTemplate('aa-ds-parent.njk',
+            '{% asyncAll loop, tag in [[10, "a"], [20, "b"]] %}{% include "aa-ds-child.njk" %}{% endall %}');
+          const result = await localEnv.renderTemplate('aa-ds-parent.njk', {});
+          expect(result).to.equal('V10|V20|');
+        });
+
+        it('for nested include restore should return to outer metadata after inner loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('inner-meta.njk', 'IN{{ loop.index }}|');
+          loader.addTemplate('outer-meta.njk', 'OUT{{ loop.index }}|');
+          loader.addTemplate('for-for-parent.njk',
+            '{% for o in [1,2] %}{% for i in ["a","b"] %}{% include "inner-meta.njk" %}{% endfor %}{% include "outer-meta.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('for-for-parent.njk', {});
+          expect(result).to.equal('IN1|IN2|OUT1|IN1|IN2|OUT2|');
+        });
+
+        it('for + asyncEach restore should return to outer metadata after inner loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('inner-ae-meta.njk', 'IN{{ loop.index }}|');
+          loader.addTemplate('outer-ae-meta.njk', 'OUT{{ loop.index }}|');
+          loader.addTemplate('for-ae-parent.njk',
+            '{% for o in [1,2] %}{% asyncEach i in ["a","b"] %}{% include "inner-ae-meta.njk" %}{% endeach %}{% include "outer-ae-meta.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('for-ae-parent.njk', {});
+          expect(result).to.equal('IN1|IN2|OUT1|IN1|IN2|OUT2|');
+        });
+
+        it('for + asyncAll restore should return to outer metadata after inner loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('inner-aa-meta.njk', 'IN{{ loop.index }}|');
+          loader.addTemplate('outer-aa-meta.njk', 'OUT{{ loop.index }}|');
+          loader.addTemplate('for-aa-parent.njk',
+            '{% for o in [1,2] %}{% asyncAll i in ["a","b"] %}{% include "inner-aa-meta.njk" %}{% endall %}{% include "outer-aa-meta.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('for-aa-parent.njk', {});
+          expect(result).to.equal('IN1|IN2|OUT1|IN1|IN2|OUT2|');
+        });
+
+        it('while + for restore should return to while metadata after inner loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('inner-wf.njk', 'IN{{ loop.index }}|');
+          loader.addTemplate('outer-wf.njk', 'OUT{{ loop.index }}|');
+          loader.addTemplate('while-for-parent.njk',
+            '{% while state.next() %}{% for x in [1,2] %}{% include "inner-wf.njk" %}{% endfor %}{% include "outer-wf.njk" %}{% endwhile %}');
+          const context = {
+            state: {
+              i: 0,
+              async next() {
+                this.i += 1;
+                await delay(1);
+                return this.i <= 2;
+              }
+            }
+          };
+          const result = await localEnv.renderTemplate('while-for-parent.njk', context);
+          expect(result).to.equal('IN1|IN2|OUT1|IN1|IN2|OUT2|');
+        });
+
+        it('while + while restore should return to outer while metadata after inner loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('inner-ww.njk', 'IN{{ loop.index }}|');
+          loader.addTemplate('outer-ww.njk', 'OUT{{ loop.index }}|');
+          loader.addTemplate('while-while-parent.njk',
+            '{% while outer.next() %}{% while inner.next() %}{% include "inner-ww.njk" %}{% endwhile %}{% include "outer-ww.njk" %}{% set reset = inner.reset() %}{% endwhile %}');
+          const context = {
+            outer: {
+              i: 0,
+              async next() {
+                this.i += 1;
+                await delay(1);
+                return this.i <= 2;
+              }
+            },
+            inner: {
+              i: 0,
+              async next() {
+                this.i += 1;
+                await delay(1);
+                return this.i <= 2;
+              },
+              reset() {
+                this.i = 0;
+                return '';
+              }
+            }
+          };
+          const result = await localEnv.renderTemplate('while-while-parent.njk', context);
+          expect(result).to.equal('IN1|IN2|OUT1|IN1|IN2|OUT2|');
+        });
+
+        it('while nested loop include isolation should keep inner and outer loop metadata separate', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('inner-wi.njk', 'IN{{ loop.index }}|');
+          loader.addTemplate('outer-wi.njk', 'OUT{{ loop.index }}|');
+          loader.addTemplate('while-nested-parent.njk',
+            '{% while state.next() %}{% for x in [1,2] %}{% include "inner-wi.njk" %}{% endfor %}{% include "outer-wi.njk" %}{% endwhile %}');
+          const context = {
+            state: {
+              i: 0,
+              async next() {
+                this.i += 1;
+                await delay(1);
+                return this.i <= 2;
+              }
+            }
+          };
+          const result = await localEnv.renderTemplate('while-nested-parent.njk', context);
+          expect(result).to.equal('IN1|IN2|OUT1|IN1|IN2|OUT2|');
+        });
+
+        it('concurrentLimit loop include should read per-iteration loop metadata', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('cl-child.njk', 'I{{ loop.index }}|');
+          loader.addTemplate('cl-parent.njk',
+            '{% for item in [1,2,3,4] of 2 %}{% include "cl-child.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('cl-parent.njk', {});
+          expect(result).to.equal('I1|I2|I3|I4|');
+        });
+
+        it('nested concurrentLimit loops with include should keep metadata isolated', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('ncl-inner.njk', 'IN{{ loop.index }}|');
+          loader.addTemplate('ncl-outer.njk', 'OUT{{ loop.index }}|');
+          loader.addTemplate('ncl-parent.njk',
+            '{% for o in [1,2] of 2 %}{% for i in ["a","b","c"] of 2 %}{% include "ncl-inner.njk" %}{% endfor %}{% include "ncl-outer.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('ncl-parent.njk', {});
+          expect(result).to.equal('IN1|IN2|IN3|OUT1|IN1|IN2|IN3|OUT2|');
+        });
+
+        it('concurrentLimit with loop target shadow should keep include reading value loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('cl-shadow-child.njk', 'V{{ loop }}|');
+          loader.addTemplate('cl-shadow-parent.njk',
+            '{% for loop in [10,20,30] of 2 %}{% include "cl-shadow-child.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('cl-shadow-parent.njk', {});
+          expect(result).to.equal('V10|V20|V30|');
+        });
+
+        it.skip('include inside set capture body within loop should resolve current loop binding', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('cap-child.njk', 'I{{ loop.index }}');
+          loader.addTemplate('cap-parent.njk',
+            '{% for item in [1,2] %}{% set blockOut %}{% include "cap-child.njk" %}{% endset %}{{ blockOut }}|{% endfor %}');
+          const result = await localEnv.renderTemplate('cap-parent.njk', {});
+          expect(result).to.equal('I1|I2|');
+        });
+
+        it.skip('include inside call body within loop should resolve current loop binding', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('call-child.njk', 'I{{ loop.index }}');
+          loader.addTemplate('call-parent.njk',
+            '{% macro wrap() %}[{{ caller() }}]{% endmacro %}{% for item in [1,2] %}{% call wrap() %}{% include "call-child.njk" %}{% endcall %}{% endfor %}');
+          const result = await localEnv.renderTemplate('call-parent.njk', {});
+          expect(result).to.equal('[I1][I2]');
+        });
+
+        it('loop else include should not leak current loop alias', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('else-child.njk', '{% if loop %}HAS{% else %}NO{% endif %}|');
+          loader.addTemplate('else-parent.njk',
+            '{% for item in [] %}{% include "else-child.njk" %}{% else %}{% include "else-child.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('else-parent.njk', {});
+          expect(result).to.equal('NO|');
+        });
+
+        it('inner loop arr expression should read parent loop metadata', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('arr-parent.njk',
+            '{% for outer in [1,2] %}{% for inner in makeArr(loop.index) %}{{ inner }}{% endfor %}|{% endfor %}');
+          const context = {
+            makeArr(idx) {
+              return [idx];
+            }
+          };
+          const result = await localEnv.renderTemplate('arr-parent.njk', context);
+          expect(result).to.equal('1|2|');
+        });
+
+        it('inner loop concurrentLimit expression should read parent loop metadata', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('of-parent.njk',
+            '{% for outer in [1,2] %}{% for inner in [1,2,3] of loop.index %}{{ loop.index }}{% endfor %}|{% endfor %}');
+          const result = await localEnv.renderTemplate('of-parent.njk', {});
+          expect(result).to.equal('123|123|');
+        });
+
+        it('object iteration include should read loop metadata', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('obj-meta-child.njk', 'I{{ loop.index }}-{{ "T" if loop.first else "F" }}|');
+          loader.addTemplate('obj-meta-parent.njk',
+            '{% for k, v in items %}{% include "obj-meta-child.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('obj-meta-parent.njk', { items: { a: 1, b: 2 } });
+          expect(result).to.equal('I1-T|I2-F|');
+        });
+
+        it('object iteration with loop shadow target should expose value loop inside include', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('obj-shadow-child.njk', 'V{{ loop }}|');
+          loader.addTemplate('obj-shadow-parent.njk',
+            '{% for loop, v in {x: 10, y: 20} %}{% include "obj-shadow-child.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('obj-shadow-parent.njk', {});
+          expect(result).to.equal('Vx|Vy|');
+        });
+
+        it('asyncEach else include should not leak current loop alias', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('ae-else-child.njk', '{% if loop %}HAS{% else %}NO{% endif %}|');
+          loader.addTemplate('ae-else-parent.njk',
+            '{% asyncEach item in [] %}{% include "ae-else-child.njk" %}{% else %}{% include "ae-else-child.njk" %}{% endeach %}');
+          const result = await localEnv.renderTemplate('ae-else-parent.njk', {});
+          expect(result).to.equal('NO|');
+        });
+
+        it('asyncAll else include should not leak current loop alias', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('aa-else-child.njk', '{% if loop %}HAS{% else %}NO{% endif %}|');
+          loader.addTemplate('aa-else-parent.njk',
+            '{% asyncAll item in [] %}{% include "aa-else-child.njk" %}{% else %}{% include "aa-else-child.njk" %}{% endall %}');
+          const result = await localEnv.renderTemplate('aa-else-parent.njk', {});
+          expect(result).to.equal('NO|');
+        });
+
+        it('while + asyncEach restore should return to while metadata after inner loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('inner-wae.njk', 'IN{{ loop.index }}|');
+          loader.addTemplate('outer-wae.njk', 'OUT{{ loop.index }}|');
+          loader.addTemplate('while-ae-parent.njk',
+            '{% while state.next() %}{% asyncEach x in [1,2] %}{% include "inner-wae.njk" %}{% endeach %}{% include "outer-wae.njk" %}{% endwhile %}');
+          const context = {
+            state: {
+              i: 0,
+              async next() {
+                this.i += 1;
+                await delay(1);
+                return this.i <= 2;
+              }
+            }
+          };
+          const result = await localEnv.renderTemplate('while-ae-parent.njk', context);
+          expect(result).to.equal('IN1|IN2|OUT1|IN1|IN2|OUT2|');
+        });
+
+        it('while + asyncAll restore should return to while metadata after inner loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('inner-waa.njk', 'IN{{ loop.index }}|');
+          loader.addTemplate('outer-waa.njk', 'OUT{{ loop.index }}|');
+          loader.addTemplate('while-aa-parent.njk',
+            '{% while state.next() %}{% asyncAll x in [1,2] %}{% include "inner-waa.njk" %}{% endall %}{% include "outer-waa.njk" %}{% endwhile %}');
+          const context = {
+            state: {
+              i: 0,
+              async next() {
+                this.i += 1;
+                await delay(1);
+                return this.i <= 2;
+              }
+            }
+          };
+          const result = await localEnv.renderTemplate('while-aa-parent.njk', context);
+          expect(result).to.equal('IN1|IN2|OUT1|IN1|IN2|OUT2|');
         });
       });
 
@@ -3567,4 +3947,3 @@ return output.snapshot()`;
   }); // End Cascada Script Loops
 
 })();
-

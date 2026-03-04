@@ -37,6 +37,8 @@ class CompileLoop {
       null //else
     );
     fakeForNode.isAsync = true;
+    fakeForNode.loopRuntimeName = node.loopRuntimeName;
+    fakeForNode.needsLoopAlias = node.needsLoopAlias;
 
     // Delegate to _compileFor, passing the condition node to be injected into the body
     this._compileFor(fakeForNode, frame, true, iteratorCompiler, node.cond);
@@ -48,6 +50,14 @@ class CompileLoop {
 
   _compileFor(node, frame, sequentialLoopBody = false, iteratorCompiler = null, whileConditionNode = null) {
     const useLoopValues = node.isAsync && LOOP_VARS_USE_VALUE;
+    if (useLoopValues && !node.loopRuntimeName) {
+      this.compiler.fail(
+        'Internal compiler error: missing loopRuntimeName for async loop value bindings.',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
     const forResult = this.compiler.buffer.asyncBufferNode(node, frame, true, false, node.arr, (blockFrame) => {
       // Evaluate the array expression
       const arr = this.compiler._tmpid();
@@ -81,7 +91,6 @@ class CompileLoop {
       const loopVars = [];
       const registerLoopVarBinding = (name) => {
         if (node.isAsync && useLoopValues) {
-          this._declareLoopValueOutput(blockFrame, name, node);
           return;
         }
         blockFrame.set(name, name);
@@ -101,10 +110,6 @@ class CompileLoop {
         loopVars.push(name);
         registerLoopVarBinding(name);
       }
-      if (useLoopValues) {
-        this._declareLoopValueOutput(blockFrame, 'loop', node);
-      }
-
       // Compile the loop body function and collect metadata
       const loopBodyFuncId = this.compiler._tmpid();
       this.compiler.emit(`let ${loopBodyFuncId} = `);
@@ -230,6 +235,24 @@ class CompileLoop {
     }
     const bodyResult = this.compiler.buffer.asyncBufferNode(node, frame, bodyCreatesScope, false, node.body, (bodyFrame) => {
       const limitedWaitedOutputName = hasConcurrencyLimit ? `__waited__${this.compiler._tmpid()}` : null;
+      if (useLoopValues) {
+        if (node.needsLoopAlias && !node.loopRuntimeName) {
+          this.compiler.fail(
+            'Internal compiler error: include loop alias requires loopRuntimeName.',
+            node.lineno,
+            node.colno,
+            node
+          );
+        }
+        loopVars.forEach((name) => {
+          this._declareLoopValueOutput(bodyFrame, name, node);
+        });
+        // Only declare plain `loop` alias for include-compat.
+        if (node.needsLoopAlias && !loopVars.includes('loop')) {
+          this._declareLoopValueOutput(bodyFrame, 'loop', node, node.loopRuntimeName);
+        }
+        this._declareLoopValueOutput(bodyFrame, node.loopRuntimeName, node, undefined, true);
+      }
       if (limitedWaitedOutputName) {
         this.compiler._addDeclaredOutput(bodyFrame, limitedWaitedOutputName, 'value', null, node);
         this.compiler.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${limitedWaitedOutputName}", "value", context, null);`);
@@ -397,7 +420,7 @@ class CompileLoop {
     return elseFrame;
   }
 
-  _declareLoopValueOutput(frame, name, _node) {
+  _declareLoopValueOutput(frame, name, _node, runtimeName, internal = false) {
     if (this.compiler.scriptMode && this.compiler.isReservedDeclarationName(name)) {
       this.compiler.fail(
         `Identifier '${name}' is reserved and cannot be used as a variable or output name.`,
@@ -407,18 +430,23 @@ class CompileLoop {
       );
     }
     frame.declaredOutputs = frame.declaredOutputs || new Map();
-    frame.declaredOutputs.set(name, {
+    const decl = {
       type: 'value',
-      initializer: null
-    });
+      initializer: null,
+      internal
+    };
+    if (runtimeName && runtimeName !== name) {
+      decl.runtimeName = runtimeName;
+    }
+    frame.declaredOutputs.set(name, decl);
   }
 
-  _emitLoopValueDeclarations(loopVars) {
+  _emitLoopValueDeclarations(node, loopVars) {
     const buffer = this.compiler.buffer.currentBuffer;
-    const declared = new Set(['loop', ...loopVars]);
-    declared.forEach((name) => {
+    loopVars.forEach((name) => {
       this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${name}", "value", context, null);`);
     });
+    this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${node.loopRuntimeName}", "value", context, null);`);
   }
 
   _emitLoopValueAssignment(node, outputName, valueExpr, frame) {
@@ -431,7 +459,7 @@ class CompileLoop {
 
   _emitLoopBindings(node, loopVars, loopIndex, loopLength, isLast, frame, useLoopValues) {
     if (useLoopValues) {
-      this._emitLoopValueDeclarations(loopVars);
+      this._emitLoopValueDeclarations(node, loopVars);
       this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame);
       return;
     }
@@ -454,9 +482,9 @@ class CompileLoop {
   _emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame) {
     this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
       this.compiler.emit(
-        `${resultVar} = runtime.setLoopValueBindings('loop', ${loopIndex}, ${loopLength}, ${isLast}, {lineno: ${node.lineno}, colno: ${node.colno}})`
+        `${resultVar} = runtime.setLoopValueBindings('${node.loopRuntimeName}', ${loopIndex}, ${loopLength}, ${isLast}, {lineno: ${node.lineno}, colno: ${node.colno}})`
       );
-    }, node, 'loop');
+    }, node, node.loopRuntimeName);
   }
 
   _compileAsyncLoopBindings(node, arr, i, len) {
