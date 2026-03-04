@@ -2,6 +2,7 @@
 
 const nodes = require('../nodes');
 const { VALUE_IMPORT_BINDINGS } = require('../feature-flags');
+const CompileBuffer = require('./compile-buffer');
 
 /**
  * CompileInheritance - Handles template inheritance operations
@@ -465,14 +466,19 @@ class CompileInheritance {
       this.compileIncludeSync(node, frame);
       return;
     }
-    // `asyncBlockAddToBuffer` places the final result into the parent buffer.
-    // The block is async because `getTemplate` returns a promise.
-    this.compiler.buffer.asyncAddToBuffer(node, frame, (resultVar, f) => {
+    // Keep include command enqueue synchronous in the parent buffer. The command
+    // argument carries the async include completion promise.
+    this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar, f) => {
       // Get the template object (this part is async)
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();
       const includeVarsVar = this.compiler._tmpid();
       const aliasMapVar = this.compiler._tmpid();
+      const includeTextPromise = this.compiler._tmpid();
+      // Included template renders into its own default text lane.
+      // The caller lane may be scope-specific (e.g. capture text output) and
+      // is only used when enqueueing the final TextCommand in the parent buffer.
+      const includeOutputName = CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT;
 
       // Get the template name expression
       this.emit(`let ${templateNameVar} = `);
@@ -492,16 +498,19 @@ class CompileInheritance {
       this._emitDeclaredValueAliasMap(f, aliasMapVar);
 
       // Resolve template promise, then compose and snapshot.
-      this.emit.line(`${resultVar} = runtime.resolveSingle(${templateVar}).then(function(resolvedTemplate){`);
+      this.emit.line(`let ${includeTextPromise} = runtime.resolveSingle(${templateVar}).then(function(resolvedTemplate){`);
       this.emit.line(`  const composed = resolvedTemplate._renderForComposition(${includeVarsVar}, frame, astate, cb);`);
       // Compose child buffer with base->canonical aliases (e.g. loop -> loop#7)
       // so natural names used inside included templates target the right lane.
       this.emit.line(`  composed._setBoundaryAliases(${aliasMapVar});`);
-      this.emit.line(`  return composed.addSnapshot("${this.compiler.buffer.currentTextOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
+      this.emit.line(`  return composed.addSnapshot("${includeOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
       this.emit.line('});');
-      // Step 7: include boundary completion in limited-loop waited output.
-      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, resultVar, node);
-    }, node, null, this.compiler.buffer.currentTextOutputName, true);
+      this.emit.line(`${resultVar} = new runtime.TextCommand({ handler: "${this.compiler.buffer.currentTextOutputName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} });`);
+      // Include boundary completion in limited-loop waited output.
+      // Wait on the composed include snapshot promise (timing unit), not on the
+      // command object created for parent enqueue.
+      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, includeTextPromise, node);
+    }, node, this.compiler.buffer.currentTextOutputName, false);
   }
 
   compileIncludeSync(node, frame) {

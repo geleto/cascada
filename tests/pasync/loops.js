@@ -244,7 +244,7 @@
         });
 
 
-        it.skip('include inside set capture body within loop should resolve current loop binding', async () => {
+        it('include inside set capture body within loop should resolve current loop binding', async () => {
           const loader = new StringLoader();
           const localEnv = new AsyncEnvironment(loader);
           loader.addTemplate('cap-child.njk', 'I{{ loop.index }}');
@@ -307,6 +307,28 @@
             '{% for loop, v in {x: 10, y: 20} %}{% include "obj-shadow-child.njk" %}{% endfor %}');
           const result = await localEnv.renderTemplate('obj-shadow-parent.njk', {});
           expect(result).to.equal('Vx|Vy|');
+        });
+
+        it('include inside if branches within loop should keep current loop metadata', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('if-scope-child.njk', 'I{{ loop.index }}|');
+          loader.addTemplate('if-scope-parent.njk',
+            '{% for item in [1,2] %}{% if item == 1 %}{% include "if-scope-child.njk" %}{% else %}{% include "if-scope-child.njk" %}{% endif %}{% endfor %}');
+
+          const result = await localEnv.renderTemplate('if-scope-parent.njk', {});
+          expect(result).to.equal('I1|I2|');
+        });
+
+        it('include inside switch cases within loop should keep current loop metadata', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('switch-scope-child.njk', 'S{{ loop.index }}|');
+          loader.addTemplate('switch-scope-parent.njk',
+            '{% for item in [1,2] %}{% switch item %}{% case 1 %}{% include "switch-scope-child.njk" %}{% case 2 %}{% include "switch-scope-child.njk" %}{% default %}X{% endswitch %}{% endfor %}');
+
+          const result = await localEnv.renderTemplate('switch-scope-parent.njk', {});
+          expect(result).to.equal('S1|S2|');
         });
 
         it('asyncEach else include should not leak current loop alias', async () => {

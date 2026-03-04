@@ -3,6 +3,7 @@
 var nodes = require('./nodes');
 var lib = require('./lib');
 var { LOOP_VARS_USE_VALUE } = require('./feature-flags');
+var scopeBoundaries = require('./compiler/scope-boundaries');
 
 var sym = 0;
 function gensym() {
@@ -306,13 +307,138 @@ function rewriteImplicitLoopSymbol(ast, idPool) {
   return ast;
 }
 
+function rewriteDuplicateDeclarations(ast, idPool) {
+  const scopeStack = [new Map()];
+  const declarationCounts = new Map();
+  const scopeRules = scopeBoundaries;
+
+  function currentScope() {
+    return scopeStack[scopeStack.length - 1];
+  }
+
+  function lookupRenamed(name) {
+    for (let i = scopeStack.length - 1; i >= 0; i--) {
+      const mapped = scopeStack[i].get(name);
+      if (mapped) {
+        return mapped;
+      }
+    }
+    return null;
+  }
+
+  function nextRenamed(name) {
+    const nextCount = (declarationCounts.get(name) || 0) + 1;
+    declarationCounts.set(name, nextCount);
+    if (nextCount === 1) {
+      return name;
+    }
+    if (idPool && typeof idPool.next === 'function') {
+      // Share compiler/transformer id space for deterministic, collision-free aliases.
+      return `${name}#${idPool.next()}`;
+    }
+    return `${name}#${nextCount - 1}`;
+  }
+
+  function registerDeclarations(symbols, scopeMap) {
+    symbols.forEach((symbol) => {
+      if (!(symbol instanceof nodes.Symbol) || symbol.isCompilerInternal) {
+        return;
+      }
+      const sourceName = symbol.value;
+      const renamed = nextRenamed(sourceName);
+      // Rewrite declaration target in-place and remember source->runtime mapping
+      // for subsequent reads inside the active lexical scope chain.
+      symbol.value = renamed;
+      scopeMap.set(sourceName, renamed);
+    });
+  }
+
+  function withScope(fn) {
+    scopeStack.push(new Map());
+    fn();
+    scopeStack.pop();
+  }
+
+  function rewrite(node) {
+    if (Array.isArray(node)) {
+      node.forEach(rewrite);
+      return;
+    }
+
+    if (!(node instanceof nodes.Node)) {
+      return;
+    }
+
+    if (node instanceof nodes.Symbol && !node.isCompilerInternal) {
+      const mapped = lookupRenamed(node.value);
+      if (mapped) {
+        // Symbol reads/writes resolve to the nearest active declaration mapping.
+        node.value = mapped;
+      }
+      return;
+    }
+
+    const boundaryFields = scopeRules.getScopeBoundaryFields(node);
+    const boundarySet = new Set(boundaryFields);
+
+    // Current-scope declarations.
+    const declarationContexts = [
+      {},
+      { inImportTarget: true },
+      { inFromImportTarget: true }
+    ];
+    for (let i = 0; i < declarationContexts.length; i++) {
+      const ctx = declarationContexts[i];
+      if (!scopeRules.isDeclarationSite(node, ctx)) {
+        continue;
+      }
+      registerDeclarations(scopeRules.extractDeclaredSymbols(node, ctx), currentScope());
+      break;
+    }
+
+    // Non-boundary fields remain in the current lexical scope.
+    node.fields.forEach((field) => {
+      if (boundarySet.has(field)) {
+        return;
+      }
+      rewrite(node[field]);
+    });
+
+    // Boundary fields each execute in child lexical scopes.
+    boundaryFields.forEach((field) => {
+      const value = node[field];
+      if (Array.isArray(value)) {
+        value.forEach((child) => {
+          // Each branch/case/body gets its own lexical declaration scope.
+          withScope(() => {
+            rewrite(child);
+          });
+        });
+        return;
+      }
+
+      if (value instanceof nodes.Node || value != null) {
+        withScope(() => {
+          rewrite(value);
+        });
+      }
+    });
+  }
+
+  rewrite(ast);
+  return ast;
+}
+
 function transform(ast, asyncFilters, name, opts) {
   if (opts.asyncMode) {
     ast = addDynamicExtendsSetup(ast, opts);
   }
   ast = cps(ast, asyncFilters || []);
   if (opts.asyncMode && LOOP_VARS_USE_VALUE) {
-    return rewriteImplicitLoopSymbol(ast, opts && opts.idPool);
+    ast = rewriteImplicitLoopSymbol(ast, opts && opts.idPool);
+  }
+  if (opts.asyncMode) {
+    ast = rewriteDuplicateDeclarations(ast, opts && opts.idPool);
   }
   return ast;
 }

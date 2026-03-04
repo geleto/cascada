@@ -2,13 +2,17 @@
 
 let expect;
 let AsyncEnvironment;
+let AsyncScript;
 
 if (typeof require !== 'undefined') {
   expect = require('expect.js');
-  AsyncEnvironment = require('../../src/environment/environment').AsyncEnvironment;
+  const environment = require('../../src/environment/environment');
+  AsyncEnvironment = environment.AsyncEnvironment;
+  AsyncScript = environment.AsyncScript;
 } else {
   expect = window.expect;
   AsyncEnvironment = nunjucks.AsyncEnvironment;
+  AsyncScript = nunjucks.AsyncScript;
 }
 
 describe('Cascada Script: Variables', function () {
@@ -324,6 +328,22 @@ describe('Cascada Script: Variables', function () {
       expect(fallback.selection).to.be('fallback');
     });
 
+    it('should emit canonical runtime aliases for duplicated branch declarations', function () {
+      const script = `
+        var result = {}
+        if flag
+          var scopedValue = "A"
+          result.out = scopedValue
+        else
+          var scopedValue = "B"
+          result.out = scopedValue
+        endif
+        return result`;
+
+      const compiled = new AsyncScript(script, env, 'dup-branch-script.casc')._compileSource();
+      expect(/scopedValue#\d+/.test(compiled)).to.be(true);
+    });
+
     it('should timeout with branch-local var assigned into outer object path (minimal repro)', async function () {
       const script = `
         var result
@@ -404,6 +424,26 @@ describe('Cascada Script: Variables', function () {
       expect(defaultResult.value).to.be('DEFAULT');
     });
 
+    it('should emit canonical runtime aliases for duplicated switch declarations', function () {
+      const script = `
+        var result = {}
+        switch mode
+        case "alpha"
+          var branchScoped = "ALPHA"
+          result.out = branchScoped
+        case "beta"
+          var branchScoped = "BETA"
+          result.out = branchScoped
+        default
+          var branchScoped = "DEFAULT"
+          result.out = branchScoped
+        endswitch
+        return result`;
+
+      const compiled = new AsyncScript(script, env, 'dup-switch-script.casc')._compileSource();
+      expect(/branchScoped#\d+/.test(compiled)).to.be(true);
+    });
+
     it('should not leak vars declared in switch cases', async function () {
       const script = `
         var result = {}
@@ -454,6 +494,52 @@ describe('Cascada Script: Variables', function () {
       const result = await env.renderScriptString(script, {});
       expect(result.inner).to.be('BETA');
       expect(result.outer).to.be('outer switch scope');
+    });
+
+    it('should keep for-body declarations scoped and allow outer redeclaration', async function () {
+      const script = `
+        var values = []
+        for i in [1, 2]
+          var scopedValue = "inner-" + i
+          values.push(scopedValue)
+        endfor
+        var scopedValue = "outer"
+        return { values: values, outer: scopedValue }`;
+
+      const result = await env.renderScriptString(script, {});
+      expect(result.values).to.eql(['inner-1', 'inner-2']);
+      expect(result.outer).to.be('outer');
+    });
+
+    it('should keep while-body declarations scoped and allow outer redeclaration', async function () {
+      const script = `
+        var n = 0
+        var values = []
+        while n < 2
+          var scopedValue = "w-" + n
+          values.push(scopedValue)
+          n = n + 1
+        endwhile
+        var scopedValue = "outer"
+        return { values: values, outer: scopedValue }`;
+
+      const result = await env.renderScriptString(script, {});
+      expect(result.values).to.eql(['w-0', 'w-1']);
+      expect(result.outer).to.be('outer');
+    });
+
+    it('should keep capture declarations scoped and allow outer redeclaration', async function () {
+      const script = `
+        var captured = capture
+          var scopedValue = "capture"
+          return scopedValue
+        endcapture
+        var scopedValue = "outer"
+        return { captured: captured, outer: scopedValue }`;
+
+      const result = await env.renderScriptString(script, {});
+      expect(result.captured).to.be('capture');
+      expect(result.outer).to.be('outer');
     });
   });
 
@@ -574,4 +660,3 @@ describe('Cascada Script: Variables', function () {
   });
 
 });
-

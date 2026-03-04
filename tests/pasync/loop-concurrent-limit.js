@@ -13,6 +13,7 @@
   let DataCommand;
   let CommandBuffer;
   let createOutput;
+  let scopeBoundaries;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -29,6 +30,7 @@
     DataCommand = runtime.DataCommand;
     CommandBuffer = runtime.CommandBuffer;
     createOutput = runtime.createOutput;
+    scopeBoundaries = require('../../src/compiler/scope-boundaries');
   } else {
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
@@ -42,6 +44,7 @@
     DataCommand = nunjucks.runtime.DataCommand;
     CommandBuffer = nunjucks.runtime.CommandBuffer;
     createOutput = nunjucks.runtime.createOutput;
+    scopeBoundaries = nunjucks.compiler.scopeBoundaries || null;
   }
 
   function normalizeOutput(str) {
@@ -1943,6 +1946,19 @@
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ loop.index }}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(/loop#\d+/.test(source)).to.be(true);
+    });
+
+    it('exposes canonical scope boundary coverage table in scope-boundaries', function () {
+      if (!scopeBoundaries) {
+        this.skip();
+      }
+      const fields = scopeBoundaries.SCOPE_BOUNDARY_FIELDS_BY_NODE;
+      const nodeNames = scopeBoundaries.SCOPE_BOUNDARY_NODE_NAMES;
+      expect(fields).to.be.ok();
+      expect(Array.isArray(nodeNames)).to.be(true);
+      nodeNames.forEach((name) => {
+        expect(Array.isArray(fields[name])).to.be(true);
+      });
     });
 
     it('does not declare internal __waited__ output for unbounded loops', function () {
