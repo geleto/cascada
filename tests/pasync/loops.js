@@ -224,6 +224,23 @@
           expect(result).to.equal('IN1|IN2|OUT1|IN1|IN2|OUT2|');
         });
 
+        it('nested loop shadowing should restore outer loop metadata for include after inner loop', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('inner-shadow.njk', 'IN{{ loop }}|');
+          loader.addTemplate('outer-shadow.njk', 'OUT{{ loop.index }}|');
+          loader.addTemplate('nested-shadow-parent.njk',
+            `{% for outer in [1,2] %}
+              {% for loop in [10,20] %}
+                {% include "inner-shadow.njk" %}
+              {% endfor %}
+              {% include "outer-shadow.njk" %}
+            {% endfor %}`);
+
+          const result = await localEnv.renderTemplate('nested-shadow-parent.njk', {});
+          expect(result).to.equal('IN10|IN20|OUT1|IN10|IN20|OUT2|');
+        });
+
 
         it.skip('include inside set capture body within loop should resolve current loop binding', async () => {
           const loader = new StringLoader();
