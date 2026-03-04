@@ -90,6 +90,8 @@ class CompileInheritance {
           : `null, null, astate, cb`
         });`);
       }, res, node);
+      // Step 7: include import boundary completion in limited-loop waited output.
+      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, id, node);
       //this.emit.line(';');
     } else {
       this.emit.addScopeLevel();
@@ -131,6 +133,7 @@ class CompileInheritance {
     if (node.isAsync) {
       // Get the exported object from the template
       const res = this.compiler._tmpid();
+      const bindingIds = [];
       this.emit(`${importedId} = `);
       // Use node as position node for the getExported part
       this.emit.asyncBlockValue(node, frame, (n, f) => {
@@ -167,6 +170,7 @@ class CompileInheritance {
         this.emit.line(`    var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err;`);
         this.emit.line(`  }`);
         this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err; } })();`);
+        bindingIds.push(id);
 
         if (useValueImportBindings) {
           this.compiler._addDeclaredOutput(frame, alias, 'value', null, node);
@@ -188,6 +192,15 @@ class CompileInheritance {
           }
         }
       });
+
+      // from-import boundary completion as a single completion unit.
+      if (bindingIds.length > 0) {
+        const boundaryCompletion = this.compiler._tmpid();
+        this.emit.line(`let ${boundaryCompletion} = runtime.resolveAll([${bindingIds.join(', ')}]);`);
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, boundaryCompletion, node);
+      } else {
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(frame, importedId, node);
+      }
     } else {
       // Sync mode remains unchanged
       this.emit.addScopeLevel(); // after _compileGetTemplateOrScript
@@ -284,6 +297,8 @@ class CompileInheritance {
         } else {
           this.emit.line(`${id} = context.getAsyncBlock("${node.name.value}").then((blockFunc) => blockFunc(env, context, frame, runtime, astate, cb, ${this.compiler.buffer.currentBuffer}));`);
         }
+        // Step 7: block invocation boundary completion in limited-loop waited output.
+        this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, id, node);
       }, node, null, this.compiler.buffer.currentTextOutputName, true);
     }
     else {
@@ -407,6 +422,8 @@ class CompileInheritance {
       this.emit.line(`  const composed = resolvedTemplate._renderForComposition(${includeVarsVar}, frame, astate, cb);`);
       this.emit.line(`  return composed.addSnapshot("${this.compiler.buffer.currentTextOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
       this.emit.line('});');
+      // Step 7: include boundary completion in limited-loop waited output.
+      this.compiler.buffer.emitOwnWaitedConcurrencyResolve(f, resultVar, node);
     }, node, null, this.compiler.buffer.currentTextOutputName, true);
   }
 

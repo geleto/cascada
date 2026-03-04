@@ -1614,6 +1614,11 @@
   });
 
   describe('Compiler waited-output scaffolding', function () {
+    function countWaitResolveCommands(source) {
+      const matches = source.match(/new runtime\.WaitResolveCommand/g);
+      return matches ? matches.length : 0;
+    }
+
     it('declares internal __waited__ output for limited loop iterations', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ x }}{% endfor %}', env);
@@ -1641,6 +1646,69 @@
       const tmpl = new AsyncTemplate('{% for x in xs %}{{ x + 1 }}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(source).to.not.contain('new runtime.WaitResolveCommand');
+    });
+
+    it('emits exactly one WaitResolveCommand for an aggregate root expression in a limited loop', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ [x + 1, x * 2, (x + 3)] }}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(1);
+    });
+
+    it('does not emit extra child waits for aggregate children in a limited loop expression root', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ [foo(x), bar(x), baz(x)] }}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(1);
+    });
+
+    it('emits WaitResolveCommand for include boundary completion in limited loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% include "inc.njk" %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
+    });
+
+    it('emits WaitResolveCommand for import boundary completion in limited loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% import "m.njk" as m %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
+    });
+
+    it('emits WaitResolveCommand for from-import boundary completion in limited loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% from "m.njk" import foo %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
+    });
+
+    it('emits WaitResolveCommand for block-invocation boundary completion in limited loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% block b %}B{{ x }}{% endblock %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
+    });
+
+    it('does not emit boundary WaitResolveCommand for include in unbounded loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs %}{% include "inc.njk" %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(0);
+    });
+
+    it('does not emit boundary WaitResolveCommand for import in unbounded loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs %}{% import "m.njk" as m %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(0);
+    });
+
+    it('does not emit boundary WaitResolveCommand for block invocation in unbounded loops', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs %}{% block b %}B{{ x }}{% endblock %}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(countWaitResolveCommands(source)).to.be(0);
     });
   });
 

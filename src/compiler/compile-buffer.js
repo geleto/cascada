@@ -285,12 +285,22 @@ class CompileBuffer {
   }
 
   emitOwnWaitedConcurrencyResolve(frame, valueExpr, positionNode = null) {
+    // Limited-loop timing hook:
+    // Emit a WaitResolveCommand only when current compilation scope owns a
+    // waited output (`__waited__*`). Outside that scope this is a no-op.
+    //
+    // This command is for iteration-completion timing only (used by waitApplied).
+    // It must not change functional error propagation semantics.
     const waitedOutputName = this.currentWaitedOutputName;
     if (!this.compiler.asyncMode || !waitedOutputName) {
       return;
     }
+    // Register as usage, not mutation: waited commands are bookkeeping and
+    // should not participate in output-mutation wrapping decisions.
     this.registerOutputUsage(frame, waitedOutputName);
     const runtimeOutputName = this._resolveOutputRuntimeName(frame, waitedOutputName);
+    // WaitResolveCommand resolves plain promises and aggregate roots; runtime
+    // command apply intentionally swallows resolution errors (timing-only wait).
     this.compiler.emit.line(
       `${this.currentBuffer}.add(new runtime.WaitResolveCommand({ handler: "${runtimeOutputName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${runtimeOutputName}");`
     );
