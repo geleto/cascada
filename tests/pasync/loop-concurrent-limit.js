@@ -4,9 +4,11 @@
   let expect;
   let AsyncEnvironment;
   let AsyncTemplate;
+  let StringLoader;
   let delay;
   let createPoison;
   let isPoisonError;
+  let parser;
   let TextCommand;
   let DataCommand;
   let CommandBuffer;
@@ -17,10 +19,12 @@
     const envModule = require('../../src/environment/environment');
     AsyncEnvironment = envModule.AsyncEnvironment;
     AsyncTemplate = envModule.AsyncTemplate;
+    StringLoader = require('../util').StringLoader;
     delay = require('../util').delay;
     const runtime = require('../../src/runtime/runtime');
     createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
+    parser = require('../../src/parser');
     TextCommand = runtime.TextCommand;
     DataCommand = runtime.DataCommand;
     CommandBuffer = runtime.CommandBuffer;
@@ -29,9 +33,11 @@
     expect = window.expect;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
     AsyncTemplate = nunjucks.AsyncTemplate;
+    StringLoader = window.util.StringLoader;
     delay = window.util.delay;
     createPoison = nunjucks.createPoison;
     isPoisonError = nunjucks.isPoisonError;
+    parser = nunjucks.parser;
     TextCommand = nunjucks.runtime.TextCommand;
     DataCommand = nunjucks.runtime.DataCommand;
     CommandBuffer = nunjucks.runtime.CommandBuffer;
@@ -47,6 +53,272 @@
 
     beforeEach(() => {
       env = new AsyncEnvironment();
+    });
+
+    describe('Coverage moved from loops.js', () => {
+      it('parses for-loop concurrent limit syntax', async () => {
+        const template = '{% for chunk in chunks of limit %}{{ chunk }}{% endfor %}';
+        const ast = parser.parse(template);
+        let forNode = null;
+
+        for (let i = 0; i < ast.children.length; i++) {
+          const child = ast.children[i];
+          if (child && child.typename === 'For') {
+            forNode = child;
+            break;
+          }
+        }
+
+        expect(forNode).to.be.ok();
+        expect(forNode.concurrentLimit).to.be.ok();
+        expect(forNode.concurrentLimit.value).to.be('limit');
+
+        const context = { chunks: [1, 2, 3], limit: 2 };
+        const result = await env.renderTemplateString(template, context);
+        expect(result).to.equal('123');
+      });
+
+      it('keeps async while loops sequential despite concurrentLimit additions', async () => {
+        const context = {
+          state: {
+            counter: 0,
+            concurrentCount: 0,
+            maxConcurrent: 0,
+            async shouldContinue() {
+              await delay(2);
+              if (this.counter >= 3) {
+                return false;
+              }
+              this.counter++;
+              return true;
+            },
+            async doWork(index) {
+              this.concurrentCount++;
+              this.maxConcurrent = Math.max(this.maxConcurrent, this.concurrentCount);
+              await delay(15);
+              this.concurrentCount--;
+              return `work-${index}`;
+            }
+          }
+        };
+
+        const template = `
+        {%- while state.shouldContinue() -%}
+          {{ state.doWork(loop.index0) }}
+        {%- endwhile -%}
+        `;
+
+        await env.renderTemplateString(template, context);
+        expect(context.state.maxConcurrent).to.be(1);
+      });
+
+      it('keeps asyncEach loops sequential after concurrentLimit changes', async () => {
+        const context = {
+          items: [1, 2, 3],
+          concurrentCount: 0,
+          maxConcurrent: 0,
+          async processItem(item) {
+            context.concurrentCount++;
+            context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
+            await delay(10);
+            context.concurrentCount--;
+            return `Item ${item}`;
+          }
+        };
+
+        const template = `
+        {%- asyncEach item in items -%}
+          {{ processItem(item) }}
+        {%- endeach -%}
+        `;
+
+        await env.renderTemplateString(template, context);
+        expect(context.maxConcurrent).to.be(1);
+      });
+
+      it('concurrentLimit loop include reads per-iteration loop metadata', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        loader.addTemplate('cl-child.njk', 'I{{ loop.index }}|');
+        loader.addTemplate('cl-parent.njk',
+          '{% for item in [1,2,3,4] of 2 %}{% include "cl-child.njk" %}{% endfor %}');
+        const result = await localEnv.renderTemplate('cl-parent.njk', {});
+        expect(result).to.equal('I1|I2|I3|I4|');
+      });
+
+      it('nested concurrentLimit loops with include keep metadata isolated', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        loader.addTemplate('ncl-inner.njk', 'IN{{ loop.index }}|');
+        loader.addTemplate('ncl-outer.njk', 'OUT{{ loop.index }}|');
+        loader.addTemplate('ncl-parent.njk',
+          '{% for o in [1,2] of 2 %}{% for i in ["a","b","c"] of 2 %}{% include "ncl-inner.njk" %}{% endfor %}{% include "ncl-outer.njk" %}{% endfor %}');
+        const result = await localEnv.renderTemplate('ncl-parent.njk', {});
+        expect(result).to.equal('IN1|IN2|IN3|OUT1|IN1|IN2|IN3|OUT2|');
+      });
+
+      it('concurrentLimit with loop target shadow keeps include reading value loop', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        loader.addTemplate('cl-shadow-child.njk', 'V{{ loop }}|');
+        loader.addTemplate('cl-shadow-parent.njk',
+          '{% for loop in [10,20,30] of 2 %}{% include "cl-shadow-child.njk" %}{% endfor %}');
+        const result = await localEnv.renderTemplate('cl-shadow-parent.njk', {});
+        expect(result).to.equal('V10|V20|V30|');
+      });
+
+      it('inner loop concurrentLimit expression reads parent loop metadata', async () => {
+        const loader = new StringLoader();
+        const localEnv = new AsyncEnvironment(loader);
+        loader.addTemplate('of-parent.njk',
+          '{% for outer in [1,2] %}{% for inner in [1,2,3] of loop.index %}{{ loop.index }}{% endfor %}|{% endfor %}');
+        const result = await localEnv.renderTemplate('of-parent.njk', {});
+        expect(result).to.equal('123|123|');
+      });
+
+      it('handles hard errors from async iterator.next() in limited mode', async () => {
+        const context = {
+          async *makeAsyncItems() {
+            yield 0;
+            yield 1;
+            throw new Error('Iterator failed');
+          },
+          async processItem(id) {
+            await delay(5);
+            return `Item ${id}`;
+          }
+        };
+
+        const template = '{% for id in makeAsyncItems() of 2 %}{{ processItem(id) }}{% endfor %}';
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+          expect(err.errors[0].message).to.contain('Iterator failed');
+        }
+      });
+
+      it('converts yielded Error values to poison in limited mode', async () => {
+        const context = {
+          async *makeAsyncItems() {
+            yield new Error('Soft problem');
+            yield 42;
+          },
+          async processItem(v) {
+            return `VAL-${v},`;
+          }
+        };
+
+        const template = `
+          {%- for v in makeAsyncItems() of 2 -%}
+            {%- set result = "" -%}
+            {%- if v is error -%}
+              {%- set result = "POISON," -%}
+            {%- else -%}
+              {%- set result = processItem(v) -%}
+            {%- endif -%}
+            {{- result -}}
+          {%- endfor -%}`;
+        const result = await env.renderTemplateString(template, context);
+
+        expect(result).to.equal('POISON,VAL-42,');
+      });
+
+      it('preserves loop-scoped set assignments across body and else in limited mode', async () => {
+        const context = {
+          async *makeAsyncItems() {
+            yield -1;
+            yield 4;
+          },
+          async *makeEmptyItems() { },
+          async formatValue(v) {
+            return `VAL-${v},`;
+          }
+        };
+
+        const template = `
+          {%- for v in makeAsyncItems() of 2 -%}
+            {%- set status = "" -%}
+            {%- if v < 0 -%}
+              {%- set status = "NEG," -%}
+            {%- else -%}
+              {%- set status = formatValue(v) -%}
+            {%- endif -%}
+            {{- status -}}
+          {%- else -%}
+            {%- set status = "BODY_EMPTY," -%}
+            {{- status -}}
+          {%- endfor -%}
+          {%- for v in makeEmptyItems() of 2 -%}
+            {%- set status = formatValue(v) -%}
+            {{- status -}}
+          {%- else -%}
+            {%- set status = "EMPTY," -%}
+            {{- status -}}
+          {%- endfor -%}
+        `;
+
+        const result = await env.renderTemplateString(template, context);
+        expect(result.replace(/\s+/g, '')).to.equal('NEG,VAL-4,EMPTY,');
+      });
+
+      it('handles limits greater than async iterator item count', async () => {
+        const context = {
+          concurrentCount: 0,
+          maxConcurrent: 0,
+          async *makeAsyncItems() {
+            for (let i = 0; i < 3; i++) {
+              yield i;
+            }
+          },
+          async processItem(id) {
+            context.concurrentCount++;
+            context.maxConcurrent = Math.max(context.maxConcurrent, context.concurrentCount);
+            await delay(10);
+            context.concurrentCount--;
+          }
+        };
+
+        const template = '{% for id in makeAsyncItems() of 10 %}{{ processItem(id) }}{% endfor %}';
+        await env.renderTemplateString(template, context);
+        expect(context.maxConcurrent).to.be(3);
+      });
+
+      it('runs else when limited async iterator is empty', async () => {
+        const context = {
+          async *emptyGen() { }
+        };
+
+        const template = '{% for x in emptyGen() of 3 %}X{% else %}ELSE{% endfor %}';
+        const result = await env.renderTemplateString(template, context);
+        expect(result).to.equal('ELSE');
+      });
+
+      it('does not run else when limited async iterator already iterated before error', async () => {
+        const context = {
+          async *makeAsyncItems() {
+            yield 1;
+            yield 2;
+          },
+          async processItem(id) {
+            if (id === 2) {
+              throw new Error('Boom');
+            }
+            return `OK-${id},`;
+          }
+        };
+
+        const template = '{% for id in makeAsyncItems() of 2 %}{{ processItem(id) }}{% else %}ELSE{% endfor %}';
+
+        try {
+          await env.renderTemplateString(template, context);
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(isPoisonError(err)).to.be(true);
+        }
+      });
     });
 
     describe('Object iterators with concurrent limits', () => {
@@ -1797,4 +2069,3 @@
     });
   });
 }());
-
