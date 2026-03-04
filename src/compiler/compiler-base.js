@@ -41,6 +41,7 @@ class CompilerBase extends Obj {
     // Properties essential for any compilation, including expressions
     this.codebuf = [];
     this.lastId = 0;
+    this.idPool = options && options.idPool ? options.idPool : null;
     this.throwOnUndefined = options.throwOnUndefined || false;
     this.asyncMode = options.asyncMode || false;
     this.scriptMode = options.scriptMode || false;
@@ -114,6 +115,9 @@ class CompilerBase extends Obj {
   }
 
   _tmpid() {
+    if (this.idPool && typeof this.idPool.next === 'function') {
+      return 't_' + this.idPool.next();
+    }
     this.lastId++;
     return 't_' + this.lastId;
   }

@@ -7,7 +7,6 @@
   //var Environment;
   var delay;
   var StringLoader;
-  var createPoison;
   var isPoisonError;
   var runtime;
   var CONVERT_SCRIPT_VAR_TO_VALUE;
@@ -20,7 +19,6 @@
     delay = require('../util').delay;
     StringLoader = require('../util').StringLoader;
     runtime = require('../../src/runtime/runtime');
-    createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
     CONVERT_SCRIPT_VAR_TO_VALUE = require('../../src/feature-flags').CONVERT_SCRIPT_VAR_TO_VALUE;
   } else {
@@ -31,7 +29,6 @@
     delay = window.util.delay;
     StringLoader = window.util.StringLoader;
     runtime = nunjucks.runtime;
-    createPoison = runtime.createPoison;
     isPoisonError = runtime.isPoisonError;
     CONVERT_SCRIPT_VAR_TO_VALUE = true;
   }
@@ -230,15 +227,20 @@
           loader.addTemplate('inner-shadow.njk', 'IN{{ loop }}|');
           loader.addTemplate('outer-shadow.njk', 'OUT{{ loop.index }}|');
           loader.addTemplate('nested-shadow-parent.njk',
-            `{% for outer in [1,2] %}
-              {% for loop in [10,20] %}
-                {% include "inner-shadow.njk" %}
-              {% endfor %}
-              {% include "outer-shadow.njk" %}
-            {% endfor %}`);
+            '{% for outer in [1,2] %}{% for loop in [10,20] %}{% include "inner-shadow.njk" %}{% endfor %}{% include "outer-shadow.njk" %}{% endfor %}');
 
           const result = await localEnv.renderTemplate('nested-shadow-parent.njk', {});
           expect(result).to.equal('IN10|IN20|OUT1|IN10|IN20|OUT2|');
+        });
+
+        it('include should read nearest scoped value variable across nested loop boundaries', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('value-child.njk', 'S{{ someVar }}|');
+          loader.addTemplate('value-parent.njk',
+            '{% for someVar in ["A","B"] %}{% for someVar in [1,2] %}{% include "value-child.njk" %}{% endfor %}{% include "value-child.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('value-parent.njk', {});
+          expect(result).to.equal('S1|S2|SA|S1|S2|SB|');
         });
 
 

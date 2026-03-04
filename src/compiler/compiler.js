@@ -1987,7 +1987,17 @@ class Compiler extends CompilerBase {
 module.exports = {
   compile: function compile(src, asyncFilters, extensions, name, opts = {}) {
     AsyncFrame.inCompilerContext = true;
-    const c = new Compiler(name, opts);
+    // Shared id pool for this compilation unit. Transformer and compiler both
+    // allocate from here so loop aliases (loop#N) and compiler tmp ids stay unique.
+    const idPool = {
+      value: 0,
+      next() {
+        this.value += 1;
+        return this.value;
+      }
+    };
+    const compileOptions = Object.assign({}, opts, { idPool });
+    const c = new Compiler(name, compileOptions);
 
     // Run the extension preprocessors against the source.
     const preprocessors = (extensions || []).map(ext => ext.preprocess).filter(f => !!f);
@@ -1998,7 +2008,7 @@ module.exports = {
       parser.parse(processedSrc, extensions, opts),
       asyncFilters,
       name,
-      opts
+      compileOptions
     ));
     AsyncFrame.inCompilerContext = false;
     return c.getCode();

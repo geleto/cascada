@@ -1938,6 +1938,13 @@
       expect(source).to.contain('runtime.declareOutput(frame,');
     });
 
+    it('emits canonical loop runtime aliases with loop#<id>', function () {
+      const env = new AsyncEnvironment();
+      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ loop.index }}{% endfor %}', env);
+      const source = tmpl._compileSource();
+      expect(/loop#\d+/.test(source)).to.be(true);
+    });
+
     it('does not declare internal __waited__ output for unbounded loops', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs %}{{ x }}{% endfor %}', env);
@@ -1978,6 +1985,7 @@
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% include "inc.njk" %}{% endfor %}', env);
       const source = tmpl._compileSource();
       expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
+      expect(source).to.contain('._setBoundaryAliases(');
     });
 
     it('emits WaitResolveCommand for import boundary completion in limited loops', function () {
@@ -2154,6 +2162,101 @@
       const dataSnapshot = await buffer.getOutput('data').finalSnapshot();
       expect(textSnapshot).to.be('x');
       expect(dataSnapshot).to.eql({ value: 1 });
+    });
+  });
+
+  describe('CommandBuffer boundary alias canonicalization', function () {
+    it('maps base handler names to canonical aliases in add()', function () {
+      const ctx = { path: 'alias-add.njk' };
+      const buffer = new CommandBuffer(ctx, null, { parent: null }, false);
+      createOutput({ parent: null }, buffer, 'loop#4', ctx, 'text');
+      buffer._setBoundaryAliases({ loop: 'loop#4' });
+
+      buffer.add(new TextCommand({
+        handler: 'text',
+        args: ['x'],
+        pos: { lineno: 1, colno: 1 }
+      }), 'loop');
+
+      expect(buffer.arrays.loop).to.be(undefined);
+      expect(buffer.arrays['loop#4']).to.have.length(1);
+    });
+
+    it('resolves addSnapshot() through boundary aliases', async function () {
+      const ctx = { path: 'alias-snapshot.njk' };
+      const frame = { parent: null };
+      const buffer = new CommandBuffer(ctx, null, frame, false);
+      createOutput(frame, buffer, 'loop#4', ctx, 'text');
+      buffer._setBoundaryAliases({ loop: 'loop#4' });
+
+      buffer.addText('A', { lineno: 1, colno: 1 }, 'loop');
+      buffer.markFinishedAndPatchLinks();
+
+      const snap = await buffer.addSnapshot('loop', { lineno: 1, colno: 1 });
+      expect(snap).to.be('A');
+    });
+
+    it('inherits boundary aliases for child buffers linked through addBuffer', function () {
+      const ctx = { path: 'alias-child.njk' };
+      const frame = { parent: null };
+      const parent = new CommandBuffer(ctx, null, frame, false);
+      const child = new CommandBuffer(ctx, null, frame, false);
+      parent._setBoundaryAliases({ loop: 'loop#4', someVar: 'someVar#9' });
+
+      parent.addBuffer(child, 'loop');
+
+      expect(child._boundaryAliases.loop).to.be('loop#4');
+      expect(child._boundaryAliases.someVar).to.be('someVar#9');
+      child.add(new TextCommand({
+        handler: 'text',
+        args: ['x'],
+        pos: { lineno: 1, colno: 1 }
+      }), 'someVar');
+      expect(child.arrays.someVar).to.be(undefined);
+      expect(child.arrays['someVar#9']).to.have.length(1);
+    });
+
+    it('reuses parent alias map reference when child has no own aliases', function () {
+      const ctx = { path: 'alias-reuse.njk' };
+      const frame = { parent: null };
+      const parent = new CommandBuffer(ctx, null, frame, false);
+      const child = new CommandBuffer(ctx, null, frame, false);
+      parent._setBoundaryAliases({ loop: 'loop#4' });
+
+      parent.addBuffer(child, 'loop');
+
+      expect(child._boundaryAliases).to.be(parent._boundaryAliases);
+    });
+
+    it('merges parent aliases when child already has own aliases', function () {
+      const ctx = { path: 'alias-merge.njk' };
+      const frame = { parent: null };
+      const parent = new CommandBuffer(ctx, null, frame, false);
+      const child = new CommandBuffer(ctx, null, frame, false);
+      parent._setBoundaryAliases({ loop: 'loop#4', shared: 'shared#1' });
+      child._setBoundaryAliases({ own: 'own#7', shared: 'shared#9' });
+
+      parent.addBuffer(child, 'loop');
+
+      expect(child._boundaryAliases).to.not.be(parent._boundaryAliases);
+      expect(child._boundaryAliases.loop).to.be('loop#4');
+      expect(child._boundaryAliases.own).to.be('own#7');
+      expect(child._boundaryAliases.shared).to.be('shared#9');
+    });
+
+    it('keeps canonical input names unchanged', function () {
+      const ctx = { path: 'alias-canonical.njk' };
+      const buffer = new CommandBuffer(ctx, null, { parent: null }, false);
+      createOutput({ parent: null }, buffer, 'loop#4', ctx, 'text');
+      buffer._setBoundaryAliases({ loop: 'loop#4' });
+
+      buffer.add(new TextCommand({
+        handler: 'text',
+        args: ['x'],
+        pos: { lineno: 1, colno: 1 }
+      }), 'loop#4');
+
+      expect(buffer.arrays['loop#4']).to.have.length(1);
     });
   });
 }());

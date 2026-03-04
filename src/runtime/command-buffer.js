@@ -46,6 +46,10 @@ class CommandBuffer {
       this._waitAppliedPromise = null;
       this._waitAppliedResolve = null;
     }
+    if (parent && parent._boundaryAliases) {
+      // Propagate include-boundary alias projection down the buffer tree.
+      this._inheritBoundaryAliases(parent._boundaryAliases);
+    }
   }
 
   _registerOutput(handlerName, output) {
@@ -69,7 +73,8 @@ class CommandBuffer {
     if (!iterator || !outputName) {
       return;
     }
-    this._visitingIterators.set(outputName, iterator);
+    const resolvedOutputName = this._resolveHandlerName(outputName);
+    this._visitingIterators.set(resolvedOutputName, iterator);
     if (this._enableWaitApplied) {
       this._activeWaitAppliedCount++;
     }
@@ -79,9 +84,10 @@ class CommandBuffer {
     if (!iterator || !outputName) {
       return;
     }
-    const current = this._visitingIterators.get(outputName);
+    const resolvedOutputName = this._resolveHandlerName(outputName);
+    const current = this._visitingIterators.get(resolvedOutputName);
     if (current === iterator) {
-      this._visitingIterators.delete(outputName);
+      this._visitingIterators.delete(resolvedOutputName);
     }
     if (this._enableWaitApplied && this._activeWaitAppliedCount > 0) {
       this._activeWaitAppliedCount--;
@@ -121,18 +127,32 @@ class CommandBuffer {
 
   add(value, outputName) {
     checkFinishedBuffer(this);
-    if (!this.arrays[outputName]) {
-      this.arrays[outputName] = [];
+    const resolvedOutputName = this._resolveHandlerName(outputName);
+    // Normalize command handler/path keys at ingress so all downstream runtime
+    // lookups operate on canonical output names.
+    if (!isCommandBuffer(value) && value && typeof value === 'object') {
+      if (Object.prototype.hasOwnProperty.call(value, 'handler')) {
+        value.handler = resolvedOutputName;
+      }
+      if (Object.prototype.hasOwnProperty.call(value, 'pathKey')) {
+        value.pathKey = resolvedOutputName;
+      }
     }
-    const target = this.arrays[outputName];
+    if (!this.arrays[resolvedOutputName]) {
+      this.arrays[resolvedOutputName] = [];
+    }
+    const target = this.arrays[resolvedOutputName];
     target.push(value);
     const slot = target.length - 1;
 
     if (isCommandBuffer(value)) {
       value.parent = this;
+      if (this._boundaryAliases) {
+        value._inheritBoundaryAliases(this._boundaryAliases);
+      }
     }
 
-    this._notifyCommandOrBufferAdded(outputName);
+    this._notifyCommandOrBufferAdded(resolvedOutputName);
     return slot;
   }
 
@@ -193,7 +213,8 @@ class CommandBuffer {
       pos
     });
     if (this.finished) {
-      const output = this._outputs.get(outputName);
+      const resolvedOutputName = this._resolveHandlerName(outputName);
+      const output = this._outputs.get(resolvedOutputName);
       const path = (this._context && this._context.path) ? this._context.path : null;
       if (!output._buffer.finished) {
         throw new RuntimeFatalError(
@@ -204,7 +225,7 @@ class CommandBuffer {
           path
         );
       }
-      return this._runFinishedSnapshotCommand(cmd, outputName);
+      return this._runFinishedSnapshotCommand(cmd, resolvedOutputName);
     }
     return this._addCommand(cmd, outputName);
   }
@@ -218,7 +239,8 @@ class CommandBuffer {
       pos
     });
     if (this.finished) {
-      const output = this._outputs.get(outputName);
+      const resolvedOutputName = this._resolveHandlerName(outputName);
+      const output = this._outputs.get(resolvedOutputName);
       const path = (this._context && this._context.path) ? this._context.path : null;
       if (!output._buffer.finished) {
         throw new RuntimeFatalError(
@@ -229,7 +251,7 @@ class CommandBuffer {
           path
         );
       }
-      return this._runFinishedSnapshotCommand(cmd, outputName);
+      return this._runFinishedSnapshotCommand(cmd, resolvedOutputName);
     }
     return this._addCommand(cmd, outputName);
   }
@@ -343,12 +365,13 @@ class CommandBuffer {
   }
 
   getOutput(outputName = 'text') {
+    const resolvedOutputName = this._resolveHandlerName(outputName);
     if (!(this._outputs instanceof Map)) {
       throw new Error('CommandBuffer outputs are unavailable');
     }
-    const output = this._outputs.get(outputName);
+    const output = this._outputs.get(resolvedOutputName);
     if (!output) {
-      throw new Error(`CommandBuffer output '${outputName}' is unavailable`);
+      throw new Error(`CommandBuffer output '${resolvedOutputName}' is unavailable`);
     }
     return output;
   }
@@ -368,6 +391,54 @@ class CommandBuffer {
     this._waitAppliedResolve = null;
     this._waitAppliedPromise = null;
     resolve();
+  }
+
+  _setBoundaryAliases(map) {
+    if (!map) {
+      return;
+    }
+    this._boundaryAliases = Object.create(null);
+    const keys = Object.keys(map);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      this._boundaryAliases[key] = map[key];
+    }
+  }
+
+  _inheritBoundaryAliases(parentMap) {
+    if (!parentMap) {
+      return;
+    }
+    if (!this._boundaryAliases) {
+      // Fast path: reuse parent alias object until this buffer gets own aliases.
+      this._boundaryAliases = parentMap;
+      return;
+    }
+    const inherited = Object.create(null);
+    const own = this._boundaryAliases;
+    const parentKeys = Object.keys(parentMap);
+    for (let i = 0; i < parentKeys.length; i++) {
+      const key = parentKeys[i];
+      inherited[key] = parentMap[key];
+    }
+    const ownKeys = Object.keys(own);
+    for (let i = 0; i < ownKeys.length; i++) {
+      const key = ownKeys[i];
+      inherited[key] = own[key];
+    }
+    this._boundaryAliases = inherited;
+  }
+
+  _resolveHandlerName(name) {
+    if (typeof name !== 'string') {
+      return name;
+    }
+    if (/#\d+$/.test(name)) {
+      // Already canonical (e.g. loop#4).
+      return name;
+    }
+    const mapped = this._boundaryAliases && this._boundaryAliases[name];
+    return mapped || name;
   }
 }
 

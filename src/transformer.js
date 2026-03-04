@@ -215,7 +215,7 @@ function cps(ast, asyncFilters) {
   return convertStatements(liftSuper(liftFilters(ast, asyncFilters)));
 }
 
-function rewriteImplicitLoopSymbol(ast) {
+function rewriteImplicitLoopSymbol(ast, idPool) {
   let loopSym = 0;
   // These fields are evaluated outside the per-iteration body binding:
   // - arr / concurrentLimit belong to scheduler/control-flow evaluation
@@ -223,7 +223,12 @@ function rewriteImplicitLoopSymbol(ast) {
   // They must keep the parent active loop symbol.
   const LOOP_NON_BODY_FIELDS = ['arr', 'concurrentLimit', 'else_'];
   function nextLoopSymbol() {
-    return '__loop__' + (loopSym++);
+    // Reuse compiler's per-compilation id pool so generated temporary ids
+    // and loop runtime aliases cannot collide.
+    if (idPool && typeof idPool.next === 'function') {
+      return 'loop#' + idPool.next();
+    }
+    return 'loop#' + (loopSym++);
   }
   function targetDeclaresLoop(targetNode) {
     if (!targetNode) {
@@ -234,46 +239,6 @@ function rewriteImplicitLoopSymbol(ast) {
     }
     if (targetNode instanceof nodes.Array) {
       return targetNode.children.some((child) => targetDeclaresLoop(child));
-    }
-    return false;
-  }
-
-  function containsIncludeForCurrentLoop(node, atTopLoopBody) {
-    if (Array.isArray(node)) {
-      for (let i = 0; i < node.length; i++) {
-        if (containsIncludeForCurrentLoop(node[i], false)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    if (!(node instanceof nodes.Node)) {
-      return false;
-    }
-
-    if (node instanceof nodes.Include) {
-      return true;
-    }
-
-    // Do not let nested loops force aliasing for the parent loop.
-    if (!atTopLoopBody &&
-      (node instanceof nodes.For || node instanceof nodes.AsyncEach || node instanceof nodes.AsyncAll || node instanceof nodes.While)) {
-      return false;
-    }
-
-    // Capture/call bodies are not part of node.fields and must be visited
-    // explicitly so include-compat aliasing is enabled when needed.
-    if ((node instanceof nodes.Set || node instanceof nodes.CallAssign) &&
-      node.body &&
-      containsIncludeForCurrentLoop(node.body, false)) {
-      return true;
-    }
-
-    for (let i = 0; i < node.fields.length; i++) {
-      if (containsIncludeForCurrentLoop(node[node.fields[i]], false)) {
-        return true;
-      }
     }
     return false;
   }
@@ -291,11 +256,9 @@ function rewriteImplicitLoopSymbol(ast) {
     if (node instanceof nodes.For || node instanceof nodes.AsyncEach || node instanceof nodes.AsyncAll) {
       const loopSymbol = nextLoopSymbol();
       // Persist per-loop runtime symbol on node so compiler/runtime can bind
-      // metadata output without relying on lexical name "loop".
+      // metadata output without relying on lexical name "loop". The suffix
+      // makes each loop binding canonical and scope-stable.
       node.loopRuntimeName = loopSymbol;
-      // Includes read from context variables, so some loop bodies need a
-      // compatibility alias for plain "loop" in addition to loopRuntimeName.
-      node.needsLoopAlias = containsIncludeForCurrentLoop(node.body, true);
       const loopIsShadowedByTarget = targetDeclaresLoop(node.name);
 
       // Non-body zones execute outside iteration binding and keep parent loop scope.
@@ -313,7 +276,6 @@ function rewriteImplicitLoopSymbol(ast) {
     if (node instanceof nodes.While) {
       const loopSymbol = nextLoopSymbol();
       node.loopRuntimeName = loopSymbol;
-      node.needsLoopAlias = containsIncludeForCurrentLoop(node.body, true);
 
       // Async while compiles condition inside iteration body.
       rewrite(node.cond, loopSymbol);
@@ -350,7 +312,7 @@ function transform(ast, asyncFilters, name, opts) {
   }
   ast = cps(ast, asyncFilters || []);
   if (opts.asyncMode && LOOP_VARS_USE_VALUE) {
-    return rewriteImplicitLoopSymbol(ast);
+    return rewriteImplicitLoopSymbol(ast, opts && opts.idPool);
   }
   return ast;
 }

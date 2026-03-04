@@ -38,7 +38,6 @@ class CompileLoop {
     );
     fakeForNode.isAsync = true;
     fakeForNode.loopRuntimeName = node.loopRuntimeName;
-    fakeForNode.needsLoopAlias = node.needsLoopAlias;
 
     // Delegate to _compileFor, passing the condition node to be injected into the body
     this._compileFor(fakeForNode, frame, true, iteratorCompiler, node.cond);
@@ -236,24 +235,10 @@ class CompileLoop {
     const bodyResult = this.compiler.buffer.asyncBufferNode(node, frame, bodyCreatesScope, false, node.body, (bodyFrame) => {
       const limitedWaitedOutputName = hasConcurrencyLimit ? `__waited__${this.compiler._tmpid()}` : null;
       if (useLoopValues) {
-        if (node.needsLoopAlias && !node.loopRuntimeName) {
-          this.compiler.fail(
-            'Internal compiler error: include loop alias requires loopRuntimeName.',
-            node.lineno,
-            node.colno,
-            node
-          );
-        }
         loopVars.forEach((name) => {
           this._declareLoopValueOutput(bodyFrame, name, node);
         });
-        // Include receives context variables by name, so it expects plain `loop`.
-        // Provide an alias only when transformer detected include usage and only
-        // if user loop target did not already declare/shadow `loop`.
-        if (node.needsLoopAlias && !loopVars.includes('loop')) {
-          this._declareLoopValueOutput(bodyFrame, 'loop', node, node.loopRuntimeName);
-        }
-        // Internal metadata binding for rewritten loop symbol (e.g. __loop__3).
+        // Internal metadata binding for rewritten loop symbol (e.g. loop#3).
         this._declareLoopValueOutput(bodyFrame, node.loopRuntimeName, node, undefined, true);
       }
       if (limitedWaitedOutputName) {

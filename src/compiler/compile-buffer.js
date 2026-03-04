@@ -97,7 +97,7 @@ class CompileBuffer {
 
   _resolveOutputRuntimeName(frame, outputName) {
     // Output declarations may expose a lexical name that maps to a different
-    // runtime key (e.g. loop alias "loop" -> "__loop__N").
+    // runtime key (e.g. loop alias "loop" -> "loop#N").
     const outputDecl = this.compiler.async._getDeclaredOutput(frame, outputName);
     return outputDecl?.runtimeName ?? outputName;
   }
