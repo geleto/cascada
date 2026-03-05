@@ -6,7 +6,6 @@
   let createPoison;
   let isPoison;
   let isPoisonError;
-  const SEQUNTIAL_PATHS_USE_VALUE = true;
   //let PoisonError;
   //let collectErrors;
   let AsyncFrame;
@@ -31,9 +30,6 @@
   }
 
   function setupSequentialRuntimeForTests(root) {
-    if (!SEQUNTIAL_PATHS_USE_VALUE) {
-      return null;
-    }
     const context = { path: 'test', env: {} };
     const currentBuffer = runtime.createCommandBuffer(context, null, root);
     runtime.declareOutput(root, currentBuffer, '!lockKey', 'sequential_path', context, null);
@@ -41,37 +37,15 @@
   }
 
   async function expectLockPoison(lock, root) {
-    if (SEQUNTIAL_PATHS_USE_VALUE) {
-      const output = runtime.getOutput(root, '!lockKey');
-      const errs = output._getSequentialPathPoisonErrors();
-      expect(Array.isArray(errs) && errs.length > 0).to.be(true);
-      return;
-    }
-    if (lock && typeof lock.then === 'function') {
-      try {
-        await lock;
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(isPoisonError(err)).to.be(true);
-      }
-    } else {
-      expect(isPoison(lock)).to.be(true);
-    }
+    const output = runtime.getOutput(root, '!lockKey');
+    const errs = output._getSequentialPathPoisonErrors();
+    expect(Array.isArray(errs) && errs.length > 0).to.be(true);
   }
 
   async function expectLockTrue(lock, root) {
-    if (SEQUNTIAL_PATHS_USE_VALUE) {
-      const output = runtime.getOutput(root, '!lockKey');
-      const errs = output._getSequentialPathPoisonErrors();
-      expect(!errs || errs.length === 0).to.be(true);
-      return;
-    }
-    if (lock && typeof lock.then === 'function') {
-      const resolved = await lock;
-      expect(resolved).to.equal(true);
-    } else {
-      expect(lock).to.equal(true);
-    }
+    const output = runtime.getOutput(root, '!lockKey');
+    const errs = output._getSequentialPathPoisonErrors();
+    expect(!errs || errs.length === 0).to.be(true);
   }
 
   describe('Lookup Functions Poison Handling', () => {
@@ -190,9 +164,7 @@
         root.set('!lockKey~', undefined, true);
         frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
-        if (SEQUNTIAL_PATHS_USE_VALUE) {
-          runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
-        }
+        runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
         try {
           await runtime.sequentialMemberLookupAsyncValue(
@@ -226,11 +198,7 @@
           expect(isPoisonError(err)).to.be(true);
 
           const readLock = root.lookup('!lockKey~');
-          if (SEQUNTIAL_PATHS_USE_VALUE) {
-            await expectLockTrue(readLock, root);
-          } else {
-            await expectLockPoison(readLock, root);
-          }
+          await expectLockTrue(readLock, root);
         }
       });
 
@@ -252,11 +220,7 @@
           expect(isPoisonError(err)).to.be(true);
 
           const readLock = root.lookup('!lockKey~');
-          if (SEQUNTIAL_PATHS_USE_VALUE) {
-            await expectLockTrue(readLock, root);
-          } else {
-            await expectLockPoison(readLock, root);
-          }
+          await expectLockTrue(readLock, root);
         }
       });
 
@@ -277,11 +241,7 @@
           expect(isPoisonError(err)).to.be(true);
 
           const readLock = root.lookup('!lockKey~');
-          if (SEQUNTIAL_PATHS_USE_VALUE) {
-            await expectLockTrue(readLock, root);
-          } else {
-            await expectLockPoison(readLock, root);
-          }
+          await expectLockTrue(readLock, root);
         }
       });
 
@@ -327,9 +287,7 @@
         root.set('myVar', 'test value', true);
         frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
-        if (SEQUNTIAL_PATHS_USE_VALUE) {
-          runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
-        }
+        runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
         try {
           await runtime.sequentialContextLookupValue(
@@ -365,11 +323,7 @@
           expect(isPoisonError(err)).to.be(true);
 
           const readLock = root.lookup('!lockKey~');
-          if (SEQUNTIAL_PATHS_USE_VALUE) {
-            await expectLockTrue(readLock, root);
-          } else {
-            await expectLockPoison(readLock, root);
-          }
+          await expectLockTrue(readLock, root);
         }
       });
 

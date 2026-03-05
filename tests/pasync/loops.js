@@ -9,7 +9,6 @@
   var StringLoader;
   var isPoisonError;
   var runtime;
-  var CONVERT_SCRIPT_VAR_TO_VALUE = true;
 
 
   if (typeof require !== 'undefined') {
@@ -2895,7 +2894,7 @@ return output.snapshot()`;
       expect(result.summary).to.have.property('items', 'a, b, c');
     });
 
-    it('should adapt loop assignment concurrency to CONVERT_SCRIPT_VAR_TO_VALUE while preserving final source-order output', async () => {
+    it('should keep loop assignment concurrency while preserving final source-order output', async () => {
       let count = 0;
       let maxCount = 0;
       const context = {

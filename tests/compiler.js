@@ -13,7 +13,6 @@
   var finish;
   var isSlim;
   var Compiler;
-  var CONVERT_TEMPLATE_VAR_TO_VALUE = true;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -820,7 +819,7 @@
         var loader = new Loader('tests/templates');
         var env = new Environment(loader);
         var tmpl = new Template(tmplStr, env, 'parse-error.njk');
-        var expectedColumn = CONVERT_TEMPLATE_VAR_TO_VALUE ? 29 : 26;
+        var expectedColumn = 29;
 
         tmpl.render({}, function (err, res) {
           expect(res).to.be(undefined);

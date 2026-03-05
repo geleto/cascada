@@ -72,9 +72,9 @@ module.exports = class CompileSequential {
       const currentPathKey = this._extractStaticPathKey(node); // Key for this specific node
       if (node.sequentialRepair && !funCallLockKey) {
         // If this is a repair node (!!), we must set the lockKey so that compileSymbol/compileLookupVal
-        // emits the sequential lookup (sequentialContextLookup) which handles the repair logic.
+        // emits the sequential lookup (sequentialContextLookupValue) which handles the repair logic.
         // However, if we are part of a FunCall lock that covers this path, the FunCall will handle the repair propagation
-        // via node.sequentialRepair propagation and sequentialCallWrap logic,
+        // via node.sequentialRepair propagation and sequentialCallWrapValue logic,
         // otherwise we have two colliding operations on the same lock
         node.lockKey = currentPathKey;
       }
@@ -324,10 +324,6 @@ module.exports = class CompileSequential {
   _getSequenceKey(node) {
     let path = this._getSequentialPath(node);
     return path ? '!' + path.join('!') : null;
-  }
-
-  _getReadLockKey(lockKey) {
-    return lockKey ? `${lockKey}~` : null;
   }
 
   // @todo - inline in _getSequenceKey

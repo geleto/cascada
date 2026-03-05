@@ -9,7 +9,6 @@
   //let PoisonError;
   let collectErrors;
   let AsyncFrame;
-  const SEQUNTIAL_PATHS_USE_VALUE = true;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -33,9 +32,6 @@
   const mockErrorContext = { lineno: 1, colno: 1, errorContextString: 'test', path: 'test' };
 
   function setupSequentialRuntimeForTests(root) {
-    if (!SEQUNTIAL_PATHS_USE_VALUE) {
-      return null;
-    }
     const context = { path: 'test', env: {} };
     const currentBuffer = runtime.createCommandBuffer(context, null, root);
     runtime.declareOutput(root, currentBuffer, '!lockKey', 'sequential_path', context, null);
@@ -43,53 +39,22 @@
   }
 
   async function expectLockPoison(lock, root, lockKey = '!lockKey') {
-    if (SEQUNTIAL_PATHS_USE_VALUE) {
-      const output = runtime.getOutput(root, lockKey);
-      const errs = output._getSequentialPathPoisonErrors();
-      expect(Array.isArray(errs) && errs.length > 0).to.be(true);
-      return;
-    }
-    if (lock && typeof lock.then === 'function') {
-      try {
-        await lock;
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(isPoisonError(err)).to.be(true);
-      }
-    } else {
-      expect(isPoison(lock)).to.be(true);
-    }
+    const output = runtime.getOutput(root, lockKey);
+    const errs = output._getSequentialPathPoisonErrors();
+    expect(Array.isArray(errs) && errs.length > 0).to.be(true);
   }
 
   async function expectLockTrue(lock, root, lockKey = '!lockKey') {
-    if (SEQUNTIAL_PATHS_USE_VALUE) {
-      const output = runtime.getOutput(root, lockKey);
-      const errs = output._getSequentialPathPoisonErrors();
-      expect(!errs || errs.length === 0).to.be(true);
-      return;
-    }
-    if (lock && typeof lock.then === 'function') {
-      const resolved = await lock;
-      expect(resolved).to.equal(true);
-    } else {
-      expect(lock).to.equal(true);
-    }
+    const output = runtime.getOutput(root, lockKey);
+    const errs = output._getSequentialPathPoisonErrors();
+    expect(!errs || errs.length === 0).to.be(true);
   }
 
   async function expectLockValue(lock, value, root, lockKey = '!lockKey') {
-    if (SEQUNTIAL_PATHS_USE_VALUE) {
-      const output = runtime.getOutput(root, lockKey);
-      const errs = output._getSequentialPathPoisonErrors();
-      expect(!errs || errs.length === 0).to.be(true);
-      expect(output._getCurrentResult()).to.equal(value);
-      return;
-    }
-    if (lock && typeof lock.then === 'function') {
-      const resolved = await lock;
-      expect(resolved).to.equal(value);
-    } else {
-      expect(lock).to.equal(value);
-    }
+    const output = runtime.getOutput(root, lockKey);
+    const errs = output._getSequentialPathPoisonErrors();
+    expect(!errs || errs.length === 0).to.be(true);
+    expect(output._getCurrentResult()).to.equal(value);
   }
 
   describe('Call and Suppression Function Poison Handling', () => {
@@ -462,12 +427,8 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-          if (SEQUNTIAL_PATHS_USE_VALUE) {
-            expect(thrown.errors[0]).to.be.an(Error);
-            expect(thrown.errors[0].message).to.contain('Poisoned arg');
-          } else {
-            expect(thrown.errors[0]).to.equal(err);
-          }
+          expect(thrown.errors[0]).to.be.an(Error);
+          expect(thrown.errors[0].message).to.contain('Poisoned arg');
 
           // Lock should be poisoned
           const lock = root.lookup('!lockKey');
@@ -526,9 +487,7 @@
         root.set('!lockKey~', undefined, true);
         frame = root.pushAsyncBlock(null, { '!lockKey': 1, '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
-        if (SEQUNTIAL_PATHS_USE_VALUE) {
-          runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
-        }
+        runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
         try {
           await runtime.sequentialCallWrapValue(

@@ -875,7 +875,7 @@ endif`;
       expect(converted).to.equal('guard value, output, lock!');
     });
 
-    it('should route capture declaration based on CONVERT_SCRIPT_VAR_TO_VALUE', () => {
+    it('should route capture declaration to value tag', () => {
       const state = { inMultiLineComment: false, stringState: null };
       const result = scriptTranspiler._processLine('var x_capture = capture', state, 0);
       expect(result.lineType).to.equal('TAG');
@@ -883,7 +883,7 @@ endif`;
       expect(result.blockType).to.equal('START');
     });
 
-    it('should route call declaration based on CONVERT_SCRIPT_VAR_TO_VALUE', () => {
+    it('should route call declaration to call_assign value form', () => {
       const state = { inMultiLineComment: false, stringState: null };
       const result = scriptTranspiler._processLine('var x_call = call foo(bar)', state, 0);
       expect(result.lineType).to.equal('TAG');
