@@ -1,7 +1,7 @@
 'use strict';
 
 const nodes = require('../nodes');
-const { VALUE_IMPORT_BINDINGS } = require('../feature-flags');
+const { VALUE_IMPORT_BINDINGS, CONVERT_TEMPLATE_VAR_TO_VALUE } = require('../feature-flags');
 const CompileBuffer = require('./compile-buffer');
 
 /**
@@ -350,8 +350,12 @@ class CompileInheritance {
         const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
         if (needsParentCheck) {
           if (this.compiler.hasDynamicExtends) {
-            this.compiler.async.updateFrameReads(f, '__parentTemplate');
-            this.emit.line('const parentPromise = runtime.contextOrFrameLookup(context, frame, "__parentTemplate").then((parent) => {');
+            if (!this.compiler.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE) {
+              this.emit.line(`const parentPromise = runtime.contextOrFrameOrValueLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer}).then((parent) => {`);
+            } else {
+              this.compiler.async.updateFrameReads(f, '__parentTemplate');
+              this.emit.line('const parentPromise = runtime.contextOrFrameLookup(context, frame, "__parentTemplate").then((parent) => {');
+            }
             if (this.compiler.hasStaticExtends) {
               // Check both: dynamic can override static
               this.emit.line('  if (!parent) parent = parentTemplate;');

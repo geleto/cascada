@@ -2,7 +2,7 @@
 
 var nodes = require('./nodes');
 var lib = require('./lib');
-var { LOOP_VARS_USE_VALUE } = require('./feature-flags');
+var { LOOP_VARS_USE_VALUE, CONVERT_TEMPLATE_VAR_TO_VALUE } = require('./feature-flags');
 var scopeBoundaries = require('./compiler/scope-boundaries');
 
 var sym = 0;
@@ -470,11 +470,13 @@ function addDynamicExtendsSetup(ast, opts) {
     return ast;
   }
 
-  // 1. Inject the initial `{% set __parentTemplate = null; %}`
+  // 1. Inject the initial parent-template binding.
   const target = new nodes.Symbol(0, 0, '__parentTemplate');
   const value = new nodes.Literal(0, 0, null);
   const declarationNode = new nodes.Set(0, 0, [target], value);
-  declarationNode.varType = opts.scriptMode ? 'declaration' : 'assignment';
+  declarationNode.varType = (!opts.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE)
+    ? 'setval'
+    : (opts.scriptMode ? 'declaration' : 'assignment');
   ast.children.unshift(declarationNode);
 
   // 2. Rewrite every dynamic `Extends` node into a `NodeList` of [Extends, Set].
@@ -491,7 +493,9 @@ function addDynamicExtendsSetup(ast, opts) {
       setValue.isCompilerInternal = true; // This is the crucial link!
 
       const setNode = new nodes.Set(node.lineno, node.colno, [setTarget], setValue);
-      setNode.varType = 'assignment';
+      setNode.varType = (!opts.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE)
+        ? 'setval'
+        : 'assignment';
 
       // C. Replace the original Extends node with a list of the two new nodes.
       return new nodes.NodeList(node.lineno, node.colno, [node, setNode]);
