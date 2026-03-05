@@ -864,11 +864,11 @@ endif`;
       expect(converted).to.equal('value x = 1');
     });
 
-    it('should skip var-to-value conversion for capture and call declarations', () => {
+    it('should convert var-to-value for capture and call declarations', () => {
       const captureConverted = scriptTranspiler._convertVarDeclarationToValue('var x = capture', true);
       const callConverted = scriptTranspiler._convertVarDeclarationToValue('var x = call(user)', true);
-      expect(captureConverted).to.equal('var x = capture');
-      expect(callConverted).to.equal('var x = call(user)');
+      expect(captureConverted).to.equal('value x = capture');
+      expect(callConverted).to.equal('value x = call(user)');
     });
 
     it('should convert guard var selector to value when forced', () => {
@@ -876,21 +876,23 @@ endif`;
       expect(converted).to.equal('guard value, output, lock!');
     });
 
-    it('should keep capture declaration on var parsing path', () => {
+    it('should route capture declaration based on CONVERT_SCRIPT_VAR_TO_VALUE', () => {
       const state = { inMultiLineComment: false, stringState: null };
-      const result = scriptTranspiler._processLine('var x = capture', state, 0);
+      const result = scriptTranspiler._processLine('var x_capture = capture', state, 0);
       expect(result.lineType).to.equal('TAG');
-      expect(result.tagName).to.equal('var');
+      expect(result.tagName).to.equal(CONVERT_SCRIPT_VAR_TO_VALUE ? 'value' : 'var');
       expect(result.blockType).to.equal('START');
     });
 
-    it('should keep call declaration on call_assign var parsing path', () => {
+    it('should route call declaration based on CONVERT_SCRIPT_VAR_TO_VALUE', () => {
       const state = { inMultiLineComment: false, stringState: null };
-      const result = scriptTranspiler._processLine('var x = call foo(bar)', state, 0);
+      const result = scriptTranspiler._processLine('var x_call = call foo(bar)', state, 0);
       expect(result.lineType).to.equal('TAG');
       expect(result.tagName).to.equal('call_assign');
       expect(result.blockType).to.equal('START');
-      expect(result.codeContent).to.equal('var x = foo(bar)');
+      expect(result.codeContent).to.equal(
+        `${CONVERT_SCRIPT_VAR_TO_VALUE ? 'value' : 'var'} x_call = foo(bar)`
+      );
     });
 
     it('should handle var declarations with assignment', () => {
@@ -908,7 +910,7 @@ endif`;
 endcapture
 return {}`;
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- var report  -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- endvar -%}\n{%- return {} -%}');
+      expect(template).to.equal(`{%- ${DECL_TAG} report capture -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- end${DECL_TAG} -%}\n{%- return {} -%}`);
     });
 
     it('should handle extern declarations', () => {
@@ -932,7 +934,7 @@ return {}`;
 endcapture
 return {}`;
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- var report  -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- endvar -%}\n{%- return {} -%}');
+      expect(template).to.equal(`{%- ${DECL_TAG} report capture -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- end${DECL_TAG} -%}\n{%- return {} -%}`);
     });
 
     it('should handle complex assignments with expressions', () => {

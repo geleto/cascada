@@ -1053,13 +1053,17 @@ class ScriptTranspiler {
       return codeContent;
     }
 
-    const eqIndex = trimmed.indexOf('=');
-    if (eqIndex !== -1) {
-      const expr = trimmed.substring(eqIndex + 1).trim();
-      const isCaptureExpr = /^capture(\b|\()/.test(expr);
-      const isCallExpr = /^call(\b|\()/.test(expr);
-      if (isCaptureExpr || isCallExpr) {
-        return codeContent;
+    // Keep legacy capture/call var-declaration behavior when script var->value
+    // conversion is disabled by flag.
+    if (!CONVERT_SCRIPT_VAR_TO_VALUE) {
+      const eqIndex = trimmed.indexOf('=');
+      if (eqIndex !== -1) {
+        const expr = trimmed.substring(eqIndex + 1).trim();
+        const isCaptureExpr = /^capture(\b|\()/.test(expr);
+        const isCallExpr = /^call(\b|\()/.test(expr);
+        if (isCaptureExpr || isCallExpr) {
+          return codeContent;
+        }
       }
     }
 
