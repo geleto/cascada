@@ -9,8 +9,7 @@ const {
 const {
   checkWriteCounterExists,
   checkWriteCounterNegative,
-  checkFrameBalance,
-  ENABLE_FRAME_BALANCE_CHECK
+  checkFrameBalance
 } = require('./checks');
 
 
@@ -95,18 +94,13 @@ class Frame {
       newFrame._seesRootScope = true;
     }
 
-    // Use the imported flag directly since we added it to top-level imports
-    if (ENABLE_FRAME_BALANCE_CHECK) {
-      newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
-    }
+    newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
 
     return newFrame;
   }
 
   pop() {
-    if (ENABLE_FRAME_BALANCE_CHECK) {
-      checkFrameBalance(this, this.parent);
-    }
+    checkFrameBalance(this, this.parent);
     return this.parent;
   }
 
@@ -316,7 +310,7 @@ class AsyncFrame extends Frame {
   }
 
   //when all assignments to a variable are done, resolve the promise for that variable
-  _countdownAndResolveAsyncWrites(varName, decrementVal = 1, scopeFrame = null, checkInfo = null) {
+  _countdownAndResolveAsyncWrites(varName, decrementVal = 1, scopeFrame = null) {
     if (!this.writeCounters || !(varName in this.writeCounters) || decrementVal === 0) {
       // For sequence locks, we need to search all the way up the chain ignoring scopeFrame,
       // because writeCounters can be in intermediate frames (e.g., guard blocks) even though
@@ -329,13 +323,12 @@ class AsyncFrame extends Frame {
         // For non-sequence variables, respect the scopeFrame boundary
         // For sequence locks, pass root as scopeFrame to stop at root
         const actualScopeFrame = isSequenceLock ? this.getRoot() : scopeFrame;
-        return this.parent._countdownAndResolveAsyncWrites(varName, decrementVal, actualScopeFrame, checkInfo || this.checkInfo);
+        return this.parent._countdownAndResolveAsyncWrites(varName, decrementVal, actualScopeFrame);
       }
       if (!this.parent) {
         return false;//root frame does not keep counts
       }
-      // @todo - throw error, cb argument or frame.checkInfo.cb
-      return checkWriteCounterExists(varName, checkInfo);
+      return checkWriteCounterExists(varName);
     }
     let count = this.writeCounters[varName];
     if (count === 0) {
@@ -349,7 +342,7 @@ class AsyncFrame extends Frame {
     }
     if (count < decrementVal) {
       this.writeCounters[varName] = count - decrementVal;
-      checkWriteCounterNegative(varName, count, this.checkInfo);
+      checkWriteCounterNegative(varName, count);
     }
 
     let reachedZero = (count === decrementVal);
@@ -380,7 +373,7 @@ class AsyncFrame extends Frame {
         // Only propagate if the parent is not the scope frame (or null)
         if (this.parent !== scopeFrame) {
           // Propagate a single count upwards
-          this.parent._countdownAndResolveAsyncWrites(varName, 1, scopeFrame, checkInfo || this.checkInfo);
+          this.parent._countdownAndResolveAsyncWrites(varName, 1, scopeFrame);
         }
       }
       return true;
@@ -486,9 +479,7 @@ class AsyncFrame extends Frame {
       newFrame._seesRootScope = true;
     }
 
-    if (ENABLE_FRAME_BALANCE_CHECK) {
-      newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
-    }
+    newFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
 
     return newFrame;
   }
@@ -528,9 +519,7 @@ class AsyncFrame extends Frame {
     // Async block frames never own inherited buffers by default.
 
     // Track runtime depth for balance validation
-    if (ENABLE_FRAME_BALANCE_CHECK) {
-      asyncBlockFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
-    }
+    asyncBlockFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
 
     asyncBlockFrame.isAsyncBlock = true;
     asyncBlockFrame.sequentialLoopBody = sequentialLoopBody;

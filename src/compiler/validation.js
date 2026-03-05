@@ -1,21 +1,5 @@
 'use strict';
 
-// Enable bidirectional validation to ensure write counter registration and decrementing are mutual.
-// Set to true during development to catch compiler bugs early at compile-time.
-// Can be set to false in production if needed for performance (runtime checks still active).
-const ENABLE_RESOLVEUP_VALIDATION = true;
-
-// Enable frame balance validation at compile-time.
-// Set to true during development to catch frame push/pop bugs early.
-// Can be set to false in production if needed for performance.
-const ENABLE_FRAME_BALANCE_VALIDATION = true;
-
-// Enable declaration scope validation at compile-time.
-// This ensures variables are only declared on frames that explicitly create a scope.
-// Set to true during development to catch incorrect frame selection early.
-const ENABLE_SCOPE_VALIDATION = true;
-
-
 const RESERVED_DECLARATION_NAMES = new Set(['var', 'data', 'text', 'value', 'sink', 'sequence']);
 
 /**
@@ -24,9 +8,7 @@ const RESERVED_DECLARATION_NAMES = new Set(['var', 'data', 'text', 'value', 'sin
  * @param {Frame} parentFrame - The parent frame
  */
 function trackCompileTimeFrameDepth(newFrame, parentFrame) {
-  if (ENABLE_FRAME_BALANCE_VALIDATION) {
-    newFrame._compilerDepth = (parentFrame._compilerDepth || 0) + 1;
-  }
+  newFrame._compilerDepth = (parentFrame._compilerDepth || 0) + 1;
 }
 
 /**
@@ -36,15 +18,13 @@ function trackCompileTimeFrameDepth(newFrame, parentFrame) {
  * @param {Node} positionNode - The AST node for error positioning
  */
 function validateCompileTimeFrameBalance(frame, compiler, positionNode) {
-  if (ENABLE_FRAME_BALANCE_VALIDATION) {
-    if (!frame.parent) {
-      compiler.fail('Compiler error: Frame pop without parent - unbalanced push/pop detected', positionNode.lineno, positionNode.colno, positionNode);
-    }
+  if (!frame.parent) {
+    compiler.fail('Compiler error: Frame pop without parent - unbalanced push/pop detected', positionNode.lineno, positionNode.colno, positionNode);
+  }
 
-    const expectedDepth = (frame._compilerDepth || 0) - 1;
-    if (frame.parent._compilerDepth !== undefined && frame.parent._compilerDepth !== expectedDepth) {
-      compiler.fail(`Compiler error: Frame depth mismatch - expected ${expectedDepth}, got ${frame.parent._compilerDepth}`, positionNode.lineno, positionNode.colno, positionNode);
-    }
+  const expectedDepth = (frame._compilerDepth || 0) - 1;
+  if (frame.parent._compilerDepth !== undefined && frame.parent._compilerDepth !== expectedDepth) {
+    compiler.fail(`Compiler error: Frame depth mismatch - expected ${expectedDepth}, got ${frame.parent._compilerDepth}`, positionNode.lineno, positionNode.colno, positionNode);
   }
 }
 
@@ -57,14 +37,12 @@ function validateCompileTimeFrameBalance(frame, compiler, positionNode) {
  * @param {Node} node - The AST node for error reporting
  */
 function validateResolveUp(frame, name, hasResolveUpMetadata, compiler, node) {
-  if (ENABLE_RESOLVEUP_VALIDATION) {
-    const hasWriteCounter = !!(frame.writeCounts && (name in frame.writeCounts));
-    if (hasResolveUpMetadata !== hasWriteCounter) {
-      compiler.fail(
-        `Compiler-runtime mismatch for variable '${name}': metadata says resolveUp=${hasResolveUpMetadata} but writeCounts exists=${hasWriteCounter}`,
-        node.lineno, node.colno, node
-      );
-    }
+  const hasWriteCounter = !!(frame.writeCounts && (name in frame.writeCounts));
+  if (hasResolveUpMetadata !== hasWriteCounter) {
+    compiler.fail(
+      `Compiler-runtime mismatch for variable '${name}': metadata says resolveUp=${hasResolveUpMetadata} but writeCounts exists=${hasWriteCounter}`,
+      node.lineno, node.colno, node
+    );
   }
 }
 
@@ -158,10 +136,6 @@ function validateSetTarget(compiler, node, target, name, isDeclared) {
  * @param {Node|null} node - The AST node for error positioning (optional)
  */
 function validateDeclarationScope(frame, name, compiler, node) {
-  if (!ENABLE_SCOPE_VALIDATION) {
-    return;
-  }
-
   if (frame && frame.createScope === false) {
     const lineno = node && node.lineno;
     const colno = node && node.colno;
@@ -457,9 +431,6 @@ function validateOutputObservationCall(compiler, { node, command, handler, outpu
 
 module.exports = {
   RESERVED_DECLARATION_NAMES,
-  ENABLE_RESOLVEUP_VALIDATION,
-  ENABLE_FRAME_BALANCE_VALIDATION,
-  ENABLE_SCOPE_VALIDATION,
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance,
   validateResolveUp,

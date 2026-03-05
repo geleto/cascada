@@ -391,14 +391,9 @@ class CompileInheritance {
         const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
         if (needsParentCheck) {
           if (this.compiler.hasDynamicExtends) {
-            if (!this.compiler.scriptMode) {
-              // Value mode: __parentTemplate is a value output/context read in async templates.
-              // Wrap in resolveSingle so this path works for both sync and promise values.
-              this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrValueLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer})).then((parent) => {`);
-            } else {
-              this.compiler.async.updateFrameReads(f, '__parentTemplate');
-              this.emit.line('const parentPromise = runtime.contextOrFrameLookup(context, frame, "__parentTemplate").then((parent) => {');
-            }
+            // Dynamic parent selection reads __parentTemplate via value/context path.
+            // Do not fall back to frame lookup here.
+            this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrValueLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer})).then((parent) => {`);
             if (this.compiler.hasStaticExtends) {
               // Check both: dynamic can override static
               this.emit.line('  if (!parent) parent = parentTemplate;');

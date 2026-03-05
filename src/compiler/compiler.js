@@ -1739,14 +1739,9 @@ class Compiler extends CompilerBase {
       this.emit.line('astate.waitAllClosures().then(async () => {');
 
       if (this.hasDynamicExtends) {
-        // Dynamic extends: check frame variable
-        if (!this.scriptMode) {
-          // Value mode: __parentTemplate is emitted as setval/value output.
-          // Do not fall back to frame lookup here.
-          this.emit.line(`  let finalParent = await runtime.contextOrValueLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
-        } else {
-          this.emit.line('  let finalParent = await runtime.contextOrFrameLookup(context, frame, "__parentTemplate");');
-        }
+        // Dynamic extends: resolve from value output or context only.
+        // Do not fall back to frame lookup.
+        this.emit.line(`  let finalParent = await runtime.contextOrValueLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
         if (this.hasStaticExtends) {
           this.emit.line('  if (!finalParent) finalParent = parentTemplate;');
         }

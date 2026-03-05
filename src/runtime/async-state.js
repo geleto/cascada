@@ -1,7 +1,5 @@
 'use strict';
 
-const { createCheckInfo } = require('./checks');
-
 class AsyncState {
   constructor(parent = null) {
     this.activeClosures = 0;
@@ -9,17 +7,15 @@ class AsyncState {
     this.parent = parent;
     this.completionPromise = null;
     this.completionResolver = null;
-    this.asyncBlockFrame = null;//@todo - remove
   }
 
-  _enterAsyncBlock(asyncBlockFrame) {
+  _enterAsyncBlock() {
     const newState = new AsyncState(this);
-    newState.asyncBlockFrame = asyncBlockFrame || null;
     newState._incrementClosures();
 
     // Create a new completion promise for this specific closure chain
     /*this.waitAllClosures().then(() => {
-      asyncBlockFrame.dispose();// - todo - why does it succeed and then fail?
+      // async frame cleanup hook placeholder.
     });*/
 
     return newState;
@@ -37,11 +33,6 @@ class AsyncState {
       }
     } else if (this.activeClosures < 0) {
       throw new Error('Negative activeClosures count detected');
-    }
-
-    if (this.activeClosures === 0 && this.checkInfo && this.asyncBlockFrame) {
-      const { checkPendingWrites } = require('./checks');
-      checkPendingWrites(this.asyncBlockFrame, this.checkInfo);
     }
 
     if (this.parent) {
@@ -65,12 +56,7 @@ class AsyncState {
       }
     }
 
-    const checkInfo = createCheckInfo(cb, runtime, lineno, colno, errorContextString, context);
-    const childState = this._enterAsyncBlock(childFrame);
-    childState.checkInfo = checkInfo;
-    if (checkInfo) {
-      childFrame.checkInfo = checkInfo;
-    }
+    const childState = this._enterAsyncBlock();
 
     const activeBuffer = newBuffer || parentBuffer || null;
     const cleanup = () => {
