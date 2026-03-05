@@ -174,10 +174,10 @@ module.exports = class CompileEmit {
         return !(declared && declared.has(name));
       });
       if (foreignUsed.length > 0) {
-        const linkLines = foreignUsed
-          .map((name) => `${parentBufferId}.addBuffer(${bufferId}, "${name}");`)
-          .join('\n') + '\n';
-        this.insert(linkInsertPos, linkLines);
+        // Use the shared runtime prelink helper to keep boundary-linking behavior
+        // consistent with include/block prelink paths.
+        const linkLine = `runtime.linkWithParentCompositionBuffer(${parentBufferId}, ${bufferId}, ${JSON.stringify(foreignUsed)}, ${bufferId}._outputs);\n`;
+        this.insert(linkInsertPos, linkLine);
       }
     }
 
