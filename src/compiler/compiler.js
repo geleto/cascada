@@ -124,7 +124,22 @@ class Compiler extends CompilerBase {
     });
   }
 
-  //todo
+  /**
+   * Emit a runtime prelink call that attaches `childBufferExpr` to handler lanes
+   * on `parentBufferExpr` when those lanes are present in `presenceMapExpr`.
+   *
+   * `insertPos` is used for block functions where prelinking must be injected
+   * before block body code is emitted.
+   */
+  emitLinkWithParentCompositionBuffer(handlers, parentBufferExpr, childBufferExpr, presenceMapExpr, insertPos = null) {
+    const snippet = `runtime.linkWithParentCompositionBuffer(${parentBufferExpr}, ${childBufferExpr}, ${JSON.stringify(handlers)}, ${presenceMapExpr});`;
+
+    if (typeof insertPos === 'number') {
+      this.emit.insertLine(insertPos, snippet);
+    } else {
+      this.emit.line(snippet);
+    }
+  }
 
 
   compileCallExtension(node, frame) {
@@ -1822,7 +1837,22 @@ class Compiler extends CompilerBase {
         this.emit.line(`context = context.forkForPath(${this.inheritance._templateName()});`);
       }
       this.emit.line('var frame = frame.push(true);'); // Keep this as 'var', the codebase depends on the function-scoped nature of var for frame
+      // Prelink must be emitted before block body compilation so snapshot commands
+      // produced by block symbol reads are reachable on the proper handler lanes.
+      const blockPrelinkPos = this.codebuf.length;
+      this.emit.line('');
       this.compile(block.body, tmpFrame);
+      if (this.asyncMode) {
+        const usedOutputs = tmpFrame.usedOutputs ? Array.from(tmpFrame.usedOutputs) : [];
+        const prelinkHandlers = usedOutputs.filter((hname) => hname !== this.buffer.currentTextOutputName);
+        this.emitLinkWithParentCompositionBuffer(
+          prelinkHandlers,
+          'parentBuffer',
+          this.buffer.currentBuffer,
+          'parentBuffer._outputs',
+          blockPrelinkPos
+        );
+      }
       if (this.asyncMode) {
         // Block functions in async mode return final text snapshots directly.
         this.emit.line(`${this.buffer.currentBuffer}.markFinishedAndPatchLinks();`);

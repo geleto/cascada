@@ -115,6 +115,28 @@ function promisify(fn) {
   };
 }
 
+/**
+ * Link a composed child buffer into selected parent handler lanes.
+ *
+ * The compiler provides a conservative handler candidate list; this helper
+ * performs a runtime intersection against `presenceMap` (typically child `_outputs`)
+ * to avoid linking lanes that do not exist for the child.
+ */
+function linkWithParentCompositionBuffer(parentBuffer, childBuffer, handlers, presenceMap) {
+  if (!parentBuffer || !childBuffer || !Array.isArray(handlers) || handlers.length === 0) {
+    return;
+  }
+  if (!(presenceMap instanceof Map)) {
+    return;
+  }
+  for (let i = 0; i < handlers.length; i++) {
+    const handler = handlers[i];
+    if (presenceMap.has(handler)) {
+      parentBuffer.addBuffer(childBuffer, handler);
+    }
+  }
+}
+
 module.exports = {
   makeMacro,
   makeKeywordArgs,
@@ -128,6 +150,7 @@ module.exports = {
   ensureDefinedAsync: outputValue.ensureDefinedAsync,
   promisify,
   withPath,
+  linkWithParentCompositionBuffer,
   SafeString: outputValue.SafeString,
   copySafeness: outputValue.copySafeness,
   markSafe: outputValue.markSafe,
@@ -202,6 +225,8 @@ module.exports = {
   memberLookupAsync: lookup.memberLookupAsync,
   memberLookupScript: lookup.memberLookupScript,
   memberLookupScriptAsync: lookup.memberLookupScriptAsync,
+  linkReadOutput: lookup.linkReadOutput,
+  valueOutputLookup: lookup.valueOutputLookup,
   contextOrFrameLookup: lookup.contextOrFrameLookup,
   contextOrValueLookup: lookup.contextOrValueLookup,
   contextOrFrameOrValueLookup: lookup.contextOrFrameOrValueLookup,

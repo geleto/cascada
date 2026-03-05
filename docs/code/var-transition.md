@@ -1,77 +1,122 @@
-# Var To Value Transition: Flag-Driven Usage
+# Var To Value Transition: Remaining Work
 
-This document tracks places where behavior must be value-based when migration flags are enabled.
+This document tracks only what is still pending for the final model:
 
-`var` language support is intentionally retained (parser/transpiler/runtime compatibility). The goal is not to remove `var` syntax support, but to ensure internal emission/execution paths use value outputs when the relevant flags are `true`.
+- value outputs + command buffers are the temporal consistency mechanism,
+- old var-style async write synchronization is not used for value dataflow paths.
 
-Current migration flags in [`src/feature-flags.js`](../../src/feature-flags.js) are all `true`:
+`var` syntax support remains for compatibility. Frame-local control variables remain allowed (macro args, loop metadata, internal temps).
+
+## Current Baseline
+
+With flags enabled in [`src/feature-flags.js`](../../src/feature-flags.js):
+
 - `CONVERT_TEMPLATE_VAR_TO_VALUE`
 - `CONVERT_SCRIPT_VAR_TO_VALUE`
 - `LOOP_VARS_USE_VALUE`
 - `SEQUNTIAL_PATHS_USE_VALUE`
 - `VALUE_IMPORT_BINDINGS`
+- `INCLUDE_PRELINK_OUTPUTS`
+- `INHERITANCE_CONTEXT_ONLY_LOOKUP`
+- `LOOKUP_DYNAMIC_OUTPUT_LINKING` (default `false`, optional dynamic fallback)
 
-## Active Areas To Verify (With Flags = true)
+already-completed conversion areas are considered stable unless regressions appear.
 
-### 1) Script transpiler conversion coverage
-- Ensure `var` declarations route to `value` emission when `CONVERT_SCRIPT_VAR_TO_VALUE=true`, including `capture` and `call` forms.
-- Primary logic lives in [`src/script/script-transpiler.js`](../../src/script/script-transpiler.js), notably `_convertVarDeclarationToValue(...)` and `_processVar(...)`.
+## Remaining Tasks (In Execution Order)
 
-### 2) Template symbol lookup path selection
-- In async template conversion mode, verify symbol reads use value-aware lookup where expected.
-- Relevant branch: [`src/compiler/compiler-base.js:427`](../../src/compiler/compiler-base.js#L427), fallback at [`src/compiler/compiler-base.js:430`](../../src/compiler/compiler-base.js#L430).
+### 1) Finish `#3`: macro publication fully value-aligned under flags
 
-### 3) Macro/export publication path
-- Macro publication still uses frame/context variable assignment paths at [`src/compiler/compiler.js:1436`](../../src/compiler/compiler.js#L1436), [`src/compiler/compiler.js:1444`](../../src/compiler/compiler.js#L1444).
-- Decide whether this remains acceptable or should be value-output aligned under flags.
+Goal: when conversion flags are on, macro publication should not depend on `context.setVariable(...)`.
 
-### 4) Dynamic extends parent binding path
-- Transformer injects `Set` assignment for `__parentTemplate` in [`src/transformer.js:510`](../../src/transformer.js#L510), [`src/transformer.js:530`](../../src/transformer.js#L530).
-- Root completion reads via lookup at [`src/compiler/compiler.js:1744`](../../src/compiler/compiler.js#L1744).
+Current location:
+- [`src/compiler/compiler.js`](../../src/compiler/compiler.js) (`compileMacro`)
 
-## Flag-Off Compatibility Paths (Intentionally Retained)
+Work:
+- Guard/remove remaining `context.setVariable(...)` macro publication branches under value-conversion conditions.
+- Keep flag-off behavior unchanged.
+- Verify top-level export visibility and macro call semantics remain correct.
 
-These paths support behavior when flags are disabled and can remain by design.
+### 2) Remove `__parentTemplate` read dependency on frame lookup in value mode
 
-### 1) Import bindings fallback when `VALUE_IMPORT_BINDINGS=false`
-- Legacy var/frame/context import alias path in [`src/compiler/compile-inheritance.js:188`](../../src/compiler/compile-inheritance.js#L188), [`src/compiler/compile-inheritance.js:257`](../../src/compiler/compile-inheritance.js#L257).
+Goal: dynamic extends parent resolution in value mode should use value/context path, not frame fallback.
 
-### 2) Loop variable fallback when `LOOP_VARS_USE_VALUE=false`
-- Legacy loop `frame.set(...)` variable binding path in [`src/compiler/compile-loop.js:89`](../../src/compiler/compile-loop.js#L89), [`src/compiler/compile-loop.js:463`](../../src/compiler/compile-loop.js#L463).
+Current locations:
+- [`src/compiler/compiler.js`](../../src/compiler/compiler.js) (`compileRoot` final parent resolution)
+- [`src/compiler/compile-inheritance.js`](../../src/compiler/compile-inheritance.js) (`compileBlock` parent check)
 
-### 3) Sequential path fallback when `SEQUNTIAL_PATHS_USE_VALUE=false`
-- Legacy frame-lock/read-lock implementation in [`src/runtime/sequential.js:214`](../../src/runtime/sequential.js#L214), [`src/runtime/sequential.js:246`](../../src/runtime/sequential.js#L246), [`src/runtime/sequential.js:301`](../../src/runtime/sequential.js#L301).
+Work:
+- Under template value-conversion mode, avoid `contextOrFrameOrValueLookup(...)` / `contextOrFrameLookup(...)` for `__parentTemplate`.
+- Use value-aware read path consistent with `setval` storage.
+- Keep flag-off compatibility branch.
 
-## Port Checklist (Suggested Order)
+### 3) Complete boundary-driven linking coverage; keep lookup linking optional only
 
-1. Script transpiler: ensure all declaration shapes (`simple`, `capture`, `call`) emit value-path forms when `CONVERT_SCRIPT_VAR_TO_VALUE=true`.
-2. Template compilation: verify converted template set/symbol paths consistently use value-aware lookup/commands when `CONVERT_TEMPLATE_VAR_TO_VALUE=true`.
-3. Macro/export behavior: decide and document whether macro publication should remain var-based or be value-aligned under flags.
-4. Dynamic extends: decide whether `__parentTemplate` remains variable-based or gets a value-aligned path.
-5. Keep flag-off compatibility branches (`VALUE_IMPORT_BINDINGS`, `LOOP_VARS_USE_VALUE`, `SEQUNTIAL_PATHS_USE_VALUE`) unless there is a deliberate decision to remove that compatibility.
+Goal: structural linking at boundaries should be sufficient; lookup-time dynamic linking remains an optional mode, not required for correctness.
 
-## Risk / Effort Notes
+Current locations:
+- Include prelink: [`src/compiler/compile-inheritance.js`](../../src/compiler/compile-inheritance.js)
+- Block prelink emission: [`src/compiler/compiler.js`](../../src/compiler/compiler.js)
+- Optional runtime fallback: [`src/runtime/lookup.js`](../../src/runtime/lookup.js)
 
-- High risk:
-  - Template symbol lookup default changes (can affect broad read semantics).
-  - Dynamic extends parent-template binding migration (affects inheritance flow).
-  - Sequential fallback removal (ordering/poison behavior sensitive).
+Work:
+- Ensure all required handler lanes (including canonical aliases like `x#N`) are linked by boundary logic.
+- Keep `LOOKUP_DYNAMIC_OUTPUT_LINKING=false` as default correctness path.
+- Any failing cases with fallback off must be fixed structurally (usedOutputs/alias projection/boundary link), not by reintroducing mandatory lookup linking.
 
-- Medium risk:
-  - Macro publication path migration (imports/exports and top-level scope behavior).
-  - Import fallback removal (inter-template symbol exposure behavior).
+### 4) Identify and retire old var-style async sync for value dataflow paths
 
-- Low to medium risk:
-  - Transpiler declaration conversion cleanup.
-  - Flag gating consistency across declaration forms.
+Goal: value dataflow should rely on command-chain ordering, not var write-count/promisification mechanics.
 
-## Exit Criteria
+Primary old-mechanism locations:
+- compiler-side write metadata propagation: [`src/compiler/compile-async.js`](../../src/compiler/compile-async.js)
+- runtime async var locking/countdown: [`src/runtime/frame.js`](../../src/runtime/frame.js)
+- async block orchestration contract: [`src/runtime/async-state.js`](../../src/runtime/async-state.js)
 
-- With flags enabled, generated code/emission follows value-output paths for targeted features.
-- With flags disabled, existing var-compatible behavior remains intact.
-- Full test suite passes, with focused coverage for:
-  - capture/call assignment forms
-  - imports/from-imports
-  - async loops and loop metadata
-  - sequential path ordering/repair
-  - template inheritance/dynamic extends
+Work:
+- Audit each remaining use of `writeCounts`, `pushAsyncBlock(...writeCounts...)`, and parent-var promisification.
+- Separate frame-local control variable needs from value dataflow needs.
+- Remove/guard old var-sync paths where they are no longer needed for value flows.
+
+## Explicit Non-Goals
+
+- Removing parser/runtime compatibility for `var` syntax.
+- Removing all frame lookups globally (frame locals remain for control/runtime internals).
+- Enabling lookup-time dynamic linking by default.
+
+## Completion Criteria
+
+1. With flags enabled, value dataflow no longer relies on var-style async write locking/countdown.
+2. `LOOKUP_DYNAMIC_OUTPUT_LINKING=false` passes `npm run test:quick` without hangs/regressions.
+3. Macro publication and dynamic extends parent resolution are value-aligned under flags.
+4. Flag-off compatibility paths continue to work as designed.
+
+## Final Consolidation Phase (Post-Transition)
+
+After the remaining tasks above are complete and stable, perform the final cleanup:
+
+### A) Remove old var implementation
+
+- Remove legacy var runtime/compiler synchronization paths that are no longer required.
+- Keep only frame-local control variables (runtime internals), not legacy var dataflow semantics.
+
+### B) Rename value implementation to become canonical var implementation
+
+- Promote current value dataflow model to the canonical internal implementation for variable semantics.
+- Rename internals/APIs as needed so the system no longer has dual "var vs value" implementation language.
+
+### C) Remove translation layers
+
+- Remove transpiler/compiler/transformer translation logic that maps:
+  - `var -> value`
+  - `set -> setval`
+- Delete migration-only branches and compatibility wiring that exists only for dual-path support.
+
+### D) Remove transition flags that are no longer meaningful
+
+- Remove conversion flags once there is only one implementation path.
+- Keep only long-term behavioral flags that are intentionally supported (for example optional dynamic output linking, if still desired).
+
+### E) Final verification
+
+- Re-run full test suite with single-path implementation.
+- Ensure generated code no longer contains migration-era translation artifacts.

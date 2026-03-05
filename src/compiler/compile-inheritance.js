@@ -1,7 +1,11 @@
 'use strict';
 
 const nodes = require('../nodes');
-const { VALUE_IMPORT_BINDINGS, CONVERT_TEMPLATE_VAR_TO_VALUE } = require('../feature-flags');
+const {
+  VALUE_IMPORT_BINDINGS,
+  CONVERT_TEMPLATE_VAR_TO_VALUE,
+  INCLUDE_PRELINK_OUTPUTS
+} = require('../feature-flags');
 const CompileBuffer = require('./compile-buffer');
 
 /**
@@ -109,6 +113,48 @@ class CompileInheritance {
       const base = keys[i];
       this.emit.line(`${aliasVar}[${JSON.stringify(base)}] = ${JSON.stringify(aliases[base])};`);
     }
+  }
+
+  /**
+   * Collect canonical runtime handler names that should be prelinked for include composition.
+   *
+   * We intentionally include:
+   * - statically tracked used outputs (read/write analysis), and
+   * - declared value outputs visible from the current lexical scope chain.
+   *
+   * Runtime link helper intersects this list with the child's actual output map,
+   * so extra candidates are harmless while preserving conservative coverage.
+   */
+  _collectIncludeLinkCandidates(frame) {
+    const candidates = new Set();
+    const textHandler = this.compiler.buffer.currentTextOutputName;
+
+    const addRuntimeName = (name) => {
+      if (!name || name === textHandler) {
+        return;
+      }
+      candidates.add(name);
+    };
+
+    let cur = frame;
+    while (cur) {
+      if (cur.usedOutputs) {
+        for (const name of cur.usedOutputs) {
+          addRuntimeName(name);
+        }
+      }
+      if (cur.declaredOutputs) {
+        cur.declaredOutputs.forEach((decl, name) => {
+          if (!decl || decl.type !== 'value') {
+            return;
+          }
+          addRuntimeName(decl.runtimeName || name);
+        });
+      }
+      cur = cur.parent;
+    }
+
+    return Array.from(candidates);
   }
 
   _templateName() {
@@ -507,6 +553,18 @@ class CompileInheritance {
       // Compose child buffer with base->canonical aliases (e.g. loop -> loop#7)
       // so natural names used inside included templates target the right lane.
       this.emit.line(`  composed._setBoundaryAliases(${aliasMapVar});`);
+      if (INCLUDE_PRELINK_OUTPUTS) {
+        // Structural prelinking: attach composed child to parent lanes up front so
+        // include-time symbol snapshots do not depend on lookup-time dynamic linking.
+        const includeLinkCandidates = this._collectIncludeLinkCandidates(f);
+        const parentBufferExpr = this.compiler.buffer.currentBuffer;
+        this.compiler.emitLinkWithParentCompositionBuffer(
+          includeLinkCandidates,
+          parentBufferExpr,
+          'composed',
+          'composed._outputs'
+        );
+      }
       this.emit.line(`  return composed.addSnapshot("${includeOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
       this.emit.line('});');
       this.emit.line(`${resultVar} = new runtime.TextCommand({ handler: "${this.compiler.buffer.currentTextOutputName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} });`);

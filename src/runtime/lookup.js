@@ -8,6 +8,7 @@ const {
   RuntimePromise,
   collectErrors,
 } = require('./errors');
+const { LOOKUP_DYNAMIC_OUTPUT_LINKING } = require('../feature-flags');
 
 const {
   resolveDuo
@@ -250,11 +251,43 @@ function contextOrFrameLookup(context, frame, name) {
  * - Otherwise, fall back to context lookup (globals/context vars).
  */
 function contextOrValueLookup(_context, frame, name, currentBuffer) {
-  const output = getOutput(frame, name);
-  if (output) {
-    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  const outputRead = valueOutputLookup(frame, name, currentBuffer);
+  if (outputRead !== undefined) {
+    return outputRead;
   }
   return _context.lookup(name);
+}
+
+/**
+ * Output-only lookup for known declared value outputs.
+ * Returns undefined when no output binding is available.
+ *
+ * Ordering rule:
+ * - If the output owner buffer is in the current buffer ancestry, snapshot from
+ *   current buffer lane (ordered read).
+ * - Otherwise, use finalSnapshot() directly (cross-tree / completed-owner read).
+ */
+function valueOutputLookup(frame, name, currentBuffer) {
+  let output = getOutput(frame, name);
+  if (!output && currentBuffer && currentBuffer._outputs instanceof Map) {
+    output = currentBuffer._outputs.get(name);
+  }
+  if (!output) {
+    return undefined;
+  }
+  if (isBufferInAncestry(currentBuffer, output._buffer)) {
+    if (currentBuffer && currentBuffer.parent && currentBuffer.parent.finished) {
+      return output.finalSnapshot();
+    }
+    // Optional dynamic mode: lazily link current read buffer into the handler lane.
+    // This is intentionally flag-guarded so structural prelinking remains the default model,
+    // but dynamic compositions can opt in without changing compiler wiring.
+    if (LOOKUP_DYNAMIC_OUTPUT_LINKING) {
+      ensureReadOutputLink(currentBuffer, output, name);
+    }
+    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  }
+  return output.finalSnapshot();
 }
 
 function contextOrFrameOrValueLookup(context, frame, name, currentBuffer) {
@@ -268,8 +301,7 @@ function contextOrFrameOrValueLookup(context, frame, name, currentBuffer) {
   }
   const output = getOutput(frame, name);
   if (output) {
-    ensureReadOutputLink(currentBuffer, output, name);
-    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+    return valueOutputLookup(frame, name, currentBuffer);
   }
   return undefined;
 }
@@ -309,6 +341,8 @@ function contextOrValueLookupScriptAsync(context, frame, name, currentBuffer, er
   return context.lookupScriptModeAsync(name, errorContext);
 }
 
+// Dynamically links the current read buffer into the target handler lane once.
+// This is used only when LOOKUP_DYNAMIC_OUTPUT_LINKING is enabled.
 function ensureReadOutputLink(currentBuffer, output, outputName) {
   if (!currentBuffer || !output || output._buffer === currentBuffer) {
     return;
@@ -323,6 +357,19 @@ function ensureReadOutputLink(currentBuffer, output, outputName) {
   }
   parent.addBuffer(currentBuffer, outputName);
   currentBuffer._readOutputLinks[outputName] = true;
+}
+
+// Returns true when `ancestor` is on the parent chain of `buffer`.
+// Used to decide whether an ordered lane snapshot is valid from current buffer.
+function isBufferInAncestry(buffer, ancestor) {
+  let current = buffer;
+  while (current) {
+    if (current === ancestor) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
 }
 
 function contextOrFrameLookupScript(context, frame, name) {
@@ -340,7 +387,9 @@ module.exports = {
   memberLookupScript,
   memberLookupAsync,
   memberLookupScriptAsync,
+  linkReadOutput: ensureReadOutputLink,
   contextOrFrameLookup,
+  valueOutputLookup,
   contextOrValueLookup,
   contextOrFrameOrValueLookup,
   contextOrFrameLookupScript,

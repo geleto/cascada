@@ -9,7 +9,11 @@ const {
   trackActualRead,
   validateSinkSnapshotInGuard
 } = require('./validation');
-const { SEQUNTIAL_PATHS_USE_VALUE, CONVERT_TEMPLATE_VAR_TO_VALUE } = require('../feature-flags');
+const {
+  SEQUNTIAL_PATHS_USE_VALUE,
+  CONVERT_TEMPLATE_VAR_TO_VALUE,
+  INHERITANCE_CONTEXT_ONLY_LOOKUP
+} = require('../feature-flags');
 
 // Moved from the main compiler as it's used by compileCompare (expression)
 const compareOps = {
@@ -424,8 +428,31 @@ class CompilerBase extends Obj {
         this.emit('runtime.contextOrValueLookupScript(' + `context, frame, "${name}", ${this.buffer.currentBuffer})`);
       }
     } else {
-      if (this.asyncMode && CONVERT_TEMPLATE_VAR_TO_VALUE && this.inBlock && !this._isDeclared(frame, name)) {
-        this.emit('runtime.contextOrFrameOrValueLookup(' + `context, frame, "${name}", ${this.buffer.currentBuffer})`);
+      const useContextOnlyInheritanceLookup =
+        this.asyncMode &&
+        this.inBlock &&
+        !this._isDeclared(frame, name) &&
+        (CONVERT_TEMPLATE_VAR_TO_VALUE || INHERITANCE_CONTEXT_ONLY_LOOKUP);
+      if (useContextOnlyInheritanceLookup) {
+        // Conservative registration: unresolved inheritance/block symbols can still
+        // resolve to value outputs at runtime (after context miss), and prelinking
+        // relies on usedOutputs coverage to keep snapshots reachable.
+        this.buffer.registerOutputUsage(frame, name);
+        const outputDecl = this.async && this.async._getDeclaredOutput
+          ? this.async._getDeclaredOutput(frame, name)
+          : null;
+        if (outputDecl) {
+          this.emit('runtime.valueOutputLookup(' + `frame, "${name}", ${this.buffer.currentBuffer})`);
+        } else {
+          const contextRef = this._tmpid();
+          // Preserve context-first semantics for non-output names, then only fall back
+          // to output-aware lookup for dynamic value-output visibility.
+          this.emit('(() => {');
+          this.emit(`const ${contextRef} = context.lookup("${name}");`);
+          this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
+          this.emit(`return runtime.contextOrValueLookup(context, frame, "${name}", ${this.buffer.currentBuffer});`);
+          this.emit('})()');
+        }
       } else {
         this.emit('runtime.contextOrFrameLookup(' + 'context, frame, "' + name + '")');
       }

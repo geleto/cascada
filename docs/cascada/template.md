@@ -253,6 +253,13 @@ In Nunjucks and non-async Cascada templates, conditional statements (`if` and `s
 
 In async Cascada templates, `if` and `switch` create local variable scopes. Variables set within these blocks are local to the block and not visible in the parent scope.
 
+## Async Inheritance Scope Note
+
+In async mode, variable scope changed:
+
+* `include` in async termplates retains access to parent-scope variables (for example, values set with `{% set %}` before the include).
+* `extends` and `super` in scripts and async templates no longer can read parent-scope template variables.
+
 ## Unsupported Features
 
 The following Cascada Script features are **not available** in templates:
