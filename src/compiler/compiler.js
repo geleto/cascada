@@ -1759,7 +1759,9 @@ class Compiler extends CompilerBase {
       if (this.hasDynamicExtends) {
         // Dynamic extends: check frame variable
         if (!this.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE) {
-          this.emit.line(`  let finalParent = await runtime.contextOrFrameOrValueLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
+          // Value mode: __parentTemplate is emitted as setval/value output.
+          // Do not fall back to frame lookup here.
+          this.emit.line(`  let finalParent = await runtime.contextOrValueLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
         } else {
           this.emit.line('  let finalParent = await runtime.contextOrFrameLookup(context, frame, "__parentTemplate");');
         }

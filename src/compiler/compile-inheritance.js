@@ -397,7 +397,9 @@ class CompileInheritance {
         if (needsParentCheck) {
           if (this.compiler.hasDynamicExtends) {
             if (!this.compiler.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE) {
-              this.emit.line(`const parentPromise = runtime.contextOrFrameOrValueLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer}).then((parent) => {`);
+              // Value mode: __parentTemplate is a value output/context read in async templates.
+              // Wrap in resolveSingle so this path works for both sync and promise values.
+              this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrValueLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer})).then((parent) => {`);
             } else {
               this.compiler.async.updateFrameReads(f, '__parentTemplate');
               this.emit.line('const parentPromise = runtime.contextOrFrameLookup(context, frame, "__parentTemplate").then((parent) => {');
