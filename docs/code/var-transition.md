@@ -22,60 +22,37 @@ With flags enabled in [`src/feature-flags.js`](../../src/feature-flags.js):
 
 already-completed conversion areas are considered stable unless regressions appear.
 
-## Remaining Tasks (In Execution Order)
+### Audit Findings
 
-### 1) Finish `#3`: macro publication fully value-aligned under flags
+Old var-sync is still actively used in these subsystems:
 
-Goal: when conversion flags are on, macro publication should not depend on `context.setVariable(...)`.
+- Compiler metadata producers:
+  - `updateFrameWrites` / `updateFrameReads` in [`src/compiler/compile-async.js`](../../src/compiler/compile-async.js)
+  - control-flow write accounting (`if`/`switch`/`guard`/loop) in [`src/compiler/compiler.js`](../../src/compiler/compiler.js), [`src/compiler/compiler-base.js`](../../src/compiler/compiler-base.js), [`src/compiler/compile-loop.js`](../../src/compiler/compile-loop.js)
+  - async block arg emission (`readArgs`/`writeArgs`) in [`src/compiler/compile-emit.js`](../../src/compiler/compile-emit.js)
+- Runtime consumers:
+  - async frame synchronization (`pushAsyncBlock`, parent promisification/countdown) in [`src/runtime/frame.js`](../../src/runtime/frame.js)
+  - async block orchestration contract in [`src/runtime/async-state.js`](../../src/runtime/async-state.js)
+  - branch skip/poison propagation in [`src/runtime/frame.js`](../../src/runtime/frame.js), [`src/runtime/loop.js`](../../src/runtime/loop.js)
 
-Current location:
-- [`src/compiler/compiler.js`](../../src/compiler/compiler.js) (`compileMacro`)
+This usage is currently tied to frame-local/control behavior (and sequence lock flows), not to value-output command-chain ordering.
 
-Work:
-- Guard/remove remaining `context.setVariable(...)` macro publication branches under value-conversion conditions.
-- Keep flag-off behavior unchanged.
-- Verify top-level export visibility and macro call semantics remain correct.
+### Remaining Tasks
 
-### 2) Remove `__parentTemplate` read dependency on frame lookup in value mode
+1. Split remaining var-sync usage into explicit buckets:
+- Keep bucket: frame-local/control semantics + sequence lock semantics.
+- Remove bucket: any remaining dataflow path that should be value-output ordered instead.
 
-Goal: dynamic extends parent resolution in value mode should use value/context path, not frame fallback.
+2. Shrink compiler metadata surface:
+- For each producer of `writeCounts`/`readVars`, confirm it belongs to keep bucket.
+- Remove producers that are no longer needed after value-output migration is complete.
 
-Current locations:
-- [`src/compiler/compiler.js`](../../src/compiler/compiler.js) (`compileRoot` final parent resolution)
-- [`src/compiler/compile-inheritance.js`](../../src/compiler/compile-inheritance.js) (`compileBlock` parent check)
+3. Shrink runtime var-sync surface:
+- After compiler-side pruning, remove corresponding runtime pieces that become unused (`pushAsyncBlock` write sync branches, parent promisification/countdown paths not needed by keep bucket).
 
-Work:
-- Under template value-conversion mode, avoid `contextOrFrameOrValueLookup(...)` / `contextOrFrameLookup(...)` for `__parentTemplate`.
-- Use value-aware read path consistent with `setval` storage.
-- Keep flag-off compatibility branch.
-
-### 3) Complete boundary-driven linking coverage; keep lookup linking optional only
-
-Goal: structural linking at boundaries should be sufficient; lookup-time dynamic linking remains an optional mode, not required for correctness.
-
-Current locations:
-- Include prelink: [`src/compiler/compile-inheritance.js`](../../src/compiler/compile-inheritance.js)
-- Block prelink emission: [`src/compiler/compiler.js`](../../src/compiler/compiler.js)
-- Optional runtime fallback: [`src/runtime/lookup.js`](../../src/runtime/lookup.js)
-
-Work:
-- Ensure all required handler lanes (including canonical aliases like `x#N`) are linked by boundary logic.
-- Keep `LOOKUP_DYNAMIC_OUTPUT_LINKING=false` as default correctness path.
-- Any failing cases with fallback off must be fixed structurally (usedOutputs/alias projection/boundary link), not by reintroducing mandatory lookup linking.
-
-### 4) Identify and retire old var-style async sync for value dataflow paths
-
-Goal: value dataflow should rely on command-chain ordering, not var write-count/promisification mechanics.
-
-Primary old-mechanism locations:
-- compiler-side write metadata propagation: [`src/compiler/compile-async.js`](../../src/compiler/compile-async.js)
-- runtime async var locking/countdown: [`src/runtime/frame.js`](../../src/runtime/frame.js)
-- async block orchestration contract: [`src/runtime/async-state.js`](../../src/runtime/async-state.js)
-
-Work:
-- Audit each remaining use of `writeCounts`, `pushAsyncBlock(...writeCounts...)`, and parent-var promisification.
-- Separate frame-local control variable needs from value dataflow needs.
-- Remove/guard old var-sync paths where they are no longer needed for value flows.
+4. Prepare final consolidation cut:
+- Once the above pruning is done and stable, proceed with old-var removal and value->var consolidation steps below.
+- Keep behavior guarded and staged until full suite parity is stable.
 
 ## Explicit Non-Goals
 
@@ -85,9 +62,9 @@ Work:
 
 ## Completion Criteria
 
-1. With flags enabled, value dataflow no longer relies on var-style async write locking/countdown.
+1. With flags enabled, value-output dataflow does not require legacy var-sync machinery.
 2. `LOOKUP_DYNAMIC_OUTPUT_LINKING=false` passes `npm run test:quick` without hangs/regressions.
-3. Macro publication and dynamic extends parent resolution are value-aligned under flags.
+3. No value-output symbol path depends on lookup-time dynamic linking for correctness.
 4. Flag-off compatibility paths continue to work as designed.
 
 ## Final Consolidation Phase (Post-Transition)
