@@ -238,7 +238,6 @@ module.exports = {
 
   callWrap: call.callWrap,
   callWrapAsync: call.callWrapAsync,
-  sequentialCallWrap: sequential.sequentialCallWrap,
   sequentialCallWrapValue: sequential.sequentialCallWrapValue,
   handleError: errors.handleError,
 
@@ -253,13 +252,9 @@ module.exports = {
   createLoopBindings: loop.createLoopBindings,
   setLoopValueBindings: loop.setLoopValueBindings,
 
-  sequentialContextLookup: sequential.sequentialContextLookup,
   sequentialContextLookupValue: sequential.sequentialContextLookupValue,
-  sequentialContextLookupScript: sequential.sequentialContextLookupScript,
   sequentialContextLookupScriptValue: sequential.sequentialContextLookupScriptValue,
-  sequentialMemberLookupScriptAsync: sequential.sequentialMemberLookupScriptAsync,
   sequentialMemberLookupScriptAsyncValue: sequential.sequentialMemberLookupScriptAsyncValue,
-  sequentialMemberLookupAsync: sequential.sequentialMemberLookupAsync,
   sequentialMemberLookupAsyncValue: sequential.sequentialMemberLookupAsyncValue,
   setPath: require('./set-path').setPath,
   STOP_WHILE: loop.STOP_WHILE,

@@ -449,15 +449,13 @@
         const poison = createPoison(err);
 
         try {
-          await runtime.sequentialCallWrap(
+          await runtime.sequentialCallWrapValue(
             (x) => x * 2,
             'double',
             mockContext,
             [poison],
             frame,
-            '!lockKey',
-            '!lockKey~',
-            mockErrorContext,
+            '!lockKey', mockErrorContext,
             false,
             currentBuffer
           );
@@ -479,15 +477,13 @@
 
       it('should throw PoisonError when function throws', async () => {
         try {
-          await runtime.sequentialCallWrap(
+          await runtime.sequentialCallWrapValue(
             () => { throw new Error('Boom'); },
             'throwingFunc',
             mockContext,
             [],
             frame,
-            '!lockKey',
-            '!lockKey~',
-            mockErrorContext,
+            '!lockKey', mockErrorContext,
             false,
             currentBuffer
           );
@@ -504,15 +500,13 @@
         const poison = createPoison(new Error('Poisoned function'));
 
         try {
-          await runtime.sequentialCallWrap(
+          await runtime.sequentialCallWrapValue(
             poison,
             'poisonedFunc',
             mockContext,
             [],
             frame,
-            '!lockKey',
-            '!lockKey~',
-            mockErrorContext,
+            '!lockKey', mockErrorContext,
             false,
             currentBuffer
           );
@@ -537,15 +531,13 @@
         }
 
         try {
-          await runtime.sequentialCallWrap(
+          await runtime.sequentialCallWrapValue(
             (x) => x * 2,
             'double',
             mockContext,
             [5],
             frame,
-            '!lockKey',
-            '!lockKey~',
-            mockErrorContext,
+            '!lockKey', mockErrorContext,
             false,
             currentBuffer
           );
@@ -561,15 +553,13 @@
         };
 
         try {
-          await runtime.sequentialCallWrap(
+          await runtime.sequentialCallWrapValue(
             asyncFunc,
             'asyncFunc',
             mockContext,
             [],
             frame,
-            '!lockKey',
-            '!lockKey~',
-            mockErrorContext,
+            '!lockKey', mockErrorContext,
             false,
             currentBuffer
           );
@@ -586,15 +576,13 @@
         const rejectingPromise = Promise.reject(new Error('Promise rejection'));
 
         try {
-          await runtime.sequentialCallWrap(
+          await runtime.sequentialCallWrapValue(
             (x) => x * 2,
             'double',
             mockContext,
             [rejectingPromise],
             frame,
-            '!lockKey',
-            '!lockKey~',
-            mockErrorContext,
+            '!lockKey', mockErrorContext,
             false,
             currentBuffer
           );
@@ -608,15 +596,13 @@
       });
 
       it('should successfully call valid function', async () => {
-        const result = await runtime.sequentialCallWrap(
+        const result = await runtime.sequentialCallWrapValue(
           (x, y) => x + y,
           'add',
           mockContext,
           [5, 3],
           frame,
-          '!lockKey',
-          '!lockKey~',
-          mockErrorContext,
+          '!lockKey', mockErrorContext,
           false,
           currentBuffer
         );
@@ -633,15 +619,13 @@
           return 42;
         };
 
-        const result = await runtime.sequentialCallWrap(
+        const result = await runtime.sequentialCallWrapValue(
           asyncFunc,
           'asyncFunc',
           mockContext,
           [],
           frame,
-          '!lockKey',
-          '!lockKey~',
-          mockErrorContext,
+          '!lockKey', mockErrorContext,
           false,
           currentBuffer
         );
@@ -1020,3 +1004,4 @@
   });
 
 })();
+

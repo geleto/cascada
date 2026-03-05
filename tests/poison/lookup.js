@@ -195,13 +195,11 @@
         }
 
         try {
-          await runtime.sequentialMemberLookupAsync(
+          await runtime.sequentialMemberLookupAsyncValue(
             frame,
             { prop: 'value' },
             'prop',
-            '!lockKey',
-            '!lockKey~',
-            null,
+            '!lockKey', null,
             false,
             currentBuffer
           );
@@ -215,13 +213,11 @@
         const poison = createPoison(new Error('Target poisoned'));
 
         try {
-          await runtime.sequentialMemberLookupAsync(
+          await runtime.sequentialMemberLookupAsyncValue(
             frame,
             poison,
             'prop',
-            '!lockKey',
-            '!lockKey~',
-            null,
+            '!lockKey', null,
             false,
             currentBuffer
           );
@@ -243,13 +239,11 @@
         const promise = Promise.resolve(poison);
 
         try {
-          await runtime.sequentialMemberLookupAsync(
+          await runtime.sequentialMemberLookupAsyncValue(
             frame,
             promise,
             'prop',
-            '!lockKey',
-            '!lockKey~',
-            null,
+            '!lockKey', null,
             false,
             currentBuffer
           );
@@ -270,13 +264,11 @@
         const promise = Promise.reject(new Error('Rejected'));
 
         try {
-          await runtime.sequentialMemberLookupAsync(
+          await runtime.sequentialMemberLookupAsyncValue(
             frame,
             promise,
             'prop',
-            '!lockKey',
-            '!lockKey~',
-            null,
+            '!lockKey', null,
             false,
             currentBuffer
           );
@@ -295,13 +287,11 @@
 
       it('should successfully lookup and release lock', async () => {
         const obj = { name: 'test' };
-        const result = await runtime.sequentialMemberLookupAsync(
+        const result = await runtime.sequentialMemberLookupAsyncValue(
           frame,
           obj,
           'name',
-          '!lockKey',
-          '!lockKey~',
-          null,
+          '!lockKey', null,
           false,
           currentBuffer
         );
@@ -342,14 +332,11 @@
         }
 
         try {
-          await runtime.sequentialContextLookup(
+          await runtime.sequentialContextLookupValue(
             context,
             frame,
             'myVar',
-            '!lockKey',
-            '!lockKey~',
-            false,
-            currentBuffer
+            '!lockKey', false, currentBuffer
           );
           expect().fail('Should have thrown');
         } catch (err) {
@@ -367,14 +354,11 @@
         currentBuffer = setupSequentialRuntimeForTests(root);
 
         try {
-          await runtime.sequentialContextLookup(
+          await runtime.sequentialContextLookupValue(
             context,
             frame,
             'myVar',
-            '!lockKey',
-            '!lockKey~',
-            false,
-            currentBuffer
+            '!lockKey', false, currentBuffer
           );
           expect().fail('Should have thrown');
         } catch (err) {
@@ -390,14 +374,11 @@
       });
 
       it('should successfully lookup and release lock', async () => {
-        const result = await runtime.sequentialContextLookup(
+        const result = await runtime.sequentialContextLookupValue(
           context,
           frame,
           'myVar',
-          '!lockKey',
-          '!lockKey~',
-          false,
-          currentBuffer
+          '!lockKey', false, currentBuffer
         );
 
         expect(result).to.equal('test value');
@@ -443,3 +424,4 @@
     });
   });
 })();
+
