@@ -290,22 +290,6 @@ function valueOutputLookup(frame, name, currentBuffer) {
   return output.finalSnapshot();
 }
 
-function contextOrFrameOrValueLookup(context, frame, name, currentBuffer) {
-  const val = frame.lookup(name);
-  if (val !== undefined) {
-    return val;
-  }
-  const contextVal = context.lookup(name);
-  if (contextVal !== undefined) {
-    return contextVal;
-  }
-  const output = getOutput(frame, name);
-  if (output) {
-    return valueOutputLookup(frame, name, currentBuffer);
-  }
-  return undefined;
-}
-
 /**
  * Context/frame/output lookup for scripts.
  * Order:
@@ -372,16 +356,6 @@ function isBufferInAncestry(buffer, ancestor) {
   return false;
 }
 
-function contextOrFrameLookupScript(context, frame, name) {
-  let {value: val, frame: f} = frame.lookupAndLocate(name);
-  return f ? val : context.lookupScriptMode(name);
-}
-
-function contextOrFrameLookupScriptAsync(context, frame, name, errorContext = null) {
-  let {value: val, frame: f} = frame.lookupAndLocate(name);
-  return f ? val : context.lookupScriptModeAsync(name, errorContext);
-}
-
 module.exports = {
   memberLookup,
   memberLookupScript,
@@ -391,9 +365,6 @@ module.exports = {
   contextOrFrameLookup,
   valueOutputLookup,
   contextOrValueLookup,
-  contextOrFrameOrValueLookup,
-  contextOrFrameLookupScript,
-  contextOrFrameLookupScriptAsync,
   contextOrValueLookupScript,
   contextOrValueLookupScriptAsync,
 };

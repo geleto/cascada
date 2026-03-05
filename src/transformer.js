@@ -2,7 +2,6 @@
 
 var nodes = require('./nodes');
 var lib = require('./lib');
-var { LOOP_VARS_USE_VALUE, CONVERT_TEMPLATE_VAR_TO_VALUE } = require('./feature-flags');
 var scopeBoundaries = require('./compiler/scope-boundaries');
 
 var sym = 0;
@@ -434,7 +433,7 @@ function transform(ast, asyncFilters, name, opts) {
     ast = addDynamicExtendsSetup(ast, opts);
   }
   ast = cps(ast, asyncFilters || []);
-  if (opts.asyncMode && LOOP_VARS_USE_VALUE) {
+  if (opts.asyncMode) {
     ast = rewriteImplicitLoopSymbol(ast, opts && opts.idPool);
   }
   if (opts.asyncMode) {
@@ -474,9 +473,9 @@ function addDynamicExtendsSetup(ast, opts) {
   const target = new nodes.Symbol(0, 0, '__parentTemplate');
   const value = new nodes.Literal(0, 0, null);
   const declarationNode = new nodes.Set(0, 0, [target], value);
-  declarationNode.varType = (!opts.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE)
+  declarationNode.varType = !opts.scriptMode
     ? 'setval'
-    : (opts.scriptMode ? 'declaration' : 'assignment');
+    : 'declaration';
   ast.children.unshift(declarationNode);
 
   // 2. Rewrite every dynamic `Extends` node into a `NodeList` of [Extends, Set].
@@ -493,7 +492,7 @@ function addDynamicExtendsSetup(ast, opts) {
       setValue.isCompilerInternal = true; // This is the crucial link!
 
       const setNode = new nodes.Set(node.lineno, node.colno, [setTarget], setValue);
-      setNode.varType = (!opts.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE)
+      setNode.varType = !opts.scriptMode
         ? 'setval'
         : 'assignment';
 

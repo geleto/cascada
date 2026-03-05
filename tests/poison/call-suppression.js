@@ -9,7 +9,7 @@
   //let PoisonError;
   let collectErrors;
   let AsyncFrame;
-  let SEQUNTIAL_PATHS_USE_VALUE;
+  const SEQUNTIAL_PATHS_USE_VALUE = true;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -20,7 +20,6 @@
     //PoisonError = runtime.PoisonError;
     collectErrors = runtime.collectErrors;
     AsyncFrame = runtime.AsyncFrame;
-    ({ SEQUNTIAL_PATHS_USE_VALUE } = require('../../src/feature-flags'));
   } else {
     expect = window.expect;
     createPoison = nunjucks.runtime.createPoison;
@@ -29,7 +28,6 @@
     //PoisonError = nunjucks.runtime.PoisonError;
     collectErrors = nunjucks.runtime.collectErrors;
     AsyncFrame = nunjucks.runtime.AsyncFrame;
-    SEQUNTIAL_PATHS_USE_VALUE = false;
   }
 
   const mockErrorContext = { lineno: 1, colno: 1, errorContextString: 'test', path: 'test' };

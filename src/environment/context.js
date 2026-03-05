@@ -3,7 +3,6 @@
 const lib = require('../lib');
 const { Obj } = require('../object');
 const { createPoison } = require('../runtime/errors');
-const { VALUE_IMPORT_BINDINGS } = require('../feature-flags');
 
 class Context extends Obj {
   init(ctx, blocks, env, path, scriptMode = false) {
@@ -22,11 +21,7 @@ class Context extends Obj {
     this.ctx = lib.extend({}, ctx);
 
     this.blocks = {};
-    if (VALUE_IMPORT_BINDINGS) {
-      this.exportResolveFunctions = Object.create(null);
-    } else {
-      this.exportedNames = Object.create(null);
-    }
+    this.exportResolveFunctions = Object.create(null);
 
     lib.keys(blocks).forEach(name => {
       this.addBlock(name, blocks[name]);
@@ -153,10 +148,6 @@ class Context extends Obj {
   }
 
   addExport(name, initialValue) {
-    if (!VALUE_IMPORT_BINDINGS) {
-      this.exportedNames[name] = true;
-      return;
-    }
     if (this.exportResolveFunctions[name] !== undefined) {
       return;
     }
@@ -190,7 +181,7 @@ class Context extends Obj {
 
   getExported() {
     var exported = {};
-    const exportNames = Object.keys(VALUE_IMPORT_BINDINGS ? this.exportResolveFunctions : this.exportedNames);
+    const exportNames = Object.keys(this.exportResolveFunctions);
     exportNames.forEach((name) => {
       exported[name] = this.ctx[name];
     });
@@ -205,11 +196,7 @@ class Context extends Obj {
     // Share critical state objects by REFERENCE. Do NOT copy them.
     newContext.ctx = this.ctx;           // Share the variable store.
     newContext.blocks = this.blocks;       // Share the block definitions for extends/super.
-    if (VALUE_IMPORT_BINDINGS) {
-      newContext.exportResolveFunctions = this.exportResolveFunctions;
-    } else {
-      newContext.exportedNames = this.exportedNames; // Share the exported name registry for import.
-    }
+    newContext.exportResolveFunctions = this.exportResolveFunctions;
 
     // Share async state properties by REFERENCE.
     newContext.asyncBlocksPromise = this.asyncBlocksPromise;

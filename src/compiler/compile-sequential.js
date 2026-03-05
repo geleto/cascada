@@ -1,6 +1,5 @@
 const nodes = require('../nodes');
 const { AsyncFrame } = require('../runtime/runtime');
-const { SEQUNTIAL_PATHS_USE_VALUE } = require('../feature-flags');
 
 const SequenceOperationType = {
   PATH: 1,
@@ -607,16 +606,8 @@ module.exports = class CompileSequential {
    * @param {Set<string>} locks - Set of lock names to declare
    */
   preDeclareSequenceLocks(rootFrame, locks) {
-    if (SEQUNTIAL_PATHS_USE_VALUE) {
-      for (const lockName of locks) {
-        this.compiler._addDeclaredOutput(rootFrame, lockName, 'sequential_path');
-      }
-      return;
-    }
     for (const lockName of locks) {
-      this.compiler._addDeclaredVar(rootFrame, lockName);
-      const readLockName = this._getReadLockKey(lockName);
-      this.compiler._addDeclaredVar(rootFrame, readLockName);
+      this.compiler._addDeclaredOutput(rootFrame, lockName, 'sequential_path');
     }
   }
 
@@ -624,11 +615,8 @@ module.exports = class CompileSequential {
     if (!lockKey) {
       return false;
     }
-    if (SEQUNTIAL_PATHS_USE_VALUE) {
-      const decl = this.compiler.async._getDeclaredOutput(frame, lockKey);
-      return !!(decl && decl.type === 'sequential_path');
-    }
-    return this.compiler._isDeclared(frame, lockKey);
+    const decl = this.compiler.async._getDeclaredOutput(frame, lockKey);
+    return !!(decl && decl.type === 'sequential_path');
   }
 
   /**

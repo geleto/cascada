@@ -21,7 +21,6 @@ const CompileInheritance = require('./compile-inheritance');
 const CompileLoop = require('./compile-loop');
 const CompileBuffer = require('./compile-buffer');
 const CompilerBase = require('./compiler-base');
-const { CONVERT_TEMPLATE_VAR_TO_VALUE, CONVERT_SCRIPT_VAR_TO_VALUE, SEQUNTIAL_PATHS_USE_VALUE, VALUE_IMPORT_BINDINGS } = require('../feature-flags');
 
 class Compiler extends CompilerBase {
   init(templateName, options) {
@@ -453,7 +452,7 @@ class Compiler extends CompilerBase {
       this.emit.line(`frame.set("${name}", ${valueId}, ${resolveUp});`);
 
       // This block is specific to template mode's behavior.
-      if (!this.scriptMode && !(this.asyncMode && VALUE_IMPORT_BINDINGS)) {
+      if (!this.scriptMode && !this.asyncMode) {
         this.emit.line('if(frame.topLevel) {');
         this.emit.line(`  context.setVariable("${name}", ${valueId});`);
         this.emit.line('}');
@@ -462,7 +461,7 @@ class Compiler extends CompilerBase {
       // This export logic is common to both modes.
       if (name.charAt(0) !== '_') {
         this.emit.line('if(frame.topLevel) {');
-        if (this.asyncMode && VALUE_IMPORT_BINDINGS) {
+        if (this.asyncMode) {
           this.emit.line(`  context.addExport("${name}");`);
         } else {
           this.emit.line(`  context.addExport("${name}", ${valueId});`);
@@ -487,7 +486,7 @@ class Compiler extends CompilerBase {
   }
 
   compileSetval(node, frame) {
-    const templateSetvalMode = !this.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE;
+    const templateSetvalMode = !this.scriptMode;
     if (!this.scriptMode && !templateSetvalMode) {
       this.fail('setval is only supported in script mode or template conversion mode', node.lineno, node.colno, node);
     }
@@ -618,7 +617,7 @@ class Compiler extends CompilerBase {
 
       if (name.charAt(0) !== '_' && hasAssignedValue) {
         this.emit.line('if(frame.topLevel) {');
-        if (this.asyncMode && VALUE_IMPORT_BINDINGS) {
+        if (this.asyncMode) {
           this.emit.line(`  context.addExport("${name}");`);
         } else {
           this.emit.line(`  context.addExport("${name}", ${valueId});`);
@@ -626,7 +625,7 @@ class Compiler extends CompilerBase {
         this.emit.line('}');
       }
 
-      if (!this.scriptMode && hasAssignedValue && !(this.asyncMode && VALUE_IMPORT_BINDINGS)) {
+      if (!this.scriptMode && hasAssignedValue && !this.asyncMode) {
         this.emit.line('if(frame.topLevel) {');
         this.emit.line(`  context.setVariable("${name}", ${valueId});`);
         this.emit.line('}');
@@ -841,15 +840,11 @@ class Compiler extends CompilerBase {
         if (blockFrame.writeCounts) {
           for (const key of Object.keys(blockFrame.writeCounts)) {
             if (key.startsWith('!')) {
-              if (SEQUNTIAL_PATHS_USE_VALUE && key.endsWith('~')) {
-                modifiedLocks.add(key.slice(0, -1));
-              } else {
-                modifiedLocks.add(key);
-              }
+              modifiedLocks.add(key);
             }
           }
         }
-        if (SEQUNTIAL_PATHS_USE_VALUE && blockFrame.usedOutputs) {
+        if (blockFrame.usedOutputs) {
           for (const outputName of blockFrame.usedOutputs) {
             if (outputName && outputName.startsWith('!')) {
               modifiedLocks.add(outputName);
@@ -857,7 +852,7 @@ class Compiler extends CompilerBase {
           }
         }
 
-        const shouldGuardAllSequencesImplicitly = SEQUNTIAL_PATHS_USE_VALUE &&
+        const shouldGuardAllSequencesImplicitly =
           variableTargets === '*' &&
           (!node.sequenceTargets || node.sequenceTargets.length === 0);
 
@@ -879,7 +874,7 @@ class Compiler extends CompilerBase {
               for (const lock of modifiedLocks) {
                 // Check for exact match or child match (e.g. !lock matching !lock or !lock!sub)
                 // Also include read-lock keys (suffix '~') for the same base.
-                const includeReadLocks = !SEQUNTIAL_PATHS_USE_VALUE;
+                const includeReadLocks = false;
                 if (lock === baseKey || lock.startsWith(baseKey + '!') || (includeReadLocks && lock.startsWith(baseKey + '~'))) {
                   resolvedSequenceTargets.add(lock);
                   matchFound = true;
@@ -898,19 +893,10 @@ class Compiler extends CompilerBase {
         }
 
         if (resolvedSequenceTargets.size > 0) {
-          if (SEQUNTIAL_PATHS_USE_VALUE) {
-            this.emit.insertLine(
-              guardRepairLinePos,
-              `runtime.guard.repairSequenceOutputs(frame, ${this.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
-            );
-          } else {
-            // Pass guardState (which is always initialized now if needed) to repairSequenceLocks
-            // Note: guardStateVar is guaranteed to exist because variableTargets OR resolvedSequenceTargets > 0 triggers init
-            this.emit.insertLine(
-              guardRepairLinePos,
-              `runtime.guard.repairSequenceLocks(frame, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
-            );
-          }
+          this.emit.insertLine(
+            guardRepairLinePos,
+            `runtime.guard.repairSequenceOutputs(frame, ${this.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
+          );
         }
 
 
@@ -939,14 +925,14 @@ class Compiler extends CompilerBase {
           guardTargets,
           blockFrame
         );
-        if (SEQUNTIAL_PATHS_USE_VALUE && resolvedSequenceTargets.size > 0) {
+        if (resolvedSequenceTargets.size > 0) {
           const merged = new Set(guardHandlers);
           for (const lockName of resolvedSequenceTargets) {
             merged.add(lockName);
           }
           guardHandlers = Array.from(merged);
         }
-        if (SEQUNTIAL_PATHS_USE_VALUE && blockFrame.declaredOutputs) {
+        if (blockFrame.declaredOutputs) {
           const merged = new Set(guardHandlers);
           for (const name of blockFrame.declaredOutputs.keys()) {
             merged.add(name);
@@ -1445,9 +1431,7 @@ class Compiler extends CompilerBase {
 
   compileMacro(node, frame) {
     var funcId = this._compileMacro(node, frame, false);
-    const useValueMacroPublication = this.asyncMode &&
-      VALUE_IMPORT_BINDINGS &&
-      (CONVERT_TEMPLATE_VAR_TO_VALUE || (this.scriptMode && CONVERT_SCRIPT_VAR_TO_VALUE));
+    const useValueMacroPublication = this.asyncMode;
 
     // Expose the macro to the templates
     var name = node.name.value;
@@ -1738,7 +1722,7 @@ class Compiler extends CompilerBase {
 
     this.emit.beginEntryFunction(node, 'root', frame);
     this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-    if (SEQUNTIAL_PATHS_USE_VALUE && frame.declaredOutputs) {
+    if (frame.declaredOutputs) {
       for (const [name, decl] of frame.declaredOutputs.entries()) {
         if (!decl || decl.type !== 'sequential_path') {
           continue;
@@ -1749,7 +1733,7 @@ class Compiler extends CompilerBase {
     // Always declare parentTemplate (needed even for dynamic-only extends)
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
-    if (this.asyncMode && VALUE_IMPORT_BINDINGS) {
+    if (this.asyncMode) {
       this.emit.line('context.resolveExports(frame, runtime);');
     }
     if (this.asyncMode) {
@@ -1758,7 +1742,7 @@ class Compiler extends CompilerBase {
 
       if (this.hasDynamicExtends) {
         // Dynamic extends: check frame variable
-        if (!this.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE) {
+        if (!this.scriptMode) {
           // Value mode: __parentTemplate is emitted as setval/value output.
           // Do not fall back to frame lookup here.
           this.emit.line(`  let finalParent = await runtime.contextOrValueLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);

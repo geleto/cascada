@@ -1,11 +1,6 @@
 'use strict';
 
 const nodes = require('../nodes');
-const {
-  VALUE_IMPORT_BINDINGS,
-  CONVERT_TEMPLATE_VAR_TO_VALUE,
-  INCLUDE_PRELINK_OUTPUTS
-} = require('../feature-flags');
 const CompileBuffer = require('./compile-buffer');
 
 /**
@@ -197,7 +192,7 @@ class CompileInheritance {
   compileImport(node, frame) {
     const target = node.target.value;
     const id = this._compileGetTemplateOrScript(node, frame, false, false, true);
-    const useValueImportBindings = this.compiler.asyncMode && VALUE_IMPORT_BINDINGS;
+    const useValueImportBindings = this.compiler.asyncMode;
 
     if (node.isAsync) {
       const res = this.compiler._tmpid();
@@ -246,7 +241,7 @@ class CompileInheritance {
   compileFromImport(node, frame) {
     // Pass node.template for position in _compileGetTemplateOrScript
     const importedId = this._compileGetTemplateOrScript(node, frame, false, false, true);
-    const useValueImportBindings = this.compiler.asyncMode && VALUE_IMPORT_BINDINGS;
+    const useValueImportBindings = this.compiler.asyncMode;
 
     if (node.isAsync) {
       // Get the exported object from the template
@@ -396,7 +391,7 @@ class CompileInheritance {
         const needsParentCheck = !this.compiler.inBlock && (this.compiler.hasDynamicExtends || this.compiler.hasStaticExtends);
         if (needsParentCheck) {
           if (this.compiler.hasDynamicExtends) {
-            if (!this.compiler.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE) {
+            if (!this.compiler.scriptMode) {
               // Value mode: __parentTemplate is a value output/context read in async templates.
               // Wrap in resolveSingle so this path works for both sync and promise values.
               this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrValueLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer})).then((parent) => {`);
@@ -555,18 +550,16 @@ class CompileInheritance {
       // Compose child buffer with base->canonical aliases (e.g. loop -> loop#7)
       // so natural names used inside included templates target the right lane.
       this.emit.line(`  composed._setBoundaryAliases(${aliasMapVar});`);
-      if (INCLUDE_PRELINK_OUTPUTS) {
-        // Structural prelinking: attach composed child to parent lanes up front so
-        // include-time symbol snapshots do not depend on lookup-time dynamic linking.
-        const includeLinkCandidates = this._collectIncludeLinkCandidates(f);
-        const parentBufferExpr = this.compiler.buffer.currentBuffer;
-        this.compiler.emitLinkWithParentCompositionBuffer(
-          includeLinkCandidates,
-          parentBufferExpr,
-          'composed',
-          'composed._outputs'
-        );
-      }
+      // Structural prelinking: attach composed child to parent lanes up front so
+      // include-time symbol snapshots do not depend on lookup-time dynamic linking.
+      const includeLinkCandidates = this._collectIncludeLinkCandidates(f);
+      const parentBufferExpr = this.compiler.buffer.currentBuffer;
+      this.compiler.emitLinkWithParentCompositionBuffer(
+        includeLinkCandidates,
+        parentBufferExpr,
+        'composed',
+        'composed._outputs'
+      );
       this.emit.line(`  return composed.addSnapshot("${includeOutputName}", { lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0} });`);
       this.emit.line('});');
       this.emit.line(`${resultVar} = new runtime.TextCommand({ handler: "${this.compiler.buffer.currentTextOutputName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} });`);

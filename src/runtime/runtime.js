@@ -229,9 +229,6 @@ module.exports = {
   valueOutputLookup: lookup.valueOutputLookup,
   contextOrFrameLookup: lookup.contextOrFrameLookup,
   contextOrValueLookup: lookup.contextOrValueLookup,
-  contextOrFrameOrValueLookup: lookup.contextOrFrameOrValueLookup,
-  contextOrFrameLookupScript: lookup.contextOrFrameLookupScript,
-  contextOrFrameLookupScriptAsync: lookup.contextOrFrameLookupScriptAsync,
   contextOrValueLookupScript: lookup.contextOrValueLookupScript,
   contextOrValueLookupScriptAsync: lookup.contextOrValueLookupScriptAsync,
 

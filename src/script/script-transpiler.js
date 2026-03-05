@@ -71,8 +71,6 @@
  * block structure validation, ensuring robust and accurate conversion.
  */
 
-const { CONVERT_SCRIPT_VAR_TO_VALUE } = require('../feature-flags');
-
 // Import the script parser
 const { parseTemplateLine, TOKEN_TYPES } = require('./script-lexer');
 const { RESERVED_DECLARATION_NAMES } = require('../compiler/validation');
@@ -1025,7 +1023,7 @@ class ScriptTranspiler {
   }
 
   _convertVarDeclarationToValue(codeContent, forceConvert = false) {
-    if (!(forceConvert || CONVERT_SCRIPT_VAR_TO_VALUE)) {
+    if (!forceConvert && !codeContent) {
       return codeContent;
     }
 
@@ -1051,20 +1049,6 @@ class ScriptTranspiler {
     const varDeclMatch = trimmed.match(/^var\s+[A-Za-z_][A-Za-z0-9_]*\b(?:\s*=.*)?$/);
     if (!varDeclMatch) {
       return codeContent;
-    }
-
-    // Keep legacy capture/call var-declaration behavior when script var->value
-    // conversion is disabled by flag.
-    if (!CONVERT_SCRIPT_VAR_TO_VALUE) {
-      const eqIndex = trimmed.indexOf('=');
-      if (eqIndex !== -1) {
-        const expr = trimmed.substring(eqIndex + 1).trim();
-        const isCaptureExpr = /^capture(\b|\()/.test(expr);
-        const isCallExpr = /^call(\b|\()/.test(expr);
-        if (isCaptureExpr || isCallExpr) {
-          return codeContent;
-        }
-      }
     }
 
     return codeContent.replace(/^var\b/, 'value');

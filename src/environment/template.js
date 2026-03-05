@@ -8,7 +8,6 @@ const { AsyncState } = globalRuntime;
 const { Obj } = require('../object');
 const { callbackAsap } = require('./utils');
 const { Context } = require('./context');
-const { CONVERT_TEMPLATE_VAR_TO_VALUE } = require('../feature-flags');
 
 function convertTemplateSetTagsToSetval(source) {
   if (!source || typeof source !== 'string') {
@@ -337,8 +336,7 @@ class Template extends Obj {
   }
 
   _compileSource() {
-    const convertTemplateVarToValue = !!(CONVERT_TEMPLATE_VAR_TO_VALUE && !this.scriptMode);
-    const source = convertTemplateVarToValue
+    const source = !this.scriptMode
       ? convertTemplateSetTagsToSetval(this.tmplStr)
       : this.tmplStr;
 
@@ -413,6 +411,5 @@ class AsyncTemplate extends Template {
 
 module.exports = {
   Template,
-  AsyncTemplate,
-  CONVERT_TEMPLATE_VAR_TO_VALUE
+  AsyncTemplate
 };

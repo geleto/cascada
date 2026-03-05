@@ -1,5 +1,4 @@
 const scriptTranspiler = require('../src/script/script-transpiler');
-const { CONVERT_SCRIPT_VAR_TO_VALUE } = require('../src/feature-flags');
 const { TOKEN_TYPES } = require('../src/script/script-lexer');
 const expect = require('expect.js');
 
@@ -7,7 +6,7 @@ const aliasOptions = {
   useCoreOutputAliases: true
 };
 
-const DECL_TAG = CONVERT_SCRIPT_VAR_TO_VALUE ? 'value' : 'var';
+const DECL_TAG = 'value';
 
 describe('Script Transpiler', () => {
   // Helper function tests
@@ -880,7 +879,7 @@ endif`;
       const state = { inMultiLineComment: false, stringState: null };
       const result = scriptTranspiler._processLine('var x_capture = capture', state, 0);
       expect(result.lineType).to.equal('TAG');
-      expect(result.tagName).to.equal(CONVERT_SCRIPT_VAR_TO_VALUE ? 'value' : 'var');
+      expect(result.tagName).to.equal('value');
       expect(result.blockType).to.equal('START');
     });
 
@@ -891,7 +890,7 @@ endif`;
       expect(result.tagName).to.equal('call_assign');
       expect(result.blockType).to.equal('START');
       expect(result.codeContent).to.equal(
-        `${CONVERT_SCRIPT_VAR_TO_VALUE ? 'value' : 'var'} x_call = foo(bar)`
+        'value x_call = foo(bar)'
       );
     });
 

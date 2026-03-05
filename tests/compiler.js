@@ -13,7 +13,7 @@
   var finish;
   var isSlim;
   var Compiler;
-  var CONVERT_TEMPLATE_VAR_TO_VALUE = false;
+  var CONVERT_TEMPLATE_VAR_TO_VALUE = true;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -21,7 +21,6 @@
     Template = require('../src/environment/environment').Template;
     Environment = require('../src/environment/environment').Environment;
     Compiler = require('../src/compiler/compiler').Compiler;
-    CONVERT_TEMPLATE_VAR_TO_VALUE = require('../src/feature-flags').CONVERT_TEMPLATE_VAR_TO_VALUE;
     fs = require('fs');
   } else {
     expect = window.expect;

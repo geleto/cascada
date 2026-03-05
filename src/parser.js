@@ -5,7 +5,6 @@ var nodes = require('./nodes');
 var Obj = require('./object').Obj;
 var lib = require('./lib');
 const { RESERVED_DECLARATION_NAMES } = require('./compiler/validation');
-const { CONVERT_TEMPLATE_VAR_TO_VALUE } = require('./feature-flags');
 
 class Parser extends Obj {
   init(tokens, opts) {
@@ -683,7 +682,7 @@ class Parser extends Obj {
           );
           node.value = null;
           this.advanceAfterBlockEnd();
-        } else if (!this.scriptMode && CONVERT_TEMPLATE_VAR_TO_VALUE) {
+        } else if (!this.scriptMode) {
           // Template conversion mode:
           // rewritten set-blocks become setval-blocks and keep block-capture semantics.
           node.body = new nodes.Capture(

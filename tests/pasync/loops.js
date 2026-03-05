@@ -9,7 +9,8 @@
   var StringLoader;
   var isPoisonError;
   var runtime;
-  var CONVERT_SCRIPT_VAR_TO_VALUE;
+  var CONVERT_SCRIPT_VAR_TO_VALUE = true;
+
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
@@ -20,7 +21,6 @@
     StringLoader = require('../util').StringLoader;
     runtime = require('../../src/runtime/runtime');
     isPoisonError = runtime.isPoisonError;
-    CONVERT_SCRIPT_VAR_TO_VALUE = require('../../src/feature-flags').CONVERT_SCRIPT_VAR_TO_VALUE;
   } else {
     expect = window.expect;
     //unescape = window.he.unescape;
@@ -30,7 +30,6 @@
     StringLoader = window.util.StringLoader;
     runtime = nunjucks.runtime;
     isPoisonError = runtime.isPoisonError;
-    CONVERT_SCRIPT_VAR_TO_VALUE = true;
   }
 
   describe('Async mode - loops', () => {
@@ -2920,11 +2919,7 @@ return output.snapshot()`;
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.be('Processed: c');
-      if (CONVERT_SCRIPT_VAR_TO_VALUE) {
-        expect(maxCount).to.be.greaterThan(1);
-      } else {
-        expect(maxCount).to.be(1);
-      }
+      expect(maxCount).to.be.greaterThan(1);
     });
 
     it('should handle locally scoped variables in script loop body', async () => {

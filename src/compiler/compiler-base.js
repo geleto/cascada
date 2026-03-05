@@ -9,11 +9,6 @@ const {
   trackActualRead,
   validateSinkSnapshotInGuard
 } = require('./validation');
-const {
-  SEQUNTIAL_PATHS_USE_VALUE,
-  CONVERT_TEMPLATE_VAR_TO_VALUE,
-  INHERITANCE_CONTEXT_ONLY_LOOKUP
-} = require('../feature-flags');
 
 // Moved from the main compiler as it's used by compileCompare (expression)
 const compareOps = {
@@ -384,27 +379,14 @@ class CompilerBase extends Obj {
         // to indicate all further paths locked by it that they don't need to make a lock for further funCalls
         // hence we can use _updateFrameReads for all of them
 
-        if (SEQUNTIAL_PATHS_USE_VALUE) {
-          this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
-          if (node.sequentialRepair) {
-            this.buffer.registerOutputMutation(frame, nodeStaticPathKey);
-          }
-          if (this.scriptMode) {
-            this.emit(`runtime.sequentialContextLookupScriptValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
-          } else {
-            this.emit(`runtime.sequentialContextLookupValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
-          }
+        this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
+        if (node.sequentialRepair) {
+          this.buffer.registerOutputMutation(frame, nodeStaticPathKey);
+        }
+        if (this.scriptMode) {
+          this.emit(`runtime.sequentialContextLookupScriptValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
         } else {
-          const readLockKey = this.sequential._getReadLockKey(nodeStaticPathKey);
-          if (node.sequentialRepair) {
-            this.async.updateFrameWrites(frame, nodeStaticPathKey);
-          }
-          this.async.updateFrameWrites(frame, readLockKey);
-          if (this.scriptMode) {
-            this.emit(`runtime.sequentialContextLookupScript(context, frame, "${name}", "${nodeStaticPathKey}", "${readLockKey}", ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
-          } else {
-            this.emit(`runtime.sequentialContextLookup(context, frame, "${name}", "${nodeStaticPathKey}", "${readLockKey}", ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
-          }
+          this.emit(`runtime.sequentialContextLookupValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
         }
         return;
       }
@@ -431,8 +413,7 @@ class CompilerBase extends Obj {
       const useContextOnlyInheritanceLookup =
         this.asyncMode &&
         this.inBlock &&
-        !this._isDeclared(frame, name) &&
-        (CONVERT_TEMPLATE_VAR_TO_VALUE || INHERITANCE_CONTEXT_ONLY_LOOKUP);
+        !this._isDeclared(frame, name);
       if (useContextOnlyInheritanceLookup) {
         // Conservative registration: unresolved inheritance/block symbols can still
         // resolve to value outputs at runtime (after context miss), and prelinking
@@ -838,36 +819,19 @@ class CompilerBase extends Obj {
 
         // Create the error context and pass it to the runtime function.
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
-        if (SEQUNTIAL_PATHS_USE_VALUE) {
-          this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
-          if (node.sequentialRepair) {
-            this.buffer.registerOutputMutation(frame, nodeStaticPathKey);
-          }
-          if (this.scriptMode) {
-            this.emit('runtime.sequentialMemberLookupScriptAsyncValue(frame, (');
-          } else {
-            this.emit('runtime.sequentialMemberLookupAsyncValue(frame, (');
-          }
-          this.compile(node.target, frame); // Compile the object being accessed.
-          this.emit('),');
-          this.compile(node.val, frame); // Compile the property/key expression.
-          this.emit(`, "${nodeStaticPathKey}", ${errorContextJson}, ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
-        } else {
-          const readLockKey = this.sequential._getReadLockKey(nodeStaticPathKey);
-          if (node.sequentialRepair) {
-            this.async.updateFrameWrites(frame, nodeStaticPathKey);
-          }
-          this.async.updateFrameWrites(frame, readLockKey);
-          if (this.scriptMode) {
-            this.emit('runtime.sequentialMemberLookupScriptAsync(frame, (');
-          } else {
-            this.emit('runtime.sequentialMemberLookupAsync(frame, (');
-          }
-          this.compile(node.target, frame); // Compile the object being accessed.
-          this.emit('),');
-          this.compile(node.val, frame); // Compile the property/key expression.
-          this.emit(`, "${nodeStaticPathKey}", "${readLockKey}", ${errorContextJson}, ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
+        this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
+        if (node.sequentialRepair) {
+          this.buffer.registerOutputMutation(frame, nodeStaticPathKey);
         }
+        if (this.scriptMode) {
+          this.emit('runtime.sequentialMemberLookupScriptAsyncValue(frame, (');
+        } else {
+          this.emit('runtime.sequentialMemberLookupAsyncValue(frame, (');
+        }
+        this.compile(node.target, frame); // Compile the object being accessed.
+        this.emit('),');
+        this.compile(node.val, frame); // Compile the property/key expression.
+        this.emit(`, "${nodeStaticPathKey}", ${errorContextJson}, ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
         return;
       }
 
@@ -921,16 +885,10 @@ class CompilerBase extends Obj {
         if (this._isDeclared(frame, keyRoot) || keyRootOutput) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }
-        if (SEQUNTIAL_PATHS_USE_VALUE) {
-          this.buffer.registerOutputUsage(frame, sequenceLockKey);
-          this.buffer.registerOutputMutation(frame, sequenceLockKey);
-        } else {
-          const readLockKey = this.sequential._getReadLockKey(sequenceLockKey);
-          this.async.updateFrameWrites(frame, sequenceLockKey);
-          this.async.updateFrameWrites(frame, readLockKey);
-        }
+        this.buffer.registerOutputUsage(frame, sequenceLockKey);
+        this.buffer.registerOutputMutation(frame, sequenceLockKey);
       }
-      if (sequenceLockKey && SEQUNTIAL_PATHS_USE_VALUE) {
+      if (sequenceLockKey) {
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
         this.emit('runtime.sequentialCallWrapValue(');
         this.compile(node.name, frame);
@@ -946,12 +904,7 @@ class CompilerBase extends Obj {
       };
       this._compileAggregate(mergedNode, frame, '[', ']', true, false, function (result) {
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
-        if (!sequenceLockKey) {
-          this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson});`);
-        } else {
-          const readLockKey = this.sequential._getReadLockKey(sequenceLockKey);
-          this.emit(`return runtime.sequentialCallWrap(${result}[0], "${funcName}", context, ${result}.slice(1), frame, "${sequenceLockKey}", "${readLockKey}", ${errorContextJson}, ${!!node.sequentialRepair}, ${this.buffer.currentBuffer});`);
-        }
+        this.emit(`return runtime.callWrapAsync(${result}[0], "${funcName}", context, ${result}.slice(1), ${errorContextJson});`);
       });
     } else {
       // In sync mode, compile as usual.
@@ -995,11 +948,8 @@ class CompilerBase extends Obj {
     if (!lockKey) {
       return false;
     }
-    if (SEQUNTIAL_PATHS_USE_VALUE) {
-      const decl = this.async._getDeclaredOutput(frame, lockKey);
-      return !!(decl && decl.type === 'sequential_path');
-    }
-    return this._isDeclared(frame, lockKey);
+    const decl = this.async._getDeclaredOutput(frame, lockKey);
+    return !!(decl && decl.type === 'sequential_path');
   }
 
   _compileOutputObservationFunCall(node, frame, outputDecl, outputName, methodName, sequencePath) {

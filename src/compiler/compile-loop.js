@@ -1,7 +1,6 @@
 'use strict';
 
 const nodes = require('../nodes');
-const { LOOP_VARS_USE_VALUE } = require('../feature-flags');
 
 class CompileLoop {
   constructor(compiler) {
@@ -48,7 +47,7 @@ class CompileLoop {
   }
 
   _compileFor(node, frame, sequentialLoopBody = false, iteratorCompiler = null, whileConditionNode = null) {
-    const useLoopValues = node.isAsync && LOOP_VARS_USE_VALUE;
+    const useLoopValues = node.isAsync;
     if (useLoopValues && !node.loopRuntimeName) {
       this.compiler.fail(
         'Internal compiler error: missing loopRuntimeName for async loop value bindings.',
