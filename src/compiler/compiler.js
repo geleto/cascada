@@ -21,7 +21,7 @@ const CompileInheritance = require('./compile-inheritance');
 const CompileLoop = require('./compile-loop');
 const CompileBuffer = require('./compile-buffer');
 const CompilerBase = require('./compiler-base');
-const { CONVERT_TEMPLATE_VAR_TO_VALUE, SEQUNTIAL_PATHS_USE_VALUE, VALUE_IMPORT_BINDINGS } = require('../feature-flags');
+const { CONVERT_TEMPLATE_VAR_TO_VALUE, CONVERT_SCRIPT_VAR_TO_VALUE, SEQUNTIAL_PATHS_USE_VALUE, VALUE_IMPORT_BINDINGS } = require('../feature-flags');
 
 class Compiler extends CompilerBase {
   init(templateName, options) {
@@ -1430,6 +1430,9 @@ class Compiler extends CompilerBase {
 
   compileMacro(node, frame) {
     var funcId = this._compileMacro(node, frame, false);
+    const useValueMacroPublication = this.asyncMode &&
+      VALUE_IMPORT_BINDINGS &&
+      (CONVERT_TEMPLATE_VAR_TO_VALUE || (this.scriptMode && CONVERT_SCRIPT_VAR_TO_VALUE));
 
     // Expose the macro to the templates
     var name = node.name.value;
@@ -1440,7 +1443,7 @@ class Compiler extends CompilerBase {
     } else {
       if (node.name.value.charAt(0) !== '_') {
         this.emit.line(`context.addExport("${name}", ${funcId});`);
-        if (!(this.asyncMode && VALUE_IMPORT_BINDINGS)) {
+        if (!useValueMacroPublication) {
           this.emit.line(`context.setVariable("${name}", ${funcId});`);
         }
       } else {
