@@ -1014,14 +1014,10 @@
         asyncBody,
         runtime,
         frame,
-        null, // readVars
-        null, // writeCounts
-        null, // usedOutputs
+        { writeCounts: null, usedOutputs: null },
         null, // parentBuffer
         false, // createOutputBuffer
-        cb,
-        1, 1, // lineno, colno
-        { path: 'test.njk' } // context
+        cb
       ).then(() => {
         done(new Error('asyncBlock should have rejected'));
       }).catch(err => {

@@ -330,6 +330,7 @@ class Compiler extends CompilerBase {
     }
 
     const ids = [];
+    const resolveUpByTarget = Object.create(null);
 
     // 1. First pass: Validate, declare, and prepare temporary JS variables for all targets.
     node.targets.forEach((target) => {
@@ -367,7 +368,7 @@ class Compiler extends CompilerBase {
       // This call is common and crucial for async operations in both modes.
       // In async mode, updateFrameWrites returns whether write counters were added
       if (this.asyncMode) {
-        this.async.updateFrameWrites(frame, name);
+        resolveUpByTarget[name] = !!this.async.updateFrameWrites(frame, name);
       } else if (this.scriptMode) {
         this._addDeclaredVar(frame, name);
       }
@@ -433,10 +434,8 @@ class Compiler extends CompilerBase {
       let resolveUp;
 
       if (this.scriptMode) {
-        // Script mode: Use metadata from updateFrameWrites
-        // This tells us if write counters were actually registered for this variable
-        // Convert to boolean to avoid undefined vs false mismatches
-        const hasResolveUpMetadata = !!(frame.varsNeedingResolveUp && frame.varsNeedingResolveUp.has(name));
+        // Script mode: use metadata collected during first-pass write analysis.
+        const hasResolveUpMetadata = !!resolveUpByTarget[name];
 
         // Bidirectional validation (enabled by flag for development/debugging)
         validateResolveUp(frame, name, hasResolveUpMetadata, this, node);

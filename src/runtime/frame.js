@@ -514,7 +514,19 @@ class AsyncFrame extends Frame {
     }
   }*/
 
-  pushAsyncBlock(reads, writeCounters, sequentialLoopBody = false, usedOutputs = null) {
+  pushAsyncBlock(writeCounters, sequentialLoopBody = false, usedOutputs = null) {
+    // Legacy compatibility: pushAsyncBlock(reads, writeCounters, ...)
+    // Read snapshots are no longer used; if second arg is an object, treat it as writeCounters.
+    if (
+      sequentialLoopBody &&
+      typeof sequentialLoopBody === 'object' &&
+      !Array.isArray(sequentialLoopBody)
+    ) {
+      writeCounters = sequentialLoopBody;
+      sequentialLoopBody = !!arguments[2];
+      usedOutputs = arguments.length > 3 ? arguments[3] : null;
+    }
+
     let asyncBlockFrame = new AsyncFrame(this, false);
     // Async block frames never own inherited buffers by default.
 
@@ -526,11 +538,8 @@ class AsyncFrame extends Frame {
     if (Array.isArray(usedOutputs)) {
       asyncBlockFrame.usedOutputs = new Set(usedOutputs);
     }
-    if (reads || writeCounters) {
+    if (writeCounters) {
       asyncBlockFrame.asyncVars = {};
-      if (reads) {
-        asyncBlockFrame._snapshotVariables(reads);
-      }
       if (writeCounters) {
         if (sequentialLoopBody) {
           // Sequential mode: Snapshot values locally (NO promisification of parent).

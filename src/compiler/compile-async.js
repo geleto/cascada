@@ -8,10 +8,6 @@ const asyncOperationNodes = new Set([
   'Extends', 'Include', 'Import', 'FromImport', 'Super'
 ]);
 
-const {
-  markReadVarPassThrough
-} = require('./validation');
-
 module.exports = class CompileAsync {
 
   constructor(compiler) {
@@ -41,8 +37,6 @@ module.exports = class CompileAsync {
     // Store the writes and variable declarations down the scope chain
     // Search for the var in the scope chain
     let vf = frame;
-    const startingFrame = frame; // Remember the starting frame
-
     if (name.startsWith('!')) {
       // Sequence keys are conceptually declared at the root
       while (vf.parent) {
@@ -95,18 +89,11 @@ module.exports = class CompileAsync {
       frame = frame.parent;
     }
 
-    // Store metadata on the starting frame for validation at code generation
-    if (addedCounters) {
-      startingFrame.varsNeedingResolveUp = startingFrame.varsNeedingResolveUp || new Set();
-      startingFrame.varsNeedingResolveUp.add(name);
-    }
-
     return addedCounters;
   }
 
   //@todo - handle included parent frames properly
   updateFrameReads(frame, name) {
-    const startingFrame = frame;
     // Find the variable declaration in the scope chain
     let df = frame;
 
@@ -145,16 +132,10 @@ module.exports = class CompileAsync {
       if ((frame.readVars && frame.readVars.has(name)) ||
         (frame.writeCounts && frame.writeCounts[name])) {
         // Already in readVars, or written here (will be snapshotted anyway)
-        if (frame !== startingFrame) {
-          markReadVarPassThrough(frame, name);
-        }
         break;
       }
       frame.readVars = frame.readVars || new Set();
       frame.readVars.add(name);
-      if (frame !== startingFrame) {
-        markReadVarPassThrough(frame, name);
-      }
       frame = frame.parent;
     }
   }

@@ -5,7 +5,6 @@ const { TemplateError } = require('../lib');
 // const { Frame, AsyncFrame } = require('./runtime'); // Not used in base class
 const { Obj } = require('../object');
 const {
-  trackActualRead,
   validateSinkSnapshotInGuard
 } = require('./validation');
 
@@ -363,7 +362,6 @@ class CompilerBase extends Obj {
         return;
       }
 
-      trackActualRead(frame, name, this, node);
       this.async.updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
 
       let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);

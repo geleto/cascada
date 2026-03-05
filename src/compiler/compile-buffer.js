@@ -486,9 +486,8 @@ class CompileBuffer {
 
       this.compiler.emit.asyncClosureDepth--;
       this.compiler.emit.line('}');
-      const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs, outputArgs } = this.compiler.emit.getAsyncBlockArgs(frame, positionNode);
-      this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${this.currentBuffer}, false, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+      const asyncMetaArg = this.compiler.emit.getAsyncBlockArgs(frame);
+      this.compiler.emit.line(`, runtime, frame, ${asyncMetaArg}, ${this.currentBuffer}, false, cb);`);
 
       frame = frame.pop();
 
@@ -571,9 +570,8 @@ class CompileBuffer {
 
     this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit.line('}');
-    const errorContext = this.compiler._generateErrorContext(node, positionNode);
-    const { readArgs, writeArgs, outputArgs } = this.compiler.emit.getAsyncBlockArgs(innerFrame, positionNode);
-    this.compiler.emit.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${this.currentBuffer}, false, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}");`);
+    const asyncMetaArg = this.compiler.emit.getAsyncBlockArgs(innerFrame);
+    this.compiler.emit.line(`, runtime, frame, ${asyncMetaArg}, ${this.currentBuffer}, false, cb);`);
     return innerFrame.pop();
   }
 

@@ -1,8 +1,6 @@
 const {
   trackCompileTimeFrameDepth,
-  validateCompileTimeFrameBalance,
-  ensureReadValidationState,
-  validateReadVarsConsistency
+  validateCompileTimeFrameBalance
 } = require('./validation');
 const { DEFAULT_TEMPLATE_TEXT_OUTPUT } = require('./compile-buffer');
 
@@ -209,9 +207,6 @@ module.exports = class CompileEmit {
       //unscoped frames are only used in async blocks
       const newFrame = frame.push(false, createScope);
       trackCompileTimeFrameDepth(newFrame, frame);
-      if (node.isAsync) {
-        ensureReadValidationState(newFrame);
-      }
       return newFrame;
     }
     return frame;
@@ -226,11 +221,10 @@ module.exports = class CompileEmit {
       }
       this.asyncClosureDepth--;
       this.line('}');
-      const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs, outputArgs } = this.getAsyncBlockArgs(frame, positionNode);
+      const asyncMetaArg = this.getAsyncBlockArgs(frame);
       const resolvedParentBufferArg = parentBufferArg || this.compiler.buffer.currentBuffer || 'null';
       const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${resolvedParentBufferArg}, ${createOutputBufferArg}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", false, ${sequentialLoopBody}, ${hasConcurrencyLimit})`);
+      this.line(`, runtime, frame, ${asyncMetaArg}, ${resolvedParentBufferArg}, ${createOutputBufferArg}, cb, ${sequentialLoopBody}, ${hasConcurrencyLimit})`);
       this.line(';');
     }
     if (createScope && !node.isAsync) {
@@ -276,11 +270,10 @@ module.exports = class CompileEmit {
       this.line('}');
 
       this.line('}');
-      const errorContext = this.compiler._generateErrorContext(node, positionNode);
-      const { readArgs, writeArgs, outputArgs } = this.getAsyncBlockArgs(frame, positionNode);
+      const asyncMetaArg = this.getAsyncBlockArgs(frame);
       const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
       const parentBufferArg = this.compiler.buffer.currentBuffer || 'null';
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${parentBufferArg}, ${createOutputBufferArg}, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}", true, false)`);
+      this.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferArg}, ${createOutputBufferArg}, cb, false, false)`);
 
       this.asyncClosureDepth--;
       frame = frame.pop();
@@ -360,16 +353,15 @@ module.exports = class CompileEmit {
     }
     this.line(`  return ${id};`);
     this.line('}');
-    const errorContext = this.compiler._generateErrorContext(node, positionNode);
-    const { readArgs, writeArgs, outputArgs } = this.getAsyncBlockArgs(frame, positionNode);
+    const asyncMetaArg = this.getAsyncBlockArgs(frame);
     // asyncBlockRender materializes its own text snapshot and returns it to the caller.
     // Linking this temporary render buffer into the parent text stream would duplicate
     // content (once via parent traversal, once via returned snapshot).
     const parentBufferArg = 'null';
     if (callbackName) {
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${parentBufferArg}, true, ${callbackName}, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      this.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferArg}, true, ${callbackName})`);
     } else {
-      this.line(`, runtime, frame, ${readArgs}, ${writeArgs}, ${outputArgs}, ${parentBufferArg}, true, cb, ${positionNode.lineno}, ${positionNode.colno}, context, "${errorContext}")`);
+      this.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferArg}, true, cb)`);
     }
 
     frame = frame.pop();
@@ -377,39 +369,12 @@ module.exports = class CompileEmit {
   }
 
   // @todo - optimize this:
-  // if a parent async block has the read and there are no writes
-  // we can use the parent snapshot
   // similar for writes we can do some optimizations
-  getAsyncBlockArgs(frame, positionNode = null) {
-    ensureReadValidationState(frame);
-    validateReadVarsConsistency(frame, this.compiler, positionNode);
-    let reads = [];
-    if (frame.readVars) {
-      //add each read var to a list of vars to be snapshotted, with a few exceptions
-      frame.readVars.forEach((name) => {
-        //skip variables that are written to, they will be snapshotted anyway
-        if (frame.writeCounts && frame.writeCounts[name]) {
-          return;
-        }
-        //see if it's read by a parent and not written to there, then the parent snapshot is enough
-        //but for this to work we have to check only async block frames and it's good to check up the chain
-        //@todo - implement this
-        //@todo - similar for writes!!!!
-        /*if (frame.parent.readVars && frame.parent.readVars.has(name) && !(frame.parent.writeCounts && !frame.parent.writeCounts[name])) {
-          return;
-        }*/
-        if (frame.declaredVars && frame.declaredVars.has(name)) {
-          // If the variable 'name' is declared in the *current* 'frame'
-          throw new Error(`ReadVar ${name} in declaration scope, this indicates mismatch between compiler and runtime frame`);
-        }
-        reads.push(name);
-      });
-    }
-    const readArgs = reads.length ? JSON.stringify(reads) : 'null';
+  getAsyncBlockArgs(frame) {
     const writeArgs = frame.writeCounts ? JSON.stringify(frame.writeCounts) : 'null';
     const outputArgs = frame.usedOutputs && frame.usedOutputs.size > 0
       ? JSON.stringify(Array.from(frame.usedOutputs))
       : 'null';
-    return { readArgs, writeArgs, outputArgs };
+    return `({ writeCounts: ${writeArgs}, usedOutputs: ${outputArgs} })`;
   }
 };
