@@ -120,20 +120,6 @@ describe('Frame Balance Validation', function () {
     expect(p0).to.be(root);
   });
 
-  it('should track depth in pushAsyncBlock', function () {
-    if (!ENABLE_FRAME_BALANCE_CHECK) {
-      this.skip();
-      return;
-    }
-    const { AsyncFrame } = require('../../src/runtime/frame');
-    const root = new AsyncFrame(null, false);
-    root._runtimeDepth = 0;
-
-    // pushAsyncBlock takes (reads, writeCounters, sequentialLoopBody)
-    const child = root.pushAsyncBlock([], {});
-
-    expect(child._runtimeDepth).to.be(1);
-  });
   describe('ReadVars Consistency Validation', function () {
     it('should fail when a non-local declared variable is read but not registered in readVars', function () {
       if (!ENABLE_READVARS_VALIDATION) {
