@@ -6,8 +6,7 @@ const {
   validateSetTarget,
   validateDeclarationScope,
   validateReadOnlyOuterMutation,
-  validateOutputDeclarationNode,
-  ENABLE_READVARS_VALIDATION
+  validateOutputDeclarationNode
 } = require('./validation');
 
 const parser = require('../parser');
@@ -31,7 +30,6 @@ class Compiler extends CompilerBase {
     this.templateName = templateName;
     this.hasExtends = false;
     this.inBlock = false;
-    this.enableReadVarsValidation = ENABLE_READVARS_VALIDATION;
 
     // Instantiate and link helper modules
     this.sequential = new CompileSequential(this);

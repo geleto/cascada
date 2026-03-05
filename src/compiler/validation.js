@@ -15,9 +15,6 @@ const ENABLE_FRAME_BALANCE_VALIDATION = true;
 // Set to true during development to catch incorrect frame selection early.
 const ENABLE_SCOPE_VALIDATION = true;
 
-// Enable compile-time validation that readVars registrations match actual reads.
-// This helps catch missing snapshots (critical) and unused snapshots (optimization).
-const ENABLE_READVARS_VALIDATION = true;
 
 const RESERVED_DECLARATION_NAMES = new Set(['var', 'data', 'text', 'value', 'sink', 'sequence']);
 
@@ -183,7 +180,7 @@ function validateDeclarationScope(frame, name, compiler, node) {
  * @param {Frame} frame - The compile-time frame
  */
 function ensureReadValidationState(frame) {
-  if (!ENABLE_READVARS_VALIDATION || !frame) {
+  if (!frame) {
     return;
   }
   if (!frame.actualReads) {
@@ -206,7 +203,7 @@ function ensureReadValidationState(frame) {
  * @param {Node} node - AST node for positioning
  */
 function trackActualRead(frame, name, compiler, node) {
-  if (!ENABLE_READVARS_VALIDATION || !compiler || !compiler.asyncMode) {
+  if (!compiler || !compiler.asyncMode) {
     return;
   }
   // Skip locals declared in the current frame; they do not need snapshotting.
@@ -232,7 +229,7 @@ function trackActualRead(frame, name, compiler, node) {
  * @param {string} name - Variable name
  */
 function markReadVarPassThrough(frame, name) {
-  if (!ENABLE_READVARS_VALIDATION || !frame) {
+  if (!frame) {
     return;
   }
   ensureReadValidationState(frame);
@@ -248,7 +245,7 @@ function markReadVarPassThrough(frame, name) {
  * @param {Node} node - Position node for error reporting
  */
 function validateReadVarsConsistency(frame, compiler, node) {
-  if (!ENABLE_READVARS_VALIDATION || !compiler || !compiler.asyncMode || !frame) {
+  if (!compiler || !compiler.asyncMode || !frame) {
     return;
   }
 
@@ -463,7 +460,6 @@ module.exports = {
   ENABLE_RESOLVEUP_VALIDATION,
   ENABLE_FRAME_BALANCE_VALIDATION,
   ENABLE_SCOPE_VALIDATION,
-  ENABLE_READVARS_VALIDATION,
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance,
   validateResolveUp,

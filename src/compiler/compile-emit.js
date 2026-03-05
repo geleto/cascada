@@ -1,7 +1,6 @@
 const {
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance,
-  ENABLE_READVARS_VALIDATION,
   ensureReadValidationState,
   validateReadVarsConsistency
 } = require('./validation');
@@ -210,7 +209,7 @@ module.exports = class CompileEmit {
       //unscoped frames are only used in async blocks
       const newFrame = frame.push(false, createScope);
       trackCompileTimeFrameDepth(newFrame, frame);
-      if (ENABLE_READVARS_VALIDATION && node.isAsync) {
+      if (node.isAsync) {
         ensureReadValidationState(newFrame);
       }
       return newFrame;
@@ -382,10 +381,8 @@ module.exports = class CompileEmit {
   // we can use the parent snapshot
   // similar for writes we can do some optimizations
   getAsyncBlockArgs(frame, positionNode = null) {
-    if (ENABLE_READVARS_VALIDATION) {
-      ensureReadValidationState(frame);
-      validateReadVarsConsistency(frame, this.compiler, positionNode);
-    }
+    ensureReadValidationState(frame);
+    validateReadVarsConsistency(frame, this.compiler, positionNode);
     let reads = [];
     if (frame.readVars) {
       //add each read var to a list of vars to be snapshotted, with a few exceptions

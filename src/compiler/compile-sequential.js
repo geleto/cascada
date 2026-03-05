@@ -13,25 +13,6 @@ module.exports = class CompileSequential {
     this.compiler = compiler;
   }
 
-  //@todo - public
-  _declareSequentialLocks(node, frame) {
-    const sequenceLockFrame = frame.getRoot();
-    // Get immediate children using the _getImmediateChildren method
-    const children = this.compiler._getImmediateChildren(node);
-
-    // Process each child node
-    for (const child of children) {
-      this._declareSequentialLocks(child, sequenceLockFrame);
-    }
-
-    if (node.typename === 'FunCall') {
-      const key = this._getSequenceKey(node.name);
-      if (key) {
-        this.compiler._addDeclaredVar(sequenceLockFrame, key);
-      }
-    }
-  }
-
   processExpression(node, frame) {
     frame = frame.getRoot();
     const f = new AsyncFrame();
@@ -543,55 +524,6 @@ module.exports = class CompileSequential {
     }
 
     return definedVars;
-  }
-
-  /**
-   * Extract the base variable name from a sequential node.
-   * For account!.deposit() -> '!account'
-   * For db!.query().execute() -> '!db'
-   * Returns the leftmost/base identifier in the chain.
-   * @param {Node} node - The sequential node
-   * @returns {string|null} Lock name prefixed with '!' or null
-   */
-  _extractBaseLockName(node) {
-    if (!node) {
-      return null;
-    }
-
-    // If it's a symbol: account!
-    if (node.typename === 'Symbol') {
-      return '!' + node.value;
-    }
-
-    // If it's a member lookup: account!.field or account!.method()
-    // Navigate to the leftmost base
-    if (node.typename === 'LookupVal' && node.target) {
-      return this._extractBaseLockName(node.target);
-    }
-
-    // If it's a function call: account!.method()
-    // The sequence is on the object being called on
-    if (node.typename === 'FunCall' && node.name) {
-      return this._extractBaseLockName(node.name);
-    }
-
-    // If it's a filter: account!|filter
-    if (node.typename === 'Filter' && node.name) {
-      return this._extractBaseLockName(node.name);
-    }
-
-    // Try to find the base by checking children for sequential marker
-    const children = this.compiler._getImmediateChildren(node);
-    for (const child of children) {
-      if (child && child.sequential) {
-        const lockName = this._extractBaseLockName(child);
-        if (lockName) {
-          return lockName;
-        }
-      }
-    }
-
-    return null;
   }
 
   /**

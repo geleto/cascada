@@ -9,7 +9,6 @@ const asyncOperationNodes = new Set([
 ]);
 
 const {
-  ENABLE_READVARS_VALIDATION,
   markReadVarPassThrough
 } = require('./validation');
 
@@ -146,14 +145,14 @@ module.exports = class CompileAsync {
       if ((frame.readVars && frame.readVars.has(name)) ||
         (frame.writeCounts && frame.writeCounts[name])) {
         // Already in readVars, or written here (will be snapshotted anyway)
-        if (ENABLE_READVARS_VALIDATION && frame !== startingFrame) {
+        if (frame !== startingFrame) {
           markReadVarPassThrough(frame, name);
         }
         break;
       }
       frame.readVars = frame.readVars || new Set();
       frame.readVars.add(name);
-      if (ENABLE_READVARS_VALIDATION && frame !== startingFrame) {
+      if (frame !== startingFrame) {
         markReadVarPassThrough(frame, name);
       }
       frame = frame.parent;
