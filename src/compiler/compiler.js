@@ -1456,12 +1456,11 @@ class Compiler extends CompilerBase {
     if (frame.parent) {
       this.emit.line(`frame.set("${name}", ${funcId});`);
     } else {
-      if (node.name.value.charAt(0) !== '_') {
+      const isPublicMacro = node.name.value.charAt(0) !== '_';
+      if (isPublicMacro) {
         this.emit.line(`context.addExport("${name}", ${funcId});`);
-        if (!useValueMacroPublication) {
-          this.emit.line(`context.setVariable("${name}", ${funcId});`);
-        }
-      } else {
+      }
+      if (!useValueMacroPublication) {
         this.emit.line(`context.setVariable("${name}", ${funcId});`);
       }
     }
