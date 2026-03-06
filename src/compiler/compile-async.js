@@ -102,7 +102,7 @@ module.exports = class CompileAsync {
 
   //within an async block, each set is counted, but when propagating the writes to the parent async block
   //only the first write is propagated
-  countsTo1(writeCounts) {
+  capWriteCounts(writeCounts) {
     if (!writeCounts) {
       return undefined;
     }
@@ -118,7 +118,7 @@ module.exports = class CompileAsync {
    * @param {Array<Object>} counts - Array of write count objects
    * @returns {Object} Combined write counts
    */
-  _combineWriteCounts(counts) {
+  combineWriteCounts(counts) {
     const combined = {};
 
     counts.forEach((count) => {
@@ -129,5 +129,20 @@ module.exports = class CompileAsync {
     });
 
     return combined;
+  }
+
+  subtractWriteCounts(total, subset) {
+    const diff = {};
+    if (!total) {
+      return diff;
+    }
+    for (const key in total) {
+      const totalCount = total[key];
+      const subsetCount = subset ? (subset[key] || 0) : 0;
+      if (totalCount > subsetCount) {
+        diff[key] = totalCount - subsetCount;
+      }
+    }
+    return diff;
   }
 };

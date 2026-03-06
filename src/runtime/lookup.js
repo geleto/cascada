@@ -361,7 +361,6 @@ module.exports = {
   memberLookupScript,
   memberLookupAsync,
   memberLookupScriptAsync,
-  linkReadOutput: ensureReadOutputLink,
   contextOrFrameLookup,
   valueOutputLookup,
   contextOrValueLookup,

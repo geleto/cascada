@@ -103,7 +103,7 @@ class Frame {
   }
 
   new() {
-    return new Frame();//undefined, this.isolateWrites);
+    return new Frame();
   }
 
   markOutputBufferScope(buffer) {
@@ -131,8 +131,6 @@ class AsyncFrame extends Frame {
   constructor(parent, isolateWrites, createScope = true) {
     super(parent, isolateWrites);
     this.createScope = createScope;
-
-    //this.sequenceLockFrame = (parent && parent.sequenceLockFrame) ? parent.sequenceLockFrame : this;
 
     if (AsyncFrame.inCompilerContext) {
       //holds the names of the variables declared at the frame
@@ -180,10 +178,7 @@ class AsyncFrame extends Frame {
   static inCompilerContext = false;
 
   new() {
-    //no parent but keep track of sequenceLockFrame
-    const nf = new AsyncFrame();//undefined, this.isolateWrites);
-    //nf.sequenceLockFrame = this.sequenceLockFrame;
-    return nf;
+    return new AsyncFrame();
   }
 
   //second parameter to pushAsyncBlock only for recursive frames
@@ -194,8 +189,6 @@ class AsyncFrame extends Frame {
     } else {
       //not for set tags
       super.set(name, val);
-      //@todo - handle for recursive frames
-      //name = name.substring(0, name.indexOf('.'));
     }
   }
 
@@ -207,19 +200,19 @@ class AsyncFrame extends Frame {
       throw new Error('resolveUp can only be used for variables, not for properties/paths');
     }
 
-    //find or create the variable scope:
+    // Find or create the variable scope.
     let scopeFrame = this.resolve(name, true);
     if (!scopeFrame) {
-      //add the variable here unless !createScope in which case try adding in a parent frame that can createScope
+      // If this frame cannot create scope, add it in the nearest parent that can.
       if (!this.createScope) {
-        this.parent.set(name, val);//set recursively ti
+        this.parent.set(name, val);
         scopeFrame = this.resolve(name, true);
         if (!scopeFrame) {
           throw new Error('Variable should have been added in a parent frame');
         }
       }
       else {
-        scopeFrame = this;//create the variable in this frame
+        scopeFrame = this;
       }
     }
 
@@ -241,31 +234,11 @@ class AsyncFrame extends Frame {
     return scopeFrame;
   }
 
-  //@todo when we start skipping block promisify - do complete get implementation here to check asyncVars at all levels
   get(name) {
     if (this.asyncVars && name in this.asyncVars) {
       return this.asyncVars[name];
     }
     return super.get(name);
-  }
-
-  //@todo - fix when this.variables[name] exists but is undefined
-  /*lookup(name) {
-    let val = (this.asyncVars && name in this.asyncVars) ? this.asyncVars[name] : this.variables[name];
-    if (val !== undefined) {
-      return val;
-    }
-    return this.parent && this.parent.lookup(name);
-  }*/
-
-  has(name) {
-    if (this.asyncVars && name in this.asyncVars) {
-      return true;
-    }
-    if (this.variables && name in this.variables) {
-      return true;
-    }
-    return this.parent && this.parent.has(name);
   }
 
   lookup(name) {
@@ -294,14 +267,6 @@ class AsyncFrame extends Frame {
     return { value: undefined, frame: null };
   }
 
-  resolve(name, forWrite) {
-    /*if (name.startsWith('!')) {
-      // Sequence keys conceptually resolve to the root frame
-      return this.sequenceLockFrame;
-    }*/
-    return super.resolve(name, forWrite);
-  }
-
   //when all assignments to a variable are done, resolve the promise for that variable
   _countdownAndResolveAsyncWrites(varName, decrementVal = 1, scopeFrame = null) {
     if (!this.writeCounters || !(varName in this.writeCounters) || decrementVal === 0) {
@@ -326,7 +291,7 @@ class AsyncFrame extends Frame {
     }
     let count = this.writeCounters[varName];
     if (count === 0) {
-      // @todo - remove this and fix the failing tests
+      // Already fully resolved by an earlier countdown in this branch path.
       return false;
     }
     if (count <= 0) {
@@ -348,14 +313,6 @@ class AsyncFrame extends Frame {
       if (!this.sequentialLoopBody) {
         // Parallel mode: Resolve the parent's pending promise
         this._resolveAsyncVar(varName);
-      } else {
-        /*if (this.parent) {
-          // Sequential mode: Commit value to parent immediately
-          this._commitSequentialWrite(varName);
-        }*/
-        // The value will be comitted after the frame waitAllClosures
-        // As by that time some promises may have already been resolved
-
       }
 
       if (this.parent && !this.sequentialLoopBody) {
@@ -437,38 +394,6 @@ class AsyncFrame extends Frame {
     }
   }
 
-  /*_resolveAsyncVar(varName) {
-    let value = this.asyncVars[varName];
-    let resolveFunc = this.promiseResolves[varName];
-
-    if (!resolveFunc) {
-      console.error(`No resolve function for variable ${varName}`);
-      return;
-    }
-
-    if (value && typeof value.then === 'function') {
-      value.then(resolvedValue => {
-        resolveFunc(resolvedValue);
-      }).catch(err => {
-        resolveFunc(Promise.reject(err));
-      });
-    } else {
-      resolveFunc(value);
-    }
-
-    //@todo - if the var is the same promise - set it to the value
-    //this cleanup may not be needed:
-    // Cleanup
-    //delete this.asyncVars[varName];
-    //if (Object.keys(this.asyncVars).length === 0) {
-    //  this.asyncVars = undefined;
-    //}
-    delete this.promiseResolves[varName];
-    if (Object.keys(this.promiseResolves).length === 0) {
-      this.promiseResolves = undefined;
-    }
-  }*/
-
   push(isolateWrites, createScope = true) {
     const newFrame = new AsyncFrame(this, isolateWrites, createScope);
     if (this._seesRootScope) {
@@ -479,36 +404,6 @@ class AsyncFrame extends Frame {
 
     return newFrame;
   }
-
-  /**
-   * Called after a loop finishes to decrement parent counters
-   * During the loop (this.sequentialLoopBody = true), writes are not propagated upwards, so we need to do it here after the loop.
-   */
-  /*finalizeLoopWrites(finalWriteCounts) {
-    if (!finalWriteCounts) {
-      return; // No parent or nothing to finalize
-    }
-
-    // When a sequential loop finishes, it's considered a single unit of work.
-    // We must decrement the counter on its *own frame* to signal its completion.
-    // This, in turn, will trigger the resolution of its promise and propagate the
-    // completion signal upwards to its parent frame via _countdownAndResolveAsyncWrites.
-    for (const varName in finalWriteCounts) {
-      // The value in finalWriteCounts doesn't matter, just the variable name.
-      // We signal that the loop's entire influence on this variable is now complete.
-      if (this.writeCounters && varName in this.writeCounters) {
-        // Use the standard countdown on the parent.
-        // This will trigger promise resolution if it hits zero there.
-        this._countdownAndResolveAsyncWrites(varName, 1);
-      } else {
-        // This path indicates a compiler bug. The compiler generated
-        // `bodyWriteCounts` with a variable that it failed to register on the
-        // loop's own async frame. We must throw an error, because silently
-        // ignoring this would lead to a deadlock.
-        throw new Error(`Loop finalized write for "${varName}", but the loop's own frame has no counter for it.`);
-      }
-    }
-  }*/
 
   pushAsyncBlock(writeCounters, sequentialLoopBody = false, usedOutputs = null) {
     let asyncBlockFrame = new AsyncFrame(this, false);
@@ -548,10 +443,6 @@ class AsyncFrame extends Frame {
       }
     }
   }
-
-  /*_commitSequentialWrite(varName) {
-    this.parent.asyncVars[varName] = this.asyncVars[varName];
-  }*/
 
   _snapshotVariables(reads) {
     for (const varName of reads) {

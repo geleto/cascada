@@ -849,8 +849,6 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
     loopFrame.skipBranchWrites(elseWriteCounts);
   }
 
-  // Note: No finalizeLoopWrites needed - the skipBranchWrites calls above
-  // handle the completion signaling for the mutual exclusion pattern
 }
 
 /**

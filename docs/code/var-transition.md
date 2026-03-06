@@ -9,15 +9,8 @@ This document tracks only what is still pending for the final model:
 
 ## Current Baseline
 
-With flags enabled in [`src/feature-flags.js`](../../src/feature-flags.js):
+Current flag in [`src/feature-flags.js`](../../src/feature-flags.js):
 
-- `CONVERT_TEMPLATE_VAR_TO_VALUE`
-- `CONVERT_SCRIPT_VAR_TO_VALUE`
-- `LOOP_VARS_USE_VALUE`
-- `SEQUNTIAL_PATHS_USE_VALUE`
-- `VALUE_IMPORT_BINDINGS`
-- `INCLUDE_PRELINK_OUTPUTS`
-- `INHERITANCE_CONTEXT_ONLY_LOOKUP`
 - `LOOKUP_DYNAMIC_OUTPUT_LINKING` (default `false`, optional dynamic fallback)
 
 already-completed conversion areas are considered stable unless regressions appear.

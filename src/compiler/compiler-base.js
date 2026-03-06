@@ -490,7 +490,7 @@ class CompilerBase extends Obj {
         this.emit(`return `);
         this.emit.asyncBlockValue(node.body, frame, (n, f) => {
           this.compile(n, f);
-          trueBranchWrites = this.async.countsTo1(f.writeCounts);
+          trueBranchWrites = this.async.capWriteCounts(f.writeCounts);
         }, undefined, node.body);
         node.body.wrapInAsyncBlock = true; // Restore
         this.emit(`;`);
@@ -515,7 +515,7 @@ class CompilerBase extends Obj {
           this.emit(`return `);
           this.emit.asyncBlockValue(node.else_, frame, (n, f) => {
             this.compile(n, f);
-            falseBranchWrites = this.async.countsTo1(f.writeCounts);
+            falseBranchWrites = this.async.capWriteCounts(f.writeCounts);
           }, undefined, node.else_);
           node.else_.wrapInAsyncBlock = true;
           this.emit(`;`);
@@ -652,7 +652,7 @@ class CompilerBase extends Obj {
       this.emit(`return `);
       this.emit.asyncBlockValue(node.right, frame, (n, f) => {
         this.compile(n, f);
-        rightWrites = this.async.countsTo1(f.writeCounts);
+        rightWrites = this.async.capWriteCounts(f.writeCounts);
       }, undefined, node.right);
       node.right.wrapInAsyncBlock = true;
       this.emit(';');

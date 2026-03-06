@@ -127,6 +127,7 @@ class CompileLoop {
         useLoopValues
       );
       const bodyWriteCounts = bodyFrame.writeCounts;
+      const bodyWriteCountsCapped = this.compiler.async.capWriteCounts(bodyWriteCounts) || null;
       if (bodyWriteCounts) {
         // @todo - in the future will require writes+reads to be sequential,
         // update _compileLoopBody too as it handles sequential differently
@@ -145,15 +146,15 @@ class CompileLoop {
         const elseFrame = this._compileLoopElse(node, blockFrame, sequentialLoopBody);
 
         // Collect metadata from else compilation
-        elseWriteCounts = this.compiler.async.countsTo1(elseFrame.writeCounts);
+        elseWriteCounts = this.compiler.async.capWriteCounts(elseFrame.writeCounts) || null;
         elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_, blockFrame) : null;
       }
 
       // Set up loop frame with combined write counts for mutual exclusion
       // This ensures the loop frame expects writes from either body OR else, not both
       if (node.isAsync) {
-        const combinedWriteCounts = this.compiler.async._combineWriteCounts([
-          bodyWriteCounts ? this.compiler.async.countsTo1(bodyWriteCounts) : null,
+        const combinedWriteCounts = this.compiler.async.combineWriteCounts([
+          bodyWriteCountsCapped,
           elseWriteCounts
         ].filter(Boolean));
 
@@ -167,7 +168,7 @@ class CompileLoop {
       if (node.isAsync) {
         asyncOptionsCode = `{
           sequential: ${sequentialLoopBody},
-          bodyWriteCounts: ${JSON.stringify(this.compiler.async.countsTo1(bodyWriteCounts) || {})},
+          bodyWriteCounts: ${JSON.stringify(bodyWriteCountsCapped || {})},
           bodyHandlers: ${JSON.stringify(bodyHandlers ? Array.from(bodyHandlers) : [])},
           elseWriteCounts: ${JSON.stringify(elseWriteCounts || {})},
           elseHandlers: ${JSON.stringify(elseHandlers ? Array.from(elseHandlers) : [])},
@@ -188,17 +189,6 @@ class CompileLoop {
       });
       this.compiler.emit(`], ${asyncOptionsCode});`);
 
-      // End buffer block for the node (using node.arr position)
-      /*if (iteratorCompiler || frame.writeCounts) {
-        // condition and loop body counts are a single unit of work and
-        // are isolated to not affect the outer frame write counts
-        // All writes will be released by finalizeLoopWrites
-        // Cap the outer frame's writeCounts to 1 per variable
-        // The loop as a whole counts as 1 write to the parent, regardless of iterations
-        // The capping happens per loop frame before popping, and the parent naturally accumulates these capped counts.
-        frame.writeCounts = this.compiler.async.countsTo1(frame.writeCounts);
-      }*/
-      // else - all write counts are from the loop body and are 1 anyway (counts are counted inside (>1) and outside (=1))
     });
 
     frame = forResult.frame;
@@ -207,7 +197,7 @@ class CompileLoop {
   _compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, useLoopValues = false) {
     const bodyCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
     if (node.isAsync) {
-      this.compiler.emit('(async function(');//@todo - think this over, does it need async block?
+      this.compiler.emit('(async function(');
     } else {
       this.compiler.emit('function(');
     }
@@ -326,13 +316,13 @@ class CompileLoop {
         });
 
         if (whileConditionNode) {
-          const bodyOnlyWrites = this._diffWriteCounts(bodyFrame.writeCounts, preBodyWriteCounts);
+          const bodyOnlyWrites = this.compiler.async.subtractWriteCounts(bodyFrame.writeCounts, preBodyWriteCounts);
           if (Object.keys(bodyOnlyWrites).length > 0) {
             this.compiler.emit.insertLine(skipBranchWritesPos, `  frame.skipBranchWrites(${JSON.stringify(bodyOnlyWrites)});`);
           }
 
           if (catchPoisonPos !== null) {
-            const totalWrites = this.compiler.async.countsTo1(bodyFrame.writeCounts);
+            const totalWrites = this.compiler.async.capWriteCounts(bodyFrame.writeCounts);
             if (totalWrites && Object.keys(totalWrites).length > 0) {
               this.compiler.emit.insertLine(catchPoisonPos, `  frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
             }
@@ -542,18 +532,10 @@ class CompileLoop {
 
     this._compileAsyncLoopBindings(node, arr, i, len);
 
-    // Compile loop body and collect metadata
-    let _bodyWriteCounts; // eslint-disable-line no-unused-vars
-    let bodyHandlers = null; // eslint-disable-line no-unused-vars
-
     this.compiler.emit.withScopedSyntax(() => {
       if (parallel) {
         this.compiler.emit.managedBlock(frame, false, true, (managedFrame, buf) => {
           this.compiler.compile(node.body, managedFrame);
-
-          // Collect metadata from body compilation
-          _bodyWriteCounts = managedFrame.writeCounts;
-          bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body, frame) : null;
 
           this.compiler.emit.line('next(' + i + ',' + buf + ');');
           if (this.compiler.asyncMode) {
@@ -562,10 +544,6 @@ class CompileLoop {
         });
       } else {
         this.compiler.compile(node.body, frame);
-
-        // Collect metadata from body compilation
-        _bodyWriteCounts = frame.writeCounts;
-        bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body, frame) : null;
 
         this.compiler.emit.line('next(' + i + ');');
       }
@@ -586,24 +564,12 @@ class CompileLoop {
       }
     }
 
-    // Compile else block and collect metadata
-    let _elseWriteCounts2;
-    let elseHandlers = null;
-
+    // Compile else block
     if (node.else_) {
       this.compiler.emit.line('if (!' + arr + '.length) {');
       this.compiler.compile(node.else_, frame);
-
-      // Collect metadata from else compilation
-      _elseWriteCounts2 = frame.writeCounts; // eslint-disable-line no-unused-vars
-      elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_, frame) : null; // eslint-disable-line no-unused-vars
-
       this.compiler.emit.line('}');
     }
-
-    // Combine handlers from both body and else (for consistency with _compileFor)
-    // Modern async loops use _compileFor via the delegation at line 1007
-    // They delegate to _compileFor when node.isAsync is true (line 1007)
 
     frame = frame.pop();
     this.compiler.emit.line('frame = frame.pop();');
@@ -615,20 +581,6 @@ class CompileLoop {
 
   compileAsyncAll(node, frame) {
     this._compileAsyncLoop(node, frame, true);
-  }
-
-
-  _diffWriteCounts(total, subset) {
-    const diff = {};
-    if (!total) return diff;
-    for (const k in total) {
-      const t = total[k];
-      const s = subset ? subset[k] || 0 : 0;
-      if (t > s) {
-        diff[k] = t - s;
-      }
-    }
-    return diff;
   }
 }
 

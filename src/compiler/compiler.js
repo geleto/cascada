@@ -666,7 +666,7 @@ class Compiler extends CompilerBase {
           // Use case body 'c.body' as position node for this block
           this.emit.asyncBlock(c, blockFrame, caseCreatesScope, (f) => {
             this.compile(c.body, f);
-            branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
+            branchWriteCounts.push(this.async.capWriteCounts(f.writeCounts) || {});
 
             // Collect handlers from this branch
             if (this.asyncMode) {
@@ -693,7 +693,7 @@ class Compiler extends CompilerBase {
         // Use default body 'node.default' as position node for this block
         this.emit.asyncBlock(node, blockFrame, caseCreatesScope, (f) => {
           this.compile(node.default, f);
-          branchWriteCounts.push(this.async.countsTo1(f.writeCounts) || {});
+          branchWriteCounts.push(this.async.capWriteCounts(f.writeCounts) || {});
 
           // Collect handlers from default
           if (this.asyncMode) {
@@ -719,27 +719,11 @@ class Compiler extends CompilerBase {
       }
 
       // Combine writes from all branches
-      const totalWrites = this.async._combineWriteCounts(branchWriteCounts);
-
-      // Helper to exclude current branch writes from combined writes
-      const excludeCurrentWrites = (combined, current) => {
-        const filtered = { ...combined };
-        if (current) {
-          Object.keys(current).forEach((key) => {
-            if (filtered[key]) {
-              filtered[key] -= current[key];
-              if (filtered[key] <= 0) {
-                delete filtered[key];
-              }
-            }
-          });
-        }
-        return filtered;
-      };
+      const totalWrites = this.async.combineWriteCounts(branchWriteCounts);
 
       // Insert skip statements for each case, including default
       branchPositions.forEach((pos, i) => {
-        const writesToSkip = excludeCurrentWrites(totalWrites, branchWriteCounts[i]);
+        const writesToSkip = this.async.subtractWriteCounts(totalWrites, branchWriteCounts[i]);
         if (Object.keys(writesToSkip).length > 0) {
           this.emit.insertLine(pos, `frame.skipBranchWrites(${JSON.stringify(writesToSkip)});`);
         }
@@ -965,7 +949,7 @@ class Compiler extends CompilerBase {
               this.emit.line(`frame.set('${node.errorVar}', new runtime.PoisonError(${guardErrorsVar}));`);
             }
             this.compile(node.recoveryBody, f);
-            recoveryWriteCounts = this.async.countsTo1(f.writeCounts);
+            recoveryWriteCounts = this.async.capWriteCounts(f.writeCounts);
           });
         }
 
@@ -1126,7 +1110,7 @@ class Compiler extends CompilerBase {
         // Use node.body as the position node for the true branch block
         this.emit.asyncBlock(node, blockFrame, branchCreatesScope, (f) => {
           this.compile(node.body, f);
-          trueBranchWriteCounts = this.async.countsTo1(f.writeCounts);
+          trueBranchWriteCounts = this.async.capWriteCounts(f.writeCounts);
         }, node.body); // Pass body as code position
 
         this.emit('} else {');
@@ -1140,7 +1124,7 @@ class Compiler extends CompilerBase {
           // Use node.else_ as the position node for the false branch block
           this.emit.asyncBlock(node, blockFrame, branchCreatesScope, (f) => {
             this.compile(node.else_, f);
-            falseBranchWriteCounts = this.async.countsTo1(f.writeCounts);
+            falseBranchWriteCounts = this.async.capWriteCounts(f.writeCounts);
           }, node.else_); // Pass else as code position
         }
         this.emit('}');
@@ -1171,7 +1155,7 @@ class Compiler extends CompilerBase {
         this.emit('}');  // No re-throw - execution continues with poisoned vars
 
         // Fill in the poison handling code now that we have write counts and handlers
-        const combinedCounts = this.async._combineWriteCounts([trueBranchWriteCounts, falseBranchWriteCounts]);
+        const combinedCounts = this.async.combineWriteCounts([trueBranchWriteCounts, falseBranchWriteCounts]);
 
         // Poison both variables and handlers when condition fails
         const hasVariables = Object.keys(combinedCounts).length > 0;
@@ -1424,7 +1408,6 @@ class Compiler extends CompilerBase {
 
   compileMacro(node, frame) {
     var funcId = this._compileMacro(node, frame, false);
-    const useValueMacroPublication = this.asyncMode;
 
     // Expose the macro to the templates
     var name = node.name.value;
@@ -1437,7 +1420,7 @@ class Compiler extends CompilerBase {
       if (isPublicMacro) {
         this.emit.line(`context.addExport("${name}", ${funcId});`);
       }
-      if (!useValueMacroPublication) {
+      if (!this.asyncMode) {
         this.emit.line(`context.setVariable("${name}", ${funcId});`);
       }
     }

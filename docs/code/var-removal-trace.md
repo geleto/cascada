@@ -33,7 +33,7 @@ Remove:
 
 Remove var-sync metadata flow:
 - `src/compiler/compile-async.js`
-  - `updateFrameWrites`, `updateFrameReads`, `countsTo1`, `_combineWriteCounts`
+  - `updateFrameWrites`, `updateFrameReads`, `capWriteCounts`, `combineWriteCounts`
 - `src/compiler/compile-emit.js`
   - async-block args for `readVars`/`writeCounts`
 - `src/compiler/validation.js`
@@ -86,7 +86,7 @@ These are strong delete-first signals:
   - `contextOrFrameOrValueLookup`
   - `contextOrFrameLookupScript`
   - `contextOrFrameLookupScriptAsync`
-- `src/compiler/compile-async.js`: unhit write-count utility (`_combineWriteCounts`).
+- `src/compiler/compile-async.js`: unhit write-count utility (`combineWriteCounts`).
 - `src/compiler/compiler.js`: uncovered legacy branches:
   - `context.setVariable(...)` fallback
   - `contextOrFrameLookup(... "__parentTemplate")` fallback

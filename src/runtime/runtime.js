@@ -225,7 +225,6 @@ module.exports = {
   memberLookupAsync: lookup.memberLookupAsync,
   memberLookupScript: lookup.memberLookupScript,
   memberLookupScriptAsync: lookup.memberLookupScriptAsync,
-  linkReadOutput: lookup.linkReadOutput,
   valueOutputLookup: lookup.valueOutputLookup,
   contextOrFrameLookup: lookup.contextOrFrameLookup,
   contextOrValueLookup: lookup.contextOrValueLookup,
