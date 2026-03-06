@@ -260,11 +260,6 @@ module.exports = class CompileEmit {
       this.line(`return await ${res};`);
       this.line('} catch (e) {');//@todo - temp var
       this.line(`  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path);`);
-      if (frame.writeCounts) {
-        // If the block owns writes, we must clear them on error to prevent
-        // "Async block finished with pending writes" fatal error.
-        this.line(`  frame.poisonBranchWrites(err, ${JSON.stringify(frame.writeCounts)});`);
-      }
       this.line('  throw err;');
       // this.line(`  return runtime.createPoison(err);`);
       this.line('}');
@@ -371,10 +366,9 @@ module.exports = class CompileEmit {
   // @todo - optimize this:
   // similar for writes we can do some optimizations
   getAsyncBlockArgs(frame) {
-    const writeArgs = frame.writeCounts ? JSON.stringify(frame.writeCounts) : 'null';
     const outputArgs = frame.usedOutputs && frame.usedOutputs.size > 0
       ? JSON.stringify(Array.from(frame.usedOutputs))
       : 'null';
-    return `({ writeCounts: ${writeArgs}, usedOutputs: ${outputArgs} })`;
+    return `({ usedOutputs: ${outputArgs} })`;
   }
 };

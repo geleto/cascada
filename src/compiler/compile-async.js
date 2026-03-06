@@ -34,8 +34,7 @@ module.exports = class CompileAsync {
 
   //@todo - do not store writes that will not be read by the parents
   updateFrameWrites(frame, name) {
-    // Store the writes and variable declarations down the scope chain
-    // Search for the var in the scope chain
+    // Resolve declaration scope for the target variable/lock and declare when missing.
     let vf = frame;
     if (name.startsWith('!')) {
       // Sequence keys are conceptually declared at the root
@@ -71,21 +70,6 @@ module.exports = class CompileAsync {
         this.compiler._addDeclaredVar(vf, name);
       }
     }
-
-    // Count the sets in the current frame/async block
-    // Propagate the first write down the chain
-    // Do not count for the frame where the variable is declared
-    while (frame != vf) {
-      if (!frame.writeCounts || !frame.writeCounts[name]) {
-        frame.writeCounts = frame.writeCounts || {};
-        frame.writeCounts[name] = 1; // First write, continue to parent frames
-      } else {
-        frame.writeCounts[name]++;
-        break; // Subsequent writes are not propagated
-      }
-      frame = frame.parent;
-    }
-
     return vf;
   }
 
@@ -100,49 +84,4 @@ module.exports = class CompileAsync {
     return null;
   }
 
-  //within an async block, each set is counted, but when propagating the writes to the parent async block
-  //only the first write is propagated
-  capWriteCounts(writeCounts) {
-    if (!writeCounts) {
-      return undefined;
-    }
-    let firstWritesOnly = {};
-    for (let key in writeCounts) {
-      firstWritesOnly[key] = 1;
-    }
-    return firstWritesOnly;
-  }
-
-  /**
-   * Combines multiple write count objects into a single object
-   * @param {Array<Object>} counts - Array of write count objects
-   * @returns {Object} Combined write counts
-   */
-  combineWriteCounts(counts) {
-    const combined = {};
-
-    counts.forEach((count) => {
-      if (!count) return;
-      Object.entries(count).forEach(([key, value]) => {
-        combined[key] = (combined[key] || 0) + value;
-      });
-    });
-
-    return combined;
-  }
-
-  subtractWriteCounts(total, subset) {
-    const diff = {};
-    if (!total) {
-      return diff;
-    }
-    for (const key in total) {
-      const totalCount = total[key];
-      const subsetCount = subset ? (subset[key] || 0) : 0;
-      if (totalCount > subsetCount) {
-        diff[key] = totalCount - subsetCount;
-      }
-    }
-    return diff;
-  }
 };

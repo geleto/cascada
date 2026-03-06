@@ -646,9 +646,7 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
 }
 
 /**
- * Poison both body and else effects when loop array is poisoned before iteration.
- * We poison both branches because we don't know if the underlying value would have
- * been empty (else runs) or non-empty (body runs).
+ * Poison body/else handler effects when loop input fails before/during iteration.
  *
  * @param {AsyncFrame} frame - The loop frame
  * @param {Object} buffer - The CommandBuffer instance
@@ -660,10 +658,7 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
   //replace the errors with the handleError'd errors
   errors = errors.map(error => handleError(error, asyncOptions.errorContext.lineno, asyncOptions.errorContext.colno, asyncOptions.errorContext.errorContextString, asyncOptions.errorContext.path));
 
-  // Poison body effects
-  if (asyncOptions.bodyWriteCounts && Object.keys(asyncOptions.bodyWriteCounts).length > 0) {
-    frame.poisonBranchWrites(errors, asyncOptions.bodyWriteCounts);
-  }
+  // Poison body handler effects.
   if (asyncOptions.bodyHandlers && asyncOptions.bodyHandlers.length > 0) {
     for (const handler of asyncOptions.bodyHandlers) {
       buffer.addPoison(errors, handler);
@@ -674,10 +669,7 @@ function poisonLoopEffects(frame, buffer, asyncOptions, errors, didIterate) {
     return;// we don't poison the else side-effects if we had at least one iteration
   }
 
-  // Poison else effects
-  if (asyncOptions.elseWriteCounts && Object.keys(asyncOptions.elseWriteCounts).length > 0) {
-    frame.poisonBranchWrites(errors, asyncOptions.elseWriteCounts);
-  }
+  // Poison else handler effects.
   if (asyncOptions.elseHandlers && asyncOptions.elseHandlers.length > 0) {
     for (const handler of asyncOptions.elseHandlers) {
       buffer.addPoison(errors, handler);
@@ -714,8 +706,6 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
   let sequential = asyncOptions ? asyncOptions.sequential : false;
   let limitSequentialOverride = false;
   const isAsync = asyncOptions !== null;
-  const bodyWriteCounts = asyncOptions ? asyncOptions.bodyWriteCounts : null;
-  const elseWriteCounts = asyncOptions ? asyncOptions.elseWriteCounts : null;
   const errorContext = asyncOptions ? asyncOptions.errorContext : null;
 
   let didIterate = false;
@@ -816,37 +806,20 @@ async function iterate(arr, loopBody, loopElse, loopFrame, buffer, loopVars = []
   } catch (err) {
     const errors = isPoisonError(err) ? err.errors : [err];
     didIterate = errors[errors.length - 1]?.didIterate || false;
-    if (didIterate && asyncOptions && asyncOptions.elseWriteCounts && Object.keys(asyncOptions.elseWriteCounts).length > 0) {
-      loopFrame.skipBranchWrites(asyncOptions.elseWriteCounts);
-    }
     // if we had at least one iteration, we won't poison the else side-effects
     poisonLoopEffects(loopFrame, buffer, asyncOptions, errors, didIterate);
     // Re-throw the error so it propagates to the caller
     throw err;
   }
 
-  // Implement mutual exclusion between body and else execution
-  // This follows our plan: always skip body, conditionally handle else
-
-  // Step 3: Always skip body write counters (regardless of didIterate)
-  // Body writes are suppressed during execution via sequentialLoopBody,
-  // this skip signals their completion to the loop frame
-  if (bodyWriteCounts && Object.keys(bodyWriteCounts).length > 0) {
-    loopFrame.skipBranchWrites(bodyWriteCounts);
-  }
-
-  // Step 4-5: Handle else execution and write counting
+  // Handle else execution.
   if (!didIterate && loopElse) {
-    // Step 4: Else block runs - let it propagate normally to loop frame
     if (asyncOptions) {
       await loopElse();
     } else {
       // Sync: execute directly (else block is sync function, outputs to buffer via closure)
       loopElse();
     }
-  } else if (elseWriteCounts && Object.keys(elseWriteCounts).length > 0) {
-    // Step 5: Else block doesn't run - skip its write counters
-    loopFrame.skipBranchWrites(elseWriteCounts);
   }
 
 }

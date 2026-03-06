@@ -54,13 +54,12 @@ function validateGuardVariablesDeclared(variableTargets, frame, compiler, node) 
  * @param {Node} node - The AST node for error reporting
  */
 function validateGuardVariablesModified(variableTargets, frame, compiler, node) {
-  if (variableTargets && variableTargets.length > 0) {
-    for (const varName of variableTargets) {
-      if (!frame.writeCounts || !frame.writeCounts[varName]) {
-        compiler.fail(`guard variable "${varName}" must be modified inside guard`, node.lineno, node.colno, node);
-      }
-    }
-  }
+  // Legacy write-counter validation removed with writeCounts pipeline.
+  // Guard variable revert now relies on runtime snapshots, not compile-time write accounting.
+  void variableTargets;
+  void frame;
+  void compiler;
+  void node;
 }
 
 /**

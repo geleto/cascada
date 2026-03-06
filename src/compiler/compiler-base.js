@@ -478,19 +478,13 @@ class CompilerBase extends Obj {
 
       this.emit('  if(cond) {');
 
-      // Placeholder for back-patching generated frame.skipBranchWrites
-      const skipPlaceholderIdx = this.codebuf.length;
-      this.emit('');
-
       // Compile True Branch
-      let trueBranchWrites = null;
       if (node.body.wrapInAsyncBlock) {
         // Disable auto-wrapping by compile() since we do it manually
         node.body.wrapInAsyncBlock = false;
         this.emit(`return `);
         this.emit.asyncBlockValue(node.body, frame, (n, f) => {
           this.compile(n, f);
-          trueBranchWrites = this.async.capWriteCounts(f.writeCounts);
         }, undefined, node.body);
         node.body.wrapInAsyncBlock = true; // Restore
         this.emit(`;`);
@@ -502,20 +496,13 @@ class CompilerBase extends Obj {
 
       this.emit('  } else {');
 
-      // Skip true branch writes
-      if (trueBranchWrites) {
-        this.emit(`    frame.skipBranchWrites(${JSON.stringify(trueBranchWrites)});`);
-      }
-
       // Compile False Branch
-      let falseBranchWrites = null;
       if (node.else_) {
         if (node.else_.wrapInAsyncBlock) {
           node.else_.wrapInAsyncBlock = false;
           this.emit(`return `);
           this.emit.asyncBlockValue(node.else_, frame, (n, f) => {
             this.compile(n, f);
-            falseBranchWrites = this.async.capWriteCounts(f.writeCounts);
           }, undefined, node.else_);
           node.else_.wrapInAsyncBlock = true;
           this.emit(`;`);
@@ -528,11 +515,6 @@ class CompilerBase extends Obj {
         this.emit('    return "";');
       }
       this.emit('  }'); // End else
-
-      // Back-patch: Skip false branch writes in true branch
-      if (falseBranchWrites) {
-        this.codebuf[skipPlaceholderIdx] = `    frame.skipBranchWrites(${JSON.stringify(falseBranchWrites)});`;
-      }
 
       this.emit('})');
     } else {
@@ -637,22 +619,16 @@ class CompilerBase extends Obj {
     const check = isOr ? 'left' : '!left';
     this.emit(`  if (${check}) {`);
 
-    // Placeholder for back-patching
-    const skipPos = this.codebuf.length;
-    this.emit('');
-
     this.emit('    return left;');
     this.emit('  }');
     this.emit('  else {');
 
     // Compile right
-    let rightWrites = null;
     if (node.right.wrapInAsyncBlock) {
       node.right.wrapInAsyncBlock = false;
       this.emit(`return `);
       this.emit.asyncBlockValue(node.right, frame, (n, f) => {
         this.compile(n, f);
-        rightWrites = this.async.capWriteCounts(f.writeCounts);
       }, undefined, node.right);
       node.right.wrapInAsyncBlock = true;
       this.emit(';');
@@ -664,11 +640,6 @@ class CompilerBase extends Obj {
 
     this.emit('  }'); // End else
     this.emit('})');
-
-    // Insert skipwrites if needed
-    if (rightWrites) {
-      this.codebuf[skipPos] = `    frame.skipBranchWrites(${JSON.stringify(rightWrites)});`;
-    }
   }
 
   compileAdd(node, frame) {

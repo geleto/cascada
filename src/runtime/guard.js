@@ -276,25 +276,18 @@ function complete(frame, guardState, shouldRevert) {
     return;
   }
 
-  if (!frame || !frame.asyncVars) {
-    throw new Error('Guard completion requires async frame variables');
+  if (!frame) {
+    return;
   }
 
   if (guardState.names === '*') {
-    for (const name of Object.keys(frame.asyncVars)) {
-      frame._countdownAndResolveAsyncWrites(name, 1);
-    }
     return;
   }
 
   for (const name of guardState.names) {
-    if (!(name in frame.asyncVars)) {
-      throw new Error(`Guard variable "${name}" missing from async frame`);
-    }
-    if (shouldRevert) {
+    if (shouldRevert && frame.asyncVars && name in frame.asyncVars) {
       frame.asyncVars[name] = guardState.snapshot[name];
     }
-    frame._countdownAndResolveAsyncWrites(name, 1);
   }
 }
 

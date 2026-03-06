@@ -1,12 +1,6 @@
 'use strict';
 
 const {
-  createPoison,
-  isPoison,
-  isPoisonError
-} = require('./errors');
-
-const {
   checkFrameBalance
 } = require('./checks');
 
@@ -136,12 +130,6 @@ class AsyncFrame extends Frame {
       //holds the names of the variables declared at the frame
       this.declaredVars = undefined;
 
-      //holds the write counts for each variable that CAN be modified by an async block or its children
-      //this includes variables that are modified in branches that are not taken (e.g. count both sides of an if)
-      //the counts are propagated upwards before the frame that has declared the variable
-      //passed as argument to pushAsyncBlock in the template source
-      this.writeCounts = undefined;
-
       //holds the names of outputs declared at this frame
       this.declaredOutputs = undefined;
 
@@ -152,27 +140,10 @@ class AsyncFrame extends Frame {
       this.mutatedOutputs = undefined;
 
     } else {
-      //when an async block is entered, it creates a promise for all variables that it or it's children modify
-      //the value of the variable in the parent(an asyncVar if it's async block, regular var with frame.set otherwise) is changed to the promise
-      //the promise is resolved when the block is done modifying the variable and the value is set to the final value
-      this.promiseResolves = undefined;
-
-      //holds the write counters for each variable that is modified in an async block or its children
-      //the variable name is the key and the value is the number of remaining writes (including missed writes due to branches)
-      //once the counter reaches 0, the promise for the variable is resolved and the parent write counter is decremented by 1
-      this.writeCounters = undefined;
-
-      //holds the variables that are modified in an async block frame while it is active
-      //once the block is done modifying a variable, the promise for the variable is resolved with this value
-      //asyncVars[varName] is only used if the variable is not stored in the frame scope
+      // Runtime async locals for this frame.
       this.asyncVars = undefined;
     }
 
-    // if this is true, writes (set) should never propagate upwards past
-    // this frame to its parent (though reads may).
-    this.isolateWrites = isolateWrites;
-
-    this.isAsyncBlock = false;//not used
   }
 
   static inCompilerContext = false;
@@ -184,15 +155,14 @@ class AsyncFrame extends Frame {
   //second parameter to pushAsyncBlock only for recursive frames
   set(name, val, resolveUp) {
     if (resolveUp) {
-      const scopeFrame = this.assign(name, val);
-      this._countdownAndResolveAsyncWrites(name, 1, scopeFrame);
+      this.assign(name, val);
     } else {
       //not for set tags
       super.set(name, val);
     }
   }
 
-  /** Works like set with resolveUp, but without updating the writeCounts */
+  /** Works like set with resolveUp for async frames. */
   assign(name, val) {
     //only set tags and lock variable operations use resolveUp
     //set tags do not have variables with dots, so the name is the whole variable name
@@ -245,7 +215,7 @@ class AsyncFrame extends Frame {
     if (this.asyncVars && name in this.asyncVars) {
       return this.asyncVars[name];
     }
-    if (this.variables && name in this.variables) {
+    if (name in this.variables) {
       return this.variables[name];
     }
     return this.parent && this.parent.lookup(name);
@@ -267,133 +237,6 @@ class AsyncFrame extends Frame {
     return { value: undefined, frame: null };
   }
 
-  //when all assignments to a variable are done, resolve the promise for that variable
-  _countdownAndResolveAsyncWrites(varName, decrementVal = 1, scopeFrame = null) {
-    if (!this.writeCounters || !(varName in this.writeCounters) || decrementVal === 0) {
-      // For sequence locks, we need to search all the way up the chain ignoring scopeFrame,
-      // because writeCounters can be in intermediate frames (e.g., guard blocks) even though
-      // the lock value itself is stored in the root frame
-      const isSequenceLock = varName.startsWith('!');
-      const shouldContinueSearch = isSequenceLock ? !!this.parent : (this.parent && this.parent !== scopeFrame);
-
-      if (shouldContinueSearch) {
-        // Search for the proper frame (from async block)
-        // For non-sequence variables, respect the scopeFrame boundary
-        // For sequence locks, pass root as scopeFrame to stop at root
-        const actualScopeFrame = isSequenceLock ? this.getRoot() : scopeFrame;
-        return this.parent._countdownAndResolveAsyncWrites(varName, decrementVal, actualScopeFrame);
-      }
-      if (!this.parent) {
-        return false;//root frame does not keep counts
-      }
-      const { RuntimeFatalError } = require('./errors');
-      throw new RuntimeFatalError(`No write counter found for variable ${varName}`);
-    }
-    let count = this.writeCounters[varName];
-    if (count === 0) {
-      // Already fully resolved by an earlier countdown in this branch path.
-      return false;
-    }
-    if (count <= 0) {
-      //we should have already thrown an error
-      this.writeCounters[varName] = count - decrementVal;
-      return false;
-    }
-    if (count < decrementVal) {
-      this.writeCounters[varName] = count - decrementVal;
-      const { RuntimeFatalError } = require('./errors');
-      const message = `Variable ${varName} write counter ${count === undefined ? 'is undefined' : 'turned negative'} in _trackAsyncWrites`;
-      throw new RuntimeFatalError(message);
-    }
-
-    let reachedZero = (count === decrementVal);
-    if (reachedZero) {
-      //this variable will no longer be modified, time to resolve it
-      this.writeCounters[varName] = 0;
-      if (!this.sequentialLoopBody) {
-        // Parallel mode: Resolve the parent's pending promise
-        this._resolveAsyncVar(varName);
-      }
-
-      if (this.parent && !this.sequentialLoopBody) {
-        // propagate upwards because this frame's work is fully done (counter hit zero)
-        // but only if this frame is NOT itself a loop body (sequentialLoopBody)
-
-        // Find the declaring frame to ensure we stop propagation there.
-        if (!scopeFrame) {
-          scopeFrame = this.resolve(varName, true);
-        }
-        // Only propagate if the parent is not the scope frame (or null)
-        if (this.parent !== scopeFrame) {
-          // Propagate a single count upwards
-          this.parent._countdownAndResolveAsyncWrites(varName, 1, scopeFrame);
-        }
-      }
-      return true;
-    } else {
-      this.writeCounters[varName] = count - decrementVal;//just decrement, not yet done
-      return false;
-    }
-  }
-
-  skipBranchWrites(varCounts) {
-    for (let varName in varCounts) {
-      this._countdownAndResolveAsyncWrites(varName, varCounts[varName]);
-    }
-  }
-
-  /**
-   * Poison all variables that would be written in branches when condition is poisoned.
-   * Used by if/switch/while when the condition evaluation results in poison.
-   *
-   * @param {PoisonedValue|Error} error - The poison value or error to propagate
-   * @param {Object} varCounts - Map of variable names to write counts
-   */
-  poisonBranchWrites(error, varCounts) {
-    const poison = isPoison(error) ? error : createPoison(error);
-
-    for (let varName in varCounts) {
-      // Set poison value in the appropriate location
-      if (this.asyncVars && varName in this.asyncVars) {
-        this.asyncVars[varName] = poison;
-      } else {
-        // Find the scope frame and set poison there
-        const scopeFrame = this.resolve(varName, true);
-        if (scopeFrame) {
-          if (scopeFrame.asyncVars && varName in scopeFrame.asyncVars) {
-            scopeFrame.asyncVars[varName] = poison;
-          } else {
-            scopeFrame.variables[varName] = poison;
-          }
-        } else {
-          // Variable doesn't exist yet - create it as poisoned
-          this.variables[varName] = poison;
-        }
-      }
-
-      // Trigger countdown with the write count for this variable
-      this._countdownAndResolveAsyncWrites(varName, varCounts[varName]);
-    }
-  }
-
-  _resolveAsyncVar(varName) {
-    let value = this.asyncVars[varName];
-    let resolveFunc = this.promiseResolves[varName];
-    // Resolve with the value (which may be poison - that's ok, it will propagate)
-    resolveFunc(value);
-
-    //optional cleanup, counters and resolves only, helpful for finding bugs
-    delete this.writeCounters[varName];
-    if (Object.keys(this.writeCounters).length === 0) {
-      this.writeCounters = undefined;
-    }
-
-    delete this.promiseResolves[varName];
-    if (Object.keys(this.promiseResolves).length === 0) {
-      this.promiseResolves = undefined;
-    }
-  }
-
   push(isolateWrites, createScope = true) {
     const newFrame = new AsyncFrame(this, isolateWrites, createScope);
     if (this._seesRootScope) {
@@ -405,138 +248,31 @@ class AsyncFrame extends Frame {
     return newFrame;
   }
 
-  pushAsyncBlock(writeCounters, sequentialLoopBody = false, usedOutputs = null) {
-    let asyncBlockFrame = new AsyncFrame(this, false);
+  pushAsyncBlock(sequentialLoopBody = false) {
+    const asyncBlockFrame = new AsyncFrame(this, false);
     // Async block frames never own inherited buffers by default.
 
     // Track runtime depth for balance validation
     asyncBlockFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
 
-    asyncBlockFrame.isAsyncBlock = true;
     asyncBlockFrame.sequentialLoopBody = sequentialLoopBody;
-    if (Array.isArray(usedOutputs)) {
-      asyncBlockFrame.usedOutputs = new Set(usedOutputs);
-    }
-    if (writeCounters) {
-      asyncBlockFrame.asyncVars = {};
-      if (sequentialLoopBody) {
-        // Sequential mode: Snapshot values locally (NO promisification of parent).
-        // We work on local copies and commit them to parent immediately when writes complete.
-        asyncBlockFrame.writeCounters = writeCounters;
-        asyncBlockFrame._snapshotVariables(Object.keys(writeCounters));
-      } else {
-        // Parallel mode: Promisify parent variables to coordinate async writes.
-        asyncBlockFrame._promisifyParentVariables(writeCounters);
-      }
-    }
     return asyncBlockFrame;
   }
 
   _commitSequentialWrites() {
-    if (!this.writeCounters) {
+    if (!this.parent) {
       return;
     }
 
-    for (const varName in this.writeCounters) {
-      if (varName in this.parent.asyncVars) {
+    if (!this.asyncVars) {
+      return;
+    }
+
+    for (const varName in this.asyncVars) {
+      if (this.parent.asyncVars && varName in this.parent.asyncVars) {
         this.parent.asyncVars[varName] = this.asyncVars[varName];
-      }
-    }
-  }
-
-  _snapshotVariables(reads) {
-    for (const varName of reads) {
-      this.asyncVars[varName] = this.lookup(varName);
-    }
-  }
-
-  //@todo - skip promisify if parent has the same counts
-  _promisifyParentVariables(writeCounters) {
-    this.writeCounters = writeCounters;
-    this.promiseResolves = {};
-    let parent = this.parent;
-    for (let varName in writeCounters) {
-      //snapshot the value
-      let { value, frame } = parent.lookupAndLocate(varName);
-      if (!frame) {
-        if (!varName.startsWith('!')) {
-          // Variable not declared yet in runtime scope; initialize it now so async block can lock it
-          parent.set(varName, undefined, true);
-          ({ value, frame } = parent.lookupAndLocate(varName));
-          if (!frame) {
-            throw new Error(`Promisified variable ${varName} not found`);
-          }
-        } else {
-          //for sequential keys, create a default value in root if none found
-          //e.g. declare the lock the first time it is used
-          const sequenceLockFrame = this.getRoot();//this.sequenceLockFrame;
-          value = undefined;//not yet locked
-          sequenceLockFrame.variables = sequenceLockFrame.variables || {};
-          sequenceLockFrame.variables[varName] = value;
-          frame = sequenceLockFrame;
-        }
-      }
-      this.asyncVars[varName] = value;//local snapshot of the value
-      //promisify the variable in the frame (parent of the new async frame)
-      //these will be resolved when the async block is done with the variable
-      if (frame.asyncVars && varName in frame.asyncVars) {
-        this._promisifyParentVar(frame, 'asyncVars', varName);
-      } else if (frame.variables && varName in frame.variables) {
-        this._promisifyParentVar(frame, 'variables', varName);
-      }
-      else {
-        throw new Error('Variable not found in parent frame');
-      }
-    }
-  }
-
-  async _promisifyParentVar(parent, containerName, varName) {
-    // Snapshot the current value from the parent frame for local use by this block.
-    this.asyncVars[varName] = parent[containerName][varName];
-    let resolve;
-    // Create the initial lock Promise, referenced by the 'promise' variable.
-    let currentPromiseToAwait = new Promise((res) => { resolve = res; });
-    // Store the resolver function in this frame, tied to the variable name.
-    this.promiseResolves[varName] = resolve;
-    // Place the lock Promise into the parent frame's variable slot.
-    parent[containerName][varName] = currentPromiseToAwait;
-
-    while (true) {
-      try {
-        let awaitedValue = await currentPromiseToAwait; // Await the tracked promise
-
-        // Check if awaitedValue is poison - STOP LOOP
-        if (isPoison(awaitedValue)) {
-          parent[containerName][varName] = awaitedValue;
-          break; // Stop loop on poison
-        }
-
-        // Now, check the parent slot state *after* the await
-        if (parent[containerName][varName] === currentPromiseToAwait) {
-          // The promise we awaited is still in the slot.
-          // Update the slot with the resolved value.
-          parent[containerName][varName] = awaitedValue;
-
-          // Is the value we just placed ALSO a promise?
-          if (awaitedValue && typeof awaitedValue.then === 'function') {
-            // Yes, track this new promise and loop again
-            currentPromiseToAwait = awaitedValue;
-            continue;
-          } else {
-            // Not a promise, we are done
-            break;
-          }
-        } else {
-          // The slot was overwritten while we awaited.
-          // Give up responsibility. The block that overwrote it is now in charge.
-          break;
-        }
-      } catch (err) {
-        // Promise was rejected - convert to poison
-        // Note: error from async variable resolution, position info added upstream if available
-        const poison = isPoisonError(err) ? createPoison(err.errors) : createPoison(err);
-        parent[containerName][varName] = poison;
-        break;
+      } else if (varName in this.parent.variables) {
+        this.parent.variables[varName] = this.asyncVars[varName];
       }
     }
   }

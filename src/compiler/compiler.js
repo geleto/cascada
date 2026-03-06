@@ -630,7 +630,6 @@ class Compiler extends CompilerBase {
   compileSwitch(node, frame) {
     const switchResult = this.buffer.asyncBufferNode(node, frame, false, false, node.expr, (blockFrame) => {
       const branchPositions = [];
-      const branchWriteCounts = [];
       const branchHandlers = []; // Track handlers per branch
       let catchPoisonPos;
       const caseCreatesScope = this.scriptMode || this.asyncMode;
@@ -666,7 +665,6 @@ class Compiler extends CompilerBase {
           // Use case body 'c.body' as position node for this block
           this.emit.asyncBlock(c, blockFrame, caseCreatesScope, (f) => {
             this.compile(c.body, f);
-            branchWriteCounts.push(this.async.capWriteCounts(f.writeCounts) || {});
 
             // Collect handlers from this branch
             if (this.asyncMode) {
@@ -676,7 +674,6 @@ class Compiler extends CompilerBase {
           this.emit.line('break;');
         } else {
           // Empty case body (fall-through)
-          branchWriteCounts.push({});
           if (this.asyncMode) {
             branchHandlers.push(new Set());
           }
@@ -693,7 +690,6 @@ class Compiler extends CompilerBase {
         // Use default body 'node.default' as position node for this block
         this.emit.asyncBlock(node, blockFrame, caseCreatesScope, (f) => {
           this.compile(node.default, f);
-          branchWriteCounts.push(this.async.capWriteCounts(f.writeCounts) || {});
 
           // Collect handlers from default
           if (this.asyncMode) {
@@ -718,18 +714,7 @@ class Compiler extends CompilerBase {
         this.emit('}'); // No re-throw - execution continues with poisoned vars
       }
 
-      // Combine writes from all branches
-      const totalWrites = this.async.combineWriteCounts(branchWriteCounts);
-
-      // Insert skip statements for each case, including default
-      branchPositions.forEach((pos, i) => {
-        const writesToSkip = this.async.subtractWriteCounts(totalWrites, branchWriteCounts[i]);
-        if (Object.keys(writesToSkip).length > 0) {
-          this.emit.insertLine(pos, `frame.skipBranchWrites(${JSON.stringify(writesToSkip)});`);
-        }
-      });
-
-      // Fill in the poison handling code now that we have write counts and handlers
+      // Fill in the poison handling code (handler poisoning)
       if (this.asyncMode) {
         // Combine handlers from all branches
         const allHandlers = new Set();
@@ -737,22 +722,12 @@ class Compiler extends CompilerBase {
           handlers.forEach(h => allHandlers.add(h));
         });
 
-        const hasVariables = Object.keys(totalWrites).length > 0;
         const hasHandlers = allHandlers.size > 0;
 
-        if (hasVariables || hasHandlers) {
-          // Variable poisoning in catch block
-          if (hasVariables) {
+        if (hasHandlers) {
+          for (const handler of allHandlers) {
             this.emit.insertLine(catchPoisonPos,
-              `    frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
-          }
-
-          // Handler (buffer) poisoning in catch block
-          if (hasHandlers) {
-            for (const handler of allHandlers) {
-              this.emit.insertLine(catchPoisonPos,
-                `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
-            }
+              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
           }
         }
       }
@@ -810,17 +785,9 @@ class Compiler extends CompilerBase {
         this.compile(node.body, blockFrame);
 
         // Resolve and Validate Sequence Targets
-        // We do this by checking frame.writeCounts which contains all variables and sequence locks modified in the block
+        // Sequence lock mutations are tracked via used output handlers.
         const resolvedSequenceTargets = new Set();
         const modifiedLocks = new Set();
-
-        if (blockFrame.writeCounts) {
-          for (const key of Object.keys(blockFrame.writeCounts)) {
-            if (key.startsWith('!')) {
-              modifiedLocks.add(key);
-            }
-          }
-        }
         if (blockFrame.usedOutputs) {
           for (const outputName of blockFrame.usedOutputs) {
             if (outputName && outputName.startsWith('!')) {
@@ -879,9 +846,7 @@ class Compiler extends CompilerBase {
 
         let finalVariableTargets = variableTargets;
         if (variableTargets === '*') {
-          const writtenVars = blockFrame.writeCounts
-            ? Object.keys(blockFrame.writeCounts).filter((key) => !key.startsWith('!'))
-            : [];
+          const writtenVars = [];
           finalVariableTargets = writtenVars;
           if (guardStateVar && guardInitLinePos !== null) {
             this.emit.insertLine(guardInitLinePos,
@@ -936,7 +901,6 @@ class Compiler extends CompilerBase {
         );
         this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
-        let recoveryWriteCounts;
         if (node.recoveryBody) {
           this.emit.asyncBlock(node, blockFrame, true, (f) => {
             if (node.errorVar) {
@@ -949,15 +913,10 @@ class Compiler extends CompilerBase {
               this.emit.line(`frame.set('${node.errorVar}', new runtime.PoisonError(${guardErrorsVar}));`);
             }
             this.compile(node.recoveryBody, f);
-            recoveryWriteCounts = this.async.capWriteCounts(f.writeCounts);
           });
         }
 
         this.emit.line('} else {');
-
-        if (recoveryWriteCounts) {
-          this.emit.line(`frame.skipBranchWrites(${JSON.stringify(recoveryWriteCounts)});`);
-        }
         this.emit.line('}');
       } finally {
         this.guardDepth = previousGuardDepth;
@@ -1090,8 +1049,6 @@ class Compiler extends CompilerBase {
 
     const branchCreatesScope = this.scriptMode || this.asyncMode;
     const ifResult = this.buffer.asyncBufferNode(node, frame, false, false, node.cond, (blockFrame) => {
-      let trueBranchWriteCounts, falseBranchWriteCounts;
-      let trueBranchCodePos;
       let catchPoisonPos;
 
       if (this.asyncMode) {
@@ -1105,26 +1062,17 @@ class Compiler extends CompilerBase {
 
         this.emit(`if (${condResultId}) {`);
 
-        trueBranchCodePos = this.codebuf.length;
-        this.emit('');
         // Use node.body as the position node for the true branch block
         this.emit.asyncBlock(node, blockFrame, branchCreatesScope, (f) => {
           this.compile(node.body, f);
-          trueBranchWriteCounts = this.async.capWriteCounts(f.writeCounts);
         }, node.body); // Pass body as code position
 
         this.emit('} else {');
-
-        if (trueBranchWriteCounts) {
-          //skip the true branch writes in the false branch
-          this.emit('frame.skipBranchWrites(' + JSON.stringify(trueBranchWriteCounts) + ');');
-        }
 
         if (node.else_) {
           // Use node.else_ as the position node for the false branch block
           this.emit.asyncBlock(node, blockFrame, branchCreatesScope, (f) => {
             this.compile(node.else_, f);
-            falseBranchWriteCounts = this.async.capWriteCounts(f.writeCounts);
           }, node.else_); // Pass else as code position
         }
         this.emit('}');
@@ -1141,11 +1089,6 @@ class Compiler extends CompilerBase {
           allHandlers = new Set([...trueBranchHandlers, ...falseBranchHandlers]);
         }
 
-        if (falseBranchWriteCounts) {
-          //skip the false branch writes in the true branch code
-          this.emit.insertLine(trueBranchCodePos, `frame.skipBranchWrites(${JSON.stringify(falseBranchWriteCounts)});`);
-        }
-
         // Add catch block to poison variables when condition fails
         const errorContext = this._createErrorContext(node, node.cond);
         this.emit('} catch (e) {');
@@ -1154,26 +1097,13 @@ class Compiler extends CompilerBase {
         this.emit('');
         this.emit('}');  // No re-throw - execution continues with poisoned vars
 
-        // Fill in the poison handling code now that we have write counts and handlers
-        const combinedCounts = this.async.combineWriteCounts([trueBranchWriteCounts, falseBranchWriteCounts]);
-
-        // Poison both variables and handlers when condition fails
-        const hasVariables = Object.keys(combinedCounts).length > 0;
+        // Fill in the poison handling code for handlers when condition fails.
         const hasHandlers = allHandlers.size > 0;
 
-        if (hasVariables || hasHandlers) {
-          // Variable poisoning
-          if (hasVariables) {
+        if (hasHandlers) {
+          for (const handler of allHandlers) {
             this.emit.insertLine(catchPoisonPos,
-              `    frame.poisonBranchWrites(contextualError, ${JSON.stringify(combinedCounts)});`);
-          }
-
-          // Handler (buffer) poisoning
-          if (hasHandlers) {
-            for (const handler of allHandlers) {
-              this.emit.insertLine(catchPoisonPos,
-                `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
-            }
+              `    ${this.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
           }
         }
       } else {

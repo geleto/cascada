@@ -119,48 +119,23 @@ class CompileLoop {
       const bodyFrame = this._compileLoopBody(
         node,
         blockFrame,
-        arr,
         loopVars,
         sequentialLoopBody,
         hasConcurrentLimit,
         whileConditionNode,
         useLoopValues
       );
-      const bodyWriteCounts = bodyFrame.writeCounts;
-      const bodyWriteCountsCapped = this.compiler.async.capWriteCounts(bodyWriteCounts) || null;
-      if (bodyWriteCounts) {
-        // @todo - in the future will require writes+reads to be sequential,
-        // update _compileLoopBody too as it handles sequential differently
-        sequentialLoopBody = true;
-      }
 
       // Compile else block and collect metadata
       let elseFuncId = 'null';
-      let elseWriteCounts = null;
       let elseHandlers = null;
 
       if (node.else_) {
         elseFuncId = this.compiler._tmpid();
         this.compiler.emit(`let ${elseFuncId} = `);
 
-        const elseFrame = this._compileLoopElse(node, blockFrame, sequentialLoopBody);
-
-        // Collect metadata from else compilation
-        elseWriteCounts = this.compiler.async.capWriteCounts(elseFrame.writeCounts) || null;
+        this._compileLoopElse(node, blockFrame, sequentialLoopBody);
         elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_, blockFrame) : null;
-      }
-
-      // Set up loop frame with combined write counts for mutual exclusion
-      // This ensures the loop frame expects writes from either body OR else, not both
-      if (node.isAsync) {
-        const combinedWriteCounts = this.compiler.async.combineWriteCounts([
-          bodyWriteCountsCapped,
-          elseWriteCounts
-        ].filter(Boolean));
-
-        if (combinedWriteCounts && Object.keys(combinedWriteCounts).length > 0) {
-          blockFrame.writeCounts = combinedWriteCounts;
-        }
       }
 
       // Build asyncOptions code string if in async mode
@@ -168,9 +143,7 @@ class CompileLoop {
       if (node.isAsync) {
         asyncOptionsCode = `{
           sequential: ${sequentialLoopBody},
-          bodyWriteCounts: ${JSON.stringify(bodyWriteCountsCapped || {})},
           bodyHandlers: ${JSON.stringify(bodyHandlers ? Array.from(bodyHandlers) : [])},
-          elseWriteCounts: ${JSON.stringify(elseWriteCounts || {})},
           elseHandlers: ${JSON.stringify(elseHandlers ? Array.from(elseHandlers) : [])},
           concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
           errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this.compiler._generateErrorContext(node)}", path: context.path }
@@ -194,7 +167,7 @@ class CompileLoop {
     frame = forResult.frame;
   }
 
-  _compileLoopBody(node, frame, arr, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, useLoopValues = false) {
+  _compileLoopBody(node, frame, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, useLoopValues = false) {
     const bodyCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
     if (node.isAsync) {
       this.compiler.emit('(async function(');
@@ -264,8 +237,6 @@ class CompileLoop {
 
         // Compile Loop Condition (if while loop)
         // We do this after destructuring but before body, in the same async block
-        let preBodyWriteCounts = null;
-        let skipBranchWritesPos = -1;
         let catchPoisonPos = null;
         let whileCondId;
 
@@ -301,13 +272,8 @@ class CompileLoop {
           }
 
           this.compiler.emit(`if (!${whileCondId}) {`);
-          skipBranchWritesPos = this.compiler.codebuf.length;
-          this.compiler.emit.line(''); // Placeholder for skipBranchWrites
           this.compiler.emit.line('  return runtime.STOP_WHILE;');
           this.compiler.emit.line('}');
-
-          // Snapshot writes including condition and destructuring
-          preBodyWriteCounts = bodyFrame.writeCounts ? { ...bodyFrame.writeCounts } : {};
         }
 
         // Compile the loop body with the updated frame
@@ -316,16 +282,7 @@ class CompileLoop {
         });
 
         if (whileConditionNode) {
-          const bodyOnlyWrites = this.compiler.async.subtractWriteCounts(bodyFrame.writeCounts, preBodyWriteCounts);
-          if (Object.keys(bodyOnlyWrites).length > 0) {
-            this.compiler.emit.insertLine(skipBranchWritesPos, `  frame.skipBranchWrites(${JSON.stringify(bodyOnlyWrites)});`);
-          }
-
           if (catchPoisonPos !== null) {
-            const totalWrites = this.compiler.async.capWriteCounts(bodyFrame.writeCounts);
-            if (totalWrites && Object.keys(totalWrites).length > 0) {
-              this.compiler.emit.insertLine(catchPoisonPos, `  frame.poisonBranchWrites(contextualError, ${JSON.stringify(totalWrites)});`);
-            }
             const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body, bodyFrame) : null;
             if (bodyHandlers && bodyHandlers.size > 0) {
               for (const handler of bodyHandlers) {
@@ -335,13 +292,7 @@ class CompileLoop {
           }
         }
 
-        // Collect metadata from body compilation
-        if (bodyFrame.writeCounts || sequentialLoopBody) {
-          //@todo - in the future will require writes+reads to be sequential
-          //only writes - will save the last write to the loop frame
-        }
-
-        const shouldAwaitLoopBody = Boolean(bodyFrame.writeCounts) || sequentialLoopBody || hasConcurrencyLimit;
+        const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
         return {
           result: bodyFrame,
           sequential: shouldAwaitLoopBody,
