@@ -153,7 +153,7 @@
         root = new AsyncFrame();
         root.set('!lockKey', undefined, true);
         root.set('!lockKey~', undefined, true);
-        frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
+        frame = root.pushAsyncBlock({ '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
       });
 
@@ -162,7 +162,7 @@
         root = new AsyncFrame();
         root.set('!lockKey', lockPoison, true);
         root.set('!lockKey~', undefined, true);
-        frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
+        frame = root.pushAsyncBlock({ '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
         runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
@@ -271,7 +271,7 @@
         root.set('!lockKey', undefined, true);
         root.set('!lockKey~', undefined, true);
         root.set('myVar', 'test value', true);
-        frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
+        frame = root.pushAsyncBlock({ '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
 
         context = {
@@ -285,7 +285,7 @@
         root.set('!lockKey', lockPoison, true);
         root.set('!lockKey~', undefined, true);
         root.set('myVar', 'test value', true);
-        frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
+        frame = root.pushAsyncBlock({ '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
         runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
@@ -308,7 +308,7 @@
         root.set('!lockKey', undefined, true);
         root.set('!lockKey~', undefined, true);
         root.set('myVar', poison, true);
-        frame = root.pushAsyncBlock(null, { '!lockKey~': 1 });
+        frame = root.pushAsyncBlock({ '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
 
         try {

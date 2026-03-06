@@ -75,69 +75,18 @@ module.exports = class CompileAsync {
     // Count the sets in the current frame/async block
     // Propagate the first write down the chain
     // Do not count for the frame where the variable is declared
-    let addedCounters = false;
     while (frame != vf) {
       if (!frame.writeCounts || !frame.writeCounts[name]) {
         frame.writeCounts = frame.writeCounts || {};
         frame.writeCounts[name] = 1; // First write, continue to parent frames
-        addedCounters = true;
       } else {
         frame.writeCounts[name]++;
-        addedCounters = true;
         break; // Subsequent writes are not propagated
       }
       frame = frame.parent;
     }
 
-    return addedCounters;
-  }
-
-  //@todo - handle included parent frames properly
-  updateFrameReads(frame, name) {
-    // Find the variable declaration in the scope chain
-    let df = frame;
-
-    // Special handling for sequence locks
-    if (name.startsWith('!')) {
-      // Locks are always declared at root
-      while (df.parent) {
-        df = df.parent;
-      }
-
-      // Check if the lock was pre-declared
-      if (!df.declaredVars || !df.declaredVars.has(name)) {
-        // Lock not pre-declared - may be created dynamically by a write
-        // Don't add to readVars since it doesn't exist yet
-        return;
-      }
-      // Lock exists at root - proceed to add to readVars for snapshotting
-    } else {
-      // Normal variable lookup in scope chain
-      do {
-        if (df.declaredVars && df.declaredVars.has(name)) {
-          break; // Found the var declaration
-        }
-        df = df.parent;
-      } while (df);
-
-      if (!df) {
-        // A context variable (not a lock, not declared)
-        return;
-      }
-    }
-
-    // Add to readVars for snapshotting
-    // Walk from current frame up to declaration frame
-    while (frame != df) {
-      if ((frame.readVars && frame.readVars.has(name)) ||
-        (frame.writeCounts && frame.writeCounts[name])) {
-        // Already in readVars, or written here (will be snapshotted anyway)
-        break;
-      }
-      frame.readVars = frame.readVars || new Set();
-      frame.readVars.add(name);
-      frame = frame.parent;
-    }
+    return vf;
   }
 
   _getDeclaredOutput(frame, name) {

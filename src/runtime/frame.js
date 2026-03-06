@@ -7,8 +7,6 @@ const {
 } = require('./errors');
 
 const {
-  checkWriteCounterExists,
-  checkWriteCounterNegative,
   checkFrameBalance
 } = require('./checks');
 
@@ -145,11 +143,6 @@ class AsyncFrame extends Frame {
       //the counts are propagated upwards before the frame that has declared the variable
       //passed as argument to pushAsyncBlock in the template source
       this.writeCounts = undefined;
-
-      //holds the names of the variables that are read in the frame or its children
-      //used when making a snapshot of the frame state when entering an async block
-      //passed as argument to pushAsyncBlock in the template source
-      this.readVars = undefined;
 
       //holds the names of outputs declared at this frame
       this.declaredOutputs = undefined;
@@ -328,7 +321,8 @@ class AsyncFrame extends Frame {
       if (!this.parent) {
         return false;//root frame does not keep counts
       }
-      return checkWriteCounterExists(varName);
+      const { RuntimeFatalError } = require('./errors');
+      throw new RuntimeFatalError(`No write counter found for variable ${varName}`);
     }
     let count = this.writeCounters[varName];
     if (count === 0) {
@@ -342,7 +336,9 @@ class AsyncFrame extends Frame {
     }
     if (count < decrementVal) {
       this.writeCounters[varName] = count - decrementVal;
-      checkWriteCounterNegative(varName, count);
+      const { RuntimeFatalError } = require('./errors');
+      const message = `Variable ${varName} write counter ${count === undefined ? 'is undefined' : 'turned negative'} in _trackAsyncWrites`;
+      throw new RuntimeFatalError(message);
     }
 
     let reachedZero = (count === decrementVal);
@@ -515,18 +511,6 @@ class AsyncFrame extends Frame {
   }*/
 
   pushAsyncBlock(writeCounters, sequentialLoopBody = false, usedOutputs = null) {
-    // Legacy compatibility: pushAsyncBlock(reads, writeCounters, ...)
-    // Read snapshots are no longer used; if second arg is an object, treat it as writeCounters.
-    if (
-      sequentialLoopBody &&
-      typeof sequentialLoopBody === 'object' &&
-      !Array.isArray(sequentialLoopBody)
-    ) {
-      writeCounters = sequentialLoopBody;
-      sequentialLoopBody = !!arguments[2];
-      usedOutputs = arguments.length > 3 ? arguments[3] : null;
-    }
-
     let asyncBlockFrame = new AsyncFrame(this, false);
     // Async block frames never own inherited buffers by default.
 
@@ -540,16 +524,14 @@ class AsyncFrame extends Frame {
     }
     if (writeCounters) {
       asyncBlockFrame.asyncVars = {};
-      if (writeCounters) {
-        if (sequentialLoopBody) {
-          // Sequential mode: Snapshot values locally (NO promisification of parent).
-          // We work on local copies and commit them to parent immediately when writes complete.
-          asyncBlockFrame.writeCounters = writeCounters;
-          asyncBlockFrame._snapshotVariables(Object.keys(writeCounters));
-        } else {
-          // Parallel mode: Promisify parent variables to coordinate async writes.
-          asyncBlockFrame._promisifyParentVariables(writeCounters);
-        }
+      if (sequentialLoopBody) {
+        // Sequential mode: Snapshot values locally (NO promisification of parent).
+        // We work on local copies and commit them to parent immediately when writes complete.
+        asyncBlockFrame.writeCounters = writeCounters;
+        asyncBlockFrame._snapshotVariables(Object.keys(writeCounters));
+      } else {
+        // Parallel mode: Promisify parent variables to coordinate async writes.
+        asyncBlockFrame._promisifyParentVariables(writeCounters);
       }
     }
     return asyncBlockFrame;

@@ -1,6 +1,5 @@
 const {
   RESERVED_DECLARATION_NAMES,
-  validateResolveUp,
   validateGuardVariablesDeclared,
   validateGuardVariablesModified,
   validateSetTarget,
@@ -366,9 +365,10 @@ class Compiler extends CompilerBase {
       ids.push(id);
 
       // This call is common and crucial for async operations in both modes.
-      // In async mode, updateFrameWrites returns whether write counters were added
+      // In async mode, updateFrameWrites returns the declaration frame that owns this target.
       if (this.asyncMode) {
-        resolveUpByTarget[name] = !!this.async.updateFrameWrites(frame, name);
+        const declarationFrame = this.async.updateFrameWrites(frame, name);
+        resolveUpByTarget[name] = declarationFrame !== frame;
       } else if (this.scriptMode) {
         this._addDeclaredVar(frame, name);
       }
@@ -434,13 +434,9 @@ class Compiler extends CompilerBase {
       let resolveUp;
 
       if (this.scriptMode) {
-        // Script mode: use metadata collected during first-pass write analysis.
-        const hasResolveUpMetadata = !!resolveUpByTarget[name];
-
-        // Bidirectional validation (enabled by flag for development/debugging)
-        validateResolveUp(frame, name, hasResolveUpMetadata, this, node);
-
-        resolveUp = hasResolveUpMetadata;
+        // Script mode: propagate writes to the declaring frame only when this
+        // target was registered in first-pass async write analysis.
+        resolveUp = !!resolveUpByTarget[name];
       } else {
         // Template mode: always pass true to resolve up and maintain original behavior
         resolveUp = true;

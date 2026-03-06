@@ -1,32 +1,6 @@
 'use strict';
 
 /**
- * Check if a write counter exists for a variable.
- * Called when attempting to decrement a write counter.
- *
- * @param {string} varName - Variable name
- * @throws {RuntimeFatalError} If no write counter found
- */
-function checkWriteCounterExists(varName) {
-  const { RuntimeFatalError } = require('./errors');
-  throw new RuntimeFatalError(`No write counter found for variable ${varName}`);
-}
-
-/**
- * Check if write counter went negative.
- * Called when decrementing a write counter results in a negative value.
- *
- * @param {string} varName - Variable name
- * @param {number} count - Current counter value
- * @throws {RuntimeFatalError} Always throws
- */
-function checkWriteCounterNegative(varName, count) {
-  const { RuntimeFatalError } = require('./errors');
-  const message = `Variable ${varName} write counter ${count === undefined ? 'is undefined' : 'turned negative'} in _trackAsyncWrites`;
-  throw new RuntimeFatalError(message);
-}
-
-/**
  * Check frame balance when popping.
  * Called when returning to parent frame to validate push/pop balance.
  *
@@ -81,8 +55,6 @@ function ensureSequentialPathOutput(frame, pathKey) {
 }
 
 module.exports = {
-  checkWriteCounterExists,
-  checkWriteCounterNegative,
   checkFrameBalance,
   checkFinishedBuffer,
   ensureSequentialPathOutput

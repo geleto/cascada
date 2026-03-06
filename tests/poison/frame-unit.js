@@ -38,7 +38,7 @@
         const parentFrame = new AsyncFrame();
         parentFrame.set('myVar', 'initial', true);
 
-        const asyncFrame = parentFrame.pushAsyncBlock(null, { myVar: 1 });
+        const asyncFrame = parentFrame.pushAsyncBlock({ myVar: 1 });
         const poison = createPoison(new Error('Async error'));
 
         asyncFrame.set('myVar', poison, true);
@@ -53,7 +53,7 @@
         const parentFrame = new AsyncFrame();
         parentFrame.set('myVar', 'initial', true);
 
-        const asyncFrame = parentFrame.pushAsyncBlock(null, { myVar: 1 });
+        const asyncFrame = parentFrame.pushAsyncBlock({ myVar: 1 });
 
         // Simulate setting a poison after promisification
         setTimeout(() => {
@@ -72,7 +72,7 @@
         const parentFrame = new AsyncFrame();
         parentFrame.set('myVar', 'initial', true);
 
-        const asyncFrame = parentFrame.pushAsyncBlock(null, { myVar: 1 });
+        const asyncFrame = parentFrame.pushAsyncBlock({ myVar: 1 });
 
         // Set a rejected promise
         setTimeout(() => {
@@ -91,7 +91,7 @@
         const parentFrame = new AsyncFrame();
         parentFrame.set('myVar', 'initial', true);
 
-        const asyncFrame = parentFrame.pushAsyncBlock(null, { myVar: 1 });
+        const asyncFrame = parentFrame.pushAsyncBlock({ myVar: 1 });
 
         const poison = createPoison(new Error('Poison in promise'));
         setTimeout(() => {
@@ -154,7 +154,7 @@
         const parentFrame = new AsyncFrame();
         parentFrame.set('x', 'initial', true);
 
-        const asyncFrame = parentFrame.pushAsyncBlock(null, { x: 2 });
+        const asyncFrame = parentFrame.pushAsyncBlock({ x: 2 });
 
         asyncFrame.poisonBranchWrites(new Error('Async branch failed'), { x: 2 });
 
@@ -174,7 +174,7 @@
         const rootFrame = new AsyncFrame();
         rootFrame.set('result', 'initial', true);
 
-        const asyncFrame = rootFrame.pushAsyncBlock(null, { result: 1 });
+        const asyncFrame = rootFrame.pushAsyncBlock({ result: 1 });
 
         // Set poison in async block
         const poison = createPoison(new Error('Child block error'));
@@ -195,8 +195,8 @@
         const rootFrame = new AsyncFrame();
         rootFrame.set('data', 'initial', true);
 
-        const level1 = rootFrame.pushAsyncBlock(null, { data: 1 });
-        const level2 = level1.pushAsyncBlock(null, { data: 1 });
+        const level1 = rootFrame.pushAsyncBlock({ data: 1 });
+        const level2 = level1.pushAsyncBlock({ data: 1 });
 
         // Poison at deepest level
         const poison = createPoison(new Error('Deep error'));
@@ -254,7 +254,7 @@
         const parentFrame = new AsyncFrame();
         parentFrame.set('testVar', 'initial', true);
 
-        const asyncFrame = parentFrame.pushAsyncBlock(null, { testVar: 1 });
+        const asyncFrame = parentFrame.pushAsyncBlock({ testVar: 1 });
 
         // Poison in asyncVars
         const asyncPoison = createPoison(new Error('Async poison'));
@@ -274,7 +274,7 @@
         const frame = new AsyncFrame();
         frame.set('chain', 'start', true);
 
-        const asyncFrame = frame.pushAsyncBlock(null, { chain: 1 });
+        const asyncFrame = frame.pushAsyncBlock({ chain: 1 });
 
         // Create a promise that resolves to poison
         const poison = createPoison(new Error('Chain poison'));
@@ -314,8 +314,8 @@
         const rootFrame = new AsyncFrame();
         rootFrame.set('shared', 'initial', true);
 
-        const block1 = rootFrame.pushAsyncBlock(null, { shared: 1 });
-        const block2 = rootFrame.pushAsyncBlock(null, { shared: 1 });
+        const block1 = rootFrame.pushAsyncBlock({ shared: 1 });
+        const block2 = rootFrame.pushAsyncBlock({ shared: 1 });
 
         // Poison in first block
         const poison1 = createPoison(new Error('Block 1 error'));

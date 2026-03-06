@@ -401,7 +401,7 @@
         root = new AsyncFrame();
         root.set('!lockKey', undefined, true);
         root.set('!lockKey~', undefined, true);
-        frame = root.pushAsyncBlock(null, { '!lockKey': 1, '!lockKey~': 1 });
+        frame = root.pushAsyncBlock({ '!lockKey': 1, '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
         mockContext = {
           env: { globals: {} },
@@ -485,7 +485,7 @@
         root = new AsyncFrame();
         root.set('!lockKey', lockPoison, true);
         root.set('!lockKey~', undefined, true);
-        frame = root.pushAsyncBlock(null, { '!lockKey': 1, '!lockKey~': 1 });
+        frame = root.pushAsyncBlock({ '!lockKey': 1, '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
         runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 

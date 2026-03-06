@@ -362,17 +362,13 @@ class CompilerBase extends Obj {
         return;
       }
 
-      this.async.updateFrameReads(frame, name);//will register the name as read if it's a frame variable only
-
       let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isSequencePathLockDeclared(frame, nodeStaticPathKey)) {
         // This node accesses a declared sequence lock path.
         // Register the static path key as variable write so the next lock would wait for it
         // Multiple static path keys can be in the same block
-        // @todo - optimization: if there are no further funCalls with lock on the path
-        // we can use _updateFrameReads. The last funCall can record false in the lock value
-        // to indicate all further paths locked by it that they don't need to make a lock for further funCalls
-        // hence we can use _updateFrameReads for all of them
+        // @todo - optimization: if there are no further funCalls with lock on the path,
+        // emit a terminal marker so follow-up accesses can skip redundant lock plumbing.
 
         this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
         if (node.sequentialRepair) {

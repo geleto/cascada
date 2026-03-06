@@ -1,12 +1,6 @@
 const expect = require('expect.js');
 const { Frame } = require('../../src/runtime/frame');
 const { ENABLE_FRAME_BALANCE_CHECK } = require('../../src/runtime/checks');
-const {
-  ENABLE_READVARS_VALIDATION,
-  trackActualRead,
-  markReadVarPassThrough,
-  validateReadVarsConsistency
-} = require('../../src/compiler/validation');
 
 describe('Frame Balance Validation', function () {
   it('should validate balanced push/pop operations', function () {
@@ -118,93 +112,5 @@ describe('Frame Balance Validation', function () {
 
     const p0 = p1.pop();
     expect(p0).to.be(root);
-  });
-
-  describe('ReadVars Consistency Validation', function () {
-    it('should fail when a non-local declared variable is read but not registered in readVars', function () {
-      if (!ENABLE_READVARS_VALIDATION) {
-        this.skip();
-        return;
-      }
-
-      const { AsyncFrame } = require('../../src/runtime/frame');
-      const prevCompilerContext = AsyncFrame.inCompilerContext;
-      AsyncFrame.inCompilerContext = true;
-
-      try {
-        const root = new AsyncFrame(null, false, true);
-        root.declaredVars = new Set(['count']);
-
-        const child = root.push(false, false);
-
-        const compiler = {
-          asyncMode: true,
-          _isDeclared(f, name) {
-            while (f) {
-              if (f.declaredVars && f.declaredVars.has(name)) {
-                return true;
-              }
-              f = f.parent;
-            }
-            return false;
-          },
-          fail(msg) {
-            throw new Error(msg);
-          }
-        };
-
-        const node = { lineno: 9, colno: 2 };
-        trackActualRead(child, 'count', compiler, node);
-
-        expect(() => {
-          validateReadVarsConsistency(child, compiler, node);
-        }).to.throwException(/not registered in readVars/);
-      } finally {
-        AsyncFrame.inCompilerContext = prevCompilerContext;
-      }
-    });
-
-    it('should allow pass-through readVars without flagging unused snapshots', function () {
-      if (!ENABLE_READVARS_VALIDATION) {
-        this.skip();
-        return;
-      }
-
-      const { AsyncFrame } = require('../../src/runtime/frame');
-      const prevCompilerContext = AsyncFrame.inCompilerContext;
-      AsyncFrame.inCompilerContext = true;
-
-      try {
-        const root = new AsyncFrame(null, false, true);
-        root.declaredVars = new Set(['count']);
-
-        const mid = root.push(false, false);
-        mid.readVars = new Set(['count']);
-        markReadVarPassThrough(mid, 'count');
-
-        const compiler = {
-          asyncMode: true,
-          _isDeclared(f, name) {
-            while (f) {
-              if (f.declaredVars && f.declaredVars.has(name)) {
-                return true;
-              }
-              f = f.parent;
-            }
-            return false;
-          },
-          fail(msg) {
-            throw new Error(msg);
-          }
-        };
-
-        const node = { lineno: 3, colno: 1 };
-        validateReadVarsConsistency(mid, compiler, node);
-
-        expect(compiler._validationWarnings || []).to.have.length(0);
-      } finally {
-        AsyncFrame.inCompilerContext = prevCompilerContext;
-      }
-    });
   });
 });
