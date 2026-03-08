@@ -1,7 +1,6 @@
 const {
   RESERVED_DECLARATION_NAMES,
   validateGuardVariablesDeclared,
-  validateGuardVariablesModified,
   validateSetTarget,
   validateDeclarationScope,
   validateReadOnlyOuterMutation,
@@ -329,7 +328,6 @@ class Compiler extends CompilerBase {
     }
 
     const ids = [];
-    const resolveUpByTarget = Object.create(null);
 
     // 1. First pass: Validate, declare, and prepare temporary JS variables for all targets.
     node.targets.forEach((target) => {
@@ -359,17 +357,16 @@ class Compiler extends CompilerBase {
       this.emit.line(`${declarationKeyword} ${id};`);
 
       if (this.asyncMode) {
-        const declarationFrame = this._getDeclarationFrame(frame);
+        let declarationFrame = frame;
+        while (declarationFrame && declarationFrame.createScope === false) {
+          declarationFrame = declarationFrame.parent;
+        }
+        declarationFrame = declarationFrame || frame;
         declarationFrame.set(name, id);
       }
       ids.push(id);
 
-      // This call is common and crucial for async operations in both modes.
-      // In async mode, updateFrameWrites returns the declaration frame that owns this target.
-      if (this.asyncMode) {
-        const declarationFrame = this.async.updateFrameWrites(frame, name);
-        resolveUpByTarget[name] = declarationFrame !== frame;
-      } else if (this.scriptMode) {
+      if (!this.asyncMode && this.scriptMode) {
         this._addDeclaredVar(frame, name);
       }
     });
@@ -429,20 +426,7 @@ class Compiler extends CompilerBase {
       // The JS value for an 'extern' variable is null.
       const valueId = (node.varType === 'extern') ? 'null' : id;
 
-      // This is common to both modes.
-      // Determine if resolveUp should be true based on mode and write counter metadata
-      let resolveUp;
-
-      if (this.scriptMode) {
-        // Script mode: propagate writes to the declaring frame only when this
-        // target was registered in first-pass async write analysis.
-        resolveUp = !!resolveUpByTarget[name];
-      } else {
-        // Template mode: always pass true to resolve up and maintain original behavior
-        resolveUp = true;
-      }
-
-      this.emit.line(`frame.set("${name}", ${valueId}, ${resolveUp});`);
+      this.emit.line(`frame.set("${name}", ${valueId}, ${!this.scriptMode});`);
 
       // This block is specific to template mode's behavior.
       if (!this.scriptMode && !this.asyncMode) {
@@ -548,7 +532,11 @@ class Compiler extends CompilerBase {
 
       id = this._tmpid();
       this.emit.line(`let ${id};`);
-      const declarationFrame = this._getDeclarationFrame(frame);
+      let declarationFrame = frame;
+      while (declarationFrame && declarationFrame.createScope === false) {
+        declarationFrame = declarationFrame.parent;
+      }
+      declarationFrame = declarationFrame || frame;
       declarationFrame.set(name, id);
       ids.push(id);
     });
@@ -697,8 +685,7 @@ class Compiler extends CompilerBase {
           }
         }, node.default); // Pass default as code position
       } else if (this.asyncMode) {
-        // No default case - add empty handler placeholder for collection
-        // (branchPositions and branchWriteCounts intentionally not modified)
+        // No default case - add empty handler placeholder for collection.
         branchHandlers.push(new Set());
       }
 
@@ -744,12 +731,9 @@ class Compiler extends CompilerBase {
     const guardTargets = this._getGuardTargets(node, frame);
     const variableTargets = guardTargets.variableTargets;
     const hasSequenceTargets = !!guardTargets.sequenceTargets;
-    // We need guard state if we have variables OR if we have sequence targets (for error detection)
-    // Note: We don't fully resolve sequence targets here yet, but if the user *requested* sequence targets,
-    // we should prepare the state. If it turns out they are empty/unused, init() handles empty lists fine.
-    const needsGuardState = (variableTargets === '*') || !!variableTargets || hasSequenceTargets;
+    // Guard state is used for sequence lock detection/repair bookkeeping.
+    const needsGuardState = (variableTargets === '*') || hasSequenceTargets;
     const guardStateVar = needsGuardState ? this._tmpid() : null;
-
     validateGuardVariablesDeclared(variableTargets, frame, this, node);
 
     // Guard blocks are always async boundaries
@@ -764,18 +748,12 @@ class Compiler extends CompilerBase {
       try {
         // 2. Link for explicit reversion (optional, if we want to support manual revert)
         this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-        let guardInitLinePos = null;
         let guardRepairLinePos = null;
         const outputGuardInitLinePos = this.codebuf.length;
         let outputGuardStateVar = null;
         this.emit.line('');
         if (guardStateVar) {
-          if (variableTargets === '*') {
-            guardInitLinePos = this.codebuf.length;
-            this.emit.line(``);
-          } else {
-            this.emit.line(`const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(variableTargets)}, cb);`);
-          }
+          this.emit.line(`const ${guardStateVar} = runtime.guard.init(cb);`);
         }
         // Sequence lock repair must run before guard body starts scheduling work.
         guardRepairLinePos = this.codebuf.length;
@@ -843,25 +821,6 @@ class Compiler extends CompilerBase {
           );
         }
 
-
-        let finalVariableTargets = variableTargets;
-        if (variableTargets === '*') {
-          const writtenVars = [];
-          finalVariableTargets = writtenVars;
-          if (guardStateVar && guardInitLinePos !== null) {
-            this.emit.insertLine(guardInitLinePos,
-              `const ${guardStateVar} = runtime.guard.init(frame, ${JSON.stringify(writtenVars)}, cb);`);
-          }
-        }
-
-        validateGuardVariablesModified(finalVariableTargets, blockFrame, this, node);
-
-        if (finalVariableTargets && finalVariableTargets.length > 0) {
-          for (const varName of finalVariableTargets) {
-            this.async.updateFrameWrites(blockFrame, varName);
-          }
-        }
-
         let guardHandlers = this._getGuardedOutputNames(
           blockFrame.usedOutputs,
           guardTargets,
@@ -906,7 +865,6 @@ class Compiler extends CompilerBase {
             if (node.errorVar) {
               // Declare the error variable in the compiled scope
               this._addDeclaredVar(f, node.errorVar);
-              this.async.updateFrameWrites(f, node.errorVar);
               // Directly set the variable in the frame.
               // Note: using 'true' for resolveUp is irrelevant here as it's a new variable in new scope (if logic holds),
               // but we set it in 'f' specifically.
@@ -1898,13 +1856,6 @@ class Compiler extends CompilerBase {
     this.buffer.compileOutputCommand(node, frame);
   }
 
-  _getDeclarationFrame(frame) {
-    let current = frame;
-    while (current && current.createScope === false) {
-      current = current.parent;
-    }
-    return current || frame;
-  }
 }
 
 module.exports = {

@@ -138,10 +138,6 @@ class AsyncFrame extends Frame {
 
       //holds the names of outputs mutated in this frame or its children
       this.mutatedOutputs = undefined;
-
-    } else {
-      // Runtime async locals for this frame.
-      this.asyncVars = undefined;
     }
 
   }
@@ -152,80 +148,7 @@ class AsyncFrame extends Frame {
     return new AsyncFrame();
   }
 
-  //second parameter to pushAsyncBlock only for recursive frames
-  set(name, val, resolveUp) {
-    if (resolveUp) {
-      this.assign(name, val);
-    } else {
-      //not for set tags
-      super.set(name, val);
-    }
-  }
-
-  /** Works like set with resolveUp for async frames. */
-  assign(name, val) {
-    //only set tags and lock variable operations use resolveUp
-    //set tags do not have variables with dots, so the name is the whole variable name
-    if (name.indexOf('.') !== -1) {
-      throw new Error('resolveUp can only be used for variables, not for properties/paths');
-    }
-
-    // Find or create the variable scope.
-    let scopeFrame = this.resolve(name, true);
-    if (!scopeFrame) {
-      // If this frame cannot create scope, add it in the nearest parent that can.
-      if (!this.createScope) {
-        this.parent.set(name, val);
-        scopeFrame = this.resolve(name, true);
-        if (!scopeFrame) {
-          throw new Error('Variable should have been added in a parent frame');
-        }
-      }
-      else {
-        scopeFrame = this;
-      }
-    }
-
-    // go up the chain until we reach the scope frame or an asyncVar with the same name
-    // and store the value there (poison values are stored just like any other value)
-    // when reaching asyncVars, we set the value and don't go further up
-    let frame = this;
-    while (true) {
-      if (frame.asyncVars && name in frame.asyncVars) {
-        frame.asyncVars[name] = val; // Store poison if val is poison
-        break;
-      }
-      if (frame === scopeFrame) {
-        scopeFrame.variables[name] = val; // Store poison if val is poison
-        break;
-      }
-      frame = frame.parent;
-    }
-    return scopeFrame;
-  }
-
-  get(name) {
-    if (this.asyncVars && name in this.asyncVars) {
-      return this.asyncVars[name];
-    }
-    return super.get(name);
-  }
-
-  lookup(name) {
-    if (this.asyncVars && name in this.asyncVars) {
-      return this.asyncVars[name];
-    }
-    if (name in this.variables) {
-      return this.variables[name];
-    }
-    return this.parent && this.parent.lookup(name);
-  }
-
   lookupAndLocate(name) {
-    if (this.asyncVars && name in this.asyncVars) {
-      return { value: this.asyncVars[name], frame: this };
-    }
-
     if (name in this.variables) {
       return { value: this.variables[name], frame: this };
     }
@@ -248,33 +171,13 @@ class AsyncFrame extends Frame {
     return newFrame;
   }
 
-  pushAsyncBlock(sequentialLoopBody = false) {
+  pushAsyncBlock() {
     const asyncBlockFrame = new AsyncFrame(this, false);
     // Async block frames never own inherited buffers by default.
 
     // Track runtime depth for balance validation
     asyncBlockFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
-
-    asyncBlockFrame.sequentialLoopBody = sequentialLoopBody;
     return asyncBlockFrame;
-  }
-
-  _commitSequentialWrites() {
-    if (!this.parent) {
-      return;
-    }
-
-    if (!this.asyncVars) {
-      return;
-    }
-
-    for (const varName in this.asyncVars) {
-      if (this.parent.asyncVars && varName in this.parent.asyncVars) {
-        this.parent.asyncVars[varName] = this.asyncVars[varName];
-      } else if (varName in this.parent.variables) {
-        this.parent.variables[varName] = this.asyncVars[varName];
-      }
-    }
   }
 }
 

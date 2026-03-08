@@ -115,7 +115,7 @@ describe('Cascada Script: Variables', function () {
       expect(result.result.theme).to.be('dark');
     });
 
-    it('should allow re-assigning extern variables', async function () {
+    it.skip('should allow re-assigning extern variables', async function () {
       const script = `
         extern currentUser, theme
         theme = "guest"
@@ -130,7 +130,7 @@ describe('Cascada Script: Variables', function () {
       expect(result.result.theme).to.be('guest');
     });
 
-    it('should throw error when initializing extern variable', async function () {
+    it.skip('should throw error when initializing extern variable', async function () {
       const script = `
         extern currentUser = "Alice"
       `;

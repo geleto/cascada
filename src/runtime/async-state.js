@@ -50,11 +50,10 @@ class AsyncState {
     parentBuffer,
     createOutputBuffer,
     cb,
-    sequentialAsyncBlock = false,
     hasConcurrencyLimit = false
   ) {
     const usedOutputs = asyncMeta && Array.isArray(asyncMeta.usedOutputs) ? asyncMeta.usedOutputs : null;
-    const childFrame = f.pushAsyncBlock(sequentialAsyncBlock);
+    const childFrame = f.pushAsyncBlock();
     // Runtime async-block creation site for CommandBuffer.
     // This avoids compiler-side duplicate creation for async block execution.
     let newBuffer = null;
@@ -82,13 +81,6 @@ class AsyncState {
         if (hasConcurrencyLimit) {
           waitAppliedPromise = newBuffer.waitApplied();
         }
-      }
-      // Ensure per-block finalization always runs (decrementing counters, releasing locks, etc.)
-      if (sequentialAsyncBlock) {
-        // This is the best place to do it rather than when the counter reaches 0
-        // because by this time some promises may have already been resolved
-        // and we will write the final values to the parent frame rather than the promises
-        childFrame._commitSequentialWrites();
       }
       childState._leaveAsyncBlock();
       return waitAppliedPromise;

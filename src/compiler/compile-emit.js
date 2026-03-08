@@ -224,7 +224,7 @@ module.exports = class CompileEmit {
       const asyncMetaArg = this.getAsyncBlockArgs(frame);
       const resolvedParentBufferArg = parentBufferArg || this.compiler.buffer.currentBuffer || 'null';
       const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
-      this.line(`, runtime, frame, ${asyncMetaArg}, ${resolvedParentBufferArg}, ${createOutputBufferArg}, cb, ${sequentialLoopBody}, ${hasConcurrencyLimit})`);
+      this.line(`, runtime, frame, ${asyncMetaArg}, ${resolvedParentBufferArg}, ${createOutputBufferArg}, cb, ${hasConcurrencyLimit})`);
       this.line(';');
     }
     if (createScope && !node.isAsync) {
@@ -268,7 +268,7 @@ module.exports = class CompileEmit {
       const asyncMetaArg = this.getAsyncBlockArgs(frame);
       const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
       const parentBufferArg = this.compiler.buffer.currentBuffer || 'null';
-      this.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferArg}, ${createOutputBufferArg}, cb, false, false)`);
+      this.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferArg}, ${createOutputBufferArg}, cb, false)`);
 
       this.asyncClosureDepth--;
       frame = frame.pop();

@@ -30,36 +30,17 @@ function validateCompileTimeFrameBalance(frame, compiler, positionNode) {
 
 /**
  * Validate that guard variables are declared in the scope.
- * @param {Array<string>} variableTargets - List of variable names to check
- * @param {Frame} frame - The current frame
- * @param {Compiler} compiler - The compiler instance
- * @param {Node} node - The AST node for error reporting
+ * This remains a compile-time syntax/semantic check even though
+ * async var rollback machinery has been removed.
  */
 function validateGuardVariablesDeclared(variableTargets, frame, compiler, node) {
   if (variableTargets && variableTargets !== '*') {
     for (const varName of variableTargets) {
-      // Assuming _isDeclared is available on compiler instance
       if (!compiler._isDeclared(frame, varName)) {
         compiler.fail(`guard variable "${varName}" is not declared`, node.lineno, node.colno, node);
       }
     }
   }
-}
-
-/**
- * Validate that guard variables are modified inside the guard block.
- * @param {Array<string>} variableTargets - List of variable names to check
- * @param {Frame} frame - The current frame (after body compilation)
- * @param {Compiler} compiler - The compiler instance
- * @param {Node} node - The AST node for error reporting
- */
-function validateGuardVariablesModified(variableTargets, frame, compiler, node) {
-  // Legacy write-counter validation removed with writeCounts pipeline.
-  // Guard variable revert now relies on runtime snapshots, not compile-time write accounting.
-  void variableTargets;
-  void frame;
-  void compiler;
-  void node;
 }
 
 /**
@@ -285,7 +266,6 @@ module.exports = {
   trackCompileTimeFrameDepth,
   validateCompileTimeFrameBalance,
   validateGuardVariablesDeclared,
-  validateGuardVariablesModified,
   validateSetTarget,
   validateDeclarationScope,
   validateReadOnlyOuterMutation,

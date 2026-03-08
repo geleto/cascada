@@ -31,48 +31,6 @@ module.exports = class CompileAsync {
     return hasAsync;
   }
 
-
-  //@todo - do not store writes that will not be read by the parents
-  updateFrameWrites(frame, name) {
-    // Resolve declaration scope for the target variable/lock and declare when missing.
-    let vf = frame;
-    if (name.startsWith('!')) {
-      // Sequence keys are conceptually declared at the root
-      while (vf.parent) {
-        vf = vf.parent;
-      }
-
-      // Ensure the lock is declared at root
-      // (In case pre-declaration missed it or it's created dynamically)
-      if (!vf.declaredVars || !vf.declaredVars.has(name)) {
-        this.compiler._addDeclaredVar(vf, name);
-      }
-    } else {
-      // Normal variable scope resolution
-      do {
-        if (vf.declaredVars && vf.declaredVars.has(name)) {
-          break; // Found the var in vf
-        }
-        if (vf.isolateWrites) {
-          vf = null;
-          break;
-        }
-        vf = vf.parent;
-      } while (vf);
-
-      if (!vf) {
-        // The variable did not exist
-        // Declare a new variable in the current frame (or a parent if !createScope)
-        vf = frame;
-        while (!vf.createScope) {
-          vf = vf.parent; // Skip the frames that cannot create a new scope
-        }
-        this.compiler._addDeclaredVar(vf, name);
-      }
-    }
-    return vf;
-  }
-
   _getDeclaredOutput(frame, name) {
     while (frame) {
       if (frame.declaredOutputs && frame.declaredOutputs.has(name)) {
