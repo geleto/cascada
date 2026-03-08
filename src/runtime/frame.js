@@ -172,13 +172,9 @@ class AsyncFrame extends Frame {
   }
 
   pushAsyncBlock() {
-    const asyncBlockFrame = new AsyncFrame(this, false);
-    // Async block frames never own inherited buffers by default.
-
-    // Track runtime depth for balance validation
-    asyncBlockFrame._runtimeDepth = (this._runtimeDepth || 0) + 1;
-    return asyncBlockFrame;
+    return this.push(false);
   }
+
 }
 
 module.exports = {

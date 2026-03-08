@@ -102,41 +102,21 @@ async function restoreOutputs(buffer, outputGuardState) {
   return errors;
 }
 
-async function commitOutputTransactions(outputGuardState) {
-  if (!outputGuardState) {
-    return [];
-  }
-  return settleSequenceTransactions(outputGuardState, 'commit');
-}
-
-async function collectGuardStateErrors(guardState) {
-  const sequenceErrors = [];
-
-  if (!guardState) {
-    return sequenceErrors;
-  }
-
-  // Wait for all sequence lock repair/detection operations to complete
-  if (guardState.detectionPromises && guardState.detectionPromises.length > 0) {
-    await Promise.all(guardState.detectionPromises);
-  }
-
-  // Check for any detected sequence errors
-  if (guardState.sequenceErrors && guardState.sequenceErrors.length > 0) {
-    sequenceErrors.push(...guardState.sequenceErrors);
-  }
-
-  return sequenceErrors;
-}
-
-async function finalizeGuard(frame, guardState, buffer, allowedHandlers, outputGuardState) {
-  void frame;
+async function finalizeGuard(guardState, buffer, allowedHandlers, outputGuardState) {
   const bufferErrors = await collectOutputErrors(buffer, allowedHandlers);
-  const sequenceErrors = await collectGuardStateErrors(guardState);
+  const sequenceErrors = [];
+  if (guardState) {
+    if (guardState.detectionPromises && guardState.detectionPromises.length > 0) {
+      await Promise.all(guardState.detectionPromises);
+    }
+    if (guardState.sequenceErrors && guardState.sequenceErrors.length > 0) {
+      sequenceErrors.push(...guardState.sequenceErrors);
+    }
+  }
   const guardErrors = bufferErrors.concat(sequenceErrors);
 
   if (outputGuardState && guardErrors.length === 0) {
-    const commitErrors = await commitOutputTransactions(outputGuardState);
+    const commitErrors = await settleSequenceTransactions(outputGuardState, 'commit');
     if (commitErrors.length > 0) {
       guardErrors.push(...commitErrors);
     }
@@ -185,7 +165,7 @@ function resolveGuardOutputNames(buffer, allowedHandlers) {
   return Object.keys(buffer.arrays || Object.create(null));
 }
 
-function repairSequenceOutputs(frame, buffer, guardState, lockNames) {
+function repairSequenceOutputs(buffer, guardState, lockNames) {
   if (!lockNames || lockNames.length === 0) {
     return;
   }
@@ -275,8 +255,7 @@ module.exports = {
   initOutputSnapshots,
   finalizeGuard,
   repairSequenceOutputs,
-  restoreOutputs,
-  commitOutputTransactions
+  restoreOutputs
 };
 
 function reportAndThrow(cb, err) {

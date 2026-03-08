@@ -729,12 +729,13 @@ class Compiler extends CompilerBase {
     }
 
     const guardTargets = this._getGuardTargets(node, frame);
-    const variableTargets = guardTargets.variableTargets;
+    const variableTargetsAll = guardTargets.variableTargetsAll;
+    const variableValidationTargets = guardTargets.variableValidationTargets;
     const hasSequenceTargets = !!guardTargets.sequenceTargets;
     // Guard state is used for sequence lock detection/repair bookkeeping.
-    const needsGuardState = (variableTargets === '*') || hasSequenceTargets;
+    const needsGuardState = variableTargetsAll || hasSequenceTargets;
     const guardStateVar = needsGuardState ? this._tmpid() : null;
-    validateGuardVariablesDeclared(variableTargets, frame, this, node);
+    validateGuardVariablesDeclared(variableValidationTargets, frame, this, node);
 
     // Guard blocks are always async boundaries
     node.isAsync = true;
@@ -775,7 +776,7 @@ class Compiler extends CompilerBase {
         }
 
         const shouldGuardAllSequencesImplicitly =
-          variableTargets === '*' &&
+          variableTargetsAll &&
           (!node.sequenceTargets || node.sequenceTargets.length === 0);
 
         if (node.sequenceTargets && node.sequenceTargets.length > 0) {
@@ -817,7 +818,7 @@ class Compiler extends CompilerBase {
         if (resolvedSequenceTargets.size > 0) {
           this.emit.insertLine(
             guardRepairLinePos,
-            `runtime.guard.repairSequenceOutputs(frame, ${this.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
+            `runtime.guard.repairSequenceOutputs(${this.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
           );
         }
 
@@ -856,7 +857,7 @@ class Compiler extends CompilerBase {
         // 5. Check Buffer/Variables for Poison
         const guardErrorsVar = this._tmpid();
         this.emit.line(
-          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(frame, ${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${JSON.stringify(guardHandlers)}, ${outputGuardStateVar || 'null'});`
+          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${JSON.stringify(guardHandlers)}, ${outputGuardStateVar || 'null'});`
         );
         this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
@@ -954,10 +955,11 @@ class Compiler extends CompilerBase {
       : (Array.isArray(guardNode && guardNode.variableTargets) && guardNode.variableTargets.length > 0
         ? guardNode.variableTargets
         : null);
-    let variableTargets = variableTargetsRaw;
+    const variableTargetsAll = variableTargetsRaw === '*';
+    const hasVariableTargetsSelector = variableTargetsRaw !== null;
+    const variableValidationTargets = [];
 
     if (Array.isArray(variableTargetsRaw) && variableTargetsRaw.length > 0) {
-      const resolvedVariables = [];
       const resolvedHandlers = new Set(Array.isArray(handlerSelector) ? handlerSelector : []);
 
       for (const name of variableTargetsRaw) {
@@ -965,7 +967,7 @@ class Compiler extends CompilerBase {
         const outputDecl = this.async._getDeclaredOutput(frame, name);
 
         if (isDeclaredVar) {
-          resolvedVariables.push(name);
+          variableValidationTargets.push(name);
         }
         if (outputDecl) {
           resolvedHandlers.add(name);
@@ -975,25 +977,25 @@ class Compiler extends CompilerBase {
           continue;
         }
         if (!isDeclaredVar && !outputDecl) {
-          resolvedVariables.push(name);
+          variableValidationTargets.push(name);
         }
       }
 
       if (handlerSelector !== '*') {
         handlerSelector = resolvedHandlers.size > 0 ? Array.from(resolvedHandlers) : null;
       }
-      variableTargets = resolvedVariables.length > 0 ? resolvedVariables : null;
     }
     const sequenceTargets = Array.isArray(guardNode && guardNode.sequenceTargets) && guardNode.sequenceTargets.length > 0
       ? guardNode.sequenceTargets
       : null;
 
-    const hasAnySelectors = !!handlerSelector || !!typeTargets || !!variableTargets || !!sequenceTargets;
+    const hasAnySelectors = !!handlerSelector || !!typeTargets || hasVariableTargetsSelector || !!sequenceTargets;
 
     return {
       handlerSelector,
       typeTargets,
-      variableTargets,
+      variableTargetsAll,
+      variableValidationTargets: variableValidationTargets.length > 0 ? variableValidationTargets : null,
       sequenceTargets,
       hasAnySelectors
     };

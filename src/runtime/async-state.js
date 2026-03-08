@@ -53,7 +53,7 @@ class AsyncState {
     hasConcurrencyLimit = false
   ) {
     const usedOutputs = asyncMeta && Array.isArray(asyncMeta.usedOutputs) ? asyncMeta.usedOutputs : null;
-    const childFrame = f.pushAsyncBlock();
+    const childFrame = f.push(false);
     // Runtime async-block creation site for CommandBuffer.
     // This avoids compiler-side duplicate creation for async block execution.
     let newBuffer = null;
