@@ -133,13 +133,15 @@ class CompilerBase extends Obj {
   }
 
   _isDeclared(frame, name) {
-    while (frame) {
-      if (frame.declaredVars && frame.declaredVars.has(name)) {
-        return true;
-      }
-      frame = frame.parent;
+    // Variable declaration checks intentionally exclude value outputs.
+    // Output declarations are tracked separately in declaredOutputs.
+    const outputDecl = this.async && this.async._getDeclaredOutput
+      ? this.async._getDeclaredOutput(frame, name)
+      : null;
+    if (outputDecl) {
+      return false;
     }
-    return false;
+    return !!(frame && frame.resolve && frame.resolve(name, false));
   }
 
 

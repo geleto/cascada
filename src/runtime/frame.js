@@ -128,9 +128,6 @@ class AsyncFrame extends Frame {
     this.createScope = createScope;
 
     if (AsyncFrame.inCompilerContext) {
-      //holds the names of the variables declared at the frame
-      this.declaredVars = undefined;
-
       //holds the names of outputs declared at this frame
       this.declaredOutputs = undefined;
 

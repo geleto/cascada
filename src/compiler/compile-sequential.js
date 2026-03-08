@@ -16,18 +16,6 @@ module.exports = class CompileSequential {
   processExpression(node, frame) {
     frame = frame.getRoot();
     const f = new AsyncFrame();
-    // copy declaredVars from frame to f, but only properties that start with `!`
-    // these are the keys of the active sequence locks
-    // copy because we don't want any added sequence lock keys to be used in the compilation
-    //@todo - do we still add sequence lock keys? Don't think so but we need to check @todo
-    if (frame.declaredVars) {
-      f.declaredVars = new Set();
-      for (const item of frame.declaredVars) {
-        if (item.startsWith('!')) {
-          f.declaredVars.add(item);
-        }
-      }
-    }
     if (frame.declaredOutputs) {
       f.declaredOutputs = new Map();
       for (const [name, info] of frame.declaredOutputs.entries()) {

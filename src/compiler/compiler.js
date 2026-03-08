@@ -51,11 +51,6 @@ class Compiler extends CompilerBase {
       if (outputDecl && outputDecl.type !== 'value' && !allowSequenceLockAlias) {
         this.fail(`Cannot declare variable '${varName}' because an output with the same name is already declared.`);
       }
-
-      if (!frame.declaredVars) {
-        frame.declaredVars = new Set();
-      }
-      frame.declaredVars.add(varName);
     }
   }
 
@@ -335,6 +330,7 @@ class Compiler extends CompilerBase {
       let id;
 
       const isDeclared = this._isDeclared(frame, name);
+      const declaredFrame = isDeclared ? frame.resolve(name, false) : null;
 
       // Read-only parent scopes (e.g. call/caller bodies) may read from parent frames,
       // but must not mutate parent variables. Without this check, assignments can
@@ -345,7 +341,7 @@ class Compiler extends CompilerBase {
           node,
           target,
           name,
-          mutatingOuterRef: isDeclared && !(frame.declaredVars && frame.declaredVars.has(name))
+          mutatingOuterRef: !!declaredFrame && declaredFrame !== frame
         });
       }
 
