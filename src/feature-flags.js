@@ -7,11 +7,11 @@
 const LOOKUP_DYNAMIC_OUTPUT_LINKING = false;
 
 // Migration-enforcement switch:
-// When enabled, AsyncFrame.set throws only on reassignment at runtime.
-const THROW_ON_ASYNC_FRAME_REASSIGN = false;
+// When enabled, AsyncFrame.set throws on any runtime assignment.
+const THROW_ON_ASYNC_FRAME_ASSIGN = true;
 
 
 module.exports = {
   LOOKUP_DYNAMIC_OUTPUT_LINKING,
-  THROW_ON_ASYNC_FRAME_REASSIGN
+  THROW_ON_ASYNC_FRAME_ASSIGN
 };

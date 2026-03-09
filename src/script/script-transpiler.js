@@ -1045,7 +1045,9 @@ class ScriptTranspiler {
       return codeContent;
     }
 
-    const varDeclMatch = trimmed.match(/^var\s+[A-Za-z_][A-Za-z0-9_]*\b(?:\s*=.*)?$/);
+    const varDeclMatch = trimmed.match(
+      /^var\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*(?:\s*=.*)?$/
+    );
     if (!varDeclMatch) {
       return codeContent;
     }
@@ -1376,7 +1378,7 @@ class ScriptTranspiler {
     if (code.startsWith('@')) {
       throw new Error(`Legacy '@' output commands are no longer supported at line ${lineIndex + 1}`);
     } else if (firstWord === 'var' ||
-      (firstWord === 'value' && /^value\s+[A-Za-z_][A-Za-z0-9_]*(\s*=.*)?$/.test(code))) {
+      (firstWord === 'value' && /^value\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*(?:\s*=.*)?$/.test(code))) {
       if (firstWord === 'value') {
         this._processValueDeclaration(parseResult, lineIndex);
       } else {

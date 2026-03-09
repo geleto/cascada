@@ -1970,32 +1970,32 @@ class Compiler extends CompilerBase {
 
 module.exports = {
   compile: function compile(src, asyncFilters, extensions, name, opts = {}) {
-    AsyncFrame.inCompilerContext = true;
-    // Shared id pool for this compilation unit. Transformer and compiler both
-    // allocate from here so loop aliases (loop#N) and compiler tmp ids stay unique.
-    const idPool = {
-      value: 0,
-      next() {
-        this.value += 1;
-        return this.value;
-      }
-    };
-    const compileOptions = Object.assign({}, opts, { idPool });
-    const c = new Compiler(name, compileOptions);
+    return AsyncFrame.withCompilerContext(() => {
+      // Shared id pool for this compilation unit. Transformer and compiler both
+      // allocate from here so loop aliases (loop#N) and compiler tmp ids stay unique.
+      const idPool = {
+        value: 0,
+        next() {
+          this.value += 1;
+          return this.value;
+        }
+      };
+      const compileOptions = Object.assign({}, opts, { idPool });
+      const c = new Compiler(name, compileOptions);
 
-    // Run the extension preprocessors against the source.
-    const preprocessors = (extensions || []).map(ext => ext.preprocess).filter(f => !!f);
+      // Run the extension preprocessors against the source.
+      const preprocessors = (extensions || []).map(ext => ext.preprocess).filter(f => !!f);
 
-    const processedSrc = preprocessors.reduce((s, processor) => processor(s), src);
+      const processedSrc = preprocessors.reduce((s, processor) => processor(s), src);
 
-    c.compile(transformer.transform(
-      parser.parse(processedSrc, extensions, opts),
-      asyncFilters,
-      name,
-      compileOptions
-    ));
-    AsyncFrame.inCompilerContext = false;
-    return c.getCode();
+      c.compile(transformer.transform(
+        parser.parse(processedSrc, extensions, opts),
+        asyncFilters,
+        name,
+        compileOptions
+      ));
+      return c.getCode();
+    });
   },
 
   Compiler: Compiler

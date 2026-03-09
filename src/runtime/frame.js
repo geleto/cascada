@@ -3,7 +3,7 @@
 const {
   checkFrameBalance
 } = require('./checks');
-const { THROW_ON_ASYNC_FRAME_REASSIGN } = require('../feature-flags');
+const { THROW_ON_ASYNC_FRAME_ASSIGN } = require('../feature-flags');
 
 
 // Frames keep track of scoping both at compile-time and run-time so
@@ -142,6 +142,16 @@ class AsyncFrame extends Frame {
 
   static inCompilerContext = false;
 
+  static withCompilerContext(fn) {
+    const prev = AsyncFrame.inCompilerContext;
+    AsyncFrame.inCompilerContext = true;
+    try {
+      return fn();
+    } finally {
+      AsyncFrame.inCompilerContext = prev;
+    }
+  }
+
   new() {
     return new AsyncFrame();
   }
@@ -170,8 +180,8 @@ class AsyncFrame extends Frame {
   }
 
   set(name, val, resolveUp) {
-    if (THROW_ON_ASYNC_FRAME_REASSIGN && !AsyncFrame.inCompilerContext) {
-      throw new Error(`AsyncFrame.set reassignment is disabled at runtime (attempted: "${name}")`);
+    if (THROW_ON_ASYNC_FRAME_ASSIGN && !AsyncFrame.inCompilerContext) {
+      throw new Error(`AsyncFrame.set is disabled at runtime (attempted: "${name}")`);
     }
 
     return super.set(name, val, resolveUp);
