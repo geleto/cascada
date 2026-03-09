@@ -51,7 +51,7 @@ Cascada Templates are built on top of Nunjucks and support most Cascada Script *
 | **Call Block**           | `call wrapper()`<br>  `(x) :data`<br>  `...`<br>`endcall`  | `{% call wrapper() %}`<br>  `...`<br>`{% endcall %}`                         |
 | **Call Block Assignment**| `var x = call wrapper()`<br>  `(x) :data`<br>  `...`<br>`endcall`<br>`x = call wrapper() ... endcall` | *(script only)* |
 | **Caller Invocation**    | `var result = caller(value)`                               | `{{ caller() }}`                                                             |
-| **Block Capture**        | `var html = capture :text`<br>  `...`<br>`endcapture`      | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
+| **Block Assignment**     | *(not available in script mode anymore)*                   | `{% set html %}`<br>  `...`<br>`{% endset %}`                                |
 | **Template Inheritance** | `extends "base.html"`                                      | `{% extends "base.html" %}`                                                  |
 | **Include**              | `include "header.html"`                                    | `{% include "header.html" %}`                                                |
 | **Import**               | `from "utils.html" import helper`                          | `{% from "utils.html" import helper %}`                                      |
@@ -92,28 +92,9 @@ Posts:
 {% endfor %}
 ```
 
-## Block Captures
+## Block Assignment in Templates
 
-In Script mode, you can capture output into a variable using the `capture` block with a focus directive. Templates use a different approach.
-
-### In Script Mode
-
-Script uses `capture` with a focus directive to specify which output handler to use:
-
-```javascript
-var summary = capture :text
-  @text("Total: " + items.length + " items")
-endcapture
-
-var userData = capture :data
-  @data.name = user.name
-  @data.count = items.length
-endcapture
-```
-
-### In Template Mode
-
-Templates use Nunjucks' block assignment syntax:
+Templates use Nunjucks block assignment syntax:
 
 ```nunjucks
 {% set summary %}
@@ -121,10 +102,7 @@ Templates use Nunjucks' block assignment syntax:
 {% endset %}
 ```
 
-**Key differences:**
-
-* Templates don't use the `capture` keyword — use `{% set %}...{% endset %}` instead
-* Text output is the only mode — no focus directives needed
+This is the template equivalent for capturing a rendered fragment into a variable.
 
 ## The `do` Tag
 
@@ -245,7 +223,7 @@ An optional `recover` block may render alternative text on failure.
 
 ### `revert`
 
-`revert` unconditionally skips text output from the current capture, macro, or script scope.
+`revert` unconditionally skips text output from the current macro or template scope.
 
 ## Variable Scoping in Async Mode
 
@@ -268,7 +246,7 @@ The following Cascada Script features are **not available** in templates:
 * **Output focus directives**: `:data`, `:text`, `:handlerName`
 * **Property assignment**: `obj.prop = value` is not supported
 
-**Note:** Templates only output text, so focus directives are not needed. Block captures use `{% set var %}...{% endset %}` without any focus directive. Like Nunjucks, property assignment is not supported—use `{% set %}` to reassign entire variables.
+**Note:** Templates only output text, so focus directives are not needed. Use `{% set var %}...{% endset %}` for block assignment. Like Nunjucks, property assignment is not supported—use `{% set %}` to reassign entire variables.
 
 ## When to Use Templates vs Script
 

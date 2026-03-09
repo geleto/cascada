@@ -265,9 +265,6 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       check('x = 10', null);
     });
 
-    it('should NOT throw error for capture block in check (throws in processing)', () => {
-      expect(transpiler._isAssignment('x.y = capture', 1)).to.be(true);
-    });
   });
 
   describe('runtime.setPath (Lazy Semantics)', () => {

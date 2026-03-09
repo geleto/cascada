@@ -660,18 +660,16 @@
         }
       });
 
-      it('should handle promise in capture block', async () => {
+      it('should handle promise in local output assembly', async () => {
         env.addGlobal('asyncData', () => {
           return Promise.reject(new Error('Capture data failed'));
         });
 
         const script = `
         text output
-        var result = capture
-          text captureText
-          captureText(asyncData())
-          return { text: captureText.snapshot() }
-        endcapture
+        text localText
+        localText(asyncData())
+        var result = { text: localText.snapshot() }
         output(result)
 
         return { text: output.snapshot() }`;

@@ -123,8 +123,7 @@ class ScriptTranspiler {
         'verbatim': 'endverbatim',
         'set': 'endset', //only when no = in the set, then the block has to be closed
         'var': 'endvar', //only when no = in the var, then the block has to be closed
-        'guard': 'endguard',
-        'capture': 'endcapture'
+        'guard': 'endguard'
       },
 
       // Tags that should never be treated as multi-line
@@ -958,7 +957,7 @@ class ScriptTranspiler {
       parseResult.blockType = null;
 
     } else {
-      // CASE: Has assignment (e.g., `var x, y = 10` or `var x, y = capture...`)
+      // CASE: Has assignment (e.g., `var x, y = 10`)
       const targetsStr = content.substring(0, assignPos).trim();
 
       if (!this._isValidIdentifierList(targetsStr)) {
@@ -987,21 +986,11 @@ class ScriptTranspiler {
         }
       }
 
-      // Check for capture block
       const exprStr = content.substring(assignPos + 1).trim();
       const firstExprWord = this._getFirstWord(exprStr);
 
       if (firstExprWord === 'capture') {
-        const captureContent = exprStr.substring('capture'.length).trim();
-        parseResult.lineType = 'TAG';
-        parseResult.blockType = 'START';
-        parseResult.tagName = isAssignment ? 'set' : declarationTag;
-        // For capture, the valid syntax is {% capture varName %} content {% endcapture %}
-        // But here we support `var x = capture` or `x = capture`.
-        // The transpiler usually emits `{% capture x %}...`
-
-        parseResult.codeContent = `${targetsStr}${captureContent ? ` ${captureContent}` : ''}`;
-        this.setBlockStack.push(parseResult.tagName);
+        throw new Error(`Capture blocks are no longer supported at line ${lineIndex + 1}`);
       } else if (firstExprWord === 'call') {
         // "var x = call ... endcall" / "x = call ... endcall"
         // becomes an internal block tag that the parser/compiler understand.
@@ -1118,12 +1107,7 @@ class ScriptTranspiler {
       } else if (outputType === 'var') {
         const firstExprWord = this._getFirstWord(assignmentExpr);
         if (firstExprWord === 'capture') {
-          const captureContent = assignmentExpr.substring('capture'.length).trim();
-          parseResult.lineType = 'TAG';
-          parseResult.blockType = this.BLOCK_TYPE.START;
-          parseResult.tagName = 'set';
-          parseResult.codeContent = `${outputName}${captureContent ? ` ${captureContent}` : ''}`;
-          this.setBlockStack.push('set');
+          throw new Error(`Capture blocks are no longer supported at line ${lineIndex + 1}`);
         } else if (firstExprWord === 'call') {
           const afterCall = assignmentExpr.substring('call'.length).trim();
           parseResult.lineType = 'TAG';
@@ -1338,14 +1322,7 @@ class ScriptTranspiler {
       this._isAssignment(code, lineIndex)) {
       this._processVar(parseResult, lineIndex, true);
     } else if (firstWord === 'endcapture') {
-      if (this.setBlockStack.length === 0) {
-        throw new Error(`Unexpected 'endcapture' at line ${lineIndex + 1} - no matching var/set block found`);
-      }
-      const tag = this.setBlockStack.pop();
-      parseResult.lineType = 'TAG';
-      parseResult.tagName = 'end' + tag;
-      parseResult.codeContent = parseResult.codeContent.substring('endcapture'.length).trim();
-      parseResult.blockType = this.BLOCK_TYPE.END;
+      throw new Error(`'endcapture' is no longer supported at line ${lineIndex + 1}`);
     } else if (this.RESERVED_KEYWORDS.has(firstWord)) {
       // Standard keyword processing
       parseResult.lineType = 'TAG';

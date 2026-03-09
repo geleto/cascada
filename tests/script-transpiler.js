@@ -858,14 +858,6 @@ endif`;
 
   // Variable handling tests
   describe('Variable Handling', () => {
-    it('should route capture declaration to var tag', () => {
-      const state = { inMultiLineComment: false, stringState: null };
-      const result = scriptTranspiler._processLine('var x_capture = capture', state, 0);
-      expect(result.lineType).to.equal('TAG');
-      expect(result.tagName).to.equal('var');
-      expect(result.blockType).to.equal('START');
-    });
-
     it('should route call declaration to call_assign var form', () => {
       const state = { inMultiLineComment: false, stringState: null };
       const result = scriptTranspiler._processLine('var x_call = call foo(bar)', state, 0);
@@ -883,34 +875,10 @@ endif`;
       expect(template).to.equal(`{%- ${DECL_TAG} user = fetchUser(123) -%}`);
     });
 
-    it('should handle var declarations with block assignment', () => {
-      const script = `var report = capture
-  data outData
-  outData.report.title = "Q3 Summary"
-  outData.report.status = "complete"
-  return outData.snapshot()
-endcapture
-return {}`;
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- ${DECL_TAG} report -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- end${DECL_TAG} -%}\n{%- return {} -%}`);
-    });
-
     it('should handle simple assignments', () => {
       const script = 'user = "new-value"';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.equal('{%- set user = "new-value" -%}');
-    });
-
-    it('should handle block assignments with capture', () => {
-      const script = `var report = capture
-  data outData
-  outData.report.title = "Q3 Summary"
-  outData.report.status = "complete"
-  return outData.snapshot()
-endcapture
-return {}`;
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- ${DECL_TAG} report -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- end${DECL_TAG} -%}\n{%- return {} -%}`);
     });
 
     it('should handle complex assignments with expressions', () => {
@@ -936,6 +904,7 @@ return {}`;
       const script = 'value x = 1';
       expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/no longer supported/);
     });
+
   });
 
   // Complex integration tests
@@ -1136,21 +1105,6 @@ return { text: outText.snapshot() }`;
       const script = 'var x = 1 // comment;';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.contain(`{%- ${DECL_TAG} x = 1 -%}{#- comment; -#}`);
-    });
-  });
-  describe('Macro and Capture Focus Rejection', () => {
-
-    it('should continue capture with', () => {
-      const script = `
-        x = capture
-          output(x)
-        endcapture
-      `;
-      const template = scriptTranspiler.scriptToTemplate(script);
-      // {%- set x \n -%}
-      expect(template).to.contain('set x');
-      expect(template).to.contain('');
-      expect(template).not.to.contain('focus="text"');
     });
   });
 });

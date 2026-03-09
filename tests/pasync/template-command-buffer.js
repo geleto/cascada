@@ -48,7 +48,7 @@
       expect(result).to.equal('O1|E2|O3|E4|');
     });
 
-    it('should preserve macro/call/capture parity', async function () {
+    it('should preserve macro/call/set-block parity', async function () {
       const env = new AsyncEnvironment();
       const template = `
         {% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}

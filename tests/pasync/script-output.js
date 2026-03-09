@@ -1103,16 +1103,14 @@ describe('Cascada Script: Output commands', function () {
   });
 
   describe('Scoping and Control', function () {
-    it('should use a capture block to capture output without focusing', async () => {
+    it('should assemble data/text outputs without capture blocks', async () => {
       const script = `
         data result
-        var captured = capture
-          data captureData
-          text captureText
-          captureData.user.name = "Captured User"
-          captureText("hello from capture")
-          return {data: captureData.snapshot(), text: captureText.snapshot() }
-        endcapture
+        data captureData
+        text captureText
+        captureData.user.name = "Captured User"
+        captureText("hello from capture")
+        var captured = { data: captureData.snapshot(), text: captureText.snapshot() }
         result.result = captured
 
         return result.snapshot()`;
@@ -1146,17 +1144,10 @@ describe('Cascada Script: Output commands', function () {
       expect(result.x).to.equal(100);
     });
 
-    it('should allow input focusing in capture blocks', async () => {
+    it('should assign structured values without capture blocks', async () => {
       const script = `
-        // The capture block's output is focused to just the data object
         data result
-        var userData = capture
-          data captureData
-          var user = { name: "Bob", role: "user" }
-          captureData.name = user.name
-          captureData.role = user.role
-          return captureData.snapshot()
-        endcapture
+        var userData = { name: "Bob", role: "user" }
 
         result.result.user = userData
 
@@ -1174,20 +1165,15 @@ describe('Cascada Script: Output commands', function () {
       });
     });
 
-    it('should support capture in assignment to existing variables', async () => {
+    it('should support assignment to existing variables without capture', async () => {
       const script = `
 
         // 1. Declare variable
         data result
         var capturedContent = "initial"
 
-        // 2. Assign using capture (must work on existing variable)
-        capturedContent = capture
-             data captureData
-             captureData.status = "updated"
-             captureData.value = 123
-             return captureData.snapshot()
-        endcapture
+        // 2. Reassign with a structured object
+        capturedContent = { status: "updated", value: 123 }
 
         result.result = capturedContent
 
@@ -1202,17 +1188,14 @@ describe('Cascada Script: Output commands', function () {
     });
   });
 
-  it('should allow input focusing in capture blocks', async () => {
+  it('should compose output snapshots without capture blocks', async () => {
     const script = `
-      // The set block's output is focused to just the data object
       data result
-      var captured = capture
-        data captureData
-        text captureText
-        captureData.user.name = "Captured User"
-        captureText("hello from capture")
-        return {data: captureData.snapshot(), text: captureText.snapshot() }
-      endcapture
+      data captureData
+      text captureText
+      captureData.user.name = "Captured User"
+      captureText("hello from capture")
+      var captured = { data: captureData.snapshot(), text: captureText.snapshot() }
       result.result = captured
 
       return result.snapshot()`;

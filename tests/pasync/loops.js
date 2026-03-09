@@ -2810,28 +2810,18 @@ return result.snapshot()`;
 
       const script = `
 
-// Use capture block to handle the while loop logic
 data output
-var result = capture
-  data captured
-  var counter = 0
-  var iterations = 0
-  while checkCondition(counter)
-    var processed = processItem("item-" + counter)
-    captured.whileResults.push(processed)
-    iterations = iterations + 1
-    counter = incrementCounter(counter)
-  endwhile
+var counter = 0
+var iterations = 0
+while checkCondition(counter)
+  var processed = processItem("item-" + counter)
+  output.whileResults.push(processed)
+  iterations = iterations + 1
+  counter = incrementCounter(counter)
+endwhile
 
-  captured.summary.iterations = iterations
-  captured.summary.finalCounter = counter
-  return captured.snapshot()
-endcapture
-
-// Assign the captured result to our data object
-output.whileResults = result.whileResults
-output.summary.iterations = result.summary.iterations
-output.summary.finalCounter = result.summary.finalCounter
+output.summary.iterations = iterations
+output.summary.finalCounter = counter
 
 return output.snapshot()`;
 
@@ -2858,26 +2848,16 @@ return output.snapshot()`;
 
       const script = `
 
-// Use capture block to handle the each loop logic
 data output
-var result = capture
-  data captured
-  var items = ["a", "b", "c"]
-  var totalItems = items.length
-  each item in items
-    var processed = processItem(item)
-    captured.eachResults.push(processed)
-  endeach
+var items = ["a", "b", "c"]
+var totalItems = items.length
+each item in items
+  var processed = processItem(item)
+  output.eachResults.push(processed)
+endeach
 
-  captured.summary.totalItems = totalItems
-  captured.summary.items = items | join(", ")
-  return captured.snapshot()
-endcapture
-
-// Assign the captured result to our data object
-output.eachResults = result.eachResults
-output.summary.totalItems = result.summary.totalItems
-output.summary.items = result.summary.items
+output.summary.totalItems = totalItems
+output.summary.items = items | join(", ")
 
 return output.snapshot()`;
 

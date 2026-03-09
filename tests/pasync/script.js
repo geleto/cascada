@@ -136,20 +136,15 @@ describe('Cascada Script: Variables', function () {
     });
   });
 
-  describe('Capture Block Assignment', function () {
-    it('should use capture block for declaration and assignment', async function () {
+  describe('Variable Assignment with Objects', function () {
+    it('should handle declaration and assignment from async values', async function () {
       const script = `
         var rawUserData = fetchUser(123)
-        var user = capture
-          data userData
-          userData.id = rawUserData.id
-          userData.username = rawUserData.name | title
-          userData.status = "active" if rawUserData.isActive == 1 else "inactive"
-          return userData.snapshot()
-        endcapture
-        var result = {}
-        result.user = user
-        return result`;
+        var user = {}
+        user.id = rawUserData.id
+        user.username = rawUserData.name | title
+        user.status = "active" if rawUserData.isActive == 1 else "inactive"
+        return { user: user }`;
 
       const context = {
         fetchUser: async (id) => ({ id: 123, name: 'alice', isActive: 1 })
@@ -163,15 +158,10 @@ describe('Cascada Script: Variables', function () {
       });
     });
 
-    it('should use capture block for assignment to existing variable', async function () {
+    it('should support assignment to an existing variable', async function () {
       const script = `
         var user
-        user = capture
-          data userData
-          userData.name = "Bob"
-          userData.role = "admin"
-          return userData.snapshot()
-        endcapture
+        user = { name: "Bob", role: "admin" }
         return { result: { user: user } }`;
 
       const result = await env.renderScriptString(script, {});
@@ -181,18 +171,13 @@ describe('Cascada Script: Variables', function () {
       });
     });
 
-    it('should access outer scope variables in capture block', async function () {
+    it('should access outer scope variables in assignment expressions', async function () {
       const script = `
         var baseUrl = "https://api.example.com"
-        var user = capture
-          data userData
-          userData.apiUrl = baseUrl + "/users"
-          userData.name = "Alice"
-          return userData.snapshot()
-        endcapture
-        var result = {}
-        result.user = user
-        return result`;
+        var user = {}
+        user.apiUrl = baseUrl + "/users"
+        user.name = "Alice"
+        return { user: user }`;
 
       const result = await env.renderScriptString(script, {});
       expect(result.user).to.eql({
@@ -201,13 +186,10 @@ describe('Cascada Script: Variables', function () {
       });
     });
 
-    it('should read outer scope variable in minimal capture block', async function () {
+    it('should read outer scope variable in assignment flow', async function () {
       const script = `
         var base = "outer"
-        var result = capture
-          var out = base
-          return out
-        endcapture
+        var result = base
         return result`;
 
       const result = await env.renderScriptString(script, {});
@@ -483,36 +465,30 @@ describe('Cascada Script: Variables', function () {
       expect(result.outer).to.be('outer');
     });
 
-    it('should keep capture declarations scoped and allow outer redeclaration', async function () {
+    it('should allow outer assignment updated inside branch', async function () {
       const script = `
-        var captured = capture
-          var scopedValue = "capture"
-          return scopedValue
-        endcapture
         var scopedValue = "outer"
-        return { captured: captured, outer: scopedValue }`;
+        if true
+          scopedValue = "inner"
+        endif
+        var outerValue = "outer"
+        return { value: scopedValue, outer: outerValue }`;
 
       const result = await env.renderScriptString(script, {});
-      expect(result.captured).to.be('capture');
+      expect(result.value).to.be('inner');
       expect(result.outer).to.be('outer');
     });
   });
 
   describe('Complex Variable Scenarios', function () {
-    it('should handle nested capture blocks', async function () {
+    it('should handle nested object construction', async function () {
       const script = `
-        var outer = capture
-          data outerData
-          outerData.level = "outer"
-          var inner = capture
-            data innerData
-            innerData.level = "inner"
-            innerData.parentLevel = "outer"
-            return innerData.snapshot()
-          endcapture
-          outerData.innerResult = inner
-          return outerData.snapshot()
-        endcapture
+        var inner = {}
+        inner.level = "inner"
+        inner.parentLevel = "outer"
+        var outer = {}
+        outer.level = "outer"
+        outer.innerResult = inner
         return { result: { outer: outer } }`;
 
       const result = await env.renderScriptString(script, {});
@@ -525,18 +501,15 @@ describe('Cascada Script: Variables', function () {
       });
     });
 
-    it('should handle complex variable declarations with async operations', async function () {
+    it('should handle complex variable assignment with async operations', async function () {
       const script = `
         var userData = fetchUser(1)
         var settings = fetchSettings(1)
-        var profile = capture
-          data profileData
-          profileData.name = userData.name
-          profileData.email = userData.email
-          profileData.theme = settings.theme
-          profileData.notifications = settings.notifications
-          return profileData.snapshot()
-        endcapture
+        var profile = {}
+        profile.name = userData.name
+        profile.email = userData.email
+        profile.theme = settings.theme
+        profile.notifications = settings.notifications
         return { result: { profile: profile } }`;
 
       const context = {
@@ -555,14 +528,10 @@ describe('Cascada Script: Variables', function () {
   });
 
   describe('Error Handling in Variable Operations', function () {
-    it('should handle errors in capture block gracefully', async function () {
+    it('should handle errors in assignment expressions gracefully', async function () {
       const script = `
-        var capturedResult = capture
-          data captureData
-          // This would cause an error if not handled
-          captureData.value = someUndefinedFunction()
-          return captureData.snapshot()
-        endcapture
+        var capturedResult = {}
+        capturedResult.value = someUndefinedFunction()
         return { result: { output: capturedResult } }`;
 
       try {

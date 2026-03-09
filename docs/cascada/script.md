@@ -234,31 +234,18 @@ items[0] = slowApiCall()
 
 **\* *Note:** Property Assignment is a **script-only feature** and is not available in the Cascada template language. Similar to Nunjucks, templates can access object properties and array elements for reading, but cannot modify them directly.
 
-#### Block Assignment with `capture`
-The `capture...endcapture` block is a special construct used **exclusively on the right side of an assignment (`=`)** to orchestrate logic and assemble a value. It's perfect for transforming data or running a set of parallel operations to create a single variable.
+#### Building Intermediate Values Without `capture`
+`capture...endcapture` is no longer supported in scripts.
 
-The block runs its own logic and uses [Output Commands](#the-handler-system-using--output-commands) to build a result, which is then assigned to the variable. You can use an [output focus directive](#focusing-the-output-data-text-handlername) like `:data` to assign a clean data object. This directive can be placed on the same line as `capture` or on the first line of the block body.
+Use normal variables plus output snapshots (`data.snapshot()`, `text.snapshot()`, `value.snapshot()`) and explicit `return` statements to build intermediate and final results.
 
 ```javascript
-// First, fetch some raw data from an async source.
-// This might return an object with inconsistent field names or values.
-var rawUserData = fetchUser(123) // e.g., returns { id: 123, name: "alice", isActive: 1 }
-
-// Use a 'capture' block for declaration and assignment.
-// It transforms the raw data into a clean 'user' object.
-var user = capture : data
-  // Logic inside the block can access variables from the outer scope.
-  @data.id = rawUserData.id
-  @data.username = rawUserData.name | title // Use a filter for formatting
-  @data.status = "active" if rawUserData.isActive == 1 else "inactive"
-endcapture
-
-// Now, the 'user' variable holds a clean, structured object:
-// {
-//   "id": 123,
-//   "username": "Alice",
-//   "status": "active"
-// }
+var rawUserData = fetchUser(123)
+var user = {
+  id: rawUserData.id,
+  username: rawUserData.name | title,
+  status: "active" if rawUserData.isActive == 1 else "inactive"
+}
 ```
 
 #### Variable Scoping and Shadowing
@@ -613,7 +600,7 @@ For details on detecting and recovering from errors in your scripts, see the [Er
 
 ## Building Outputs Declaratively with `@`
 
-Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct a **result object** that is returned by any executable scope, such as an entire **script**, a **[macro](#macros-and-reusable-components)**, or a **[`capture` block](#block-assignment-with-capture)**.
+Output Commands, marked with the `@` sigil, are the heart of Cascada Script's data-building capabilities. Their purpose is to declaratively construct a **result object** that is returned by an executable scope, such as the entire **script** or a **[macro](#macros-and-reusable-components)**.
 
 All output operations use a standard function-call syntax, such as `@handler.method(...)`. This approach separates the *definition* of your final output from the *execution* of your asynchronous logic, allowing Cascada to run independent operations in parallel while ensuring your data is assembled correctly and in a predictable order.
 
@@ -677,7 +664,7 @@ var userSettings = { notifications: true, theme: "light" }
 
 ### The Core Concept: Collect, Execute, Assemble
 
-Instead of being executed immediately, `@` commands are stored in order and applied at the end of each **execution scope** (the main script, a [macro](#macros-and-reusable-components),or a [`capture` block](#block-assignment-with-capture)):
+Instead of being executed immediately, `@` commands are stored in order and applied at the end of each **execution scope** (the main script or a [macro](#macros-and-reusable-components)):
 
 1.  **Collect:** As your script runs, Cascada collects `@` commands into a buffer, preserving their source-code order.
 2.  **Execute:** All other logic - `var` assignments, `async` function calls, `for` loops - runs to completion. Independent async operations happen concurrently, maximizing performance.
@@ -741,7 +728,7 @@ Handler methods are executed synchronously during the "Assemble" step. For async
 
 ### Understanding the Result Object
 
-Any block of logic - the entire script, a macro, or a `capture` block - produces a result object. The keys of this object correspond to the **names of the output handlers** used within that scope. After the "Assemble" phase, the engine populates this object using values from each handler.
+Any executable scope - the entire script or a macro - produces a result object. The keys of this object correspond to the **names of the output handlers** used within that scope. After the "Assemble" phase, the engine populates this object using values from each handler.
 
 For example, a scope that uses the `data`, `text`, and a [custom `turtle` handler](#creating-custom-output-command-handlers) will produce a result object like this:
 ```json
@@ -1071,7 +1058,7 @@ Paths in `@data` commands are highly flexible.
 
 #### The `@value` Handler: Capturing a Single Value
 
-The `@value` handler provides a simple way to return a single value from a scope (script, macro, or capture block). Unlike `@data`, which builds up a structured object, `@value` simply captures whatever value you last set.
+The `@value` handler provides a simple way to return a single value from a scope (script or macro). Unlike `@data`, which builds up a structured object, `@value` simply captures whatever value you last set.
 
 **Key characteristics:**
 - **Simple assignment**: The last value set becomes the output
@@ -1174,7 +1161,7 @@ For details on the `!` operator, see [Sequential Execution Control](#managing-si
 
 ### Error handling and recovery with output handlers
 
-When an Error Value is written to an output handler (such as `@data` or `@text`), that handler becomes **poisoned**. This means the handler's final output will be an Error Value, which causes the capture block, macro, or script's render promise to be rejected.
+When an Error Value is written to an output handler (such as `@data` or `@text`), that handler becomes **poisoned**. This means the handler's final output will be an Error Value, which causes the current macro or script render promise to be rejected.
 
 ```javascript
 var user = fetchUser(userId)  // May fail
@@ -1381,7 +1368,7 @@ Once an Error Value is created, it automatically spreads to any dependent operat
 #### Output & Effects
 
 * **Output Handlers:**
-  If an Error Value is written to an output handler (such as `@data` or `@text`), that handler becomes **poisoned**. This causes the **return value** of the current script, macro, or capture block to become an **Error Value** instead of normal output, which will reject the render promise. See [How Scripts Fail](#how-scripts-fail-from-error-values-to-rejected-promises) for details.
+  If an Error Value is written to an output handler (such as `@data` or `@text`), that handler becomes **poisoned**. This causes the **return value** of the current script or macro to become an **Error Value** instead of normal output, which will reject the render promise. See [How Scripts Fail](#how-scripts-fail-from-error-values-to-rejected-promises) for details.
 
   ```javascript
   @data.user = myError  // ❌ Poisons the @data handler
@@ -1813,13 +1800,11 @@ While `guard` provides automatic protection for a block of code, you may sometim
 Calling `@handler._revert()` resets that handler to the state it was in at the beginning of the **current output scope**. Use `@._revert()` when you want to revert **all** handlers in the scope at once, or write the `revert` statement, which is the script-language shorthand for the same universal operation. Any of these forms discard all writes (successful or failed) made within that scope and remove the poison status.
 
 **The `revert` Statement (Scripts)**
-`revert` is a standalone statement (no `@`) that immediately behaves as if you called `@._revert()`. It is available anywhere a normal statement can appear, including within `if`/`else`, loop bodies, guards, captures, and macros. Because it resets every handler in the current output scope, reach for `@handler._revert()` when you need to surgically fix just one handler and `revert` when you deliberately want a clean slate for the entire scope.
+`revert` is a standalone statement (no `@`) that immediately behaves as if you called `@._revert()`. It is available anywhere a normal statement can appear, including within `if`/`else`, loop bodies, guards, and macros. Because it resets every handler in the current output scope, reach for `@handler._revert()` when you need to surgically fix just one handler and `revert` when you deliberately want a clean slate for the entire scope.
 
 ```javascript
 guard
-  var payload = capture :data
-    @data.value = riskyFetch()
-  endcapture
+  var payload = riskyFetch()
 
   if payload is error
     revert             // clears the guard's buffered output
@@ -1836,7 +1821,7 @@ endguard
 The "checkpoint" that `_revert()` restores to is the start of the nearest enclosing scope boundary. These boundaries now include:
 1.  `guard` blocks (including their private buffers when inserted into a parent output)
 2.  `include` and `call` buffers that stage output before merging into the parent scope
-3.  Isolated scopes such as `capture`, `macro`, and `caller` blocks, all of which flatten immediately after they finish
+3.  Isolated scopes such as `macro` and `caller` blocks, both of which flatten immediately after they finish
 4.  The Script or Template root (if none of the above apply)
 
 **Usage**
@@ -1867,21 +1852,19 @@ if content is error
 endif
 ```
 
-**Example: Resetting `@text` inside a `capture` block**
+**Example: Resetting `@text` in script scope**
 
 ```javascript
-var message = capture :text
-  @text("Starting operation...")
-  var result = riskyOperation()
+@text("Starting operation...")
+var result = riskyOperation()
 
-  if result is error
-     // Reverts only to the start of this capture block
-     revert          // same as @._revert()
-     @text("Operation failed.")
-  else
-     @text(" Success!")
-  endif
-endcapture
+if result is error
+   // Reverts only to the start of the current output scope
+   revert          // same as @._revert()
+   @text("Operation failed.")
+else
+   @text(" Success!")
+endif
 ```
 
 For a deeper dive into how the runtime tracks these buffers and boundaries, see `docs/code/output-revert.md`.
@@ -2714,7 +2697,7 @@ env.addCommandHandlerClass('turtle', TurtleHandler);
 
 ### Handler Lifecycle
 
-1. **`init()`** is called at the start of each output scope (script, macro, or capture block)
+1. **`init()`** is called at the start of each output scope (script or macro)
 2. Commands are buffered during execution
 3. **`invoke()`** is called for each buffered command during the Assembly phase
 4. **`finalize()`** is called to produce the final value

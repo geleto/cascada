@@ -186,17 +186,6 @@
       }
     });
 
-    it('should report correct path for error in capture block', async () => {
-      var scriptName = 'error-capture.casc';
-      loader.addTemplate(scriptName, 'var captured = capture\n  nonExistentFunction()\nendcapture\n{{ captured }}');
-      try {
-        await env.renderScript(scriptName, {});
-        expect().fail('Expected an error to be thrown');
-      } catch (err) {
-        expect(err.message).to.contain(`(${scriptName})`);
-      }
-    });
-
     it('should report correct path for error in multi-level extends (grandparent -> parent -> child)', async () => {
       var grandparentName = 'error-extends-grandparent.njk';
       var parentName = 'error-extends-parent-middle.njk';
