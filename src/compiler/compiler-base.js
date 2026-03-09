@@ -333,6 +333,14 @@ class CompilerBase extends Obj {
     }
     const declaredOutput = this.async._getDeclaredOutput(frame, name);
     if (declaredOutput && !this._isDeclared(frame, name)) {
+      if (node.sequential || node.sequentialRepair) {
+        this.fail(
+          'Sequence marker (!) is not allowed in non-context variable paths',
+          node.lineno,
+          node.colno,
+          node
+        );
+      }
       if (declaredOutput.type === 'value') {
         // Value outputs are read as point-in-stream snapshots when used as symbols.
         // This makes `x` equivalent to `x.snapshot()` in expressions.
@@ -364,6 +372,7 @@ class CompilerBase extends Obj {
     if (this.asyncMode) {
       let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isSequencePathLockDeclared(frame, nodeStaticPathKey)) {
+        this._assertSequenceRootIsContextPath(frame, nodeStaticPathKey, node);
         // This node accesses a declared sequence lock path.
         // Register the static path key as variable write so the next lock would wait for it
         // Multiple static path keys can be in the same block
@@ -687,6 +696,11 @@ class CompilerBase extends Obj {
     if (!this.scriptMode || !this.asyncMode || !targetNode) {
       return null;
     }
+    // Sequence-marked targets (path! / path!!) are handled by sequential-path
+    // compilation and must not be reinterpreted as value-output observation.
+    if (targetNode.sequential) {
+      return null;
+    }
 
     if (targetNode instanceof nodes.Symbol) {
       const name = targetNode.value;
@@ -775,6 +789,7 @@ class CompilerBase extends Obj {
       // Check if this is a sequential lookup (marked with `!`).
       let nodeStaticPathKey = node.lockKey; // this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isSequencePathLockDeclared(frame, nodeStaticPathKey)) {
+        this._assertSequenceRootIsContextPath(frame, nodeStaticPathKey, node);
         // This is a sequential lookup.
         // Register the static path key as a variable write so the next lock waits for it.
         // Multiple static path keys can be in the same block.
@@ -912,6 +927,21 @@ class CompilerBase extends Obj {
     }
     const decl = this.async._getDeclaredOutput(frame, lockKey);
     return !!(decl && decl.type === 'sequential_path');
+  }
+
+  _assertSequenceRootIsContextPath(frame, lockKey, node) {
+    if (!lockKey || lockKey.charAt(0) !== '!') {
+      return;
+    }
+    const sepIndex = lockKey.indexOf('!', 1);
+    const keyRoot = lockKey.substring(1, sepIndex === -1 ? lockKey.length : sepIndex);
+    if (!keyRoot) {
+      return;
+    }
+    const keyRootOutput = this.async._getDeclaredOutput(frame, keyRoot);
+    if (this._isDeclared(frame, keyRoot) || keyRootOutput) {
+      this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
+    }
   }
 
   _compileOutputObservationFunCall(node, frame, outputDecl, outputName, methodName, sequencePath) {
