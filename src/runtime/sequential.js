@@ -2,9 +2,7 @@
 
 const {
   memberLookupAsync,
-  memberLookupScriptAsync,
-  contextOrFrameLookup,
-  contextOrValueLookupScriptAsync
+  memberLookupScriptAsync
 } = require('./lookup');
 const { callWrapAsync } = require('./call');
 const { ensureSequentialPathOutput } = require('./checks');
@@ -30,13 +28,13 @@ function sequentialCallWrapValue(func, funcName, context, args, frame, pathKey, 
 
 function sequentialContextLookupValue(context, frame, name, pathKey, repair = false, currentBuffer = null) {
   return withSequentialPathOutput(frame, currentBuffer, pathKey, null, repair, false, () =>
-    contextOrFrameLookup(context, frame, name)
+    contextLookupOnly(context, name, pathKey)
   );
 }
 
 function sequentialContextLookupScriptValue(context, frame, name, pathKey, repair = false, currentBuffer = null) {
   return withSequentialPathOutput(frame, currentBuffer, pathKey, null, repair, false, () =>
-    contextOrValueLookupScriptAsync(context, frame, name, currentBuffer)
+    contextLookupOnly(context, name, pathKey)
   );
 }
 
@@ -59,3 +57,13 @@ module.exports = {
   sequentialMemberLookupAsyncValue,
   sequentialMemberLookupScriptAsyncValue
 };
+
+function contextLookupOnly(context, name, pathKey) {
+  const value = context.lookup(name);
+  if (value === undefined) {
+    throw new Error(
+      `Sequential path '${pathKey}' root '${name}' is not available in context`
+    );
+  }
+  return value;
+}
