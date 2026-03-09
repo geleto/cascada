@@ -310,16 +310,23 @@ class Compiler extends CompilerBase {
       return this.compileSetval(node, frame);
     }
 
-    if (this.asyncMode &&
-      node.varType === 'assignment' &&
-      node.targets &&
-      node.targets.length > 0 &&
-      node.targets.every((t) => {
-        if (!(t instanceof nodes.Symbol)) return false;
-        const out = this.async._getDeclaredOutput(frame, t.value);
-        return !!(out && out.type === 'value');
-      })) {
-      return this.compileSetval(node, frame);
+    if (this.asyncMode) {
+      // Async mode no longer supports legacy frame-var assignment semantics.
+      // Normalize set/var nodes into the value-output assignment/declaration path.
+      const setvalNode = new nodes.Set(node.lineno, node.colno, node.targets, node.value, 'setval');
+      if (node.path) {
+        setvalNode.path = node.path;
+      }
+      if (node.body) {
+        setvalNode.body = node.body;
+      }
+      if (node.declarationOnly) {
+        setvalNode.declarationOnly = !!node.declarationOnly;
+      }
+      if (node.isSetvalDeclaration || node.varType === 'declaration') {
+        setvalNode.isSetvalDeclaration = true;
+      }
+      return this.compileSetval(setvalNode, frame);
     }
 
     const ids = [];
@@ -347,22 +354,12 @@ class Compiler extends CompilerBase {
 
       validateSetTarget(this, node, target, name, isDeclared);
 
-      // Both modes rely on a fresh temp for the JS assignment.
+      // Sync mode relies on a fresh temp for JS assignment.
       id = this._tmpid();
-      const declarationKeyword = this.asyncMode ? 'let' : 'var';
-      this.emit.line(`${declarationKeyword} ${id};`);
-
-      if (this.asyncMode) {
-        let declarationFrame = frame;
-        while (declarationFrame && declarationFrame.createScope === false) {
-          declarationFrame = declarationFrame.parent;
-        }
-        declarationFrame = declarationFrame || frame;
-        declarationFrame.set(name, id);
-      }
+      this.emit.line(`var ${id};`);
       ids.push(id);
 
-      if (!this.asyncMode && this.scriptMode) {
+      if (this.scriptMode) {
         this._addDeclaredVar(frame, name);
       }
     });
@@ -375,35 +372,17 @@ class Compiler extends CompilerBase {
       }
       this.emit(ids[0] + ' = ');
 
-      if (this.asyncMode) {
-        const setPathValueId = this._tmpid();
-        this.emit(`let ${setPathValueId} = `);
-        this._compileExpression(node.value, frame, true);
-        this.emit.line(';');
-        this.buffer.emitOwnWaitedConcurrencyResolve(frame, setPathValueId, node.value || node);
-
-        this.emit('runtime.setPath(');
-        this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
-        // Compile path array WITHOUT resolving items (so promises are passed to setPath)
-        this._compileAggregate(node.path, frame, '[', ']', false, false);
-        this.emit(', ');
-        this.emit(setPathValueId);
-        this.emit(')');
-      } else {
-        // Sync mode
-        this.emit('runtime.setPath(');
-        this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
-        this.compile(node.path, frame);
-        this.emit(', ');
-        this.compile(node.value, frame);
-        this.emit(')');
-      }
+      this.emit('runtime.setPath(');
+      this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
+      this.compile(node.path, frame);
+      this.emit(', ');
+      this.compile(node.value, frame);
+      this.emit(')');
       this.emit.line(';');
     } else if (node.value) { // e.g., set x = 123
       this.emit(ids.join(' = ') + ' = ');
       this._compileExpression(node.value, frame, true, node.value);
       this.emit.line(';');
-      this.buffer.emitOwnWaitedConcurrencyResolve(frame, ids[0], node.value);
     } else { // e.g., set x = capture ...
       this.emit(ids.join(' = ') + ' = ');
       this.emit.asyncBlockValue(node, frame, (n, f) => {
@@ -429,11 +408,7 @@ class Compiler extends CompilerBase {
       // This export logic is common to both modes.
       if (name.charAt(0) !== '_') {
         this.emit.line('if(frame.topLevel) {');
-        if (this.asyncMode) {
-          this.emit.line(`  context.addExport("${name}");`);
-        } else {
-          this.emit.line(`  context.addExport("${name}", ${id});`);
-        }
+        this.emit.line(`  context.addExport("${name}", ${id});`);
         this.emit.line('}');
       }
     });

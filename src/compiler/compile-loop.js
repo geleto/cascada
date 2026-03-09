@@ -402,10 +402,6 @@ class CompileLoop {
     }
 
     this.compiler.emit.line(`frame.set("${varName}", ${valueExpr});`);
-    if (node.isAsync) {
-      frame.set(varName, valueExpr);
-      this.compiler._addDeclaredVar(frame, varName);
-    }
   }
 
   _emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame) {
