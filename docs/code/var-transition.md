@@ -32,20 +32,18 @@ This usage is currently tied to frame-local/control behavior (and sequence lock 
 
 ### Remaining Tasks
 
-1. Split remaining var-sync usage into explicit buckets:
+1. Split remaining frame-local usage into explicit buckets:
 - Keep bucket: frame-local/control semantics + sequence lock semantics.
 - Remove bucket: any remaining dataflow path that should be value-output ordered instead.
 
-2. Shrink compiler metadata surface:
-- For each producer of `writeCounts`/`readVars`, confirm it belongs to keep bucket.
-- Remove producers that are no longer needed after value-output migration is complete.
-
-3. Shrink runtime var-sync surface:
-- After compiler-side pruning, remove corresponding runtime pieces that become unused (`pushAsyncBlock` write sync branches, parent promisification/countdown paths not needed by keep bucket).
-
-4. Prepare final consolidation cut:
+2. Prepare final consolidation cut:
 - Once the above pruning is done and stable, proceed with old-var removal and value->var consolidation steps below.
 - Keep behavior guarded and staged until full suite parity is stable.
+
+### Completed In This Step
+
+- Former compiler var-sync metadata (`readVars`/`writeCounts` producers and async block arg emission for those fields) is already removed from active compiler paths.
+- Runtime async var-sync contract tied to that metadata is already removed from active async block orchestration.
 
 ## Explicit Non-Goals
 

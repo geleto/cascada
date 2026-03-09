@@ -1304,12 +1304,42 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       }
     });
 
+    it('should reject reserved keywords as macro parameter names', async () => {
+      const script = `
+        macro bad(data)
+          return data
+        endmacro
+        return bad(1)
+      `;
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('is reserved');
+      }
+    });
+
+    it('should reject duplicate macro parameter names', async () => {
+      const script = `
+        macro bad(x, x=1)
+          return x
+        endmacro
+        return bad(2)
+      `;
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('already been declared');
+      }
+    });
+
     it('should pass output snapshots as regular values', async () => {
       const script = `
         data myData
         myData.x = 1
-        macro wrap(value)
-          return value
+        macro wrap(payload)
+          return payload
         endmacro
         var snap = myData.snapshot()
         var result = wrap(snap)
@@ -1650,6 +1680,20 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         expect().fail('Should have thrown');
       } catch (err) {
         expect(err.message).to.match(/Cannot read|not defined|undefined|Can not look up|Cannot assign to undeclared variable/);
+      }
+    });
+
+    it('should throw on mixed assignment targets (declared value + undeclared variable)', async () => {
+      const script = `
+        value x
+        x, y = 1
+        return x
+      `;
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('Cannot assign to undeclared variable');
       }
     });
 

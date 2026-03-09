@@ -72,7 +72,7 @@ class Compiler extends CompilerBase {
     }
 
     if (frame.declaredOutputs.has(name)) {
-      this.fail(`Output '${name}' already declared`, node && node.lineno, node && node.colno, node || undefined);
+      this.fail(`Cannot declare output '${name}': already declared`, node && node.lineno, node && node.colno, node || undefined);
     }
 
     // Match variable declaration semantics: disallow shadowing parent declarations.
@@ -310,7 +310,7 @@ class Compiler extends CompilerBase {
       return this.compileSetval(node, frame);
     }
 
-    if (this.scriptMode &&
+    if (this.asyncMode &&
       node.varType === 'assignment' &&
       node.targets &&
       node.targets.length > 0 &&
@@ -1196,8 +1196,9 @@ class Compiler extends CompilerBase {
     this.emit.lines(
       'frame = ' + ((keepFrame) ? 'frame.push(true);' : 'frame.new();'),
       'kwargs = kwargs || {};',
-      'if (Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
-      'frame.set("caller", kwargs.caller); }'
+      'if (!Object.prototype.hasOwnProperty.call(kwargs, "caller")) {',
+      '  kwargs.caller = undefined;',
+      '}'
     );
 
     let err = this._tmpid();
@@ -1209,38 +1210,80 @@ class Compiler extends CompilerBase {
         '}');
     }
 
-    // Expose the arguments to the template. Don't need to use
-    // random names because the function
-    // will create a new run-time scope for us
-    args.forEach((arg) => {
-      this.emit.line(`frame.set("${arg.value}", l_${arg.value});`);
-      currFrame.set(arg.value, `l_${arg.value}`);
-      if (node.isAsync) {
-        this._addDeclaredVar(currFrame, arg.value);
-      }
-    });
-
-    // Expose the keyword arguments
-    if (kwargs) {
-      kwargs.children.forEach((pair) => {
-        const name = pair.key.value;
-        if (node.isAsync) {
-          this._addDeclaredVar(currFrame, name);
-        }
-        this.emit(`frame.set("${name}", `);
-        this.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
-        this.emit(` ? kwargs["${name}"] : `);
-        this._compileExpression(pair.value, currFrame, false);
-        this.emit(');');
-      });
-    }
-
-    if (node.isAsync) {
-      this._addDeclaredVar(currFrame, 'caller');
-    }
     let returnStatement;
     const snapshotVar = this._tmpid();
     this.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
+      if (node.isAsync) {
+        // Async macro bindings are value outputs so assignment/read semantics
+        // match value-command ordering instead of frame-local var behavior.
+        this._declareMacroBindingValueOutput(managedFrame, bufferId, 'caller', node);
+        args.forEach((arg) => {
+          this._declareMacroBindingValueOutput(managedFrame, bufferId, arg.value, arg);
+        });
+        if (kwargs) {
+          kwargs.children.forEach((pair) => {
+            this._declareMacroBindingValueOutput(managedFrame, bufferId, pair.key.value, pair.key);
+          });
+        }
+
+        this._emitMacroBindingInit(
+          managedFrame,
+          bufferId,
+          'caller',
+          () => {
+            this.emit('kwargs.caller');
+          },
+          node
+        );
+
+        args.forEach((arg) => {
+          this._emitMacroBindingInit(
+            managedFrame,
+            bufferId,
+            arg.value,
+            () => {
+              this.emit(`l_${arg.value}`);
+            },
+            arg
+          );
+        });
+
+        if (kwargs) {
+          kwargs.children.forEach((pair) => {
+            const name = pair.key.value;
+            this._emitMacroBindingInit(
+              managedFrame,
+              bufferId,
+              name,
+              () => {
+                this.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}") ? kwargs["${name}"] : `);
+                this._compileExpression(pair.value, managedFrame, false);
+              },
+              pair
+            );
+          });
+        }
+      } else {
+        // Sync mode keeps frame-local macro binding behavior.
+        this.emit.line('frame.set("caller", kwargs.caller);');
+        managedFrame.set('caller', 'kwargs.caller');
+        args.forEach((arg) => {
+          this.emit.line(`frame.set("${arg.value}", l_${arg.value});`);
+          managedFrame.set(arg.value, `l_${arg.value}`);
+        });
+
+        if (kwargs) {
+          kwargs.children.forEach((pair) => {
+            const name = pair.key.value;
+            this.emit(`frame.set("${name}", `);
+            this.emit(`Object.prototype.hasOwnProperty.call(kwargs, "${name}")`);
+            this.emit(` ? kwargs["${name}"] : `);
+            this._compileExpression(pair.value, managedFrame, false);
+            this.emit(');');
+          });
+        }
+      }
+
       this.emit.withScopedSyntax(() => {
         this.compile(node.body, managedFrame);
       });
@@ -1288,6 +1331,53 @@ class Compiler extends CompilerBase {
     this.sequential.isCompilingMacroBody = oldIsCompilingMacroBody; // Restore state
 
     return funcId;
+  }
+
+  _declareMacroBindingValueOutput(frame, bufferId, name, node) {
+    const bindingNode = node || { lineno: 0, colno: 0 };
+    const targetNode = {
+      lineno: bindingNode.lineno,
+      colno: bindingNode.colno
+    };
+    const bindingSetNode = {
+      varType: 'declaration',
+      lineno: bindingNode.lineno,
+      colno: bindingNode.colno
+    };
+
+    // Keep macro arg/kwarg/caller declaration rules aligned with normal var declarations.
+    const alreadyDeclared = this._isDeclared(frame, name) ||
+      !!(frame.declaredOutputs && frame.declaredOutputs.has(name));
+    validateSetTarget(this, bindingSetNode, targetNode, name, alreadyDeclared);
+    this._addDeclaredVar(frame, name);
+
+    frame.declaredOutputs = frame.declaredOutputs || new Map();
+    const existing = frame.declaredOutputs.get(name);
+    if (existing) {
+      this.fail(
+        `Cannot declare output '${name}': already declared`,
+        node && node.lineno,
+        node && node.colno,
+        node || undefined
+      );
+    }
+
+    // Macro invocation bindings are emitted as value outputs for async ordering semantics.
+    frame.declaredOutputs.set(name, {
+      type: 'value',
+      initializer: null
+    });
+    this.emit.line(`runtime.declareOutput(frame, ${bufferId}, "${name}", "value", context, null);`);
+  }
+
+  _emitMacroBindingInit(frame, bufferId, name, emitValueExpression, positionNode = null) {
+    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
+    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
+    this.buffer.registerOutputUsage(frame, name);
+    this.buffer.registerOutputMutation(frame, name);
+    this.emit(`${bufferId}.add(new runtime.ValueCommand({ handler: '${name}', args: [`);
+    emitValueExpression();
+    this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} }), "${name}");`);
   }
 
   compileMacro(node, frame) {

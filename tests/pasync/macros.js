@@ -768,5 +768,57 @@
         });
       });
     });
+
+    describe('Macro binding value semantics', () => {
+      it('should allow reassignment of macro argument in async template mode', async () => {
+        const template = `
+          {%- macro bump(x) -%}
+            {% set x = x + 1 %}
+            {{ x }}
+          {%- endmacro -%}
+          {{ bump(2) }}
+        `;
+        const rendered = await env.renderTemplateString(template, {});
+        expect(rendered.trim()).to.equal('3');
+      });
+
+      it('should allow reassignment of macro argument in async script mode', async () => {
+        const script = `
+        macro bump(x)
+          x = x + 1
+          return x
+        endmacro
+
+        var result = bump(2)
+        return result`;
+        const result = await env.renderScriptString(script, {});
+        expect(result).to.equal(3);
+      });
+
+      it('should keep caller binding assignable inside macro body', async () => {
+        const template = `
+          {%- macro wrap() -%}
+            {% set caller = "override" %}
+            {{ caller }}
+          {%- endmacro -%}
+          {% call wrap() %}ignored{% endcall %}
+        `;
+        const rendered = await env.renderTemplateString(template, {});
+        expect(rendered.trim()).to.equal('override');
+      });
+
+      it('should resolve default macro params from earlier params and allow reassignment', async () => {
+        const template = `
+          {%- macro adjust(a, b=a) -%}
+            {% set b = b + 2 %}
+            {{ b }}
+          {%- endmacro -%}
+          {{ adjust(3) }}
+        `;
+        const rendered = await env.renderTemplateString(template, {});
+        expect(rendered.trim()).to.equal('5');
+      });
+
+    });
   });
 })();

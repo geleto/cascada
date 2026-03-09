@@ -399,7 +399,7 @@
 
       beforeEach(() => {
         root = new AsyncFrame();
-        frame = root.pushAsyncBlock({ '!lockKey': 1, '!lockKey~': 1 });
+        frame = root.push(false);
         currentBuffer = setupSequentialRuntimeForTests(root);
         mockContext = {
           env: { globals: {} },
@@ -496,7 +496,7 @@
       it('should throw PoisonError for poisoned lock', async () => {
         const lockPoison = createPoison(new Error('Lock poisoned'));
         root = new AsyncFrame();
-        frame = root.pushAsyncBlock({ '!lockKey': 1, '!lockKey~': 1 });
+        frame = root.push(false);
         currentBuffer = setupSequentialRuntimeForTests(root);
         runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 

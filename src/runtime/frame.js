@@ -177,10 +177,6 @@ class AsyncFrame extends Frame {
     return super.set(name, val, resolveUp);
   }
 
-  pushAsyncBlock() {
-    return this.push(false);
-  }
-
 }
 
 module.exports = {
