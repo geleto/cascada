@@ -153,6 +153,17 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be('Hello World');
     });
 
+    it('should overwrite text output with assignment', async () => {
+      const script = `
+        text textOut
+        textOut("Hello")
+        textOut = "World"
+        return textOut.snapshot()
+      `;
+      const result = await render(script);
+      expect(result).to.be('World');
+    });
+
     it('should support nested path set operation', async () => {
       const script = `
         data myData
@@ -1637,17 +1648,14 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       }
     });
 
-    it('should throw when assigning to text outputs with =', async () => {
+    it('should overwrite text outputs when assigning with =', async () => {
       const script = `
         text textOut
         textOut = "hi"
+        return textOut.snapshot()
       `;
-      try {
-        await render(script);
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('does not support assignment');
-      }
+      const result = await render(script);
+      expect(result).to.be('hi');
     });
 
     it('should allow value outputs with initializers', async () => {

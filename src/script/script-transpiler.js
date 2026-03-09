@@ -1099,7 +1099,10 @@ class ScriptTranspiler {
         parseResult.blockType = null;
         parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}.set(null, ${assignmentExpr})`, false);
       } else if (outputType === 'text') {
-        throw new Error(`text output '${outputName}' does not support assignment at line ${lineIndex + 1}; use '${outputName}(...)'`);
+        parseResult.lineType = 'TAG';
+        parseResult.tagName = 'output_command';
+        parseResult.blockType = null;
+        parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}.set(${assignmentExpr})`, false);
       } else if (outputType === 'var') {
         const firstExprWord = this._getFirstWord(assignmentExpr);
         if (firstExprWord === 'capture') {

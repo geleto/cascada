@@ -122,7 +122,7 @@ class TextCommand extends OutputCommand {
     if (isSpecObject) {
       super({
         handler: specOrValue.handler,
-        command: null,
+        command: specOrValue.command || null,
         args: specOrValue.args || specOrValue.arguments || [],
         subpath: null,
         pos: specOrValue.pos || null
@@ -155,6 +155,20 @@ class TextCommand extends OutputCommand {
       return;
     }
     const args = Array.isArray(this.arguments) ? this.arguments : [];
+    if (this.command === 'set') {
+      if (args.length !== 1) {
+        output._setTarget(this.toPoisonValue([
+          contextualizeOutputError(output, this.pos, new Error('text.set() accepts exactly one argument'))
+        ]));
+        return;
+      }
+      output._setTarget([]);
+    } else if (this.command !== null) {
+      output._setTarget(this.toPoisonValue([
+        contextualizeOutputError(output, this.pos, new Error(`Unsupported text output command '${this.command}'`))
+      ]));
+      return;
+    }
     if (!this.normalizeArgs) {
       appendTextValues(output, args, this.pos);
       return;

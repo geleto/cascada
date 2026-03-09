@@ -765,9 +765,10 @@ endif`;
       expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello, World!") -%}');
     });
 
-    it('should reject text output assignment syntax', () => {
+    it('should convert text output assignment syntax to overwrite command', () => {
       const script = 'text outText\noutText = "Hello, World!"';
-      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/does not support assignment/);
+      const template = scriptTranspiler.scriptToTemplate(script);
+      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText.set("Hello, World!") -%}');
     });
 
     it('should reject var output callable assignment syntax', () => {
