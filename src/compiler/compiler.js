@@ -778,7 +778,7 @@ class Compiler extends CompilerBase {
         // 4. Inject Logic BEFORE closing the block
         // We need to wait for all inner async operations to complete so the buffer is fully populated
         // We wait for 1 because the current block itself is an active closure
-        this.emit.line('await astate.waitAllClosures(1);');
+        //this.emit.line('await astate.waitAllClosures(1);');
 
         // 5. Check Buffer/Variables for Poison
         const guardErrorsVar = this._tmpid();
@@ -1442,7 +1442,7 @@ class Compiler extends CompilerBase {
         } else {
           this.emit.line(`let output_textOutputVar = runtime.declareOutput(frame, currentBuffer, "${captureTextOutputName}", "text", context, null);`);
           this.compile(n.body, f);//write to output
-          this.emit.line('await astate.waitAllClosures(1)');
+          //this.emit.line('await astate.waitAllClosures(1)');
           this.emit.line(`let ${res} = await currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${node.body.lineno}, colno: ${node.body.colno}});`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
