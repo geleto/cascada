@@ -93,7 +93,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'return', 'data', 'text', 'value', 'sink', 'sequence'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'return', 'data', 'text', 'sink', 'sequence'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -122,8 +122,6 @@ class ScriptTranspiler {
         'raw': 'endraw',
         'verbatim': 'endverbatim',
         'set': 'endset', //only when no = in the set, then the block has to be closed
-        'setval': 'endsetval', // internal bridge for script `value` declarations
-        'value': 'endvalue', // declaration-style block for script `value = capture`
         'var': 'endvar', //only when no = in the var, then the block has to be closed
         'guard': 'endguard',
         'capture': 'endcapture'
@@ -134,7 +132,7 @@ class ScriptTranspiler {
         'else', 'elif', 'case', 'default',
         'endif', 'endfor', 'endswitch', 'endblock', 'endmacro',
         'endfilter', 'endcall', 'endcall_assign', 'endraw', 'endverbatim',
-        'endwhile', 'endvar', 'endvalue', 'recover'
+        'endwhile', 'endvar', 'recover'
       ],
 
       // Continuation detection
@@ -171,7 +169,7 @@ class ScriptTranspiler {
     this.RESERVED_DECLARATION_NAMES = RESERVED_DECLARATION_NAMES;
 
     // Track block stack for declaration/assignment blocks
-    this.setBlockStack = []; // 'var', 'value', 'set', or internal 'setval'
+    this.setBlockStack = []; // 'var' or 'set'
     // Track call vs call_assign nesting so endcall closes the correct block kind.
     this.callBlockStack = [];
 
@@ -940,6 +938,11 @@ class ScriptTranspiler {
       if (!isAssignment) {
         const declaredNames = content.split(',').map(name => name.trim()).filter(Boolean);
         this._assertNonReservedDeclarationNames(declaredNames, lineIndex);
+        if (declarationTag === 'var') {
+          for (const name of declaredNames) {
+            this.declareOutput(name, 'value');
+          }
+        }
       }
       if (isAssignment) {
         // This should not be possible if _isAssignment works correctly
@@ -977,6 +980,11 @@ class ScriptTranspiler {
       if (!isAssignment) {
         const declaredNames = targetsStr.split(',').map(name => name.trim()).filter(Boolean);
         this._assertNonReservedDeclarationNames(declaredNames, lineIndex);
+        if (declarationTag === 'var') {
+          for (const name of declaredNames) {
+            this.declareOutput(name, 'value');
+          }
+        }
       }
 
       // Check for capture block
@@ -992,13 +1000,7 @@ class ScriptTranspiler {
         // But here we support `var x = capture` or `x = capture`.
         // The transpiler usually emits `{% capture x %}...`
 
-        // For value declarations we emit explicit "capture" so parser can
-        // distinguish bare declaration from capture block start.
-        if (!isAssignment && declarationTag === 'value') {
-          parseResult.codeContent = `${targetsStr} capture${captureContent ? ` ${captureContent}` : ''}`;
-        } else {
-          parseResult.codeContent = `${targetsStr} ${captureContent}`;
-        }
+        parseResult.codeContent = `${targetsStr}${captureContent ? ` ${captureContent}` : ''}`;
         this.setBlockStack.push(parseResult.tagName);
       } else if (firstExprWord === 'call') {
         // "var x = call ... endcall" / "x = call ... endcall"
@@ -1019,40 +1021,6 @@ class ScriptTranspiler {
         parseResult.blockType = null;
       }
     }
-  }
-
-  _convertVarDeclarationToValue(codeContent, forceConvert = false) {
-    if (!forceConvert && !codeContent) {
-      return codeContent;
-    }
-
-    const trimmed = (codeContent || '').trim();
-    if (trimmed.startsWith('guard ')) {
-      const selectors = trimmed.substring('guard '.length).split(',');
-      let changed = false;
-      const convertedSelectors = selectors.map((selector) => {
-        const selectorTrimmed = selector.trim();
-        if (selectorTrimmed === 'var') {
-          changed = true;
-          return 'value';
-        }
-        return selectorTrimmed;
-      });
-      return changed ? `guard ${convertedSelectors.join(', ')}` : codeContent;
-    }
-
-    if (!trimmed.startsWith('var ')) {
-      return codeContent;
-    }
-
-    const varDeclMatch = trimmed.match(
-      /^var\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*(?:\s*=.*)?$/
-    );
-    if (!varDeclMatch) {
-      return codeContent;
-    }
-
-    return codeContent.replace(/^var\b/, 'value');
   }
 
   _formatOutputCommand(outputType, commandContent, includeOutputType = false) {
@@ -1153,19 +1121,19 @@ class ScriptTranspiler {
           const captureContent = assignmentExpr.substring('capture'.length).trim();
           parseResult.lineType = 'TAG';
           parseResult.blockType = this.BLOCK_TYPE.START;
-          parseResult.tagName = 'setval';
-          parseResult.codeContent = `${outputName} capture${captureContent ? ` ${captureContent}` : ''}`;
-          this.setBlockStack.push('setval');
+          parseResult.tagName = 'set';
+          parseResult.codeContent = `${outputName}${captureContent ? ` ${captureContent}` : ''}`;
+          this.setBlockStack.push('set');
         } else if (firstExprWord === 'call') {
           const afterCall = assignmentExpr.substring('call'.length).trim();
           parseResult.lineType = 'TAG';
           parseResult.blockType = this.BLOCK_TYPE.START;
           parseResult.tagName = 'call_assign';
-          parseResult.codeContent = `setval ${outputName} = ${afterCall}`;
+          parseResult.codeContent = `set ${outputName} = ${afterCall}`;
           this.callBlockStack.push('call_assign');
         } else {
           parseResult.lineType = 'TAG';
-          parseResult.tagName = 'setval';
+          parseResult.tagName = 'set';
           parseResult.blockType = null;
           parseResult.codeContent = `${outputName} = ${assignmentExpr}`;
         }
@@ -1259,7 +1227,7 @@ class ScriptTranspiler {
     const trimmed = codeContent.trim();
     const outputType = this._getFirstWord(trimmed);
     if (!outputType) return null;
-    if (!(outputType === 'data' || outputType === 'text' || outputType === 'value' || outputType === 'sink' || outputType === 'sequence')) {
+    if (!(outputType === 'data' || outputType === 'text' || outputType === 'sink' || outputType === 'sequence')) {
       return null;
     }
 
@@ -1288,39 +1256,6 @@ class ScriptTranspiler {
     parseResult.tagName = decl.outputType;
     parseResult.codeContent = parseResult.codeContent.substring(decl.outputType.length + 1).trim();
     parseResult.blockType = null;
-  }
-
-  /**
-   * Process value declaration - this is more complex than var declaration
-   * because we do a declaration bookkeeping for the value declarations
-   * as an output. This tells the transpiler it can interprer `x = ...` as
-   * `setval x = ...` in the future we will get rid of the curren var implementation
-   * and value becomes var, then set will become what setval is now currently
-   * but setval will support all outputs
-   * @param {Object} parseResult - The parse result object
-   * @param {number} lineIndex - The line index
-   */
-  _processValueDeclaration(parseResult, lineIndex) {
-    const decl = this._parseOutputDeclaration(parseResult.codeContent, lineIndex);
-    if (!decl || decl.outputType !== 'value') {
-      throw new Error(`Invalid value declaration at line ${lineIndex + 1}`);
-    }
-
-    // Keep value symbols in output scope so assignments route to output_command x(...)
-    this.declareOutput(decl.name, 'value');
-    // Reuse var declaration logic to keep value/var declaration parsing symmetric for
-    // initialized declarations, but preserve bare `value x` as declaration-only.
-    const initializerRaw = (decl.initializer || '').trim();
-    if (!initializerRaw) {
-      parseResult.lineType = 'TAG';
-      parseResult.tagName = 'value';
-      parseResult.codeContent = decl.name;
-      parseResult.blockType = null;
-      return;
-    }
-
-    parseResult.codeContent = `value ${decl.name} ${initializerRaw}`;
-    this._processVar(parseResult, lineIndex, false, 'value');
   }
 
   _isOutputDeclarationLine(firstWord, codeContent) {
@@ -1357,13 +1292,27 @@ class ScriptTranspiler {
     parseResult.isEmpty = line.trim() === '';
     const rawCodeContent = this._tokensToCode(codeTokens);
     parseResult.codeContent = rawCodeContent.trimStart();
+    if (/^guard\b/.test(parseResult.codeContent.trim())) {
+      parseResult.codeContent = parseResult.codeContent.replace(
+        /^(\s*guard\s+)(.*)$/,
+        (_match, prefix, selectors) => {
+          const normalized = selectors
+            .split(',')
+            .map((s) => {
+              const trimmed = s.trim();
+              return trimmed === 'var' ? 'value' : trimmed;
+            })
+            .join(', ');
+          return `${prefix}${normalized}`;
+        }
+      );
+    }
 
     parseResult.comments = [];
     for (let i = 0; i < comments.length; i++) {
       parseResult.comments.push(comments[i].content);
     }
 
-    parseResult.codeContent = this._convertVarDeclarationToValue(parseResult.codeContent);
     const firstWord = this._getFirstWord(parseResult.codeContent);
     const code = parseResult.codeContent.trim();
     const continuesFromPrev = this._continuesFromPrevious(code);
@@ -1377,23 +1326,20 @@ class ScriptTranspiler {
 
     if (code.startsWith('@')) {
       throw new Error(`Legacy '@' output commands are no longer supported at line ${lineIndex + 1}`);
-    } else if (firstWord === 'var' ||
-      (firstWord === 'value' && /^value\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*(?:\s*=.*)?$/.test(code))) {
-      if (firstWord === 'value') {
-        this._processValueDeclaration(parseResult, lineIndex);
-      } else {
-        this._processVar(parseResult, lineIndex);
-      }
+    } else if (firstWord === 'var') {
+      this._processVar(parseResult, lineIndex);
+    } else if (firstWord === 'value') {
+      throw new Error(`'value' declarations are no longer supported at line ${lineIndex + 1}; use 'var' instead.`);
     } else if (this._isOutputDeclarationLine(firstWord, code)) {
       this._processOutputDeclaration(parseResult, lineIndex);
     } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {
       // Output operation was processed
-    } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'value' || firstWord === 'sink' || firstWord === 'sequence') &&
+    } else if ((firstWord === 'data' || firstWord === 'text' || firstWord === 'sink' || firstWord === 'sequence') &&
       this._isAssignment(code, lineIndex)) {
       this._processVar(parseResult, lineIndex, true);
     } else if (firstWord === 'endcapture') {
       if (this.setBlockStack.length === 0) {
-        throw new Error(`Unexpected 'endcapture' at line ${lineIndex + 1} - no matching var/set/setval block found`);
+        throw new Error(`Unexpected 'endcapture' at line ${lineIndex + 1} - no matching var/set block found`);
       }
       const tag = this.setBlockStack.pop();
       parseResult.lineType = 'TAG';
@@ -1504,7 +1450,7 @@ class ScriptTranspiler {
 
     if (processedLine.blockType === this.BLOCK_TYPE.START) {
       let parentAccess = 'inherit';
-      if (processedLine.tagName === 'macro' || processedLine.tagName === 'var' || processedLine.tagName === 'value' || processedLine.tagName === 'set' || processedLine.tagName === 'setval') {
+      if (processedLine.tagName === 'macro' || processedLine.tagName === 'var' || processedLine.tagName === 'set') {
         parentAccess = 'none';
       } else if (processedLine.tagName === 'call' || processedLine.tagName === 'call_assign') {
         parentAccess = 'readonly';
@@ -1525,7 +1471,7 @@ class ScriptTranspiler {
     if (!processedLine.isContinuation && processedLine.lineType === 'TAG') {
       if (processedLine.tagName === 'output_command') {
         codeContent = this._mapCoreOutputCall(codeContent);
-      } else if (processedLine.tagName === 'data' || processedLine.tagName === 'text' || processedLine.tagName === 'value') {
+      } else if (processedLine.tagName === 'data' || processedLine.tagName === 'text') {
         codeContent = this._mapCoreOutputName(codeContent || '');
       }
     }

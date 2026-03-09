@@ -9,18 +9,6 @@ const { Obj } = require('../object');
 const { callbackAsap } = require('./utils');
 const { Context } = require('./context');
 
-function convertTemplateSetTagsToSetval(source) {
-  if (!source || typeof source !== 'string') {
-    return source;
-  }
-
-  // Replace opening tag names only.
-  // {% set ... %} -> {% setval ... %}
-  const withSetval = source.replace(/({%\s*-?\s*)set(?!val\b)\b/g, '$1setval');
-  // {% endset %} -> {% endsetval %}
-  return withSetval.replace(/({%\s*-?\s*)endset\b/g, '$1endsetval');
-}
-
 // Lazy-loaded environment classes to avoid circular dependencies
 let Environment, AsyncEnvironment;
 
@@ -336,11 +324,7 @@ class Template extends Obj {
   }
 
   _compileSource() {
-    const source = !this.scriptMode
-      ? convertTemplateSetTagsToSetval(this.tmplStr)
-      : this.tmplStr;
-
-    return compiler.compile(source,
+    return compiler.compile(this.tmplStr,
       this.env.asyncFilters,
       this.env.extensionsList,
       this.path,

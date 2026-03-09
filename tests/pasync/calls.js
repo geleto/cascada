@@ -150,7 +150,7 @@
 
     it('should allow observing outer value output inside call blocks', async () => {
       const script = `
-        value outer = 10
+        var outer = 10
 
         macro runner()
           return caller()
@@ -172,7 +172,7 @@
 
     it('should reject outer value mutation commands inside call blocks', async () => {
       const script = `
-        value outer = 10
+        var outer = 10
 
         macro runner()
           return caller()

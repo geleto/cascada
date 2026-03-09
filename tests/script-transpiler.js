@@ -6,7 +6,7 @@ const aliasOptions = {
   useCoreOutputAliases: true
 };
 
-const DECL_TAG = 'value';
+const DECL_TAG = 'var';
 
 describe('Script Transpiler', () => {
   // Helper function tests
@@ -858,39 +858,22 @@ endif`;
 
   // Variable handling tests
   describe('Variable Handling', () => {
-    it('should convert simple var declarations to value when forced', () => {
-      const converted = scriptTranspiler._convertVarDeclarationToValue('var x = 1', true);
-      expect(converted).to.equal('value x = 1');
-    });
-
-    it('should convert var-to-value for capture and call declarations', () => {
-      const captureConverted = scriptTranspiler._convertVarDeclarationToValue('var x = capture', true);
-      const callConverted = scriptTranspiler._convertVarDeclarationToValue('var x = call(user)', true);
-      expect(captureConverted).to.equal('value x = capture');
-      expect(callConverted).to.equal('value x = call(user)');
-    });
-
-    it('should convert guard var selector to value when forced', () => {
-      const converted = scriptTranspiler._convertVarDeclarationToValue('guard var, output, lock!', true);
-      expect(converted).to.equal('guard value, output, lock!');
-    });
-
-    it('should route capture declaration to value tag', () => {
+    it('should route capture declaration to var tag', () => {
       const state = { inMultiLineComment: false, stringState: null };
       const result = scriptTranspiler._processLine('var x_capture = capture', state, 0);
       expect(result.lineType).to.equal('TAG');
-      expect(result.tagName).to.equal('value');
+      expect(result.tagName).to.equal('var');
       expect(result.blockType).to.equal('START');
     });
 
-    it('should route call declaration to call_assign value form', () => {
+    it('should route call declaration to call_assign var form', () => {
       const state = { inMultiLineComment: false, stringState: null };
       const result = scriptTranspiler._processLine('var x_call = call foo(bar)', state, 0);
       expect(result.lineType).to.equal('TAG');
       expect(result.tagName).to.equal('call_assign');
       expect(result.blockType).to.equal('START');
       expect(result.codeContent).to.equal(
-        'value x_call = foo(bar)'
+        'var x_call = foo(bar)'
       );
     });
 
@@ -909,7 +892,7 @@ endif`;
 endcapture
 return {}`;
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- ${DECL_TAG} report capture -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- end${DECL_TAG} -%}\n{%- return {} -%}`);
+      expect(template).to.equal(`{%- ${DECL_TAG} report -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- end${DECL_TAG} -%}\n{%- return {} -%}`);
     });
 
     it('should handle simple assignments', () => {
@@ -927,7 +910,7 @@ return {}`;
 endcapture
 return {}`;
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal(`{%- ${DECL_TAG} report capture -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- end${DECL_TAG} -%}\n{%- return {} -%}`);
+      expect(template).to.equal(`{%- ${DECL_TAG} report -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- end${DECL_TAG} -%}\n{%- return {} -%}`);
     });
 
     it('should handle complex assignments with expressions', () => {
@@ -949,52 +932,9 @@ return {}`;
       expect(template).to.equal(`{%- ${DECL_TAG} user = fetchUser(123) -%}{#- Get user data -#}`);
     });
 
-    it('should transpile value declarations to internal setval tags', () => {
-      const script = 'value x = 1\nx = 2\nreturn x';
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- value x = 1 -%}\n{%- setval x = 2 -%}\n{%- return x -%}');
-    });
-
-    it('should transpile value capture declarations to value/endvalue block tags', () => {
-      const script = `value x = capture
-  text outText
-  outText("ok")
-  return outText.snapshot()
-endcapture
-return x.snapshot()`;
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('{%- value x capture -%}');
-      expect(template).to.contain('{%- endvalue -%}');
-    });
-
-    it('should transpile value call declarations to call_assign setval', () => {
-      const script = `value result = call collect([1, 2, 3]) (n)
-  return n
-endcall`;
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('{%- call_assign value result = collect([1, 2, 3]) (n) -%}');
-      expect(template).to.contain('{%- endcall_assign -%}');
-    });
-
-    it('should transpile value capture assignments to setval block tags', () => {
-      const script = `value x
-x = capture
-  output("ok")
-endcapture`;
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('{%- value x -%}');
-      expect(template).to.contain('{%- setval x capture -%}');
-      expect(template).to.contain('{%- endsetval -%}');
-    });
-
-    it('should transpile value call assignments to call_assign setval', () => {
-      const script = `value result
-result = call collect([1, 2, 3]) (n)
-  return n
-endcall`;
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.contain('{%- call_assign setval result = collect([1, 2, 3]) (n) -%}');
-      expect(template).to.contain('{%- endcall_assign -%}');
+    it('should reject explicit value declarations', () => {
+      const script = 'value x = 1';
+      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/no longer supported/);
     });
   });
 

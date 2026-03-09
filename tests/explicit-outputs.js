@@ -55,7 +55,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should declare value output', async () => {
       const script = `
-        value result
+        var result
         result(42)
         return result.snapshot()
       `;
@@ -86,7 +86,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const script = `
         data myData
         text textOut
-        value result
+        var result
         myData.x = 1
         textOut("hi")
         result(7)
@@ -176,7 +176,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should allow multiple value assignments (last wins)', async () => {
       const script = `
-        value result
+        var result
         result(42)
         result(100)
         return result.snapshot()
@@ -187,7 +187,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should implicitly snapshot value outputs in expressions', async () => {
       const script = `
-        value x
+        var x
         x = 5
         var y = x * 2
         return y
@@ -198,7 +198,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should allow value output initializer and use it in expressions', async () => {
       const script = `
-        value x = 3
+        var x = 3
         var y = x + 4
         return y
       `;
@@ -208,7 +208,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should support async value initializer in expressions', async () => {
       const script = `
-        value x = delayed(11, 20)
+        var x = delayed(11, 20)
         var y = x * 3
         return y
       `;
@@ -220,7 +220,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should use initialized value output across chained expressions', async () => {
       const script = `
-        value score = 10
+        var score = 10
         var boosted = score + 5
         var finalScore = boosted * score
         return finalScore
@@ -254,7 +254,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should support implicit value snapshots inside for loops', async () => {
       const script = `
-        value current = 0
+        var current = 0
         for i in [1, 2, 3]
           current = i * 10
         endfor
@@ -268,7 +268,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     it('should preserve source-order value result when parallel loop writes resolve out of order', async () => {
       const finished = [];
       const script = `
-        value current = 0
+        var current = 0
         for item in [{v: 1, d: 30}, {v: 2, d: 5}, {v: 3, d: 20}]
           current = delayed(item.v, item.d)
         endfor
@@ -288,7 +288,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should support implicit value snapshots inside while loops', async () => {
       const script = `
-        value last = 0
+        var last = 0
         var i = 1
         while i <= 4
           last = i
@@ -317,7 +317,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const script = `
         data myData
         text textOut
-        value result
+        var result
         return { data: myData.snapshot(), text: textOut.snapshot(), value: result.snapshot() }
       `;
       const result = await render(script);
@@ -1382,7 +1382,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         endmacro
 
         var callRes = call collect([1, 2, 3]) (num)
-          value out
+          var out
           out(num * 2)
           return out.snapshot()
         endcall
@@ -1639,7 +1639,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should allow value outputs with initializers', async () => {
       const script = `
-        value result = 1
+        var result = 1
         return result
       `;
       const result = await render(script);
@@ -1685,7 +1685,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
     it('should throw on mixed assignment targets (declared value + undeclared variable)', async () => {
       const script = `
-        value x
+        var x
         x, y = 1
         return x
       `;
@@ -1726,7 +1726,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     it('should reject reserved keywords as output names', async () => {
       const scripts = [
         'data data',
-        'value value = 1',
+        'var var = 1',
         'text var',
         'sink sequence = makeSink()'
       ];
@@ -1891,7 +1891,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       const script = `
         data myData
         text textOut
-        value result
+        var result
         sink logger = makeLogger()
         myData.x = 1
         textOut("hi")

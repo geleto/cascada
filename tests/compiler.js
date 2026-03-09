@@ -819,7 +819,7 @@
         var loader = new Loader('tests/templates');
         var env = new Environment(loader);
         var tmpl = new Template(tmplStr, env, 'parse-error.njk');
-        var expectedColumn = 29;
+        var expectedColumn = 26;
 
         tmpl.render({}, function (err, res) {
           expect(res).to.be(undefined);
@@ -1577,25 +1577,6 @@
         '{% endfor %}' +
         'afterwards: {{ val }}',
         '678afterwards: 8');
-
-      finish(done);
-    });
-
-    it('should compile value like var in template mode', function (done) {
-      equal('{% value username = "foo" %}{{ username }}',
-        {
-          username: 'james'
-        },
-        'foo');
-
-      equal('{% value x, y = "foo" %}{{ x }}{{ y }}',
-        'foofoo');
-
-      equal(
-        '{% value block_content %}test string{% endvalue %}' +
-        '{{ block_content }}',
-        'test string'
-      );
 
       finish(done);
     });
