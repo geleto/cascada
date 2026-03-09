@@ -179,7 +179,7 @@
         endmacro
 
         var callResult = call runner()
-          outer(20)
+          outer = 20
           return none
         endcall
 

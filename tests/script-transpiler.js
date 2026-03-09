@@ -765,6 +765,16 @@ endif`;
       expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello, World!") -%}');
     });
 
+    it('should reject text output assignment syntax', () => {
+      const script = 'text outText\noutText = "Hello, World!"';
+      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/does not support assignment/);
+    });
+
+    it('should reject var output callable assignment syntax', () => {
+      const script = 'var result\nresult(42)';
+      expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/does not support callable assignment/);
+    });
+
     it('should convert sink output calls', () => {
       const script = 'sink turtle = makeTurtle()\nturtle.forward(50)';
       const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);

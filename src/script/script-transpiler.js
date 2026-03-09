@@ -23,9 +23,8 @@
  *     - Sink outputs call methods directly on declared sinks.
  *       `sink db = makeDb(); db.insert(...)` → `{% output_command db.insert(...) %}`
  *
- * 4.  **Block Assignment with `capture`**
- *     - `var user = capture ... endcapture` becomes a declaration block.
- *       → `{% var user %}{#...#}{% endvar %}`
+ * 4.  **`capture` Removal**
+ *     - `capture ... endcapture` is no longer supported in scripts and raises an error.
  *
  * 6.  **Implicit `do` Statements**
  *     - Any standalone expression becomes a `do` statement for executing logic.
@@ -1100,10 +1099,7 @@ class ScriptTranspiler {
         parseResult.blockType = null;
         parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}.set(null, ${assignmentExpr})`, false);
       } else if (outputType === 'text') {
-        parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output_command';
-        parseResult.blockType = null;
-        parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}(${assignmentExpr})`, false);
+        throw new Error(`text output '${outputName}' does not support assignment at line ${lineIndex + 1}; use '${outputName}(...)'`);
       } else if (outputType === 'var') {
         const firstExprWord = this._getFirstWord(assignmentExpr);
         if (firstExprWord === 'capture') {
@@ -1196,7 +1192,10 @@ class ScriptTranspiler {
       return true;
     }
 
-    if (outputType === 'var' && opStart !== '(') {
+    if (outputType === 'var') {
+      if (opStart === '(') {
+        throw new Error(`var output '${outputName}' does not support callable assignment at line ${lineIndex + 1}; use '${outputName} = ...'`);
+      }
       return false;
     }
 

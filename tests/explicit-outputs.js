@@ -56,7 +56,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     it('should declare value output', async () => {
       const script = `
         var result
-        result(42)
+        result = 42
         return result.snapshot()
       `;
       const result = await render(script);
@@ -89,7 +89,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         var result
         myData.x = 1
         textOut("hi")
-        result(7)
+        result = 7
         return { data: myData.snapshot(), text: textOut.snapshot(), value: result.snapshot() }
       `;
       const result = await render(script);
@@ -177,8 +177,8 @@ describe('Cascada Script: Explicit Output Declarations', function () {
     it('should allow multiple value assignments (last wins)', async () => {
       const script = `
         var result
-        result(42)
-        result(100)
+        result = 42
+        result = 100
         return result.snapshot()
       `;
       const result = await render(script);
@@ -1383,7 +1383,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
 
         var callRes = call collect([1, 2, 3]) (num)
           var out
-          out(num * 2)
+          out = num * 2
           return out.snapshot()
         endcall
 
@@ -1634,6 +1634,19 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         expect().fail('Should have thrown');
       } catch (err) {
         expect(err.message).to.contain('cannot have initializers');
+      }
+    });
+
+    it('should throw when assigning to text outputs with =', async () => {
+      const script = `
+        text textOut
+        textOut = "hi"
+      `;
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('does not support assignment');
       }
     });
 
@@ -1895,7 +1908,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         sink logger = makeLogger()
         myData.x = 1
         textOut("hi")
-        result(5)
+        result = 5
         logger.write("log")
         return { data: myData.snapshot(), text: textOut.snapshot(), value: result.snapshot(), sink: logger.snapshot() }
       `;
