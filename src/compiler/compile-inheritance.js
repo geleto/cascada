@@ -481,7 +481,6 @@ class CompileInheritance {
     if (!node.isAsync) {
       this.emit.addScopeLevel();
     }
-    frame.set(id, id);
     if (node.isAsync) {
       this.compiler._addDeclaredVar(frame, id);
     }
@@ -588,3 +587,4 @@ class CompileInheritance {
 }
 
 module.exports = CompileInheritance;
+

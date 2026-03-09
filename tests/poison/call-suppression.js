@@ -399,8 +399,6 @@
 
       beforeEach(() => {
         root = new AsyncFrame();
-        root.set('!lockKey', undefined, true);
-        root.set('!lockKey~', undefined, true);
         frame = root.pushAsyncBlock({ '!lockKey': 1, '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
         mockContext = {
@@ -431,8 +429,7 @@
           expect(thrown.errors[0].message).to.contain('Poisoned arg');
 
           // Lock should be poisoned
-          const lock = root.lookup('!lockKey');
-          await expectLockPoison(lock, root);
+          await expectLockPoison(null, root);
         }
       });
 
@@ -451,9 +448,7 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-
-          const lock = root.lookup('!lockKey');
-          await expectLockPoison(lock, root);
+          await expectLockPoison(null, root);
         }
       });
 
@@ -474,17 +469,13 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-
-          const lock = root.lookup('!lockKey');
-          await expectLockPoison(lock, root);
+          await expectLockPoison(null, root);
         }
       });
 
       it('should throw PoisonError for poisoned lock', async () => {
         const lockPoison = createPoison(new Error('Lock poisoned'));
         root = new AsyncFrame();
-        root.set('!lockKey', lockPoison, true);
-        root.set('!lockKey~', undefined, true);
         frame = root.pushAsyncBlock({ '!lockKey': 1, '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
         runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
@@ -525,9 +516,7 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-
-          const lock = root.lookup('!lockKey');
-          await expectLockPoison(lock, root);
+          await expectLockPoison(null, root);
         }
       });
 
@@ -548,9 +537,7 @@
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-
-          const lock = root.lookup('!lockKey');
-          await expectLockPoison(lock, root);
+          await expectLockPoison(null, root);
         }
       });
 
@@ -569,8 +556,7 @@
         expect(result).to.equal(8);
 
         // Lock should be released (set to true)
-        const lock = root.lookup('!lockKey');
-        await expectLockTrue(lock, root);
+        await expectLockTrue(null, root);
       });
 
       it('should handle async function that resolves', async () => {
@@ -591,8 +577,7 @@
 
         expect(result).to.equal(42);
 
-        const lock = root.lookup('!lockKey');
-        await expectLockValue(lock, 42, root);
+        await expectLockValue(null, 42, root);
       });
     });
 
@@ -963,4 +948,8 @@
   });
 
 })();
+
+
+
+
 

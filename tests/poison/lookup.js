@@ -151,8 +151,6 @@
 
       beforeEach(() => {
         root = new AsyncFrame();
-        root.set('!lockKey', undefined, true);
-        root.set('!lockKey~', undefined, true);
         frame = root.pushAsyncBlock({ '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
       });
@@ -160,8 +158,6 @@
       it('should throw PoisonError for poisoned lock', async () => {
         const lockPoison = createPoison(new Error('Lock poisoned'));
         root = new AsyncFrame();
-        root.set('!lockKey', lockPoison, true);
-        root.set('!lockKey~', undefined, true);
         frame = root.pushAsyncBlock({ '!lockKey~': 1 });
         currentBuffer = setupSequentialRuntimeForTests(root);
         runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
@@ -196,9 +192,7 @@
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
-
-          const readLock = root.lookup('!lockKey~');
-          await expectLockTrue(readLock, root);
+          await expectLockTrue(null, root);
         }
       });
 
@@ -218,9 +212,7 @@
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
-
-          const readLock = root.lookup('!lockKey~');
-          await expectLockTrue(readLock, root);
+          await expectLockTrue(null, root);
         }
       });
 
@@ -239,9 +231,7 @@
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
-
-          const readLock = root.lookup('!lockKey~');
-          await expectLockTrue(readLock, root);
+          await expectLockTrue(null, root);
         }
       });
 
@@ -257,88 +247,7 @@
         );
 
         expect(result).to.equal('test');
-
-        const readLock = root.lookup('!lockKey~');
-        await expectLockTrue(readLock, root);
-      });
-    });
-
-    describe('sequentialContextLookup - Pure Async', () => {
-      let frame, root, context, currentBuffer;
-
-      beforeEach(() => {
-        root = new AsyncFrame();
-        root.set('!lockKey', undefined, true);
-        root.set('!lockKey~', undefined, true);
-        root.set('myVar', 'test value', true);
-        frame = root.pushAsyncBlock({ '!lockKey~': 1 });
-        currentBuffer = setupSequentialRuntimeForTests(root);
-
-        context = {
-          lookup: (name) => undefined
-        };
-      });
-
-      it('should throw PoisonError for poisoned lock', async () => {
-        const lockPoison = createPoison(new Error('Lock poisoned'));
-        root = new AsyncFrame();
-        root.set('!lockKey', lockPoison, true);
-        root.set('!lockKey~', undefined, true);
-        root.set('myVar', 'test value', true);
-        frame = root.pushAsyncBlock({ '!lockKey~': 1 });
-        currentBuffer = setupSequentialRuntimeForTests(root);
-        runtime.getOutput(root, '!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
-
-        try {
-          await runtime.sequentialContextLookupValue(
-            context,
-            frame,
-            'myVar',
-            '!lockKey', false, currentBuffer
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be(true);
-        }
-      });
-
-      it('should throw PoisonError when variable is poisoned', async () => {
-        const poison = createPoison(new Error('Variable poisoned'));
-        root = new AsyncFrame();
-        root.set('!lockKey', undefined, true);
-        root.set('!lockKey~', undefined, true);
-        root.set('myVar', poison, true);
-        frame = root.pushAsyncBlock({ '!lockKey~': 1 });
-        currentBuffer = setupSequentialRuntimeForTests(root);
-
-        try {
-          await runtime.sequentialContextLookupValue(
-            context,
-            frame,
-            'myVar',
-            '!lockKey', false, currentBuffer
-          );
-          expect().fail('Should have thrown');
-        } catch (err) {
-          expect(isPoisonError(err)).to.be(true);
-
-          const readLock = root.lookup('!lockKey~');
-          await expectLockTrue(readLock, root);
-        }
-      });
-
-      it('should successfully lookup and release lock', async () => {
-        const result = await runtime.sequentialContextLookupValue(
-          context,
-          frame,
-          'myVar',
-          '!lockKey', false, currentBuffer
-        );
-
-        expect(result).to.equal('test value');
-
-        const readLock = root.lookup('!lockKey~');
-        await expectLockTrue(readLock, root);
+        await expectLockTrue(null, root);
       });
     });
 
@@ -378,4 +287,8 @@
     });
   });
 })();
+
+
+
+
 

@@ -169,37 +169,9 @@ class AsyncFrame extends Frame {
     return newFrame;
   }
 
-  _setTargetAlreadyExists(name, resolveUp) {
-    const parts = String(name).split('.');
-    let targetFrame = this;
-
-    if (resolveUp) {
-      const resolved = this.resolve(parts[0], true);
-      if (resolved) {
-        targetFrame = resolved;
-      }
-    }
-
-    let obj = targetFrame.variables;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const key = parts[i];
-      if (!obj || typeof obj !== 'object' || !Object.prototype.hasOwnProperty.call(obj, key)) {
-        return false;
-      }
-      obj = obj[key];
-    }
-
-    if (!obj || typeof obj !== 'object') {
-      return false;
-    }
-    return Object.prototype.hasOwnProperty.call(obj, parts[parts.length - 1]);
-  }
-
   set(name, val, resolveUp) {
-    if (THROW_ON_ASYNC_FRAME_REASSIGN) {
-      if (this._setTargetAlreadyExists(name, resolveUp)) {
-        throw new Error(`AsyncFrame reassignment detected for "${name}"`);
-      }
+    if (THROW_ON_ASYNC_FRAME_REASSIGN && !AsyncFrame.inCompilerContext) {
+      throw new Error(`AsyncFrame.set reassignment is disabled at runtime (attempted: "${name}")`);
     }
 
     return super.set(name, val, resolveUp);

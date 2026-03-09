@@ -13,7 +13,6 @@
  * 2.  **Explicit Variable Handling**
  *     - `var user = ...`      → `{% var user = ... %}`
  *     - `user = "new name"`   → `{% set user = "new name" %}`
- *     - `extern config`       → `{% extern config %}`
  *
  * 3.  **Explicit Output Variables**
  *     - `text text` declares a text output variable; `text("Hello")` emits text.
@@ -94,7 +93,7 @@ class ScriptTranspiler {
     this.SYNTAX = {
       // Block-related tags
       blockTags: ['for', 'each', 'while', 'if', 'switch', 'block', 'macro', 'filter', 'raw', 'verbatim', 'call', 'guard'],
-      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'extern', 'return', 'data', 'text', 'value', 'sink', 'sequence'],
+      lineTags: [/*'set',*/'include', 'extends', 'from', 'import', 'depends', 'var', 'return', 'data', 'text', 'value', 'sink', 'sequence'],
 
       // Middle tags with their parent block types
       middleTags: {
@@ -1254,25 +1253,6 @@ class ScriptTranspiler {
     return true;
   }
 
-  _processExtern(parseResult, lineIndex) {
-    const code = parseResult.codeContent.trim();
-    const externContent = code.substring('extern'.length).trim();
-
-    if (!externContent) {
-      throw new Error(`extern declaration must specify variable names at line ${lineIndex + 1}`);
-    }
-
-    if (!this._isValidIdentifierList(externContent)) {
-      throw new Error(`Invalid variable name in extern declaration: "${externContent}" at line ${lineIndex + 1}`);
-    }
-    this._assertNonReservedDeclarationNames(externContent.split(',').map(name => name.trim()).filter(Boolean), lineIndex);
-
-    parseResult.lineType = 'TAG';
-    parseResult.tagName = 'extern';
-    parseResult.codeContent = externContent;
-    parseResult.blockType = null; // extern is always a line tag
-  }
-
   _parseOutputDeclaration(codeContent, lineIndex) {
     const trimmed = codeContent.trim();
     const outputType = this._getFirstWord(trimmed);
@@ -1402,8 +1382,6 @@ class ScriptTranspiler {
       } else {
         this._processVar(parseResult, lineIndex);
       }
-    } else if (firstWord === 'extern') {
-      this._processExtern(parseResult, lineIndex);
     } else if (this._isOutputDeclarationLine(firstWord, code)) {
       this._processOutputDeclaration(parseResult, lineIndex);
     } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {

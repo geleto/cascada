@@ -34,8 +34,7 @@ function getScopeBoundaryFields(node) {
 }
 
 function _isSetLikeDeclaration(node) {
-  return !!(node &&
-    (node.varType === 'declaration' || node.varType === 'extern' || node.isSetvalDeclaration));
+  return !!(node && node.varType === 'declaration');
 }
 
 function isDeclarationSite(node, ctx = {}) {

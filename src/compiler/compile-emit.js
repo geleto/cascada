@@ -239,7 +239,18 @@ module.exports = class CompileEmit {
     return frame;
   }
 
-  asyncBlockValue(node, frame, emitFunc, res, positionNode = node, createScope = false, createOutputBuffer = false) {
+  asyncBlockValue(
+    node,
+    frame,
+    emitFunc,
+    res,
+    positionNode = node,
+    createScope = false,
+    createOutputBuffer = false,
+    // Capture-only override. Other asyncBlockValue call sites should rely on
+    // compiler.currentBuffer. Remove this override once capture is removed.
+    parentBufferArgOverride = null
+  ) {
     if (node.isAsync) {
 
       this.line(`astate.asyncBlock(async (astate, frame, currentBuffer) => {`);
@@ -267,7 +278,12 @@ module.exports = class CompileEmit {
       this.line('}');
       const asyncMetaArg = this.getAsyncBlockArgs(frame);
       const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
-      const parentBufferArg = this.compiler.buffer.currentBuffer || 'null';
+      // Capture compilation may temporarily point compiler.currentBuffer at
+      // the async callback parameter ("currentBuffer") so body writes target
+      // the capture buffer. Parent linkage, however, must still use the
+      // outer composition buffer, so capture passes an explicit override.
+      // TODO(var-removal): remove override path when capture is removed.
+      const parentBufferArg = parentBufferArgOverride || this.compiler.buffer.currentBuffer || 'null';
       this.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferArg}, ${createOutputBufferArg}, cb, false)`);
 
       this.asyncClosureDepth--;

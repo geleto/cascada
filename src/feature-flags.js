@@ -6,8 +6,8 @@
 // compositions where compile-time/boundary prelinking does not cover every runtime-discovered read path.
 const LOOKUP_DYNAMIC_OUTPUT_LINKING = false;
 
-// Debug/probe switch:
-// When enabled, AsyncFrame.set throws on reassignment of an existing slot.
+// Migration-enforcement switch:
+// When enabled, AsyncFrame.set throws only on reassignment at runtime.
 const THROW_ON_ASYNC_FRAME_REASSIGN = false;
 
 

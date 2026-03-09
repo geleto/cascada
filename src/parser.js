@@ -886,38 +886,6 @@ class Parser extends Obj {
     return node;
   }
 
-  parseExtern() {
-    const tag = this.peekToken();
-    if (!this.skipSymbol('extern')) {
-      this.fail('parseExtern: expected extern', tag.lineno, tag.colno);
-    }
-
-    const targets = [];
-
-    // Loop to parse comma-separated variable names
-    while (true) {
-      const target = this.parsePrimary();
-      if (!(target instanceof nodes.Symbol)) {
-        this.fail('parseExtern: variable name expected', target.lineno, target.colno);
-      }
-      targets.push(target);
-
-      if (!this.skip(lexer.TOKEN_COMMA)) {
-        break;
-      }
-    }
-
-    // Important: After the loop, explicitly fail if you see an = operator
-    // or if the block does not end immediately. extern does not support initialization.
-    if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-      this.fail('parseExtern: extern variables cannot be initialized', tag.lineno, tag.colno);
-    }
-
-    this.advanceAfterBlockEnd(tag.value);
-
-    return new nodes.Set(tag.lineno, tag.colno, targets, null, 'extern');
-  }
-
   parseSwitch() {
     /*
      * Store the tag names in variables in case someone ever wants to
@@ -1239,8 +1207,6 @@ class Parser extends Obj {
       case 'output':
       case 'output_command':
         return this.parseOutputCommand();
-      case 'extern':
-        return this.parseExtern();
       case 'guard':
         return this.parseGuard();
       case 'revert':

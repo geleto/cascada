@@ -325,6 +325,12 @@ class CompilerBase extends Obj {
   compileSymbol(node, frame) {
 
     let name = node.value;
+    if (node.isCompilerInternal) {
+      // Compiler-generated temp symbols (e.g. lifted super/filter temps)
+      // are emitted as direct JS locals and never resolved from frame/context.
+      this.emit(name);
+      return;
+    }
     const declaredOutput = this.async._getDeclaredOutput(frame, name);
     if (declaredOutput && !this._isDeclared(frame, name)) {
       if (declaredOutput.type === 'value') {
@@ -356,14 +362,6 @@ class CompilerBase extends Obj {
 
     // Not in template scope, check context/frame with potential sequence lock
     if (this.asyncMode) {
-      if (node.isCompilerInternal) {
-        // This is a compiler-generated internal symbol (e.g., "hole_0").
-        // Its `name` is the actual JavaScript variable name.
-        // This variable might hold a Promise, which consuming code (like Output) will handle.
-        this.emit(name);
-        return;
-      }
-
       let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
       if (nodeStaticPathKey && this._isSequencePathLockDeclared(frame, nodeStaticPathKey)) {
         // This node accesses a declared sequence lock path.
@@ -998,8 +996,6 @@ class CompilerBase extends Obj {
     let symbol = node.symbol.value;
 
     this.assertType(node.name, nodes.Symbol);
-
-    frame.set(symbol, symbol);
 
     if (node.isAsync) {
       // Although filters are compiled differently to expressions,

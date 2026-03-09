@@ -108,6 +108,34 @@
             </div>`
           );
         });
+
+        it('should not export macros declared inside blocks', async () => {
+          loader.addTemplate('block-macro-lib.njk',
+            '{% block body %}{% macro hidden() %}H{% endmacro %}{% endblock %}{% macro visible() %}V{% endmacro %}');
+
+          const template = `
+            {% import "block-macro-lib.njk" as lib %}
+            {{ lib.visible() }}{% if lib.hidden %}|hidden{% endif %}
+          `;
+
+          const result = await env.renderTemplateString(template);
+          expect(result.trim()).to.equal('V');
+        });
+
+        it('should not export macros declared only inside inherited blocks', async () => {
+          loader.addTemplate('inherit-macro-base.njk',
+            '{% block body %}base body{% endblock %}');
+          loader.addTemplate('inherit-macro-child.njk',
+            '{% extends "inherit-macro-base.njk" %}{% macro top() %}T{% endmacro %}{% block body %}{{ super() }}{% macro hiddenChild() %}C{% endmacro %}{% endblock %}');
+
+          const template = `
+            {% import "inherit-macro-child.njk" as lib %}
+            {{ lib.top() }}{% if lib.hiddenChild %}|child{% endif %}
+          `;
+
+          const result = await env.renderTemplateString(template);
+          expect(result.trim()).to.equal('T');
+        });
       });
 
       describe('Import with Context', () => {

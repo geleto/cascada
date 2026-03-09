@@ -368,50 +368,48 @@ class Compiler extends CompilerBase {
     });
 
     // 2. Compile the value/body assignment.
-    if (node.varType !== 'extern') { // `extern` has no value.
-      if (node.path) {
-        // Validation for set_path
-        if (ids.length !== 1) {
-          this.fail('set_path only supports a single target.', node.lineno, node.colno, node);
-        }
-        this.emit(ids[0] + ' = ');
-
-        if (this.asyncMode) {
-          const setPathValueId = this._tmpid();
-          this.emit(`let ${setPathValueId} = `);
-          this._compileExpression(node.value, frame, true);
-          this.emit.line(';');
-          this.buffer.emitOwnWaitedConcurrencyResolve(frame, setPathValueId, node.value || node);
-
-          this.emit('runtime.setPath(');
-          this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
-          // Compile path array WITHOUT resolving items (so promises are passed to setPath)
-          this._compileAggregate(node.path, frame, '[', ']', false, false);
-          this.emit(', ');
-          this.emit(setPathValueId);
-          this.emit(')');
-        } else {
-          // Sync mode
-          this.emit('runtime.setPath(');
-          this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
-          this.compile(node.path, frame);
-          this.emit(', ');
-          this.compile(node.value, frame);
-          this.emit(')');
-        }
-        this.emit.line(';');
-      } else if (node.value) { // e.g., set x = 123
-        this.emit(ids.join(' = ') + ' = ');
-        this._compileExpression(node.value, frame, true, node.value);
-        this.emit.line(';');
-        this.buffer.emitOwnWaitedConcurrencyResolve(frame, ids[0], node.value);
-      } else { // e.g., set x = capture ...
-        this.emit(ids.join(' = ') + ' = ');
-        this.emit.asyncBlockValue(node, frame, (n, f) => {
-          this.compile(n.body, f);
-        }, undefined, node.body);
-        this.emit.line(';');
+    if (node.path) {
+      // Validation for set_path
+      if (ids.length !== 1) {
+        this.fail('set_path only supports a single target.', node.lineno, node.colno, node);
       }
+      this.emit(ids[0] + ' = ');
+
+      if (this.asyncMode) {
+        const setPathValueId = this._tmpid();
+        this.emit(`let ${setPathValueId} = `);
+        this._compileExpression(node.value, frame, true);
+        this.emit.line(';');
+        this.buffer.emitOwnWaitedConcurrencyResolve(frame, setPathValueId, node.value || node);
+
+        this.emit('runtime.setPath(');
+        this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
+        // Compile path array WITHOUT resolving items (so promises are passed to setPath)
+        this._compileAggregate(node.path, frame, '[', ']', false, false);
+        this.emit(', ');
+        this.emit(setPathValueId);
+        this.emit(')');
+      } else {
+        // Sync mode
+        this.emit('runtime.setPath(');
+        this.emit(`frame.lookup("${node.targets[0].value}")` + ', ');
+        this.compile(node.path, frame);
+        this.emit(', ');
+        this.compile(node.value, frame);
+        this.emit(')');
+      }
+      this.emit.line(';');
+    } else if (node.value) { // e.g., set x = 123
+      this.emit(ids.join(' = ') + ' = ');
+      this._compileExpression(node.value, frame, true, node.value);
+      this.emit.line(';');
+      this.buffer.emitOwnWaitedConcurrencyResolve(frame, ids[0], node.value);
+    } else { // e.g., set x = capture ...
+      this.emit(ids.join(' = ') + ' = ');
+      this.emit.asyncBlockValue(node, frame, (n, f) => {
+        this.compile(n.body, f);
+      }, undefined, node.body);
+      this.emit.line(';');
     }
 
 
@@ -419,15 +417,12 @@ class Compiler extends CompilerBase {
     node.targets.forEach((target, i) => {
       const id = ids[i];
       const name = target.value;
-      // The JS value for an 'extern' variable is null.
-      const valueId = (node.varType === 'extern') ? 'null' : id;
-
-      this.emit.line(`frame.set("${name}", ${valueId}, ${!this.scriptMode});`);
+      this.emit.line(`frame.set("${name}", ${id}, ${!this.scriptMode});`);
 
       // This block is specific to template mode's behavior.
       if (!this.scriptMode && !this.asyncMode) {
         this.emit.line('if(frame.topLevel) {');
-        this.emit.line(`  context.setVariable("${name}", ${valueId});`);
+        this.emit.line(`  context.setVariable("${name}", ${id});`);
         this.emit.line('}');
       }
 
@@ -437,7 +432,7 @@ class Compiler extends CompilerBase {
         if (this.asyncMode) {
           this.emit.line(`  context.addExport("${name}");`);
         } else {
-          this.emit.line(`  context.addExport("${name}", ${valueId});`);
+          this.emit.line(`  context.addExport("${name}", ${id});`);
         }
         this.emit.line('}');
       }
@@ -860,12 +855,15 @@ class Compiler extends CompilerBase {
         if (node.recoveryBody) {
           this.emit.asyncBlock(node, blockFrame, true, (f) => {
             if (node.errorVar) {
-              // Declare the error variable in the compiled scope
-              this._addDeclaredVar(f, node.errorVar);
-              // Directly set the variable in the frame.
-              // Note: using 'true' for resolveUp is irrelevant here as it's a new variable in new scope (if logic holds),
-              // but we set it in 'f' specifically.
-              this.emit.line(`frame.set('${node.errorVar}', new runtime.PoisonError(${guardErrorsVar}));`);
+              // Guard recovery error variable is exposed as an internal value output
+              // so async reads use snapshot semantics instead of frame mutation.
+              this._addDeclaredOutput(f, node.errorVar, 'value', null, node);
+              this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${node.errorVar}", "value", context, null);`);
+              this.buffer.asyncAddValueToBuffer(node, f, (resultVar) => {
+                this.emit(
+                  `${resultVar} = new runtime.ValueCommand({ handler: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+                );
+              }, node, node.errorVar);
             }
             this.compile(node.recoveryBody, f);
           });
@@ -1297,6 +1295,30 @@ class Compiler extends CompilerBase {
 
     // Expose the macro to the templates
     var name = node.name.value;
+    if (this.asyncMode) {
+      //expose the macro as a value output
+      this._addDeclaredOutput(frame, name, 'value', null, node);
+      this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "value", context, null);`);
+      this.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
+        this.emit(
+          `${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
+        );
+      }, node, name);
+      // Only root-compile macro declarations can ever be exported.
+      // Nested lexical scopes (frame.parent) cannot become top-level at runtime,
+      // so skip emitting export plumbing for them.
+      if (name.charAt(0) !== '_' && !frame.parent) {
+        this.emit.line('if(frame.topLevel) {');
+        if (this.scriptMode) {
+          this.emit.line(`  context.addExport("${name}", ${funcId});`);
+        } else {
+          this.emit.line(`  context.addExport("${name}");`);
+        }
+        this.emit.line('}');
+      }
+      return;
+    }
+
     frame.set(name, funcId);
 
     if (frame.parent) {
@@ -1306,9 +1328,7 @@ class Compiler extends CompilerBase {
       if (isPublicMacro) {
         this.emit.line(`context.addExport("${name}", ${funcId});`);
       }
-      if (!this.asyncMode) {
-        this.emit.line(`context.setVariable("${name}", ${funcId});`);
-      }
+      this.emit.line(`context.setVariable("${name}", ${funcId});`);
     }
   }
 
@@ -1360,8 +1380,10 @@ class Compiler extends CompilerBase {
     }
     if (node.isAsync) {
       const res = this._tmpid();
-      // Use node.body as position node for the capture block evaluation
-      const prevCaptureParentBuffer = this.buffer.currentBuffer;
+      // Capture-only: pass explicit parent buffer override because capture
+      // temporarily rebinds currentBuffer to async callback scope for body writes.
+      // Remove with capture removal.
+      const prevCaptureParentBuffer = buffer;
       this.buffer.currentBuffer = 'currentBuffer';
       this.emit.asyncBlockValue(node, frame, (n, f) => {
         //@todo - do this only if a child uses frame, from within _emitAsyncBlockValue
@@ -1384,7 +1406,7 @@ class Compiler extends CompilerBase {
           this.emit.line(`let ${res} = await currentBuffer.addSnapshot("${captureTextOutputName}", {lineno: ${node.body.lineno}, colno: ${node.body.colno}});`);
         }
         //@todo - return the output immediately as a promise - waitAllClosuresAndFlattem
-      }, res, node.body, true, !this.scriptMode);
+      }, res, node.body, true, !this.scriptMode, prevCaptureParentBuffer);
       this.buffer.currentBuffer = prevCaptureParentBuffer;
     }
     else {
@@ -1888,3 +1910,4 @@ module.exports = {
 
   Compiler: Compiler
 };
+

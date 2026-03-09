@@ -912,12 +912,6 @@ return {}`;
       expect(template).to.equal(`{%- ${DECL_TAG} report capture -%}\n  {%- data outData -%}\n  {%- output_command outData.set(["report", "title"], "Q3 Summary") -%}\n  {%- output_command outData.set(["report", "status"], "complete") -%}\n  {%- return outData.snapshot() -%}\n{%- end${DECL_TAG} -%}\n{%- return {} -%}`);
     });
 
-    it('should handle extern declarations', () => {
-      const script = 'extern currentUser, config, settings';
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- extern currentUser, config, settings -%}');
-    });
-
     it('should handle simple assignments', () => {
       const script = 'user = "new-value"';
       const template = scriptTranspiler.scriptToTemplate(script);

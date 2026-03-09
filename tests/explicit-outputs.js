@@ -1267,6 +1267,26 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql({ level: 'outer', inner: { level: 'inner' } });
     });
 
+    it('should not export macros declared inside macro bodies', async () => {
+      const script = `
+        macro outer()
+          macro inner()
+            return 42
+          endmacro
+          return inner()
+        endmacro
+        var outerResult = outer()
+        var leaked = inner()
+        return { outerResult: outerResult, leaked: leaked }
+      `;
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('unknown variable/function: inner');
+      }
+    });
+
     it('should throw when macro parameter conflicts with output name', async () => {
       const script = `
         macro conflict(x)

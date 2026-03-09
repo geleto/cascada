@@ -302,9 +302,9 @@ function contextOrValueLookupScript(context, frame, name, currentBuffer) {
   if (f) {
     return val;
   }
-  const output = getOutput(frame, name);
-  if (output) {
-    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  const outputRead = valueOutputLookupScript(frame, name, currentBuffer);
+  if (outputRead !== undefined) {
+    return outputRead;
   }
   return context.lookupScriptMode(name);
 }
@@ -318,11 +318,37 @@ function contextOrValueLookupScriptAsync(context, frame, name, currentBuffer, er
   if (f) {
     return val;
   }
-  const output = getOutput(frame, name);
-  if (output) {
-    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  const outputRead = valueOutputLookupScript(frame, name, currentBuffer);
+  if (outputRead !== undefined) {
+    return outputRead;
   }
   return context.lookupScriptModeAsync(name, errorContext);
+}
+
+// Script-mode output lookup variant:
+// for cross-tree reads, prefer producer-buffer snapshots while producer is live
+// to avoid waiting on full finalization of the output stream.
+function valueOutputLookupScript(frame, name, currentBuffer) {
+  let output = getOutput(frame, name);
+  if (!output && currentBuffer && currentBuffer._outputs instanceof Map) {
+    output = currentBuffer._outputs.get(name);
+  }
+  if (!output) {
+    return undefined;
+  }
+  if (isBufferInAncestry(currentBuffer, output._buffer)) {
+    if (currentBuffer && currentBuffer.parent && currentBuffer.parent.finished) {
+      return output.finalSnapshot();
+    }
+    if (LOOKUP_DYNAMIC_OUTPUT_LINKING) {
+      ensureReadOutputLink(currentBuffer, output, name);
+    }
+    return currentBuffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  }
+  if (output._buffer && !output._buffer.finished) {
+    return output._buffer.addSnapshot(name, { lineno: 0, colno: 0 });
+  }
+  return output.finalSnapshot();
 }
 
 // Dynamically links the current read buffer into the target handler lane once.

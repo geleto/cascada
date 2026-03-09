@@ -44,7 +44,7 @@ function validateGuardVariablesDeclared(variableTargets, frame, compiler, node) 
 }
 
 /**
- * Validate variable declaration/assignment rules for 'set', 'var', and 'extern' statements.
+ * Validate variable declaration/assignment rules for 'set' and 'var' statements.
  * @param {Compiler} compiler - The compiler instance
  * @param {Node} node - The Set node
  * @param {Node} target - The specific target node being processed
@@ -53,7 +53,7 @@ function validateGuardVariablesDeclared(variableTargets, frame, compiler, node) 
  */
 function validateSetTarget(compiler, node, target, name, isDeclared) {
   if (compiler.scriptMode) {
-    // Script mode: Enforce strict var/set/extern rules.
+    // Script mode: Enforce strict var/set rules.
     switch (node.varType) {
       case 'declaration': // from 'var'
         if (compiler.isReservedDeclarationName && compiler.isReservedDeclarationName(name)) {
@@ -66,17 +66,6 @@ function validateSetTarget(compiler, node, target, name, isDeclared) {
       case 'assignment': // from '='
         if (!isDeclared) {
           compiler.fail(`Cannot assign to undeclared variable '${name}'. Use 'var' to declare a new variable.`, target.lineno, target.colno, node, target);
-        }
-        break;
-      case 'extern': // from 'extern'
-        if (compiler.isReservedDeclarationName && compiler.isReservedDeclarationName(name)) {
-          compiler.fail(`Identifier '${name}' is reserved and cannot be used as a variable or output name.`, target.lineno, target.colno, node, target);
-        }
-        if (isDeclared) {
-          compiler.fail(`Identifier '${name}' has already been declared.`, target.lineno, target.colno, node, target);
-        }
-        if (node.value) {
-          compiler.fail('extern variables cannot be initialized at declaration.', node.lineno, node.colno, node);
         }
         break;
       default:

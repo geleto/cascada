@@ -99,51 +99,6 @@ describe('Cascada Script: Variables', function () {
     });
   });
 
-  describe('External Variable Declaration with extern', function () {
-    it.skip('should declare external variables', async function () {
-      const script = `
-        extern currentUser, theme
-        return { result: { user: currentUser, theme: theme } }`;
-
-      const context = {
-        currentUser: { name: 'Alice' },
-        theme: 'dark'
-      };
-
-      const result = await env.renderScriptString(script, context);
-      expect(result.result.user).to.eql({ name: 'Alice' });
-      expect(result.result.theme).to.be('dark');
-    });
-
-    it.skip('should allow re-assigning extern variables', async function () {
-      const script = `
-        extern currentUser, theme
-        theme = "guest"
-        return { result: { theme: theme } }`;
-
-      const context = {
-        currentUser: { name: 'Alice' },
-        theme: 'dark'
-      };
-
-      const result = await env.renderScriptString(script, context);
-      expect(result.result.theme).to.be('guest');
-    });
-
-    it.skip('should throw error when initializing extern variable', async function () {
-      const script = `
-        extern currentUser = "Alice"
-      `;
-
-      try {
-        await env.renderScriptString(script, {});
-        expect().fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.contain('Invalid variable name in extern declaration');
-      }
-    });
-  });
-
   describe('Variable Assignment with =', function () {
     it('should assign to previously declared variables', async function () {
       const script = `
@@ -570,33 +525,6 @@ describe('Cascada Script: Variables', function () {
       });
     });
 
-    it.skip('should handle multiple extern variables with reassignment', async function () {
-      const script = `
-        extern user, settings, theme
-        theme = "dark"
-        settings = capture
-          data settingsData
-          settingsData.notifications = true
-          settingsData.language = "en"
-          return settingsData.snapshot()
-        endcapture
-        return { result: { user: user, settings: settings, theme: theme } }`;
-
-      const context = {
-        user: { name: 'Alice' },
-        settings: { theme: 'light' },
-        theme: 'light'
-      };
-
-      const result = await env.renderScriptString(script, context);
-      expect(result.result.user).to.eql({ name: 'Alice' });
-      expect(result.result.settings).to.eql({
-        notifications: true,
-        language: 'en'
-      });
-      expect(result.result.theme).to.be('dark');
-    });
-
     it('should handle complex variable declarations with async operations', async function () {
       const script = `
         var userData = fetchUser(1)
@@ -645,18 +573,6 @@ describe('Cascada Script: Variables', function () {
       }
     });
 
-    it.skip('should handle errors in extern variable access', async function () {
-      const script = `
-        extern requiredVar
-        return { result: { value: requiredVar } }`;
-
-      try {
-        await env.renderScriptString(script, {});
-        expect().fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.contain('requiredVar is not defined');
-      }
-    });
   });
 
 });
