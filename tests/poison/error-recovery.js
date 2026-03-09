@@ -1389,6 +1389,51 @@ return result`;
         }
       });
 
+      it('should reject sequence status checks when a later local declaration shadows the lock root', async () => {
+        const script = `
+          service!.ok()
+          var service = "local-shadow"
+          var result = {}
+          result.isErr = service! is error
+          return result
+        `;
+
+        const ctx = {
+          service: {
+            ok: async () => 'ok'
+          }
+        };
+
+        try {
+          await env.renderScriptString(script, ctx);
+          expect().fail('Should have thrown compilation error');
+        } catch (e) {
+          expect(e.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+        }
+      });
+
+      it('should reject standalone repair when a later local declaration shadows the lock root', async () => {
+        const script = `
+          service!.ok()
+          var service = "local-shadow"
+          service!!
+          return "done"
+        `;
+
+        const ctx = {
+          service: {
+            ok: async () => 'ok'
+          }
+        };
+
+        try {
+          await env.renderScriptString(script, ctx);
+          expect().fail('Should have thrown compilation error');
+        } catch (e) {
+          expect(e.message).to.contain('Sequence marker (!) is not allowed in non-context variable paths');
+        }
+      });
+
       it('should allow successful sequence operations implicitly (healthy path)', async () => {
         const script = `
           var result = {}
@@ -1519,4 +1564,3 @@ return result`;
     });
   });
 }());
-

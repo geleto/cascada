@@ -407,6 +407,26 @@
         };
       });
 
+      it('should throw a descriptive error when called without a current buffer', async () => {
+        try {
+          await runtime.sequentialCallWrapValue(
+            (x) => x,
+            'identity',
+            mockContext,
+            [1],
+            frame,
+            '!lockKey',
+            mockErrorContext,
+            false,
+            null
+          );
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(err).to.be.an(Error);
+          expect(err.message).to.contain('currentBuffer');
+        }
+      });
+
       it('should throw PoisonError for poisoned arguments', async () => {
         const err = new Error('Poisoned arg');
         const poison = createPoison(err);
