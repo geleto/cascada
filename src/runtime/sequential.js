@@ -11,6 +11,11 @@ const { ensureSequentialPathOutput } = require('./checks');
 
 function withSequentialPathOutput(frame, currentBuffer, pathKey, errorContext, repair, isWrite, operation) {
   ensureSequentialPathOutput(frame, pathKey);
+  if (!currentBuffer || typeof currentBuffer.addSequentialPathWrite !== 'function' || typeof currentBuffer.addSequentialPathRead !== 'function') {
+    throw new Error(
+      `Sequential path '${pathKey}' requires a valid currentBuffer for ordered read/write execution`
+    );
+  }
   const pos = { lineno: errorContext?.lineno ?? 0, colno: errorContext?.colno ?? 0 };
   return isWrite
     ? currentBuffer.addSequentialPathWrite(pathKey, operation, pos, repair)
