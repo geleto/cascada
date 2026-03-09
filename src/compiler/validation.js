@@ -1,6 +1,6 @@
 'use strict';
 
-const RESERVED_DECLARATION_NAMES = new Set(['var', 'data', 'text', 'value', 'sink', 'sequence']);
+const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence']);
 
 /**
  * Track the depth of a frame at compile-time for balance validation.
@@ -133,7 +133,7 @@ function validateReadOnlyOuterMutation(compiler, {
  * @param {object} options
  * @param {Node} options.node - Output declaration node
  * @param {Node} options.nameNode - Name node
- * @param {string} options.outputType - data|text|value|sink|sequence
+ * @param {string} options.outputType - data|text|var|sink|sequence
  * @param {boolean} options.hasInitializer - Whether initializer exists
  * @param {boolean} options.asyncMode - Compiler async mode
  * @param {boolean} options.scriptMode - Compiler script mode
@@ -210,7 +210,7 @@ function validateOutputCommandScope(compiler, {
   const isNonMutatingRead = !isCallNode && outputType === 'sequence';
   const isMutatingCommand = !isObservationCall && !isNonMutatingRead;
   if (frame && frame.isolateWrites && !declaredInCurrentScope && isMutatingCommand) {
-    if (outputType === 'value') {
+    if (outputType === 'var') {
       compiler.fail(
         `Cannot assign to outer-scope variable '${handler}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`,
         node.lineno,

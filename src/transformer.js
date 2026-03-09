@@ -474,7 +474,7 @@ function addDynamicExtendsSetup(ast, opts) {
   const value = new nodes.Literal(0, 0, null);
   const declarationNode = new nodes.Set(0, 0, [target], value);
   declarationNode.varType = !opts.scriptMode
-    ? 'setval'
+    ? 'declaration'
     : 'declaration';
   ast.children.unshift(declarationNode);
 
@@ -493,7 +493,7 @@ function addDynamicExtendsSetup(ast, opts) {
 
       const setNode = new nodes.Set(node.lineno, node.colno, [setTarget], setValue);
       setNode.varType = !opts.scriptMode
-        ? 'setval'
+        ? 'assignment'
         : 'assignment';
 
       // C. Replace the original Extends node with a list of the two new nodes.

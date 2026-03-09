@@ -133,7 +133,7 @@ class CompilerBase extends Obj {
   }
 
   _isDeclared(frame, name) {
-    // Variable declaration checks intentionally exclude value outputs.
+    // Variable declaration checks intentionally exclude var outputs.
     // Output declarations are tracked separately in declaredOutputs.
     const outputDecl = this.async && this.async._getDeclaredOutput
       ? this.async._getDeclaredOutput(frame, name)
@@ -341,7 +341,7 @@ class CompilerBase extends Obj {
           node
         );
       }
-      if (declaredOutput.type === 'value') {
+      if (declaredOutput.type === 'var') {
         // Value outputs are read as point-in-stream snapshots when used as symbols.
         // This makes `x` equivalent to `x.snapshot()` in expressions.
         this.buffer.emitAddSnapshot(frame, name, node);
@@ -401,13 +401,13 @@ class CompilerBase extends Obj {
     }
     if (this.scriptMode) {
       if (this.asyncMode) {
-        this.emit('runtime.contextOrValueLookupScriptAsync(' +
+        this.emit('runtime.contextOrVarLookupScriptAsync(' +
           'context, frame, "' + name + '", ' +
           `${this.buffer.currentBuffer}, ` +
           `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
           ')');
       } else {
-        this.emit('runtime.contextOrValueLookupScript(' + `context, frame, "${name}", ${this.buffer.currentBuffer})`);
+        this.emit('runtime.contextOrVarLookupScript(' + `context, frame, "${name}", ${this.buffer.currentBuffer})`);
       }
     } else {
       const useContextOnlyInheritanceLookup =
@@ -416,22 +416,22 @@ class CompilerBase extends Obj {
         !this._isDeclared(frame, name);
       if (useContextOnlyInheritanceLookup) {
         // Conservative registration: unresolved inheritance/block symbols can still
-        // resolve to value outputs at runtime (after context miss), and prelinking
+        // resolve to var outputs at runtime (after context miss), and prelinking
         // relies on usedOutputs coverage to keep snapshots reachable.
         this.buffer.registerOutputUsage(frame, name);
         const outputDecl = this.async && this.async._getDeclaredOutput
           ? this.async._getDeclaredOutput(frame, name)
           : null;
         if (outputDecl) {
-          this.emit('runtime.valueOutputLookup(' + `frame, "${name}", ${this.buffer.currentBuffer})`);
+          this.emit('runtime.varOutputLookup(' + `frame, "${name}", ${this.buffer.currentBuffer})`);
         } else {
           const contextRef = this._tmpid();
           // Preserve context-first semantics for non-output names, then only fall back
-          // to output-aware lookup for dynamic value-output visibility.
+          // to output-aware lookup for dynamic var-output visibility.
           this.emit('(() => {');
           this.emit(`const ${contextRef} = context.lookup("${name}");`);
           this.emit(`if (${contextRef} !== undefined) { return ${contextRef}; }`);
-          this.emit(`return runtime.contextOrValueLookup(context, frame, "${name}", ${this.buffer.currentBuffer});`);
+          this.emit(`return runtime.contextOrVarLookup(context, frame, "${name}", ${this.buffer.currentBuffer});`);
           this.emit('})()');
         }
       } else {
@@ -697,7 +697,7 @@ class CompilerBase extends Obj {
       return null;
     }
     // Sequence-marked targets (path! / path!!) are handled by sequential-path
-    // compilation and must not be reinterpreted as value-output observation.
+    // compilation and must not be reinterpreted as var-output observation.
     if (targetNode.sequential) {
       return null;
     }

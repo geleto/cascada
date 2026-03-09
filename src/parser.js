@@ -311,8 +311,7 @@ class Parser extends Obj {
     //
     // Syntax emitted:
     //   {% call_assign var x = macroCall(args) (sig) %}...{% endcall_assign %}
-    //   {% call_assign setval x = macroCall(args) (sig) %}...{% endcall_assign %}
-    //   {% call_assign value x = macroCall(args) (sig) %}...{% endcall_assign %}
+    //   {% call_assign set x = macroCall(args) (sig) %}...{% endcall_assign %}
     //   {% call_assign set x = macroCall(args) (sig) %}...{% endcall_assign %}
     const callTok = this.peekToken();
     if (!this.skipSymbol('call_assign')) {
@@ -320,29 +319,16 @@ class Parser extends Obj {
     }
 
     let varType;
-    let isSetvalDeclaration = false;
     if (this.skipSymbol('var')) {
       varType = 'declaration';
-    } else if (this.skipSymbol('value')) {
-      // Symmetric declaration form:
-      //   call_assign value x = ...
-      varType = 'declaration';
-      isSetvalDeclaration = true;
-    } else if (this.skipSymbol('setval')) {
-      // setval is assignment-side counterpart of set for value outputs.
-      varType = 'setval';
-      isSetvalDeclaration = false;
     } else if (this.skipSymbol('set')) {
       varType = 'assignment';
     } else {
       const tok = this.peekToken();
-      this.fail('parseCallAssign: expected var, value, setval, or set', tok ? tok.lineno : callTok.lineno, tok ? tok.colno : callTok.colno);
+      this.fail('parseCallAssign: expected var or set', tok ? tok.lineno : callTok.lineno, tok ? tok.colno : callTok.colno);
     }
 
     const node = new nodes.CallAssign(callTok.lineno, callTok.colno, [], null, varType);
-    if (isSetvalDeclaration) {
-      node.isSetvalDeclaration = isSetvalDeclaration;
-    }
 
     // Parse targets up to '='
     let target;
@@ -643,12 +629,6 @@ class Parser extends Obj {
 
     const node = new nodes.Set(tag.lineno, tag.colno, [], null, varType);
 
-    if (tagName === 'setval') {
-      // setval is assignment-side counterpart of set for value outputs.
-      node.varType = 'setval';
-      node.isSetvalDeclaration = false;
-    }
-
     let target;
     while ((target = this.parsePrimary())) {
       node.targets.push(target);
@@ -664,38 +644,7 @@ class Parser extends Obj {
         this.fail('parseSet: focus directives are not supported', tag.lineno, tag.colno);
       }
 
-      // setval supports both:
-      // 1) bare declaration: {% setval x %}
-      // 2) capture block:    {% setval x capture %}...{% endsetval %}
-      if (tagName === 'setval') {
-        const isCaptureBlock = this.skipSymbol('capture');
-        if (!this.skip(lexer.TOKEN_BLOCK_END)) {
-          this.fail(`parseSet: expected = or block end in ${tagName} tag`,
-            tag.lineno,
-            tag.colno);
-        }
-        if (isCaptureBlock) {
-          node.body = new nodes.Capture(
-            tag.lineno,
-            tag.colno,
-            this.parseUntilBlocks(endTagName)
-          );
-          node.value = null;
-          this.advanceAfterBlockEnd();
-        } else if (!this.scriptMode) {
-          // Template conversion mode:
-          // rewritten set-blocks become setval-blocks and keep block-capture semantics.
-          node.body = new nodes.Capture(
-            tag.lineno,
-            tag.colno,
-            this.parseUntilBlocks(endTagName)
-          );
-          node.value = null;
-          this.advanceAfterBlockEnd();
-        } else {
-          node.value = null;
-        }
-      } else if (!this.skip(lexer.TOKEN_BLOCK_END)) {
+      if (!this.skip(lexer.TOKEN_BLOCK_END)) {
         this.fail(`parseSet: expected = or block end in ${tagName} tag`,
           tag.lineno,
           tag.colno);
@@ -811,7 +760,7 @@ class Parser extends Obj {
       initializer = this.parseExpression();
     } else {
       if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-        if (outputType === 'value') {
+        if (outputType === 'var') {
           initializer = this.parseExpression();
         } else {
           this.fail(`parseOutputDeclaration: ${outputType} outputs cannot have initializers`, tag.lineno, tag.colno);
@@ -824,66 +773,6 @@ class Parser extends Obj {
 
     this.advanceAfterBlockEnd(tag.value);
     return new nodes.OutputDeclaration(tag.lineno, tag.colno, outputType, nameNode, initializer);
-  }
-
-  parseValue() {
-    // In script mode, `value` supports:
-    //   1) declaration only: {% value x %}
-    //   2) assignment:       {% value x = expr %}
-    //   3) capture block:    {% value x capture %}...{% endvalue %}
-    //
-    // In template mode, keep legacy var-like parsing symmetry.
-    if (!this.scriptMode) {
-      const node = this._parseVarLikeDeclaration('value', 'declaration', 'endvalue', 'parseValue');
-      node.isSetvalDeclaration = true;
-      return node;
-    }
-
-    const tag = this.peekToken();
-    if (!this.skipSymbol('value')) {
-      this.fail('parseValue: expected value', tag.lineno, tag.colno);
-    }
-
-    const node = new nodes.Set(tag.lineno, tag.colno, [], null, 'declaration');
-    node.isSetvalDeclaration = true;
-
-    let target;
-    while ((target = this.parsePrimary())) {
-      node.targets.push(target);
-      if (!this.skip(lexer.TOKEN_COMMA)) {
-        break;
-      }
-    }
-
-    if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-      node.value = this.parseExpression();
-      this.advanceAfterBlockEnd(tag.value);
-      return node;
-    }
-
-    if (this.skip(lexer.TOKEN_COLON)) {
-      this.fail('parseValue: focus directives are not supported', tag.lineno, tag.colno);
-    }
-
-    const isCaptureBlock = this.skipSymbol('capture');
-    if (!this.skip(lexer.TOKEN_BLOCK_END)) {
-      this.fail('parseValue: expected =, capture, or block end in value tag', tag.lineno, tag.colno);
-    }
-
-    if (isCaptureBlock) {
-      node.body = new nodes.Capture(
-        tag.lineno,
-        tag.colno,
-        this.parseUntilBlocks('endvalue')
-      );
-      node.value = null;
-      this.advanceAfterBlockEnd();
-    } else {
-      node.declarationOnly = true;
-      node.value = null;
-    }
-
-    return node;
   }
 
   parseSwitch() {
@@ -979,7 +868,7 @@ class Parser extends Obj {
         this.fail('parseOutputCommand: expected output type', tag.lineno, tag.colno);
       }
       outputType = this.nextToken().value;
-      if (outputType !== 'data' && outputType !== 'text' && outputType !== 'value' && outputType !== 'sink' && outputType !== 'sequence') {
+      if (outputType !== 'data' && outputType !== 'text' && outputType !== 'var' && outputType !== 'sink' && outputType !== 'sequence') {
         this.fail(`parseOutputCommand: unsupported output type '${outputType}'`, tag.lineno, tag.colno);
       }
     } else if (!this.skipSymbol('output_command')) {
@@ -1175,8 +1064,6 @@ class Parser extends Obj {
         return this.parseInclude();
       case 'set':
         return this.parseSet();
-      case 'setval':
-        return this.parseSet('setval', 'setval', 'endsetval');
       case 'set_path':
         return this.parseSetPath();
       case 'var':
@@ -1186,8 +1073,6 @@ class Parser extends Obj {
       case 'sink':
       case 'sequence':
         return this.parseOutputDeclaration();
-      case 'value':
-        return this.parseValue();
       case 'macro':
         return this.parseMacro();
       case 'call':

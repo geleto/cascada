@@ -56,7 +56,7 @@ class Output {
         normalizeArgs: true,
         pos: { lineno: 0, colno: 0 }
       });
-    } else if (this._outputType === 'value') {
+    } else if (this._outputType === 'var') {
       entry = new ValueCommand({
         handler: this._outputName,
         args,
@@ -387,7 +387,7 @@ class TextOutput extends Output {
 
 class ValueOutput extends Output {
   constructor(frame, buffer, outputName, context, outputType) {
-    // Keep declaration-only value outputs aligned with `none` semantics.
+    // Keep declaration-only var outputs aligned with `none` semantics.
     // This sets the default snapshot to null without enqueuing a write command.
     super(frame, buffer, outputName, context, outputType, null, null);
   }
@@ -552,7 +552,7 @@ function createOutput(frame, buffer, outputName, context, outputType = null) {
       dynamicCommands: false
     });
   }
-  if (type === 'value') {
+  if (type === 'var') {
     // Value output is callable; args replace the current value.
     return createOutputFacade(new ValueOutput(frame, buffer, outputName, context, type), {
       callable: true,

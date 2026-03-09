@@ -48,7 +48,7 @@ class Compiler extends CompilerBase {
       const outputDecl = this.async._getDeclaredOutput(frame, varName);
       const allowSequenceLockAlias = varName && varName.startsWith('!') &&
         outputDecl && outputDecl.type === 'sequential_path';
-      if (outputDecl && outputDecl.type !== 'value' && !allowSequenceLockAlias) {
+      if (outputDecl && outputDecl.type !== 'var' && !allowSequenceLockAlias) {
         this.fail(`Cannot declare variable '${varName}' because an output with the same name is already declared.`);
       }
     }
@@ -306,27 +306,8 @@ class Compiler extends CompilerBase {
   }
 
   compileSet(node, frame) {
-    if (node.varType === 'setval' || (this.scriptMode && node.isSetvalDeclaration)) {
-      return this.compileSetval(node, frame);
-    }
-
     if (this.asyncMode) {
-      // Async mode no longer supports legacy frame-var assignment semantics.
-      // Normalize set/var nodes into the value-output assignment/declaration path.
-      const setvalNode = new nodes.Set(node.lineno, node.colno, node.targets, node.value, 'setval');
-      if (node.path) {
-        setvalNode.path = node.path;
-      }
-      if (node.body) {
-        setvalNode.body = node.body;
-      }
-      if (node.declarationOnly) {
-        setvalNode.declarationOnly = !!node.declarationOnly;
-      }
-      if (node.isSetvalDeclaration || node.varType === 'declaration') {
-        setvalNode.isSetvalDeclaration = true;
-      }
-      return this.compileSetval(setvalNode, frame);
+      return this.compileAsyncVarSet(node, frame);
     }
 
     const ids = [];
@@ -422,35 +403,16 @@ class Compiler extends CompilerBase {
 
     // Reuse the existing Set compilation path.
     const setNode = new nodes.Set(node.lineno, node.colno, node.targets, node.value, node.varType);
-    if (node.isSetvalDeclaration) {
-      setNode.isSetvalDeclaration = !!node.isSetvalDeclaration;
-    }
     return this.compileSet(setNode, frame);
   }
 
-  compileSetval(node, frame) {
-    const templateSetvalMode = !this.scriptMode;
-    if (!this.scriptMode && !templateSetvalMode) {
-      this.fail('setval is only supported in script mode or template conversion mode', node.lineno, node.colno, node);
-    }
+  compileAsyncVarSet(node, frame) {
     if (!this.asyncMode) {
-      // Template conversion mode rewrites `{% set %}` tags to `setval`.
-      // In sync template compilation we must preserve original set semantics,
-      // so route converted tags back through standard assignment compilation.
-      if (templateSetvalMode) {
-        const setNode = new nodes.Set(node.lineno, node.colno, node.targets, node.value, 'assignment');
-        if (node.body) {
-          setNode.body = node.body;
-        }
-        if (node.path) {
-          setNode.path = node.path;
-        }
-        return this.compileSet(setNode, frame);
-      }
-      this.fail('setval is only supported in async mode', node.lineno, node.colno, node);
+      this.fail('async var output assignments are only supported in async mode', node.lineno, node.colno, node);
     }
+    const templateAutoDeclareMode = !this.scriptMode;
     const ids = [];
-    const isDeclaration = !!node.isSetvalDeclaration;
+    const isDeclaration = node.varType === 'declaration';
     const isDeclarationOnly = !!node.declarationOnly;
     const validationNode = Object.assign({}, node, {
       varType: isDeclaration ? 'declaration' : 'assignment'
@@ -462,11 +424,11 @@ class Compiler extends CompilerBase {
       let id;
 
       const declaredOutput = this.async._getDeclaredOutput(frame, name);
-      const shouldDeclareInTemplateMode = templateSetvalMode && !(declaredOutput && declaredOutput.type === 'value');
+      const shouldDeclareInTemplateMode = templateAutoDeclareMode && !(declaredOutput && declaredOutput.type === 'var');
       const shouldDeclare = isDeclaration || shouldDeclareInTemplateMode;
       const isDeclaredForValidation = shouldDeclare
         ? !!(frame.declaredOutputs && frame.declaredOutputs.has(name))
-        : !!(declaredOutput && declaredOutput.type === 'value');
+        : !!(declaredOutput && declaredOutput.type === 'var');
 
       if (this.scriptMode && !isDeclaration) {
         const declaredInCurrentScope = !!(frame.declaredOutputs && frame.declaredOutputs.has(name));
@@ -482,12 +444,12 @@ class Compiler extends CompilerBase {
       validateSetTarget(this, validationNode, target, name, isDeclaredForValidation);
 
       if (shouldDeclare) {
-        this._addDeclaredOutput(frame, name, 'value', null, node);
-        this.emit(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "value", context, null);`);
+        this._addDeclaredOutput(frame, name, 'var', null, node);
+        this.emit(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
       } else {
-        if (!(declaredOutput && declaredOutput.type === 'value')) {
+        if (!(declaredOutput && declaredOutput.type === 'var')) {
           this.fail(
-            `Cannot assign to undeclared value output '${name}'. Use 'value ${name}' to declare it first.`,
+            `Cannot assign to undeclared variable output '${name}'. Use 'var ${name}' to declare it first.`,
             target.lineno,
             target.colno,
             node,
@@ -514,21 +476,19 @@ class Compiler extends CompilerBase {
         this.fail('set_path only supports a single target.', node.lineno, node.colno, node);
       }
       const targetName = node.targets[0].value;
-      const setvalPathValueId = this._tmpid();
-      this.emit(`let ${setvalPathValueId} = `);
+      const pathValueId = this._tmpid();
+      this.emit(`let ${pathValueId} = `);
       this._compileExpression(node.value, frame, true);
       this.emit.line(';');
-      this.buffer.emitOwnWaitedConcurrencyResolve(frame, setvalPathValueId, node.value || node);
+      this.buffer.emitOwnWaitedConcurrencyResolve(frame, pathValueId, node.value || node);
 
       this.emit(ids[0] + ' = ');
       this.emit('runtime.setPath(');
-      // Preserve command-tree ordering by reading the current value output
-      // through a raw snapshot command in the active buffer.
       this.buffer.emitAddRawSnapshot(frame, targetName, node);
       this.emit(', ');
       this._compileAggregate(node.path, frame, '[', ']', false, false);
       this.emit(', ');
-      this.emit(setvalPathValueId);
+      this.emit(pathValueId);
       this.emit(')');
       this.emit.line(';');
       hasAssignedValue = true;
@@ -546,10 +506,10 @@ class Compiler extends CompilerBase {
       this.emit.line(';');
       hasAssignedValue = true;
     } else if (!isDeclaration) {
-      this.fail('set value assignment requires a value or capture body.', node.lineno, node.colno, node);
+      this.fail('set var assignment requires a value or capture body.', node.lineno, node.colno, node);
     }
 
-    // 3. Second pass: emit output commands + export (mirrors compileSet second-pass shape).
+    // 3. Second pass: emit output commands + export.
     node.targets.forEach((target, i) => {
       const name = target.value;
       const valueId = ids[i];
@@ -830,10 +790,10 @@ class Compiler extends CompilerBase {
         if (node.recoveryBody) {
           this.emit.asyncBlock(node, blockFrame, true, (f) => {
             if (node.errorVar) {
-              // Guard recovery error variable is exposed as an internal value output
+              // Guard recovery error variable is exposed as an internal var output
               // so async reads use snapshot semantics instead of frame mutation.
-              this._addDeclaredOutput(f, node.errorVar, 'value', null, node);
-              this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${node.errorVar}", "value", context, null);`);
+              this._addDeclaredOutput(f, node.errorVar, 'var', null, node);
+              this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
               this.buffer.asyncAddValueToBuffer(node, f, (resultVar) => {
                 this.emit(
                   `${resultVar} = new runtime.ValueCommand({ handler: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
@@ -895,6 +855,21 @@ class Compiler extends CompilerBase {
           return true;
         }
         return guardedTypes.has(name);
+      });
+    }
+
+    if (guardTargets.variableTargetsAll) {
+      // In async mode, script/template vars are output-backed; guard var should
+      // therefore target var outputs touched inside the guard block.
+      return used.filter((name) => {
+        if (name && name.charAt(0) === '!') {
+          return false;
+        }
+        const outputDecl = frame ? this.async._getDeclaredOutput(frame, name) : null;
+        if (outputDecl) {
+          return outputDecl.type === 'var';
+        }
+        return !!(frame && this._isDeclared(frame, name));
       });
     }
 
@@ -1189,7 +1164,7 @@ class Compiler extends CompilerBase {
     const snapshotVar = this._tmpid();
     this.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
       if (node.isAsync) {
-        // Async macro bindings are value outputs so assignment/read semantics
+        // Async macro bindings are var outputs so assignment/read semantics
         // match value-command ordering instead of frame-local var behavior.
         this._declareMacroBindingValueOutput(managedFrame, bufferId, 'caller', node);
         args.forEach((arg) => {
@@ -1337,12 +1312,12 @@ class Compiler extends CompilerBase {
       );
     }
 
-    // Macro invocation bindings are emitted as value outputs for async ordering semantics.
+    // Macro invocation bindings are emitted as var outputs for async ordering semantics.
     frame.declaredOutputs.set(name, {
-      type: 'value',
+      type: 'var',
       initializer: null
     });
-    this.emit.line(`runtime.declareOutput(frame, ${bufferId}, "${name}", "value", context, null);`);
+    this.emit.line(`runtime.declareOutput(frame, ${bufferId}, "${name}", "var", context, null);`);
   }
 
   _emitMacroBindingInit(frame, bufferId, name, emitValueExpression, positionNode = null) {
@@ -1361,9 +1336,9 @@ class Compiler extends CompilerBase {
     // Expose the macro to the templates
     var name = node.name.value;
     if (this.asyncMode) {
-      //expose the macro as a value output
-      this._addDeclaredOutput(frame, name, 'value', null, node);
-      this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "value", context, null);`);
+      // Expose the macro as a var output.
+      this._addDeclaredOutput(frame, name, 'var', null, node);
+      this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${name}", "var", context, null);`);
       this.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
         this.emit(
           `${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: [${funcId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
@@ -1690,9 +1665,9 @@ class Compiler extends CompilerBase {
       this.emit.line('astate.waitAllClosures().then(async () => {');
 
       if (this.hasDynamicExtends) {
-        // Dynamic extends: resolve from value output or context only.
+        // Dynamic extends: resolve from var output or context only.
         // Do not fall back to frame lookup.
-        this.emit.line(`  let finalParent = await runtime.contextOrValueLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
+        this.emit.line(`  let finalParent = await runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.buffer.currentBuffer});`);
         if (this.hasStaticExtends) {
           this.emit.line('  if (!finalParent) finalParent = parentTemplate;');
         }
@@ -1916,7 +1891,7 @@ class Compiler extends CompilerBase {
     }
     this.emit.line(');');
 
-    if (outputType === 'value' && node.initializer) {
+    if (outputType === 'var' && node.initializer) {
       const callName = new nodes.Symbol(node.lineno, node.colno, name);
       const callArgs = new nodes.NodeList(
         node.initializer.lineno || node.lineno,

@@ -249,13 +249,13 @@ class ScriptTranspiler {
     const scope = this.getCurrentOutputScope();
     if (scope.outputs.has(name)) {
       const existingType = scope.outputs.get(name).type;
-      if (type === 'value' && existingType !== 'value') {
+      if (type === 'var' && existingType !== 'var') {
         throw new Error(`Cannot declare variable '${name}' because an output with the same name is already declared.`);
       }
-      if (type !== 'value' && existingType === 'value') {
+      if (type !== 'var' && existingType === 'var') {
         throw new Error(`Cannot declare output '${name}' because a variable with the same name is already declared`);
       }
-      if (type === 'value') {
+      if (type === 'var') {
         throw new Error(`Identifier '${name}' has already been declared.`);
       }
       throw new Error(`Output '${name}' already declared in this scope`);
@@ -267,13 +267,13 @@ class ScriptTranspiler {
       const parentScope = this.outputScopes[i];
       if (parentScope.outputs.has(name)) {
         const parentType = parentScope.outputs.get(name).type;
-        if (type === 'value' && parentType !== 'value') {
+        if (type === 'var' && parentType !== 'var') {
           throw new Error(`Cannot declare variable '${name}' because an output with the same name is already declared.`);
         }
-        if (type !== 'value' && parentType === 'value') {
+        if (type !== 'var' && parentType === 'var') {
           throw new Error(`Cannot declare output '${name}' because a variable with the same name is already declared`);
         }
-        if (type === 'value') {
+        if (type === 'var') {
           throw new Error(`Identifier '${name}' has already been declared.`);
         }
         throw new Error(`Output '${name}' cannot shadow an output declared in a parent scope`);
@@ -940,7 +940,7 @@ class ScriptTranspiler {
         this._assertNonReservedDeclarationNames(declaredNames, lineIndex);
         if (declarationTag === 'var') {
           for (const name of declaredNames) {
-            this.declareOutput(name, 'value');
+            this.declareOutput(name, 'var');
           }
         }
       }
@@ -982,7 +982,7 @@ class ScriptTranspiler {
         this._assertNonReservedDeclarationNames(declaredNames, lineIndex);
         if (declarationTag === 'var') {
           for (const name of declaredNames) {
-            this.declareOutput(name, 'value');
+            this.declareOutput(name, 'var');
           }
         }
       }
@@ -1115,7 +1115,7 @@ class ScriptTranspiler {
         parseResult.tagName = 'output_command';
         parseResult.blockType = null;
         parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}(${assignmentExpr})`, false);
-      } else if (outputType === 'value') {
+      } else if (outputType === 'var') {
         const firstExprWord = this._getFirstWord(assignmentExpr);
         if (firstExprWord === 'capture') {
           const captureContent = assignmentExpr.substring('capture'.length).trim();
@@ -1212,7 +1212,7 @@ class ScriptTranspiler {
       return true;
     }
 
-    if (outputType === 'value' && opStart !== '(') {
+    if (outputType === 'var' && opStart !== '(') {
       return false;
     }
 
@@ -1300,7 +1300,7 @@ class ScriptTranspiler {
             .split(',')
             .map((s) => {
               const trimmed = s.trim();
-              return trimmed === 'var' ? 'value' : trimmed;
+              return trimmed;
             })
             .join(', ');
           return `${prefix}${normalized}`;
@@ -1326,10 +1326,10 @@ class ScriptTranspiler {
 
     if (code.startsWith('@')) {
       throw new Error(`Legacy '@' output commands are no longer supported at line ${lineIndex + 1}`);
+    } else if (firstWord === 'value' && this._isAssignment(code, lineIndex)) {
+      throw new Error(`Explicit 'value' declarations are no longer supported at line ${lineIndex + 1}`);
     } else if (firstWord === 'var') {
       this._processVar(parseResult, lineIndex);
-    } else if (firstWord === 'value') {
-      throw new Error(`'value' declarations are no longer supported at line ${lineIndex + 1}; use 'var' instead.`);
     } else if (this._isOutputDeclarationLine(firstWord, code)) {
       this._processOutputDeclaration(parseResult, lineIndex);
     } else if (!continuesFromPrev && this._processOutputOperation(parseResult, lineIndex)) {

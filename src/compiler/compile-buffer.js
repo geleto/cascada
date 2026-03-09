@@ -15,7 +15,7 @@ const OUTPUT_COMMAND_CLASS = {
   sink: 'SinkCommand',
   sequence: 'SequenceCallCommand',
   text: 'TextCommand',
-  value: 'ValueCommand'
+  var: 'ValueCommand'
 };
 const DEFAULT_TEMPLATE_TEXT_OUTPUT = '__text__';
 
@@ -177,7 +177,7 @@ class CompileBuffer {
     const commandClass = OUTPUT_COMMAND_CLASS[outputType];
     if (!commandClass) {
       this.compiler.fail(
-        `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/value/sink/sequence).`,
+        `Unsupported output command target '${handler}'. Output commands must target declared outputs (data/text/var/sink/sequence).`,
         node.lineno,
         node.colno,
         node
@@ -389,7 +389,7 @@ class CompileBuffer {
         }
       }
 
-      // Case 3: Script assignments to declared value outputs (set/setval path).
+      // Case 3: Script assignments to declared var outputs (set path).
       // These compile from Set/CallAssign nodes, not OutputCommand nodes.
       if (frame && (n instanceof nodes.Set || n instanceof nodes.CallAssign)) {
         const targets = Array.isArray(n.targets) ? n.targets : [];

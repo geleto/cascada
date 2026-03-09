@@ -204,8 +204,8 @@ class CompileLoop {
         this._declareLoopValueOutput(bodyFrame, node.loopRuntimeName, node, undefined, true);
       }
       if (limitedWaitedOutputName) {
-        this.compiler._addDeclaredOutput(bodyFrame, limitedWaitedOutputName, 'value', null, node);
-        this.compiler.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${limitedWaitedOutputName}", "value", context, null);`);
+        this.compiler._addDeclaredOutput(bodyFrame, limitedWaitedOutputName, 'var', null, node);
+        this.compiler.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${limitedWaitedOutputName}", "var", context, null);`);
       }
 
       const compileIterationBody = () => {
@@ -359,7 +359,7 @@ class CompileLoop {
     }
     frame.declaredOutputs = frame.declaredOutputs || new Map();
     const decl = {
-      type: 'value',
+      type: 'var',
       initializer: null,
       internal
     };
@@ -373,9 +373,9 @@ class CompileLoop {
   _emitLoopValueDeclarations(node, loopVars) {
     const buffer = this.compiler.buffer.currentBuffer;
     loopVars.forEach((name) => {
-      this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${name}", "value", context, null);`);
+      this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${name}", "var", context, null);`);
     });
-    this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${node.loopRuntimeName}", "value", context, null);`);
+    this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
   }
 
   _emitLoopValueAssignment(node, outputName, valueExpr, frame) {

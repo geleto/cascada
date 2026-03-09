@@ -32,7 +32,7 @@ class CompileInheritance {
   }
 
   _getRuntimeName(name, decl) {
-    if (!decl || decl.type !== 'value') {
+    if (!decl || decl.type !== 'var') {
       return null;
     }
     const runtimeName = decl.runtimeName || name;
@@ -111,8 +111,8 @@ class CompileInheritance {
   }
 
   _emitValueImportBinding(frame, name, sourceVar, node) {
-    this.compiler._addDeclaredOutput(frame, name, 'value', null, node);
-    this.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${name}", "value", context, null);`);
+    this.compiler._addDeclaredOutput(frame, name, 'var', null, node);
+    this.emit.line(`runtime.declareOutput(frame, ${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.compiler.buffer.asyncAddValueToBuffer(node, frame, (resultVar) => {
       this.emit(
         `${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
@@ -126,7 +126,7 @@ class CompileInheritance {
    *
    * We intentionally include:
    * - statically tracked used outputs (read/write analysis), and
-   * - declared value outputs visible from the current lexical scope chain.
+   * - declared var outputs visible from the current lexical scope chain.
    *
    * Runtime link helper intersects this list with the child's actual output map,
    * so extra candidates are harmless while preserving conservative coverage.
@@ -151,7 +151,7 @@ class CompileInheritance {
       }
       if (cur.declaredOutputs) {
         cur.declaredOutputs.forEach((decl, name) => {
-          if (!decl || decl.type !== 'value') {
+          if (!decl || decl.type !== 'var') {
             return;
           }
           addRuntimeName(decl.runtimeName || name);
@@ -377,7 +377,7 @@ class CompileInheritance {
           if (this.compiler.hasDynamicExtends) {
             // Dynamic parent selection reads __parentTemplate via value/context path.
             // Do not fall back to frame lookup here.
-            this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrValueLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer})).then((parent) => {`);
+            this.emit.line(`const parentPromise = runtime.resolveSingle(runtime.contextOrVarLookup(context, frame, "__parentTemplate", ${this.compiler.buffer.currentBuffer})).then((parent) => {`);
             if (this.compiler.hasStaticExtends) {
               // Check both: dynamic can override static
               this.emit.line('  if (!parent) parent = parentTemplate;');
@@ -514,8 +514,8 @@ class CompileInheritance {
       this.emit.line(`let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}, false, ${this._templateName()}, ${node.ignoreMissing ? 'true' : 'false'});`);
 
       // Includes run in a separate template/frame. To preserve caller-visible
-      // value-output reads, copy context vars and inject currently-declared
-      // value outputs as snapshot promises from the active command buffer.
+      // var-output reads, copy context vars and inject currently-declared
+      // var outputs as snapshot promises from the active command buffer.
       // This keeps ordering semantics and leaves include logic declaration-driven.
       this.emit.line(`let ${includeVarsVar} = Object.assign({}, context.getVariables());`);
       this._emitDeclaredValueSnapshots(f, includeVarsVar, node);

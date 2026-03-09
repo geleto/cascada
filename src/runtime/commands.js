@@ -201,7 +201,7 @@ class ValueCommand extends OutputCommand {
       return;
     }
     super({
-      handler: 'value',
+      handler: 'var',
       command: null,
       arguments: [specOrValue],
       subpath: null,
@@ -223,7 +223,7 @@ class ValueCommand extends OutputCommand {
     }
     if (this.arguments.length > 1) {
       output._setTarget(this.toPoisonValue([
-        contextualizeOutputError(output, this.pos, new Error('value output accepts exactly one argument'))
+        contextualizeOutputError(output, this.pos, new Error('var output accepts exactly one argument'))
       ]));
       return;
     }
@@ -730,7 +730,7 @@ class SnapshotCommand extends Command {
 
 // RawSnapshotCommand returns the output's current target as-is, without
 // snapshot error inspection. This is required for overwrite semantics such as
-// value-output set_path where poisoned leaves may be replaced by the write.
+// var-output set_path where poisoned leaves may be replaced by the write.
 class RawSnapshotCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });

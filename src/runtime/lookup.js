@@ -245,13 +245,13 @@ function contextOrFrameLookup(context, frame, name) {
 }
 
 /**
- * Value-output lookup for template symbol aliases.
+ * Var-output lookup for template symbol aliases.
  * Does NOT read frame variables.
- * - If value output exists in active buffer hierarchy, return ordered snapshot.
+ * - If var output exists in active buffer hierarchy, return ordered snapshot.
  * - Otherwise, fall back to context lookup (globals/context vars).
  */
-function contextOrValueLookup(_context, frame, name, currentBuffer) {
-  const outputRead = valueOutputLookup(frame, name, currentBuffer);
+function contextOrVarLookup(_context, frame, name, currentBuffer) {
+  const outputRead = varOutputLookup(frame, name, currentBuffer);
   if (outputRead !== undefined) {
     return outputRead;
   }
@@ -259,7 +259,7 @@ function contextOrValueLookup(_context, frame, name, currentBuffer) {
 }
 
 /**
- * Output-only lookup for known declared value outputs.
+ * Output-only lookup for known declared var outputs.
  * Returns undefined when no output binding is available.
  *
  * Ordering rule:
@@ -267,7 +267,7 @@ function contextOrValueLookup(_context, frame, name, currentBuffer) {
  *   current buffer lane (ordered read).
  * - Otherwise, use finalSnapshot() directly (cross-tree / completed-owner read).
  */
-function valueOutputLookup(frame, name, currentBuffer) {
+function varOutputLookup(frame, name, currentBuffer) {
   let output = getOutput(frame, name);
   if (!output && currentBuffer && currentBuffer._outputs instanceof Map) {
     output = currentBuffer._outputs.get(name);
@@ -297,12 +297,12 @@ function valueOutputLookup(frame, name, currentBuffer) {
  * 2) declared output snapshot in current buffer
  * 3) script-mode context lookup (throws if missing)
  */
-function contextOrValueLookupScript(context, frame, name, currentBuffer) {
+function contextOrVarLookupScript(context, frame, name, currentBuffer) {
   let {value: val, frame: f} = frame.lookupAndLocate(name);
   if (f) {
     return val;
   }
-  const outputRead = valueOutputLookupScript(frame, name, currentBuffer);
+  const outputRead = varOutputLookupScript(frame, name, currentBuffer);
   if (outputRead !== undefined) {
     return outputRead;
   }
@@ -313,12 +313,12 @@ function contextOrValueLookupScript(context, frame, name, currentBuffer) {
  * Async context/frame/output lookup for scripts.
  * Returns poison for missing names via context.lookupScriptModeAsync.
  */
-function contextOrValueLookupScriptAsync(context, frame, name, currentBuffer, errorContext = null) {
+function contextOrVarLookupScriptAsync(context, frame, name, currentBuffer, errorContext = null) {
   let {value: val, frame: f} = frame.lookupAndLocate(name);
   if (f) {
     return val;
   }
-  const outputRead = valueOutputLookupScript(frame, name, currentBuffer);
+  const outputRead = varOutputLookupScript(frame, name, currentBuffer);
   if (outputRead !== undefined) {
     return outputRead;
   }
@@ -328,7 +328,7 @@ function contextOrValueLookupScriptAsync(context, frame, name, currentBuffer, er
 // Script-mode output lookup variant:
 // for cross-tree reads, prefer producer-buffer snapshots while producer is live
 // to avoid waiting on full finalization of the output stream.
-function valueOutputLookupScript(frame, name, currentBuffer) {
+function varOutputLookupScript(frame, name, currentBuffer) {
   let output = getOutput(frame, name);
   if (!output && currentBuffer && currentBuffer._outputs instanceof Map) {
     output = currentBuffer._outputs.get(name);
@@ -388,8 +388,8 @@ module.exports = {
   memberLookupAsync,
   memberLookupScriptAsync,
   contextOrFrameLookup,
-  valueOutputLookup,
-  contextOrValueLookup,
-  contextOrValueLookupScript,
-  contextOrValueLookupScriptAsync,
+  varOutputLookup,
+  contextOrVarLookup,
+  contextOrVarLookupScript,
+  contextOrVarLookupScriptAsync,
 };
