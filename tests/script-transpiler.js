@@ -220,7 +220,7 @@ describe('Script Transpiler', () => {
         const result = scriptTranspiler._processLine(line, state, 0);
 
         expect(result.lineType).to.equal('TAG');
-        expect(result.tagName).to.equal('output_command');
+        expect(result.tagName).to.equal('command');
         expect(result.codeContent).to.equal('outText(value)');
         expect(result.continuesToNext).to.equal(false);
         expect(result.blockType).to.equal(null);
@@ -432,13 +432,13 @@ describe('Script Transpiler', () => {
     it('should convert text statements', () => {
       const script = 'text outText\noutText("Hello, World!")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello, World!") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("Hello, World!") -%}');
     });
 
     it('should convert tag statements', () => {
       const script = 'text outText\nif condition\n  outText("Indented")\nendif\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- if condition -%}\n  {%- output_command outText("Indented") -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- if condition -%}\n  {%- command outText("Indented") -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should convert code statements to set tags', () => {
@@ -456,7 +456,7 @@ describe('Script Transpiler', () => {
     it('should preserve indentation', () => {
       const script = 'text outText\nif condition\n  outText("Indented")\nendif\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- if condition -%}\n  {%- output_command outText("Indented") -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- if condition -%}\n  {%- command outText("Indented") -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should properly convert var declarations', () => {
@@ -480,7 +480,7 @@ describe('Script Transpiler', () => {
     it('should convert while loops', () => {
       const script = 'text outText\nwhile condition\n  outText("Looping")\nendwhile\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- while condition -%}\n  {%- output_command outText("Looping") -%}\n{%- endwhile -%}\n{%- return { text: outText.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- while condition -%}\n  {%- command outText("Looping") -%}\n{%- endwhile -%}\n{%- return { text: outText.snapshot() } -%}');
     });
   });
 
@@ -489,31 +489,31 @@ describe('Script Transpiler', () => {
     it('should handle single-quoted strings', () => {
       const script = 'text outText\noutText(\'Hello, World!\')';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText(\'Hello, World!\') -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText(\'Hello, World!\') -%}');
     });
 
     it('should handle double-quoted strings', () => {
       const script = 'text outText\noutText("Hello, World!")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello, World!") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("Hello, World!") -%}');
     });
 
     it('should handle template literals', () => {
       const script = 'text outText\noutText(`Hello, World!`)';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText(`Hello, World!`) -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText(`Hello, World!`) -%}');
     });
 
     it('should handle single-line comments', () => {
       const script = 'text outText\noutText("Hello")// This is a comment';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello") -%}{#- This is a comment -#}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("Hello") -%}{#- This is a comment -#}');
     });
 
     it('should handle multi-line comments', () => {
       const script = 'text outText\noutText("Hello")/* This is a multi-line comment */';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello") -%}{#- This is a multi-line comment -#}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("Hello") -%}{#- This is a multi-line comment -#}');
     });
 
     it('should handle standalone comments', () => {
@@ -558,7 +558,7 @@ describe('Script Transpiler', () => {
     it('should handle nested blocks', () => {
       const script = 'text outText\nif condition1\n  if condition2\n    outText("Nested")\n  endif\nendif\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- if condition1 -%}\n  {%- if condition2 -%}\n    {%- output_command outText("Nested") -%}\n  {%- endif -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- if condition1 -%}\n  {%- if condition2 -%}\n    {%- command outText("Nested") -%}\n  {%- endif -%}\n{%- endif -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should validate middle tags', () => {
@@ -646,7 +646,7 @@ return { text: outText.snapshot() }`;
       expect(template).to.contain('{%- for product in products -%}');
       expect(template).to.contain('{%- if product.inStock -%}');
       expect(template).to.contain(`{%- ${DECL_TAG} formattedPrice = formatCurrency(product.price) -%}`);
-      expect(template).to.contain('{%- output_command outText("<div class=\'product\'>") -%}');
+      expect(template).to.contain('{%- command outText("<div class=\'product\'>") -%}');
       expect(template).to.contain('{%- if product.hasDiscount -%}');
       expect(template).to.contain('{%- else -%}');
       expect(template).to.contain('{%- endif -%}');
@@ -665,7 +665,7 @@ return { text: outText.snapshot() }`;
     it('should handle expressions spanning multiple lines', () => {
       const script = 'text outText\noutText("Hello, " +\n      "World!")\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello, " +\n      "World!") -%}\n{%- return { text: outText.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("Hello, " +\n      "World!") -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should detect continuation at end of line', () => {
@@ -744,31 +744,31 @@ endif`;
     it('should convert data set with explicit output variable', () => {
       const script = 'data outData\noutData.user.name = "Alice"';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- data outData -%}\n{%- output_command outData.set(["user", "name"], "Alice") -%}');
+      expect(template).to.equal('{%- data outData -%}\n{%- command outData.set(["user", "name"], "Alice") -%}');
     });
 
     it('should convert data push with explicit output variable', () => {
       const script = 'data outData\noutData.user.roles.push("admin")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- data outData -%}\n{%- output_command outData.push(["user", "roles"],"admin") -%}');
+      expect(template).to.equal('{%- data outData -%}\n{%- command outData.push(["user", "roles"],"admin") -%}');
     });
 
     it('should convert root-level data operations', () => {
       const script = 'data outData\noutData.merge({ version: "1.1" })';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- data outData -%}\n{%- output_command outData.merge(null,{ version: "1.1" }) -%}');
+      expect(template).to.equal('{%- data outData -%}\n{%- command outData.merge(null,{ version: "1.1" }) -%}');
     });
 
     it('should convert text output calls', () => {
       const script = 'text outText\noutText("Hello, World!")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Hello, World!") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("Hello, World!") -%}');
     });
 
     it('should convert text output assignment syntax to overwrite command', () => {
       const script = 'text outText\noutText = "Hello, World!"';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText.set("Hello, World!") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText.set("Hello, World!") -%}');
     });
 
     it('should reject var output callable assignment syntax', () => {
@@ -779,7 +779,7 @@ endif`;
     it('should convert sink output calls', () => {
       const script = 'sink turtle = makeTurtle()\nturtle.forward(50)';
       const template = scriptTranspiler.scriptToTemplate(script, aliasOptions);
-      expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- output_command turtle.forward(50) -%}');
+      expect(template).to.equal('{%- sink turtle = makeTurtle() -%}\n{%- command turtle.forward(50) -%}');
     });
 
     it('should convert sequence declaration and calls', () => {
@@ -796,13 +796,13 @@ endif`;
     it('should preserve comments on output operations', () => {
       const script = 'data outData\noutData.user.name = "Alice" // Set user name';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- data outData -%}\n{%- output_command outData.set(["user", "name"], "Alice" ) -%}{#- Set user name -#}');
+      expect(template).to.equal('{%- data outData -%}\n{%- command outData.set(["user", "name"], "Alice" ) -%}{#- Set user name -#}');
     });
 
     it('should handle indentation with output operations', () => {
       const script = 'data outData\n  outData.user.name = "Alice"';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- data outData -%}\n  {%- output_command outData.set(["user", "name"], "Alice") -%}');
+      expect(template).to.equal('{%- data outData -%}\n  {%- command outData.set(["user", "name"], "Alice") -%}');
     });
 
     it('should throw error for invalid path segments', () => {
@@ -833,31 +833,31 @@ endif`;
     it('should handle special characters', () => {
       const script = 'text outText\noutText("@#$%^&*")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("@#$%^&*") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("@#$%^&*") -%}');
     });
 
     it('should handle escape sequences in strings', () => {
       const script = 'text outText\noutText("Line 1\\nLine 2")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Line 1\\nLine 2") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("Line 1\\nLine 2") -%}');
     });
 
     it('should handle multi-line string literals', () => {
       const script = 'text outText\noutText("Line 1\\\nLine 2")\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("Line 1\\\nLine 2") -%}\n{%- return { text: outText.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("Line 1\\\nLine 2") -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should handle strings with embedded quotes', () => {
       const script = 'text outText\noutText("He said \\"Hello\\"")';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("He said \\"Hello\\"") -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("He said \\"Hello\\"") -%}');
     });
 
     it('should handle strings with multiple line continuations', () => {
       const script = 'text outText\noutText("First line \\\nSecond line \\\nThird line")\nreturn { text: outText.snapshot() }';
       const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('{%- text outText -%}\n{%- output_command outText("First line \\\nSecond line \\\nThird line") -%}\n{%- return { text: outText.snapshot() } -%}');
+      expect(template).to.equal('{%- text outText -%}\n{%- command outText("First line \\\nSecond line \\\nThird line") -%}\n{%- return { text: outText.snapshot() } -%}');
     });
 
     it('should handle empty blocks', () => {
@@ -944,12 +944,12 @@ endif`;
         {%- text outText -%}
         {%- ${DECL_TAG} user = { name: "Alice", role: "admin" } -%}
         {%- if user.role == "admin" -%}
-          {%- output_command outText("Hello, " + user.name) -%}
+          {%- command outText("Hello, " + user.name) -%}
           {%- for item in user.items -%}
-            {%- output_command outText(item.name) -%}
+            {%- command outText(item.name) -%}
           {%- endfor -%}
         {%- else -%}
-          {%- output_command outText("Access denied") -%}
+          {%- command outText("Access denied") -%}
         {%- endif -%}
 
         {%- return outData.snapshot() -%}`);
@@ -968,7 +968,7 @@ endif`;
       expect(template).to.contain(`{%- ${DECL_TAG} total = price *`);
       expect(template).to.contain('(1 + taxRate) *');
       expect(template).to.contain('(1 - discount) -%}');
-      expect(template).to.contain('{%- output_command outText("Total: $" + total.toFixed(2)) -%}');
+      expect(template).to.contain('{%- command outText("Total: $" + total.toFixed(2)) -%}');
     });
 
     it('should handle complex block structure with mixed tags', () => {
@@ -1005,7 +1005,7 @@ return { text: outText.snapshot() }`;
       expect(template).to.contain('{%- for product in products -%}');
       expect(template).to.contain('{%- if product.inStock -%}');
       expect(template).to.contain(`{%- ${DECL_TAG} formattedPrice = formatCurrency(product.price) -%}`);
-      expect(template).to.contain('{%- output_command outText("<div class=\'product\'>") -%}');
+      expect(template).to.contain('{%- command outText("<div class=\'product\'>") -%}');
       expect(template).to.contain('{%- if product.hasDiscount -%}');
       expect(template).to.contain('{%- else -%}');
       expect(template).to.contain('{%- endif -%}');
@@ -1041,9 +1041,9 @@ return { text: outText.snapshot() }`;
       expect(template).to.contain(`{%- ${DECL_TAG} stream = createAsyncStream() -%}`);
       expect(template).to.contain('{%- while stream.hasNext() -%}');
       expect(template).to.contain(`{%- ${DECL_TAG} chunk = stream.next() -%}`);
-      expect(template).to.contain('{%- output_command outText("Processing chunk " + loop.index + ": " + chunk) -%}');
+      expect(template).to.contain('{%- command outText("Processing chunk " + loop.index + ": " + chunk) -%}');
       expect(template).to.contain('{%- if !chunk -%}');
-      expect(template).to.contain('{%- output_command outText(\'Empty chunk\') -%}');
+      expect(template).to.contain('{%- command outText(\'Empty chunk\') -%}');
       expect(template).to.contain('{%- else -%}');
       expect(template).to.contain('{%- do results.push(processChunk(chunk)) -%}');
       expect(template).to.contain('{%- endif -%}');
@@ -1073,7 +1073,7 @@ return { text: outText.snapshot() }`;
       expect(template).to.contain('{%- depends frameVar1, frameVar2, frameVar3 -%}');
       expect(template).to.contain('{%- extends "parentTemplate_" + dynamicPart + ".njk" -%}');
       expect(template).to.contain('{%- block content -%}');
-      expect(template).to.contain('{%- output_command outText("<h1>" + frameVar1 + "</h1>") -%}');
+      expect(template).to.contain('{%- command outText("<h1>" + frameVar1 + "</h1>") -%}');
       expect(template).to.contain('{%- set frameVar3 = "Updated Value" -%}');
       expect(template).to.contain('{%- include includedTemplateName + ".njk" depends = var1, var2 -%}');
       expect(template).to.contain('{%- endblock -%}');
@@ -1119,3 +1119,4 @@ return { text: outText.snapshot() }`;
     });
   });
 });
+

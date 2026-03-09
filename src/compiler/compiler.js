@@ -1469,7 +1469,7 @@ class Compiler extends CompilerBase {
   compileOutput(node, frame) {
     if (this.scriptMode) {
       this.fail(
-        'Script mode does not support template output nodes. Use declared outputs and output_command instead.',
+        'Script mode does not support template output nodes. Use declared outputs and command instead.',
         node && node.lineno,
         node && node.colno,
         node || undefined

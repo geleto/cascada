@@ -128,7 +128,7 @@ class Parser extends Obj {
         this.dropLeadingWhitespace = true;
       }
     } else {
-      const label = (name === 'output_command') ? 'output' : name;
+      const label = (name === 'output_command' || name === 'command') ? 'output' : name;
       this.fail('expected block end in ' + label + ' statement');
     }
 
@@ -871,8 +871,8 @@ class Parser extends Obj {
       if (outputType !== 'data' && outputType !== 'text' && outputType !== 'var' && outputType !== 'sink' && outputType !== 'sequence') {
         this.fail(`parseOutputCommand: unsupported output type '${outputType}'`, tag.lineno, tag.colno);
       }
-    } else if (!this.skipSymbol('output_command')) {
-      this.fail('parseOutputCommand: expected output or output_command', tag.lineno, tag.colno);
+    } else if (!this.skipSymbol('command') && !this.skipSymbol('output_command')) {
+      this.fail('parseOutputCommand: expected output or command', tag.lineno, tag.colno);
     }
 
     // Parse the entire function call expression
@@ -1090,6 +1090,7 @@ class Parser extends Obj {
       case 'do':
         return this.parseDo();
       case 'output':
+      case 'command':
       case 'output_command':
         return this.parseOutputCommand();
       case 'guard':

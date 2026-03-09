@@ -87,7 +87,7 @@ Deferred result model:
 
 There are two emission paths.
 
-1. Statement-style output command path (`output_command`):
+1. Statement-style output command path (`command`):
 
 - Emitted through `compile-buffer`.
 - Uses `SequenceCallCommand` for calls, `SequenceGetCommand` for reads.
@@ -175,3 +175,4 @@ Covered behavior includes:
 - source-order sequence execution
 - sequence subpath method calls
 - guard begin/commit and begin/rollback flows
+

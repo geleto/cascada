@@ -16,12 +16,12 @@
  *
  * 3.  **Explicit Output Variables**
  *     - `text text` declares a text output variable; `text("Hello")` emits text.
- *       `text("Hello")`       → `{% output_command text("Hello") %}`
+ *       `text("Hello")`       → `{% command text("Hello") %}`
  *     - Data assembly uses explicit data outputs with path-based commands.
- *       `data data` + `data.user.id = 1` → `{% output_command data.set(["user","id"], 1) %}`
- *       `data.tags.push("a")` → `{% output_command data.push(["tags"], "a") %}`
+ *       `data data` + `data.user.id = 1` → `{% command data.set(["user","id"], 1) %}`
+ *       `data.tags.push("a")` → `{% command data.push(["tags"], "a") %}`
  *     - Sink outputs call methods directly on declared sinks.
- *       `sink db = makeDb(); db.insert(...)` → `{% output_command db.insert(...) %}`
+ *       `sink db = makeDb(); db.insert(...)` → `{% command db.insert(...) %}`
  *
  * 4.  **`capture` Removal**
  *     - `capture ... endcapture` is no longer supported in scripts and raises an error.
@@ -56,11 +56,11 @@
  * {#- Assemble a user object from a profile -#}
  * {%- var userProfile = fetchProfile(1) -%}
  *
- * {%- output_command data.set(["user","id"], userProfile.id) -%}
- * {%- output_command data.set(["user","name"], userProfile.name) -%}
+ * {%- command data.set(["user","id"], userProfile.id) -%}
+ * {%- command data.set(["user","name"], userProfile.name) -%}
  *
  * {%- for task in userProfile.tasks -%}
- *   {%- output_command data.push(["user","tasks"], task.title) -%}
+ *   {%- command data.push(["user","tasks"], task.title) -%}
  * {%- endfor -%}
  * ```
  *
@@ -1095,12 +1095,12 @@ class ScriptTranspiler {
 
       if (outputType === 'data') {
         parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output_command';
+        parseResult.tagName = 'command';
         parseResult.blockType = null;
         parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}.set(null, ${assignmentExpr})`, false);
       } else if (outputType === 'text') {
         parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output_command';
+        parseResult.tagName = 'command';
         parseResult.blockType = null;
         parseResult.codeContent = this._formatOutputCommand(outputType, `${outputName}.set(${assignmentExpr})`, false);
       } else if (outputType === 'var') {
@@ -1145,14 +1145,14 @@ class ScriptTranspiler {
             }
           }
           parseResult.lineType = 'TAG';
-          parseResult.tagName = 'output_command';
+          parseResult.tagName = 'command';
           parseResult.blockType = null;
           parseResult.codeContent = this._formatOutputCommand(outputType, commandContent, false);
           return true;
         }
         // Direct method call on output root (e.g., myData.set(...)) - keep as-is.
         parseResult.lineType = 'TAG';
-        parseResult.tagName = 'output_command';
+        parseResult.tagName = 'command';
         parseResult.blockType = null;
         parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
         return true;
@@ -1174,7 +1174,7 @@ class ScriptTranspiler {
       }
 
       parseResult.lineType = 'TAG';
-      parseResult.tagName = 'output_command';
+      parseResult.tagName = 'command';
       parseResult.blockType = null;
       parseResult.codeContent = this._formatOutputCommand(outputType, commandContent, false);
       return true;
@@ -1189,7 +1189,7 @@ class ScriptTranspiler {
         return false;
       }
       parseResult.lineType = 'TAG';
-      parseResult.tagName = 'output_command';
+      parseResult.tagName = 'command';
       parseResult.blockType = null;
       parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
       return true;
@@ -1203,7 +1203,7 @@ class ScriptTranspiler {
     }
 
     parseResult.lineType = 'TAG';
-    parseResult.tagName = 'output_command';
+    parseResult.tagName = 'command';
     parseResult.blockType = null;
     parseResult.codeContent = this._formatOutputCommand(outputType, trimmed, false);
     return true;
@@ -1448,7 +1448,7 @@ class ScriptTranspiler {
     let codeContent = processedLine.codeContent;
 
     if (!processedLine.isContinuation && processedLine.lineType === 'TAG') {
-      if (processedLine.tagName === 'output_command') {
+      if (processedLine.tagName === 'command') {
         codeContent = this._mapCoreOutputCall(codeContent);
       } else if (processedLine.tagName === 'data' || processedLine.tagName === 'text') {
         codeContent = this._mapCoreOutputName(codeContent || '');
@@ -1664,3 +1664,4 @@ class ScriptTranspiler {
 
 const transpiler = new ScriptTranspiler();
 module.exports = transpiler;
+
