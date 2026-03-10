@@ -21,7 +21,8 @@ This document summarizes what is outdated in [script.md](/c:/Projects/cascada/do
 
 ## Terminology policy for the rewrite
 
-- Prefer `types` / `typed variables` / `typed declarations`.
+- Prefer `var` for regular variable semantics.
+- Use `channels` for `data`, `text`, `sink`, and `sequence`.
 - Avoid leading with `output` / `output handlers` terminology in user-facing docs.
 - Acceptable type names:
   - `data`
@@ -42,7 +43,7 @@ This document summarizes what is outdated in [script.md](/c:/Projects/cascada/do
 
 ## Current language model (what `script.md` should describe)
 
-1. Script state is built with explicit typed declarations, not legacy `@...` commands.
+1. Script state is built with `var` plus explicit channels, not legacy `@...` commands.
 - Declarations:
   - `data name`
   - `text name`
@@ -50,7 +51,7 @@ This document summarizes what is outdated in [script.md](/c:/Projects/cascada/do
   - `sink name = initializer`
   - `sequence name = initializer`
 - Scope:
-  - typed declarations are validated for async script mode (not template mode and not sync-only script flow).
+  - channels are validated for async script mode (not template mode and not sync-only script flow).
 
 2. Legacy syntax is removed/rejected in scripts.
 - `@data`, `@text`, `@value` are rejected by transpiler.
@@ -59,7 +60,7 @@ This document summarizes what is outdated in [script.md](/c:/Projects/cascada/do
 - Explicit `value x = ...` declarations are not supported.
 - `extern` declarations are not part of the current script surface.
 
-3. Type operations are done through declared typed variables.
+3. Type operations are done through declared channels.
 - `data`:
   - assignment/path assignment: `out.user.name = "A"`
   - methods: `out.items.push(v)`, `out.merge(...)`, etc.
@@ -69,7 +70,7 @@ This document summarizes what is outdated in [script.md](/c:/Projects/cascada/do
 - `var` (value output):
   - assignment set: `v = 42`
   - callable assignment is not supported.
-  - bare symbol reads are allowed and behave like snapshot reads in expressions.
+  - bare symbol reads are the documented read mechanism in expressions and returns.
 - `sink`/`sequence`:
   - method calls on initialized object.
   - `sequence` supports read access, call return values, and `snapshot()`.
@@ -77,12 +78,16 @@ This document summarizes what is outdated in [script.md](/c:/Projects/cascada/do
 
 4. Snapshots and returns are explicit.
 - `return` exists and can return arbitrary values.
-- Snapshot API: `name.snapshot()`.
-- Non-`var` outputs cannot be used as bare symbols; docs should instruct `snapshot()`.
+- Snapshot API (channels only): `name.snapshot()`.
+- channels (`data/text/sink/sequence`) should be documented with `snapshot()` as the read/return mechanism.
+- `var` should be documented with bare symbol reads only (do not document `var.snapshot()`).
 
-5. Guard/recovery semantics for typed declarations.
+5. Guard/recovery semantics for channels.
 - `guard`, optional `recover`.
 - Selectors include declaration names/types, `var`, `*`, and sequence-path selectors.
+- Error inspection uses `is error` and `#`:
+  - `x#` returns the error object when `x` is an error.
+  - `x#` returns `none` when `x` is healthy.
 - `revert` is currently not available in script transpilation unless implemented there first.
 - `sink snapshot()` is currently forbidden inside guard blocks.
 - `@handler._revert()` documentation is stale and should be removed from script docs.
@@ -93,7 +98,7 @@ This document summarizes what is outdated in [script.md](/c:/Projects/cascada/do
   - `var result = myMacro(args)`.
 - Script transpiler rejects bare `call ... endcall` blocks; call-block usage is assignment form:
   - `var x = call ... endcall` or `x = call ... endcall`.
-- Macro/caller return patterns should be documented via typed declarations + `return`.
+- Macro/caller return patterns should be documented via `var`/channels + `return`.
 
 ## High-priority corrections needed in `script.md`
 
@@ -103,7 +108,7 @@ Problem:
 - Major sections describe `@data/@text/@value` as user syntax.
 
 Action:
-- Rewrite to explicit types (`data/text/var/sink/sequence`) and typed-variable operations.
+- Rewrite to explicit types (`data/text/var/sink/sequence`) and channel operations.
 - Keep `@...` only as internal implementation detail if needed (prefer not in user docs).
 
 Affected sections (non-exhaustive):
@@ -142,7 +147,7 @@ Problem:
 Action:
 - Document current pattern:
   - Call macros normally with function syntax when no caller block is needed.
-  - Declare typed variables inside macro/call body when building structured return values.
+  - Declare channels inside macro/call body when building structured return values.
   - Return snapshots/objects explicitly.
   - Use assignment-form call blocks only for caller-block scenarios.
 
@@ -190,7 +195,7 @@ Problem:
 - Existing method documentation is framed as `@data.path.method(...)` and misses current type framing.
 
 Action:
-- Reframe as `data` typed-variable methods (`myData.path.method(...)`).
+- Reframe as `data` channel methods (`myData.path.method(...)`).
 - Source methods from [default-data-methods.js](/c:/Projects/cascada/src/script/default-data-methods.js):
   - `set`, `push`, `merge`, `deepMerge`, `pop`, `shift`, `unshift`, `reverse`, `concat`
   - `text`, `append`
@@ -366,7 +371,7 @@ Rules:
 - `*` cannot be combined with other selectors.
 - duplicate selectors are invalid.
 - selectors do not use `@name` syntax.
-- lock selectors (`lock!`, `!`) are for sequential-operation locks, not `sequence` typed declarations.
+- lock selectors (`lock!`, `!`) are for sequential-operation locks, not `sequence` channels.
 
 ## 14) Critical implementation notes for doc author (no-source environment)
 
@@ -387,26 +392,113 @@ These points must be treated as authoritative while rewriting `script.md`:
 - Do not imply any `@...` command syntax for scripts.
 - `revert` must be documented only if script transpilation supports it at rewrite time.
 
-## Structural replacement proposal for `script.md`
+## In-place `script.md` update plan (preserve current structure)
 
-Use this structure for the rewrite:
+Preferred approach:
+- keep the current `script.md` structure and TOC shape;
+- update semantics section-by-section;
+- avoid a full structural rewrite unless a section becomes impossible to modernize.
+- do not force new semantics into legacy section slots when the concept has fundamentally changed.
 
-1. Quick Start (typed declarations + return)
-2. Core syntax (`var`, assignment, expressions, loops, conditionals)
-3. Typed declarations (`data/text/var/sink/sequence`, async script mode scope)
-4. Type operations
-5. Snapshot semantics
-6. Return semantics
-7. Guard/recover (and `revert` only if implemented) with current selector table
-8. Macros and call blocks (assignment-form call blocks in scripts)
-9. Sink type (required examples)
-10. Sequence type (required examples)
-11. Guard selector reference table
-12. Error/poison behavior with typed declarations
-13. Extensibility:
-- `addDataMethods` for data methods
-- note that legacy command-handler registration APIs are compatibility-only/inert for output-command execution in current async environment.
-14. Known limitations / pending items
+### Re-evaluation result: where structure should change (not only wording)
+
+Most of the current chapter flow is still usable. However, a few areas should move to more natural positions:
+
+- `return`/result composition should live in language basics, not in a legacy "result object" chapter.
+  - `return` is now a standard control-flow feature, not a handler-focus feature.
+  - channel `snapshot()` should be documented where expression/return composition is taught.
+- `var` should stay in language basics as the default variable model.
+- channels (`data/text/sink/sequence`) should have their own dedicated section.
+  - declaration intro + per-channel behavior should be grouped there, not mixed into `var` basics.
+- guard/recover should be documented as core control-flow/error-recovery, not as "output handler recovery".
+  - selector details can remain in an advanced subsection/table.
+- channels (`data/text/sink/sequence`) plus `var` should be introduced early in fundamentals, not deep inside legacy `@` framing.
+
+### Practical TOC adjustment policy
+
+- Preserve most top-level chapter order and reader familiarity.
+- Apply targeted relocations for concepts that are semantically different now:
+  - move `return` + snapshot composition into `Language Fundamentals`.
+  - keep `var` in `Language Fundamentals`.
+  - add a dedicated `channels` section (with `data/text/sink/sequence` subsections).
+  - move guard/recover fundamentals into `Control Flow` or `Error Handling` (choose one canonical location, cross-link from the other).
+  - keep sink/sequence deep-dive where side effects are discussed, but reference them from fundamentals.
+- Rename legacy headings even when chapter position stays:
+  - remove `@`/focus-era terminology.
+  - use `var` + channel terminology.
+
+Sections/subsections to preserve with semantic updates:
+- `Quick Start`
+- `Cascada's Execution Model`
+- `Language Fundamentals`
+- `Control Flow`
+- `Managing Side Effects: Sequential Execution`
+- `Error Handling`
+- `Macros and Reusable Components`
+- `Templates vs Scripts`
+- `Modular Scripts`
+- `Extending Cascada`
+- `API Reference`
+
+Sections to preserve but rename/reframe:
+- `Variable Declaration and Assignment`
+  - keep as `var` fundamentals (declaration, assignment, scope, reads).
+- `Building Outputs Declaratively with @`
+  - reframe as `channels` with:
+    - declaration intro (`data/text/sink/sequence`)
+    - per-channel behavior and examples.
+- `Output Handlers: @data, @text, @value, and Custom Logic`
+  - replace with the current channel model.
+- `Error handling and recovery with output handlers`
+  - reframe as `Error Handling and Recovery` with guard/recover as one mechanism.
+  - include non-transactional recovery patterns (`if/switch` error branching, `is error`, `#`, and sequence repair where applicable).
+  - state `#` semantics explicitly: returns error object for error values, otherwise returns `none`.
+- `Customizing the @data Handler`
+  - keep customization content but rename to `data` methods.
+
+Sections/subsections to remove or heavily rewrite:
+- `Focusing the Output (:data, :text, :handlerName)` (remove)
+- legacy `@value` guidance (rewrite to `var`)
+- capture-centric guidance (remove; keep single unsupported note)
+- `extern` language docs (remove from main language surface)
+- script-facing `_revert()` guidance (document only if transpiler supports it)
+- roadmap/development-status content in `script.md` (move out or trim)
+
+Required semantic updates across preserved sections:
+- use `command` terminology instead of `output_command`.
+- describe `text` write forms:
+  - append: `t(expr)`
+  - overwrite: `t = expr`
+- describe `var` write/read forms:
+  - assignment: `v = expr`
+  - callable `v(expr)` is invalid.
+- keep guard selector behavior accurate, including bare `guard` (no selectors) as global guard.
+- describe `sequence` as read/call/snapshot capable, with property assignment rejected.
+- remove references to focus directives and `@...` script syntax.
+
+Recommended heading replacements for substantial semantic shifts:
+- `Understanding the Result Object` -> remove this standalone framing.
+  - move content into:
+    - `Language Fundamentals`:
+      - `Return statements`
+      - `Composing return values`
+      - `When channels need snapshot()`
+- Add a dedicated `channels` chapter (or equivalent top-level section) with subsections:
+  - `data`
+  - `text`
+  - `sink`
+  - `sequence`
+- `Error handling and recovery with output handlers` -> `Error Handling and Recovery`
+  - document as language-level recovery semantics.
+  - use `Transactional Recovery with guard` as a subsection title, not the chapter title.
+
+Execution plan for editing `script.md`:
+1. Update terminology globally (`@...`/focus-era wording -> `var` + channels).
+2. Rewrite output-related sections in place (keep heading positions where possible).
+3. Update macro/call sections to assignment-form call blocks and explicit returns.
+4. Update guard/recover sections, including selector table and sink snapshot restriction.
+5. Refresh examples to current semantics without changing the overall chapter order.
+6. Regenerate TOC links and run docs consistency pass.
 
 ## Concrete example rewrites (old -> new)
 
@@ -417,7 +509,7 @@ Old:
 @text("done")
 ```
 
-New (typed declarations still used, but return shape is normal application data):
+New (channels are used where needed, but return shape is normal application data):
 ```cascada
 data outData
 text outText
@@ -441,7 +533,7 @@ New:
 macro calc(x)
   var out
   out = x * 2
-  return out.snapshot()
+  return out
 endmacro
 ```
 
@@ -458,3 +550,4 @@ data tmp
 tmp.x = 1
 var r = tmp.snapshot()
 ```
+
