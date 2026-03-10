@@ -26,7 +26,8 @@
 
       const template = `
         {% if val is error %}
-          {{ val#message }}
+          {% set err = val# %}
+          {{ err.message }}
         {% endif %}
       `;
       const output = await env.renderTemplateString(template, { val: poison });
@@ -38,32 +39,32 @@
 
       const template = `
         {% if val is error %}
-          {{ val#message }}
+          {% set err = val# %}
+          {{ err.message }}
         {% endif %}
       `;
       const output = await env.renderTemplateString(template, { val: p });
       expect(output.trim()).to.contain('Async Fail');
     });
 
-    it('should return poison when peeking at a healthy value', async () => {
+    it('should return none when peeking at a healthy value', async () => {
       const template = `
         {% set val = "healthy" %}
-        {% set peeked = val#message %}
-        {{ peeked is error }}
+        {% set peeked = val# %}
+        {{ peeked == none }}
       `;
-      // The peek itself shouldn't throw, but return a PoisonedValue
       const output = await env.renderTemplateString(template);
-      expect(output.trim()).to.contain('true');
+      expect(output.trim()).to.be('true');
     });
 
-    it('should return poison when peeking at a healthy Promise', async () => {
+    it('should return none when peeking at a healthy Promise', async () => {
       const p = Promise.resolve('healthy');
       const template = `
-        {% set peeked = val#message %}
-        {{ peeked is error }}
+        {% set peeked = val# %}
+        {{ peeked == none }}
       `;
       const output = await env.renderTemplateString(template, { val: p });
-      expect(output.trim()).to.contain('true');
+      expect(output.trim()).to.be('true');
     });
 
     it('should access array of errors via #errors', async () => {
@@ -104,23 +105,17 @@
       expect(output.trim()).to.contain('CustomName');
     });
 
-    it('should handle nested peek (peeking at the result of a peek if it is an error)', async () => {
-      // Technically peeking at an Error Value (returned by peek) isn't peeking at a Poison,
-      // passing a raw object to peek# shouldn't crash but might return poison if the object isn't poison or promise.
-      // But let's check normal behavior:
-      // val# returns a PoisonError object (which is just an object, not a PoisonedValue).
-      // So val## -> peeking at a plain object -> returns Poison (because it's healthy).
-
+    it('should return none for nested peek on a healthy error object', async () => {
       const err = new Error('Root');
       const poison = runtime.createPoison(err);
 
       const template = `
             {% set errObj = val# %}
             {% set doublePeek = errObj# %}
-            {{ doublePeek is error }}
+            {{ doublePeek == none }}
         `;
       const output = await env.renderTemplateString(template, { val: poison });
-      expect(output.trim()).to.contain('true');
+      expect(output.trim()).to.be('true');
     });
 
     it('should allow peeking in standard JS expressions', async () => {
@@ -128,7 +123,8 @@
       const poison = runtime.createPoison(err);
 
       const template = `
-        {{ val#message }}
+        {% set err = val# %}
+        {{ err.message }}
       `;
       const output = await env.renderTemplateString(template, { val: poison });
       expect(output.trim()).to.contain('Expr Error');
@@ -148,7 +144,8 @@
       const script = `
         var result = {}
         if val is error
-          result.msg = val#message
+          var err = val#
+          result.msg = err.message
         endif
 
         return result`;
@@ -184,7 +181,8 @@
         var result = {}
         var resultVal = service.action()
         if resultVal is error
-          result.peeked = resultVal#message
+          var err = resultVal#
+          result.peeked = err.message
         endif
 
         return result`;

@@ -912,6 +912,11 @@ class CompilerBase extends Obj {
     if (!outputDecl) {
       return false;
     }
+    if (outputDecl.type === 'var') {
+      // Var should behave like a normal value in expressions:
+      // implicit var read first, then regular member/method access.
+      return false;
+    }
 
     const methodName = sequencePath[sequencePath.length - 1];
     if (this._compileOutputObservationFunCall(node, frame, outputDecl, outputName, methodName, sequencePath)) {
@@ -950,7 +955,6 @@ class CompilerBase extends Obj {
     }
 
     validateSinkSnapshotInGuard(this, { node, command: methodName, outputType: outputDecl.type });
-
     if (methodName === 'snapshot') {
       this.buffer.emitAddSnapshot(frame, outputName, node);
       return true;

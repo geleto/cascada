@@ -53,16 +53,6 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be('hello world');
     });
 
-    it('should declare value output', async () => {
-      const script = `
-        var result
-        result = 42
-        return result.snapshot()
-      `;
-      const result = await render(script);
-      expect(result).to.be(42);
-    });
-
     it('should declare sink output with initializer', async () => {
       const context = {
         makeLogger() {
@@ -90,7 +80,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         myData.x = 1
         textOut("hi")
         result = 7
-        return { data: myData.snapshot(), text: textOut.snapshot(), value: result.snapshot() }
+        return { data: myData.snapshot(), text: textOut.snapshot(), value: result }
       `;
       const result = await render(script);
       expect(result).to.eql({ data: { x: 1 }, text: 'hi', value: 7 });
@@ -190,7 +180,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         var result
         result = 42
         result = 100
-        return result.snapshot()
+        return result
       `;
       const result = await render(script);
       expect(result).to.be(100);
@@ -329,7 +319,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         data myData
         text textOut
         var result
-        return { data: myData.snapshot(), text: textOut.snapshot(), value: result.snapshot() }
+        return { data: myData.snapshot(), text: textOut.snapshot(), value: result }
       `;
       const result = await render(script);
       expect(result).to.eql({ data: {}, text: '', value: null });
@@ -1395,7 +1385,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         var callRes = call collect([1, 2, 3]) (num)
           var out
           out = num * 2
-          return out.snapshot()
+          return out
         endcall
 
         return callRes
@@ -1658,6 +1648,21 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.be('hi');
     });
 
+    it('should call snapshot() as a regular method on var values', async () => {
+      const script = `
+        var result = makeObj()
+        return result.snapshot()
+      `;
+      const result = await render(script, {
+        makeObj: () => ({
+          snapshot() {
+            return 1;
+          }
+        })
+      });
+      expect(result).to.be(1);
+    });
+
     it('should allow value outputs with initializers', async () => {
       const script = `
         var result = 1
@@ -1918,7 +1923,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         textOut("hi")
         result = 5
         logger.write("log")
-        return { data: myData.snapshot(), text: textOut.snapshot(), value: result.snapshot(), sink: logger.snapshot() }
+        return { data: myData.snapshot(), text: textOut.snapshot(), value: result, sink: logger.snapshot() }
       `;
       const result = await render(script, context);
       expect(result).to.eql({ data: { x: 1 }, text: 'hi', value: 5, sink: ['log'] });

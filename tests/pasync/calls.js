@@ -158,9 +158,14 @@
 
         var observed = call runner()
           data result
-          result.snap = outer.snapshot()
-          result.isError = outer.isError()
-          result.error = outer.getError()
+          result.snap = outer
+          result.isError = outer is error
+          if outer is error
+            var err = outer#
+            result.error = err.errors[0].message
+          else
+            result.error = none
+          endif
           return result.snapshot()
         endcall
 
