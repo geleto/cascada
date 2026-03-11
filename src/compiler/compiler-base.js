@@ -4,6 +4,7 @@ const nodes = require('../nodes');
 const { TemplateError } = require('../lib');
 // const { Frame, AsyncFrame } = require('./runtime'); // Not used in base class
 const { Obj } = require('../object');
+const { validateAnalysisParity } = require('./validation');
 
 // Moved from the main compiler as it's used by compileCompare (expression)
 const compareOps = {
@@ -140,7 +141,6 @@ class CompilerBase extends Obj {
     }
     return !!(frame && frame.resolve && frame.resolve(name, false));
   }
-
 
   _getNodeName(node) {
     switch (node.typename) {
@@ -317,6 +317,62 @@ class CompilerBase extends Obj {
     } else {
       this.emit(node.value.toString());
     }
+  }
+
+  _getObservedOutputNameFromAnalysis(node) {
+    const analysis = node && node._analysis ? node._analysis : null;
+    if (analysis && analysis.observedOutputName) {
+      return analysis.observedOutputName;
+    }
+    return null;
+  }
+
+  _assertAnalysisParity(node, kind, analysisValue, compileValue) {
+    if (!node || !node._analysis) {
+      return;
+    }
+    validateAnalysisParity(this, {
+      node,
+      kind,
+      analysisValue: analysisValue === undefined ? null : analysisValue,
+      compileValue: compileValue === undefined ? null : compileValue
+    });
+  }
+
+  _detectObservedOutputNameFromAnalysisScope(node, targetNode) {
+    if (!this.analysis || !this.analysis.detectObservedOutputNameFromNodeScope) {
+      return null;
+    }
+    return this.analysis.detectObservedOutputNameFromNodeScope(node, targetNode, (t) => this._isSequenceMarkedTarget(t));
+  }
+
+  analyzeSymbol(node, analysis, ctx, analysisPass, state) {
+    if (!analysisPass) {
+      return true;
+    }
+
+    if (ctx && ctx.inDeclarationTarget) {
+      return true;
+    }
+
+    const name = node && node.value;
+    if (!name || node.isCompilerInternal) {
+      return true;
+    }
+
+    if (node.lockKey && analysisPass._isOutputDeclaredInVisibleScopes(analysis, node.lockKey)) {
+      analysisPass.registerOutputUsage(analysis, node.lockKey, state);
+      if (node.sequentialRepair) {
+        analysisPass.registerOutputMutation(analysis, node.lockKey, state);
+      }
+      return true;
+    }
+
+    if (analysisPass._isOutputDeclaredInVisibleScopes(analysis, name)) {
+      analysisPass.registerOutputUsage(analysis, name, state);
+    }
+
+    return true;
   }
 
   compileSymbol(node, frame) {
@@ -543,6 +599,28 @@ class CompilerBase extends Obj {
     this._binFuncEmitter(node, frame, 'runtime.inOperator');
   }
 
+  analyzeIs(node, analysis, _ctx, analysisPass, state) {
+    if (!analysisPass || !node || !node.right) {
+      return true;
+    }
+
+    const testName = node.right.name ? node.right.name.value : node.right.value;
+    if (testName !== 'error') {
+      return true;
+    }
+    if (this._isSequenceMarkedTarget(node.left)) {
+      return true;
+    }
+
+    const outputName = analysisPass._extractObservedOutputName(node.left);
+    if (outputName && analysisPass._isOutputDeclaredInVisibleScopes(analysis, outputName)) {
+      analysis.observedOutputName = outputName;
+      analysisPass.registerOutputUsage(analysis, outputName, state);
+    }
+
+    return true;
+  }
+
   compileIs(node, frame) {
     const testName = node.right.name ? node.right.name.value : node.right.value;
     const testFunc = `env.getTest("${testName}")`;
@@ -552,7 +630,14 @@ class CompilerBase extends Obj {
     // Ensure failMsg is properly escaped for embedding in the generated string
 
     if (testName === 'error' && this.asyncMode) {
-      const outputName = this._getObservedOutputName(node.left, frame);
+      const hasAnalysis = !!(node && node._analysis);
+      const outputName = hasAnalysis
+        ? this._getObservedOutputNameFromAnalysis(node)
+        : this._getObservedOutputName(node.left, frame);
+      if (hasAnalysis) {
+        const compileDetectedOutput = this._detectObservedOutputNameFromAnalysisScope(node, node.left);
+        this._assertAnalysisParity(node, 'Is(error).observedOutputName', outputName, compileDetectedOutput);
+      }
       if (outputName) {
         this.buffer.emitAddIsError(frame, outputName, node.left);
         return;
@@ -676,9 +761,33 @@ class CompilerBase extends Obj {
     return this._unaryOpEmitter(node, frame, '!');
   }
 
+  analyzePeekError(node, analysis, _ctx, analysisPass, state) {
+    if (!analysisPass || !node) {
+      return true;
+    }
+    if (this._isSequenceMarkedTarget(node.target)) {
+      return true;
+    }
+
+    const outputName = analysisPass._extractObservedOutputName(node.target);
+    if (outputName && analysisPass._isOutputDeclaredInVisibleScopes(analysis, outputName)) {
+      analysis.observedOutputName = outputName;
+      analysisPass.registerOutputUsage(analysis, outputName, state);
+    }
+
+    return true;
+  }
+
   compilePeekError(node, frame) {
     if (this.asyncMode) {
-      const outputName = this._getObservedOutputName(node.target, frame);
+      const hasAnalysis = !!(node && node._analysis);
+      const outputName = hasAnalysis
+        ? this._getObservedOutputNameFromAnalysis(node)
+        : this._getObservedOutputName(node.target, frame);
+      if (hasAnalysis) {
+        const compileDetectedOutput = this._detectObservedOutputNameFromAnalysisScope(node, node.target);
+        this._assertAnalysisParity(node, 'PeekError.observedOutputName', outputName, compileDetectedOutput);
+      }
       if (outputName) {
         this.buffer.emitAddGetError(frame, outputName, node.target);
         return;
@@ -695,7 +804,7 @@ class CompilerBase extends Obj {
     }
     // Sequence-marked targets (path! / path!!) are handled by sequential-path
     // compilation and must not be reinterpreted as var-output observation.
-    if (targetNode.sequential) {
+    if (this._isSequenceMarkedTarget(targetNode)) {
       return null;
     }
 
@@ -726,6 +835,24 @@ class CompilerBase extends Obj {
     }
 
     return null;
+  }
+
+  _isSequenceMarkedTarget(targetNode) {
+    if (!targetNode) {
+      return false;
+    }
+    if (targetNode.sequential || targetNode.lockKey) {
+      return true;
+    }
+    if (targetNode instanceof nodes.FunCall) {
+      const callTarget = targetNode.name;
+      return !!(callTarget && (callTarget.sequential || callTarget.lockKey));
+    }
+    if (targetNode instanceof nodes.LookupVal) {
+      return !!((targetNode.target && (targetNode.target.sequential || targetNode.target.lockKey)) ||
+        (targetNode.val && (targetNode.val.sequential || targetNode.val.lockKey)));
+    }
+    return false;
   }
 
   compileFloorDiv(node, frame) {
@@ -772,18 +899,48 @@ class CompilerBase extends Obj {
     }
   }
 
+  analyzeLookupVal(node, analysis, _ctx, analysisPass, state) {
+    if (!analysisPass || !node) {
+      return true;
+    }
+
+    if (node.lockKey && analysisPass._isOutputDeclaredInVisibleScopes(analysis, node.lockKey)) {
+      analysisPass.registerOutputUsage(analysis, node.lockKey, state);
+      if (node.sequentialRepair) {
+        analysisPass.registerOutputMutation(analysis, node.lockKey, state);
+      }
+    }
+
+    if (this.scriptMode && this.sequential) {
+      const lookupFacts = this.analysis.detectSequenceOutputLookup(node, (name) => {
+        return analysisPass._getVisibleOutputDeclaration(analysis, name);
+      });
+      if (lookupFacts) {
+        analysis.sequenceLookup = lookupFacts;
+        analysisPass.registerOutputUsage(analysis, lookupFacts.outputName, state);
+      }
+    }
+
+    return true;
+  }
+
   compileLookupVal(node, frame) {
     if (node.isAsync) {
       if (this.scriptMode) {
-        const sequencePath = this.sequential._extractStaticPath(node);
-        if (sequencePath && sequencePath.length >= 2) {
-          const outputDecl = this.async._getDeclaredOutput(frame, sequencePath[0]);
-          const propertyName = sequencePath[sequencePath.length - 1];
-          if (outputDecl && outputDecl.type === 'sequence' && propertyName !== 'snapshot') {
-            const subpath = sequencePath.slice(1, -1);
-            this.buffer.emitAddSequenceGet(frame, sequencePath[0], propertyName, subpath, node);
-            return;
-          }
+        const lookupFacts = node && node._analysis ? node._analysis : null;
+        const hasAnalysis = !!(node && node._analysis);
+        const analysisLookup = lookupFacts && lookupFacts.sequenceLookup ? lookupFacts.sequenceLookup : null;
+        const compileLookup = this.analysis.detectSequenceOutputLookup(node, (name) => {
+          return hasAnalysis
+            ? this.analysis.getVisibleOutputDeclarationFromNode(node, name)
+            : this.async._getDeclaredOutput(frame, name);
+        });
+        this._assertAnalysisParity(node, 'LookupVal.sequenceLookup', analysisLookup, compileLookup);
+        const lookupToCompile = hasAnalysis ? analysisLookup : compileLookup;
+        if (lookupToCompile) {
+          const { outputName, propertyName, subpath } = lookupToCompile;
+          this.buffer.emitAddSequenceGet(frame, outputName, propertyName, subpath, node);
+          return;
         }
       }
 
@@ -843,6 +1000,33 @@ class CompilerBase extends Obj {
     this.emit(')');
   }
 
+  analyzeFunCall(node, analysis, _ctx, analysisPass, state) {
+    if (!analysisPass || !node) {
+      return true;
+    }
+
+    if (node.lockKey && analysisPass._isOutputDeclaredInVisibleScopes(analysis, node.lockKey)) {
+      analysisPass.registerOutputUsage(analysis, node.lockKey, state);
+      analysisPass.registerOutputMutation(analysis, node.lockKey, state);
+      return true;
+    }
+
+    if (this.scriptMode && this.sequential && this.async && this.async._getDeclaredOutput) {
+      const callFacts = this.analysis.detectSpecialOutputCall(node, (name) => {
+        return analysisPass._getVisibleOutputDeclaration(analysis, name);
+      });
+      if (callFacts) {
+        analysis.specialOutputCall = callFacts;
+        analysisPass.registerOutputUsage(analysis, callFacts.outputName, state);
+        if (!callFacts.isObservation) {
+          analysisPass.registerOutputMutation(analysis, callFacts.outputName, state);
+        }
+      }
+    }
+
+    return true;
+  }
+
   compileFunCall(node, frame) {
     // Keep track of line/col info at runtime by setting
     // variables within an expression (SYNC MODE ONLY).
@@ -853,7 +1037,18 @@ class CompilerBase extends Obj {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
     if (this.asyncMode) {
-      if (this._compileSpecialOutputFunCall(node, frame)) {
+      const analysis = node && node._analysis ? node._analysis : null;
+      const hasAnalysis = !!(node && node._analysis);
+      const analysisCallFacts = analysis && analysis.specialOutputCall ? analysis.specialOutputCall : null;
+      const compileCallFacts = this.analysis.detectSpecialOutputCall(node, (name) => {
+        return hasAnalysis
+          ? this.analysis.getVisibleOutputDeclarationFromNode(node, name)
+          : this.async._getDeclaredOutput(frame, name);
+      });
+      this._assertAnalysisParity(node, 'FunCall.specialOutputCall', analysisCallFacts, compileCallFacts);
+      const callFactsToCompile = hasAnalysis ? analysisCallFacts : compileCallFacts;
+
+      if (this._compileSpecialOutputFunCallFromFacts(node, frame, callFactsToCompile)) {
         return;
       }
 
@@ -900,33 +1095,52 @@ class CompilerBase extends Obj {
     }
   }
 
-  _compileSpecialOutputFunCall(node, frame) {
+  _compileSpecialOutputFunCallFromFacts(node, frame, callFacts) {
     if (!this.scriptMode) {
       return false;
     }
-
-    const sequencePath = this.sequential._extractStaticPath(node.name);
-    if (!sequencePath || sequencePath.length < 2) {
+    if (!callFacts || !callFacts.outputName) {
+      return false;
+    }
+    if (callFacts.outputType === 'var') {
       return false;
     }
 
-    const outputName = sequencePath[0];
-    const outputDecl = this.async._getDeclaredOutput(frame, outputName);
-    if (!outputDecl) {
-      return false;
-    }
-    if (outputDecl.type === 'var') {
-      // Var should behave like a normal value in expressions:
-      // implicit var read first, then regular member/method access.
+    if (callFacts.pathDepth === 2 &&
+      (callFacts.methodName === 'snapshot' || callFacts.methodName === 'isError' || callFacts.methodName === 'getError' || callFacts.methodName === '__checkpoint')) {
+      if (callFacts.methodName === '__checkpoint') {
+        if (callFacts.outputType === 'text') {
+          this.emit(`${this.buffer.currentBuffer}.addTextCheckpoint("${callFacts.outputName}", { lineno: ${node.lineno}, colno: ${node.colno} })`);
+          return true;
+        }
+        return false;
+      }
+      if (callFacts.methodName === 'snapshot') {
+        this.buffer.emitAddSnapshot(frame, callFacts.outputName, node);
+        return true;
+      }
+      if (callFacts.methodName === 'isError') {
+        this.buffer.emitAddIsError(frame, callFacts.outputName, node);
+        return true;
+      }
+      if (callFacts.methodName === 'getError') {
+        this.buffer.emitAddGetError(frame, callFacts.outputName, node);
+        return true;
+      }
       return false;
     }
 
-    const methodName = sequencePath[sequencePath.length - 1];
-    if (this._compileOutputObservationFunCall(node, frame, outputDecl, outputName, methodName, sequencePath)) {
-      return true;
+    if (callFacts.outputType !== 'sequence' || callFacts.methodName === 'snapshot') {
+      return false;
     }
 
-    return this._compileSequenceOutputFunCall(node, frame, outputDecl, outputName, methodName, sequencePath);
+    const subpath = Array.isArray(callFacts.subpath) ? callFacts.subpath : [];
+    this._compileAggregate(node.args, frame, '[', ']', false, false, function (resolvedArgs) {
+      this.emit('return ');
+      this.buffer.emitAddSequenceCall(frame, callFacts.outputName, callFacts.methodName, subpath, resolvedArgs, node);
+      this.emit(';');
+    });
+    return true;
   }
 
   _isSequencePathLockDeclared(frame, lockKey) {
@@ -950,47 +1164,6 @@ class CompilerBase extends Obj {
     if (this._isDeclared(frame, keyRoot) || keyRootOutput) {
       this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
     }
-  }
-
-  _compileOutputObservationFunCall(node, frame, outputDecl, outputName, methodName, sequencePath) {
-    if (sequencePath.length !== 2) {
-      return false;
-    }
-
-    if (methodName === '__checkpoint') {
-      if (outputDecl.type === 'text') {
-        this.emit(`${this.buffer.currentBuffer}.addTextCheckpoint("${outputName}", { lineno: ${node.lineno}, colno: ${node.colno} })`);
-        return true;
-      }
-      return false;
-    }
-    if (methodName === 'snapshot') {
-      this.buffer.emitAddSnapshot(frame, outputName, node);
-      return true;
-    }
-    if (methodName === 'isError') {
-      this.buffer.emitAddIsError(frame, outputName, node);
-      return true;
-    }
-    if (methodName === 'getError') {
-      this.buffer.emitAddGetError(frame, outputName, node);
-      return true;
-    }
-    return false;
-  }
-
-  _compileSequenceOutputFunCall(node, frame, outputDecl, outputName, methodName, sequencePath) {
-    if (outputDecl.type !== 'sequence' || methodName === 'snapshot') {
-      return false;
-    }
-
-    const subpath = sequencePath.slice(1, -1);
-    this._compileAggregate(node.args, frame, '[', ']', false, false, function (resolvedArgs) {
-      this.emit('return ');
-      this.buffer.emitAddSequenceCall(frame, outputName, methodName, subpath, resolvedArgs, node);
-      this.emit(';');
-    });
-    return true;
   }
 
   compileFilterGet(node, frame) {
@@ -1073,6 +1246,15 @@ class CompilerBase extends Obj {
     this.emit('runtime.makeKeywordArgs(');
     this.compileDict(node, frame);
     this.emit(')');
+  }
+
+  analyzeCaller(_node, analysis) {
+    if (!analysis) {
+      return true;
+    }
+    analysis.createScope = true;
+    analysis.scopeBoundary = true;
+    return true;
   }
 
   compileCaller(node, frame) {

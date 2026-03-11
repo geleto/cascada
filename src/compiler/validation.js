@@ -1,5 +1,8 @@
 'use strict';
 
+const { isDeepStrictEqual } = require('util');
+const { VERIFY_ANALYSIS_PARITY } = require('../feature-flags');
+
 const RESERVED_DECLARATION_NAMES = new Set(['var', 'value', 'data', 'text', 'sink', 'sequence']);
 
 /**
@@ -233,6 +236,35 @@ function validateOutputObservationCall(compiler, { node, command, handler }) {
   }
 }
 
+function shouldVerifyAnalysisParity() {
+  return !!VERIFY_ANALYSIS_PARITY;
+}
+
+function validateAnalysisParity(compiler, {
+  node,
+  kind,
+  analysisValue,
+  compileValue
+}) {
+  if (!shouldVerifyAnalysisParity()) {
+    return;
+  }
+
+  if (!isDeepStrictEqual(analysisValue, compileValue)) {
+    const safeStringify = (value) => {
+      if (value === undefined) {
+        return 'undefined';
+      }
+      return JSON.stringify(value);
+    };
+    compiler.fail(
+      `Analysis/compile mismatch for ${kind}: analysis=${safeStringify(analysisValue)} compile=${safeStringify(compileValue)}`,
+      node && node.lineno,
+      node && node.colno,
+      node || undefined
+    );
+  }
+}
 
 
 module.exports = {
@@ -245,5 +277,7 @@ module.exports = {
   validateReadOnlyOuterMutation,
   validateOutputDeclarationNode,
   validateOutputCommandScope,
-  validateOutputObservationCall
+  validateOutputObservationCall,
+  shouldVerifyAnalysisParity,
+  validateAnalysisParity
 };
