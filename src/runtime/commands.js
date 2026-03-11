@@ -878,6 +878,41 @@ class CaptureGuardStateCommand extends Command {
   }
 }
 
+class TextCheckpointCommand extends Command {
+  constructor({ handler, pos = null }) {
+    super({ withDeferredResult: true });
+    this.handler = handler;
+    this.pos = pos || { lineno: 0, colno: 0 };
+    this.isObservable = true;
+    this.isSnapshotCommand = true;
+  }
+
+  apply(output) {
+    const path = output && output._context ? output._context.path : null;
+    const contextualize = (err) => (isPoisonError(err)
+      ? err
+      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+
+    if (!output || typeof output._captureTextCheckpoint !== 'function') {
+      this.rejectResult(contextualize(new Error('TextCheckpointCommand requires a text output handler with _captureTextCheckpoint()')));
+      return;
+    }
+
+    try {
+      const result = output._captureTextCheckpoint();
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).then(
+          (value) => this.resolveResult(value),
+          (err) => this.rejectResult(contextualize(err))
+        );
+      }
+      this.resolveResult(result);
+    } catch (err) {
+      this.rejectResult(contextualize(err));
+    }
+  }
+}
+
 class SinkRepairCommand extends Command {
   constructor({ handler, pos = null }) {
     super({ withDeferredResult: true });
@@ -925,14 +960,8 @@ class RestoreGuardStateCommand extends Command {
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
-
-    if (!output) {
-      this.resolveResult(undefined);
-      return;
-    }
-
-    try {
-      const result = output._restoreGuardState(this.target);
+    const applyResolvedTarget = (resolvedTarget) => {
+      const result = output._restoreGuardState(resolvedTarget);
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).then(
           (value) => this.resolveResult(value),
@@ -941,6 +970,21 @@ class RestoreGuardStateCommand extends Command {
       }
       this.resolveResult(result);
       return result;
+    };
+
+    if (!output) {
+      this.resolveResult(undefined);
+      return;
+    }
+
+    try {
+      if (this.target && typeof this.target.then === 'function') {
+        return Promise.resolve(this.target).then(
+          (resolvedTarget) => applyResolvedTarget(resolvedTarget),
+          (err) => this.rejectResult(contextualize(err))
+        );
+      }
+      return applyResolvedTarget(this.target);
     } catch (err) {
       this.rejectResult(contextualize(err));
     }
@@ -968,6 +1012,7 @@ module.exports = {
   IsErrorCommand,
   GetErrorCommand,
   CaptureGuardStateCommand,
+  TextCheckpointCommand,
   SinkRepairCommand,
   RestoreGuardStateCommand
 };

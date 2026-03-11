@@ -657,10 +657,6 @@ class Compiler extends CompilerBase {
     const guardTargets = this._getGuardTargets(node, frame);
     const variableTargetsAll = guardTargets.variableTargetsAll;
     const variableValidationTargets = guardTargets.variableValidationTargets;
-    const hasSequenceTargets = !!guardTargets.sequenceTargets;
-    // Guard state is used for sequence lock detection/repair bookkeeping.
-    const needsGuardState = variableTargetsAll || hasSequenceTargets;
-    const guardStateVar = needsGuardState ? this._tmpid() : null;
     validateGuardVariablesDeclared(variableValidationTargets, frame, this, node);
 
     // Guard blocks are always async boundaries
@@ -672,146 +668,229 @@ class Compiler extends CompilerBase {
       const previousGuardDepth = this.guardDepth;
       this.guardDepth = previousGuardDepth + 1;
 
-      try {
-        // 2. Link for explicit reversion (optional, if we want to support manual revert)
-        this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-        let guardRepairLinePos = null;
-        const outputGuardInitLinePos = this.codebuf.length;
-        let outputGuardStateVar = null;
-        this.emit.line('');
-        if (guardStateVar) {
-          this.emit.line(`const ${guardStateVar} = runtime.guard.init(cb);`);
-        }
-        // Sequence lock repair must run before guard body starts scheduling work.
-        guardRepairLinePos = this.codebuf.length;
-        this.emit.line('');
+      // Link guard scope to its current output buffer.
+      this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
+      const guardSnapshotInitPos = this.codebuf.length;
+      this.emit.line('');
 
-        // 3. Compile Body
-        this.compile(node.body, blockFrame);
+      // Guard body.
+      this.compile(node.body, blockFrame);
 
-        // Resolve and Validate Sequence Targets
-        // Sequence lock mutations are tracked via used output handlers.
-        const resolvedSequenceTargets = new Set();
-        const modifiedLocks = new Set();
-        if (blockFrame.usedOutputs) {
-          for (const outputName of blockFrame.usedOutputs) {
-            if (outputName && outputName.startsWith('!')) {
-              modifiedLocks.add(outputName);
-            }
+      // Resolve and validate sequence lock targets from used outputs.
+      const resolvedSequenceTargets = new Set();
+      const modifiedLocks = new Set();
+      if (blockFrame.usedOutputs) {
+        for (const outputName of blockFrame.usedOutputs) {
+          if (outputName && outputName.startsWith('!')) {
+            modifiedLocks.add(outputName);
           }
         }
+      }
 
-        const shouldGuardAllSequencesImplicitly =
-          variableTargetsAll &&
-          (!node.sequenceTargets || node.sequenceTargets.length === 0);
+      const shouldGuardAllSequencesImplicitly =
+        variableTargetsAll &&
+        (!node.sequenceTargets || node.sequenceTargets.length === 0);
 
-        if (node.sequenceTargets && node.sequenceTargets.length > 0) {
-          for (const target of node.sequenceTargets) {
-            let matchFound = false;
+      if (node.sequenceTargets && node.sequenceTargets.length > 0) {
+        for (const target of node.sequenceTargets) {
+          let matchFound = false;
 
-            if (target === '!') {
-              // Global guard: all modified sequence locks
-              for (const lock of modifiedLocks) {
+          if (target === '!') {
+            for (const lock of modifiedLocks) {
+              resolvedSequenceTargets.add(lock);
+              matchFound = true;
+            }
+          } else {
+            const baseKey = '!' + target.slice(0, -1);
+            for (const lock of modifiedLocks) {
+              if (lock === baseKey || lock.startsWith(baseKey + '!')) {
                 resolvedSequenceTargets.add(lock);
                 matchFound = true;
               }
-            } else {
-              // Specific target: lock! -> !lock
-              // target ends with '!' as per parser
-              const baseKey = '!' + target.slice(0, -1);
-
-              for (const lock of modifiedLocks) {
-                // Check for exact match or child match (e.g. !lock matching !lock or !lock!sub)
-                // Also include read-lock keys (suffix '~') for the same base.
-                const includeReadLocks = false;
-                if (lock === baseKey || lock.startsWith(baseKey + '!') || (includeReadLocks && lock.startsWith(baseKey + '~'))) {
-                  resolvedSequenceTargets.add(lock);
-                  matchFound = true;
-                }
-              }
-
-              if (!matchFound) {
-                this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
-              }
+            }
+            if (!matchFound) {
+              this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
             }
           }
-        } else if (shouldGuardAllSequencesImplicitly) {
-          for (const lock of modifiedLocks) {
-            resolvedSequenceTargets.add(lock);
-          }
         }
-
-        if (resolvedSequenceTargets.size > 0) {
-          this.emit.insertLine(
-            guardRepairLinePos,
-            `runtime.guard.repairSequenceOutputs(${this.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(Array.from(resolvedSequenceTargets))});`
-          );
+      } else if (shouldGuardAllSequencesImplicitly) {
+        for (const lock of modifiedLocks) {
+          resolvedSequenceTargets.add(lock);
         }
-
-        let guardHandlers = this._getGuardedOutputNames(
-          blockFrame.usedOutputs,
-          guardTargets,
-          blockFrame
-        );
-        if (resolvedSequenceTargets.size > 0) {
-          const merged = new Set(guardHandlers);
-          for (const lockName of resolvedSequenceTargets) {
-            merged.add(lockName);
-          }
-          guardHandlers = Array.from(merged);
-        }
-        if (blockFrame.declaredOutputs) {
-          const merged = new Set(guardHandlers);
-          for (const name of blockFrame.declaredOutputs.keys()) {
-            merged.add(name);
-          }
-          guardHandlers = Array.from(merged);
-        }
-        if (guardHandlers.length > 0) {
-          outputGuardStateVar = this._tmpid();
-          this.emit.insertLine(
-            outputGuardInitLinePos,
-            `const ${outputGuardStateVar} = runtime.guard.initOutputSnapshots(frame, ${JSON.stringify(guardHandlers)}, ${this.buffer.currentBuffer}, cb);`
-          );
-        }
-
-        // 4. Inject Logic BEFORE closing the block
-        // We need to wait for all inner async operations to complete so the buffer is fully populated
-        // We wait for 1 because the current block itself is an active closure
-        //this.emit.line('await astate.waitAllClosures(1);');
-
-        // 5. Check Buffer/Variables for Poison
-        const guardErrorsVar = this._tmpid();
-        this.emit.line(
-          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${this.buffer.currentBuffer}, ${JSON.stringify(guardHandlers)}, ${outputGuardStateVar || 'null'});`
-        );
-        this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
-
-        if (node.recoveryBody) {
-          this.emit.asyncBlock(node, blockFrame, true, (f) => {
-            if (node.errorVar) {
-              // Guard recovery error variable is exposed as an internal var output
-              // so async reads use snapshot semantics instead of frame mutation.
-              this._addDeclaredOutput(f, node.errorVar, 'var', null, node);
-              this.emit.line(`runtime.declareOutput(frame, ${this.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
-              this.buffer.asyncAddValueToBuffer(node, f, (resultVar) => {
-                this.emit(
-                  `${resultVar} = new runtime.ValueCommand({ handler: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} })`
-                );
-              }, node, node.errorVar);
-            }
-            this.compile(node.recoveryBody, f);
-          });
-        }
-
-        this.emit.line('} else {');
-        this.emit.line('}');
-      } finally {
-        this.guardDepth = previousGuardDepth;
       }
+
+      let guardHandlers = this._getGuardedOutputNames(
+        blockFrame.usedOutputs,
+        guardTargets,
+        blockFrame
+      );
+      if (blockFrame.declaredOutputs) {
+        const merged = new Set(guardHandlers);
+        for (const name of blockFrame.declaredOutputs.keys()) {
+          merged.add(name);
+        }
+        guardHandlers = Array.from(merged);
+      }
+
+      const snapshotHandlers = guardHandlers.filter((name) => !(name && name.charAt(0) === '!'));
+      const guardErrorTargets = Array.from(new Set([...snapshotHandlers, ...Array.from(resolvedSequenceTargets)]));
+
+      let guardSnapshotsVar = null;
+      if (snapshotHandlers.length > 0) {
+        guardSnapshotsVar = this._tmpid();
+        // Synthetic AST guard lowering captures handler state as command expressions,
+        // so snapshots/checkpoints remain ordered in the same output lane.
+        const snapshotPairs = snapshotHandlers.map((handlerName) => {
+          const outputDecl = this.async._getDeclaredOutput(blockFrame, handlerName);
+          const expr = (outputDecl && outputDecl.type === 'text')
+            ? `${this.buffer.currentBuffer}.addTextCheckpoint("${handlerName}", { lineno: 0, colno: 0 })`
+            : `${this.buffer.currentBuffer}.addSnapshot("${handlerName}", { lineno: 0, colno: 0 })`;
+          return `"${handlerName}": ${expr}`;
+        }).join(', ');
+        this.emit.insertLine(guardSnapshotInitPos, `const ${guardSnapshotsVar} = { ${snapshotPairs} };`);
+      }
+
+      const guardErrorVarName = `__guard_err_${this._tmpid()}`;
+      const guardErrorSetNode = this._buildGuardErrorSetNode(guardErrorVarName, guardErrorTargets, node);
+      this.async.propagateIsAsync(guardErrorSetNode);
+      this.compile(guardErrorSetNode, blockFrame);
+
+      for (const lockName of resolvedSequenceTargets) {
+        const repairNode = this._buildGuardSequenceRepairNode(lockName, node);
+        this.async.propagateIsAsync(repairNode);
+        this.compile(repairNode, blockFrame);
+      }
+
+      const recoveryIfNode = this._buildGuardRecoveryIfNode({
+        guardErrorVarName,
+        snapshotHandlers,
+        guardSnapshotsVar,
+        recoveryBody: node.recoveryBody,
+        errorVar: node.errorVar,
+        node
+      });
+      this.async.propagateIsAsync(recoveryIfNode);
+      this.compile(recoveryIfNode, blockFrame);
+
+      this.guardDepth = previousGuardDepth;
     });
 
     frame = guardResult.frame;
+  }
+
+  _makeCompilerInternalSymbol(name, node) {
+    const symbol = new nodes.Symbol(node.lineno, node.colno, name);
+    symbol.isCompilerInternal = true;
+    return symbol;
+  }
+
+  _buildSequentialPathNode(lockName, node, isRepair = false) {
+    const parts = (lockName || '').split('!').filter(Boolean);
+    if (parts.length === 0) {
+      this.fail(`Invalid sequence lock name "${lockName}"`, node.lineno, node.colno, node);
+    }
+
+    let pathNode = new nodes.Symbol(node.lineno, node.colno, parts[0]);
+    if (parts.length === 1) {
+      pathNode.sequential = true;
+      if (isRepair) {
+        pathNode.sequentialRepair = true;
+      }
+      return pathNode;
+    }
+
+    for (let i = 1; i < parts.length; i++) {
+      const key = new nodes.Literal(node.lineno, node.colno, parts[i]);
+      pathNode = new nodes.LookupVal(node.lineno, node.colno, pathNode, key);
+    }
+
+    pathNode.sequential = true;
+    if (isRepair) {
+      pathNode.sequentialRepair = true;
+    }
+    return pathNode;
+  }
+
+  _buildGuardErrorSetNode(guardErrorVarName, guardErrorTargets, node) {
+    const targetSymbol = new nodes.Symbol(node.lineno, node.colno, guardErrorVarName);
+    const targets = [targetSymbol];
+
+    if (!Array.isArray(guardErrorTargets) || guardErrorTargets.length === 0) {
+      return new nodes.Set(node.lineno, node.colno, targets, new nodes.Literal(node.lineno, node.colno, null), 'declaration');
+    }
+
+    const mergeFn = new nodes.Symbol(node.lineno, node.colno, '_mergeErrors');
+    const args = guardErrorTargets.map((name) => {
+      const targetNode = (name && name.charAt(0) === '!')
+        ? this._buildSequentialPathNode(name, node, false)
+        : new nodes.Symbol(node.lineno, node.colno, name);
+      return new nodes.PeekError(node.lineno, node.colno, targetNode);
+    });
+    const argList = new nodes.NodeList(node.lineno, node.colno, args);
+    const mergeCall = new nodes.FunCall(node.lineno, node.colno, mergeFn, argList);
+    return new nodes.Set(node.lineno, node.colno, targets, mergeCall, 'declaration');
+  }
+
+  _buildGuardSequenceRepairNode(lockName, node) {
+    const repairTarget = this._buildSequentialPathNode(lockName, node, true);
+    return new nodes.Do(node.lineno, node.colno, [repairTarget]);
+  }
+
+  _buildGuardRestoreOutputCommandNode(handlerName, snapshotsVarName, node) {
+    const handlerSymbol = new nodes.Symbol(node.lineno, node.colno, handlerName);
+    const methodLookup = new nodes.LookupVal(
+      node.lineno,
+      node.colno,
+      handlerSymbol,
+      new nodes.Literal(node.lineno, node.colno, '__restoreGuardState')
+    );
+    const snapshotLookup = new nodes.LookupVal(
+      node.lineno,
+      node.colno,
+      this._makeCompilerInternalSymbol(snapshotsVarName, node),
+      new nodes.Literal(node.lineno, node.colno, handlerName)
+    );
+    const args = new nodes.NodeList(node.lineno, node.colno, [snapshotLookup]);
+    const call = new nodes.FunCall(node.lineno, node.colno, methodLookup, args);
+    const outputCommandNode = new nodes.OutputCommand(node.lineno, node.colno, call);
+    outputCommandNode.isCompilerInternal = true;
+    return outputCommandNode;
+  }
+
+  _buildGuardRecoveryIfNode({ guardErrorVarName, snapshotHandlers, guardSnapshotsVar, recoveryBody, errorVar, node }) {
+    const guardErrorSymbol = new nodes.Symbol(node.lineno, node.colno, guardErrorVarName);
+    const cond = new nodes.Compare(
+      node.lineno,
+      node.colno,
+      guardErrorSymbol,
+      [new nodes.CompareOperand(node.lineno, node.colno, new nodes.Literal(node.lineno, node.colno, null), '!=')]
+    );
+
+    const bodyChildren = [];
+
+    if (guardSnapshotsVar) {
+      snapshotHandlers.forEach((handlerName) => {
+        bodyChildren.push(this._buildGuardRestoreOutputCommandNode(handlerName, guardSnapshotsVar, node));
+      });
+    }
+
+    if (recoveryBody) {
+      if (errorVar) {
+        const errorTargets = [new nodes.Symbol(node.lineno, node.colno, errorVar)];
+        const errorAssign = new nodes.Set(
+          node.lineno,
+          node.colno,
+          errorTargets,
+          new nodes.Symbol(node.lineno, node.colno, guardErrorVarName),
+          'declaration'
+        );
+        bodyChildren.push(errorAssign);
+      }
+      recoveryBody.children.forEach((child) => bodyChildren.push(child));
+    }
+
+    const ifBody = new nodes.NodeList(node.lineno, node.colno, bodyChildren);
+    return new nodes.If(node.lineno, node.colno, cond, ifBody, null);
   }
 
   _getGuardedOutputNames(usedOutputs, guardTargets, frame) {
@@ -826,8 +905,21 @@ class Compiler extends CompilerBase {
       return [];
     }
 
+    const addDefaultTemplateTextHandler = (names) => {
+      if (this.scriptMode) {
+        return names;
+      }
+      const textHandler = this.buffer.currentTextOutputName;
+      if (!textHandler) {
+        return names;
+      }
+      const merged = new Set(Array.isArray(names) ? names : []);
+      merged.add(textHandler);
+      return Array.from(merged);
+    };
+
     if (guardTargets.handlerSelector === '*') {
-      return used;
+      return addDefaultTemplateTextHandler(used);
     }
 
     const hasNamedHandlers = Array.isArray(guardTargets.handlerSelector) && guardTargets.handlerSelector.length > 0;
@@ -840,7 +932,7 @@ class Compiler extends CompilerBase {
         guardedSet.add(this.buffer.currentTextOutputName);
       }
       const guardedTypes = new Set(hasTypedHandlers ? guardTargets.typeTargets : []);
-      return used.filter((name) => {
+      const selected = used.filter((name) => {
         if (guardedSet.has(name)) {
           return true;
         }
@@ -856,12 +948,13 @@ class Compiler extends CompilerBase {
         }
         return guardedTypes.has(name);
       });
+      return addDefaultTemplateTextHandler(selected);
     }
 
     if (guardTargets.variableTargetsAll) {
       // In async mode, script/template vars are output-backed; guard var should
       // therefore target var outputs touched inside the guard block.
-      return used.filter((name) => {
+      const selected = used.filter((name) => {
         if (name && name.charAt(0) === '!') {
           return false;
         }
@@ -871,15 +964,16 @@ class Compiler extends CompilerBase {
         }
         return !!(frame && this._isDeclared(frame, name));
       });
+      return addDefaultTemplateTextHandler(selected);
     }
 
     // No selectors at all means global guard.
     if (!guardTargets.hasAnySelectors) {
-      return used;
+      return addDefaultTemplateTextHandler(used);
     }
 
     // Variable/sequence-only guards do not guard output handlers.
-    return [];
+    return addDefaultTemplateTextHandler([]);
   }
 
   _getGuardTargets(guardNode, frame) {
@@ -1639,7 +1733,6 @@ class Compiler extends CompilerBase {
       // NEW: Pre-declaration pass
       const sequenceLocks = this.sequential.collectSequenceLocks(node);
       this.sequential.preDeclareSequenceLocks(frame, sequenceLocks);
-
       this.async.propagateIsAsync(node);
       // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
     }
@@ -1910,7 +2003,9 @@ class Compiler extends CompilerBase {
 
 
   compileOutputCommand(node, frame) {
-    if (!this.scriptMode) {
+    // OutputCommand is script syntax, but compiler-internal lowering (guard restore)
+    // also emits OutputCommand nodes in template mode.
+    if (!this.scriptMode && !node.isCompilerInternal) {
       this.fail('Output commands are only supported in script mode', node.lineno, node.colno, node);
     }
     this.buffer.compileOutputCommand(node, frame);

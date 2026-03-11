@@ -1537,6 +1537,50 @@ return result`;
         expect(res.step2).to.be(false);
       });
 
+      it('should support sequence peek (#) before and after !! repair', async () => {
+        const script = `
+          var result = {}
+          service!.fail()
+          var errBefore = service!#
+          service!!
+          var errAfter = service!#
+          result.before = errBefore != none
+          result.after = errAfter == none
+          return result
+        `;
+
+        const ctx = {
+          service: {
+            fail: async () => { throw new Error('fail'); }
+          }
+        };
+
+        const res = await env.renderScriptString(script, ctx);
+        expect(res.before).to.be(true);
+        expect(res.after).to.be(true);
+      });
+
+      it('should support sequence is error status checks before and after !! repair', async () => {
+        const script = `
+          var result = {}
+          service!.fail()
+          result.before = service! is error
+          service!!
+          result.after = service! is error
+          return result
+        `;
+
+        const ctx = {
+          service: {
+            fail: async () => { throw new Error('fail'); }
+          }
+        };
+
+        const res = await env.renderScriptString(script, ctx);
+        expect(res.before).to.be(true);
+        expect(res.after).to.be(false);
+      });
+
       it('should verify scope independence: parent lock defined does not create child lock', async () => {
         const script = `
             var result = {}

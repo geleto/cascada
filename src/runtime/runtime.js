@@ -203,6 +203,7 @@ module.exports = {
   collectErrors: errors.collectErrors,
   isError: errors.isError,
   peekError: errors.peekError,
+  mergeErrors: errors.mergeErrors,
 
   resolveAll: resolve.resolveAll,
   resolveDuo: resolve.resolveDuo,

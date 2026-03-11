@@ -49,7 +49,8 @@ module.exports = class CompileSequential {
       }
 
       if (!funCallLockKey) {
-        if (!node.sequentialRepair && !node.isSequenceErrorCheck) {
+        const isSequencePeekCheck = parent instanceof nodes.PeekError;
+        if (!node.sequentialRepair && !node.isSequenceErrorCheck && !isSequencePeekCheck) {
           this.compiler.fail('Sequence marker (!) is not allowed in non-call paths', node.lineno, node.colno, node);
         }
         node.lockKey = currentPathKey;

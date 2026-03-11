@@ -4,9 +4,6 @@ const nodes = require('../nodes');
 const { TemplateError } = require('../lib');
 // const { Frame, AsyncFrame } = require('./runtime'); // Not used in base class
 const { Obj } = require('../object');
-const {
-  validateSinkSnapshotInGuard
-} = require('./validation');
 
 // Moved from the main compiler as it's used by compileCompare (expression)
 const compareOps = {
@@ -693,7 +690,7 @@ class CompilerBase extends Obj {
   }
 
   _getObservedOutputName(targetNode, frame) {
-    if (!this.scriptMode || !this.asyncMode || !targetNode) {
+    if (!this.asyncMode || !targetNode) {
       return null;
     }
     // Sequence-marked targets (path! / path!!) are handled by sequential-path
@@ -705,7 +702,10 @@ class CompilerBase extends Obj {
     if (targetNode instanceof nodes.Symbol) {
       const name = targetNode.value;
       const outputDecl = this.async._getDeclaredOutput(frame, name);
-      if (outputDecl && !this._isDeclared(frame, name)) {
+      if (outputDecl) {
+        return name;
+      }
+      if (!this.scriptMode && name === this.buffer.currentTextOutputName) {
         return name;
       }
       return null;
@@ -715,7 +715,10 @@ class CompilerBase extends Obj {
       const candidate = this.sequential._extractStaticPathRoot(targetNode.name, 2);
       if (candidate) {
         const outputDecl = this.async._getDeclaredOutput(frame, candidate);
-        if (outputDecl && !this._isDeclared(frame, candidate)) {
+        if (outputDecl) {
+          return candidate;
+        }
+        if (!this.scriptMode && candidate === this.buffer.currentTextOutputName) {
           return candidate;
         }
       }
@@ -954,7 +957,13 @@ class CompilerBase extends Obj {
       return false;
     }
 
-    validateSinkSnapshotInGuard(this, { node, command: methodName, outputType: outputDecl.type });
+    if (methodName === '__checkpoint') {
+      if (outputDecl.type === 'text') {
+        this.emit(`${this.buffer.currentBuffer}.addTextCheckpoint("${outputName}", { lineno: ${node.lineno}, colno: ${node.colno} })`);
+        return true;
+      }
+      return false;
+    }
     if (methodName === 'snapshot') {
       this.buffer.emitAddSnapshot(frame, outputName, node);
       return true;

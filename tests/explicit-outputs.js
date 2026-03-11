@@ -766,7 +766,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql(['a', 'b']);
     });
 
-    it('should run sequence guard transactions (begin/commit and begin/rollback)', async () => {
+    it('should keep sequence guard behavior without transaction hooks', async () => {
       const successScript = `
         sequence db = makeDb()
         guard db
@@ -784,7 +784,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
           snapshot() { return this.events.slice(); }
         })
       });
-      expect(success).to.eql(['begin', 'write:ok', 'commit']);
+      expect(success).to.eql(['write:ok']);
 
       const failureScript = `
         sequence db = makeDb()
@@ -809,10 +809,10 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         }),
         fail: () => createPoison([new Error('guard failure')])
       });
-      expect(failure).to.eql(['begin', 'write:fail', 'rollback']);
+      expect(failure).to.eql(['write:fail']);
     });
 
-    it('should pass begin token to commit/rollback hooks', async () => {
+    it('should not invoke begin/commit/rollback hooks in guard flow', async () => {
       const successScript = `
         sequence tx = makeTx()
         guard tx
@@ -844,7 +844,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
           };
         }
       });
-      expect(success).to.eql(['begin', 'run:ok', 'commit:t1']);
+      expect(success).to.eql(['run:ok']);
 
       const failureScript = `
         sequence tx = makeTx()
@@ -880,7 +880,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
           };
         }
       });
-      expect(failure).to.eql(['begin', 'run:ok', 'rollback:t2']);
+      expect(failure).to.eql(['run:ok']);
     });
 
     it('should skip sequence transaction hooks when they are missing', async () => {
@@ -910,7 +910,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result.flag).to.be('ok');
     });
 
-    it('should treat begin/commit hook failures as guard errors', async () => {
+    it('should ignore begin/commit hook failures in lowered guard flow', async () => {
       const beginFailScript = `
         sequence tx = makeTx()
         var state = "ok"
@@ -928,9 +928,8 @@ describe('Cascada Script: Explicit Output Declarations', function () {
           snapshot() { return this.events.slice(); }
         })
       });
-      expect(beginFail.state).to.be('ok');
-      expect(beginFail.events).to.contain('begin');
-      expect(beginFail.events.some(e => e.indexOf('commit:') === 0)).to.be(false);
+      expect(beginFail.state).to.be('changed');
+      expect(beginFail.events).to.eql(['run:x']);
 
       const commitFailScript = `
         sequence tx = makeTx()
@@ -951,11 +950,11 @@ describe('Cascada Script: Explicit Output Declarations', function () {
           snapshot() { return this.events.slice(); }
         })
       });
-      expect(commitFail.state).to.be('ok');
-      expect(commitFail.events).to.eql(['begin', 'run:x', 'commit:t', 'rollback:t']);
+      expect(commitFail.state).to.be('changed');
+      expect(commitFail.events).to.eql(['run:x']);
     });
 
-    it('should unwind multi-handler sequence transactions in LIFO order', async () => {
+    it('should keep multi-handler sequence execution order in guards', async () => {
       const successEvents = [];
       const successScript = `
         sequence a = makeA()
@@ -987,7 +986,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
           };
         }
       });
-      expect(success).to.eql(['a:begin', 'b:begin', 'a:run', 'b:run', 'b:commit:tb', 'a:commit:ta']);
+      expect(success).to.eql(['a:run', 'b:run']);
 
       const failureEvents = [];
       const failureScript = `
@@ -1023,7 +1022,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
           };
         }
       });
-      expect(failure).to.eql(['a:begin', 'b:begin', 'a:run', 'b:run', 'b:rollback:tb', 'a:rollback:ta']);
+      expect(failure).to.eql(['a:run', 'b:run']);
     });
 
     it('should avoid deadlock for sequence call expressions while guard buffer is paused', async function () {
@@ -2137,7 +2136,7 @@ describe('Cascada Script: Explicit Output Declarations', function () {
       expect(result).to.eql({ outer: 1 });
     });
 
-    it('should reject sink snapshot() inside guard', async () => {
+    it('should allow sink snapshot() inside guard', async () => {
       const script = `
         sink logger = makeLogger()
         guard logger
@@ -2146,23 +2145,19 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         endguard
         return logger.snapshot()
       `;
-      try {
-        await render(script, {
-          makeLogger() {
-            return {
-              msgs: [],
-              write(msg) { this.msgs.push(msg); },
-              snapshot() { return this.msgs.slice(); }
-            };
-          }
-        });
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('sink snapshot() is not allowed inside guard blocks');
-      }
+      const result = await render(script, {
+        makeLogger() {
+          return {
+            msgs: [],
+            write(msg) { this.msgs.push(msg); },
+            snapshot() { return this.msgs.slice(); }
+          };
+        }
+      });
+      expect(result).to.eql(['x']);
     });
 
-    it('should reject sink snapshot() inside nested guard with recover', async () => {
+    it('should allow sink snapshot() inside nested guard with recover', async () => {
       const script = `
         sink logger = makeLogger()
         guard logger
@@ -2175,20 +2170,17 @@ describe('Cascada Script: Explicit Output Declarations', function () {
         endguard
         return logger.snapshot()
       `;
-      try {
-        await render(script, {
-          makeLogger() {
-            return {
-              msgs: [],
-              write(msg) { this.msgs.push(msg); },
-              snapshot() { return this.msgs.slice(); }
-            };
-          }
-        });
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('sink snapshot() is not allowed inside guard blocks');
-      }
+      const result = await render(script, {
+        makeLogger() {
+          return {
+            msgs: [],
+            write(msg) { this.msgs.push(msg); },
+            snapshot() { return this.msgs.slice(); }
+          };
+        }
+      });
+      expect(result).to.eql(['x']);
     });
+
   });
 });

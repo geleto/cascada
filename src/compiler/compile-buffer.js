@@ -118,6 +118,9 @@ class CompileBuffer {
     const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
     const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
+    const isInternalRestoreStateCall = isCallNode &&
+      !subpath &&
+      (command === '__restoreGuardState' || command === '__restore_guard_state');
     const isObservationCall = isCallNode &&
       !subpath &&
       (command === 'snapshot' || command === 'isError' || command === 'getError');
@@ -144,6 +147,34 @@ class CompileBuffer {
         return;
       }
       this.compiler.emit(`new runtime.GetErrorCommand({ handler: '${handler}', pos: ${this._emitPositionLiteral(node)} })`);
+      return;
+    }
+
+    if (isInternalRestoreStateCall) {
+      this.registerOutputMutation(frame, handler);
+      const rawArgs = node.call && node.call.args && Array.isArray(node.call.args.children)
+        ? node.call.args.children
+        : [];
+      if (rawArgs.length === 0) {
+        this.compiler.fail(
+          `${command} requires a state argument.`,
+          node.lineno,
+          node.colno,
+          node
+        );
+      }
+      // Script transpiler currently normalizes data output calls to include a
+      // synthetic path argument (null) as first argument; skip it for internal
+      // state-restore command lowering.
+      const targetNode = (outputType === 'data' &&
+        rawArgs.length > 1 &&
+        rawArgs[0] instanceof nodes.Literal &&
+        rawArgs[0].value === null)
+        ? rawArgs[1]
+        : rawArgs[0];
+      this.compiler.emit(`new runtime.RestoreGuardStateCommand({ handler: '${handler}', target: `);
+      this.compiler._compileExpression(targetNode, frame, true, targetNode);
+      this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
       return;
     }
 

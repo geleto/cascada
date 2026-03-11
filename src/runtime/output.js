@@ -383,6 +383,53 @@ class TextOutput extends Output {
     this._target.push(createPoison(errors));
     this._markStateChanged();
   }
+
+  _captureTextCheckpoint() {
+    const target = Array.isArray(this._target) ? this._target : [];
+    if (!Array.isArray(this._target)) {
+      this._setTarget(target);
+    }
+    return {
+      __textCheckpoint: true,
+      target,
+      length: target.length
+    };
+  }
+
+  _restoreGuardState(state) {
+    // Accept both guard-state objects ({ target: [...] }) and plain snapshots
+    // ("text so far") so guard lowering can use a pure snapshot object shape.
+    if (state && typeof state === 'object' && Object.prototype.hasOwnProperty.call(state, 'target')) {
+      if (state.__textCheckpoint === true && Array.isArray(state.target)) {
+        const targetRef = state.target;
+        if (this._target !== targetRef) {
+          this._setTarget(targetRef);
+        }
+        const nextLength = Number.isInteger(state.length) ? state.length : targetRef.length;
+        targetRef.length = Math.max(0, nextLength);
+        this._invalidateInspectionCache();
+        return;
+      }
+      this._setTarget(state.target);
+      this._invalidateInspectionCache();
+      return;
+    }
+
+    if (Array.isArray(state)) {
+      this._setTarget(state);
+      this._invalidateInspectionCache();
+      return;
+    }
+
+    if (state === null || state === undefined) {
+      this._setTarget([]);
+      this._invalidateInspectionCache();
+      return;
+    }
+
+    this._setTarget([state]);
+    this._invalidateInspectionCache();
+  }
 }
 
 class ValueOutput extends Output {

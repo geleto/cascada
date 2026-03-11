@@ -14,6 +14,7 @@ const {
   IsErrorCommand,
   GetErrorCommand,
   CaptureGuardStateCommand,
+  TextCheckpointCommand,
   SinkRepairCommand,
   RestoreGuardStateCommand
 } = require('./commands');
@@ -274,6 +275,14 @@ class CommandBuffer {
 
   addCaptureGuardState(outputName, pos = null) {
     const cmd = new CaptureGuardStateCommand({
+      handler: outputName,
+      pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
+    });
+    return this._addCommand(cmd, outputName);
+  }
+
+  addTextCheckpoint(outputName, pos = null) {
+    const cmd = new TextCheckpointCommand({
       handler: outputName,
       pos: pos && typeof pos === 'object' ? pos : { lineno: 0, colno: 0 }
     });

@@ -4,19 +4,72 @@
   var cascada;
   var expect;
   var AsyncEnvironment;
+  var parser;
+  var transformer;
 
   if (typeof require !== 'undefined') {
     expect = require('expect.js');
     cascada = require('../../src/index');
     AsyncEnvironment = cascada.AsyncEnvironment;
+    parser = require('../../src/parser');
+    transformer = require('../../src/transformer');
   } else {
     expect = window.expect;
     cascada = window.cascada;
     AsyncEnvironment = nunjucks.AsyncEnvironment;
+    parser = null;
+    transformer = null;
   }
 
   function throwError(message) {
     throw new Error(message);
+  }
+
+  function compactAst(node) {
+    if (!node || typeof node !== 'object' || !node.typename) {
+      return node;
+    }
+    const out = { t: node.typename };
+    Object.keys(node).forEach((key) => {
+      if (key === 'lineno' || key === 'colno') {
+        return;
+      }
+      const value = node[key];
+      if (Array.isArray(value)) {
+        const children = value
+          .filter(item => item && typeof item === 'object' && item.typename)
+          .map(compactAst);
+        if (children.length > 0) {
+          out[key] = children;
+        }
+        return;
+      }
+      if (value && typeof value === 'object' && value.typename) {
+        out[key] = compactAst(value);
+        return;
+      }
+      if (key === 'value' || key === 'type' || key === 'varType') {
+        out[key] = value;
+      }
+    });
+    return out;
+  }
+
+  function collectNodeTypes(signature, types) {
+    if (!signature || typeof signature !== 'object') {
+      return;
+    }
+    if (signature.t) {
+      types.add(signature.t);
+    }
+    Object.keys(signature).forEach((key) => {
+      const value = signature[key];
+      if (Array.isArray(value)) {
+        value.forEach((item) => collectNodeTypes(item, types));
+      } else if (value && typeof value === 'object') {
+        collectNodeTypes(value, types);
+      }
+    });
   }
 
   describe('Guard Block', () => {
@@ -407,6 +460,46 @@
       });
 
       expect(res.replace(/\s+/g, ' ').trim()).to.equal('ok');
+    });
+
+    it('should guard default template text output when using guard var', async () => {
+      const tpl = `
+        {% set count = 1 %}
+        BEFORE
+        {% guard var %}
+          {% set count = count + 1 %}
+          INSIDE
+          {{ error("boom") }}
+        {% endguard %}
+        AFTER {{ count }}
+      `;
+
+      const res = await env.renderTemplateString(tpl, {
+        error: (msg) => { throw new Error(msg); }
+      });
+
+      expect(res.replace(/\s+/g, ' ').trim()).to.equal('BEFORE AFTER 1');
+    });
+
+    it('should guard var and sequence selectors in template mode while reverting default text output', async () => {
+      const tpl = `
+        {% set count = 1 %}
+        {% guard count, lock! %}
+          INSIDE
+          {% set count = count + 1 %}
+          {{ lock!.fail() }}
+        {% endguard %}
+        {{ lock!.success() }} {{ count }}
+      `;
+
+      const res = await env.renderTemplateString(tpl, {
+        lock: {
+          fail: () => { throw new Error('lock failure'); },
+          success: () => 'ok'
+        }
+      });
+
+      expect(res.replace(/\s+/g, ' ').trim()).to.equal('ok 1');
     });
 
     it('should revert everything with guard * in script mode', async () => {
@@ -1179,6 +1272,374 @@ return { text: output.snapshot(), data: result.snapshot() }`;
       expect(res.data.msgs.some(m => m.includes('buffer_fail'))).to.be(true);
       expect(res.data.msgs.some(m => m.includes('buffer_fail_2'))).to.be(true);
       expect(res.data.msgs.some(m => m.includes('sequence_fail'))).to.be(true);
+    });
+
+    describe('Pseudo Guard Lowering Parity', () => {
+      const pseudoGuardScript = `
+        var v = 1
+        data d
+        text t
+        sink s = makeSink()
+
+        d.before = 1
+        t("before")
+        s.write("before")
+
+        var __guard_snap = {
+          v: v,
+          d: d.snapshot(),
+          t: t.__checkpoint(),
+          s: s.snapshot()
+        }
+
+        v = nextVar()
+        d.temp = nextData()
+        t("temp")
+        s.write(nextSink())
+        svc!.op()
+
+        var __guard_err = _mergeErrors(
+          v#,
+          d#,
+          s#,
+          svc!#
+        )
+
+        svc!!
+
+        if __guard_err != none
+          v = __guard_snap.v
+          d.__restoreGuardState(__guard_snap.d)
+          t.__restoreGuardState(__guard_snap.t)
+          s.__restoreGuardState(__guard_snap.s)
+          d.recovered = true
+        endif
+
+        return {
+          v: v,
+          d: d.snapshot(),
+          t: t.snapshot(),
+          s: s.snapshot(),
+          guardErr: __guard_err
+        }
+      `;
+
+      const makeContext = (flags) => ({
+        flags,
+        nextVar() {
+          if (flags.varFail) {
+            throw new Error('var fail');
+          }
+          return 2;
+        },
+        nextData() {
+          if (flags.dataFail) {
+            throw new Error('data fail');
+          }
+          return 2;
+        },
+        nextSink() {
+          if (flags.sinkFail) {
+            throw new Error('sink fail');
+          }
+          return 'temp';
+        },
+        makeSink() {
+          return {
+            values: [],
+            write(v) { this.values.push(v); },
+            recover(snapshot) { this.values = Array.isArray(snapshot) ? snapshot.slice() : []; },
+            snapshot() { return this.values.slice(); }
+          };
+        },
+        svc: {
+          op() {
+            if (flags.seqFail) {
+              throw new Error('seq fail');
+            }
+            return 'ok';
+          }
+        }
+      });
+
+      it('should preserve body changes when nothing fails', async () => {
+        const result = await env.renderScriptString(
+          pseudoGuardScript,
+          makeContext({ varFail: false, dataFail: false, sinkFail: false, seqFail: false })
+        );
+        expect(result).to.eql({
+          v: 2,
+          d: { before: 1, temp: 2 },
+          t: 'beforetemp',
+          s: ['before', 'temp'],
+          guardErr: null
+        });
+      });
+
+      it('should restore state when one guarded source fails', async () => {
+        const result = await env.renderScriptString(
+          pseudoGuardScript,
+          makeContext({ varFail: true, dataFail: false, sinkFail: false, seqFail: false })
+        );
+        expect(result.v).to.equal(1);
+        expect(result.d).to.eql({ before: 1, recovered: true });
+        expect(result.t).to.equal('before');
+        expect(result.s).to.eql(['before']);
+        expect(result.guardErr).to.be.ok();
+        expect(result.guardErr.errors).to.have.length(1);
+        expect(result.guardErr.errors[0].message).to.contain('var fail');
+      });
+
+      it('should restore state when only data source fails', async () => {
+        const result = await env.renderScriptString(
+          pseudoGuardScript,
+          makeContext({ varFail: false, dataFail: true, sinkFail: false, seqFail: false })
+        );
+        expect(result.v).to.equal(1);
+        expect(result.d).to.eql({ before: 1, recovered: true });
+        expect(result.t).to.equal('before');
+        expect(result.s).to.eql(['before']);
+        expect(result.guardErr).to.be.ok();
+        expect(result.guardErr.errors).to.have.length(1);
+        expect(result.guardErr.errors[0].message).to.contain('data fail');
+      });
+
+      it('should restore state when only sink source fails', async () => {
+        const result = await env.renderScriptString(
+          pseudoGuardScript,
+          makeContext({ varFail: false, dataFail: false, sinkFail: true, seqFail: false })
+        );
+        expect(result.v).to.equal(1);
+        expect(result.d).to.eql({ before: 1, recovered: true });
+        expect(result.t).to.equal('before');
+        expect(result.s).to.eql(['before']);
+        expect(result.guardErr).to.be.ok();
+        expect(result.guardErr.errors).to.have.length(1);
+        expect(result.guardErr.errors[0].message).to.contain('sink fail');
+      });
+
+      it('should restore state when only sequence source fails', async () => {
+        const result = await env.renderScriptString(
+          pseudoGuardScript,
+          makeContext({ varFail: false, dataFail: false, sinkFail: false, seqFail: true })
+        );
+        expect(result.v).to.equal(1);
+        expect(result.d).to.eql({ before: 1, recovered: true });
+        expect(result.t).to.equal('before');
+        expect(result.s).to.eql(['before']);
+        expect(result.guardErr).to.be.ok();
+        expect(result.guardErr.errors).to.have.length(1);
+        expect(result.guardErr.errors[0].message).to.contain('seq fail');
+      });
+
+      it('should merge all errors when multiple guarded sources fail', async () => {
+        const result = await env.renderScriptString(
+          pseudoGuardScript,
+          makeContext({ varFail: true, dataFail: true, sinkFail: true, seqFail: true })
+        );
+        expect(result.v).to.equal(1);
+        expect(result.d).to.eql({ before: 1, recovered: true });
+        expect(result.t).to.equal('before');
+        expect(result.s).to.eql(['before']);
+        expect(result.guardErr).to.be.ok();
+        expect(result.guardErr.errors).to.have.length(4);
+        const messages = result.guardErr.errors.map(e => e.message).join(' | ');
+        expect(messages).to.contain('var fail');
+        expect(messages).to.contain('data fail');
+        expect(messages).to.contain('sink fail');
+        expect(messages).to.contain('seq fail');
+      });
+    });
+
+    describe('Pseudo Guard Lowering Parity (Template)', () => {
+      const pseudoGuardTemplate = `
+        {% set v = 1 %}
+        {% set __guard_snap_v = v %}
+        {% set __guard_snap_t = "before" %}
+
+        before
+        {% set v = nextVar() %}
+        {% do lock!.op() %}
+        {% if failText %}{{ failText() }}{% endif %}
+
+        {% set __guard_err = _mergeErrors(v#, lock!#) %}
+        {% do lock!! %}
+
+        {% if __guard_err != none %}
+          {% set v = __guard_snap_v %}
+          {{ __guard_snap_t }}
+        {% endif %}
+
+        {{ lock!.success() }} {{ v }}
+      `;
+
+      const makeTemplateContext = (flags) => ({
+        nextVar() {
+          if (flags.varFail) {
+            throw new Error('var fail');
+          }
+          return 2;
+        },
+        failText: flags.textFail ? () => { throw new Error('text fail'); } : null,
+        lock: {
+          op() {
+            if (flags.seqFail) {
+              return new cascada.runtime.PoisonedValue([new Error('seq fail')]);
+            }
+            return 'op';
+          },
+          success() {
+            return 'ok';
+          }
+        }
+      });
+
+      it('should preserve success flow for pseudo guard template', async () => {
+        const res = await env.renderTemplateString(
+          pseudoGuardTemplate,
+          makeTemplateContext({ varFail: false, seqFail: false, textFail: false })
+        );
+        expect(res.replace(/\s+/g, ' ').trim()).to.contain('before ok 2');
+      });
+
+      it('should restore var and repair sequence on sequence failure', async () => {
+        const res = await env.renderTemplateString(
+          pseudoGuardTemplate,
+          makeTemplateContext({ varFail: false, seqFail: true, textFail: false })
+        );
+        expect(res.replace(/\s+/g, ' ').trim()).to.contain('before before ok 1');
+      });
+
+      it('should restore var on var failure', async () => {
+        const res = await env.renderTemplateString(
+          pseudoGuardTemplate,
+          makeTemplateContext({ varFail: true, seqFail: false, textFail: false })
+        );
+        expect(res.replace(/\s+/g, ' ').trim()).to.contain('before before ok 1');
+      });
+    });
+
+    describe('Guard vs Pseudo Diagnostics (Template)', () => {
+      const guardTemplate = `
+        {% set v = 1 %}
+        {% guard v, lock! %}
+          {% set v = nextVar() %}
+          {% do lock!.op() %}
+        {% endguard %}
+        {{ lock!.success() }} {{ v }}
+      `;
+
+      const pseudoTemplate = `
+        {% set v = 1 %}
+        {% set __guard_snap_v = v %}
+        {% set v = nextVar() %}
+        {% do lock!.op() %}
+        {% set __guard_err = _mergeErrors(v#, lock!#) %}
+        {% do lock!! %}
+        {% if __guard_err != none %}
+          {% set v = __guard_snap_v %}
+        {% endif %}
+        {{ lock!.success() }} {{ v }}
+      `;
+
+      const makeContext = (seqFail, varFail) => ({
+        nextVar() {
+          if (varFail) {
+            throw new Error('var fail');
+          }
+          return 2;
+        },
+        lock: {
+          op() {
+            if (seqFail) {
+              throw new Error('seq fail');
+            }
+            return 'ok';
+          },
+          success() {
+            return 'ok';
+          }
+        }
+      });
+
+      it('should match observable behavior for minimal guard and pseudo variants', async () => {
+        const guardOk = await env.renderTemplateString(guardTemplate, makeContext(false, false));
+        const pseudoOk = await env.renderTemplateString(pseudoTemplate, makeContext(false, false));
+        expect(guardOk.replace(/\s+/g, ' ').trim()).to.equal('ok 2');
+        expect(pseudoOk.replace(/\s+/g, ' ').trim()).to.equal('ok 2');
+
+        const guardSeqFail = await env.renderTemplateString(guardTemplate, makeContext(true, false));
+        const pseudoSeqFail = await env.renderTemplateString(pseudoTemplate, makeContext(true, false));
+        expect(guardSeqFail.replace(/\s+/g, ' ').trim()).to.equal('ok 1');
+        expect(pseudoSeqFail.replace(/\s+/g, ' ').trim()).to.equal('ok 1');
+
+        const guardVarFail = await env.renderTemplateString(guardTemplate, makeContext(false, true));
+        const pseudoVarFail = await env.renderTemplateString(pseudoTemplate, makeContext(false, true));
+        expect(guardVarFail.replace(/\s+/g, ' ').trim()).to.equal('ok 1');
+        expect(pseudoVarFail.replace(/\s+/g, ' ').trim()).to.equal('ok 1');
+      });
+
+      it('should expose compile-shape differences for investigation', function () {
+        if (!parser || !transformer) {
+          this.skip();
+          return;
+        }
+
+        const guardCompiled = new cascada.AsyncTemplate(guardTemplate, env)._compileSource();
+        const pseudoCompiled = new cascada.AsyncTemplate(pseudoTemplate, env)._compileSource();
+        expect(guardCompiled).to.contain('_mergeErrors');
+        expect(pseudoCompiled).to.contain('_mergeErrors');
+        expect(guardCompiled).to.contain('!lock');
+        expect(pseudoCompiled).to.contain('!lock');
+        // Current architecture intentionally diverges here: guard lowering
+        // inserts snapshot object JS while pseudo lowering goes through set-var AST.
+        expect(guardCompiled).to.contain('const t_');
+        expect(pseudoCompiled).to.contain('runtime.declareOutput(frame');
+        expect(guardCompiled).to.not.equal(pseudoCompiled);
+
+        const guardAst = compactAst(transformer.transform(parser.parse(guardTemplate, [], {}), [], 'guard-diagnostic', {}));
+        const pseudoAst = compactAst(transformer.transform(parser.parse(pseudoTemplate, [], {}), [], 'guard-diagnostic', {}));
+
+        const guardTypes = new Set();
+        const pseudoTypes = new Set();
+        collectNodeTypes(guardAst, guardTypes);
+        collectNodeTypes(pseudoAst, pseudoTypes);
+
+        expect(guardTypes.has('Guard')).to.be(true);
+        expect(pseudoTypes.has('Guard')).to.be(false);
+        expect(guardTypes.has('Set')).to.be(true);
+        expect(pseudoTypes.has('Set')).to.be(true);
+      });
+
+      it('should expose text-error guard lowering differences in compiled code', function () {
+        const guardTextTemplate = `
+          {% guard %}
+            A{{ fail("boom") }}B
+          {% endguard %}
+          C
+        `;
+        const pseudoTextTemplate = `
+          {% set __guard_snap_t = "A" %}
+          A{{ maybeText() }}B
+          {% set __guard_err = _mergeErrors(none) %}
+          {% if __guard_err != none %}
+            {{ __guard_snap_t }}
+          {% endif %}
+          C
+        `;
+
+        const guardCompiled = new cascada.AsyncTemplate(guardTextTemplate, env)._compileSource();
+        const pseudoCompiled = new cascada.AsyncTemplate(pseudoTextTemplate, env)._compileSource();
+
+        // Real guard lowering captures text handler state and reads text error lane.
+        expect(guardCompiled).to.contain('addSnapshot("__text__"');
+        expect(guardCompiled).to.contain('addGetError("__text__"');
+        expect(guardCompiled).to.contain('RestoreGuardStateCommand');
+
+        // Pseudo template is ordinary transformed AST and does not use guard internals.
+        expect(pseudoCompiled).to.not.contain('addGetError("__text__"');
+        expect(pseudoCompiled).to.not.contain('RestoreGuardStateCommand');
+      });
     });
 
   });

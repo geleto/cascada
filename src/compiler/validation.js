@@ -166,20 +166,6 @@ function validateOutputDeclarationNode(compiler, {
 }
 
 /**
- * Validate sink snapshot guard restrictions.
- * @param {Compiler} compiler - The compiler instance
- * @param {object} options
- * @param {Node} options.node - Position node
- * @param {string} options.command - snapshot|isError|getError
- * @param {string|null} options.outputType - Output type
- */
-function validateSinkSnapshotInGuard(compiler, { node, command, outputType }) {
-  if (command === 'snapshot' && outputType === 'sink' && compiler.guardDepth > 0) {
-    compiler.fail('sink snapshot() is not allowed inside guard blocks', node.lineno, node.colno, node);
-  }
-}
-
-/**
  * Validate that an output command is legal in the current frame/scope.
  * In read-only scopes (isolateWrites), only non-mutating output observations
  * are allowed for outer-scope outputs.
@@ -236,7 +222,7 @@ function validateOutputCommandScope(compiler, {
  * @param {string} options.handler - Output symbol name
  * @param {string|null} options.outputType - Declared output type
  */
-function validateOutputObservationCall(compiler, { node, command, handler, outputType }) {
+function validateOutputObservationCall(compiler, { node, command, handler }) {
   if (node.call && node.call.args && node.call.args.children && node.call.args.children.length > 0) {
     compiler.fail(
       `${command}() does not accept arguments on output '${handler}'.`,
@@ -245,7 +231,6 @@ function validateOutputObservationCall(compiler, { node, command, handler, outpu
       node
     );
   }
-  validateSinkSnapshotInGuard(compiler, { node, command, outputType });
 }
 
 
@@ -259,7 +244,6 @@ module.exports = {
   validateDeclarationScope,
   validateReadOnlyOuterMutation,
   validateOutputDeclarationNode,
-  validateSinkSnapshotInGuard,
   validateOutputCommandScope,
   validateOutputObservationCall
 };

@@ -1,4 +1,5 @@
 'use strict';
+const { mergeErrors } = require('./runtime/errors');
 
 function cycler(items) {
   var index = -1;
@@ -66,6 +67,10 @@ function globals() {
 
     joiner(sep) {
       return joiner(sep);
+    },
+
+    _mergeErrors() {
+      return mergeErrors.apply(null, arguments);
     }
   };
 }

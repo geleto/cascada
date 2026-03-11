@@ -529,6 +529,28 @@ function peekError(value) {
   return null;
 }
 
+function mergeErrors() {
+  const values = Array.prototype.slice.call(arguments);
+  const merged = [];
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (value == null) {
+      continue;
+    }
+    if (isPoison(value) && Array.isArray(value.errors)) {
+      merged.push(...value.errors);
+      continue;
+    }
+    if (isPoisonError(value) && Array.isArray(value.errors)) {
+      merged.push(...value.errors);
+      continue;
+    }
+    merged.push(value);
+  }
+
+  return merged.length > 0 ? new PoisonError(merged) : null;
+}
+
 module.exports = {
   PoisonedValue,
   PoisonError,
@@ -542,5 +564,6 @@ module.exports = {
   isError,
   collectErrors,
   handleError,
-  peekError
+  peekError,
+  mergeErrors
 };
