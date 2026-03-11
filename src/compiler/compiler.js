@@ -343,6 +343,7 @@ class Compiler extends CompilerBase {
   analyzeSet(node, analysis, _ctx, analysisPass, state) {
     this._markAnalysisScope(analysis, { createScope: !!node.body });
     this._analyzeVarLikeDeclarationTargets(node, analysis, analysisPass, state);
+    this._analyzeVarLikeMutationTargets(node, analysis, analysisPass, state);
     return true;
   }
 
@@ -439,6 +440,7 @@ class Compiler extends CompilerBase {
   analyzeCallAssign(node, analysis, _ctx, analysisPass, state) {
     this._markAnalysisScope(analysis, { createScope: !!node.body });
     this._analyzeVarLikeDeclarationTargets(node, analysis, analysisPass, state);
+    this._analyzeVarLikeMutationTargets(node, analysis, analysisPass, state);
     return true;
   }
 
@@ -446,17 +448,38 @@ class Compiler extends CompilerBase {
     if (node.varType === 'declaration') {
       analysis.declarationTargetFields = ['targets'];
     }
-    if (node.varType !== 'declaration') {
-      return;
-    }
     const targets = Array.isArray(node.targets) ? node.targets : [];
     targets.forEach((target) => {
-      if (target instanceof nodes.Symbol) {
+      if (!(target instanceof nodes.Symbol)) {
+        return;
+      }
+      const name = target.value;
+      const shouldDeclareExplicitly = node.varType === 'declaration';
+      const shouldDeclareImplicitTemplateVar = !this.scriptMode &&
+        node.varType !== 'declaration' &&
+        !analysisPass._isOutputDeclaredInVisibleScopes(analysis, name);
+      if (shouldDeclareExplicitly || shouldDeclareImplicitTemplateVar) {
         analysisPass.registerOutputDeclaration(analysis, target.value, {
           type: 'var',
           initializer: null,
           node
         }, state);
+      }
+    });
+  }
+
+  _analyzeVarLikeMutationTargets(node, analysis, analysisPass, state) {
+    if (!analysisPass) {
+      return;
+    }
+    if (node.declarationOnly) {
+      return;
+    }
+    const targets = Array.isArray(node.targets) ? node.targets : [];
+    targets.forEach((target) => {
+      if (target instanceof nodes.Symbol) {
+        analysisPass.registerOutputMutation(analysis, target.value, state);
+        analysisPass.registerHandlerMutation(analysis, target.value);
       }
     });
   }
@@ -543,7 +566,7 @@ class Compiler extends CompilerBase {
       const targetName = node.targets[0].value;
       const pathValueId = this._tmpid();
       this.emit(`let ${pathValueId} = `);
-      this._compileExpression(node.value, frame, true);
+      this._compileExpression(node.value, frame, false);
       this.emit.line(';');
       this.buffer.emitOwnWaitedConcurrencyResolve(frame, pathValueId, node.value || node);
 
@@ -559,7 +582,7 @@ class Compiler extends CompilerBase {
       hasAssignedValue = true;
     } else if (node.value && !isDeclarationOnly) {
       this.emit(ids.join(' = ') + ' = ');
-      this._compileExpression(node.value, frame, true, node.value);
+      this._compileExpression(node.value, frame, false, node.value);
       this.emit.line(';');
       this.buffer.emitOwnWaitedConcurrencyResolve(frame, ids[0], node.value);
       hasAssignedValue = true;
@@ -572,6 +595,32 @@ class Compiler extends CompilerBase {
       hasAssignedValue = true;
     } else if (!isDeclaration) {
       this.fail('set var assignment requires a value or capture body.', node.lineno, node.colno, node);
+    }
+
+    if (hasAssignedValue) {
+      const seenWaitIds = new Set();
+      const waitPositionNode = node.value || node;
+      const waitErrorContext = this._generateErrorContext(node, waitPositionNode);
+      const waitLineno = waitPositionNode && waitPositionNode.lineno !== undefined ? waitPositionNode.lineno : node.lineno;
+      const waitColno = waitPositionNode && waitPositionNode.colno !== undefined ? waitPositionNode.colno : node.colno;
+      ids.forEach((valueId) => {
+        if (seenWaitIds.has(valueId)) {
+          return;
+        }
+        seenWaitIds.add(valueId);
+        this.emit.line('astate.asyncBlock(async (astate, frame, currentBuffer) => {');
+        this.emit.line('  try {');
+        this.emit.line(`    return await runtime.resolveSingle(${valueId});`);
+        this.emit.line('  } catch (e) {');
+        this.emit.line(`    const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${waitLineno}, ${waitColno}, "${waitErrorContext}", context.path);`);
+        this.emit.line('    throw err;');
+        this.emit.line('  }');
+        this.emit.line('}');
+        const asyncMetaArg = this.emit.getAsyncBlockArgs(frame);
+        const parentBufferArg = this.buffer.currentBuffer || 'null';
+        this.emit.line(`, runtime, frame, ${asyncMetaArg}, ${parentBufferArg}, false, cb, false)`);
+        this.emit.line(';');
+      });
     }
 
     // 3. Second pass: emit output commands + export.
@@ -731,13 +780,80 @@ class Compiler extends CompilerBase {
     return true;
   }
 
+  finalizeAnalyzeGuard(node, analysis, _ctx, analysisPass) {
+    if (!analysisPass || !node || !node.body) {
+      return true;
+    }
+
+    const guardTargets = this._getGuardTargetsFromNode(node);
+    const bodyFacts = this._collectGuardBodyFacts(node.body);
+    const sequenceResolution = this._resolveGuardSequenceTargets(
+      guardTargets,
+      bodyFacts.mutatedOutputs
+    );
+    if (sequenceResolution.unmatchedSpecified && sequenceResolution.unmatchedSpecified.length > 0) {
+      this.fail(
+        `guard sequence lock "${sequenceResolution.unmatchedSpecified[0]}" is not modified inside guard`,
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+    const resolvedHandlers = this._resolveGuardHandlersFromAnalysis(
+      bodyFacts,
+      guardTargets,
+      analysisPass,
+      analysis
+    );
+    const mergedHandlers = new Set(resolvedHandlers);
+    if (Array.isArray(guardTargets.variableTargetsRaw) && guardTargets.variableTargetsRaw.length > 0) {
+      guardTargets.variableTargetsRaw.forEach((name) => {
+        if (name && name !== 'text') {
+          mergedHandlers.add(name);
+        }
+      });
+    }
+    if (guardTargets.variableTargetsAll) {
+      for (const name of bodyFacts.mutatedOutputs) {
+        if (name && name.charAt(0) !== '!') {
+          mergedHandlers.add(name);
+        }
+      }
+    }
+    const nonSequenceHandlers = Array.from(mergedHandlers).filter((name) => !(name && name.charAt(0) === '!'));
+    const snapshotHandlers = nonSequenceHandlers.filter((name) => !bodyFacts.declaredOutputs.has(name));
+    const guardErrorTargets = Array.from(new Set([
+      ...nonSequenceHandlers,
+      ...Array.from(sequenceResolution.resolved)
+    ]));
+    const guardHandlerTypes = {};
+    snapshotHandlers.forEach((name) => {
+      if (!name) {
+        return;
+      }
+      if (name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT) {
+        guardHandlerTypes[name] = 'text';
+        return;
+      }
+      const outputDecl = analysisPass._getVisibleOutputDeclaration(analysis, name);
+      guardHandlerTypes[name] = outputDecl ? outputDecl.type : null;
+    });
+
+    analysis.guardResolvedHandlers = Array.from(mergedHandlers);
+    analysis.guardResolvedSequenceTargets = Array.from(sequenceResolution.resolved);
+    analysis.guardModifiedSequenceLocks = Array.from(sequenceResolution.modified);
+    analysis.guardSnapshotHandlers = snapshotHandlers;
+    analysis.guardErrorTargets = guardErrorTargets;
+    analysis.guardHandlerTypes = guardHandlerTypes;
+    return true;
+  }
+
   compileGuard(node, frame) {
     if (!this.asyncMode) {
       this.fail('guard block only supported in async mode', node.lineno, node.colno);
     }
 
     const guardTargets = this._getGuardTargets(node, frame);
-    const variableTargetsAll = guardTargets.variableTargetsAll;
     const variableValidationTargets = guardTargets.variableValidationTargets;
     validateGuardVariablesDeclared(variableValidationTargets, frame, this, node);
 
@@ -752,91 +868,53 @@ class Compiler extends CompilerBase {
 
       // Link guard scope to its current output buffer.
       this.emit.line(`frame.markOutputBufferScope(${this.buffer.currentBuffer});`);
-      const guardSnapshotInitPos = this.codebuf.length;
-      this.emit.line('');
-
-      // Guard body.
-      this.compile(node.body, blockFrame);
-
-      // Resolve and validate sequence lock targets from used outputs.
-      const resolvedSequenceTargets = new Set();
-      const modifiedLocks = new Set();
-      if (blockFrame.usedOutputs) {
-        for (const outputName of blockFrame.usedOutputs) {
-          if (outputName && outputName.startsWith('!')) {
-            modifiedLocks.add(outputName);
-          }
-        }
+      const guardAnalysis = node && node._analysis ? node._analysis : null;
+      if (!guardAnalysis) {
+        this.fail('Guard analysis is required in async mode', node.lineno, node.colno, node);
+      }
+      if (!Array.isArray(guardAnalysis.guardSnapshotHandlers) ||
+        !Array.isArray(guardAnalysis.guardErrorTargets) ||
+        !Array.isArray(guardAnalysis.guardResolvedSequenceTargets)) {
+        this.fail('Guard analysis metadata is incomplete', node.lineno, node.colno, node);
       }
 
-      const shouldGuardAllSequencesImplicitly =
-        variableTargetsAll &&
-        (!node.sequenceTargets || node.sequenceTargets.length === 0);
-
-      if (node.sequenceTargets && node.sequenceTargets.length > 0) {
-        for (const target of node.sequenceTargets) {
-          let matchFound = false;
-
-          if (target === '!') {
-            for (const lock of modifiedLocks) {
-              resolvedSequenceTargets.add(lock);
-              matchFound = true;
-            }
-          } else {
-            const baseKey = '!' + target.slice(0, -1);
-            for (const lock of modifiedLocks) {
-              if (lock === baseKey || lock.startsWith(baseKey + '!')) {
-                resolvedSequenceTargets.add(lock);
-                matchFound = true;
-              }
-            }
-            if (!matchFound) {
-              this.fail(`guard sequence lock "${target}" is not modified inside guard`, node.lineno, node.colno, node);
-            }
-          }
+      const snapshotHandlers = guardAnalysis.guardSnapshotHandlers;
+      const snapshotHandlerTypes = {};
+      snapshotHandlers.forEach((name) => {
+        if (!name) {
+          return;
         }
-      } else if (shouldGuardAllSequencesImplicitly) {
-        for (const lock of modifiedLocks) {
-          resolvedSequenceTargets.add(lock);
+        if (guardAnalysis.guardHandlerTypes &&
+          Object.prototype.hasOwnProperty.call(guardAnalysis.guardHandlerTypes, name)) {
+          snapshotHandlerTypes[name] = guardAnalysis.guardHandlerTypes[name];
+          return;
         }
-      }
-
-      let guardHandlers = this._getGuardedOutputNames(
-        blockFrame.usedOutputs,
-        guardTargets,
-        blockFrame
-      );
-      if (blockFrame.declaredOutputs) {
-        const merged = new Set(guardHandlers);
-        for (const name of blockFrame.declaredOutputs.keys()) {
-          merged.add(name);
-        }
-        guardHandlers = Array.from(merged);
-      }
-
-      const snapshotHandlers = guardHandlers.filter((name) => !(name && name.charAt(0) === '!'));
-      const guardErrorTargets = Array.from(new Set([...snapshotHandlers, ...Array.from(resolvedSequenceTargets)]));
-
+        const decl = this.async._getDeclaredOutput(blockFrame, name);
+        snapshotHandlerTypes[name] = decl ? decl.type : null;
+      });
+      const guardErrorTargets = guardAnalysis.guardErrorTargets;
       let guardSnapshotsVar = null;
       if (snapshotHandlers.length > 0) {
         guardSnapshotsVar = this._tmpid();
-        // Synthetic AST guard lowering captures handler state as command expressions,
-        // so snapshots/checkpoints remain ordered in the same output lane.
-        const snapshotPairs = snapshotHandlers.map((handlerName) => {
-          const outputDecl = this.async._getDeclaredOutput(blockFrame, handlerName);
-          const expr = (outputDecl && outputDecl.type === 'text')
-            ? `${this.buffer.currentBuffer}.addTextCheckpoint("${handlerName}", { lineno: 0, colno: 0 })`
-            : `${this.buffer.currentBuffer}.addSnapshot("${handlerName}", { lineno: 0, colno: 0 })`;
-          return `"${handlerName}": ${expr}`;
-        }).join(', ');
-        this.emit.insertLine(guardSnapshotInitPos, `const ${guardSnapshotsVar} = { ${snapshotPairs} };`);
+        const snapshotSetNode = transformer.buildGuardSnapshotSetNode({
+          guardSnapshotsVar,
+          snapshotHandlers,
+          snapshotHandlerTypes,
+          node,
+          isTemplateMode: !this.scriptMode
+        });
+        this.async.propagateIsAsync(snapshotSetNode);
+        this.compile(snapshotSetNode, blockFrame);
       }
+
+      // Guard body.
+      this.compile(node.body, blockFrame);
 
       const guardErrorVarName = `__guard_err_${this._tmpid()}`;
       const guardLowering = transformer.buildGuardLoweringAst({
         guardErrorVarName,
         guardErrorTargets,
-        resolvedSequenceTargets: Array.from(resolvedSequenceTargets),
+        resolvedSequenceTargets: guardAnalysis.guardResolvedSequenceTargets,
         snapshotHandlers,
         guardSnapshotsVar,
         recoveryBody: node.recoveryBody,
@@ -868,6 +946,210 @@ class Compiler extends CompilerBase {
     const symbol = new nodes.Symbol(node.lineno, node.colno, name);
     symbol.isCompilerInternal = true;
     return symbol;
+  }
+
+  _collectGuardBodyFacts(bodyNode) {
+    const facts = {
+      usedOutputs: new Set(),
+      mutatedOutputs: new Set(),
+      usedHandlers: new Set(),
+      mutatedHandlers: new Set(),
+      declaredOutputs: new Set()
+    };
+
+    const visit = (node) => {
+      if (!node || !(node instanceof nodes.Node)) {
+        return;
+      }
+      const analysis = node._analysis || null;
+      if (analysis) {
+        if (analysis.usesLocal) {
+          for (const name of analysis.usesLocal) facts.usedOutputs.add(name);
+        }
+        if (analysis.mutatesLocal) {
+          for (const name of analysis.mutatesLocal) facts.mutatedOutputs.add(name);
+        }
+        if (analysis.usesHandlersLocal) {
+          for (const name of analysis.usesHandlersLocal) facts.usedHandlers.add(name);
+        }
+        if (analysis.mutatesHandlersLocal) {
+          for (const name of analysis.mutatesHandlersLocal) facts.mutatedHandlers.add(name);
+        }
+        if (analysis.declaresLocal) {
+          for (const name of analysis.declaresLocal.keys()) facts.declaredOutputs.add(name);
+        }
+      }
+
+      node.fields.forEach((field) => {
+        const child = node[field];
+        if (Array.isArray(child)) {
+          child.forEach(visit);
+        } else {
+          visit(child);
+        }
+      });
+    };
+
+    visit(bodyNode);
+    return facts;
+  }
+
+  _getGuardTargetsFromNode(guardNode) {
+    const handlerTargetsRaw = Array.isArray(guardNode && guardNode.handlerTargets) &&
+      guardNode.handlerTargets.length > 0
+      ? guardNode.handlerTargets
+      : null;
+    const handlerSelector = !handlerTargetsRaw
+      ? null
+      : (handlerTargetsRaw.includes('@') ? '*' : handlerTargetsRaw);
+    const typeTargets = Array.isArray(guardNode && guardNode.typeTargets) && guardNode.typeTargets.length > 0
+      ? guardNode.typeTargets
+      : null;
+    const variableTargetsRaw = guardNode && guardNode.variableTargets === '*'
+      ? '*'
+      : (Array.isArray(guardNode && guardNode.variableTargets) && guardNode.variableTargets.length > 0
+        ? guardNode.variableTargets
+        : null);
+    const variableTargetsAll = variableTargetsRaw === '*';
+    const sequenceTargets = Array.isArray(guardNode && guardNode.sequenceTargets) && guardNode.sequenceTargets.length > 0
+      ? guardNode.sequenceTargets
+      : null;
+    const hasAnySelectors = !!handlerSelector || !!typeTargets || variableTargetsRaw !== null || !!sequenceTargets;
+    return {
+      handlerSelector,
+      typeTargets,
+      variableTargetsRaw,
+      variableTargetsAll,
+      sequenceTargets,
+      hasAnySelectors
+    };
+  }
+
+  _resolveGuardSequenceTargets(guardTargets, usedOutputsSet) {
+    const resolvedSequenceTargets = new Set();
+    const modifiedLocks = new Set();
+    const unmatchedSpecified = [];
+    for (const outputName of usedOutputsSet) {
+      if (outputName && outputName.startsWith('!')) {
+        modifiedLocks.add(outputName);
+      }
+    }
+
+    const shouldGuardAllSequencesImplicitly =
+      guardTargets.variableTargetsAll &&
+      (!guardTargets.sequenceTargets || guardTargets.sequenceTargets.length === 0);
+
+    if (guardTargets.sequenceTargets && guardTargets.sequenceTargets.length > 0) {
+      for (const target of guardTargets.sequenceTargets) {
+        if (target === '!') {
+          for (const lock of modifiedLocks) {
+            resolvedSequenceTargets.add(lock);
+          }
+        } else {
+          const baseKey = '!' + target.slice(0, -1);
+          let matchFound = false;
+          for (const lock of modifiedLocks) {
+            if (lock === baseKey || lock.startsWith(baseKey + '!')) {
+              resolvedSequenceTargets.add(lock);
+              matchFound = true;
+            }
+          }
+          if (!matchFound) {
+            unmatchedSpecified.push(target);
+          }
+        }
+      }
+    } else if (shouldGuardAllSequencesImplicitly) {
+      for (const lock of modifiedLocks) {
+        resolvedSequenceTargets.add(lock);
+      }
+    }
+    return {
+      resolved: resolvedSequenceTargets,
+      modified: modifiedLocks,
+      unmatchedSpecified
+    };
+  }
+
+  _resolveGuardHandlersFromAnalysis(bodyFacts, guardTargets, analysisPass, guardAnalysis) {
+    const mutated = new Set([...bodyFacts.mutatedHandlers, ...bodyFacts.mutatedOutputs]);
+
+    const addDefaultTemplateTextHandler = (names) => {
+      if (this.scriptMode) {
+        return names;
+      }
+      const merged = new Set(names || []);
+      merged.add(CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT);
+      return Array.from(merged);
+    };
+
+    if (guardTargets.handlerSelector === '*') {
+      return addDefaultTemplateTextHandler(Array.from(mutated));
+    }
+
+    const hasNamedHandlers = Array.isArray(guardTargets.handlerSelector) && guardTargets.handlerSelector.length > 0;
+    const hasTypedHandlers = Array.isArray(guardTargets.typeTargets) && guardTargets.typeTargets.length > 0;
+
+    if (hasNamedHandlers || hasTypedHandlers) {
+      const guardedSet = new Set(hasNamedHandlers ? guardTargets.handlerSelector : []);
+      if (!this.scriptMode && guardedSet.has('text')) {
+        guardedSet.add(CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT);
+      }
+      const guardedTypes = new Set(hasTypedHandlers ? guardTargets.typeTargets : []);
+      const selected = new Set(Array.from(mutated).filter((name) => {
+        if (guardedSet.has(name)) {
+          return true;
+        }
+        if (guardedTypes.size === 0) {
+          return false;
+        }
+        const outputDecl = analysisPass._getVisibleOutputDeclaration(guardAnalysis, name);
+        if (outputDecl) {
+          return guardedTypes.has(outputDecl.type);
+        }
+        if (!this.scriptMode && name === CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT && guardedTypes.has('text')) {
+          return true;
+        }
+        return guardedTypes.has(name);
+      }));
+      if (Array.isArray(guardTargets.variableTargetsRaw) && guardTargets.variableTargetsRaw.length > 0) {
+        guardTargets.variableTargetsRaw.forEach((name) => {
+          selected.add(name);
+          if (!this.scriptMode && name === 'text') {
+            selected.add(CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT);
+          }
+        });
+      }
+      return addDefaultTemplateTextHandler(Array.from(selected));
+    }
+
+    if (Array.isArray(guardTargets.variableTargetsRaw) && guardTargets.variableTargetsRaw.length > 0) {
+      const selected = new Set();
+      guardTargets.variableTargetsRaw.forEach((name) => {
+        selected.add(name);
+        if (!this.scriptMode && name === 'text') {
+          selected.add(CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT);
+        }
+      });
+      return addDefaultTemplateTextHandler(Array.from(selected));
+    }
+
+    if (guardTargets.variableTargetsAll) {
+      const selected = Array.from(mutated).filter((name) => {
+        if (name && name.charAt(0) === '!') {
+          return false;
+        }
+        const outputDecl = analysisPass._getVisibleOutputDeclaration(guardAnalysis, name);
+        return !!(outputDecl && outputDecl.type === 'var');
+      });
+      return addDefaultTemplateTextHandler(selected);
+    }
+
+    if (!guardTargets.hasAnySelectors) {
+      return addDefaultTemplateTextHandler(Array.from(mutated));
+    }
+
+    return addDefaultTemplateTextHandler([]);
   }
 
   _getGuardedOutputNames(usedOutputs, guardTargets, frame) {
@@ -1587,6 +1869,16 @@ class Compiler extends CompilerBase {
     return true;
   }
 
+  analyzeOutput(_node, analysis, _ctx, analysisPass) {
+    if (!analysisPass || this.scriptMode || !this.asyncMode) {
+      return true;
+    }
+    const textHandler = CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT;
+    analysisPass.registerHandlerUsage(analysis, textHandler);
+    analysisPass.registerHandlerMutation(analysis, textHandler);
+    return true;
+  }
+
   compileCapture(node, frame) {
     // we need to temporarily override the current buffer id as 'output'
     // so the set block writes to the capture output instead of the buffer
@@ -1675,6 +1967,23 @@ class Compiler extends CompilerBase {
         // In the future, when we make the CommandBuffer tree synchronously before any expression evaluation,
         // This will not be needed anymore
         const forceWrapRootExpression = this._expressionAddsCommands(child) && !this.buffer.currentWaitedOutputName;
+        if (this.guardDepth > 0) {
+          // Inside guard blocks, emit text expression commands directly into the
+          // current buffer to preserve deterministic command order for guard
+          // error aggregation/recovery lowering.
+          this.buffer.asyncAddValueToBuffer(
+            node,
+            frame,
+            (valueId, innerFrame) => {
+              this.emit(`${valueId} = new runtime.TextCommand({ handler: "${textHandler}", args: [`);
+              this._compileExpression(child, innerFrame, forceWrapRootExpression, child);
+              this.emit(`], normalizeArgs: true, pos: {lineno: ${child.lineno}, colno: ${child.colno}} })`);
+            },
+            child,
+            textHandler
+          );
+          return;
+        }
         frame = this.buffer.asyncAddToBufferScoped(
           node,
           frame,
@@ -1802,10 +2111,20 @@ class Compiler extends CompilerBase {
 
   analyzeRoot(node, analysis, _ctx, analysisPass, state) {
     this._markAnalysisScope(analysis, { createScope: true, scopeBoundary: true });
-    const sequenceLocks = this.sequential && this.sequential.collectSequenceLocks
-      ? this.sequential.collectSequenceLocks(node)
-      : [];
-    analysis.sequenceLocks = Array.isArray(sequenceLocks) ? sequenceLocks.slice() : [];
+    if (!this.scriptMode) {
+      analysisPass.registerOutputDeclaration(analysis, CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT, {
+        type: 'text',
+        initializer: null,
+        node
+      }, state);
+    }
+    const sequenceLocks = new Set(
+      this.sequential && this.sequential.collectSequenceLocks
+        ? this.sequential.collectSequenceLocks(node)
+        : []
+    );
+    this._collectLockKeysFromNode(node).forEach((lockName) => sequenceLocks.add(lockName));
+    analysis.sequenceLocks = Array.from(sequenceLocks);
     analysis.sequenceLocks.forEach((lockName) => {
       analysisPass.registerOutputDeclaration(analysis, lockName, {
         type: 'sequential_path',
@@ -1814,6 +2133,22 @@ class Compiler extends CompilerBase {
       }, state);
     });
     return true;
+  }
+
+  _collectLockKeysFromNode(node) {
+    const lockKeys = new Set();
+    const visit = (current) => {
+      if (!current || !(current instanceof nodes.Node)) {
+        return;
+      }
+      if (current.lockKey && typeof current.lockKey === 'string') {
+        lockKeys.add(current.lockKey);
+      }
+      const children = this._getImmediateChildren(current);
+      children.forEach(visit);
+    };
+    visit(node);
+    return lockKeys;
   }
 
 
@@ -1836,14 +2171,12 @@ class Compiler extends CompilerBase {
 
     if (this.asyncMode) {
       // NEW: Pre-declaration pass
-      const analysisSequenceLocks = (node && node._analysis && Array.isArray(node._analysis.sequenceLocks))
+      const sequenceLocks = (node && node._analysis && Array.isArray(node._analysis.sequenceLocks))
         ? node._analysis.sequenceLocks
-        : [];
-      const discoveredSequenceLocks = this.sequential.collectSequenceLocks(node);
-      const sequenceLocks = Array.from(new Set([
-        ...analysisSequenceLocks,
-        ...discoveredSequenceLocks
-      ]));
+        : null;
+      if (!sequenceLocks) {
+        this.fail('Root analysis sequence-lock metadata is required in async mode', node.lineno, node.colno, node);
+      }
       this.sequential.preDeclareSequenceLocks(frame, sequenceLocks);
       this.async.propagateIsAsync(node);
       // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
@@ -2083,6 +2416,7 @@ class Compiler extends CompilerBase {
       initializer: node.initializer || null,
       node
     }, state);
+    analysisPass.registerHandlerUsage(analysis, name);
     return true;
   }
 
@@ -2132,12 +2466,14 @@ class Compiler extends CompilerBase {
     }
     const handler = path[0];
     analysisPass.registerOutputUsage(analysis, handler, state);
+    analysisPass.registerHandlerUsage(analysis, handler);
 
     const isObservation = callNode &&
       path.length === 2 &&
       (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError' || path[1] === '__checkpoint');
     if (!isObservation) {
       analysisPass.registerOutputMutation(analysis, handler, state);
+      analysisPass.registerHandlerMutation(analysis, handler);
     }
     return true;
   }

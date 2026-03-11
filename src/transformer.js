@@ -570,7 +570,7 @@ function _buildGuardSequenceRepairNode(lockName, node) {
   return new nodes.Do(node.lineno, node.colno, [repairTarget]);
 }
 
-function _buildGuardRestoreOutputCommandNode(handlerName, snapshotsVarName, node, makeCompilerInternalSymbol) {
+function _buildGuardRestoreOutputCommandNode(handlerName, snapshotsVarName, node) {
   const handlerSymbol = new nodes.Symbol(node.lineno, node.colno, handlerName);
   const methodLookup = new nodes.LookupVal(
     node.lineno,
@@ -581,7 +581,7 @@ function _buildGuardRestoreOutputCommandNode(handlerName, snapshotsVarName, node
   const snapshotLookup = new nodes.LookupVal(
     node.lineno,
     node.colno,
-    _makeCompilerInternalSymbol(snapshotsVarName, node, makeCompilerInternalSymbol),
+    new nodes.Symbol(node.lineno, node.colno, snapshotsVarName),
     new nodes.Literal(node.lineno, node.colno, handlerName)
   );
   const args = new nodes.NodeList(node.lineno, node.colno, [snapshotLookup]);
@@ -612,7 +612,7 @@ function _buildGuardRecoveryIfNode({
 
   if (guardSnapshotsVar) {
     snapshotHandlers.forEach((handlerName) => {
-      bodyChildren.push(_buildGuardRestoreOutputCommandNode(handlerName, guardSnapshotsVar, node, makeCompilerInternalSymbol));
+      bodyChildren.push(_buildGuardRestoreOutputCommandNode(handlerName, guardSnapshotsVar, node));
     });
   }
 
@@ -633,6 +633,45 @@ function _buildGuardRecoveryIfNode({
 
   const ifBody = new nodes.NodeList(node.lineno, node.colno, bodyChildren);
   return new nodes.If(node.lineno, node.colno, cond, ifBody, null);
+}
+
+function buildGuardSnapshotSetNode({
+  guardSnapshotsVar,
+  snapshotHandlers,
+  snapshotHandlerTypes,
+  node,
+  isTemplateMode
+}) {
+  const targets = [new nodes.Symbol(node.lineno, node.colno, guardSnapshotsVar)];
+  const pairs = [];
+  snapshotHandlers.forEach((handlerName) => {
+    const handlerType = snapshotHandlerTypes && Object.prototype.hasOwnProperty.call(snapshotHandlerTypes, handlerName)
+      ? snapshotHandlerTypes[handlerName]
+      : null;
+    let snapshotExpr;
+    if (handlerType === 'var') {
+      snapshotExpr = new nodes.Symbol(node.lineno, node.colno, handlerName);
+    } else {
+      const handlerSymbol = new nodes.Symbol(node.lineno, node.colno, handlerName);
+      const methodLookup = new nodes.LookupVal(
+        node.lineno,
+        node.colno,
+        handlerSymbol,
+        new nodes.Literal(node.lineno, node.colno, 'snapshot')
+      );
+      const args = new nodes.NodeList(node.lineno, node.colno, []);
+      snapshotExpr = new nodes.FunCall(node.lineno, node.colno, methodLookup, args);
+    }
+    const pair = new nodes.Pair(
+      node.lineno,
+      node.colno,
+      new nodes.Literal(node.lineno, node.colno, handlerName),
+      snapshotExpr
+    );
+    pairs.push(pair);
+  });
+  const snapshotDict = new nodes.Dict(node.lineno, node.colno, pairs);
+  return new nodes.Set(node.lineno, node.colno, targets, snapshotDict, 'declaration');
 }
 
 function buildGuardLoweringAst({
@@ -673,5 +712,6 @@ function buildGuardLoweringAst({
 
 module.exports = {
   transform: transform,
-  buildGuardLoweringAst: buildGuardLoweringAst
+  buildGuardLoweringAst: buildGuardLoweringAst,
+  buildGuardSnapshotSetNode: buildGuardSnapshotSetNode
 };

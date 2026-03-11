@@ -62,6 +62,8 @@ class CompileAnalysis {
       const childCtx = this._nextContext(node, field, ctx);
       this._walk(child, node, field, childCtx, state);
     });
+
+    this._finalizeNode(node, analysis, ctx, state);
   }
 
   _ensureAnalysis(node, parentNode, parentField, ctx) {
@@ -74,9 +76,13 @@ class CompileAnalysis {
         declaresLocal: new Map(),
         usesLocal: new Set(),
         mutatesLocal: new Set(),
+        usesHandlersLocal: new Set(),
+        mutatesHandlersLocal: new Set(),
         declaredOutputs: null,
         usedOutputs: null,
-        mutatedOutputs: null
+        mutatedOutputs: null,
+        usedHandlers: null,
+        mutatedHandlers: null
       };
     }
     if (ctx && ctx.forceCreateScope) {
@@ -98,6 +104,14 @@ class CompileAnalysis {
 
   _analyzeNode(node, analysis, ctx, state) {
     const analyzerName = `analyze${node.typename}`;
+    const analyzer = this.compiler && this.compiler[analyzerName];
+    if (typeof analyzer === 'function') {
+      analyzer.call(this.compiler, node, analysis, ctx, this, state);
+    }
+  }
+
+  _finalizeNode(node, analysis, ctx, state) {
+    const analyzerName = `finalizeAnalyze${node.typename}`;
     const analyzer = this.compiler && this.compiler[analyzerName];
     if (typeof analyzer === 'function') {
       analyzer.call(this.compiler, node, analysis, ctx, this, state);
@@ -159,7 +173,7 @@ class CompileAnalysis {
   }
 
   detectSpecialOutputCall(node, lookupDeclaredOutput) {
-    if (!this.compiler || !this.compiler.scriptMode || !this.compiler.sequential || !node || !node.name || typeof lookupDeclaredOutput !== 'function') {
+    if (!this.compiler || !this.compiler.asyncMode || !this.compiler.sequential || !node || !node.name || typeof lookupDeclaredOutput !== 'function') {
       return null;
     }
     if (node.lockKey) {
@@ -252,6 +266,26 @@ class CompileAnalysis {
     owner.mutatedOutputs = owner.mutatedOutputs || new Set();
     owner.mutatedOutputs.add(outputName);
     state.mutationCount++;
+  }
+
+  registerHandlerUsage(analysis, handlerName) {
+    if (!handlerName) {
+      return;
+    }
+    analysis.usesHandlersLocal.add(handlerName);
+    const owner = this._findDeclarationOwner(analysis);
+    owner.usedHandlers = owner.usedHandlers || new Set();
+    owner.usedHandlers.add(handlerName);
+  }
+
+  registerHandlerMutation(analysis, handlerName) {
+    if (!handlerName) {
+      return;
+    }
+    analysis.mutatesHandlersLocal.add(handlerName);
+    const owner = this._findDeclarationOwner(analysis);
+    owner.mutatedHandlers = owner.mutatedHandlers || new Set();
+    owner.mutatedHandlers.add(handlerName);
   }
 
   _findDeclarationOwner(analysis) {

@@ -9,6 +9,8 @@ const {
   collectErrors
 } = require('./errors');
 
+const COMMAND_ARG_POISON_BOX_KEY = '__cascadaCommandArgPoisonBox';
+
 /**
  * Sync call wrapper for templates.
  */
@@ -85,6 +87,45 @@ function callWrapAsync(obj, name, context, args, errorContext) {
   } catch (err) {
     return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
   }
+}
+
+function _boxCommandArgPoison(value) {
+  return {
+    [COMMAND_ARG_POISON_BOX_KEY]: true,
+    value
+  };
+}
+
+/**
+ * Variant of callWrapAsync for output-command argument paths.
+ * It never rejects with PoisonError; poison is boxed so output argument
+ * resolution can unbox it deterministically during command apply.
+ */
+function callWrapAsyncForCommandArg(obj, name, context, args, errorContext) {
+  const result = callWrapAsync(obj, name, context, args, errorContext);
+  if (isPoison(result)) {
+    return _boxCommandArgPoison(result);
+  }
+  if (result && typeof result.then === 'function') {
+    return Promise.resolve(result).then(
+      (resolved) => (isPoison(resolved) ? _boxCommandArgPoison(resolved) : resolved),
+      (err) => {
+        if (isPoisonError(err)) {
+          return _boxCommandArgPoison(createPoison(err.errors));
+        }
+        return _boxCommandArgPoison(
+          createPoison(
+            err,
+            errorContext && errorContext.lineno,
+            errorContext && errorContext.colno,
+            errorContext && errorContext.errorContextString,
+            errorContext && errorContext.path
+          )
+        );
+      }
+    );
+  }
+  return result;
 }
 
 async function _callWrapAsyncComplex(obj, name, context, args, errorContext) {
@@ -167,4 +208,6 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext) {
 module.exports = {
   callWrap,
   callWrapAsync,
+  callWrapAsyncForCommandArg,
+  COMMAND_ARG_POISON_BOX_KEY
 };

@@ -13,6 +13,7 @@ const {
 const DataHandler = require('../script/data-handler');
 const { BufferIterator } = require('./buffer-iterator');
 const { PoisonError, isPoison, isPoisonError, createPoison, handleError } = require('./errors');
+const { COMMAND_ARG_POISON_BOX_KEY } = require('./call');
 const { RESOLVE_MARKER } = require('./resolve');
 const ASYNC_POISON_BOX_KEY = Symbol.for('cascada.asyncArgPoisonBox');
 
@@ -1131,6 +1132,9 @@ function resolveCommandArgsValue(value, cmd, output) {
 }
 
 function resolveCommandArg(value, cmd, output) {
+  if (value && value[COMMAND_ARG_POISON_BOX_KEY] === true) {
+    return value.value;
+  }
   if (isPoison(value)) {
     return value;
   }
@@ -1173,6 +1177,9 @@ function wrapAsyncPoisonValue(poisonedValue) {
 }
 
 function unwrapAsyncPoisonBox(value) {
+  if (value && value[COMMAND_ARG_POISON_BOX_KEY] === true) {
+    return value.value;
+  }
   if (value && value[ASYNC_POISON_BOX_KEY] === true) {
     return value.value;
   }

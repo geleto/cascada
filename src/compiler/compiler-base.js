@@ -41,6 +41,7 @@ class CompilerBase extends Obj {
     this.asyncMode = options.asyncMode || false;
     this.scriptMode = options.scriptMode || false;
     this.guardDepth = 0;
+    this._inCommandArgContext = false;
 
     // These will be instantiated by the derived Compiler class
     // and are essential for expression compilation.
@@ -350,6 +351,9 @@ class CompilerBase extends Obj {
     if (analysis) {
       return this.analysis.getVisibleOutputDeclarationFromNode(node, name);
     }
+    if (!this.scriptMode && name === this.buffer.currentTextOutputName) {
+      return { type: 'text' };
+    }
     return this.async._getDeclaredOutput(frame, name);
   }
 
@@ -385,15 +389,22 @@ class CompilerBase extends Obj {
       return true;
     }
 
-    if (node.lockKey && analysisPass._isOutputDeclaredInVisibleScopes(analysis, node.lockKey)) {
-      analysisPass.registerOutputUsage(analysis, node.lockKey, state);
+    const sequenceLockKey = node.lockKey ||
+      ((node.sequential || node.sequentialRepair) && this.sequential && this.sequential._getSequenceKey
+        ? this.sequential._getSequenceKey(node)
+        : null);
+    if (sequenceLockKey) {
+      analysisPass.registerOutputUsage(analysis, sequenceLockKey, state);
+      analysisPass.registerHandlerUsage(analysis, sequenceLockKey);
       if (node.sequentialRepair) {
-        analysisPass.registerOutputMutation(analysis, node.lockKey, state);
+        analysisPass.registerOutputMutation(analysis, sequenceLockKey, state);
+        analysisPass.registerHandlerMutation(analysis, sequenceLockKey);
       }
     }
 
     if (analysisPass._isOutputDeclaredInVisibleScopes(analysis, name)) {
       analysisPass.registerOutputUsage(analysis, name, state);
+      analysisPass.registerHandlerUsage(analysis, name);
     }
 
     return true;
@@ -782,7 +793,10 @@ class CompilerBase extends Obj {
     if (!analysisPass || !node) {
       return true;
     }
-    if (this._isSequenceMarkedTarget(node.target)) {
+    const sequenceLockKey = node.target && node.target.lockKey ? node.target.lockKey : null;
+    if (sequenceLockKey) {
+      analysisPass.registerOutputUsage(analysis, sequenceLockKey, state);
+      analysisPass.registerHandlerUsage(analysis, sequenceLockKey);
       return true;
     }
 
@@ -797,6 +811,11 @@ class CompilerBase extends Obj {
 
   compilePeekError(node, frame) {
     if (this.asyncMode) {
+      const sequenceLockKey = node.target && node.target.lockKey ? node.target.lockKey : null;
+      if (sequenceLockKey && this._isSequencePathLockDeclared(frame, sequenceLockKey)) {
+        this.buffer.emitAddGetError(frame, sequenceLockKey, node.target);
+        return;
+      }
       const outputName = this._resolveObservedOutput(node, node.target, frame, 'PeekError.observedOutputName');
       if (outputName) {
         this.buffer.emitAddGetError(frame, outputName, node.target);
@@ -914,10 +933,16 @@ class CompilerBase extends Obj {
       return true;
     }
 
-    if (node.lockKey && analysisPass._isOutputDeclaredInVisibleScopes(analysis, node.lockKey)) {
-      analysisPass.registerOutputUsage(analysis, node.lockKey, state);
+    const sequenceLockKey = node.lockKey ||
+      ((node.sequential || node.sequentialRepair) && this.sequential && this.sequential._getSequenceKey
+        ? this.sequential._getSequenceKey(node)
+        : null);
+    if (sequenceLockKey) {
+      analysisPass.registerOutputUsage(analysis, sequenceLockKey, state);
+      analysisPass.registerHandlerUsage(analysis, sequenceLockKey);
       if (node.sequentialRepair) {
-        analysisPass.registerOutputMutation(analysis, node.lockKey, state);
+        analysisPass.registerOutputMutation(analysis, sequenceLockKey, state);
+        analysisPass.registerHandlerMutation(analysis, sequenceLockKey);
       }
     }
 
@@ -928,6 +953,7 @@ class CompilerBase extends Obj {
       if (lookupFacts) {
         analysis.sequenceLookup = lookupFacts;
         analysisPass.registerOutputUsage(analysis, lookupFacts.outputName, state);
+        analysisPass.registerHandlerUsage(analysis, lookupFacts.outputName);
       }
     }
 
@@ -1014,21 +1040,27 @@ class CompilerBase extends Obj {
       return true;
     }
 
-    if (node.lockKey && analysisPass._isOutputDeclaredInVisibleScopes(analysis, node.lockKey)) {
-      analysisPass.registerOutputUsage(analysis, node.lockKey, state);
-      analysisPass.registerOutputMutation(analysis, node.lockKey, state);
+    const sequenceLockKey = node.lockKey ||
+      (this.sequential && this.sequential._getSequenceKey ? this.sequential._getSequenceKey(node.name) : null);
+    if (sequenceLockKey) {
+      analysisPass.registerOutputUsage(analysis, sequenceLockKey, state);
+      analysisPass.registerOutputMutation(analysis, sequenceLockKey, state);
+      analysisPass.registerHandlerUsage(analysis, sequenceLockKey);
+      analysisPass.registerHandlerMutation(analysis, sequenceLockKey);
       return true;
     }
 
-    if (this.scriptMode && this.sequential && this.async && this.async._getDeclaredOutput) {
+    if (this.sequential && this.async && this.async._getDeclaredOutput) {
       const callFacts = this.analysis.detectSpecialOutputCall(node, (name) => {
         return analysisPass._getVisibleOutputDeclaration(analysis, name);
       });
       if (callFacts) {
         analysis.specialOutputCall = callFacts;
         analysisPass.registerOutputUsage(analysis, callFacts.outputName, state);
+        analysisPass.registerHandlerUsage(analysis, callFacts.outputName);
         if (!callFacts.isObservation) {
           analysisPass.registerOutputMutation(analysis, callFacts.outputName, state);
+          analysisPass.registerHandlerMutation(analysis, callFacts.outputName);
         }
       }
     }
@@ -1080,6 +1112,15 @@ class CompilerBase extends Obj {
         this.emit(`, frame, "${sequenceLockKey}", ${errorContextJson}, ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
         return;
       }
+      if (this._inCommandArgContext) {
+        const errorContextJson = JSON.stringify(this._createErrorContext(node));
+        this.emit('runtime.callWrapAsyncForCommandArg(');
+        this.compile(node.name, frame);
+        this.emit(`, "${funcName}", context, `);
+        this._compileAggregate(node.args, frame, '[', ']', false, false);
+        this.emit(`, ${errorContextJson})`);
+        return;
+      }
       // Function name is dynamic, so resolve both function and arguments.
       const mergedNode = {
         isAsync: node.name.isAsync || node.args.isAsync,
@@ -1104,9 +1145,6 @@ class CompilerBase extends Obj {
   }
 
   _compileSpecialOutputFunCallFromFacts(node, frame, callFacts) {
-    if (!this.scriptMode) {
-      return false;
-    }
     if (!callFacts || !callFacts.outputName) {
       return false;
     }
@@ -1417,7 +1455,8 @@ class CompilerBase extends Obj {
       }
 
       this.sequential.processExpression(node, frame);
-      if (forceWrap || node.wrapInAsyncBlock) {
+      const shouldWrapInAsyncBlock = forceWrap || (node.wrapInAsyncBlock && !this._inCommandArgContext);
+      if (shouldWrapInAsyncBlock) {
         node.wrapInAsyncBlock = false;//so that compile won't wrap it and ignore positionNode
         this.emit.asyncBlockValue(node, frame, (n, f) => {
           this.compile(n, f);

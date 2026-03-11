@@ -238,6 +238,7 @@ module.exports = {
 
   callWrap: call.callWrap,
   callWrapAsync: call.callWrapAsync,
+  callWrapAsyncForCommandArg: call.callWrapAsyncForCommandArg,
   sequentialCallWrapValue: sequential.sequentialCallWrapValue,
   handleError: errors.handleError,
 

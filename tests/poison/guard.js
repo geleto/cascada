@@ -1591,9 +1591,9 @@ return { text: output.snapshot(), data: result.snapshot() }`;
         expect(pseudoCompiled).to.contain('_mergeErrors');
         expect(guardCompiled).to.contain('!lock');
         expect(pseudoCompiled).to.contain('!lock');
-        // Current architecture intentionally diverges here: guard lowering
-        // inserts snapshot object JS while pseudo lowering goes through set-var AST.
-        expect(guardCompiled).to.contain('const t_');
+        // Guard lowering should use AST set-var shape for snapshot prelude,
+        // not raw injected JS object literals.
+        expect(guardCompiled).to.not.match(/const\s+t_\d+\s*=\s*\{[^}]*addSnapshot\(/);
         expect(pseudoCompiled).to.contain('runtime.declareOutput(frame');
         expect(guardCompiled).to.not.equal(pseudoCompiled);
 
