@@ -833,24 +833,28 @@ class Compiler extends CompilerBase {
       }
 
       const guardErrorVarName = `__guard_err_${this._tmpid()}`;
-      const guardErrorSetNode = this._buildGuardErrorSetNode(guardErrorVarName, guardErrorTargets, node);
-      this.async.propagateIsAsync(guardErrorSetNode);
-      this.compile(guardErrorSetNode, blockFrame);
-
-      for (const lockName of resolvedSequenceTargets) {
-        const repairNode = this._buildGuardSequenceRepairNode(lockName, node);
-        this.async.propagateIsAsync(repairNode);
-        this.compile(repairNode, blockFrame);
-      }
-
-      const recoveryIfNode = this._buildGuardRecoveryIfNode({
+      const guardLowering = transformer.buildGuardLoweringAst({
         guardErrorVarName,
+        guardErrorTargets,
+        resolvedSequenceTargets: Array.from(resolvedSequenceTargets),
         snapshotHandlers,
         guardSnapshotsVar,
         recoveryBody: node.recoveryBody,
         errorVar: node.errorVar,
-        node
+        node,
+        makeCompilerInternalSymbol: (name, sourceNode) => this._makeCompilerInternalSymbol(name, sourceNode)
       });
+
+      const guardErrorSetNode = guardLowering.guardErrorSetNode;
+      this.async.propagateIsAsync(guardErrorSetNode);
+      this.compile(guardErrorSetNode, blockFrame);
+
+      for (const repairNode of guardLowering.sequenceRepairNodes) {
+        this.async.propagateIsAsync(repairNode);
+        this.compile(repairNode, blockFrame);
+      }
+
+      const recoveryIfNode = guardLowering.recoveryIfNode;
       this.async.propagateIsAsync(recoveryIfNode);
       this.compile(recoveryIfNode, blockFrame);
 
@@ -864,115 +868,6 @@ class Compiler extends CompilerBase {
     const symbol = new nodes.Symbol(node.lineno, node.colno, name);
     symbol.isCompilerInternal = true;
     return symbol;
-  }
-
-  _buildSequentialPathNode(lockName, node, isRepair = false) {
-    const parts = (lockName || '').split('!').filter(Boolean);
-    if (parts.length === 0) {
-      this.fail(`Invalid sequence lock name "${lockName}"`, node.lineno, node.colno, node);
-    }
-
-    let pathNode = new nodes.Symbol(node.lineno, node.colno, parts[0]);
-    if (parts.length === 1) {
-      pathNode.sequential = true;
-      if (isRepair) {
-        pathNode.sequentialRepair = true;
-      }
-      return pathNode;
-    }
-
-    for (let i = 1; i < parts.length; i++) {
-      const key = new nodes.Literal(node.lineno, node.colno, parts[i]);
-      pathNode = new nodes.LookupVal(node.lineno, node.colno, pathNode, key);
-    }
-
-    pathNode.sequential = true;
-    if (isRepair) {
-      pathNode.sequentialRepair = true;
-    }
-    return pathNode;
-  }
-
-  _buildGuardErrorSetNode(guardErrorVarName, guardErrorTargets, node) {
-    const targetSymbol = new nodes.Symbol(node.lineno, node.colno, guardErrorVarName);
-    const targets = [targetSymbol];
-
-    if (!Array.isArray(guardErrorTargets) || guardErrorTargets.length === 0) {
-      return new nodes.Set(node.lineno, node.colno, targets, new nodes.Literal(node.lineno, node.colno, null), 'declaration');
-    }
-
-    const mergeFn = new nodes.Symbol(node.lineno, node.colno, '_mergeErrors');
-    const args = guardErrorTargets.map((name) => {
-      const targetNode = (name && name.charAt(0) === '!')
-        ? this._buildSequentialPathNode(name, node, false)
-        : new nodes.Symbol(node.lineno, node.colno, name);
-      return new nodes.PeekError(node.lineno, node.colno, targetNode);
-    });
-    const argList = new nodes.NodeList(node.lineno, node.colno, args);
-    const mergeCall = new nodes.FunCall(node.lineno, node.colno, mergeFn, argList);
-    return new nodes.Set(node.lineno, node.colno, targets, mergeCall, 'declaration');
-  }
-
-  _buildGuardSequenceRepairNode(lockName, node) {
-    const repairTarget = this._buildSequentialPathNode(lockName, node, true);
-    return new nodes.Do(node.lineno, node.colno, [repairTarget]);
-  }
-
-  _buildGuardRestoreOutputCommandNode(handlerName, snapshotsVarName, node) {
-    const handlerSymbol = new nodes.Symbol(node.lineno, node.colno, handlerName);
-    const methodLookup = new nodes.LookupVal(
-      node.lineno,
-      node.colno,
-      handlerSymbol,
-      new nodes.Literal(node.lineno, node.colno, '__restoreGuardState')
-    );
-    const snapshotLookup = new nodes.LookupVal(
-      node.lineno,
-      node.colno,
-      this._makeCompilerInternalSymbol(snapshotsVarName, node),
-      new nodes.Literal(node.lineno, node.colno, handlerName)
-    );
-    const args = new nodes.NodeList(node.lineno, node.colno, [snapshotLookup]);
-    const call = new nodes.FunCall(node.lineno, node.colno, methodLookup, args);
-    const outputCommandNode = new nodes.OutputCommand(node.lineno, node.colno, call);
-    outputCommandNode.isCompilerInternal = true;
-    return outputCommandNode;
-  }
-
-  _buildGuardRecoveryIfNode({ guardErrorVarName, snapshotHandlers, guardSnapshotsVar, recoveryBody, errorVar, node }) {
-    const guardErrorSymbol = new nodes.Symbol(node.lineno, node.colno, guardErrorVarName);
-    const cond = new nodes.Compare(
-      node.lineno,
-      node.colno,
-      guardErrorSymbol,
-      [new nodes.CompareOperand(node.lineno, node.colno, new nodes.Literal(node.lineno, node.colno, null), '!=')]
-    );
-
-    const bodyChildren = [];
-
-    if (guardSnapshotsVar) {
-      snapshotHandlers.forEach((handlerName) => {
-        bodyChildren.push(this._buildGuardRestoreOutputCommandNode(handlerName, guardSnapshotsVar, node));
-      });
-    }
-
-    if (recoveryBody) {
-      if (errorVar) {
-        const errorTargets = [new nodes.Symbol(node.lineno, node.colno, errorVar)];
-        const errorAssign = new nodes.Set(
-          node.lineno,
-          node.colno,
-          errorTargets,
-          new nodes.Symbol(node.lineno, node.colno, guardErrorVarName),
-          'declaration'
-        );
-        bodyChildren.push(errorAssign);
-      }
-      recoveryBody.children.forEach((child) => bodyChildren.push(child));
-    }
-
-    const ifBody = new nodes.NodeList(node.lineno, node.colno, bodyChildren);
-    return new nodes.If(node.lineno, node.colno, cond, ifBody, null);
   }
 
   _getGuardedOutputNames(usedOutputs, guardTargets, frame) {

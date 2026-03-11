@@ -503,11 +503,175 @@ function addDynamicExtendsSetup(ast, opts) {
   });
 }
 
+function _buildSequentialPathNode(lockName, node, isRepair) {
+  const parts = (lockName || '').split('!').filter(Boolean);
+  if (parts.length === 0) {
+    throw new Error(`Invalid sequence lock name "${lockName}"`);
+  }
+
+  let pathNode = new nodes.Symbol(node.lineno, node.colno, parts[0]);
+  if (parts.length === 1) {
+    pathNode.sequential = true;
+    if (isRepair) {
+      pathNode.sequentialRepair = true;
+    }
+    return pathNode;
+  }
+
+  for (let i = 1; i < parts.length; i++) {
+    const key = new nodes.Literal(node.lineno, node.colno, parts[i]);
+    pathNode = new nodes.LookupVal(node.lineno, node.colno, pathNode, key);
+  }
+
+  pathNode.sequential = true;
+  if (isRepair) {
+    pathNode.sequentialRepair = true;
+  }
+  return pathNode;
+}
+
+function _makeCompilerInternalSymbol(name, node, makeCompilerInternalSymbol) {
+  if (typeof makeCompilerInternalSymbol === 'function') {
+    return makeCompilerInternalSymbol(name, node);
+  }
+  const symbol = new nodes.Symbol(node.lineno, node.colno, name);
+  symbol.isCompilerInternal = true;
+  return symbol;
+}
+
+function _buildGuardErrorSetNode(guardErrorVarName, guardErrorTargets, node) {
+  const targetSymbol = new nodes.Symbol(node.lineno, node.colno, guardErrorVarName);
+  const targets = [targetSymbol];
+
+  if (!Array.isArray(guardErrorTargets) || guardErrorTargets.length === 0) {
+    return new nodes.Set(
+      node.lineno,
+      node.colno,
+      targets,
+      new nodes.Literal(node.lineno, node.colno, null),
+      'declaration'
+    );
+  }
+
+  const mergeFn = new nodes.Symbol(node.lineno, node.colno, '_mergeErrors');
+  const args = guardErrorTargets.map((name) => {
+    const targetNode = (name && name.charAt(0) === '!')
+      ? _buildSequentialPathNode(name, node, false)
+      : new nodes.Symbol(node.lineno, node.colno, name);
+    return new nodes.PeekError(node.lineno, node.colno, targetNode);
+  });
+  const argList = new nodes.NodeList(node.lineno, node.colno, args);
+  const mergeCall = new nodes.FunCall(node.lineno, node.colno, mergeFn, argList);
+  return new nodes.Set(node.lineno, node.colno, targets, mergeCall, 'declaration');
+}
+
+function _buildGuardSequenceRepairNode(lockName, node) {
+  const repairTarget = _buildSequentialPathNode(lockName, node, true);
+  return new nodes.Do(node.lineno, node.colno, [repairTarget]);
+}
+
+function _buildGuardRestoreOutputCommandNode(handlerName, snapshotsVarName, node, makeCompilerInternalSymbol) {
+  const handlerSymbol = new nodes.Symbol(node.lineno, node.colno, handlerName);
+  const methodLookup = new nodes.LookupVal(
+    node.lineno,
+    node.colno,
+    handlerSymbol,
+    new nodes.Literal(node.lineno, node.colno, '__restoreGuardState')
+  );
+  const snapshotLookup = new nodes.LookupVal(
+    node.lineno,
+    node.colno,
+    _makeCompilerInternalSymbol(snapshotsVarName, node, makeCompilerInternalSymbol),
+    new nodes.Literal(node.lineno, node.colno, handlerName)
+  );
+  const args = new nodes.NodeList(node.lineno, node.colno, [snapshotLookup]);
+  const call = new nodes.FunCall(node.lineno, node.colno, methodLookup, args);
+  const outputCommandNode = new nodes.OutputCommand(node.lineno, node.colno, call);
+  outputCommandNode.isCompilerInternal = true;
+  return outputCommandNode;
+}
+
+function _buildGuardRecoveryIfNode({
+  guardErrorVarName,
+  snapshotHandlers,
+  guardSnapshotsVar,
+  recoveryBody,
+  errorVar,
+  node,
+  makeCompilerInternalSymbol
+}) {
+  const guardErrorSymbol = new nodes.Symbol(node.lineno, node.colno, guardErrorVarName);
+  const cond = new nodes.Compare(
+    node.lineno,
+    node.colno,
+    guardErrorSymbol,
+    [new nodes.CompareOperand(node.lineno, node.colno, new nodes.Literal(node.lineno, node.colno, null), '!=')]
+  );
+
+  const bodyChildren = [];
+
+  if (guardSnapshotsVar) {
+    snapshotHandlers.forEach((handlerName) => {
+      bodyChildren.push(_buildGuardRestoreOutputCommandNode(handlerName, guardSnapshotsVar, node, makeCompilerInternalSymbol));
+    });
+  }
+
+  if (recoveryBody) {
+    if (errorVar) {
+      const errorTargets = [new nodes.Symbol(node.lineno, node.colno, errorVar)];
+      const errorAssign = new nodes.Set(
+        node.lineno,
+        node.colno,
+        errorTargets,
+        new nodes.Symbol(node.lineno, node.colno, guardErrorVarName),
+        'declaration'
+      );
+      bodyChildren.push(errorAssign);
+    }
+    recoveryBody.children.forEach((child) => bodyChildren.push(child));
+  }
+
+  const ifBody = new nodes.NodeList(node.lineno, node.colno, bodyChildren);
+  return new nodes.If(node.lineno, node.colno, cond, ifBody, null);
+}
+
+function buildGuardLoweringAst({
+  guardErrorVarName,
+  guardErrorTargets,
+  resolvedSequenceTargets,
+  snapshotHandlers,
+  guardSnapshotsVar,
+  recoveryBody,
+  errorVar,
+  node,
+  makeCompilerInternalSymbol
+}) {
+  const guardErrorSetNode = _buildGuardErrorSetNode(guardErrorVarName, guardErrorTargets, node);
+  const sequenceRepairNodes = Array.isArray(resolvedSequenceTargets)
+    ? resolvedSequenceTargets.map((lockName) => _buildGuardSequenceRepairNode(lockName, node))
+    : [];
+  const recoveryIfNode = _buildGuardRecoveryIfNode({
+    guardErrorVarName,
+    snapshotHandlers,
+    guardSnapshotsVar,
+    recoveryBody,
+    errorVar,
+    node,
+    makeCompilerInternalSymbol
+  });
+  return {
+    guardErrorSetNode,
+    sequenceRepairNodes,
+    recoveryIfNode
+  };
+}
+
 // var parser = require('./parser');
 // var src = 'hello {% foo %}{% endfoo %} end';
 // var ast = transform(parser.parse(src, [new FooExtension()]), ['bar']);
 // nodes.printNodes(ast);
 
 module.exports = {
-  transform: transform
+  transform: transform,
+  buildGuardLoweringAst: buildGuardLoweringAst
 };
