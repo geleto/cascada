@@ -467,9 +467,8 @@ class Compiler extends CompilerBase {
       this.fail('call_assign is only supported in script mode', node.lineno, node.colno, node);
     }
 
-    // Reuse the existing Set compilation path.
-    const setNode = new nodes.Set(node.lineno, node.colno, node.targets, node.value, node.varType);
-    return this.compileSet(setNode, frame);
+    // Reuse the existing Set compilation path without creating synthetic AST nodes.
+    return this.compileSet(node, frame);
   }
 
   compileAsyncVarSet(node, frame) {
@@ -2217,19 +2216,14 @@ class Compiler extends CompilerBase {
     this.emit.line(');');
 
     if (outputType === 'var' && node.initializer) {
-      const callName = new nodes.Symbol(node.lineno, node.colno, name);
-      const callArgs = new nodes.NodeList(
-        node.initializer.lineno || node.lineno,
-        node.initializer.colno || node.colno,
-        [node.initializer]
-      );
-      callArgs.isAsync = !!node.initializer.isAsync;
-      const callNode = new nodes.FunCall(node.lineno, node.colno, callName, callArgs);
-      callNode.isAsync = !!node.initializer.isAsync;
-
-      const initCommandNode = new nodes.OutputCommand(node.lineno, node.colno, callNode);
-      initCommandNode.isAsync = !!node.initializer.isAsync;
-      this.buffer.compileOutputCommand(initCommandNode, frame);
+      const initNode = node.initializer;
+      const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
+      const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
+      this.buffer.asyncAddValueToBuffer(initNode, frame, function (resultVar, f) {
+        this.emit(`${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: [`);
+        this._compileExpression(initNode, f, true, initNode);
+        this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} })`);
+      }, initNode, name);
     }
   }
 
