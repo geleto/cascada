@@ -319,14 +319,6 @@ class CompilerBase extends Obj {
     }
   }
 
-  _getObservedOutputNameFromAnalysis(node) {
-    const analysis = node && node._analysis ? node._analysis : null;
-    if (analysis && analysis.observedOutputName) {
-      return analysis.observedOutputName;
-    }
-    return null;
-  }
-
   _assertAnalysisParity(node, kind, analysisValue, compileValue) {
     if (!node || !node._analysis) {
       return;
@@ -337,6 +329,52 @@ class CompilerBase extends Obj {
       analysisValue: analysisValue === undefined ? null : analysisValue,
       compileValue: compileValue === undefined ? null : compileValue
     });
+  }
+
+  _getAnalysis(node) {
+    return node && node._analysis ? node._analysis : null;
+  }
+
+  _resolveAnalysisFact(node, factKey, kind, compileValue) {
+    const analysis = this._getAnalysis(node);
+    if (!analysis) {
+      return { hasAnalysis: false, value: compileValue };
+    }
+    const analysisValue = analysis[factKey] || null;
+    this._assertAnalysisParity(node, kind, analysisValue, compileValue);
+    return { hasAnalysis: true, value: analysisValue };
+  }
+
+  _assertSymbolFactsParity(node, frame, name, declaredOutput) {
+    if (!this.asyncMode || node.lockKey) {
+      return;
+    }
+    const analysis = this._getAnalysis(node);
+    const facts = analysis && analysis.symbolFacts ? analysis.symbolFacts : null;
+    if (!facts || (!facts.lockKey && !facts.outputName)) {
+      return;
+    }
+    const actualLockKey = node.lockKey && this._isSequencePathLockDeclared(frame, node.lockKey)
+      ? node.lockKey
+      : null;
+    const actualOutputName = (declaredOutput && !this._isDeclared(frame, name))
+      ? name
+      : null;
+    this._assertAnalysisParity(node, 'Symbol.symbolFacts', facts, {
+      lockKey: actualLockKey,
+      outputName: actualOutputName
+    });
+  }
+
+  _resolveObservedOutput(node, targetNode, frame, kind) {
+    const analysis = this._getAnalysis(node);
+    if (!analysis) {
+      return this._getObservedOutputName(targetNode, frame);
+    }
+    const analysisOutput = analysis.observedOutputName || null;
+    const analysisScopeDetectedOutput = this._detectObservedOutputNameFromAnalysisScope(node, targetNode);
+    this._assertAnalysisParity(node, kind, analysisOutput, analysisScopeDetectedOutput);
+    return analysisOutput;
   }
 
   _detectObservedOutputNameFromAnalysisScope(node, targetNode) {
@@ -360,17 +398,26 @@ class CompilerBase extends Obj {
       return true;
     }
 
+    let visibleLockKey = null;
+    let visibleOutputName = null;
+
     if (node.lockKey && analysisPass._isOutputDeclaredInVisibleScopes(analysis, node.lockKey)) {
+      visibleLockKey = node.lockKey;
       analysisPass.registerOutputUsage(analysis, node.lockKey, state);
       if (node.sequentialRepair) {
         analysisPass.registerOutputMutation(analysis, node.lockKey, state);
       }
-      return true;
     }
 
     if (analysisPass._isOutputDeclaredInVisibleScopes(analysis, name)) {
+      visibleOutputName = name;
       analysisPass.registerOutputUsage(analysis, name, state);
     }
+
+    analysis.symbolFacts = {
+      lockKey: visibleLockKey,
+      outputName: visibleOutputName
+    };
 
     return true;
   }
@@ -385,6 +432,7 @@ class CompilerBase extends Obj {
       return;
     }
     const declaredOutput = this.async._getDeclaredOutput(frame, name);
+    this._assertSymbolFactsParity(node, frame, name, declaredOutput);
     if (declaredOutput && !this._isDeclared(frame, name)) {
       if (node.sequential || node.sequentialRepair) {
         this.fail(
@@ -630,14 +678,7 @@ class CompilerBase extends Obj {
     // Ensure failMsg is properly escaped for embedding in the generated string
 
     if (testName === 'error' && this.asyncMode) {
-      const hasAnalysis = !!(node && node._analysis);
-      const outputName = hasAnalysis
-        ? this._getObservedOutputNameFromAnalysis(node)
-        : this._getObservedOutputName(node.left, frame);
-      if (hasAnalysis) {
-        const compileDetectedOutput = this._detectObservedOutputNameFromAnalysisScope(node, node.left);
-        this._assertAnalysisParity(node, 'Is(error).observedOutputName', outputName, compileDetectedOutput);
-      }
+      const outputName = this._resolveObservedOutput(node, node.left, frame, 'Is(error).observedOutputName');
       if (outputName) {
         this.buffer.emitAddIsError(frame, outputName, node.left);
         return;
@@ -780,14 +821,7 @@ class CompilerBase extends Obj {
 
   compilePeekError(node, frame) {
     if (this.asyncMode) {
-      const hasAnalysis = !!(node && node._analysis);
-      const outputName = hasAnalysis
-        ? this._getObservedOutputNameFromAnalysis(node)
-        : this._getObservedOutputName(node.target, frame);
-      if (hasAnalysis) {
-        const compileDetectedOutput = this._detectObservedOutputNameFromAnalysisScope(node, node.target);
-        this._assertAnalysisParity(node, 'PeekError.observedOutputName', outputName, compileDetectedOutput);
-      }
+      const outputName = this._resolveObservedOutput(node, node.target, frame, 'PeekError.observedOutputName');
       if (outputName) {
         this.buffer.emitAddGetError(frame, outputName, node.target);
         return;
@@ -927,16 +961,19 @@ class CompilerBase extends Obj {
   compileLookupVal(node, frame) {
     if (node.isAsync) {
       if (this.scriptMode) {
-        const lookupFacts = node && node._analysis ? node._analysis : null;
-        const hasAnalysis = !!(node && node._analysis);
-        const analysisLookup = lookupFacts && lookupFacts.sequenceLookup ? lookupFacts.sequenceLookup : null;
+        const hasAnalysis = !!this._getAnalysis(node);
         const compileLookup = this.analysis.detectSequenceOutputLookup(node, (name) => {
           return hasAnalysis
             ? this.analysis.getVisibleOutputDeclarationFromNode(node, name)
             : this.async._getDeclaredOutput(frame, name);
         });
-        this._assertAnalysisParity(node, 'LookupVal.sequenceLookup', analysisLookup, compileLookup);
-        const lookupToCompile = hasAnalysis ? analysisLookup : compileLookup;
+        const resolvedLookup = this._resolveAnalysisFact(
+          node,
+          'sequenceLookup',
+          'LookupVal.sequenceLookup',
+          compileLookup
+        );
+        const lookupToCompile = resolvedLookup.value;
         if (lookupToCompile) {
           const { outputName, propertyName, subpath } = lookupToCompile;
           this.buffer.emitAddSequenceGet(frame, outputName, propertyName, subpath, node);
@@ -1037,16 +1074,19 @@ class CompilerBase extends Obj {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
 
     if (this.asyncMode) {
-      const analysis = node && node._analysis ? node._analysis : null;
-      const hasAnalysis = !!(node && node._analysis);
-      const analysisCallFacts = analysis && analysis.specialOutputCall ? analysis.specialOutputCall : null;
       const compileCallFacts = this.analysis.detectSpecialOutputCall(node, (name) => {
+        const hasAnalysis = !!this._getAnalysis(node);
         return hasAnalysis
           ? this.analysis.getVisibleOutputDeclarationFromNode(node, name)
           : this.async._getDeclaredOutput(frame, name);
       });
-      this._assertAnalysisParity(node, 'FunCall.specialOutputCall', analysisCallFacts, compileCallFacts);
-      const callFactsToCompile = hasAnalysis ? analysisCallFacts : compileCallFacts;
+      const resolvedCallFacts = this._resolveAnalysisFact(
+        node,
+        'specialOutputCall',
+        'FunCall.specialOutputCall',
+        compileCallFacts
+      );
+      const callFactsToCompile = resolvedCallFacts.value;
 
       if (this._compileSpecialOutputFunCallFromFacts(node, frame, callFactsToCompile)) {
         return;

@@ -8,7 +8,8 @@
 const nodes = require('../nodes');
 const {
   validateOutputCommandScope,
-  validateOutputObservationCall
+  validateOutputObservationCall,
+  validateAnalysisParity
 } = require('./validation');
 const OUTPUT_COMMAND_CLASS = {
   data: 'DataCommand',
@@ -124,6 +125,20 @@ class CompileBuffer {
     const isObservationCall = isCallNode &&
       !subpath &&
       (command === 'snapshot' || command === 'isError' || command === 'getError');
+    if (node && node._analysis && node._analysis.outputCommandFacts) {
+      validateAnalysisParity(this.compiler, {
+        node,
+        kind: 'OutputCommand.outputCommandFacts',
+        analysisValue: node._analysis.outputCommandFacts,
+        compileValue: {
+          handler,
+          isCallNode: !!isCallNode,
+          command: command || null,
+          subpath: subpath || [],
+          isObservation: !!isObservationCall
+        }
+      });
+    }
 
     validateOutputCommandScope(this.compiler, {
       frame,

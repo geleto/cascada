@@ -2248,6 +2248,13 @@ class Compiler extends CompilerBase {
     const isObservation = callNode &&
       path.length === 2 &&
       (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError' || path[1] === '__checkpoint');
+    analysis.outputCommandFacts = {
+      handler,
+      isCallNode: !!callNode,
+      command: path.length >= 2 ? path[path.length - 1] : null,
+      subpath: path.length > 2 ? path.slice(1, -1) : [],
+      isObservation
+    };
     if (!isObservation) {
       analysisPass.registerOutputMutation(analysis, handler, state);
     }
