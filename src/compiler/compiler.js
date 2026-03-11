@@ -342,22 +342,7 @@ class Compiler extends CompilerBase {
 
   analyzeSet(node, analysis, _ctx, analysisPass, state) {
     this._markAnalysisScope(analysis, { createScope: !!node.body });
-    if (node.varType === 'declaration') {
-      analysis.declarationTargetFields = ['targets'];
-    }
-    if (node.varType !== 'declaration') {
-      return false;
-    }
-    const targets = Array.isArray(node.targets) ? node.targets : [];
-    targets.forEach((target) => {
-      if (target instanceof nodes.Symbol) {
-        analysisPass.registerOutputDeclaration(analysis, target.value, {
-          type: 'var',
-          initializer: null,
-          node
-        }, state);
-      }
-    });
+    this._analyzeVarLikeDeclarationTargets(node, analysis, analysisPass, state);
     return true;
   }
 
@@ -453,11 +438,16 @@ class Compiler extends CompilerBase {
 
   analyzeCallAssign(node, analysis, _ctx, analysisPass, state) {
     this._markAnalysisScope(analysis, { createScope: !!node.body });
+    this._analyzeVarLikeDeclarationTargets(node, analysis, analysisPass, state);
+    return true;
+  }
+
+  _analyzeVarLikeDeclarationTargets(node, analysis, analysisPass, state) {
     if (node.varType === 'declaration') {
       analysis.declarationTargetFields = ['targets'];
     }
     if (node.varType !== 'declaration') {
-      return false;
+      return;
     }
     const targets = Array.isArray(node.targets) ? node.targets : [];
     targets.forEach((target) => {
@@ -469,7 +459,6 @@ class Compiler extends CompilerBase {
         }, state);
       }
     });
-    return true;
   }
 
   compileCallAssign(node, frame) {
@@ -1257,16 +1246,19 @@ class Compiler extends CompilerBase {
     }
   }
 
-  analyzeIf(node, analysis) {
+  _analyzeIfScope(node, analysis) {
+    void node;
     this._markAnalysisScope(analysis);
     analysis.scopedChildFields = ['body', 'else_'];
     return true;
   }
 
+  analyzeIf(node, analysis) {
+    return this._analyzeIfScope(node, analysis);
+  }
+
   analyzeIfAsync(node, analysis) {
-    this._markAnalysisScope(analysis);
-    analysis.scopedChildFields = ['body', 'else_'];
-    return true;
+    return this._analyzeIfScope(node, analysis);
   }
 
   _analyzeLoopNodeDeclarations(node, analysis, analysisPass, state) {
@@ -1950,7 +1942,14 @@ class Compiler extends CompilerBase {
 
     if (this.asyncMode) {
       // NEW: Pre-declaration pass
-      const sequenceLocks = this.sequential.collectSequenceLocks(node);
+      const analysisSequenceLocks = (node && node._analysis && Array.isArray(node._analysis.sequenceLocks))
+        ? node._analysis.sequenceLocks
+        : [];
+      const discoveredSequenceLocks = this.sequential.collectSequenceLocks(node);
+      const sequenceLocks = Array.from(new Set([
+        ...analysisSequenceLocks,
+        ...discoveredSequenceLocks
+      ]));
       this.sequential.preDeclareSequenceLocks(frame, sequenceLocks);
       this.async.propagateIsAsync(node);
       // this.sequential._declareSequentialLocks(node, frame); // Old logic removed
@@ -2248,13 +2247,6 @@ class Compiler extends CompilerBase {
     const isObservation = callNode &&
       path.length === 2 &&
       (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError' || path[1] === '__checkpoint');
-    analysis.outputCommandFacts = {
-      handler,
-      isCallNode: !!callNode,
-      command: path.length >= 2 ? path[path.length - 1] : null,
-      subpath: path.length > 2 ? path.slice(1, -1) : [],
-      isObservation
-    };
     if (!isObservation) {
       analysisPass.registerOutputMutation(analysis, handler, state);
     }
