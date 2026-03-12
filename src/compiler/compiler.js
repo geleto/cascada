@@ -17,6 +17,7 @@ const CompileAsync = require('./compile-async');
 const CompileInheritance = require('./compile-inheritance');
 const CompileLoop = require('./compile-loop');
 const CompileBuffer = require('./compile-buffer');
+const CompileAnalysis = require('./compile-analysis');
 const CompilerBase = require('./compiler-base');
 
 class Compiler extends CompilerBase {
@@ -36,6 +37,8 @@ class Compiler extends CompilerBase {
     this.inheritance = new CompileInheritance(this);
     this.loop = new CompileLoop(this);
     this.buffer = new CompileBuffer(this);
+    this.analysis = new CompileAnalysis(this);
+    this.analysisState = null;
   }
 
 
@@ -401,9 +404,7 @@ class Compiler extends CompilerBase {
       this.fail('call_assign is only supported in script mode', node.lineno, node.colno, node);
     }
 
-    // Reuse the existing Set compilation path.
-    const setNode = new nodes.Set(node.lineno, node.colno, node.targets, node.value, node.varType);
-    return this.compileSet(setNode, frame);
+    return this.compileSet(node, frame);
   }
 
   compileAsyncVarSet(node, frame) {
@@ -1892,19 +1893,14 @@ class Compiler extends CompilerBase {
     this.emit.line(');');
 
     if (outputType === 'var' && node.initializer) {
-      const callName = new nodes.Symbol(node.lineno, node.colno, name);
-      const callArgs = new nodes.NodeList(
-        node.initializer.lineno || node.lineno,
-        node.initializer.colno || node.colno,
-        [node.initializer]
-      );
-      callArgs.isAsync = !!node.initializer.isAsync;
-      const callNode = new nodes.FunCall(node.lineno, node.colno, callName, callArgs);
-      callNode.isAsync = !!node.initializer.isAsync;
-
-      const initCommandNode = new nodes.OutputCommand(node.lineno, node.colno, callNode);
-      initCommandNode.isAsync = !!node.initializer.isAsync;
-      this.buffer.compileOutputCommand(initCommandNode, frame);
+      const initNode = node.initializer;
+      const lineno = initNode.lineno !== undefined ? initNode.lineno : node.lineno;
+      const colno = initNode.colno !== undefined ? initNode.colno : node.colno;
+      this.buffer.asyncAddValueToBuffer(initNode, frame, function (resultVar, f) {
+        this.emit(`${resultVar} = new runtime.ValueCommand({ handler: '${name}', args: [`);
+        this._compileExpression(initNode, f, true, initNode);
+        this.emit(`], pos: {lineno: ${lineno}, colno: ${colno}} })`);
+      }, initNode, name);
     }
   }
 
@@ -1938,12 +1934,18 @@ module.exports = {
 
       const processedSrc = preprocessors.reduce((s, processor) => processor(s), src);
 
-      c.compile(transformer.transform(
+      const ast = transformer.transform(
         parser.parse(processedSrc, extensions, opts),
         asyncFilters,
         name,
         compileOptions
-      ));
+      );
+      if (c.asyncMode) {
+        c.analysisState = c.analysis.run(ast);
+      } else {
+        c.analysisState = null;
+      }
+      c.compile(ast);
       return c.getCode();
     });
   },

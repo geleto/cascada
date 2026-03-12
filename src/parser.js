@@ -328,7 +328,7 @@ class Parser extends Obj {
       this.fail('parseCallAssign: expected var or set', tok ? tok.lineno : callTok.lineno, tok ? tok.colno : callTok.colno);
     }
 
-    const node = new nodes.CallAssign(callTok.lineno, callTok.colno, [], null, varType);
+    const node = new nodes.CallAssign(callTok.lineno, callTok.colno, [], null, null, varType, null);
 
     // Parse targets up to '='
     let target;
@@ -627,7 +627,7 @@ class Parser extends Obj {
       this.fail(`parseSet: expected ${tagName}`, tag.lineno, tag.colno);
     }
 
-    const node = new nodes.Set(tag.lineno, tag.colno, [], null, varType);
+    const node = new nodes.Set(tag.lineno, tag.colno, [], null, null, varType, null);
 
     let target;
     while ((target = this.parsePrimary())) {
@@ -671,7 +671,7 @@ class Parser extends Obj {
       this.fail('parseSet: expected set_path', tag.lineno, tag.colno);
     }
 
-    const node = new nodes.Set(tag.lineno, tag.colno, [], null, 'assignment');
+    const node = new nodes.Set(tag.lineno, tag.colno, [], null, null, 'assignment', null);
 
     // Parse target (single target for now as paths imply specific object update)
     const target = this.parsePrimary();
@@ -698,7 +698,7 @@ class Parser extends Obj {
       this.fail(`${errorPrefix}: expected ${tagName}`, tag.lineno, tag.colno);
     }
 
-    const node = new nodes.Set(tag.lineno, tag.colno, [], null, varType);
+    const node = new nodes.Set(tag.lineno, tag.colno, [], null, null, varType, null);
 
     let target;
     while ((target = this.parsePrimary())) {

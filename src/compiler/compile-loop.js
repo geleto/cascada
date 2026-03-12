@@ -28,25 +28,25 @@ class CompileLoop {
       this.compiler.emit.line(`let ${arrVarName} = runtime.whileIterator();`);
     };
 
-    const fakeForNode = new nodes.For(
-      node.lineno, node.colno,
-      new nodes.Symbol(node.lineno, node.colno, 'while_iterator_placeholder'), //arr
-      new nodes.Symbol(node.lineno, node.colno, 'iterationCount'), //name
-      node.body, //body
-      null //else
-    );
-    fakeForNode.isAsync = true;
-    fakeForNode.loopRuntimeName = node.loopRuntimeName;
-
-    // Delegate to _compileFor, passing the condition node to be injected into the body
-    this._compileFor(fakeForNode, frame, true, iteratorCompiler, node.cond);
+    this._compileFor(node, frame, {
+      sequentialLoopBody: true,
+      iteratorCompiler,
+      whileConditionNode: node.cond,
+      loopVarNames: ['iterationCount'],
+      sourcePositionNode: node.cond
+    });
   }
 
   compileFor(node, frame) {
-    this._compileFor(node, frame, false);
+    this._compileFor(node, frame);
   }
 
-  _compileFor(node, frame, sequentialLoopBody = false, iteratorCompiler = null, whileConditionNode = null) {
+  _compileFor(node, frame, options = {}) {
+    const sequentialLoopBody = !!options.sequentialLoopBody;
+    const iteratorCompiler = options.iteratorCompiler || null;
+    const whileConditionNode = options.whileConditionNode || null;
+    const loopVarNames = Array.isArray(options.loopVarNames) ? options.loopVarNames : null;
+    const sourcePositionNode = options.sourcePositionNode || node.arr;
     const useLoopValues = node.isAsync;
     if (useLoopValues && !node.loopRuntimeName) {
       this.compiler.fail(
@@ -56,13 +56,13 @@ class CompileLoop {
         node
       );
     }
-    const forResult = this.compiler.buffer.asyncBufferNode(node, frame, true, false, node.arr, (blockFrame) => {
+    const forResult = this.compiler.buffer.asyncBufferNode(node, frame, true, false, sourcePositionNode, (blockFrame) => {
       // Evaluate the array expression
       const arr = this.compiler._tmpid();
 
       if (iteratorCompiler) {
         // Gets the `{ "var": 1 }` style counts from compileWhile.
-        iteratorCompiler(node.arr, blockFrame, arr);
+        iteratorCompiler(sourcePositionNode, blockFrame, arr);
       } else {
         // Loop source expression is control-flow input, not iteration-body work.
         // Keep it out of the loop body's own waited output tracking scope.
@@ -97,7 +97,12 @@ class CompileLoop {
         }
       };
 
-      if (node.name instanceof nodes.Array) {
+      if (loopVarNames) {
+        loopVarNames.forEach((name) => {
+          loopVars.push(name);
+          registerLoopVarBinding(name);
+        });
+      } else if (node.name instanceof nodes.Array) {
         node.name.children.forEach((child) => {
           const name = child.value;
           loopVars.push(name);
@@ -123,7 +128,8 @@ class CompileLoop {
         sequentialLoopBody,
         hasConcurrentLimit,
         whileConditionNode,
-        useLoopValues
+        useLoopValues,
+        loopVarNames
       );
 
       // Compile else block and collect metadata
@@ -167,7 +173,7 @@ class CompileLoop {
     frame = forResult.frame;
   }
 
-  _compileLoopBody(node, frame, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, useLoopValues = false) {
+  _compileLoopBody(node, frame, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, useLoopValues = false, loopVarNames = null) {
     const bodyCreatesScope = this.compiler.scriptMode || this.compiler.asyncMode;
     if (node.isAsync) {
       this.compiler.emit('(async function(');
@@ -218,7 +224,7 @@ class CompileLoop {
           loopVars.forEach((varName) => {
             this._emitLoopVarIterationBinding(node, varName, varName, bodyFrame, useLoopValues);
           });
-        } else if (node.name instanceof nodes.Array) {
+        } else if (!loopVarNames && node.name instanceof nodes.Array) {
           // Single variable destructuring: for [a] in arr
           // Runtime passes the item as-is (e.g. array), we destructure locally
           // Note: loopVars.length is 1 here
@@ -231,7 +237,7 @@ class CompileLoop {
 
         } else {
           // Single variable loop (Symbol)
-          const varName = node.name.value;
+          const varName = loopVarNames ? loopVars[0] : node.name.value;
           this._emitLoopVarIterationBinding(node, varName, varName, bodyFrame, useLoopValues);
         }
 
@@ -430,7 +436,7 @@ class CompileLoop {
 
   _compileAsyncLoop(node, frame, parallel) {
     if (node.isAsync) {
-      this._compileFor(node, frame, !parallel);
+      this._compileFor(node, frame, { sequentialLoopBody: !parallel });
       return;
     }
     // This shares some code with the For tag, but not enough to

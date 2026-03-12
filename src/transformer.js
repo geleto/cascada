@@ -292,11 +292,6 @@ function rewriteImplicitLoopSymbol(ast, idPool) {
       return;
     }
 
-    // Set/CallAssign capture bodies are on `.body` but not included in `fields`.
-    if ((node instanceof nodes.Set || node instanceof nodes.CallAssign) && node.body) {
-      rewrite(node.body, activeLoopSymbol);
-    }
-
     node.fields.forEach((field) => {
       rewrite(node[field], activeLoopSymbol);
     });
@@ -472,10 +467,7 @@ function addDynamicExtendsSetup(ast, opts) {
   // 1. Inject the initial parent-template binding.
   const target = new nodes.Symbol(0, 0, '__parentTemplate');
   const value = new nodes.Literal(0, 0, null);
-  const declarationNode = new nodes.Set(0, 0, [target], value);
-  declarationNode.varType = !opts.scriptMode
-    ? 'declaration'
-    : 'declaration';
+  const declarationNode = new nodes.Set(0, 0, [target], value, null, 'declaration', null);
   ast.children.unshift(declarationNode);
 
   // 2. Rewrite every dynamic `Extends` node into a `NodeList` of [Extends, Set].
@@ -491,10 +483,7 @@ function addDynamicExtendsSetup(ast, opts) {
       const setValue = new nodes.Symbol(node.lineno, node.colno, tempVar);
       setValue.isCompilerInternal = true; // This is the crucial link!
 
-      const setNode = new nodes.Set(node.lineno, node.colno, [setTarget], setValue);
-      setNode.varType = !opts.scriptMode
-        ? 'assignment'
-        : 'assignment';
+      const setNode = new nodes.Set(node.lineno, node.colno, [setTarget], setValue, null, 'assignment', null);
 
       // C. Replace the original Extends node with a list of the two new nodes.
       return new nodes.NodeList(node.lineno, node.colno, [node, setNode]);

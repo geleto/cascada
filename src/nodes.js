@@ -234,14 +234,22 @@ class Include extends Node {
 
 class Set extends Node {
   get typename() { return 'Set'; }
-  get fields() { return ['targets', 'value', 'varType']; }
+  get fields() { return ['targets', 'value', 'body', 'varType', 'path']; }
+
+  init(lineno, colno, targets, value, body, varType, path) {
+    super.init(lineno, colno, targets, value, body, varType, path);
+  }
 }
 
 // Internal node emitted by the ScriptTranspiler via the `call_assign` tag.
 // Represents a call block whose result is assigned to a variable (declaration or assignment).
 class CallAssign extends Node {
   get typename() { return 'CallAssign'; }
-  get fields() { return ['targets', 'value', 'varType']; }
+  get fields() { return ['targets', 'value', 'body', 'varType', 'path']; }
+
+  init(lineno, colno, targets, value, body, varType, path) {
+    super.init(lineno, colno, targets, value, body, varType, path);
+  }
 }
 
 class OutputDeclaration extends Node {
