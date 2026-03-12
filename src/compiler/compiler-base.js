@@ -322,6 +322,39 @@ class CompilerBase extends Obj {
     }
   }
 
+  analyzeSymbol(node, analysisPass) {
+    if (node._analysis?.declarationTarget || node.isCompilerInternal) {
+      return {};
+    }
+    const name = node.value;
+
+    const uses = [];
+    const mutates = [];
+    // @todo move node.lockKey production into the analysis pass.
+    // node.sequential / node.sequentialRepair should remain parser-provided flags.
+    if (node.lockKey) {
+      uses.push(node.lockKey);
+      if (node.sequentialRepair) {
+        mutates.push(node.lockKey);
+      }
+    } else {
+      const potentialSequencePath = this.sequential._extractStaticPathKey(node);
+      const hasDeclaredSequencePath = !!(
+        potentialSequencePath &&
+        analysisPass.getVisibleOutputDeclarationFromNode(node, potentialSequencePath)
+      );
+      if (hasDeclaredSequencePath) {
+        uses.push(potentialSequencePath);
+      }
+    }
+
+    if (analysisPass.isOutputDeclaredInVisibleScopesFromNode(node, name)) {
+      uses.push(name);
+    }
+
+    return { uses, mutates };
+  }
+
   compileSymbol(node, frame) {
 
     let name = node.value;
@@ -764,9 +797,42 @@ class CompilerBase extends Obj {
 
       node.ops.forEach((op) => {
         this.emit(` ${compareOps[op.type]} `);
-        this.compile(op.expr, frame);
+      this.compile(op.expr, frame);
       });
     }
+  }
+
+  analyzeLookupVal(node, analysisPass) {
+    const uses = [];
+    const mutates = [];
+    // @todo move node.lockKey production into the analysis pass.
+    // node.sequential / node.sequentialRepair should remain parser-provided flags.
+    if (node.lockKey) {
+      uses.push(node.lockKey);
+      if (node.sequentialRepair) {
+        mutates.push(node.lockKey);
+      }
+    } else {
+      const potentialSequencePath = this.sequential._extractStaticPathKey(node);
+      const hasDeclaredSequencePath = !!(
+        potentialSequencePath &&
+        analysisPass.getVisibleOutputDeclarationFromNode(node, potentialSequencePath)
+      );
+      if (hasDeclaredSequencePath) {
+        uses.push(potentialSequencePath);
+      }
+    }
+
+    if (this.scriptMode) {
+      const lookupFacts = this.analysis.detectSequenceOutputLookup(node, (name) => {
+        return analysisPass.getVisibleOutputDeclarationFromNode(node, name);
+      });
+      if (lookupFacts) {
+        uses.push(lookupFacts.outputName);
+      }
+    }
+
+    return { uses, mutates };
   }
 
   compileLookupVal(node, frame) {
@@ -838,6 +904,29 @@ class CompilerBase extends Obj {
     this.emit('),');
     this.compile(node.val, frame);
     this.emit(')');
+  }
+
+  analyzeFunCall(node, analysisPass) {
+    const uses = [];
+    const mutates = [];
+    const sequenceLockKey = node.lockKey || this.sequential._getSequenceKey(node.name);
+    if (sequenceLockKey) {
+      uses.push(sequenceLockKey);
+      mutates.push(sequenceLockKey);
+      return { uses, mutates };
+    }
+
+    const callFacts = this.analysis.detectSpecialOutputCall(node, (name) => {
+      return analysisPass.getVisibleOutputDeclarationFromNode(node, name);
+    });
+    if (callFacts) {
+      uses.push(callFacts.outputName);
+      if (!callFacts.isObservation) {
+        mutates.push(callFacts.outputName);
+      }
+    }
+
+    return { uses, mutates };
   }
 
   compileFunCall(node, frame) {
@@ -1064,6 +1153,13 @@ class CompilerBase extends Obj {
     this.emit('runtime.makeKeywordArgs(');
     this.compileDict(node, frame);
     this.emit(')');
+  }
+
+  analyzeCaller(node) {
+    return {
+      createScope: true,
+      scopeBoundary: true
+    };
   }
 
   compileCaller(node, frame) {
