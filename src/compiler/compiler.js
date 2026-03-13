@@ -1089,8 +1089,10 @@ class Compiler extends CompilerBase {
         this.emit('');
         this.emit('}');  // No re-throw - execution continues with poisoned vars
 
-        trueBranchHandlers = new Set(blockFrame.usedOutputs ? Array.from(blockFrame.usedOutputs) : []);
-        falseBranchHandlers = new Set();
+        trueBranchHandlers = new Set(this._getAnalysisRuntimeOutputNames(node.body, blockFrame, 'usedOutputs'));
+        falseBranchHandlers = node.else_
+          ? new Set(this._getAnalysisRuntimeOutputNames(node.else_, blockFrame, 'usedOutputs'))
+          : new Set();
         allHandlers = new Set([...trueBranchHandlers, ...falseBranchHandlers]);
 
         // Fill in the poison handling code for handlers when condition fails.
