@@ -330,25 +330,15 @@ class CompilerBase extends Obj {
 
     const uses = [];
     const mutates = [];
-    // @todo move node.lockKey production into the analysis pass.
-    // node.sequential / node.sequentialRepair should remain parser-provided flags.
-    if (node.lockKey) {
-      uses.push(node.lockKey);
-      if (node.sequentialRepair) {
-        mutates.push(node.lockKey);
-      }
-    } else {
-      const potentialSequencePath = this.sequential._extractStaticPathKey(node);
-      const hasDeclaredSequencePath = !!(
-        potentialSequencePath &&
-        analysisPass.getVisibleOutputDeclarationFromNode(node, potentialSequencePath)
-      );
-      if (hasDeclaredSequencePath) {
-        uses.push(potentialSequencePath);
+    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+    if (sequenceLockLookup) {
+      uses.push(sequenceLockLookup.key);
+      if (sequenceLockLookup.repair) {
+        mutates.push(sequenceLockLookup.key);
       }
     }
 
-    if (analysisPass.isOutputDeclaredInVisibleScopesFromNode(node, name)) {
+    if (analysisPass.getDeclaration(node, name)) {
       uses.push(name);
     }
 
@@ -403,8 +393,9 @@ class CompilerBase extends Obj {
 
     // Not in template scope, check context/frame with potential sequence lock
     if (this.asyncMode) {
-      let nodeStaticPathKey = node.lockKey;//this.sequential._extractStaticPathKey(node);
-      if (nodeStaticPathKey && this._isSequencePathLockDeclared(frame, nodeStaticPathKey)) {
+      const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+      const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
+      if (nodeStaticPathKey) {
         this._assertSequenceRootIsContextPath(frame, nodeStaticPathKey, node);
         // This node accesses a declared sequence lock path.
         // Register the static path key as variable write so the next lock would wait for it
@@ -413,13 +404,13 @@ class CompilerBase extends Obj {
         // emit a terminal marker so follow-up accesses can skip redundant lock plumbing.
 
         this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
-        if (node.sequentialRepair) {
+        if (sequenceLockLookup.repair) {
           this.buffer.registerOutputMutation(frame, nodeStaticPathKey);
         }
         if (this.scriptMode) {
-          this.emit(`runtime.sequentialContextLookupScriptValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
+          this.emit(`runtime.sequentialContextLookupScriptValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         } else {
-          this.emit(`runtime.sequentialContextLookupValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
+          this.emit(`runtime.sequentialContextLookupValue(context, frame, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         }
         return;
       }
@@ -797,7 +788,7 @@ class CompilerBase extends Obj {
 
       node.ops.forEach((op) => {
         this.emit(` ${compareOps[op.type]} `);
-      this.compile(op.expr, frame);
+        this.compile(op.expr, frame);
       });
     }
   }
@@ -805,56 +796,62 @@ class CompilerBase extends Obj {
   analyzeLookupVal(node, analysisPass) {
     const uses = [];
     const mutates = [];
-    // @todo move node.lockKey production into the analysis pass.
-    // node.sequential / node.sequentialRepair should remain parser-provided flags.
-    if (node.lockKey) {
-      uses.push(node.lockKey);
-      if (node.sequentialRepair) {
-        mutates.push(node.lockKey);
-      }
-    } else {
-      const potentialSequencePath = this.sequential._extractStaticPathKey(node);
-      const hasDeclaredSequencePath = !!(
-        potentialSequencePath &&
-        analysisPass.getVisibleOutputDeclarationFromNode(node, potentialSequencePath)
-      );
-      if (hasDeclaredSequencePath) {
-        uses.push(potentialSequencePath);
+    let sequenceOutputLookup = null;
+    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+    if (sequenceLockLookup) {
+      uses.push(sequenceLockLookup.key);
+      if (sequenceLockLookup.repair) {
+        mutates.push(sequenceLockLookup.key);
       }
     }
 
     if (this.scriptMode) {
-      const lookupFacts = this.analysis.detectSequenceOutputLookup(node, (name) => {
-        return analysisPass.getVisibleOutputDeclarationFromNode(node, name);
-      });
+      const sequencePath = this.sequential._extractStaticPath(node);
+      const lookupFacts =
+        sequencePath && sequencePath.length >= 2
+          ? (() => {
+            const outputName = sequencePath[0];
+            const outputDecl = analysisPass.getDeclaration(node, outputName);
+            const propertyName = sequencePath[sequencePath.length - 1];
+            if (!outputDecl || outputDecl.type !== 'sequence' || propertyName === 'snapshot') {
+              return null;
+            }
+            return {
+              outputName,
+              propertyName,
+              subpath: sequencePath.slice(1, -1)
+            };
+          })()
+          : null;
       if (lookupFacts) {
         uses.push(lookupFacts.outputName);
+        sequenceOutputLookup = lookupFacts;
       }
     }
 
-    return { uses, mutates };
+    return { uses, mutates, sequenceOutputLookup };
   }
 
   compileLookupVal(node, frame) {
     if (node.isAsync) {
-      if (this.scriptMode) {
-        const sequencePath = this.sequential._extractStaticPath(node);
-        if (sequencePath && sequencePath.length >= 2) {
-          const outputDecl = this.async._getDeclaredOutput(frame, sequencePath[0]);
-          const propertyName = sequencePath[sequencePath.length - 1];
-          if (outputDecl && outputDecl.type === 'sequence' && propertyName !== 'snapshot') {
-            const subpath = sequencePath.slice(1, -1);
-            this.buffer.emitAddSequenceGet(frame, sequencePath[0], propertyName, subpath, node);
-            return;
-          }
-        }
+      const sequenceOutputLookup = node._analysis && node._analysis.sequenceOutputLookup;
+      if (this.scriptMode && sequenceOutputLookup) {
+        this.buffer.emitAddSequenceGet(
+          frame,
+          sequenceOutputLookup.outputName,
+          sequenceOutputLookup.propertyName,
+          sequenceOutputLookup.subpath,
+          node
+        );
+        return;
       }
 
       // Handle both sequential and standard lookups.
 
       // Check if this is a sequential lookup (marked with `!`).
-      let nodeStaticPathKey = node.lockKey; // this.sequential._extractStaticPathKey(node);
-      if (nodeStaticPathKey && this._isSequencePathLockDeclared(frame, nodeStaticPathKey)) {
+      const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+      const nodeStaticPathKey = sequenceLockLookup && sequenceLockLookup.key;
+      if (nodeStaticPathKey) {
         this._assertSequenceRootIsContextPath(frame, nodeStaticPathKey, node);
         // This is a sequential lookup.
         // Register the static path key as a variable write so the next lock waits for it.
@@ -863,7 +860,7 @@ class CompilerBase extends Obj {
         // Create the error context and pass it to the runtime function.
         const errorContextJson = JSON.stringify(this._createErrorContext(node));
         this.buffer.registerOutputUsage(frame, nodeStaticPathKey);
-        if (node.sequentialRepair) {
+        if (sequenceLockLookup.repair) {
           this.buffer.registerOutputMutation(frame, nodeStaticPathKey);
         }
         if (this.scriptMode) {
@@ -874,7 +871,7 @@ class CompilerBase extends Obj {
         this.compile(node.target, frame); // Compile the object being accessed.
         this.emit('),');
         this.compile(node.val, frame); // Compile the property/key expression.
-        this.emit(`, "${nodeStaticPathKey}", ${errorContextJson}, ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
+        this.emit(`, "${nodeStaticPathKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         return;
       }
 
@@ -909,24 +906,53 @@ class CompilerBase extends Obj {
   analyzeFunCall(node, analysisPass) {
     const uses = [];
     const mutates = [];
-    const sequenceLockKey = node.lockKey || this.sequential._getSequenceKey(node.name);
-    if (sequenceLockKey) {
-      uses.push(sequenceLockKey);
-      mutates.push(sequenceLockKey);
+    let specialOutputCall = null;
+    const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+    if (sequenceLockLookup) {
+      uses.push(sequenceLockLookup.key);
+      mutates.push(sequenceLockLookup.key);
       return { uses, mutates };
     }
 
-    const callFacts = this.analysis.detectSpecialOutputCall(node, (name) => {
-      return analysisPass.getVisibleOutputDeclarationFromNode(node, name);
-    });
+    const callFacts =
+      this.asyncMode &&
+      this.scriptMode &&
+      node &&
+      node.name &&
+      !(node._analysis && node._analysis.sequenceLockLookup)
+        ? (() => {
+          const sequencePath = this.sequential._extractStaticPath(node.name);
+          if (!sequencePath || sequencePath.length < 2) {
+            return null;
+          }
+
+          const outputName = sequencePath[0];
+          const outputDecl = analysisPass.getDeclaration(node, outputName);
+          if (!outputDecl) {
+            return null;
+          }
+
+          const methodName = sequencePath[sequencePath.length - 1];
+          return {
+            outputName,
+            outputType: outputDecl.type,
+            methodName,
+            subpath: sequencePath.slice(1, -1),
+            isObservation:
+                sequencePath.length === 2 &&
+                (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError' || methodName === '__checkpoint')
+          };
+        })()
+        : null;
     if (callFacts) {
       uses.push(callFacts.outputName);
       if (!callFacts.isObservation) {
         mutates.push(callFacts.outputName);
       }
+      specialOutputCall = callFacts;
     }
 
-    return { uses, mutates };
+    return { uses, mutates, specialOutputCall };
   }
 
   compileFunCall(node, frame) {
@@ -943,7 +969,8 @@ class CompilerBase extends Obj {
         return;
       }
 
-      const sequenceLockKey = node.lockKey;//this.sequential._getSequenceKey(node.name, frame);
+      const sequenceLockLookup = node._analysis && node._analysis.sequenceLockLookup;
+      const sequenceLockKey = sequenceLockLookup && sequenceLockLookup.key;
       if (sequenceLockKey) {
         let index = sequenceLockKey.indexOf('!', 1);
         const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
@@ -960,7 +987,7 @@ class CompilerBase extends Obj {
         this.compile(node.name, frame);
         this.emit(`, "${funcName}", context, `);
         this._compileAggregate(node.args, frame, '[', ']', false, false);
-        this.emit(`, frame, "${sequenceLockKey}", ${errorContextJson}, ${!!node.sequentialRepair}, ${this.buffer.currentBuffer})`);
+        this.emit(`, frame, "${sequenceLockKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
         return;
       }
       // Function name is dynamic, so resolve both function and arguments.
@@ -990,37 +1017,19 @@ class CompilerBase extends Obj {
     if (!this.scriptMode) {
       return false;
     }
-
-    const sequencePath = this.sequential._extractStaticPath(node.name);
-    if (!sequencePath || sequencePath.length < 2) {
+    const specialOutputCall = node._analysis && node._analysis.specialOutputCall;
+    if (!specialOutputCall) {
       return false;
     }
-
-    const outputName = sequencePath[0];
-    const outputDecl = this.async._getDeclaredOutput(frame, outputName);
-    if (!outputDecl) {
-      return false;
-    }
-    if (outputDecl.type === 'var') {
+    if (specialOutputCall.outputType === 'var') {
       // Var should behave like a normal value in expressions:
       // implicit var read first, then regular member/method access.
       return false;
     }
-
-    const methodName = sequencePath[sequencePath.length - 1];
-    if (this._compileOutputObservationFunCall(node, frame, outputDecl, outputName, methodName, sequencePath)) {
+    if (this._compileOutputObservationFunCall(node, frame, specialOutputCall)) {
       return true;
     }
-
-    return this._compileSequenceOutputFunCall(node, frame, outputDecl, outputName, methodName, sequencePath);
-  }
-
-  _isSequencePathLockDeclared(frame, lockKey) {
-    if (!lockKey) {
-      return false;
-    }
-    const decl = this.async._getDeclaredOutput(frame, lockKey);
-    return !!(decl && decl.type === 'sequential_path');
+    return this._compileSequenceOutputFunCall(node, frame, specialOutputCall);
   }
 
   _assertSequenceRootIsContextPath(frame, lockKey, node) {
@@ -1038,36 +1047,44 @@ class CompilerBase extends Obj {
     }
   }
 
-  _compileOutputObservationFunCall(node, frame, outputDecl, outputName, methodName, sequencePath) {
-    if (sequencePath.length !== 2) {
+  _compileOutputObservationFunCall(node, frame, specialOutputCall) {
+    if (specialOutputCall.subpath.length !== 0) {
       return false;
     }
-
-    validateSinkSnapshotInGuard(this, { node, command: methodName, outputType: outputDecl.type });
-    if (methodName === 'snapshot') {
-      this.buffer.emitAddSnapshot(frame, outputName, node);
+    validateSinkSnapshotInGuard(this, {
+      node,
+      command: specialOutputCall.methodName,
+      outputType: specialOutputCall.outputType
+    });
+    if (specialOutputCall.methodName === 'snapshot') {
+      this.buffer.emitAddSnapshot(frame, specialOutputCall.outputName, node);
       return true;
     }
-    if (methodName === 'isError') {
-      this.buffer.emitAddIsError(frame, outputName, node);
+    if (specialOutputCall.methodName === 'isError') {
+      this.buffer.emitAddIsError(frame, specialOutputCall.outputName, node);
       return true;
     }
-    if (methodName === 'getError') {
-      this.buffer.emitAddGetError(frame, outputName, node);
+    if (specialOutputCall.methodName === 'getError') {
+      this.buffer.emitAddGetError(frame, specialOutputCall.outputName, node);
       return true;
     }
     return false;
   }
 
-  _compileSequenceOutputFunCall(node, frame, outputDecl, outputName, methodName, sequencePath) {
-    if (outputDecl.type !== 'sequence' || methodName === 'snapshot') {
+  _compileSequenceOutputFunCall(node, frame, specialOutputCall) {
+    if (specialOutputCall.outputType !== 'sequence' || specialOutputCall.methodName === 'snapshot') {
       return false;
     }
-
-    const subpath = sequencePath.slice(1, -1);
     this._compileAggregate(node.args, frame, '[', ']', false, false, function (resolvedArgs) {
       this.emit('return ');
-      this.buffer.emitAddSequenceCall(frame, outputName, methodName, subpath, resolvedArgs, node);
+      this.buffer.emitAddSequenceCall(
+        frame,
+        specialOutputCall.outputName,
+        specialOutputCall.methodName,
+        specialOutputCall.subpath,
+        resolvedArgs,
+        node
+      );
       this.emit(';');
     });
     return true;
@@ -1156,9 +1173,17 @@ class CompilerBase extends Obj {
   }
 
   analyzeCaller(node) {
+    const declares = [{ name: 'caller', type: 'var', initializer: null }];
+    node.args.children.forEach((arg) => {
+      if (arg instanceof nodes.Symbol) {
+        arg._analysis = { declarationTarget: true };
+        declares.push({ name: arg.value, type: 'var', initializer: null });
+      }
+    });
     return {
       createScope: true,
-      scopeBoundary: true
+      scopeBoundary: false,
+      declares
     };
   }
 

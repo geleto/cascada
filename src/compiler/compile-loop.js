@@ -48,14 +48,6 @@ class CompileLoop {
     const loopVarNames = Array.isArray(options.loopVarNames) ? options.loopVarNames : null;
     const sourcePositionNode = options.sourcePositionNode || node.arr;
     const useLoopValues = node.isAsync;
-    if (useLoopValues && !node.loopRuntimeName) {
-      this.compiler.fail(
-        'Internal compiler error: missing loopRuntimeName for async loop value bindings.',
-        node.lineno,
-        node.colno,
-        node
-      );
-    }
     const forResult = this.compiler.buffer.asyncBufferNode(node, frame, true, false, sourcePositionNode, (blockFrame) => {
       // Evaluate the array expression
       const arr = this.compiler._tmpid();
@@ -117,11 +109,9 @@ class CompileLoop {
       const loopBodyFuncId = this.compiler._tmpid();
       this.compiler.emit(`let ${loopBodyFuncId} = `);
 
-      const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body, blockFrame) : null;
-
       //compile the loop body function
       const hasConcurrentLimit = Boolean(node.concurrentLimit);
-      this._compileLoopBody(
+      const bodyFrame = this._compileLoopBody(
         node,
         blockFrame,
         loopVars,
@@ -131,6 +121,7 @@ class CompileLoop {
         useLoopValues,
         loopVarNames
       );
+      const bodyHandlers = node.isAsync ? new Set(bodyFrame.usedOutputs ? Array.from(bodyFrame.usedOutputs) : []) : null;
 
       // Compile else block and collect metadata
       let elseFuncId = 'null';
@@ -140,8 +131,8 @@ class CompileLoop {
         elseFuncId = this.compiler._tmpid();
         this.compiler.emit(`let ${elseFuncId} = `);
 
-        this._compileLoopElse(node, blockFrame, sequentialLoopBody);
-        elseHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.else_, blockFrame) : null;
+        const elseFrame = this._compileLoopElse(node, blockFrame, sequentialLoopBody);
+        elseHandlers = node.isAsync ? new Set(elseFrame.usedOutputs ? Array.from(elseFrame.usedOutputs) : []) : null;
       }
 
       // Build asyncOptions code string if in async mode
@@ -206,8 +197,10 @@ class CompileLoop {
         loopVars.forEach((name) => {
           this._declareLoopValueOutput(bodyFrame, name, node);
         });
-        // Internal metadata binding for rewritten loop symbol (e.g. loop#3).
-        this._declareLoopValueOutput(bodyFrame, node.loopRuntimeName, node, undefined, true);
+        if (node.loopRuntimeName) {
+          // Internal metadata binding for rewritten loop symbol (e.g. loop#3).
+          this._declareLoopValueOutput(bodyFrame, node.loopRuntimeName, node, undefined, true);
+        }
       }
       if (limitedWaitedOutputName) {
         this.compiler._addDeclaredOutput(bodyFrame, limitedWaitedOutputName, 'var', null, node);
@@ -289,7 +282,7 @@ class CompileLoop {
 
         if (whileConditionNode) {
           if (catchPoisonPos !== null) {
-            const bodyHandlers = node.isAsync ? this.compiler.buffer.collectBranchHandlers(node.body, bodyFrame) : null;
+            const bodyHandlers = node.isAsync ? new Set(bodyFrame.usedOutputs ? Array.from(bodyFrame.usedOutputs) : []) : null;
             if (bodyHandlers && bodyHandlers.size > 0) {
               for (const handler of bodyHandlers) {
                 this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addPoison(contextualError, "${handler}");`);
@@ -381,7 +374,9 @@ class CompileLoop {
     loopVars.forEach((name) => {
       this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${name}", "var", context, null);`);
     });
-    this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
+    if (node.loopRuntimeName) {
+      this.compiler.emit.line(`runtime.declareOutput(frame, ${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
+    }
   }
 
   _emitLoopValueAssignment(node, outputName, valueExpr, frame) {
@@ -395,7 +390,9 @@ class CompileLoop {
   _emitLoopBindings(node, loopVars, loopIndex, loopLength, isLast, frame, useLoopValues) {
     if (useLoopValues) {
       this._emitLoopValueDeclarations(node, loopVars);
-      this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame);
+      if (node.loopRuntimeName) {
+        this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast, frame);
+      }
       return;
     }
     this.compiler.emit.line(`runtime.setLoopBindings(frame, ${loopIndex}, ${loopLength}, ${isLast});`);
@@ -494,7 +491,7 @@ class CompileLoop {
           if (this.compiler.asyncMode) {
             this.compiler.emit.line(`${buf}.markFinishedAndPatchLinks();`);
           }
-        });
+        }, undefined, node.body);
       } else {
         this.compiler.compile(node.body, frame);
 

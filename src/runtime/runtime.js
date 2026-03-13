@@ -131,8 +131,9 @@ function linkWithParentCompositionBuffer(parentBuffer, childBuffer, handlers, pr
   }
   for (let i = 0; i < handlers.length; i++) {
     const handler = handlers[i];
-    if (presenceMap.has(handler)) {
-      parentBuffer.addBuffer(childBuffer, handler);
+    const resolvedHandler = childBuffer._resolveHandlerName(handler);
+    if (presenceMap.has(resolvedHandler)) {
+      parentBuffer.addBuffer(childBuffer, resolvedHandler);
     }
   }
 }

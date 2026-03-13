@@ -55,9 +55,12 @@ module.exports = class CompileEmit {
   }
 
   beginEntryFunction(node, name, frame = null) {
+    const rootTextOutputName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
+      ? node._analysis.textOutput
+      : DEFAULT_TEMPLATE_TEXT_OUTPUT;
     this.compiler.buffer.currentBuffer = 'output';
     this.compiler.buffer.currentTextOutputVer = 'output_textOutputVar';
-    this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode ? null : DEFAULT_TEMPLATE_TEXT_OUTPUT;
+    this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode ? null : rootTextOutputName;
     this.compiler.buffer.currentWaitedOutputName = null;
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
@@ -110,7 +113,9 @@ module.exports = class CompileEmit {
     this.line('}');
     this.compiler.buffer.currentBuffer = null;
     this.compiler.buffer.currentTextOutputVer = null;
-    this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode ? null : DEFAULT_TEMPLATE_TEXT_OUTPUT;
+    this.compiler.buffer.currentTextOutputName = this.compiler.scriptMode
+      ? null
+      : (((node && node._analysis && node._analysis.textOutput)));
     this.compiler.buffer.currentWaitedOutputName = null;
   }
 
@@ -123,7 +128,7 @@ module.exports = class CompileEmit {
   // Managed block for non-astate paths (scope/frame + optional scope-root buffer).
   // If createScopeRootBuffer=true, this is a sanctioned scope-root buffer creation
   // site. The callback body is compiled between initialization and caller-managed finalization.
-  managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined) {
+  managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined, analysisNode = null) {
     let nextFrame = frame;
     if (createScope) {
       this.line('frame = frame.push();');
@@ -158,17 +163,13 @@ module.exports = class CompileEmit {
     }
 
     if (createScopeRootBuffer && parentBufferId) {
-      const used = nextFrame && nextFrame.usedOutputs
-        ? Array.from(nextFrame.usedOutputs)
-        : [];
-      const declared = nextFrame && nextFrame.declaredOutputs
-        ? nextFrame.declaredOutputs
-        : null;
+      const used = this.compiler._getAnalysisRuntimeOutputNames(analysisNode, nextFrame, 'usedOutputs');
+      const declared = new Set(this.compiler._getAnalysisRuntimeDeclaredOutputNames(analysisNode, nextFrame));
       const foreignUsed = used.filter((name) => {
         if (name === this.compiler.buffer.currentTextOutputName) {
           return false;
         }
-        return !(declared && declared.has(name));
+        return !declared.has(name);
       });
       if (foreignUsed.length > 0) {
         // Use the shared runtime prelink helper to keep boundary-linking behavior
@@ -221,7 +222,7 @@ module.exports = class CompileEmit {
       }
       this.asyncClosureDepth--;
       this.line('}');
-      const asyncMetaArg = this.getAsyncBlockArgs(frame);
+      const asyncMetaArg = this.getAsyncBlockArgs(node, frame);
       const resolvedParentBufferArg = parentBufferArg || this.compiler.buffer.currentBuffer || 'null';
       const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
       this.line(`, runtime, frame, ${asyncMetaArg}, ${resolvedParentBufferArg}, ${createOutputBufferArg}, cb, ${hasConcurrencyLimit})`);
@@ -276,7 +277,7 @@ module.exports = class CompileEmit {
       this.line('}');
 
       this.line('}');
-      const asyncMetaArg = this.getAsyncBlockArgs(frame);
+      const asyncMetaArg = this.getAsyncBlockArgs(node, frame);
       const createOutputBufferArg = createOutputBuffer ? 'true' : 'false';
       // Capture compilation may temporarily point compiler.currentBuffer at
       // the async callback parameter ("currentBuffer") so body writes target
@@ -298,7 +299,7 @@ module.exports = class CompileEmit {
     if (!node.isAsync) {
       const { bufferId: id } = this.managedBlock(frame, false, true, (blockFrame) => {
         innerBodyFunction.call(this.compiler, blockFrame);
-      });
+      }, undefined, node);
       if (this.compiler.asyncMode) {
         this.line(`${id}.markFinishedAndPatchLinks();`);
       }
@@ -364,7 +365,7 @@ module.exports = class CompileEmit {
     }
     this.line(`  return ${id};`);
     this.line('}');
-    const asyncMetaArg = this.getAsyncBlockArgs(frame);
+    const asyncMetaArg = this.getAsyncBlockArgs(node, frame);
     // asyncBlockRender materializes its own text snapshot and returns it to the caller.
     // Linking this temporary render buffer into the parent text stream would duplicate
     // content (once via parent traversal, once via returned snapshot).
@@ -381,10 +382,26 @@ module.exports = class CompileEmit {
 
   // @todo - optimize this:
   // similar for writes we can do some optimizations
-  getAsyncBlockArgs(frame) {
-    const outputArgs = frame.usedOutputs && frame.usedOutputs.size > 0
-      ? JSON.stringify(Array.from(frame.usedOutputs))
-      : 'null';
+  getAsyncBlockArgs(node, frame) {
+    const usedOutputs = this.compiler._getAnalysisRuntimeOutputNames(node, frame, 'usedOutputs');
+    if (frame && frame.usedOutputs) {
+      frame.usedOutputs.forEach((name) => {
+        if (!usedOutputs.includes(name)) {
+          usedOutputs.push(name);
+        }
+      });
+    }
+    const declaredOutputs = new Set(this.compiler._getAnalysisRuntimeDeclaredOutputNames(node, frame));
+    const linkedOutputs = usedOutputs.filter((name) => {
+      if (name === this.compiler.buffer.currentTextOutputName) {
+        return true;
+      }
+      return !declaredOutputs.has(name);
+    });
+    if (this.compiler.buffer.currentWaitedOutputName) {
+      linkedOutputs.push(this.compiler.buffer.currentWaitedOutputName);
+    }
+    const outputArgs = linkedOutputs.length > 0 ? JSON.stringify(linkedOutputs) : 'null';
     return `({ usedOutputs: ${outputArgs} })`;
   }
 };

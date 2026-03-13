@@ -23,26 +23,59 @@ class CompileAnalysis {
       return null;
     }
 
-    const state = {
-      nodeCount: 0,
-      declarationCount: 0,
-      usageCount: 0,
-      mutationCount: 0
-    };
-
-    this._walk(rootNode, null, null, state);
-    this._finalizeAggregates(rootNode);
-
-    return state;
+    this._annotateSequenceMetadata(rootNode);
+    this._walk(rootNode, null, null);
+    this._finalizeDeclarations(rootNode);
+    this._finalizeOutputUsage(rootNode);
+    return null;
   }
 
-  _walk(node, parentNode, parentField, state) {
+  _annotateSequenceMetadata(rootNode) {
+    if (!this.compiler || !this.compiler.asyncMode || !this.compiler.sequential || !rootNode) {
+      return;
+    }
+
+    const sequenceLocks = Array.from(new Set(this.compiler.sequential.collectSequenceLocks(rootNode)));
+    rootNode._analysis = Object.assign(rootNode._analysis || {}, {
+      sequenceLocks
+    });
+
+    const frame = {
+      declaredOutputs: new Map(),
+      parent: null
+    };
+    sequenceLocks.forEach((lockName) => {
+      if (!lockName) {
+        return;
+      }
+      frame.declaredOutputs.set(lockName, { type: 'sequential_path', initializer: null });
+    });
+
+    this.compiler.sequential._collectSequenceKeysAndOperations(rootNode, frame);
+
+    const nodesList = [];
+    this._collectNodes(rootNode, nodesList);
+    for (let i = 0; i < nodesList.length; i++) {
+      const node = nodesList[i];
+      if (!node || !node.lockKey) {
+        continue;
+      }
+      node._analysis = Object.assign(node._analysis || {}, {
+        sequenceLockLookup: {
+          key: node.lockKey,
+          repair: !!node.sequentialRepair
+        }
+      });
+    }
+  }
+
+  _walk(node, parentNode, parentField) {
     if (!node) {
       return;
     }
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length; i++) {
-        this._walk(node[i], parentNode, parentField, state);
+        this._walk(node[i], parentNode, parentField);
       }
       return;
     }
@@ -50,66 +83,67 @@ class CompileAnalysis {
       return;
     }
 
-    state.nodeCount++;
-
     const analysis = this._ensureAnalysis(node, parentNode, parentField);
-    this._analyzeNode(node, state);
-    this._publishLocalDeclarationsForVisibility(analysis);
+    this._analyzeNode(node);
+    this._registerDeclarations(analysis);
 
     node.fields.forEach((field) => {
       const child = node[field];
-      this._walk(child, node, field, state);
+      this._walk(child, node, field);
     });
 
-    this._finalizeNode(node, state);
+    this._finalizeNode(node);
   }
 
   _ensureAnalysis(node, parentNode, parentField) {
     const parentAnalysis = parentNode && parentNode._analysis ? parentNode._analysis : null;
+    const existingAnalysis = node._analysis || {};
+    const normalizeAnalysisList = (value, name) => {
+      if (value === undefined) {
+        return [];
+      }
+      if (!Array.isArray(value)) {
+        throw new Error(`Invalid _analysis.${name} for ${node.typename}: expected array or undefined`);
+      }
+      return value;
+    };
     node._analysis = Object.assign({
       createScope: false,
       scopeBoundary: false,
       declarationTarget: false,
       parent: parentAnalysis,
-      declares: [],
-      uses: [],
-      mutates: [],
+      textOutput: null,
+      sequenceLocks: existingAnalysis.sequenceLocks || null,
+      sequenceLockLookup: existingAnalysis.sequenceLockLookup || null,
+      declares: normalizeAnalysisList(existingAnalysis.declares, 'declares'),
+      declaresInParent: normalizeAnalysisList(existingAnalysis.declaresInParent, 'declaresInParent'),
+      uses: normalizeAnalysisList(existingAnalysis.uses, 'uses'),
+      mutates: normalizeAnalysisList(existingAnalysis.mutates, 'mutates'),
       declaredOutputs: null,
       usedOutputs: null,
-      mutatedOutputs: null,
-      usedHandlers: null,
-      mutatedHandlers: null
-    }, node._analysis || {});
+      mutatedOutputs: null
+    }, existingAnalysis);
     node._analysis.parent = parentAnalysis;
-    if (!Array.isArray(node._analysis.declares)) {
-      node._analysis.declares = [];
-    }
-    if (!Array.isArray(node._analysis.uses)) {
-      node._analysis.uses = [];
-    }
-    if (!Array.isArray(node._analysis.mutates)) {
-      node._analysis.mutates = [];
-    }
     void parentField;
     return node._analysis;
   }
 
-  _analyzeNode(node, state) {
+  _analyzeNode(node) {
     const analyzerName = `analyze${node.typename}`;
     const analyzer = this.compiler && this.compiler[analyzerName];
     if (typeof analyzer === 'function') {
-      const returned = analyzer.call(this.compiler, node, this, state);
+      const returned = analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
         node._analysis = Object.assign(node._analysis || {}, returned);
       }
     }
   }
 
-  _finalizeNode(node, state) {
+  _finalizeNode(node) {
     const analyzerName = `finalizeAnalyze${node.typename}`;
     const analyzer = this.compiler && this.compiler[analyzerName];
     if (typeof analyzer === 'function') {
-      const returned = analyzer.call(this.compiler, node, this, state);
+      const returned = analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
         node._analysis = Object.assign(node._analysis || {}, returned);
       }
@@ -133,68 +167,11 @@ class CompileAnalysis {
     return [];
   }
 
-  getVisibleOutputDeclarationFromNode(node, name) {
+  getDeclaration(node, name) {
     if (!node || !node._analysis) {
       return null;
     }
-    return this._getVisibleOutputDeclaration(node._analysis, name);
-  }
-
-  detectSpecialOutputCall(node, lookupDeclaredOutput) {
-    if (!this.compiler || !this.compiler.asyncMode || !this.compiler.sequential || !node || !node.name || typeof lookupDeclaredOutput !== 'function') {
-      return null;
-    }
-    if (node.lockKey) {
-      return null;
-    }
-
-    const sequencePath = this.compiler.sequential._extractStaticPath(node.name);
-    if (!sequencePath || sequencePath.length < 2) {
-      return null;
-    }
-
-    const outputName = sequencePath[0];
-    const outputDecl = lookupDeclaredOutput(outputName);
-    if (!outputDecl) {
-      return null;
-    }
-
-    const methodName = sequencePath[sequencePath.length - 1];
-    const isObservation =
-      sequencePath.length === 2 &&
-      (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError' || methodName === '__checkpoint');
-
-    return {
-      outputName,
-      outputType: outputDecl.type,
-      methodName,
-      pathDepth: sequencePath.length,
-      subpath: sequencePath.slice(1, -1),
-      isObservation
-    };
-  }
-
-  detectSequenceOutputLookup(node, lookupDeclaredOutput) {
-    if (!this.compiler || !this.compiler.scriptMode || !this.compiler.sequential || !node || typeof lookupDeclaredOutput !== 'function') {
-      return null;
-    }
-    const sequencePath = this.compiler.sequential._extractStaticPath(node);
-    if (!sequencePath || sequencePath.length < 2) {
-      return null;
-    }
-
-    const outputName = sequencePath[0];
-    const outputDecl = lookupDeclaredOutput(outputName);
-    const propertyName = sequencePath[sequencePath.length - 1];
-    if (!outputDecl || outputDecl.type !== 'sequence' || propertyName === 'snapshot') {
-      return null;
-    }
-
-    return {
-      outputName,
-      propertyName,
-      subpath: sequencePath.slice(1, -1)
-    };
+    return this._getDeclaration(node._analysis, name);
   }
 
   _findScopeOwner(analysis) {
@@ -208,7 +185,7 @@ class CompileAnalysis {
     return analysis;
   }
 
-  _finalizeAggregates(rootNode) {
+  _finalizeDeclarations(rootNode) {
     const nodesList = [];
     this._collectNodes(rootNode, nodesList);
     for (let i = 0; i < nodesList.length; i++) {
@@ -217,10 +194,6 @@ class CompileAnalysis {
         continue;
       }
       analysis.declaredOutputs = null;
-      analysis.usedOutputs = null;
-      analysis.mutatedOutputs = null;
-      analysis.usedHandlers = null;
-      analysis.mutatedHandlers = null;
     }
 
     for (let i = 0; i < nodesList.length; i++) {
@@ -243,30 +216,6 @@ class CompileAnalysis {
             initializer: Object.prototype.hasOwnProperty.call(decl, 'initializer') ? decl.initializer : null
           });
         }
-      }
-
-      const localUses = Array.isArray(analysis.uses) ? analysis.uses : [];
-      for (let j = 0; j < localUses.length; j++) {
-        const name = localUses[j];
-        if (!name) {
-          continue;
-        }
-        owner.usedOutputs = owner.usedOutputs || new Set();
-        owner.usedOutputs.add(name);
-        owner.usedHandlers = owner.usedHandlers || new Set();
-        owner.usedHandlers.add(name);
-      }
-
-      const localMutates = Array.isArray(analysis.mutates) ? analysis.mutates : [];
-      for (let j = 0; j < localMutates.length; j++) {
-        const name = localMutates[j];
-        if (!name) {
-          continue;
-        }
-        owner.mutatedOutputs = owner.mutatedOutputs || new Set();
-        owner.mutatedOutputs.add(name);
-        owner.mutatedHandlers = owner.mutatedHandlers || new Set();
-        owner.mutatedHandlers.add(name);
       }
     }
 
@@ -297,23 +246,34 @@ class CompileAnalysis {
     }
   }
 
-  _publishLocalDeclarationsForVisibility(analysis) {
-    if (!analysis || !Array.isArray(analysis.declares) || analysis.declares.length === 0) {
+  _registerDeclarations(analysis) {
+    if (!analysis) {
       return;
     }
-    const owner = this._findScopeOwner(analysis);
-    owner.declaredOutputs = owner.declaredOutputs || new Map();
-    for (let i = 0; i < analysis.declares.length; i++) {
-      const decl = analysis.declares[i];
-      if (!decl || !decl.name) {
-        continue;
+    const registerDeclares = (declares, owner) => {
+      if (!Array.isArray(declares) || declares.length === 0 || !owner) {
+        return;
       }
-      if (!owner.declaredOutputs.has(decl.name)) {
-        owner.declaredOutputs.set(decl.name, {
-          type: decl.type,
-          initializer: Object.prototype.hasOwnProperty.call(decl, 'initializer') ? decl.initializer : null
-        });
+      owner.declaredOutputs = owner.declaredOutputs || new Map();
+      for (let i = 0; i < declares.length; i++) {
+        const decl = declares[i];
+        if (!decl || !decl.name) {
+          continue;
+        }
+        if (!owner.declaredOutputs.has(decl.name)) {
+          owner.declaredOutputs.set(decl.name, {
+            type: decl.type,
+            initializer: Object.prototype.hasOwnProperty.call(decl, 'initializer') ? decl.initializer : null
+          });
+        }
       }
+    };
+
+    registerDeclares(analysis.declares, this._findScopeOwner(analysis));
+
+    if (Array.isArray(analysis.declaresInParent) && analysis.declaresInParent.length > 0) {
+      const parentOwner = analysis.parent ? this._findScopeOwner(analysis.parent) : null;
+      registerDeclares(analysis.declaresInParent, parentOwner);
     }
   }
 
@@ -336,18 +296,94 @@ class CompileAnalysis {
     });
   }
 
-  _isOutputDeclaredInVisibleScopes(analysis, name) {
-    return !!this._getVisibleOutputDeclaration(analysis, name);
-  }
-
-  isOutputDeclaredInVisibleScopesFromNode(node, name) {
-    if (!node || !node._analysis) {
-      return false;
+  _finalizeOutputUsage(node) {
+    if (!node) {
+      return {
+        usedOutputs: new Set(),
+        mutatedOutputs: new Set()
+      };
     }
-    return this._isOutputDeclaredInVisibleScopes(node._analysis, name);
+    if (Array.isArray(node)) {
+      const aggregate = {
+        usedOutputs: new Set(),
+        mutatedOutputs: new Set()
+      };
+      node.forEach((child) => {
+        const childAggregate = this._finalizeOutputUsage(child);
+        childAggregate.usedOutputs.forEach((name) => aggregate.usedOutputs.add(name));
+        childAggregate.mutatedOutputs.forEach((name) => aggregate.mutatedOutputs.add(name));
+      });
+      return aggregate;
+    }
+    if (!(node instanceof nodes.Node)) {
+      return {
+        usedOutputs: new Set(),
+        mutatedOutputs: new Set()
+      };
+    }
+
+    const analysis = node._analysis || {};
+    const localUses = Array.isArray(analysis.uses) ? analysis.uses : [];
+    const localMutates = Array.isArray(analysis.mutates) ? analysis.mutates : [];
+    const usedOutputs = new Set();
+    const mutatedOutputs = new Set();
+
+    localUses.forEach((name) => {
+      if (!name) {
+        return;
+      }
+      usedOutputs.add(name);
+    });
+    localMutates.forEach((name) => {
+      if (!name) {
+        return;
+      }
+      usedOutputs.add(name);
+      mutatedOutputs.add(name);
+    });
+
+    node.fields.forEach((field) => {
+      const childAggregate = this._finalizeOutputUsage(node[field]);
+      childAggregate.usedOutputs.forEach((name) => usedOutputs.add(name));
+      childAggregate.mutatedOutputs.forEach((name) => mutatedOutputs.add(name));
+    });
+
+    analysis.usedOutputs = usedOutputs.size > 0 ? usedOutputs : null;
+    analysis.mutatedOutputs = mutatedOutputs.size > 0 ? mutatedOutputs : null;
+
+    if (analysis.scopeBoundary) {
+      return {
+        usedOutputs: new Set(),
+        mutatedOutputs: new Set()
+      };
+    }
+
+    const declaredHere = analysis.declaredOutputs instanceof Map ? analysis.declaredOutputs : null;
+    if (!declaredHere || declaredHere.size === 0) {
+      return {
+        usedOutputs,
+        mutatedOutputs
+      };
+    }
+
+    const parentUsedOutputs = new Set(usedOutputs);
+    const parentMutatedOutputs = new Set(mutatedOutputs);
+
+    declaredHere.forEach((_decl, name) => {
+      if (!name) {
+        return;
+      }
+      parentUsedOutputs.delete(name);
+      parentMutatedOutputs.delete(name);
+    });
+
+    return {
+      usedOutputs: parentUsedOutputs,
+      mutatedOutputs: parentMutatedOutputs
+    };
   }
 
-  _getVisibleOutputDeclaration(analysis, name) {
+  _getDeclaration(analysis, name) {
     let current = analysis;
     while (current) {
       if (current.declaredOutputs && current.declaredOutputs.has(name)) {
@@ -355,6 +391,17 @@ class CompileAnalysis {
       }
       if (current.scopeBoundary) {
         break;
+      }
+      current = current.parent;
+    }
+    return null;
+  }
+
+  getCurrentTextOutput(analysis) {
+    let current = analysis;
+    while (current) {
+      if (current.textOutput) {
+        return current.textOutput;
       }
       current = current.parent;
     }

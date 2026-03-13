@@ -215,93 +215,9 @@ function cps(ast, asyncFilters) {
   return convertStatements(liftSuper(liftFilters(ast, asyncFilters)));
 }
 
-function rewriteImplicitLoopSymbol(ast, idPool) {
-  let loopSym = 0;
-  // These fields are evaluated outside the per-iteration body binding:
-  // - arr / concurrentLimit belong to scheduler/control-flow evaluation
-  // - else_ runs when no iteration body executes
-  // They must keep the parent active loop symbol.
-  const LOOP_NON_BODY_FIELDS = ['arr', 'concurrentLimit', 'else_'];
-  function nextLoopSymbol() {
-    // Reuse compiler's per-compilation id pool so generated temporary ids
-    // and loop runtime aliases cannot collide.
-    if (idPool && typeof idPool.next === 'function') {
-      return 'loop#' + idPool.next();
-    }
-    return 'loop#' + (loopSym++);
-  }
-  function targetDeclaresLoop(targetNode) {
-    if (!targetNode) {
-      return false;
-    }
-    if (targetNode instanceof nodes.Symbol) {
-      return targetNode.value === 'loop';
-    }
-    if (targetNode instanceof nodes.Array) {
-      return targetNode.children.some((child) => targetDeclaresLoop(child));
-    }
-    return false;
-  }
-
-  function rewrite(node, activeLoopSymbol) {
-    if (Array.isArray(node)) {
-      node.forEach((child) => rewrite(child, activeLoopSymbol));
-      return;
-    }
-
-    if (!(node instanceof nodes.Node)) {
-      return;
-    }
-
-    if (node instanceof nodes.For || node instanceof nodes.AsyncEach || node instanceof nodes.AsyncAll) {
-      const loopSymbol = nextLoopSymbol();
-      // Persist per-loop runtime symbol on node so compiler/runtime can bind
-      // metadata output without relying on lexical name "loop". The suffix
-      // makes each loop binding canonical and scope-stable.
-      node.loopRuntimeName = loopSymbol;
-      const loopIsShadowedByTarget = targetDeclaresLoop(node.name);
-
-      // Non-body zones execute outside iteration binding and keep parent loop scope.
-      // Do not rewrite declaration targets (`name`): they are bindings, not reads.
-      LOOP_NON_BODY_FIELDS.forEach((field) => {
-        rewrite(node[field], activeLoopSymbol);
-      });
-
-      // Only iteration body executes with this loop binding.
-      // If target declares `loop`, it shadows loop metadata in this scope.
-      rewrite(node.body, loopIsShadowedByTarget ? null : loopSymbol);
-      return;
-    }
-
-    if (node instanceof nodes.While) {
-      const loopSymbol = nextLoopSymbol();
-      node.loopRuntimeName = loopSymbol;
-
-      // Async while compiles condition inside iteration body.
-      rewrite(node.cond, loopSymbol);
-      rewrite(node.body, loopSymbol);
-      return;
-    }
-
-    if (node instanceof nodes.Symbol &&
-      activeLoopSymbol &&
-      node.value === 'loop' &&
-      !node.isCompilerInternal) {
-      // Rewrite user-facing loop metadata symbol to the per-loop runtime symbol.
-      node.value = activeLoopSymbol;
-      return;
-    }
-
-    node.fields.forEach((field) => {
-      rewrite(node[field], activeLoopSymbol);
-    });
-  }
-
-  rewrite(ast, null);
-  return ast;
-}
-
-function rewriteDuplicateDeclarations(ast, idPool) {
+// @todo - do this after analysis, rename both AST nodes and analysis nodes
+// use the analysis data for scoping, etc...!!!
+function renameConflictingDeclarations(ast, idPool) {
   const scopeStack = [new Map()];
   const declarationCounts = new Map();
   const scopeRules = scopeBoundaries;
@@ -429,10 +345,7 @@ function transform(ast, asyncFilters, name, opts) {
   }
   ast = cps(ast, asyncFilters || []);
   if (opts.asyncMode) {
-    ast = rewriteImplicitLoopSymbol(ast, opts && opts.idPool);
-  }
-  if (opts.asyncMode) {
-    ast = rewriteDuplicateDeclarations(ast, opts && opts.idPool);
+    ast = renameConflictingDeclarations(ast, opts && opts.idPool);
   }
   return ast;
 }

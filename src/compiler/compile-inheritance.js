@@ -124,37 +124,30 @@ class CompileInheritance {
   /**
    * Collect canonical runtime handler names that should be prelinked for include composition.
    *
-   * We intentionally include:
-   * - statically tracked used outputs (read/write analysis), and
-   * - declared var outputs visible from the current lexical scope chain.
-   *
-   * Runtime link helper intersects this list with the child's actual output map,
-   * so extra candidates are harmless while preserving conservative coverage.
+   * Include composition snapshots visible declared var outputs by nearest lexical
+   * name. Mirror that here so nested/shadowed loop metadata links only the
+   * currently visible handler lane for each name.
    */
   _collectIncludeLinkCandidates(frame) {
     const candidates = new Set();
-    const textHandler = this.compiler.buffer.currentTextOutputName;
-
-    const addRuntimeName = (name) => {
-      if (!name || name === textHandler) {
-        return;
-      }
-      candidates.add(name);
-    };
+    const visibleNames = new Set();
 
     let cur = frame;
     while (cur) {
-      if (cur.usedOutputs) {
-        for (const name of cur.usedOutputs) {
-          addRuntimeName(name);
-        }
-      }
       if (cur.declaredOutputs) {
         cur.declaredOutputs.forEach((decl, name) => {
-          if (!decl || decl.type !== 'var') {
+          const resolved = this._getRuntimeName(name, decl);
+          if (!resolved) {
             return;
           }
-          addRuntimeName(decl.runtimeName || name);
+          if (visibleNames.has(resolved.naturalName)) {
+            return;
+          }
+          visibleNames.add(resolved.naturalName);
+          const runtimeName = resolved.runtimeName;
+          if (runtimeName) {
+            candidates.add(runtimeName);
+          }
         });
       }
       cur = cur.parent;
@@ -531,6 +524,9 @@ class CompileInheritance {
       // Structural prelinking: attach composed child to parent lanes up front so
       // include-time symbol snapshots do not depend on lookup-time dynamic linking.
       const includeLinkCandidates = this._collectIncludeLinkCandidates(f);
+      includeLinkCandidates.forEach((name) => {
+        this.compiler.buffer.registerOutputUsage(f, name);
+      });
       const parentBufferExpr = this.compiler.buffer.currentBuffer;
       this.compiler.emitLinkWithParentCompositionBuffer(
         includeLinkCandidates,

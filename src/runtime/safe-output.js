@@ -4,12 +4,6 @@ var lib = require('../lib');
 const errors = require('./errors');
 const { CommandBuffer } = require('./command-buffer');
 
-function snapshotTextFromBuffer(buffer, errorContext = null) {
-  const lineno = errorContext && typeof errorContext.lineno === 'number' ? errorContext.lineno : 0;
-  const colno = errorContext && typeof errorContext.colno === 'number' ? errorContext.colno : 0;
-  return buffer.addSnapshot('text', { lineno, colno });
-}
-
 function normalizeBufferValue(val) {
   if (val && typeof val === 'object') {
     if (val instanceof CommandBuffer) {
@@ -28,9 +22,6 @@ function normalizeBufferValue(val) {
 // Snapshot-first materialization for template text values.
 function materializeTemplateTextValue(val, context) {
   val = normalizeBufferValue(val);
-  if (val instanceof CommandBuffer) {
-    return snapshotTextFromBuffer(val, null);
-  }
   if (val && typeof val.finalSnapshot === 'function') {
     return val.finalSnapshot();
   }
@@ -118,9 +109,6 @@ function suppressValueAsync(val, autoescape, errorContext) {
     return val;
   }
 
-  if (val instanceof CommandBuffer) {
-    return snapshotTextFromBuffer(val, errorContext);
-  }
   if (val && typeof val.finalSnapshot === 'function') {
     return val.finalSnapshot();
   }
@@ -197,10 +185,6 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
     }
 
     return suppressValue(val.join(','), autoescape);
-  }
-
-  if (val instanceof CommandBuffer) {
-    return snapshotTextFromBuffer(val, errorContext);
   }
 
   return suppressValue(val, autoescape);

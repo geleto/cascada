@@ -9,8 +9,6 @@ let SinkCommand;
 let CommandBuffer;
 let createOutput;
 let createSinkOutput;
-let materializeTemplateTextValue;
-let suppressValueAsync;
 let createPoison;
 let isPoisonError;
 
@@ -23,8 +21,6 @@ if (typeof require !== 'undefined') {
   CommandBuffer = require('../../src/runtime/runtime').CommandBuffer;
   createOutput = require('../../src/runtime/runtime').createOutput;
   createSinkOutput = require('../../src/runtime/runtime').createSinkOutput;
-  materializeTemplateTextValue = require('../../src/runtime/runtime').materializeTemplateTextValue;
-  suppressValueAsync = require('../../src/runtime/runtime').suppressValueAsync;
   createPoison = require('../../src/runtime/runtime').createPoison;
   isPoisonError = require('../../src/runtime/runtime').isPoisonError;
   expectAsyncError = require('../util').expectAsyncError;
@@ -37,8 +33,6 @@ if (typeof require !== 'undefined') {
   CommandBuffer = nunjucks.runtime.CommandBuffer;
   createOutput = nunjucks.runtime.createOutput;
   createSinkOutput = nunjucks.runtime.createSinkOutput;
-  materializeTemplateTextValue = nunjucks.runtime.materializeTemplateTextValue;
-  suppressValueAsync = nunjucks.runtime.suppressValueAsync;
   createPoison = nunjucks.runtime.createPoison;
   isPoisonError = nunjucks.runtime.isPoisonError;
   expectAsyncError = nunjucks.util.expectAsyncError;
@@ -271,123 +265,6 @@ describe('output.finalSnapshot', function () {
       const second = await output.finalSnapshot();
       expect(first).to.equal('A');
       expect(second).to.equal('A');
-    });
-
-    it('materializeTemplateTextValue should snapshot a child CommandBuffer without waiting for parent finish', async function () {
-      const root = new CommandBuffer(context, null, { parent: null });
-      const child = new CommandBuffer(context, null, { parent: null });
-      const rootFrame = { parent: null };
-      const childFrame = { parent: null };
-
-      // Register text outputs so both buffers can execute text commands.
-      const rootOut = createOutput(rootFrame, root, 'text', context, 'text');
-      const childOut = createOutput(childFrame, child, 'text', context, 'text');
-
-      child.add(new TextCommand({ handler: 'text', args: ['child'], pos: { lineno: 1, colno: 1 } }), 'text');
-      child.markFinishedAndPatchLinks();
-      root.add(child, 'text');
-      root.add(new TextCommand({ handler: 'text', args: ['-root'], pos: { lineno: 1, colno: 2 } }), 'text');
-
-      const timed = Promise.race([
-        Promise.resolve(materializeTemplateTextValue(child, context)),
-        new Promise((resolve) => setTimeout(() => resolve('__timeout__'), 100))
-      ]);
-      const result = await timed;
-      expect(result).to.equal('child');
-
-      // Root is intentionally not finished here; child materialization must
-      // not require parent/root completion.
-      rootOut(''); // touch root output so iterator remains active for finalization
-      const childFinal = await childOut.finalSnapshot();
-      expect(childFinal).to.equal('child');
-    });
-
-    it('suppressValueAsync should materialize Promise<CommandBuffer> without waiting for parent finish', async function () {
-      const root = new CommandBuffer(context, null, { parent: null });
-      const child = new CommandBuffer(context, null, { parent: null });
-      const rootFrame = { parent: null };
-      const childFrame = { parent: null };
-      createOutput(rootFrame, root, 'text', context, 'text');
-      createOutput(childFrame, child, 'text', context, 'text');
-
-      child.add(new TextCommand({ handler: 'text', args: ['branch'], pos: { lineno: 2, colno: 1 } }), 'text');
-      child.markFinishedAndPatchLinks();
-      root.add(child, 'text');
-      root.add(new TextCommand({ handler: 'text', args: ['-tail'], pos: { lineno: 2, colno: 2 } }), 'text');
-
-      const errorContext = { lineno: 2, colno: 1, errorContextString: 'test', path: context.path || null };
-      const timed = Promise.race([
-        Promise.resolve(suppressValueAsync(Promise.resolve(child), false, errorContext)),
-        new Promise((resolve) => setTimeout(() => resolve('__timeout__'), 100))
-      ]);
-
-      const result = await timed;
-      expect(result).to.equal('branch');
-    });
-
-    it('should snapshot one finished child branch even when sibling child is unfinished', async function () {
-      const root = new CommandBuffer(context, null, { parent: null });
-      const a = new CommandBuffer(context, null, { parent: null });
-      const b = new CommandBuffer(context, null, { parent: null });
-      const rootFrame = { parent: null };
-      const aFrame = { parent: null };
-      const bFrame = { parent: null };
-
-      createOutput(rootFrame, root, 'text', context, 'text');
-      createOutput(aFrame, a, 'text', context, 'text');
-      createOutput(bFrame, b, 'text', context, 'text');
-
-      a.add(new TextCommand({ handler: 'text', args: ['A'], pos: { lineno: 3, colno: 1 } }), 'text');
-      a.markFinishedAndPatchLinks();
-      b.add(new TextCommand({ handler: 'text', args: ['B'], pos: { lineno: 3, colno: 2 } }), 'text');
-      // b intentionally not finished.
-
-      root.add(a, 'text');
-      root.add(b, 'text');
-
-      const timed = Promise.race([
-        Promise.resolve(materializeTemplateTextValue(a, context)),
-        new Promise((resolve) => setTimeout(() => resolve('__timeout__'), 100))
-      ]);
-
-      const result = await timed;
-      expect(result).to.equal('A');
-    });
-
-    it('suppressValueAsync should collect rejection errors with mixed array values including CommandBuffer', async function () {
-      const child = new CommandBuffer(context, null, { parent: null });
-      const childFrame = { parent: null };
-      createOutput(childFrame, child, 'text', context, 'text');
-      child.add(new TextCommand({ handler: 'text', args: ['X'], pos: { lineno: 4, colno: 1 } }), 'text');
-      child.markFinishedAndPatchLinks();
-
-      const rejection = Promise.reject(new Error('array-boom'));
-      const errorContext = { lineno: 4, colno: 1, errorContextString: 'array-mix', path: context.path || null };
-      try {
-        await suppressValueAsync([child, rejection, 'tail'], false, errorContext);
-        expect().fail('Should have thrown');
-      } catch (err) {
-        // ensure async error collection path remains deterministic and complete
-        expect(err).to.be.an(Error);
-        expect(err.message).to.contain('array-boom');
-      }
-    });
-
-    it('addSnapshot-driven failures should preserve path metadata', async function () {
-      const bad = new CommandBuffer(context, null, { parent: null });
-      const badFrame = { parent: null };
-      createOutput(badFrame, bad, 'text', context, 'text');
-      bad.add(new TextCommand({ handler: 'text', args: [{ bad: true }], pos: { lineno: 5, colno: 7 } }), 'text');
-      bad.markFinishedAndPatchLinks();
-
-      const errorContext = { lineno: 5, colno: 7, errorContextString: 'bad-text', path: '/snapshot-metadata.njk' };
-      try {
-        await suppressValueAsync(Promise.resolve(bad), false, errorContext);
-        expect().fail('Should have thrown');
-      } catch (err) {
-        expect(err.message).to.contain('[Line 5, Column 7]');
-        expect(err.message).to.contain('Invalid TextCommand argument type');
-      }
     });
 
     it('finalSnapshot should wait for owning output completion', async function () {
@@ -1005,4 +882,3 @@ describe('output.finalSnapshot', function () {
     });
   });
 });
-
