@@ -83,7 +83,7 @@ class CompileAnalysis {
       return;
     }
 
-    const analysis = this._ensureAnalysis(node, parentNode, parentField);
+    const analysis = this._ensureAnalysis(node, parentNode);
     this._analyzeNode(node);
     this._registerDeclarations(analysis);
 
@@ -95,7 +95,7 @@ class CompileAnalysis {
     this._finalizeNode(node);
   }
 
-  _ensureAnalysis(node, parentNode, parentField) {
+  _ensureAnalysis(node, parentNode) {
     const parentAnalysis = parentNode && parentNode._analysis ? parentNode._analysis : null;
     const existingAnalysis = node._analysis || {};
     const normalizeAnalysisList = (value, name) => {
@@ -124,7 +124,6 @@ class CompileAnalysis {
       mutatedOutputs: null
     }, existingAnalysis);
     node._analysis.parent = parentAnalysis;
-    void parentField;
     return node._analysis;
   }
 
@@ -185,6 +184,38 @@ class CompileAnalysis {
     return this._findScopeOwner(analysis);
   }
 
+  getIncludeVisibleVarOutputs(analysis) {
+    const visibleOutputs = [];
+    const visibleNames = new Set();
+    let current = analysis;
+    while (current) {
+      if (current.declaredOutputs) {
+        current.declaredOutputs.forEach((decl, name) => {
+          if (!decl || decl.type !== 'var') {
+            return;
+          }
+          const runtimeName = decl.runtimeName || name;
+          const baseName = this.getBaseOutputName(runtimeName);
+          if (visibleNames.has(baseName)) {
+            return;
+          }
+          visibleNames.add(baseName);
+          visibleOutputs.push({
+            name,
+            decl,
+            runtimeName,
+            baseName
+          });
+        });
+      }
+      if (current.scopeBoundary) {
+        break;
+      }
+      current = current.parent;
+    }
+    return visibleOutputs;
+  }
+
   _findScopeOwner(analysis) {
     let current = analysis;
     while (current) {
@@ -194,6 +225,14 @@ class CompileAnalysis {
       current = current.parent;
     }
     return analysis;
+  }
+
+  getBaseOutputName(runtimeName) {
+    const hashIndex = runtimeName.indexOf('#');
+    if (hashIndex === -1) {
+      return runtimeName;
+    }
+    return runtimeName.slice(0, hashIndex);
   }
 
   _finalizeDeclarations(rootNode) {
@@ -222,10 +261,7 @@ class CompileAnalysis {
         }
         owner.declaredOutputs = owner.declaredOutputs || new Map();
         if (!owner.declaredOutputs.has(decl.name)) {
-          owner.declaredOutputs.set(decl.name, {
-            type: decl.type,
-            initializer: Object.prototype.hasOwnProperty.call(decl, 'initializer') ? decl.initializer : null
-          });
+          owner.declaredOutputs.set(decl.name, this._cloneDeclaration(decl));
         }
       }
     }
@@ -272,10 +308,7 @@ class CompileAnalysis {
           continue;
         }
         if (!owner.declaredOutputs.has(decl.name)) {
-          owner.declaredOutputs.set(decl.name, {
-            type: decl.type,
-            initializer: Object.prototype.hasOwnProperty.call(decl, 'initializer') ? decl.initializer : null
-          });
+          owner.declaredOutputs.set(decl.name, this._cloneDeclaration(decl));
         }
       }
     };
@@ -305,6 +338,16 @@ class CompileAnalysis {
     node.fields.forEach((field) => {
       this._collectNodes(node[field], out);
     });
+  }
+
+  _cloneDeclaration(decl) {
+    return {
+      type: decl.type,
+      initializer: Object.prototype.hasOwnProperty.call(decl, 'initializer') ? decl.initializer : null,
+      internal: !!decl.internal,
+      isLoopMeta: !!decl.isLoopMeta,
+      runtimeName: decl.runtimeName || null
+    };
   }
 
   _finalizeOutputUsage(node) {

@@ -16,93 +16,26 @@ class CompileInheritance {
 	  this.emit = this.compiler.emit;
   }
 
-  _parseCanonicalRuntimeName(runtimeName) {
-    const hashIndex = runtimeName.lastIndexOf('#');
-    if (hashIndex <= 0 || hashIndex === runtimeName.length - 1) {
-      return null;
-    }
-    const suffix = runtimeName.slice(hashIndex + 1);
-    if (!/^\d+$/.test(suffix)) {
-      return null;
-    }
-    return {
-      baseName: runtimeName.slice(0, hashIndex),
-      id: suffix
-    };
-  }
-
-  _getRuntimeName(name, decl) {
-    if (!decl || decl.type !== 'var') {
-      return null;
-    }
-    const runtimeName = decl.runtimeName || name;
-    const parsed = this._parseCanonicalRuntimeName(runtimeName);
-    if (decl.internal && !parsed) {
-      return null;
-    }
-    return {
-      // Include context variables are keyed by natural names.
-      naturalName: parsed ? parsed.baseName : name,
-      runtimeName,
-      // Non-null only for canonical renamed handlers, e.g. "loop#4".
-      canonicalBaseName: parsed ? parsed.baseName : null
-    };
-  }
-
-  _emitDeclaredValueSnapshots(frame, targetVarsVar, positionNode) {
+  _emitDeclaredValueSnapshots(analysis, frame, targetVarsVar, positionNode) {
     const lineno = positionNode && positionNode.lineno != null ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno != null ? positionNode.colno : 0;
-
-    // Include consumes variables by natural lexical names from context vars.
-    // Project canonical runtime names (e.g. loop#4 -> loop) back to natural keys.
-    const snapshotMap = Object.create(null);
-    let cur = frame;
-    while (cur) {
-      if (cur.declaredOutputs) {
-        cur.declaredOutputs.forEach((decl, name) => {
-          const resolved = this._getRuntimeName(name, decl);
-          if (!resolved) {
-            return;
-          }
-          if (!snapshotMap[resolved.naturalName]) {
-            snapshotMap[resolved.naturalName] = resolved.runtimeName;
-          }
-        });
-      }
-      cur = cur.parent;
-    }
-
-    const names = Object.keys(snapshotMap);
-    names.forEach((naturalName) => {
-      const runtimeName = snapshotMap[naturalName];
-      const snapshotExpr = this.compiler.buffer.emitAddSnapshot(frame, runtimeName, { lineno, colno }, true);
-      this.emit.line(`${targetVarsVar}[${JSON.stringify(naturalName)}] = ${snapshotExpr};`);
+    const visibleOutputs = this.compiler.analysis.getIncludeVisibleVarOutputs(analysis);
+    visibleOutputs.forEach((entry) => {
+      const snapshotExpr = this.compiler.buffer.emitAddSnapshot(frame, entry.runtimeName, { lineno, colno }, true);
+      this.emit.line(`${targetVarsVar}[${JSON.stringify(entry.baseName)}] = ${snapshotExpr};`);
     });
   }
 
-  _emitDeclaredValueAliasMap(frame, aliasVar) {
+  _emitDeclaredValueAliasMap(analysis, aliasVar) {
+    const visibleOutputs = this.compiler.analysis.getIncludeVisibleVarOutputs(analysis);
     const aliases = Object.create(null);
-    let cur = frame;
-    while (cur) {
-      if (cur.declaredOutputs) {
-        cur.declaredOutputs.forEach((decl, name) => {
-          const resolved = this._getRuntimeName(name, decl);
-          if (!resolved) {
-            return;
-          }
-          if (!resolved.canonicalBaseName) {
-            return;
-          }
-          const baseName = resolved.canonicalBaseName;
-          // Nearest declaration wins when multiple scopes map the same base name.
-          if (!aliases[baseName]) {
-            aliases[baseName] = resolved.runtimeName;
-          }
-        });
+    for (let i = 0; i < visibleOutputs.length; i++) {
+      const entry = visibleOutputs[i];
+      if (entry.baseName === entry.runtimeName) {
+        continue;
       }
-      cur = cur.parent;
+      aliases[entry.baseName] = entry.runtimeName;
     }
-
     const keys = Object.keys(aliases);
     for (let i = 0; i < keys.length; i++) {
       const base = keys[i];
@@ -128,32 +61,9 @@ class CompileInheritance {
    * name. Mirror that here so nested/shadowed loop metadata links only the
    * currently visible handler lane for each name.
    */
-  _collectIncludeLinkCandidates(frame) {
-    const candidates = new Set();
-    const visibleNames = new Set();
-
-    let cur = frame;
-    while (cur) {
-      if (cur.declaredOutputs) {
-        cur.declaredOutputs.forEach((decl, name) => {
-          const resolved = this._getRuntimeName(name, decl);
-          if (!resolved) {
-            return;
-          }
-          if (visibleNames.has(resolved.naturalName)) {
-            return;
-          }
-          visibleNames.add(resolved.naturalName);
-          const runtimeName = resolved.runtimeName;
-          if (runtimeName) {
-            candidates.add(runtimeName);
-          }
-        });
-      }
-      cur = cur.parent;
-    }
-
-    return Array.from(candidates);
+  _collectIncludeLinkCandidates(analysis) {
+    return this.compiler.analysis.getIncludeVisibleVarOutputs(analysis)
+      .map((entry) => entry.runtimeName);
   }
 
   _templateName() {
@@ -511,9 +421,9 @@ class CompileInheritance {
       // var outputs as snapshot promises from the active command buffer.
       // This keeps ordering semantics and leaves include logic declaration-driven.
       this.emit.line(`let ${includeVarsVar} = Object.assign({}, context.getVariables());`);
-      this._emitDeclaredValueSnapshots(f, includeVarsVar, node);
+      this._emitDeclaredValueSnapshots(node._analysis, f, includeVarsVar, node);
       this.emit.line(`let ${aliasMapVar} = {};`);
-      this._emitDeclaredValueAliasMap(f, aliasMapVar);
+      this._emitDeclaredValueAliasMap(node._analysis, aliasMapVar);
 
       // Resolve template promise, then compose and snapshot.
       this.emit.line(`let ${includeTextPromise} = runtime.resolveSingle(${templateVar}).then(function(resolvedTemplate){`);
@@ -523,10 +433,7 @@ class CompileInheritance {
       this.emit.line(`  composed._setBoundaryAliases(${aliasMapVar});`);
       // Structural prelinking: attach composed child to parent lanes up front so
       // include-time symbol snapshots do not depend on lookup-time dynamic linking.
-      const includeLinkCandidates = this._collectIncludeLinkCandidates(f);
-      includeLinkCandidates.forEach((name) => {
-        this.compiler.buffer.registerOutputUsage(f, name);
-      });
+      const includeLinkCandidates = this._collectIncludeLinkCandidates(node._analysis);
       const parentBufferExpr = this.compiler.buffer.currentBuffer;
       this.compiler.emitLinkWithParentCompositionBuffer(
         includeLinkCandidates,

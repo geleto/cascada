@@ -1169,7 +1169,7 @@ class Compiler extends CompilerBase {
     return {};
   }
 
-  _analyzeLoopNodeDeclarations(node, analysisPass) {
+  _analyzeLoopNodeDeclarations(node, analysisPass, declarationsInBody = false) {
     if (node.name instanceof nodes.Symbol) {
       node.name._analysis = { declarationTarget: true };
     } else if (node.name instanceof nodes.Array || node.name instanceof nodes.NodeList) {
@@ -1185,6 +1185,19 @@ class Compiler extends CompilerBase {
     if (!declaredNames.includes('loop')) {
       declares.push({ name: 'loop', type: 'var', initializer: null, internal: true, isLoopMeta: true });
     }
+    if (declarationsInBody) {
+      node.body._analysis = Object.assign({}, node.body._analysis, {
+        createScope: true,
+        loopOwner: node,
+        declares
+      });
+      if (node.else_) {
+        node.else_._analysis = Object.assign({}, node.else_._analysis, {
+          createScope: true
+        });
+      }
+      return {};
+    }
     return { createScope: true, declares };
   }
 
@@ -1198,7 +1211,7 @@ class Compiler extends CompilerBase {
   }
 
   analyzeFor(node, analysisPass) {
-    return this._analyzeLoopNodeDeclarations(node, analysisPass);
+    return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
   }
 
   compileFor(node, frame) {
@@ -1206,7 +1219,7 @@ class Compiler extends CompilerBase {
   }
 
   analyzeAsyncEach(node, analysisPass) {
-    return this._analyzeLoopNodeDeclarations(node, analysisPass);
+    return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
   }
 
   compileAsyncEach(node, frame) {
@@ -1214,7 +1227,7 @@ class Compiler extends CompilerBase {
   }
 
   analyzeAsyncAll(node, analysisPass) {
-    return this._analyzeLoopNodeDeclarations(node, analysisPass);
+    return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
   }
 
   compileAsyncAll(node, frame) {
@@ -1573,7 +1586,15 @@ class Compiler extends CompilerBase {
       return {};
     }
     const textOutput = this.analysis.getCurrentTextOutput(node._analysis);
-    return textOutput ? { uses: [textOutput], mutates: [textOutput] } : {};
+    const includeVisibleOutputs = this.analysis.getIncludeVisibleVarOutputs(node._analysis)
+      .map((entry) => entry.runtimeName);
+    const uses = textOutput
+      ? [textOutput, ...includeVisibleOutputs]
+      : includeVisibleOutputs;
+    return {
+      uses,
+      mutates: textOutput ? [textOutput] : []
+    };
   }
 
   compileInclude(node, frame) {

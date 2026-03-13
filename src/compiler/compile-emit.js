@@ -384,13 +384,6 @@ module.exports = class CompileEmit {
   // similar for writes we can do some optimizations
   getAsyncBlockArgs(node, frame) {
     const usedOutputs = this.compiler._getAnalysisRuntimeOutputNames(node, frame, 'usedOutputs');
-    if (frame && frame.usedOutputs) {
-      frame.usedOutputs.forEach((name) => {
-        if (!usedOutputs.includes(name)) {
-          usedOutputs.push(name);
-        }
-      });
-    }
     const declaredOutputs = new Set(this.compiler._getAnalysisRuntimeDeclaredOutputNames(node, frame));
     const linkedOutputs = usedOutputs.filter((name) => {
       if (name === this.compiler.buffer.currentTextOutputName) {

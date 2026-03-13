@@ -71,13 +71,14 @@ class CompileRename {
         continue;
       }
       if (decl.isLoopMeta) {
-        if (!node.loopRuntimeName) {
-          node.loopRuntimeName = this._nextLoopRuntimeName();
+        const ownerNode = (node._analysis && node._analysis.loopOwner) || node;
+        if (!ownerNode.loopRuntimeName) {
+          ownerNode.loopRuntimeName = this._nextLoopRuntimeName();
         }
-        decl.name = node.loopRuntimeName;
+        decl.name = ownerNode.loopRuntimeName;
         nextBinding = {
           kind: 'loop',
-          runtimeName: node.loopRuntimeName
+          runtimeName: ownerNode.loopRuntimeName
         };
         continue;
       }
