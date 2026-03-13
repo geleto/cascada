@@ -174,6 +174,17 @@ class CompileAnalysis {
     return this._getDeclaration(node._analysis, name);
   }
 
+  getDeclarationOwner(node, name) {
+    if (!node || !node._analysis) {
+      return null;
+    }
+    return this._getDeclarationOwner(node._analysis, name);
+  }
+
+  getScopeOwner(analysis) {
+    return this._findScopeOwner(analysis);
+  }
+
   _findScopeOwner(analysis) {
     let current = analysis;
     while (current) {
@@ -384,10 +395,18 @@ class CompileAnalysis {
   }
 
   _getDeclaration(analysis, name) {
+    const owner = this._getDeclarationOwner(analysis, name);
+    if (!owner || !owner.declaredOutputs) {
+      return null;
+    }
+    return owner.declaredOutputs.get(name) || null;
+  }
+
+  _getDeclarationOwner(analysis, name) {
     let current = analysis;
     while (current) {
       if (current.declaredOutputs && current.declaredOutputs.has(name)) {
-        return current.declaredOutputs.get(name);
+        return current;
       }
       if (current.scopeBoundary) {
         break;

@@ -50,7 +50,7 @@ class Compiler extends CompilerBase {
       validateDeclarationScope(frame, varName, this, null);
       // Variables and outputs share the same lexical scoping rules.
       // Use _getDeclaredOutput (lexical-only) for collision checks.
-      const outputDecl = this.async._getDeclaredOutput(frame, varName);
+      const outputDecl = this._getOutputDeclaration(null, frame, varName);
       const allowSequenceLockAlias = varName && varName.startsWith('!') &&
         outputDecl && outputDecl.type === 'sequential_path';
       if (outputDecl && outputDecl.type !== 'var' && !allowSequenceLockAlias) {
@@ -112,7 +112,6 @@ class Compiler extends CompilerBase {
       this.fail(`Cannot declare output '${name}': already declared`, node && node.lineno, node && node.colno, node || undefined);
     }
 
-    // Match variable declaration semantics: disallow shadowing parent declarations.
     let parentFrame = frame && frame.parent;
     while (parentFrame) {
       if (parentFrame.declaredOutputs && parentFrame.declaredOutputs.has(name)) {
@@ -129,7 +128,7 @@ class Compiler extends CompilerBase {
     // Output declarations cannot conflict with variables in the same lexical frame chain.
     // Note: we intentionally do NOT consider outputParent here; macro/call detached scopes
     // can still access outer outputs via @name without having lexical name conflicts.
-    if (this._isDeclared(frame, name)) {
+    if (this._isDeclared(frame, name, node)) {
       this.fail(
         `Cannot declare output '${name}' because a variable with the same name is already declared`,
         node && node.lineno,
@@ -382,7 +381,7 @@ class Compiler extends CompilerBase {
       const name = target.value;
       let id;
 
-      const isDeclared = this._isDeclared(frame, name);
+      const isDeclared = this._isDeclared(frame, name, node);
       const declaredFrame = isDeclared ? frame.resolve(name, false) : null;
 
       // Read-only parent scopes (e.g. call/caller bodies) may read from parent frames,
@@ -490,15 +489,17 @@ class Compiler extends CompilerBase {
       const name = target.value;
       let id;
 
-      const declaredOutput = this.async._getDeclaredOutput(frame, name);
+      const declaredOutput = !this.scriptMode && this.async && this.async._getDeclaredOutput
+        ? this.async._getDeclaredOutput(frame, name)
+        : this._getOutputDeclaration(node, frame, name, true);
       const shouldDeclareInTemplateMode = templateAutoDeclareMode && !(declaredOutput && declaredOutput.type === 'var');
       const shouldDeclare = isDeclaration || shouldDeclareInTemplateMode;
       const isDeclaredForValidation = shouldDeclare
-        ? !!(frame.declaredOutputs && frame.declaredOutputs.has(name))
+        ? this._isOutputDeclaredInCurrentScope(node, frame, name)
         : !!(declaredOutput && declaredOutput.type === 'var');
 
       if (this.scriptMode && !isDeclaration) {
-        const declaredInCurrentScope = !!(frame.declaredOutputs && frame.declaredOutputs.has(name));
+        const declaredInCurrentScope = this._isOutputDeclaredInCurrentScope(node, frame, name);
         validateReadOnlyOuterMutation(this, {
           frame,
           node,
@@ -943,7 +944,7 @@ class Compiler extends CompilerBase {
         if (guardedTypes.size === 0 || !frame) {
           return false;
         }
-        const outputDecl = this.async._getDeclaredOutput(frame, name);
+        const outputDecl = frame ? this.async._getDeclaredOutput(frame, name) : null;
         if (outputDecl) {
           return guardedTypes.has(outputDecl.type);
         }
@@ -1003,8 +1004,8 @@ class Compiler extends CompilerBase {
       const resolvedHandlers = new Set(Array.isArray(handlerSelector) ? handlerSelector : []);
 
       for (const name of variableTargetsRaw) {
-        const isDeclaredVar = this._isDeclared(frame, name);
-        const outputDecl = this.async._getDeclaredOutput(frame, name);
+        const isDeclaredVar = this._isDeclared(frame, name, guardNode);
+        const outputDecl = this._getOutputDeclaration(guardNode, frame, name);
 
         if (isDeclaredVar) {
           variableValidationTargets.push(name);
@@ -1430,8 +1431,8 @@ class Compiler extends CompilerBase {
     };
 
     // Keep macro arg/kwarg/caller declaration rules aligned with normal var declarations.
-    const alreadyDeclared = this._isDeclared(frame, name) ||
-      !!(frame.declaredOutputs && frame.declaredOutputs.has(name));
+    const alreadyDeclared = this._isDeclared(frame, name, node) ||
+      this._isOutputDeclaredInCurrentScope(node, frame, name);
     validateSetTarget(this, bindingSetNode, targetNode, name, alreadyDeclared);
     this._addDeclaredVar(frame, name);
 

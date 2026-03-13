@@ -107,7 +107,7 @@ class CompileBuffer {
 
     const handler = staticPath[0];
     this.registerOutputUsage(frame, handler);
-    const outputDecl = this.compiler.async._getDeclaredOutput(frame, handler);
+    const outputDecl = this.compiler._getOutputDeclaration(node, frame, handler);
     const outputType = node.outputType || (outputDecl ? outputDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
     const subpath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
@@ -121,7 +121,7 @@ class CompileBuffer {
       handler,
       outputType,
       hasOutputDecl: !!outputDecl,
-      declaredInCurrentScope: !!(frame && frame.declaredOutputs && frame.declaredOutputs.has(handler)),
+      declaredInCurrentScope: this.compiler._isOutputDeclaredInCurrentScope(node, frame, handler),
       isCallNode,
       isObservationCall
     });

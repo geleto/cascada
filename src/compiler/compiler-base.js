@@ -132,12 +132,36 @@ class CompilerBase extends Obj {
     }
   }
 
-  _isDeclared(frame, name) {
-    // Variable declaration checks intentionally exclude var outputs.
-    // Output declarations are tracked separately in declaredOutputs.
-    const outputDecl = this.async && this.async._getDeclaredOutput
+  _nodeDeclaresOutput(node, name) {
+    const declares = node && node._analysis && node._analysis.declares;
+    return Array.isArray(declares) && declares.some((decl) => decl && decl.name === name);
+  }
+
+  _getOutputDeclaration(node, frame, name, excludeLocalDeclarations = false) {
+    if (excludeLocalDeclarations && this._nodeDeclaresOutput(node, name)) {
+      return this.async && this.async._getDeclaredOutput
+        ? this.async._getDeclaredOutput(frame, name)
+        : null;
+    }
+    const analysisDecl = node && node._analysis && this.analysis
+      ? this.analysis.getDeclaration(node, name)
+      : null;
+    if (analysisDecl) {
+      return analysisDecl;
+    }
+    return this.async && this.async._getDeclaredOutput
       ? this.async._getDeclaredOutput(frame, name)
       : null;
+  }
+
+  _isOutputDeclaredInCurrentScope(node, frame, name) {
+    return !!(frame && frame.declaredOutputs && frame.declaredOutputs.has(name));
+  }
+
+  _isDeclared(frame, name, node = null) {
+    // Variable declaration checks intentionally exclude var outputs.
+    // Output declarations are tracked separately in declaredOutputs.
+    const outputDecl = this._getOutputDeclaration(node, frame, name);
     if (outputDecl) {
       return false;
     }
@@ -354,8 +378,8 @@ class CompilerBase extends Obj {
       this.emit(name);
       return;
     }
-    const declaredOutput = this.async._getDeclaredOutput(frame, name);
-    if (declaredOutput && !this._isDeclared(frame, name)) {
+    const declaredOutput = this._getOutputDeclaration(node, frame, name);
+    if (declaredOutput && !this._isDeclared(frame, name, node)) {
       if (node.sequential || node.sequentialRepair) {
         this.fail(
           'Sequence marker (!) is not allowed in non-context variable paths',
@@ -365,6 +389,13 @@ class CompilerBase extends Obj {
         );
       }
       if (declaredOutput.type === 'var') {
+        if (!this.scriptMode && this.inBlock) {
+          // Block functions can read var outputs declared in the child root buffer
+          // while executing under a parent block buffer. Use runtime var lookup
+          // there so cross-tree reads resolve against the producer buffer.
+          this.emit(`runtime.varOutputLookup(frame, "${name}", ${this.buffer.currentBuffer})`);
+          return;
+        }
         // Value outputs are read as point-in-stream snapshots when used as symbols.
         // This makes `x` equivalent to `x.snapshot()` in expressions.
         this.buffer.emitAddSnapshot(frame, name, node);
@@ -437,15 +468,13 @@ class CompilerBase extends Obj {
       const useContextOnlyInheritanceLookup =
         this.asyncMode &&
         this.inBlock &&
-        !this._isDeclared(frame, name);
+        !this._isDeclared(frame, name, node);
       if (useContextOnlyInheritanceLookup) {
         // Conservative registration: unresolved inheritance/block symbols can still
         // resolve to var outputs at runtime (after context miss), and prelinking
         // relies on usedOutputs coverage to keep snapshots reachable.
         this.buffer.registerOutputUsage(frame, name);
-        const outputDecl = this.async && this.async._getDeclaredOutput
-          ? this.async._getDeclaredOutput(frame, name)
-          : null;
+        const outputDecl = this._getOutputDeclaration(node, frame, name);
         if (outputDecl) {
           this.emit('runtime.varOutputLookup(' + `frame, "${name}", ${this.buffer.currentBuffer})`);
         } else {
@@ -728,8 +757,8 @@ class CompilerBase extends Obj {
 
     if (targetNode instanceof nodes.Symbol) {
       const name = targetNode.value;
-      const outputDecl = this.async._getDeclaredOutput(frame, name);
-      if (outputDecl && !this._isDeclared(frame, name)) {
+      const outputDecl = this._getOutputDeclaration(targetNode, frame, name);
+      if (outputDecl && !this._isDeclared(frame, name, targetNode)) {
         return name;
       }
       return null;
@@ -738,8 +767,8 @@ class CompilerBase extends Obj {
     if (targetNode instanceof nodes.FunCall) {
       const candidate = this.sequential._extractStaticPathRoot(targetNode.name, 2);
       if (candidate) {
-        const outputDecl = this.async._getDeclaredOutput(frame, candidate);
-        if (outputDecl && !this._isDeclared(frame, candidate)) {
+        const outputDecl = this._getOutputDeclaration(targetNode, frame, candidate);
+        if (outputDecl && !this._isDeclared(frame, candidate, targetNode)) {
           return candidate;
         }
       }
@@ -974,8 +1003,8 @@ class CompilerBase extends Obj {
       if (sequenceLockKey) {
         let index = sequenceLockKey.indexOf('!', 1);
         const keyRoot = sequenceLockKey.substring(1, index === -1 ? sequenceLockKey.length : index);
-        const keyRootOutput = this.async._getDeclaredOutput(frame, keyRoot);
-        if (this._isDeclared(frame, keyRoot) || keyRootOutput) {
+        const keyRootOutput = this._getOutputDeclaration(node, frame, keyRoot);
+        if (this._isDeclared(frame, keyRoot, node) || keyRootOutput) {
           this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
         }
         this.buffer.registerOutputUsage(frame, sequenceLockKey);
@@ -1041,8 +1070,8 @@ class CompilerBase extends Obj {
     if (!keyRoot) {
       return;
     }
-    const keyRootOutput = this.async._getDeclaredOutput(frame, keyRoot);
-    if (this._isDeclared(frame, keyRoot) || keyRootOutput) {
+    const keyRootOutput = this._getOutputDeclaration(node, frame, keyRoot);
+    if (this._isDeclared(frame, keyRoot, node) || keyRootOutput) {
       this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);
     }
   }
